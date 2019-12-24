@@ -1,0 +1,4 @@
+name = "TypeProfiler"
+uuid = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
+authors = ["aviatesk <aviatesk@gmail.com>"]
+version = "0.0.0"
