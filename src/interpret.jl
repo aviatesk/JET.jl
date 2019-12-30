@@ -1,7 +1,3 @@
-using JuliaInterpreter: sparam_syms, pc_expr, is_leaf, show_stackloc, is_leaf,
-                        moduleof, isassign, finish_and_return!, handle_err,
-                        resolvefc, @lookup
-
 # lookups
 # -------
 
@@ -16,8 +12,8 @@ via the 3-argument version.
 If none of the above apply, the value of `node` will be returned.
 """
 macro lookup_type(args...)
-  length(args) == 2 || length(args) == 3 || error("invalid number of arguments ", length(args))
-  havemod = length(args) == 3
+  length(args) === 2 || length(args) === 3 || error("invalid number of arguments ", length(args))
+  havemod = length(args) === 3
   local mod
   if havemod
     mod, frame, node = args
@@ -25,15 +21,9 @@ macro lookup_type(args...)
     frame, node = args
   end
   nodetmp = gensym(:node)  # used to hoist, e.g., args[4]
-  if havemod
-    fallback = :(if isa($nodetmp, Symbol)
-      typeof′(getfield($(esc(mod)), $nodetmp))
-    else
-      typeof′($nodetmp)
-    end)
-  else
-    fallback = :(typeof′($nodetmp))
-  end
+  fallback = havemod ?
+    :($nodetmp isa Symbol ? typeof′(getfield($(esc(mod)), $nodetmp)) : typeof′($nodetmp)) :
+    :(typeof′($nodetmp))
 
   quote
     $nodetmp = $(esc(node))
@@ -41,46 +31,57 @@ macro lookup_type(args...)
     isa($nodetmp, SlotNumber) ? lookup_type($(esc(frame)), $nodetmp) :
     isa($nodetmp, Const) ? lookup_type($(esc(frame)), $nodetmp) :
     isa($nodetmp, TypedSlot) ? lookup_type($(esc(frame)), $nodetmp) :
-    # isa($nodetmp, QuoteNode) ? $nodetmp.value :
+    isa($nodetmp, QuoteNode) ? lookup_type($(esc(frame)), $nodetmp) :
     isa($nodetmp, Expr) ? lookup_type($(esc(frame)), $nodetmp) :
-    # isa($nodetmp, GlobalRef) ? lookup_var_type($(esc(frame)), $nodetmp) :
-    # isa($nodetmp, Symbol) ? getfield(moduleof($(esc(frame))), $nodetmp) :
+    isa($nodetmp, GlobalRef) ? lookup_type($(esc(frame)), $nodetmp) :
+    isa($nodetmp, Symbol) ? lookup_type($(esc(frame)), $nodetmp) :
     $fallback
   end
 end
 
 # TODO: fallback to pre-computed types
-lookup_type(frame, ssav::SSAValue) =
-  typeof′(frame.framecode.src.ssavaluetypes[ssav.id])
-lookup_type(frame, slot::SlotNumber) = begin
-  return typ = typeof′(frame.framecode.src.slottypes[slot.id])
+lookup_type(frame::Frame, ssav::SSAValue) =
+  strip_const(frame.framecode.src.ssavaluetypes[ssav.id])
+lookup_type(frame::Frame, slot::SlotNumber) = begin
+  return typ = strip_const(frame.framecode.src.slottypes[slot.id])
   # typ !== Any && return typ
   # throw("can't determine slot type: $(frame.framecode.src.slotnames[slot.id])")
 end
-lookup_type(frame, c::Const) = typeof′(c.val)
-lookup_type(frame, typedslot::TypedSlot) =
-  (t = typedslot.typ) isa Const ? lookup_type(frame, t) : t
-function lookup_type(frame, e::Expr)
+lookup_type(frame::Frame, c::Const) = strip_const(c)
+lookup_type(frame::Frame, tslot::TypedSlot) = strip_const(tslot.typ)
+lookup_type(frame::Frame, node::QuoteNode) = typeof′(node.value)
+function lookup_type(frame::Frame, e::Expr)
   head = e.head
-  head == :the_exception && return frame.framedata.last_exception[]
-  if head == :static_parameter
+  if head === :the_exception
+    @error "exceptions are not supported"
+    return Undefined
+  elseif head === :static_parameter
     arg = e.args[1]::Int
     if isassigned(frame.framedata.sparams, arg)
-      return frame.framedata.sparams[arg]
+      return Type{frame.framedata.sparams[arg]}
     else
       syms = sparam_syms(frame.framecode.scope)
       throw(UndefVarError(syms[arg]))
     end
+  elseif head === :boundscheck
+    if length(e.args) === 0
+      return Bool
+    else
+      error("invalid boundscheck at ", e)
+    end
+  else
+    error("invalid lookup expr ", e)
   end
-  head == :boundscheck && length(e.args) == 0 && return Bool
-  error("invalid lookup expr ", e)
 end
-# lookup_type(frame, ref::GlobalRef) = getfield(ref.mod, ref.name)
+lookup_type(frame::Frame, ref::GlobalRef) = typeof′(getfield(ref.mod, ref.name))
+function lookup_type(frame::Frame, sym::Symbol)
+  mod = moduleof(frame)
+  isdefined(mod, sym) || return Undefiend
+  return typeof′(getfield(mod, sym))
+end
 
 # recursive call
 # --------------
-
-# const recurse = finish_and_return!
 
 step_code!(frame, istoplevel::Bool) = step_code!(frame, pc_expr(frame), istoplevel)
 function step_code!(frame, @nospecialize(node), istoplevel::Bool)
@@ -105,7 +106,6 @@ function step_code!(frame, @nospecialize(node), istoplevel::Bool)
             @lookup_type(frame, rhs)
           end
         end
-        isa(rhs, BreakpointRef) && return rhs
         do_assignment!(frame, lhs, rhs)
       elseif node.head == :gotoifnot
         # NOTE: just check the branch node type, and ignore jump itself
@@ -259,87 +259,80 @@ function evaluate_or_profile_code!(frame, node::Expr)
   end
 end
 
-function profile_call(frame::Frame, call_expr::Expr; kwargs...)
-  # pc = frame.pc
+function profile_call(
+  frame::Frame, call_expr::Expr;
+  enter_generated::Bool = false
+)
   # TODO: I may need this ?
   # ret = bypass_builtins(frame, call_expr, pc)
   # isa(ret, Some{Type}) && return ret.value
 
   ret = maybe_profile_builtin_call(frame, call_expr, true)
   if ret isa SomeType
-    @show call_expr
-    rettyp = typeof′(ret)
-    return @show rettyp
+    rettyp = unwrap_sometype(ret)
+    @show call_expr, ret
+    return rettyp
   end
 
   call_expr = ret
   argtypes = collect_argtypes(frame, call_expr)
-  f, types = argtypes[1], argtypes[2:end]
-  # if fargtyps[1] === typeof(Core.eval)
-  #   # NOTE: maybe can't handle this
-  #   # return Core.eval(fargs[2], fargs[3])  # not a builtin, but worth treating specially
-  # elseif fargtyps[1] === typeof(Base.rethrow)
-  #   err = length(fargtyps) > 1 ? fargtyps[2] : frame.framedata.last_exception[]
-  #   throw(err)
-  # end
-  # if fargtyps[1] === typeof(Core.invoke) # invoke needs special handling
-  #   # TODO: handle this
-  #   error("encounter Core.invoke")
-  #   # f_invoked = which(fargs[2], fargs[3])
-  #   # fargs_pruned = [fargs[2]; fargs[4:end]]
-  #   # sig = Tuple{_Typeof.(fargs_pruned)...}
-  #   # ret = prepare_framecode(f_invoked, sig; kwargs...)
-  #   # isa(ret, Compiled) && invoke(fargs[2:end]...)
-  #   # framecode, lenv = ret
-  #   # lenv === nothing && return framecode  # this was a Builtin
-  #   # fargs = fargs_pruned
-  # else
-  #   framecode, lenv = get_call_framecode(fargtyps, frame.framecode, frame.pc; kwargs...)
-  #   if lenv === nothing
-  #     # if isa(framecode, Compiled)
-  #     #   f = popfirst!(fargs)  # now it's really just `args`
-  #     #   return Base.invokelatest(f, fargs...)
-  #     # end
-  #     return framecode  # this was a Builtin
-  #   end
-  # end
-  # TODO: recursive calls
-  # newframe = prepare_frame_caller(frame, framecode, fargtyps, lenv)
-  # npc = newframe.pc
-  # shouldbreak(newframe, npc) && return BreakpointRef(newframe.framecode, npc)
-  # ret = evaluate_or_profile!(frame, false)
-  # isa(ret, BreakpointRef) && return ret
-  # frame.callee = nothing
-  # return_from(newframe)
-  @show f, types
-  src, rettyp = code_typed(f, types)[1]
-  return @show rettyp
+  f = to_function(argtypes[1])
+
+  if f === Core.eval
+    # NOTE: maybe can't handle this
+    @warn "TypeProfiler can't profile `Core.eval`"
+    return Undefined
+  elseif f === Base.rethrow
+    @warn "TypeProfiler currently doesn't handle exceptions."
+    return Undefined
+  elseif f === Core.invoke # invoke needs special handling
+    # TODO: handle this
+    error("encounter Core.invoke")
+    # f_invoked = which(fargs[2], fargs[3])
+    # fargs_pruned = [fargs[2]; fargs[4:end]]
+    # sig = Tuple{_Typeof.(fargs_pruned)...}
+    # ret = prepare_framecode(f_invoked, sig; enter_generated = enter_generated)
+    # isa(ret, Compiled) && invoke(fargs[2:end]...)
+    # framecode, lenv = ret
+    # lenv === nothing && return framecode  # this was a Builtin
+    # fargs = fargs_pruned
+  else
+    framecode, lenv = get_call_framecode(argtypes, frame.framecode, frame.pc; enter_generated = enter_generated)
+    if lenv === nothing
+      if isa(framecode, Compiled)
+        @warn "Hit Compiled method: $(argtypes)"
+        return Undefined
+      else
+        # return framecode  # this was a Builtin
+        error("builtin ?")
+      end
+    end
+  end
+
+  newframe = prepare_frame_caller(frame, framecode, argtypes, lenv)
+  npc = newframe.pc
+  rettyp = evaluate_or_profile!(newframe, false)
+  frame.callee = nothing
+  return_from(newframe)
+  @show rettyp, scopeof(newframe)
+  return rettyp
 end
 
+# HACK:
+# - overload `_Typeof` so that it would "unwrap" `SomeType`
+# - wrap in `SomeType` so that `prepare_hoge` works as if with actual values
 function collect_argtypes(frame::Frame, call_expr::Expr; isfc::Bool = false)
   args = frame.framedata.callargs
   resize!(args, length(call_expr.args))
   mod = moduleof(frame)
   # TODO: :foreigncall should be handled separatelly
-  # NOTE: use actual function value here
-  args[1] = isfc ? resolvefc(frame, call_expr.args[1]) : @lookup(mod, frame, call_expr.args[1])
-  for i = 2:length(args)
-    args[i] = @lookup_type(mod, frame, call_expr.args[i])
+  for (i, arg) in enumerate(call_expr.args)
+    args[i] = SomeType(@lookup_type(mod, frame, arg))
   end
   return args
 end
 
-function do_assignment!(frame, @nospecialize(lhs), @nospecialize(rhs))
-    code, data = frame.framecode, frame.framedata
-    if isa(lhs, SSAValue)
-        data.ssavalues[lhs.id] = rhs
-    elseif isa(lhs, SlotNumber)
-        counter = (frame.assignment_counter += 1)
-        data.locals[lhs.id] = Some{Any}(rhs)
-        data.last_reference[lhs.id] = counter
-    elseif isa(lhs, GlobalRef)
-        Core.eval(lhs.mod, :($(lhs.name) = $(QuoteNode(rhs))))
-    elseif isa(lhs, Symbol)
-        Core.eval(moduleof(code), :($lhs = $(QuoteNode(rhs))))
-    end
-end
+_Typeof(t::SomeType) = t.type
+to_function(t::SomeType) = to_function(t.type)
+to_function(t::Type{<:Function}) = t.instance
+to_function(t::Type{T}) where {T} = t

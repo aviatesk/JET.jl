@@ -1,14 +1,4 @@
-# introduce JuliaInterpreter's types here
-using JuliaInterpreter: Frame, FrameCode, FrameData
-
-# Our own replacements for Core types. We need to do this to ensure we can tell the difference
-# between "data" (Core types) and "code" (our types) if we step into Core.Compiler
-struct SSAValue
-    id::Int
-end
-struct SlotNumber
-    id::Int
-end
+# additional replacements for `Core` types (basically what appears in typed `Core.CodeInfo`)
 struct Const
   val::Any
   actual::Bool
@@ -17,7 +7,17 @@ struct TypedSlot
   id::Int
   typ::Any
 end
-TypedSlot(id::Int, _const::Core.Compiler.Const) = TypedSlot(id, Const(_const.val, _const.actual))
+
+replaced_coretype(@nospecialize(x)) = x
+replaced_coretype(ssav::Core.SSAValue) = SSAValue(ssav.id)
+replaced_coretype(slot::Core.SlotNumber) = SlotNumber(slot.id)
+replaced_coretype(c::Core.Compiler.Const) = Const(c.val, c.actual)
+replaced_coretype(tslot::Core.TypedSlot) = TypedSlot(tslot.id, replaced_coretype(tslot.typ))
+replaced_coretype_rev(@nospecialize(x)) = x
+replaced_coretype_rev(ssav::SSAValue) = Core.SSAValue(ssav.id)
+replaced_coretype_rev(slot::SlotNumber) = Core.SlotNumber(slot.id)
+replaced_coretype_rev(c::Const) = Core.Compiler.Const(c.val, c.actual)
+replaced_coretype_rev(tslot::TypedSlot) = Core.TypedSlot(tslot.id, replaced_coretype_rev(tslot.typ))
 
 """
     SomeType
