@@ -114,6 +114,8 @@ function step_code!(frame, @nospecialize(node), istoplevel::Bool)
       else
         rhs = evaluate_or_profile_code!(frame, node)
       end
+    elseif isa(node, Const)
+      return step_code!(frame, node.val, istoplevel)
     elseif isa(node, Core.GotoNode) # NOTE: ignore GotoNode
     elseif isa(node, Core.NewvarNode)
       # FIXME: undefine the slot?

@@ -1,22 +1,32 @@
 function type_annotate_frame!(frame::Frame, s::Method)
-  tt = signature_type(frame)
+  tt = signature_type(frame, s)
   typedsrc = typed_src(s, tt)
 
-  # update to typed ssa statements (basically introduces `TypedSlot`s)
-  replace_coretypes!(typedsrc)
+  # update to typed ssa statements
   frame.framecode.src.code = typedsrc.code
 
   # update to typed ssavalues
-  frame.framecode.src.ssavaluetypes::Vector{Any} = replaced_coretype.(typedsrc.ssavaluetypes)
+  ssavaluetypes::Vector{Any} = typedsrc.ssavaluetypes
+  frame.framecode.src.ssavaluetypes = ssavaluetypes
 
   # update to typed slots
-  frame.framecode.src.slottypes = replaced_coretype.(typedsrc.slottypes)
+  frame.framecode.src.slottypes = typedsrc.slottypes
 end
 
 # extract call arg types from `FrameData.locals` (wrapped in `Some`)
-function signature_type(frame::Frame)
+# TODO: handle kwargs
+function signature_type(frame::Frame, s::Method)
+  sig = s.sig
+  sig isa UnionAll && (sig = sig.body)
   call_args = filter(!isnothing, frame.framedata.locals)
-  call_arg_types = map(s -> typeof′(s.value), call_args)
+  call_arg_types = map(zip(sig.parameters, call_args)) do (s, call_arg)
+    if s isa UnionAll && s.body isa DataType && s.body.name.name === :Vararg
+      tpl = typeof′(call_arg isa Some ? call_arg.value : call_arg)::Type{<:Tuple}
+      return Vararg{typejoin(tpl.types...), length(tpl.parameters)}
+    else
+      return typeof′(call_arg isa Some ? call_arg.value : call_arg)
+    end
+  end
   return Tuple{call_arg_types...}
 end
 
@@ -26,7 +36,7 @@ function typed_src(
   world = Base.get_world_counter(), params = Core.Compiler.Params(world)
 )::Core.CodeInfo
   xs = filter(x -> m == x[3], Base._methods_by_ftype(tt, -1, world))
-  isempty(xs) && error("no method found for $(m) with $(types)")
+  isempty(xs) && error("no method found for $(m) with $(tt)")
   length(xs) !== 1 && error("multiple method found for: $m with $types")
 
   x = xs[1]

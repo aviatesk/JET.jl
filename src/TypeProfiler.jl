@@ -4,27 +4,18 @@ module TypeProfiler
 using JuliaInterpreter
 for n in names(JuliaInterpreter,; all = true)
   s = string(n)
-  (startswith(s, '#') || s in ("eval", "include")) && continue
+  (startswith(s, '#') || s in ("eval", "include", "SSAValue", "SlotNumber")) && continue
   Core.eval(@__MODULE__, :(import JuliaInterpreter: $n))
 end
+
+using Core: SSAValue, SlotNumber, TypedSlot
+using Core.Compiler: Const
 
 include("types.jl")
 include("utils.jl")
 include("manipulate.jl")
 include("interpret.jl")
 include("builtins.jl")
-
-function __init__()
-  Core.eval(JuliaInterpreter, :(function replace_coretypes_list!(list; rev::Bool = false)
-    for (i, stmt) in enumerate(list)
-      if stmt isa Expr
-        replace_coretypes!(stmt; rev = rev)
-      else
-        list[i] = rev ? $replaced_coretype_rev(stmt) : $replaced_coretype(stmt)
-      end
-    end
-  end))
-end
 
 function evaluate_or_profile!(frame::Frame, istoplevel::Bool = false)
   # type annotate `frame`
@@ -37,7 +28,20 @@ function evaluate_or_profile!(frame::Frame, istoplevel::Bool = false)
 
   # finishes this frame
   while (pc = step_code!(frame, istoplevel)) !== nothing end
-  return get_return(frame)
+  return get_return_type(frame)
+end
+
+using Base.Meta: isexpr
+
+function get_return_type(frame)
+    node = pc_expr(frame)
+    if isexpr(node, :return)
+      @lookup_type(frame, (node::Expr).args[1])
+    elseif node isa Const && isexpr(node.val, :return)
+      @lookup_type(frame, (node.val::Expr).args[1])
+    else
+      error("expected return statement, got ", node)
+    end
 end
 
 end

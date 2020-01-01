@@ -149,7 +149,6 @@ end
 
 typeof′(@nospecialize(x)) = typeof(x)
 typeof′(x::Type{T}) where {T} = Type{T}
-typeof′(x::Const) = typeof′(x.val)
 typeof′(x::SomeType) = x.type
 
 unwrap_sometype(@nospecialize(x)) = x
