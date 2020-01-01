@@ -7,14 +7,17 @@ function type_annotate_frame!(frame::Frame, s::Method)
   frame.framecode.src.code = typedsrc.code
 
   # update to typed ssavalues
-  frame.framecode.src.ssavaluetypes = replaced_coretype.(typedsrc.ssavaluetypes)
-  empty!(frame.framedata.ssavalues)
-  for t in replaced_coretype.(typedsrc.ssavaluetypes)
-    push!(frame.framedata.ssavalues, t)
-  end
+  frame.framecode.src.ssavaluetypes::Vector{Any} = replaced_coretype.(typedsrc.ssavaluetypes)
 
   # update to typed slots
   frame.framecode.src.slottypes = replaced_coretype.(typedsrc.slottypes)
+end
+
+# extract call arg types from `FrameData.locals` (wrapped in `Some`)
+function signature_type(frame::Frame)
+  call_args = filter(!isnothing, frame.framedata.locals)
+  call_arg_types = map(s -> typeof′(s.value), call_args)
+  return Tuple{call_arg_types...}
 end
 
 # NOTE: maybe too fragile, make this robust

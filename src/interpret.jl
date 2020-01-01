@@ -187,8 +187,9 @@ function profile_call(
 
   ret = maybe_profile_builtin_call(frame, call_expr, true)
   if ret isa SomeType
+    call_arg_types = collect_call_arg_types(frame, call_expr)
     rettyp = unwrap_sometype(ret)
-    @show call_expr, ret
+    @show call_arg_types, rettyp
     return rettyp
   end
 
@@ -236,10 +237,10 @@ function profile_call(
   end
 
   newframe = prepare_frame_caller(frame, framecode, call_arg_types_wrapped, lenv)
-  npc = newframe.pc
   rettyp = evaluate_or_profile!(newframe, false)
   frame.callee = nothing
   return_from(newframe)
+
   @show scopeof(newframe), rettyp
   return rettyp
 end

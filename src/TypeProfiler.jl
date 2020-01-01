@@ -23,7 +23,6 @@ function __init__()
         list[i] = rev ? $replaced_coretype_rev(stmt) : $replaced_coretype(stmt)
       end
     end
-    return nothing
   end))
 end
 
