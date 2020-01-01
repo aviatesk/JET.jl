@@ -1,85 +1,3 @@
-# lookups
-# -------
-
-"""
-    rhs = @lookup_type(frame, node)
-    rhs = @lookup_type(mod, frame, node)
-
-This macro looks up previously-computed types referenced as SSAValues, SlotNumbers,
-GlobalRefs, QuoteNode, sparam or exception reference expression.
-It will also lookup symbols in `moduleof(frame)`; this can be supplied ahead-of-time
-via the 3-argument version.
-If none of the above apply, the value of `node` will be returned.
-"""
-macro lookup_type(args...)
-  length(args) === 2 || length(args) === 3 || error("invalid number of arguments ", length(args))
-  havemod = length(args) === 3
-  local mod
-  if havemod
-    mod, frame, node = args
-  else
-    frame, node = args
-  end
-  nodetmp = gensym(:node)  # used to hoist, e.g., args[4]
-  fallback = havemod ?
-    :($nodetmp isa Symbol ? typeof′(getfield($(esc(mod)), $nodetmp)) : typeof′($nodetmp)) :
-    :(typeof′($nodetmp))
-
-  quote
-    $nodetmp = $(esc(node))
-    isa($nodetmp, SSAValue) ? lookup_type($(esc(frame)), $nodetmp) :
-    isa($nodetmp, SlotNumber) ? lookup_type($(esc(frame)), $nodetmp) :
-    isa($nodetmp, Const) ? lookup_type($(esc(frame)), $nodetmp) :
-    isa($nodetmp, TypedSlot) ? lookup_type($(esc(frame)), $nodetmp) :
-    isa($nodetmp, QuoteNode) ? lookup_type($(esc(frame)), $nodetmp) :
-    isa($nodetmp, Expr) ? lookup_type($(esc(frame)), $nodetmp) :
-    isa($nodetmp, GlobalRef) ? lookup_type($(esc(frame)), $nodetmp) :
-    isa($nodetmp, Symbol) ? lookup_type($(esc(frame)), $nodetmp) :
-    $fallback
-  end
-end
-
-# TODO: fallback to pre-computed types
-lookup_type(frame::Frame, ssav::SSAValue) =
-  strip_const(frame.framecode.src.ssavaluetypes[ssav.id])
-lookup_type(frame::Frame, slot::SlotNumber) = begin
-  return typ = strip_const(frame.framecode.src.slottypes[slot.id])
-  # typ !== Any && return typ
-  # throw("can't determine slot type: $(frame.framecode.src.slotnames[slot.id])")
-end
-lookup_type(frame::Frame, c::Const) = strip_const(c)
-lookup_type(frame::Frame, tslot::TypedSlot) = strip_const(tslot.typ)
-lookup_type(frame::Frame, node::QuoteNode) = typeof′(node.value)
-function lookup_type(frame::Frame, e::Expr)
-  head = e.head
-  if head === :the_exception
-    @error "exceptions are not supported"
-    return Undefined
-  elseif head === :static_parameter
-    arg = e.args[1]::Int
-    if isassigned(frame.framedata.sparams, arg)
-      return Type{frame.framedata.sparams[arg]}
-    else
-      syms = sparam_syms(frame.framecode.scope)
-      throw(UndefVarError(syms[arg]))
-    end
-  elseif head === :boundscheck
-    if length(e.args) === 0
-      return Bool
-    else
-      error("invalid boundscheck at ", e)
-    end
-  else
-    error("invalid lookup expr ", e)
-  end
-end
-lookup_type(frame::Frame, ref::GlobalRef) = typeof′(getfield(ref.mod, ref.name))
-function lookup_type(frame::Frame, sym::Symbol)
-  mod = moduleof(frame)
-  isdefined(mod, sym) || return Undefiend
-  return typeof′(getfield(mod, sym))
-end
-
 # recursive call
 # --------------
 
@@ -274,10 +192,10 @@ function profile_call(
     return rettyp
   end
 
-  call_expr = ret
-  argtypes = collect_argtypes(frame, call_expr)
-  f = to_function(argtypes[1])
-
+  call_arg_types = ret
+  f_type = call_arg_types[1]
+  arg_types = call_arg_types[2:end]
+  f = to_function(f_type) # non-builtin function *can* be identified from its type
   if f === Core.eval
     # NOTE: maybe can't handle this
     @warn "TypeProfiler can't profile `Core.eval`"
@@ -288,6 +206,7 @@ function profile_call(
   elseif f === Core.invoke # invoke needs special handling
     # TODO: handle this
     error("encounter Core.invoke")
+    return Undefined
     # f_invoked = which(fargs[2], fargs[3])
     # fargs_pruned = [fargs[2]; fargs[4:end]]
     # sig = Tuple{_Typeof.(fargs_pruned)...}
@@ -296,43 +215,42 @@ function profile_call(
     # framecode, lenv = ret
     # lenv === nothing && return framecode  # this was a Builtin
     # fargs = fargs_pruned
-  else
-    framecode, lenv = get_call_framecode(argtypes, frame.framecode, frame.pc; enter_generated = enter_generated)
-    if lenv === nothing
-      if isa(framecode, Compiled)
-        @warn "Hit Compiled method: $(argtypes)"
-        return Undefined
-      else
-        # return framecode  # this was a Builtin
-        error("builtin ?")
-      end
+  end
+
+  # HACK: wrap in `SomeType` so that `prepare_hoge` works as if with actual values
+  call_arg_types_wrapped = Any[SomeType(t) for t in call_arg_types]
+  framecode, lenv = get_call_framecode(
+    call_arg_types_wrapped,
+    frame.framecode,
+    frame.pc;
+    enter_generated = enter_generated
+  )
+  if lenv === nothing
+    if isa(framecode, Compiled)
+      @warn "Hit Compiled method: $(arg_types)"
+      return Undefined
+    else
+      error("builtin ?")  # this was a Builtin
+      return Undefined
     end
   end
 
-  newframe = prepare_frame_caller(frame, framecode, argtypes, lenv)
+  newframe = prepare_frame_caller(frame, framecode, call_arg_types_wrapped, lenv)
   npc = newframe.pc
   rettyp = evaluate_or_profile!(newframe, false)
   frame.callee = nothing
   return_from(newframe)
-  @show rettyp, scopeof(newframe)
+  @show scopeof(newframe), rettyp
   return rettyp
 end
 
 # HACK:
 # - overload `_Typeof` so that it would "unwrap" `SomeType`
-# - wrap in `SomeType` so that `prepare_hoge` works as if with actual values
-function collect_argtypes(frame::Frame, call_expr::Expr; isfc::Bool = false)
-  args = frame.framedata.callargs
-  resize!(args, length(call_expr.args))
-  mod = moduleof(frame)
-  # TODO: :foreigncall should be handled separatelly
-  for (i, arg) in enumerate(call_expr.args)
-    args[i] = SomeType(@lookup_type(mod, frame, arg))
-  end
-  return args
-end
-
+# - overload `to_function` so that it would identify a function from its type
+#    * NOTE: except intrinsic functions
 _Typeof(t::SomeType) = t.type
 to_function(t::SomeType) = to_function(t.type)
 to_function(t::Type{<:Function}) = t.instance
+to_function(t::Type{Core.IntrinsicFunction}) =
+  error("to_function can't identify intrinsic functions.")
 to_function(t::Type{T}) where {T} = t
