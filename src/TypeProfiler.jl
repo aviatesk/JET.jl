@@ -36,9 +36,9 @@ using Base.Meta: isexpr
 function get_return_type(frame)
     node = pc_expr(frame)
     if isexpr(node, :return)
-      @lookup_type(frame, (node::Expr).args[1])
+      lookup_type(frame, (node::Expr).args[1])
     elseif node isa Const && isexpr(node.val, :return)
-      @lookup_type(frame, (node.val::Expr).args[1])
+      lookup_type(frame, (node.val::Expr).args[1])
     else
       error("expected return statement, got ", node)
     end

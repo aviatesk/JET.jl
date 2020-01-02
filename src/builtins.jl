@@ -49,7 +49,8 @@ function maybe_profile_builtin_call(frame, call_expr, expand::Bool)
     # HACK:
     # use actual function value for intrinsic functions since we can't identify
     # them by their type
-    f = @lookup_value(frame, call_expr.args[1])
+    f = lookup_value(frame, call_expr.args[1])
+    isa(f, Function) || error("can't lookup f correctly")
     if f === Core.Intrinsics.not_int
       if nargs === 1
         return SomeType(arg_types[1])

@@ -2,45 +2,17 @@
 # -------
 
 """
-    typ = @lookup_type(frame, node)
-    typ = @lookup_type(mod, frame, node)
+    typ = lookup_type(frame::Frame, x)
 
-Looks up a previously-inferred type referenced as `SSAValue`, `SlotNumber`, `Const`,
-  `TypedSlot`, `QuoteNode`, `GlobalRef`, or `Symbol` (in a scope of `moduleof(frame)`
-  or the optional first argument `mod` module).
-If none of the above apply, the value of `node` will be returned.
+Looks up a previously-inferred type referenced as `SSAValue`, `SlotNumber`,
+  `Const`, `TypedSlot`, `QuoteNode`, `GlobalRef`, or `Symbol` for a binding in
+  a scope of `moduleof(frame)`.
+If none of the above apply, returns the direct type of `x`.
 """
-macro lookup_type(args...)
-  length(args) === 2 || length(args) === 3 || error("invalid number of arguments ", length(args))
-  havemod = length(args) === 3
-  local mod
-  if havemod
-    mod, frame, node = args
-  else
-    frame, node = args
-  end
-  nodetmp = gensym(:node)  # used to hoist, e.g., args[4]
-  fallback = havemod ?
-    :($nodetmp isa Symbol ? typeof′(getfield($(esc(mod)), $nodetmp)) : typeof′($nodetmp)) :
-    :(typeof′($nodetmp))
-
-  quote
-    $nodetmp = $(esc(node))
-    ret =
-      isa($nodetmp, SSAValue) ? lookup_type($(esc(frame)), $nodetmp) :
-      isa($nodetmp, SlotNumber) ? lookup_type($(esc(frame)), $nodetmp) :
-      isa($nodetmp, TypedSlot) ? lookup_type($(esc(frame)), $nodetmp) :
-      isa($nodetmp, QuoteNode) ? lookup_type($(esc(frame)), $nodetmp) :
-      isa($nodetmp, GlobalRef) ? lookup_type($(esc(frame)), $nodetmp) :
-      isa($nodetmp, Symbol) ? lookup_type($(esc(frame)), $nodetmp) :
-      isa($nodetmp, Expr) ? lookup_type($(esc(frame)), $nodetmp) :
-      $fallback
-    isa(ret, Const) ? typeof′(ret.val) : ret
-  end
-end
-
+lookup_type(frame::Frame, @nospecialize(x)) = typeof′(x) # fallback case
 lookup_type(frame::Frame, ssav::SSAValue) = frame.framecode.src.ssavaluetypes[ssav.id]
 lookup_type(frame::Frame, slot::SlotNumber) = frame.framecode.src.slottypes[slot.id]
+lookup_type(frame::Frame, c::Const) = lookup_type(frame, c.val) # cascade to its value
 lookup_type(frame::Frame, tslot::TypedSlot) = tslot.typ
 lookup_type(frame::Frame, node::QuoteNode) = typeof′(node.value)
 function lookup_type(frame::Frame, ref::GlobalRef)
@@ -77,43 +49,21 @@ function lookup_type(frame::Frame, e::Expr)
 end
 
 """
-    val = @lookup_value(frame, node)
-    val = @lookup_value(mod, frame, node)
+    val = lookup_value(frame, x)
 
-Looks up a value referenced as `SSAValues`, `SlotNumbers`, `Const`, `QuoteNode`,
-  `GlobalRef` or `Symbol` (in a scope of `moduleof(frame)` or the optional first
-  argument `mod` module).
-If none of the above apply, the value of `node` will be returned.
+Looks up a _value_ referenced as Const`, `QuoteNode`, `GlobalRef` or `Symbol` for
+  a binding in a scope of `moduleof(frame)`.
+If none of the above apply, returns the direct value of `x`.
+
+!!! note
+
+    Obviously our `frame` only holds _types_ instead of their actual values,
+    we could expect this function work in a very limited circumstance like looking
+    for a constant binding, etc.
 """
-macro lookup_value(args...)
-  length(args) === 2 || length(args) === 3 || error("invalid number of arguments ", length(args))
-  havemod = length(args) === 3
-  local mod
-  if havemod
-    mod, frame, node = args
-  else
-    frame, node = args
-  end
-  nodetmp = gensym(:node)  # used to hoist, e.g., args[4]
-  fallback = havemod ?
-    :($nodetmp isa Symbol ? getfield($(esc(mod)), $nodetmp) : $nodetmp) :
-    :($nodetmp)
-
-  quote
-    $nodetmp = $(esc(node))
-    ret =
-      isa($nodetmp, SSAValue) ? lookup_value($(esc(frame)), $nodetmp) :
-      isa($nodetmp, SlotNumber) ? lookup_value($(esc(frame)), $nodetmp) :
-      isa($nodetmp, QuoteNode) ? lookup_value($(esc(frame)), $nodetmp) :
-      isa($nodetmp, GlobalRef) ? lookup_value($(esc(frame)), $nodetmp) :
-      isa($nodetmp, Symbol) ? lookup_value($(esc(frame)), $nodetmp) :
-      $fallback
-    isa(ret, Const) ? ret.val : ret
-  end
-end
-
-lookup_value(frame::Frame, ssav::SSAValue) = frame.framecode.src.ssavaluetypes[ssav.id]
-lookup_value(frame::Frame, slot::SlotNumber) = frame.framecode.src.slottypes[slot.id]
+function lookup_value end
+lookup_value(frame::Frame, @nospecialize(x)) = x
+lookup_value(frame::Frame, c::Const) = c.val
 lookup_value(frame::Frame, node::QuoteNode) = node.value
 function lookup_value(frame::Frame, ref::GlobalRef)
   isdefined(ref.mod, ref.name) || return Undefined()
@@ -133,12 +83,11 @@ Looks up for the types of function call arguments in `call_expr`, while reusing
   the already allocated array in `frame` (i.e. `frame.framedata.callargs`).
 """
 function collect_call_arg_types(frame::Frame, call_expr::Expr; isfc::Bool = false)
-  mod = moduleof(frame)
   arg_types = frame.framedata.callargs
   resize!(arg_types, length(call_expr.args))
 
   for (i, arg) in enumerate(call_expr.args)
-    arg_types[i] = @lookup_type(mod, frame, arg)
+    arg_types[i] = lookup_type(frame, arg)
   end
 
   return arg_types

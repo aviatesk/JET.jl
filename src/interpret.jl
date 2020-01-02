@@ -19,15 +19,15 @@ function step_code!(frame, @nospecialize(node), istoplevel::Bool)
           rhs = evaluate_or_profile_code!(frame, rhs)
         else
           rhs = if istoplevel
-            @lookup_type(moduleof(frame), frame, rhs)
+            lookup_type(frame, rhs)
           else
-            @lookup_type(frame, rhs)
+            lookup_type(frame, rhs)
           end
         end
         do_assignment!(frame, lhs, rhs)
       elseif node.head == :gotoifnot
         # NOTE: just check the branch node type, and ignore jump itself
-        arg = @lookup_type(frame, node.args[1])
+        arg = lookup_type(frame, node.args[1])
         if arg !== Bool
           throw(TypeError(nameof(frame), "if", Bool, node.args[1]))
         end
@@ -124,7 +124,7 @@ function step_code!(frame, @nospecialize(node), istoplevel::Bool)
       # TODO: handle variables that the type profiler creates
       rhs = getfield(moduleof(frame), node)
     else
-      rhs = @lookup_type(frame, node)
+      rhs = lookup_type(frame, node)
     end
   catch err
     return handle_err(finish_and_return!, frame, err)
