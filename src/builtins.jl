@@ -47,8 +47,10 @@ function maybe_profile_builtin_call(frame, call_expr, expand::Bool)
   #   return Some{Any}(Base.llvmcall(getargs(args, frame)...))
   # end
   if f isa Core.IntrinsicFunction
-    if (unprimitive_arg_types = filter(!isprimitivetype, arg_types)) |> !isempty
-      @error "invalid intrinsic_call: profiled unprimitive type arguments $unprimitive_arg_types for $f"
+    all(arg_types) do arg_type
+      isprimitivetype(arg_type) || (t isa Type && isprimitivetype(t.parameters[1]))
+    end || begin
+      @error "invalid intrinsic_call: profiled unprimitive type arguments $arg_types for $f"
       return SomeType(Undefined)
     end
 

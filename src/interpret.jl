@@ -1,3 +1,41 @@
+using Base.Meta: isexpr
+
+# entry point
+# -----------
+
+function profile_file(filename::AbstractString; mod::Module = Main)
+  isfile(filename) || error("No such file exists: $filename")
+  filetext = read(filename, String)
+  profile_text(filetext; filename = filename, mod = Main)
+end
+function profile_text(text::String; filename::AbstractString = "none", mod::Module = Main)
+  exs = Base.parse_input_line(text; filename = filename)
+  for i = 2:2:length(exs.args)
+    frame = prepare_thunk(mod, exs.args[i])
+    evaluate_or_profile!(frame, true)
+  end
+end
+
+function evaluate_or_profile!(frame::Frame, istoplevel::Bool = false)
+  # type annotate `frame`
+  (s = scopeof(frame)) isa Method && type_annotate_frame!(frame, s)
+
+  # finishes this frame
+  while (pc = step_code!(frame, istoplevel)) !== nothing end
+  return get_return_type(frame)
+end
+
+function get_return_type(frame)
+  node = pc_expr(frame)
+  if isexpr(node, :return)
+    lookup_type(frame, (node::Expr).args[1])
+  elseif node isa Const && isexpr(node.val, :return)
+    lookup_type(frame, (node.val::Expr).args[1])
+  else
+    error("expected return statement, got ", node)
+  end
+end
+
 # recursive call
 # --------------
 
@@ -24,14 +62,14 @@ function step_code!(frame, @nospecialize(node), istoplevel::Bool)
             lookup_type(frame, rhs)
           end
         end
-        do_assignment!(frame, lhs, rhs)
+        do_assignment′!(frame, lhs, rhs)
       elseif node.head == :gotoifnot
         # NOTE: just check the branch node type, and ignore jump itself
         arg = lookup_type(frame, node.args[1])
         if arg !== Bool
           throw(TypeError(nameof(frame), "if", Bool, node.args[1]))
         end
-      # TODO: handle exception
+      # TODO: handle exception ?
       # elseif node.head == :enter
       #   rhs = node.args[1]
       #   push!(data.exception_frames, rhs)
@@ -120,9 +158,6 @@ function step_code!(frame, @nospecialize(node), istoplevel::Bool)
     elseif isa(node, Core.NewvarNode)
       # FIXME: undefine the slot?
     elseif istoplevel && isa(node, Core.LineNumberNode)
-    elseif istoplevel && isa(node, Symbol)
-      # TODO: handle variables that the type profiler creates
-      rhs = getfield(moduleof(frame), node)
     else
       rhs = lookup_type(frame, node)
     end
@@ -134,7 +169,7 @@ function step_code!(frame, @nospecialize(node), istoplevel::Bool)
   if isassign(frame, pc)
     @isdefined(rhs) || error("rhs not defined: $(frame) $(node)")
     lhs = SSAValue(pc)
-    do_assignment!(frame, lhs, rhs)
+    do_assignment′!(frame, lhs, rhs)
   end
   return (frame.pc = pc + 1)
 end
@@ -257,3 +292,13 @@ to_function(t::Type{Core.IntrinsicFunction}) =
 to_function(t::IntrinsicFunctionType) = t.f
 to_function(t::Type{T}) where {T} = T
 to_function(t::Type{Type{T}}) where {T} = t.parameters[1]
+
+do_assignment′!(frame::Frame, ssav::SSAValue, @nospecialize(rhs)) = frame.framedata.ssavalues[ssav.id] = rhs
+function do_assignment′!(frame::Frame, slot::SlotNumber, @nospecialize(rhs))
+  frame.framedata.locals[slot.id] = rhs
+  frame.framedata.last_reference[slot.id] = (frame.assignment_counter += 1)
+end
+do_assignment′!(frame::Frame, gr::GlobalRef, @nospecialize(rhs)) =
+  Core.eval(gr.mod, :($(gr.name) = $(SomeType(rhs))))
+do_assignment′!(frame::Frame, sym::Symbol, @nospecialize(rhs)) =
+  Core.eval(moduleof(frame), :($sym = $(SomeType(rhs))))
