@@ -166,15 +166,14 @@ function evaluate_or_profile_code!(frame, node::Expr)
   #   return length(frame.framedata.exception_frames)
   # elseif head == :boundscheck
   #   return true
-  # elseif head == :meta || head == :inbounds || head ==
-  #        (@static VERSION >= v"1.2.0-DEV.462" ? :loopinfo : :simdloop) ||
-  #        head == :gc_preserve_begin || head == :gc_preserve_end
-  #   return nothing
+  elseif head == :meta || head == :inbounds || head ==
+         (@static VERSION >= v"1.2.0-DEV.462" ? :loopinfo : :simdloop) ||
+         head == :gc_preserve_begin || head == :gc_preserve_end
+    return Nothing
   # elseif head == :method && length(node.args) == 1
   #   return evaluate_methoddef(frame, node)
   # end
   else
-    @error "called: $(node)"
     return lookup_type(frame, node)
   end
 end
@@ -250,10 +249,11 @@ end
 # HACK:
 # - overload `_Typeof` so that it would "unwrap" `SomeType`
 # - overload `to_function` so that it would identify a function from its type
-#    * NOTE: except intrinsic functions
 _Typeof(t::SomeType) = t.type
 to_function(t::SomeType) = to_function(t.type)
 to_function(t::Type{<:Function}) = t.instance
 to_function(t::Type{Core.IntrinsicFunction}) =
-  error("to_function can't identify intrinsic functions.")
-to_function(t::Type{T}) where {T} = t
+  error("to_function can't identify intrinsic functions. Use IntrinsicFunctionType wrapper type instead.")
+to_function(t::IntrinsicFunctionType) = t.f
+to_function(t::Type{T}) where {T} = T
+to_function(t::Type{Type{T}}) where {T} = t.parameters[1]

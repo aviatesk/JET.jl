@@ -17,7 +17,7 @@ end
 # TODO: handle kwargs
 function signature_type(frame::Frame, s::Method)
   sig = s.sig
-  sig isa UnionAll && (sig = sig.body)
+  while sig isa UnionAll; sig = sig.body; end
   call_args = filter(!isnothing, frame.framedata.locals)
   call_arg_types = map(zip(sig.parameters, call_args)) do (s, call_arg)
     if s isa UnionAll && s.body isa DataType && s.body.name.name === :Vararg

@@ -9,6 +9,17 @@ struct SomeType
 end
 
 """
+    IntrinsicFunctionType
+
+Wrapper type for `Core.IntrinsicFunction`s. This type serves as a workaround so that
+  we can identify `Core.IntrinsicFunction`s from their type (which is supposed to be
+  obtained from [`typeof′`](@ref) function).
+"""
+struct IntrinsicFunctionType
+  f::Core.IntrinsicFunction
+end
+
+"""
     struct Undefined end
 
 A Singleton type that represents when the type profiler failed to track a type.
