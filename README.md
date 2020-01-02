@@ -3,18 +3,21 @@
 TypeProfiler employs Julia's type inference for bug reports.
 
 
-## TODOs
+### TODOs
 
-- [ ] recursive type level frame creation
+in order of priority:
+- [ ] toplevel executions
 - [ ] profiling
   * what to report ?
+    + `Union{}` or no method found would be obvious errors
   * how to handle `Any`, `Undefined`, etc
   * etc ...
-- [ ] toplevel executions
-- [ ] replace `Core` types: enables profiling things in `Core.Compiler` module
-- [ ] `typeof′(::Type{T}) where {T} = T`: dangerous ?
-- [ ] avoid recursive frame creation
+- [ ] multiple state merging
+  * there can be multiple applicable methods
+  * Maybe I need to rewrap most functionalities in `JuliaInterpreter`
+- [ ] handle recursive type level frame creation
+- [ ] get independent from `JuliaInterpreter`
 - performance improvements
   * [ ] avoid dynamic dispatches
   * [ ] cache frames (signature based)
-- [ ] get independent from `JuliaInterpreter`
+- [ ] replace `Core` types: enables profiling things in `Core.Compiler` module
