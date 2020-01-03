@@ -77,9 +77,9 @@ end
 
 typeof′(@nospecialize(x)) = typeof(x)
 typeof′(x::Type{T}) where {T} = Type{T}
-typeof′(x::SomeType) = x.type
-typeof′(tpl::NTuple{N,SomeType}) where {N} = Tuple{typeof′.(tpl)...}
+typeof′(x::ProfiledType) = x.type
+typeof′(tpl::NTuple{N,ProfiledType}) where {N} = Tuple{typeof′.(tpl)...}
 typeof′(x::Core.IntrinsicFunction) = IntrinsicFunctionType(x)
 
-unwrap_sometype(@nospecialize(x)) = x
-unwrap_sometype(x::SomeType) = x.type
+unwrap_ProfiledType(@nospecialize(x)) = x
+unwrap_ProfiledType(x::ProfiledType) = x.type

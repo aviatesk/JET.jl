@@ -24,7 +24,7 @@ frame = enter_call(outer,)
 JuliaInterpreter.finish_and_return!(frame)
 
 frame = enter_call(foo, 10)
-framecode, lenv = get_call_framecode(Any[SomeType(typeof(summer)), SomeType(typeof(1:10))], frame.framecode, 3)
-newframe = prepare_frame_caller(frame, framecode, Any[SomeType(typeof(summer)), SomeType(typeof(1:10))], lenv)
+framecode, lenv = get_call_framecode(Any[ProfiledType(typeof(summer)), ProfiledType(typeof(1:10))], frame.framecode, 3)
+newframe = prepare_frame_caller(frame, framecode, Any[ProfiledType(typeof(summer)), ProfiledType(typeof(1:10))], lenv)
 @show newframe
 newframe.framedata.locals

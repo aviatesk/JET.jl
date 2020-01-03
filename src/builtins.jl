@@ -8,7 +8,7 @@
     ret = maybe_profile_builtin_call(frame, call_expr, expand::Bool)
 
 If `call_expr` is a call to a builtin function, profile it and return the profiled
-  type in a [`SomeType`](@ref) wrapper.
+  type in a [`ProfiledType`](@ref) wrapper.
 Otherwise, return `arg_types` that represents types of the call.
 
 If `expand` is true, `Core._apply` calls will be resolved as a call to the applied function.
@@ -51,32 +51,32 @@ function maybe_profile_builtin_call(frame, call_expr, expand::Bool)
       isprimitivetype(arg_type) || (t isa Type && isprimitivetype(t.parameters[1]))
     end || begin
       @error "invalid intrinsic_call: profiled unprimitive type arguments $arg_types for $f"
-      return SomeType(Undefined)
+      return ProfiledType(Undefined)
     end
 
     if f === Core.Intrinsics.not_int
       if nargs === 1
-        return SomeType(arg_types[1])
+        return ProfiledType(arg_types[1])
       else
         @error "invalid intrinsic_call: profiled invalid number of arguments $(nargs) for $(f)"
-        return SomeType(Undefined)
+        return ProfiledType(Undefined)
       end
     elseif f === Core.Intrinsics.add_int
       if nargs === 2
         if arg_types[1] == arg_types[2]
-          return SomeType(arg_types[1])
+          return ProfiledType(arg_types[1])
         else
           @error "invalid intrinsic_call: profiled unmatch type arguments $(nargs) for $(f)"
-          return SomeType(Undefined)
+          return ProfiledType(Undefined)
         end
       else
         @error "invalid intrinsic_call: profiled invalid number of arguments $(nargs) for $(f)"
-        return SomeType(Undefined)
+        return ProfiledType(Undefined)
       end
     end
 
     warn_unimplmented(f, arg_types; kind = "intrinsic")
-    return SomeType(Undefined)
+    return ProfiledType(Undefined)
   # elseif isa(f, getfield(Core, kwinvoke_name))
   #   return Some{Any}(kwinvoke_instance(getargs(args, frame)...))
   # end
@@ -85,22 +85,22 @@ function maybe_profile_builtin_call(frame, call_expr, expand::Bool)
   # --------
   elseif f === ===
     if nargs === 2
-      return SomeType(Bool)
+      return ProfiledType(Bool)
     else
       @error "invalid builtin function call: === expects 2 arguments but profiled $nargs arguments"
-      return SomeType(Undefined)
+      return ProfiledType(Undefined)
     end
   elseif f === <:
     if nargs === 2
       if all(t -> t == Bool, arg_types)
-        return SomeType(Bool)
+        return ProfiledType(Bool)
       else
         @error "invalid builtin function call: <: expects boolean types but profiled $arg_types"
-        return SomeType(Undefined)
+        return ProfiledType(Undefined)
       end
     else
       @error "invalid builtin function call: <: expects 2 arguments but profiled $nargs arguments"
-      return SomeType(Undefined)
+      return ProfiledType(Undefined)
     end
   # elseif f === Core._apply
   #   argswrapped = getargs(args, frame)
@@ -273,13 +273,13 @@ function maybe_profile_builtin_call(frame, call_expr, expand::Bool)
   #   end
   elseif f === typeof
     if nargs === 1
-      return SomeType(arg_types[1])
+      return ProfiledType(arg_types[1])
     else
       @error "invalid builtin function call: typeof expects 1 argument but profiled $nargs arguments"
     end
   else
     warn_unimplmented(f, arg_types)
-    return SomeType(Undefined)
+    return ProfiledType(Undefined)
   end
 end
 

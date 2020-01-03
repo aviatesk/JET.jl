@@ -1,12 +1,15 @@
 """
-    SomeType
+    struct ProfiledType
+        type::Type
+    end
+    const PT = ProfiledType
 
-Wrapper type for "type-profiled" variables -- the actual type is kept in
-  `type` field.
+The wrapper type for "type-profiled" variables. An actual type will be kept in `type` field.
 """
-struct SomeType
+struct ProfiledType
   type::Type
 end
+const PT = ProfiledType
 
 """
     IntrinsicFunctionType

@@ -222,9 +222,9 @@ function profile_call(
   # isa(ret, Some{Type}) && return ret.value
 
   ret = maybe_profile_builtin_call(frame, call_expr, true)
-  if ret isa SomeType
+  if ret isa ProfiledType
     call_arg_types = collect_call_arg_types(frame, call_expr)
-    rettyp = unwrap_sometype(ret)
+    rettyp = unwrap_ProfiledType(ret)
     @show call_arg_types, rettyp
     return rettyp
   end
@@ -254,8 +254,8 @@ function profile_call(
     # fargs = fargs_pruned
   end
 
-  # HACK: wrap in `SomeType` so that `prepare_hoge` works as if with actual values
-  call_arg_types_wrapped = Any[SomeType(t) for t in call_arg_types]
+  # HACK: wrap in `ProfiledType` so that `prepare_hoge` works as if with actual values
+  call_arg_types_wrapped = Any[ProfiledType(t) for t in call_arg_types]
   framecode, lenv = get_call_framecode(
     call_arg_types_wrapped,
     frame.framecode,
@@ -282,10 +282,10 @@ function profile_call(
 end
 
 # HACK:
-# - overload `_Typeof` so that it would "unwrap" `SomeType`
+# - overload `_Typeof` so that it would "unwrap" `ProfiledType`
 # - overload `to_function` so that it would identify a function from its type
-_Typeof(t::SomeType) = t.type
-to_function(t::SomeType) = to_function(t.type)
+_Typeof(t::ProfiledType) = t.type
+to_function(t::ProfiledType) = to_function(t.type)
 to_function(t::Type{<:Function}) = t.instance
 to_function(t::Type{Core.IntrinsicFunction}) =
   error("to_function can't identify intrinsic functions. Use IntrinsicFunctionType wrapper type instead.")
@@ -299,6 +299,6 @@ function do_assignment′!(frame::Frame, slot::SlotNumber, @nospecialize(rhs))
   frame.framedata.last_reference[slot.id] = (frame.assignment_counter += 1)
 end
 do_assignment′!(frame::Frame, gr::GlobalRef, @nospecialize(rhs)) =
-  Core.eval(gr.mod, :($(gr.name) = $(SomeType(rhs))))
+  Core.eval(gr.mod, :($(gr.name) = $(ProfiledType(rhs))))
 do_assignment′!(frame::Frame, sym::Symbol, @nospecialize(rhs)) =
-  Core.eval(moduleof(frame), :($sym = $(SomeType(rhs))))
+  Core.eval(moduleof(frame), :($sym = $(ProfiledType(rhs))))
