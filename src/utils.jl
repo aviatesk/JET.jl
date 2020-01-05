@@ -55,7 +55,6 @@ function lookup_type(frame::Frame, gr::GlobalRef)
 end
 lookup_type(frame::Frame, qn::QuoteNode) = typeof′(qn.value)
 
-# TODO: :foreigncall should be special cased
 # TODO?:
 # maybe we want to make a temporary field `call_argtypes` in `Frame` and reuse
 # the previously allocated array for keeping the current call argtypes

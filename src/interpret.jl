@@ -56,6 +56,9 @@ function profile_and_get_rhs_type!(frame, ex::Expr)
   head = ex.head
   if head === :call
     return profile_call!(frame, ex)
+  elseif head === :foreigncall
+    # :foreigncall is statically computed, let's just trust the inference
+    return ex.args[2]
   elseif head === :invoke
     mi = ex.args[1]::MethodInstance
     newframe = Frame(frame, mi)
@@ -65,7 +68,7 @@ function profile_and_get_rhs_type!(frame, ex::Expr)
     return newframe.src.rettype
   elseif head === :gotoifnot
     return profile_gotoifnot!(frame, ex)
-  elseif head === :meta
+  elseif head === :meta || head === :gc_preserve_begin
     return Any
   elseif head === :unreachable
     # obviously this is a sign of an error, but hopefully we profiled all of them
