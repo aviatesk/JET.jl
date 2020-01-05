@@ -45,6 +45,7 @@ function lookup_type(frame::Frame, @nospecialize(x))
   return typeof′(x)
 end
 lookup_type(frame::Frame, ssav::SSAValue) = frame.ssavaluetypes[ssav.id]
+lookup_type(frame::Frame, slot::SlotNumber) = frame.src.parent.specTypes.parameters[slot.id]
 function lookup_type(frame::Frame, gr::GlobalRef)
   if isdefined(gr.mod, gr.name)
     typeof′(getfield(gr.mod, gr.name))

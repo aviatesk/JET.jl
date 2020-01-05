@@ -2,8 +2,8 @@ module TypeProfiler
 
 # export profile_file, profile_text
 
-using Core: SimpleVector, svec,
-            CodeInfo, MethodInstance, LineInfoNode, GotoNode, PiNode, PhiNode
+using Core: SimpleVector, svec, MethodInstance, CodeInfo, LineInfoNode,
+            GotoNode, PiNode, PhiNode, SlotNumber
 using Core.Compiler: SSAValue, tmerge
 using Base: is_expr
 
