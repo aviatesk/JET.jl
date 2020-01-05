@@ -95,18 +95,57 @@ end
 # Report
 # ------
 
-function (reporttyp::Type{<:ErrorReport})(frame::Frame, args...)
-  lin = lineinfonode(frame)
-  reporttyp(frame, lin, args...)
+"""
+    abstract type ErrorReport end
+
+Abstract type of all the error reports that TypeProfiler states.
+Each concrete report type should be defined with [`@reportdef`](@ref) macro.
+"""
+ErrorReport
+
+macro reportdef(structdef)
+  @assert is_expr(structdef, :struct) "struct definition should be given"
+  name_ex = structdef.args[2]
+  @assert begin
+    is_expr(name_ex, :<:) &&
+    endswith(string(name_ex.args[1]), "ErrorReport") &&
+    name_ex.args[2] === :ErrorReport
+  end "should be a subtype of ErrorReport"
+
+  name = name_ex.args[1]
+
+  fields = filter(structdef.args[3].args) do x
+    isa(x, LineNumberNode) && return false
+    !is_expr(x, :(::)) && return true
+    return (x.args[2] === :Frame || x.args[2] === :LineInfoNode) ? false : true
+  end
+  fieldnames = map(fields) do ex
+    return if is_expr(ex, :(::))
+      ex.args[1]
+    else
+      ex
+    end
+  end
+
+  quote
+    # define struct itself
+    $structdef
+
+    # define constructor
+    function $name(frame::Frame, $(fields...))
+      lin = lineinfonode(frame)
+      $name(frame, lin, $(fieldnames...))
+    end
+  end |> esc
 end
 
-struct ConditionErrorReport <: ErrorReport
+@reportdef struct ConditionErrorReport <: ErrorReport
   frame::Frame
   lin::LineInfoNode
   profiled::Type
 end
 
-struct ArgumentNumberErrorReport <: ErrorReport
+@reportdef struct ArgumentNumberErrorReport <: ErrorReport
   frame::Frame
   lin::LineInfoNode
   f::Function
@@ -114,9 +153,9 @@ struct ArgumentNumberErrorReport <: ErrorReport
   profiled::Int
 end
 
-struct ArgumentTypeErrorReport <: ErrorReport
+@reportdef struct ArgumentTypeErrorReport <: ErrorReport
   frame::Frame
-  lin::LineNumberNode
+  lin::LineInfoNode
   f::Function
   expected::Type
   profiled::Type
@@ -125,7 +164,7 @@ end
 function Base.show(io::IO, report::T) where {T<:ErrorReport}
   fs = filter(n -> n ∉ (:frame, :lin), fieldnames(T))
   cs = [getfield(report, f) for f in fs]
-  c = join(string.(cs), ' ')
+  c = join(string.(cs), ", ")
   s = string(typeof(report).name.name, '(', c, ')',  " in ", scopeof(report.frame))
   println(io, s)
 end

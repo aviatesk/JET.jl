@@ -1,29 +1,40 @@
 """
-    @return_if_unknown! type
+    @return_if_unknown! typ
 
-Returns [`Unknown`](@ref) type immediatelly if `type` includes `Unknown`.
+Returns [`Unknown`](@ref) type immediatelly if `typ` includes `Unknown`.
 
 See also: [`include_unknwon`](@ref)
 """
-macro return_if_unknown!(typex)
+macro return_if_unknown!(typ)
   quote
-    if include_unknwon($typex)
+    if include_unknwon($typ)
       return Unknown
     end
   end |> esc
 end
 
-report!(frame::Frame, report::ErrorReport) = push!(frame.reports, report)
-
 """
     @report!(report)
 
-Adds `report` to `frame.reports` (NOTE: `frame::Frame` is supposed to exist in a local scope) and then returns `Unknown` type away from the local scope.
+Adds `report` to `frame.reports` and then returns `Unknown` type away
+  from the local scope.
+
+!!! note
+    `frame::Frame` is supposed to exist in a local scope.
 """
 macro report!(report)
   quote
-    report!($report)
+    report!(frame, $report)
     return Unknown
+  end |> esc
+end
+report!(frame::Frame, report::ErrorReport) = push!(frame.reports, report)
+
+macro maybe_report_argnumerr!(f, expected, actual)
+  quote
+    if $expected !== (profiled = $actual isa Int ? $actual : length($actual))
+      @report!(ArgumentNumberErrorReport(frame, $f, $expected, profiled))
+    end
   end |> esc
 end
 
@@ -36,19 +47,33 @@ function profile_call!(frame, call_ex)
 end
 
 function profile_isdefined_call!(frame, argtyps)
-  nargs = length(argtyps)
-  if nargs !== 2
-    @report!(ArgumentNumberErrorReport(frame, isdefined, 2, nargs))
-  end
+  @maybe_report_argnumerr!(isdefined, 2, argtyps)
 
-  @return_if_unknown! argtyps
-
-  second_argtyp = @inbounds argtyps[2]
-  if second_argtyp in (Symbol, Int, Union{Symbol, Int})
+  expected = Tuple{Any, Union{Symbol, Int}}
+  actual = Tuple{argtyps...}
+  if actual <: expected
     return Bool
   else
-    @report!(ArgumentTypeErrorReport(frame, isdefined, Union{Symbol, Int}, second_argtyp))
+    @report!(ArgumentTypeErrorReport(frame, isdefined, expected, actual))
   end
+end
+
+function profile_isa_call!(frame, argtyps)
+  @maybe_report_argnumerr!(isa, 2, argtyps)
+
+  second_argtyp = @inbounds argtyps[2]
+  if second_argtyp isa Type{<:Type}
+    return Bool
+  else
+    actual = Tuple{argtyps...}
+    expected = Tuple{Any, Type{<:Type}}
+    @report!(ArgumentTypeErrorReport(frame, isa, expected, actual))
+  end
+end
+
+function profile_typeof_call!(frame, argtyps)
+  @maybe_report_argnumerr!(typeof, 1, argtyps)
+  return argtyps[1]
 end
 
 function profile_gotoifnot!(frame, gotoifnot_ex)

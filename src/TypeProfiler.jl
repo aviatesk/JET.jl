@@ -5,6 +5,7 @@ module TypeProfiler
 using Core: SimpleVector, svec,
             CodeInfo, MethodInstance, LineInfoNode, GotoNode, PiNode, PhiNode
 using Core.Compiler: SSAValue, tmerge
+using Base: is_expr
 
 include("types.jl")
 include("utils.jl")
@@ -26,7 +27,7 @@ typeinf_mi(mi::MethodInstance) = Core.Compiler.typeinf_ext(mi, Base.get_world_co
 
 mi = method_instance(sum, "julia")
 frame = Frame(mi)
-
+step_code!(frame)
 function init(f, args...)
   (@__MODULE__).eval(quote
     mi = method_instance($f, $(args...))

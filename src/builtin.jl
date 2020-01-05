@@ -15,10 +15,10 @@ $(""# If `expand` is true, `Core._apply` calls will be resolved as a call to the
 """
 function maybe_profile_builtin_call!(frame, call_ex, expand::Bool = false)
   call_argtypes = collect_call_argtypes(frame, call_ex)
+  @return_if_unknown! call_argtypes
+
   ftyp = @inbounds call_argtypes[1]
   argtyps = @inbounds call_argtypes[2:end]
-
-  @return_if_unknown! argtyps
 
   ftyp <: Core.Builtin || return @show call_argtypes
 
@@ -30,6 +30,10 @@ function maybe_profile_builtin_call!(frame, call_ex, expand::Bool = false)
     f = to_function(ftyp)
     if f == isdefined
       return profile_isdefined_call!(frame, argtyps)
+    elseif f == isa
+      return profile_isa_call!(frame, argtyps)
+    elseif f == typeof
+      return profile_typeof_call!(frame, argtyps)
     else
       return frame.src.ssavaluetypes[frame.pc]
     end
