@@ -32,6 +32,9 @@ struct ProfiledType
   type::Type
 end
 
+# NOTE: need to be here so that Frame can refer to this type
+abstract type ErrorReport end
+
 # Frame
 # -----
 
@@ -45,6 +48,8 @@ struct _FrameChain{T}
 end
 
 mutable struct Frame
+  #= reports =#
+  reports::Vector{ErrorReport} # will be referenced from leaf frames
   #= frame info =#
   scope::Union{Method,Module}
   # sparams::Vector{Any}
@@ -64,10 +69,15 @@ end
 
 const FrameChain = _FrameChain{Frame}
 
-function Frame(scope, src::CodeInfo, caller = nothing)
+function Frame(scope::Union{Method,Module}, src::CodeInfo, caller::Union{Nothing, FrameChain} = nothing)
+  reports = if caller !== nothing
+    caller.frame.reports
+  else
+    ErrorReport[]
+  end
   ssavaluetypes = Vector{Type}(undef, length(src.ssavaluetypes))
   nstmts = length(ssavaluetypes)
-  return Frame(scope, src, nstmts, false, false, 1, ssavaluetypes, nothing, caller, nothing)
+  return Frame(reports, scope, src, nstmts, false, false, 1, ssavaluetypes, nothing, caller, nothing)
 end
 function Frame(mi::MethodInstance)
   scope = mi.def::Method
@@ -84,8 +94,6 @@ end
 
 # Report
 # ------
-
-abstract type ErrorReport end
 
 function (reporttyp::Type{<:ErrorReport})(frame::Frame, args...)
   lin = lineinfonode(frame)

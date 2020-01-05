@@ -40,7 +40,6 @@ leaf_lin(frame::Frame) = traverse(callee_lin, frame)
 # lookups
 # -------
 
-function lookup_type end
 function lookup_type(frame::Frame, @nospecialize(x))
   @warn "hit fallback lookup_type: $(typeof(x))"
   return typeof′(x)
@@ -51,7 +50,6 @@ function lookup_type(frame::Frame, gr::GlobalRef)
     typeof′(getfield(gr.mod, gr.name))
   else
     # TODO: error report
-    # lin = lineinfonode(frame)
     return Unknown
   end
 end

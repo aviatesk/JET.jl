@@ -28,36 +28,37 @@ end
 # recursive call
 # --------------
 
-function step_code!(reports, frame)
+function step_code!(frame)
   frame.pc > nstmts(frame) && return nothing
-  return pc = step_code!(reports, frame, pc_stmt(frame))
+  return pc = step_code!(frame, pc_stmt(frame))
 end
-function step_code!(reports, frame, @nospecialize(stmt))
+function step_code!(frame, @nospecialize(stmt))
   @assert is_leaf(frame)
-  rhs_type = profile_and_get_rhs_type!(reports, frame, stmt)
-  assign_rhs_type!(reports, frame, stmt, rhs_type)
+  rhs_type = profile_and_get_rhs_type!(frame, stmt)
+  assign_rhs_type!(frame, stmt, rhs_type)
   return frame.pc += 1
 end
 
-function profile_and_get_rhs_type!(reports, frame, @nospecialize(stmt))
+function profile_and_get_rhs_type!(frame, @nospecialize(stmt))
   @error "unimplemented type statement: $stmt"
   return Unknown
 end
 
 # ignore goto statement and just proceed to profile the next statement
-profile_and_get_rhs_type!(reports, frame, gn::GotoNode) = Any
+profile_and_get_rhs_type!(frame, gn::GotoNode) = Any
+
 # NOTE:
 # let's just use the inference result for Pi and Phi nodes for now,
 # but in the future we want to use updated (i.e. profiled) types instead
 # - Pi node check: pi.typ == frame.ssavaluetypes[pi.val]
 # - Phi node check: Core.tmerge(lookup_type.(phi.values)) == Core.tmerge(getindex.(frame.ssavaluetypes, phi.values))
-profile_and_get_rhs_type!(reports, frame, pi::PiNode) = frame.src.ssavaluetypes[frame.pc]
-profile_and_get_rhs_type!(reports, frame, phi::PhiNode) = frame.src.ssavaluetypes[frame.pc]
+profile_and_get_rhs_type!(frame, pi::PiNode) = frame.src.ssavaluetypes[frame.pc]
+profile_and_get_rhs_type!(frame, phi::PhiNode) = frame.src.ssavaluetypes[frame.pc]
 
-function profile_and_get_rhs_type!(reports, frame, ex::Expr)
+function profile_and_get_rhs_type!(frame, ex::Expr)
   head = ex.head
   if head === :call
-    return profile_call!(reports, frame, ex)
+    return profile_call!(frame, ex)
   elseif head === :invoke
     mi = ex.args[1]::MethodInstance
     newframe = Frame(frame, mi)
@@ -66,7 +67,7 @@ function profile_and_get_rhs_type!(reports, frame, ex::Expr)
     frame.callee = nothing
     return newframe.src.rettype
   elseif head === :gotoifnot
-    return profile_gotoifnot!(reports, frame, ex)
+    return profile_gotoifnot!(frame, ex)
   elseif head === :meta
     return Any
   elseif head === :unreachable
@@ -83,7 +84,7 @@ function profile_and_get_rhs_type!(reports, frame, ex::Expr)
   end
 end
 
-function assign_rhs_type!(reports, frame, stmt, rhs_type)
+function assign_rhs_type!(frame, stmt, rhs_type)
   frame.ssavaluetypes[frame.pc] = rhs_type
 end
 

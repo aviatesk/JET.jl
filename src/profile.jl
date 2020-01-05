@@ -13,28 +13,29 @@ macro return_if_unknown!(typex)
   end |> esc
 end
 
+report!(frame::Frame, report::ErrorReport) = push!(frame.reports, report)
+
 """
     @report!(report)
 
-Adds `report` to `reports` (,which is supposed to exist in a local scope), and
-  then returns `Unknown` type away from the local scope.
+Adds `report` to `frame.reports` (NOTE: `frame::Frame` is supposed to exist in a local scope) and then returns `Unknown` type away from the local scope.
 """
 macro report!(report)
   quote
-    push!(reports, $report)
+    report!($report)
     return Unknown
   end |> esc
 end
 
-function profile_call!(reports, frame, call_ex)
-  ret = (reports, frame, call_ex)
+function profile_call!(frame, call_ex)
+  ret = maybe_profile_builtin_call!(frame, call_ex)
   ret isa Vector{Type} || return ret
 
   # TODO: recursive method call
   return Any
 end
 
-function profile_isdefined_call!(reports, frame, argtyps)
+function profile_isdefined_call!(frame, argtyps)
   nargs = length(argtyps)
   if nargs !== 2
     @report!(ArgumentNumberErrorReport(frame, isdefined, 2, nargs))
@@ -50,7 +51,7 @@ function profile_isdefined_call!(reports, frame, argtyps)
   end
 end
 
-function profile_gotoifnot!(reports, frame, gotoifnot_ex)
+function profile_gotoifnot!(frame, gotoifnot_ex)
   # just check the node is really `Bool` type
   condtyp = lookup_type(frame, gotoifnot_ex.args[1])
   @return_if_unknown! condtyp

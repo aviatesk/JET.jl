@@ -26,13 +26,11 @@ typeinf_mi(mi::MethodInstance) = Core.Compiler.typeinf_ext(mi, Base.get_world_co
 
 mi = method_instance(sum, "julia")
 frame = Frame(mi)
-reports = ErrorReport[]
 
 function init(f, args...)
   (@__MODULE__).eval(quote
     mi = method_instance($f, $(args...))
     frame = Frame(mi)
-    reports = ErrorReport[]
   end)
   nothing
 end
