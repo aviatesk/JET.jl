@@ -59,12 +59,12 @@ function profile_subtype_call!(frame, argtyps)
 end
 
 function profile_equiv_call!(frame, argtyps)
-  @maybe_report_argnumerr!(===, 1, argtyps)
+  @maybe_report_argnumerr!(===, 2, argtyps)
   return Bool
 end
 
 function profile_ifelse_call!(frame, argtyps)
-  @maybe_report_argnumerr!(===, 3, argtyps)
+  @maybe_report_argnumerr!(ifelse, 3, argtyps)
   condtyp, l, r  = @inbounds argtyps
   if condtyp == Bool
     return tmerge(l, r)
