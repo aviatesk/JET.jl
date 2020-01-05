@@ -32,6 +32,8 @@ function maybe_profile_builtin_call!(frame, call_ex, expand::Bool = false)
       return profile_subtype_call!(frame, argtyps)
     elseif f === ===
       return profile_equiv_call!(frame, argtyps)
+    elseif f === ifelse
+      return profile_ifelse_call!(frame, argtyps)
     elseif f === isa
       return profile_isa_call!(frame, argtyps)
     elseif f === isdefined
@@ -39,6 +41,7 @@ function maybe_profile_builtin_call!(frame, call_ex, expand::Bool = false)
     elseif f === typeof
       return profile_typeof_call!(frame, argtyps)
     else
+      @warn "unimplmented builtin call: $f"
       return frame.src.ssavaluetypes[frame.pc]
     end
   end

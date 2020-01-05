@@ -63,15 +63,13 @@ function profile_equiv_call!(frame, argtyps)
   return Bool
 end
 
-function profile_isdefined_call!(frame, argtyps)
-  @maybe_report_argnumerr!(isdefined, 2, argtyps)
-
-  expected = Tuple{Any, Union{Symbol, Int}}
-  actual = Tuple{argtyps...}
-  if actual <: expected
-    return Bool
+function profile_ifelse_call!(frame, argtyps)
+  @maybe_report_argnumerr!(===, 3, argtyps)
+  condtyp, l, r  = @inbounds argtyps
+  if condtyp == Bool
+    return tmerge(l, r)
   else
-    @report!(ArgumentTypeErrorReport(frame, isdefined, expected, actual))
+    @report!(ArgumentTypeErrorReport(frame, ifelse, Bool, condtyp))
   end
 end
 
@@ -84,6 +82,18 @@ function profile_isa_call!(frame, argtyps)
     return Bool
   else
     @report!(ArgumentTypeErrorReport(frame, isa, expected, actual))
+  end
+end
+
+function profile_isdefined_call!(frame, argtyps)
+  @maybe_report_argnumerr!(isdefined, 2, argtyps)
+
+  expected = Tuple{Any, Union{Symbol, Int}}
+  actual = Tuple{argtyps...}
+  if actual <: expected
+    return Bool
+  else
+    @report!(ArgumentTypeErrorReport(frame, isdefined, expected, actual))
   end
 end
 
