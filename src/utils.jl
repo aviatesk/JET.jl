@@ -4,6 +4,9 @@
 nstmts(frame::Frame) = frame.nstmts
 scopeof(frame::Frame) = frame.scope
 moduleof(frame::Frame) = (s = scopeof(frame)) isa Module ? s : s.module
+rettyp(frame::Frame) = frame.rettyp === nothing ?
+  Unknown : # if nothing, there was no `return` statement (which usually means an error)
+  frame.rettyp
 
 pc_stmt(src::CodeInfo, pc::Int) = src.code[pc]
 pc_stmt(frame::Frame, pc::Int) = pc_stmt(frame.src, pc)
