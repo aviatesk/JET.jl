@@ -46,6 +46,23 @@ function profile_call!(frame, call_ex)
   return Any
 end
 
+function profile_subtype_call!(frame, argtyps)
+  @maybe_report_argnumerr!(<:, 2, argtyps)
+
+  expected = Tuple{Type,Type}
+  actual = Tuple[argtyps...]
+  if actual <: expected
+    return Bool
+  else
+    @report!(ArgumentTypeErrorReport(frame, <:, expected, actual))
+  end
+end
+
+function profile_equiv_call!(frame, argtyps)
+  @maybe_report_argnumerr!(===, 1, argtyps)
+  return Bool
+end
+
 function profile_isdefined_call!(frame, argtyps)
   @maybe_report_argnumerr!(isdefined, 2, argtyps)
 
@@ -61,12 +78,11 @@ end
 function profile_isa_call!(frame, argtyps)
   @maybe_report_argnumerr!(isa, 2, argtyps)
 
-  second_argtyp = @inbounds argtyps[2]
-  if second_argtyp isa Type{<:Type}
+  expected = Tuple{Any,Type}
+  actual = Tuple{argtyps...}
+  if actual <: expected
     return Bool
   else
-    actual = Tuple{argtyps...}
-    expected = Tuple{Any, Type{<:Type}}
     @report!(ArgumentTypeErrorReport(frame, isa, expected, actual))
   end
 end

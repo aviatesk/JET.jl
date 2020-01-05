@@ -43,10 +43,8 @@ function profile_and_get_rhs_type!(frame, @nospecialize(stmt))
   @error "unimplemented type statement: $stmt"
   return Unknown
 end
-
 # ignore goto statement and just proceed to profile the next statement
 profile_and_get_rhs_type!(frame, gn::GotoNode) = Any
-
 # NOTE:
 # let's just use the inference result for Pi and Phi nodes for now,
 # but in the future we want to use updated (i.e. profiled) types instead
@@ -54,7 +52,6 @@ profile_and_get_rhs_type!(frame, gn::GotoNode) = Any
 # - Phi node check: Core.tmerge(lookup_type.(phi.values)) == Core.tmerge(getindex.(frame.ssavaluetypes, phi.values))
 profile_and_get_rhs_type!(frame, pi::PiNode) = frame.src.ssavaluetypes[frame.pc]
 profile_and_get_rhs_type!(frame, phi::PhiNode) = frame.src.ssavaluetypes[frame.pc]
-
 function profile_and_get_rhs_type!(frame, ex::Expr)
   head = ex.head
   if head === :call

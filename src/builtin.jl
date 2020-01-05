@@ -28,11 +28,15 @@ function maybe_profile_builtin_call!(frame, call_ex, expand::Bool = false)
   else
     # builtin functions
     f = to_function(ftyp)
-    if f == isdefined
-      return profile_isdefined_call!(frame, argtyps)
-    elseif f == isa
+    if f === <:
+      return profile_subtype_call!(frame, argtyps)
+    elseif f === ===
+      return profile_equiv_call!(frame, argtyps)
+    elseif f === isa
       return profile_isa_call!(frame, argtyps)
-    elseif f == typeof
+    elseif f === isdefined
+      return profile_isdefined_call!(frame, argtyps)
+    elseif f === typeof
       return profile_typeof_call!(frame, argtyps)
     else
       return frame.src.ssavaluetypes[frame.pc]
