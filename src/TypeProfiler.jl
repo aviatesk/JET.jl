@@ -10,8 +10,7 @@ include("types.jl")
 include("utils.jl")
 include("interpret.jl")
 include("profile.jl")
-# include("manipulate.jl")
-# include("builtins.jl")
+include("builtin.jl")
 
 # for development
 # ---------------

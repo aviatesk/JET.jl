@@ -20,7 +20,7 @@ function maybe_profile_builtin_call!(reports, frame, call_ex, expand::Bool = fal
 
   @return_if_unknown! argtyps
 
-  ftyp isa Core.Builtin || return call_argtypes
+  ftyp <: Core.Builtin || return @show call_argtypes
 
   if ftyp == Core.IntrinsicFunction
     # TODO: identify intrinsic functions

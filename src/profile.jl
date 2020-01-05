@@ -27,7 +27,7 @@ macro report!(report)
 end
 
 function profile_call!(reports, frame, call_ex)
-  ret = maybe_profile_builtin_call!(reports, frame, call_ex)
+  ret = (reports, frame, call_ex)
   ret isa Vector{Type} || return ret
 
   # TODO: recursive method call
@@ -56,5 +56,5 @@ function profile_gotoifnot!(reports, frame, gotoifnot_ex)
   @return_if_unknown! condtyp
   condtyp == Bool && return condtyp
 
-  @report!(ConditionErrorReport(frame, cond_typ))
+  @report!(ConditionErrorReport(frame, condtyp))
 end
