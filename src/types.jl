@@ -9,7 +9,8 @@
 """
     const Unknown = Union{}
 
-A special type that TypeProfiler introduces when it finds something _errorable_.
+A special type that TypeProfiler introduces when it finds something _errorable_ or
+  can't determine its type (mostly because of unimplmented features).
 After introduing this type, TypeProfiler still continues profiling, but any futher
   profiling for things including this type will be skipped.
 
@@ -70,7 +71,7 @@ function Frame(scope, src::CodeInfo, caller = nothing)
 end
 function Frame(mi::MethodInstance)
   scope = mi.def::Method
-  src = typed_code(mi)
+  src = Core.Compiler.typeinf_ext(mi, Base.get_world_counter())
   return Frame(scope, src)
 end
 function Frame(parentframe::Frame, mi::MethodInstance)
@@ -81,15 +82,42 @@ function Frame(parentframe::Frame, mi::MethodInstance)
   return Frame(scope, src, caller)
 end
 
-typed_code(mi::MethodInstance) = Core.Compiler.typeinf_ext(mi, Base.get_world_counter())
-
 # Report
 # ------
 
-abstract type Report end
+abstract type ErrorReport end
 
-struct ConditionErrorReport <: Report
+function (reporttyp::Type{<:ErrorReport})(frame::Frame, args...)
+  lin = lineinfonode(frame)
+  reporttyp(frame, lin, args...)
+end
+
+struct ConditionErrorReport <: ErrorReport
   frame::Frame
   lin::LineInfoNode
-  typ::Type
+  profiled::Type
+end
+
+struct ArgumentNumberErrorReport <: ErrorReport
+  frame::Frame
+  lin::LineInfoNode
+  f::Function
+  expected::Int
+  profiled::Int
+end
+
+struct ArgumentTypeErrorReport <: ErrorReport
+  frame::Frame
+  lin::LineNumberNode
+  f::Function
+  expected::Type
+  profiled::Type
+end
+
+function Base.show(io::IO, report::T) where {T<:ErrorReport}
+  fs = filter(n -> n ∉ (:frame, :lin), fieldnames(T))
+  cs = [getfield(report, f) for f in fs]
+  c = join(string.(cs), ' ')
+  s = string(typeof(report).name.name, '(', c, ')',  " in ", scopeof(report.frame))
+  println(io, s)
 end

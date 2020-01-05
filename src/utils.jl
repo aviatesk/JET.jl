@@ -2,6 +2,8 @@
 # -----
 
 nstmts(frame::Frame) = frame.nstmts
+scopeof(frame::Frame) = frame.scope
+moduleof(frame::Frame) = (s = scopeof(frame)) isa Module ? s : s.module
 
 pc_stmt(src::CodeInfo, pc::Int) = src.code[pc]
 pc_stmt(frame::Frame, pc::Int) = pc_stmt(frame.src, pc)
@@ -40,10 +42,54 @@ leaf_lin(frame::Frame) = traverse(callee_lin, frame)
 
 function lookup_type end
 function lookup_type(frame::Frame, @nospecialize(x))
-  @warn "hit fallback lookup_type: $x"
+  @warn "hit fallback lookup_type: $(typeof(x))"
   return typeof′(x)
 end
 lookup_type(frame::Frame, ssav::SSAValue) = frame.ssavaluetypes[ssav.id]
+function lookup_type(frame::Frame, gr::GlobalRef)
+  if isdefined(gr.mod, gr.name)
+    typeof′(getfield(gr.mod, gr.name))
+  else
+    # TODO: error report
+    # lin = lineinfonode(frame)
+    return Unknown
+  end
+end
+lookup_type(frame::Frame, qn::QuoteNode) = typeof′(qn.value)
+
+# TODO: :foreigncall should be special cased
+# TODO?:
+# maybe we want to make a temporary field `call_argtypes` in `Frame` and reuse
+# the previously allocated array for keeping the current call argtypes
+"""
+    collect_call_argtypes(frame::Frame, call_expr::Expr)
+
+Looks up for the types of function call arguments in `call_expr`.
+"""
+collect_call_argtypes(frame::Frame, call_expr::Expr) =
+  Type[lookup_type(frame, arg) for (i, arg) in enumerate(call_expr.args)]
+
+"""
+    to_function(ftyp::Type)
+
+Identifies a function object from its type.
+
+!!! note
+    Intrinsic functions can't be identified its type, so we need to directly
+    reference its value instead of using this function.
+"""
+function to_function(@nospecialize(ftyp::Type))
+  return if ftyp <: Function
+    ftyp.instance
+  elseif ftyp <: Type
+    ftyp.parameters[1]
+  else # bultin
+    if ftyp == Core.IntrinsicFunction
+      error("intrinsic function can't be identified from its type")
+    end
+    ftyp.instance
+  end
+end
 
 # """
 #     typ = lookup_type(frame::Frame, x)
@@ -97,24 +143,6 @@ lookup_type(frame::Frame, ssav::SSAValue) = frame.ssavaluetypes[ssav.id]
 #     return Unknown
 #   end
 # end
-#
-# # TODO: :foreigncall should be special cased
-# """
-#     collect_call_arg_types(frame::Frame, call_expr::Expr; isfc::Bool = false)
-#
-# Looks up for the types of function call arguments in `call_expr`, while reusing
-#   the already allocated array in `frame` (i.e. `frame.framedata.callargs`).
-# """
-# function collect_call_arg_types(frame::Frame, call_expr::Expr; isfc::Bool = false)
-#   arg_types = frame.framedata.callargs
-#   resize!(arg_types, length(call_expr.args))
-#
-#   for (i, arg) in enumerate(call_expr.args)
-#     arg_types[i] = lookup_type(frame, arg)
-#   end
-#
-#   return arg_types
-# end
 
 # types
 # -----
@@ -124,5 +152,8 @@ typeof′(x::Type{T}) where {T} = Type{T}
 typeof′(x::ProfiledType) = x.type
 # typeof′(tpl::NTuple{N,ProfiledType}) where {N} = Tuple{typeof′.(tpl)...}
 
-# unwrap_pt(@nospecialize(x)) = x
-# unwrap_pt(pt::PT) = pt.type
+unwrap_pt(@nospecialize(x)) = x
+unwrap_pt(pt::ProfiledType) = pt.type
+
+include_unknwon(typ::Type) = typ == Unknown
+include_unknwon(itr) = any(==(Unknown), itr)

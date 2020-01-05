@@ -25,17 +25,6 @@ function evaluate_or_profile!(frame::Frame, istoplevel::Bool = false)
   return get_return_type(frame)
 end
 
-# function get_return_type(frame)
-#   node = pc_expr(frame)
-#   if isexpr(node, :return)
-#     lookup_type(frame, (node::Expr).args[1])
-#   elseif node isa Const && isexpr(node.val, :return)
-#     lookup_type(frame, (node.val::Expr).args[1])
-#   else
-#     error("expected return statement, got ", node)
-#   end
-# end
-
 # recursive call
 # --------------
 
@@ -68,8 +57,7 @@ profile_and_get_rhs_type!(reports, frame, phi::PhiNode) = frame.src.ssavaluetype
 function profile_and_get_rhs_type!(reports, frame, ex::Expr)
   head = ex.head
   if head === :call
-    @warn "you should implment :call head asap"
-    return Unknown
+    return profile_call!(reports, frame, ex)
   elseif head === :invoke
     mi = ex.args[1]::MethodInstance
     newframe = Frame(frame, mi)
@@ -78,11 +66,7 @@ function profile_and_get_rhs_type!(reports, frame, ex::Expr)
     frame.callee = nothing
     return newframe.src.rettype
   elseif head === :gotoifnot
-    # just check the node is really `Bool` type
-    condex = ex.args[1]
-    condtyp = lookup_type(frame, condex)
-    profile_condition_type!(reports, frame, condtyp)
-    return Any
+    return profile_gotoifnot!(reports, frame, ex)
   elseif head === :meta
     return Any
   elseif head === :unreachable
