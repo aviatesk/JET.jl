@@ -43,6 +43,7 @@ function profile_and_get_rhs_type!(frame, @nospecialize(stmt))
   @error "unimplemented type statement: $stmt"
   return Unknown
 end
+profile_and_get_rhs_type!(frame, ::Nothing) = Nothing
 # ignore goto statement and just proceed to profile the next statement
 profile_and_get_rhs_type!(frame, gn::GotoNode) = Any
 # NOTE:
@@ -52,6 +53,7 @@ profile_and_get_rhs_type!(frame, gn::GotoNode) = Any
 # - Phi node check: Core.tmerge(lookup_type.(phi.values)) == Core.tmerge(getindex.(frame.ssavaluetypes, phi.values))
 profile_and_get_rhs_type!(frame, pi::PiNode) = frame.src.ssavaluetypes[frame.pc]
 profile_and_get_rhs_type!(frame, phi::PhiNode) = frame.src.ssavaluetypes[frame.pc]
+profile_and_get_rhs_type!(frame, gr::GlobalRef) = lookup_type(frame, gr)
 function profile_and_get_rhs_type!(frame, ex::Expr)
   head = ex.head
   if head === :call
@@ -68,7 +70,7 @@ function profile_and_get_rhs_type!(frame, ex::Expr)
     return newframe.src.rettype
   elseif head === :gotoifnot
     return profile_gotoifnot!(frame, ex)
-  elseif head === :meta || head === :gc_preserve_begin
+  elseif head === :meta || head === :gc_preserve_begin || head === :gc_preserve_end
     return Any
   elseif head === :unreachable
     # obviously this is a sign of an error, but hopefully we profiled all of them
