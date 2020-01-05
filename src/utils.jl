@@ -43,7 +43,7 @@ function lookup_type(frame::Frame, @nospecialize(x))
   @warn "hit fallback lookup_type: $x"
   return typeof′(x)
 end
-lookup_type(frame::Frame, ssav::SSAValue) = unwrap_pt(frame.ssavaluetypes[ssav.id])
+lookup_type(frame::Frame, ssav::SSAValue) = frame.ssavaluetypes[ssav.id]
 
 # """
 #     typ = lookup_type(frame::Frame, x)
@@ -65,7 +65,7 @@ lookup_type(frame::Frame, ssav::SSAValue) = unwrap_pt(frame.ssavaluetypes[ssav.i
 # _lookup_type(frame::Frame, tslot::TypedSlot) = tslot.typ
 # _lookup_type(frame::Frame, node::QuoteNode) = typeof′(node.value)
 # function _lookup_type(frame::Frame, ref::GlobalRef)
-#   isdefined(ref.mod, ref.name) || return Undefined
+#   isdefined(ref.mod, ref.name) || return Unknown
 #   return typeof′(getfield(ref.mod, ref.name))
 # end
 # function _lookup_type(frame::Frame, sym::Symbol)
@@ -77,7 +77,7 @@ lookup_type(frame::Frame, ssav::SSAValue) = unwrap_pt(frame.ssavaluetypes[ssav.i
 #   head = e.head
 #   if head === :the_exception
 #     @error "exceptions are not supported"
-#     return Undefined
+#     return Unknown
 #   elseif head === :static_parameter
 #     arg = e.args[1]::Int
 #     if isassigned(frame.framedata.sparams, arg)
@@ -94,7 +94,7 @@ lookup_type(frame::Frame, ssav::SSAValue) = unwrap_pt(frame.ssavaluetypes[ssav.i
 #     end
 #   else
 #     @error "invalid lookup expr: $e"
-#     return Undefined
+#     return Unknown
 #   end
 # end
 #
@@ -121,8 +121,8 @@ lookup_type(frame::Frame, ssav::SSAValue) = unwrap_pt(frame.ssavaluetypes[ssav.i
 
 typeof′(@nospecialize(x)) = typeof(x)
 typeof′(x::Type{T}) where {T} = Type{T}
-typeof′(x::PT) = x.type
+typeof′(x::ProfiledType) = x.type
 # typeof′(tpl::NTuple{N,ProfiledType}) where {N} = Tuple{typeof′.(tpl)...}
 
-unwrap_pt(@nospecialize(x)) = x
-unwrap_pt(pt::PT) = pt.type
+# unwrap_pt(@nospecialize(x)) = x
+# unwrap_pt(pt::PT) = pt.type

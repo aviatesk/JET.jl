@@ -45,56 +45,57 @@ function step_code!(reports, frame)
 end
 function step_code!(reports, frame, @nospecialize(stmt))
   @assert is_leaf(frame)
-  rhs_type = profile_and_get_rhs_type!(reports, frame, stmt)::PT
+  rhs_type = profile_and_get_rhs_type!(reports, frame, stmt)
   assign_rhs_type!(reports, frame, stmt, rhs_type)
   return frame.pc += 1
 end
 
 function profile_and_get_rhs_type!(reports, frame, @nospecialize(stmt))
   @error "unimplemented type statement: $stmt"
-  return PT(Undefined)
+  return Unknown
 end
 
 # ignore goto statement and just proceed to profile the next statement
-profile_and_get_rhs_type!(reports, frame, gn::GotoNode) = PT(Any)
+profile_and_get_rhs_type!(reports, frame, gn::GotoNode) = Any
 # NOTE:
 # let's just use the inference result for Pi and Phi nodes for now,
-# but maybe we want to use updated (i.e. profiled) types instead
+# but in the future we want to use updated (i.e. profiled) types instead
 # - Pi node check: pi.typ == frame.ssavaluetypes[pi.val]
 # - Phi node check: Core.tmerge(lookup_type.(phi.values)) == Core.tmerge(getindex.(frame.ssavaluetypes, phi.values))
-profile_and_get_rhs_type!(reports, frame, pi::PiNode) = PT(frame.src.ssavaluetypes[frame.pc])
-profile_and_get_rhs_type!(reports, frame, phi::PhiNode) = PT(frame.src.ssavaluetypes[frame.pc])
+profile_and_get_rhs_type!(reports, frame, pi::PiNode) = frame.src.ssavaluetypes[frame.pc]
+profile_and_get_rhs_type!(reports, frame, phi::PhiNode) = frame.src.ssavaluetypes[frame.pc]
 
 function profile_and_get_rhs_type!(reports, frame, ex::Expr)
   head = ex.head
   if head === :call
     @warn "you should implment :call head asap"
-    return PT(Undefined)
+    return Unknown
   elseif head === :invoke
     mi = ex.args[1]::MethodInstance
     newframe = Frame(frame, mi)
     frame.callee = FrameChain(lineinfonode(frame), frame)
     # TODO: recursive profiling
     frame.callee = nothing
-    return PT(newframe.src.rettype)
+    return newframe.src.rettype
   elseif head === :gotoifnot
     # just check the node is really `Bool` type
     condex = ex.args[1]
     condtyp = lookup_type(frame, condex)
     profile_condition_type!(reports, frame, condtyp)
-    return PT(condtyp)
+    return Any
   elseif head === :meta
-    return PT(Any)
+    return Any
   elseif head === :unreachable
-    # sign of an error, but hopefully we profiled all of them up to here, so let's just ignore it
-    return PT(Union{})
+    # obviously this is a sign of an error, but hopefully we profiled all of them
+    # up to here, so let's just ignore this
+    return Unknown
   elseif head === :return
     retex = ex.args[1]
     rettyp = lookup_type(frame, retex)
     return update_rettyp!(frame, rettyp)
   else
     @error "unimplmented expression type: $ex"
-    return PT(Undefined)
+    return Unknown
   end
 end
 
@@ -104,11 +105,9 @@ end
 
 function update_rettyp!(frame, rettyp)
   if frame.rettyp === nothing
-    frame.rettyp = PT(rettyp)
+    frame.rettyp = rettyp
   else
-    oldtyp = unwrap_pt(frame.rettyp)
-    newtyp = tmerge(oldtyp, rettyp)
-    frame.rettyp = PT(newtyp)
+    frame.rettyp = tmerge(frame.rettyp, rettyp)
   end
   return frame.rettyp
 end

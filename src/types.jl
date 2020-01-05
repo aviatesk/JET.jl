@@ -1,24 +1,35 @@
+# Profilng
+# --------
+
+# There are mainly two kinds of types that TypeProfiler interprets:
+# - T is usual Julia types
+# - Unknown is introduced when TypeProfiler finds something _errorable_,
+#   or can't evaluate its type (mostly because of unimplemented features)
+
+"""
+    const Unknown = Union{}
+
+A special type that TypeProfiler introduces when it finds something _errorable_.
+After introduing this type, TypeProfiler still continues profiling, but any futher
+  profiling for things including this type will be skipped.
+
+!!! note
+    For consistency with Julia's internal, this type is just a type alias for `Union{}`,
+      which is the singleton instance of [`Core.TypeofBottom`](@ref) type.
+"""
+const Unknown = Union{}
+
 """
     struct ProfiledType
         type::Type
     end
-    const PT = ProfiledType
 
-The wrapper type for "type-profiled" variables. An actual type will be kept in `type` field.
+Wrapper type for "type-profiled" (top-level) variables. The actual profiled type
+  will be kept in `type` field.
 """
 struct ProfiledType
   type::Type
 end
-const PT = ProfiledType
-
-"""
-    struct Undefined end
-
-A Singleton type that represents when the type profiler failed to track a type.
-It should be reported when and where this is introduced, and then any further
-  profiling for things including this type won't be executed.
-"""
-struct Undefined end
 
 # Frame
 # -----
@@ -42,9 +53,9 @@ mutable struct Frame
   istoplevel::Bool # TODO
   #= profiling state =#
   pc::Int
-  ssavaluetypes::Vector{PT}
-  # slottypes::Vector{PT}
-  rettyp::Union{Nothing,PT} # initialized with nothing
+  ssavaluetypes::Vector{Type}
+  # slottypes::Vector{Type}
+  rettyp::Union{Nothing,Type} # initialized with nothing
   #= frame chain =#
   caller::Union{_FrameChain{Frame},Nothing}
   callee::Union{_FrameChain{Frame},Nothing}
@@ -53,7 +64,7 @@ end
 const FrameChain = _FrameChain{Frame}
 
 function Frame(scope, src::CodeInfo, caller = nothing)
-  ssavaluetypes = Vector{PT}(undef, length(src.ssavaluetypes))
+  ssavaluetypes = Vector{Type}(undef, length(src.ssavaluetypes))
   nstmts = length(ssavaluetypes)
   return Frame(scope, src, nstmts, false, false, 1, ssavaluetypes, nothing, caller, nothing)
 end
@@ -72,8 +83,8 @@ end
 
 typed_code(mi::MethodInstance) = Core.Compiler.typeinf_ext(mi, Base.get_world_counter())
 
-# Profiling
-# ---------
+# Report
+# ------
 
 abstract type Report end
 
