@@ -158,3 +158,18 @@ unwrap_pt(pt::ProfiledType) = pt.type
 
 include_unknwon(typ::Type) = typ == Unknown
 include_unknwon(itr) = any(==(Unknown), itr)
+
+"""
+    @return_if_unknown! typ_ex
+
+Returns [`Unknown`](@ref) type immediatelly if `typ_ex` includes `Unknown`.
+
+See also: [`include_unknwon`](@ref)
+"""
+macro return_if_unknown!(typ_ex)
+  return quote
+    typ = $(esc(typ_ex))
+    include_unknwon(typ) && return Unknown
+    typ
+  end
+end

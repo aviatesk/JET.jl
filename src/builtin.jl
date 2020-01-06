@@ -14,8 +14,7 @@ $(""# If `expand` is true, `Core._apply` calls will be resolved as a call to the
     TypeProfiler just _trust_s the inference and reuses the inferred types for now.
 """
 function maybe_profile_builtin_call!(frame, call_ex, expand::Bool = false)
-  call_argtypes = collect_call_argtypes(frame, call_ex)
-  @return_if_unknown! call_argtypes
+  @return_if_unknown! call_argtypes = collect_call_argtypes(frame, call_ex)
 
   ftyp = @inbounds call_argtypes[1]
   argtyps = @inbounds call_argtypes[2:end]

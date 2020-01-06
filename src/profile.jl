@@ -1,19 +1,4 @@
 """
-    @return_if_unknown! typ
-
-Returns [`Unknown`](@ref) type immediatelly if `typ` includes `Unknown`.
-
-See also: [`include_unknwon`](@ref)
-"""
-macro return_if_unknown!(typ)
-  quote
-    if include_unknwon($typ)
-      return Unknown
-    end
-  end |> esc
-end
-
-"""
     @report!(report)
 
 Adds `report` to `frame.reports` and then returns `Unknown` type away
@@ -104,8 +89,7 @@ end
 
 function profile_gotoifnot!(frame, gotoifnot_ex)
   # just check the node is really `Bool` type
-  condtyp = lookup_type(frame, gotoifnot_ex.args[1])
-  @return_if_unknown! condtyp
+  @return_if_unknown! condtyp = lookup_type(frame, gotoifnot_ex.args[1])
   condtyp == Bool && return condtyp
 
   @report!(ConditionErrorReport(frame, condtyp))
