@@ -32,7 +32,7 @@ macro maybe_report_argtyperr!(f, _expected, _actual)
   return quote
     $expected = $_expected
     $actual = $_actual
-    if $actual <: $expected
+    if !<:($actual, $expected)
       @report!(ArgumentTypeErrorReport(frame, $f, $expected, $actual))
     end
   end |> esc
