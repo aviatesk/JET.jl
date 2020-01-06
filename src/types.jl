@@ -99,55 +99,33 @@ end
     abstract type ErrorReport end
 
 Abstract type of all the error reports that TypeProfiler states.
-Each concrete report type should be defined with [`@reportdef`](@ref) macro.
+Each concrete report type should have the two mandatory fields below:
+
+1. `frame::Frame`: a current frame in which this error report is profiled
+2. `lin::LineInfoNode`:
+    - specifies _where_ this error report can occur
+    - should be obtained with `lineinfonode(frame::Frame)`
+
+`frame`, `lin` fields should be the 1st and 2nd field, respectively.
+
+!!! note
+    There is an utility macro [`@report!`](@ref) for adding an error report to
+      its frame.
+
+See also: [`lineinfonode`](@ref), [`@report!`](@ref)
 """
 ErrorReport
 
-macro reportdef(structdef)
-  @assert is_expr(structdef, :struct) "struct definition should be given"
-  name_ex = structdef.args[2]
-  @assert begin
-    is_expr(name_ex, :<:) &&
-    endswith(string(name_ex.args[1]), "ErrorReport") &&
-    name_ex.args[2] === :ErrorReport
-  end "should be a subtype of ErrorReport"
+@nospecialize
 
-  name = name_ex.args[1]
-
-  fields = filter(structdef.args[3].args) do x
-    isa(x, LineNumberNode) && return false
-    !is_expr(x, :(::)) && return true
-    return (x.args[2] === :Frame || x.args[2] === :LineInfoNode) ? false : true
-  end
-  fieldnames = map(fields) do ex
-    return if is_expr(ex, :(::))
-      ex.args[1]
-    else
-      ex
-    end
-  end
-
-  quote
-    # define struct itself
-    $structdef
-
-    # define constructor
-    function $name(frame::Frame, $(fields...))
-      @nospecialize
-      lin = lineinfonode(frame)
-      $name(frame, lin, $(fieldnames...))
-    end
-  end |> esc
-end
-
-@reportdef struct MethodErrorReport <: ErrorReport
+struct MethodErrorReport <: ErrorReport
   frame::Frame
   lin::LineInfoNode
   f::Any
   args::Type
 end
 
-@reportdef struct ArgumentNumberErrorReport <: ErrorReport
+struct ArgumentNumberErrorReport <: ErrorReport
   frame::Frame
   lin::LineInfoNode
   f::Function
@@ -155,7 +133,7 @@ end
   profiled::Int
 end
 
-@reportdef struct ArgumentTypeErrorReport <: ErrorReport
+struct ArgumentTypeErrorReport <: ErrorReport
   frame::Frame
   lin::LineInfoNode
   f::Function
@@ -163,11 +141,49 @@ end
   profiled::Type
 end
 
-@reportdef struct ConditionErrorReport <: ErrorReport
+struct ConditionErrorReport <: ErrorReport
   frame::Frame
   lin::LineInfoNode
   profiled::Type
 end
+
+@specialize
+
+"""
+    @report!(frame, reporttyp, args...)
+    @report!(frame, reportcall)
+
+Adds a report to `frame.reports` and then `return`s `Unknown` type.
+The reports is supposed to be specified with the following way:
+
+- `@report!(frame, reporttyp, args...)`
+- `@report!(frame, reporttyp(args...))`
+
+where `reporttyp` specifies the [`ErrorReport`](@ref) type itself and `args...`
+  are its _third_ and subsequent fields.
+"""
+macro report!(frame, exs...)
+  if length(exs) === 1
+    call_ex = exs[1]
+    @assert is_expr(call_ex, :call) && begin
+      reporttyp = call_ex.args[1]
+      endswith(string(reporttyp), "ErrorReport")
+    end "invalid call: $call_ex"
+    args = call_ex.args[2:end]
+  else
+    reporttyp = exs[1]
+    @assert endswith(string(reporttyp), "ErrorReport") "invalid argument form: $args"
+    args = exs[2:end]
+  end
+
+  return quote
+    lin = lineinfonode($(esc(frame)))
+    report = $reporttyp($(esc(frame)), lin, $(map(esc, args)...))
+    report!($(esc(frame)), report)
+    return Unknown
+  end
+end
+report!(frame::Frame, report::ErrorReport) = push!(frame.reports, report)
 
 function Base.show(io::IO, report::T) where {T<:ErrorReport}
   fs = filter(n -> n ∉ (:frame, :lin), fieldnames(T))
