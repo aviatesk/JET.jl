@@ -148,13 +148,16 @@ end
 # types
 # -----
 
-typeof′(@nospecialize(x)) = typeof(x)
+typeof′(x) = typeof(x)
 typeof′(x::Type{T}) where {T} = Type{T}
 typeof′(x::ProfiledType) = x.type
 # typeof′(tpl::NTuple{N,ProfiledType}) where {N} = Tuple{typeof′.(tpl)...}
 
-unwrap_pt(@nospecialize(x)) = x
+unwrap_pt(x) = x
 unwrap_pt(pt::ProfiledType) = pt.type
+
+tuple_typ(typs) = tuple_typ(typs...)
+tuple_typ(typs::Type...) = Tuple{typs...}
 
 include_unknwon(typ::Type) = typ == Unknown
 include_unknwon(itr) = any(==(Unknown), itr)
