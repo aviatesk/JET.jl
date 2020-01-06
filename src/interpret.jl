@@ -58,16 +58,20 @@ function profile_and_get_rhs_type!(frame, ex::Expr)
   head = ex.head
   if head === :call
     return profile_call!(frame, ex)
-  elseif head === :foreigncall
-    # :foreigncall is statically computed, let's just trust the inference
-    return ex.args[2]
   elseif head === :invoke
     mi = ex.args[1]::MethodInstance
     newframe = Frame(frame, mi)
-    frame.callee = FrameChain(lineinfonode(frame), frame)
-    # TODO: recursive profiling
+    frame.callee = FrameChain(lineinfonode(frame), newframe)
+    rettyp = evaluate_or_profile!(newframe)
     frame.callee = nothing
-    return newframe.src.rettype
+    return rettyp
+  # :new and :foreigncall are statically computed, let's just trust the inference
+  elseif head === :new
+    typ = lookup_type(frame, ex.args[1])
+    return typ.parameters[1]::Type
+  elseif head === :foreigncall
+    typ = lookup_type(frame, ex.args[2])
+    return typ.parameters[1]::Type
   elseif head === :gotoifnot
     return profile_gotoifnot!(frame, ex)
   elseif head === :meta || head === :gc_preserve_begin || head === :gc_preserve_end
