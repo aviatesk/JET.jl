@@ -19,7 +19,7 @@ function maybe_profile_builtin_call!(frame, call_ex, expand::Bool = false)
   ftyp = @inbounds call_argtypes[1]
   argtyps = @inbounds call_argtypes[2:end]
 
-  ftyp <: Core.Builtin || return @show call_argtypes
+  ftyp <: Core.Builtin || return call_argtypes
 
   if ftyp == Core.IntrinsicFunction
     # TODO: identify intrinsic functions

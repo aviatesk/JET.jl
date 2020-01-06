@@ -26,6 +26,16 @@ function profile_call!(frame, call_ex)
   return Any
 end
 
+function profile_gotoifnot!(frame, gotoifnot_ex)
+  # just check the node is really `Bool` type
+  @return_if_unknown! condtyp = lookup_type(frame, gotoifnot_ex.args[1])
+  condtyp == Bool && return condtyp
+  @report!(frame, ConditionErrorReport(condtyp))
+end
+
+# builtins
+# --------
+
 function profile_subtype_call!(frame, argtyps)
   @maybe_report_argnumerr!(frame, <:, 2, argtyps)
   @maybe_report_argtyperr!(frame, <:, Tuple{Type,Type}, to_tuple_type(argtyps))
@@ -59,11 +69,4 @@ end
 function profile_typeof_call!(frame, argtyps)
   @maybe_report_argnumerr!(frame, typeof, 1, argtyps)
   return argtyps[1]
-end
-
-function profile_gotoifnot!(frame, gotoifnot_ex)
-  # just check the node is really `Bool` type
-  @return_if_unknown! condtyp = lookup_type(frame, gotoifnot_ex.args[1])
-  condtyp == Bool && return condtyp
-  @report!(frame, ConditionErrorReport(condtyp))
 end
