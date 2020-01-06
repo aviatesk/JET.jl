@@ -52,15 +52,15 @@ mutable struct Frame
   reports::Vector{ErrorReport} # will be referenced from leaf frames
   #= frame info =#
   scope::Union{Method,Module}
-  # sparams::Vector{Any}
   src::CodeInfo
+  slottypes::Vector{Any} # MethodInstance.specTypes seems to be not always true
+  sparams::Vector{Any}
   nstmts::Int
   generator::Bool # TODO
   istoplevel::Bool # TODO
   #= profiling state =#
   pc::Int
   ssavaluetypes::Vector{Type}
-  # slottypes::Vector{Type}
   rettyp::Union{Nothing,Type} # initialized with nothing
   #= frame chain =#
   caller::Union{_FrameChain{Frame},Nothing}
@@ -69,27 +69,30 @@ end
 
 const FrameChain = _FrameChain{Frame}
 
-function Frame(scope::Union{Method,Module}, src::CodeInfo, caller::Union{Nothing, FrameChain} = nothing)
-  reports = if caller !== nothing
-    caller.frame.reports
-  else
-    ErrorReport[]
-  end
+function Frame(
+  scope::Union{Method,Module}, src::CodeInfo, slottypes::Vector, sparams::Vector,
+  caller::Union{Nothing,FrameChain} = nothing;
+  generator::Bool = false, istoplevel::Bool = false,
+)
+  reports = caller !== nothing ? caller.frame.reports : ErrorReport[]
   ssavaluetypes = Vector{Type}(undef, length(src.ssavaluetypes))
   nstmts = length(ssavaluetypes)
-  return Frame(reports, scope, src, nstmts, false, false, 1, ssavaluetypes, nothing, caller, nothing)
+  return Frame(
+    reports,
+    scope, src, slottypes, sparams, nstmts, generator, istoplevel,
+    1, ssavaluetypes, nothing,
+    caller, nothing,
+  )
 end
-function Frame(mi::MethodInstance)
+function Frame(mi::MethodInstance, slottypes::Vector, parentframe::Union{Nothing,Frame} = nothing)
   scope = mi.def::Method
   src = Core.Compiler.typeinf_ext(mi, Base.get_world_counter())
-  return Frame(scope, src)
-end
-function Frame(parentframe::Frame, mi::MethodInstance)
-  scope = mi.def::Method
-  src = Core.Compiler.typeinf_ext(mi, Base.get_world_counter())
-  lin = lineinfonode(parentframe)
-  caller = FrameChain(lin, parentframe)
-  return Frame(scope, src, caller)
+  sparams = collect(mi.sparam_vals)
+  caller = parentframe === nothing ? nothing : begin
+    lin = lineinfonode(parentframe)
+    FrameChain(lin, parentframe)
+  end
+  return Frame(scope, src, slottypes, sparams, caller)
 end
 
 # Report

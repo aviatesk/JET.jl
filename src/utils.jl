@@ -48,7 +48,7 @@ function lookup_type(frame::Frame, @nospecialize(x))
   return typeof′(x)
 end
 lookup_type(frame::Frame, ssav::SSAValue) = frame.ssavaluetypes[ssav.id]
-lookup_type(frame::Frame, slot::SlotNumber) = frame.src.parent.specTypes.parameters[slot.id]
+lookup_type(frame::Frame, slot::SlotNumber) = frame.slottypes[slot.id]
 function lookup_type(frame::Frame, gr::GlobalRef)
   if isdefined(gr.mod, gr.name)
     typeof′(getfield(gr.mod, gr.name))
@@ -63,12 +63,19 @@ lookup_type(frame::Frame, qn::QuoteNode) = typeof′(qn.value)
 # maybe we want to make a temporary field `call_argtypes` in `Frame` and reuse
 # the previously allocated array for keeping the current call argtypes
 """
-    collect_call_argtypes(frame::Frame, call_expr::Expr)
+    collect_call_argtypes(frame::Frame, call_ex::Expr)
 
-Looks up for the types of function call arguments in `call_expr`.
+Looks up for the types of function call arguments in `call_ex`.
+
+!!! note
+    `call_ex.head` should be `:call` or `:invoke`
 """
-collect_call_argtypes(frame::Frame, call_expr::Expr) =
-  Type[lookup_type(frame, arg) for (i, arg) in enumerate(call_expr.args)]
+function collect_call_argtypes(frame::Frame, call_ex::Expr)
+  args = call_ex.head === :call ? call_ex.args :
+    call_ex.head === :invoke ? call_ex.args[2:end] :
+    return Type[]
+  return Type[lookup_type(frame, arg) for arg in args]
+end
 
 """
     to_function(ftyp::Type)

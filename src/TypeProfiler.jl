@@ -25,16 +25,13 @@ function method_instance(f, args...)
 end
 typeinf_mi(mi::MethodInstance) = Core.Compiler.typeinf_ext(mi, Base.get_world_counter())
 
-mi = method_instance(sum, "julia")
-frame = Frame(mi)
-step_code!(frame)
 function init(f, args...)
   (@__MODULE__).eval(quote
     mi = method_instance($f, $(args...))
-    frame = Frame(mi)
+    frame = Frame(mi, [typeof($f), typeof.($args)...])
   end)
   nothing
 end
-init() = init(sum, "julia")
+(init() = init(sum, "julia"))()
 
 end
