@@ -133,16 +133,18 @@ macro reportdef(structdef)
 
     # define constructor
     function $name(frame::Frame, $(fields...))
+      @nospecialize
       lin = lineinfonode(frame)
       $name(frame, lin, $(fieldnames...))
     end
   end |> esc
 end
 
-@reportdef struct ConditionErrorReport <: ErrorReport
+@reportdef struct MethodErrorReport <: ErrorReport
   frame::Frame
   lin::LineInfoNode
-  profiled::Type
+  f::Any
+  args::Type
 end
 
 @reportdef struct ArgumentNumberErrorReport <: ErrorReport
@@ -158,6 +160,12 @@ end
   lin::LineInfoNode
   f::Function
   expected::Type
+  profiled::Type
+end
+
+@reportdef struct ConditionErrorReport <: ErrorReport
+  frame::Frame
+  lin::LineInfoNode
   profiled::Type
 end
 
