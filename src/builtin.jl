@@ -45,6 +45,6 @@ function maybe_profile_builtin_call!(frame, call_ex, expand::Bool = false)
     end
   end
 
-  @error "you shouldn't reach here: $(call_ex)"
+  @error "you shouldn't reach here: $call_ex"
   return Unknown
 end

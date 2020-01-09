@@ -84,6 +84,7 @@ function Frame(
     caller, nothing,
   )
 end
+
 function Frame(mi::MethodInstance, slottypes::Vector, parentframe::Union{Nothing,Frame} = nothing)
   scope = mi.def::Method
   src = Core.Compiler.typeinf_ext(mi, Base.get_world_counter())
@@ -124,7 +125,6 @@ ErrorReport
 struct MethodErrorReport <: ErrorReport
   frame::Frame
   lin::LineInfoNode
-  f::Any
   args::Type
 end
 
@@ -181,7 +181,7 @@ macro report!(frame, exs...)
 
   return quote
     lin = lineinfonode($(esc(frame)))
-    report = $reporttyp($(esc(frame)), lin, $(map(esc, args)...))
+    report = $reporttyp($(esc(frame)), lin, $(esc.(args)...))
     report!($(esc(frame)), report)
     return Unknown
   end
