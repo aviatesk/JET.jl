@@ -66,19 +66,19 @@ function profile_and_get_rhs_type!(frame, ex::Expr)
     rettyp = evaluate_or_profile!(newframe)
     frame.callee = nothing
     return rettyp
-  # :new and :foreigncall are statically computed, let's just trust the inference
+  # :new and :foreigncall are supposed to be statically computed, let's just trust the inference
   elseif head === :new
     typ = lookup_type(frame, ex.args[1])
     return typ.parameters[1]::Type
   elseif head === :foreigncall
-    typ = lookup_type(frame, ex.args[2])
+    typ = lookup_type(frame, ex.args[2]) # XXX: maybe Ref{T} case will break this ?
     return typ.parameters[1]::Type
   elseif head === :gotoifnot
     return profile_gotoifnot!(frame, ex)
   elseif head === :meta || head === :gc_preserve_begin || head === :gc_preserve_end
     return Any
   elseif head === :unreachable
-    # obviously this is a sign of an error, but hopefully we profiled all of them
+    # basically this is a sign of an error, but hopefully we profiled all of them
     # up to here, so let's just ignore this
     return Unknown
   elseif head === :return
