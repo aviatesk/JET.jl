@@ -77,28 +77,6 @@ function collect_call_argtypes(frame::Frame, call_ex::Expr)
   return lookup_type.(Ref(frame), args)
 end
 
-"""
-    to_function(ftyp::Type)
-
-Identifies a function object from its type.
-
-!!! note
-    Intrinsic functions can't be identified its type, so we need to directly
-    reference its value instead of using this function.
-"""
-function to_function(@nospecialize(ftyp::Type))
-  return if ftyp <: Function
-    ftyp.instance
-  elseif ftyp <: Type
-    ftyp.parameters[1]
-  else # bultin
-    if ftyp == Core.IntrinsicFunction
-      error("intrinsic function can't be identified from its type")
-    end
-    ftyp.instance
-  end
-end
-
 # types
 # -----
 

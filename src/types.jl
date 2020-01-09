@@ -131,7 +131,7 @@ end
 struct ArgumentNumberErrorReport <: ErrorReport
   frame::Frame
   lin::LineInfoNode
-  f::Function
+  ftyp::Type
   expected::Int
   profiled::Int
 end
@@ -139,7 +139,7 @@ end
 struct ArgumentTypeErrorReport <: ErrorReport
   frame::Frame
   lin::LineInfoNode
-  f::Function
+  ftyp::Type
   expected::Type
   profiled::Type
 end
