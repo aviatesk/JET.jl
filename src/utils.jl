@@ -4,8 +4,8 @@
 nstmts(frame::Frame) = frame.nstmts
 scopeof(frame::Frame) = frame.scope
 moduleof(frame::Frame) = (s = scopeof(frame)) isa Module ? s : s.module
-rettyp(frame::Frame) = frame.rettyp === nothing ?
-  Unknown : # if nothing, there was no `return` statement (which usually means an error)
+rettyp(frame::Frame) = frame.rettyp === Union{} ?
+  Unknown : # if Union{}, there was no `return` statement (which usually means an error occurs within)
   frame.rettyp
 
 pc_stmt(src::CodeInfo, pc::Int) = src.code[pc]
@@ -89,6 +89,8 @@ unwrap_pt(@nospecialize(x)) = x
 unwrap_pt(pt::ProfiledType) = pt.type
 
 include_unknwon(@nospecialize(typ::Type)) = typ == Unknown
+# XXX: introduce this ?
+# include_unknown(union::Union) = union.a == Unknown || include_unknown(union.b)
 include_unknwon(itr) = any(==(Unknown), itr)
 
 """

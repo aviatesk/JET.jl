@@ -7,7 +7,7 @@
 #   or can't evaluate its type (mostly because of unimplemented features)
 
 """
-    const Unknown = Union{}
+    struct Unknown end
 
 A special type that TypeProfiler introduces when it finds something _errorable_ or
   can't determine its type (mostly because of unimplmented features).
@@ -15,10 +15,10 @@ After introduing this type, TypeProfiler still continues profiling, but any futh
   profiling for things including this type will be skipped.
 
 !!! note
-    For consistency with Julia's internal, this type is just a type alias for `Union{}`,
-      which is the singleton instance of [`Core.TypeofBottom`](@ref) type.
+    This type plays an equivalent role to [`Union{}`](@ref) in the Julia's internal,
+      but also indicates TypeProfiler itself really founds errros.
 """
-const Unknown = Union{}
+struct Unknown end
 
 """
     struct ProfiledType
@@ -61,7 +61,7 @@ mutable struct Frame
   #= profiling state =#
   pc::Int
   ssavaluetypes::Vector{Type}
-  rettyp::Union{Nothing,Type} # initialized with nothing
+  rettyp::Type # intialized with Union{} as in the inference
   #= frame chain =#
   caller::Union{_FrameChain{Frame},Nothing}
   callee::Union{_FrameChain{Frame},Nothing}
@@ -80,7 +80,7 @@ function Frame(
   return Frame(
     reports,
     scope, src, slottypes, sparams, nstmts, generator, istoplevel,
-    1, ssavaluetypes, nothing,
+    1, ssavaluetypes, Union{},
     caller, nothing,
   )
 end

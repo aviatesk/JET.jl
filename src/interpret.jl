@@ -96,13 +96,8 @@ function assign_rhs_type!(frame, stmt, rhs_type)
 end
 
 function update_rettyp!(frame, rettyp)
-  if frame.rettyp === nothing
-    frame.rettyp = rettyp
-  elseif rettyp == Unknown
-    # let's ignore previously profiled types once we profile Unknown
-    frame.rettyp = Unknown
-  else
-    frame.rettyp = tmerge(frame.rettyp, rettyp)
-  end
-  return frame.rettyp
+  @return_if_unknown! frame.rettyp
+  # let's ignore previously profiled types once we profile Unknown
+  rettyp == Unknown && return frame.rettyp = Unknown
+  return frame.rettyp = tmerge(frame.rettyp, rettyp)
 end
