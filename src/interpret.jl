@@ -3,26 +3,22 @@ using Base.Meta: isexpr
 # entry point
 # -----------
 
-function profile_file(filename::AbstractString; mod::Module = Main)
-  isfile(filename) || error("No such file exists: $filename")
-  filetext = read(filename, String)
-  profile_text(filetext; filename = filename, mod = Main)
-end
-function profile_text(text::String; filename::AbstractString = "none", mod::Module = Main)
-  exs = Base.parse_input_line(text; filename = filename)
-  for i = 2:2:length(exs.args)
-    frame = prepare_thunk(mod, exs.args[i])
-    evaluate_or_profile!(frame, true)
-  end
-end
+# function profile_file(filename::AbstractString; mod::Module = Main)
+#   isfile(filename) || error("No such file exists: $filename")
+#   filetext = read(filename, String)
+#   profile_text(filetext; filename = filename, mod = Main)
+# end
+# function profile_text(text::String; filename::AbstractString = "none", mod::Module = Main)
+#   exs = Base.parse_input_line(text; filename = filename)
+#   for i = 2:2:length(exs.args)
+#     frame = prepare_thunk(mod, exs.args[i])
+#     evaluate_or_profile!(frame, true)
+#   end
+# end
 
-function evaluate_or_profile!(frame::Frame, istoplevel::Bool = false)
-  # type annotate `frame`
-  (s = scopeof(frame)) isa Method && type_annotate_frame!(frame, s)
-
-  # finishes this frame
-  while (pc = step_code!(frame, istoplevel)) !== nothing end
-  return get_return_type(frame)
+function evaluate_or_profile!(frame::Frame)
+  while (pc = step_code!(frame)) !== nothing end
+  return rettyp(frame)
 end
 
 # recursive call
@@ -91,9 +87,7 @@ function profile_and_get_rhs_type!(frame, ex::Expr)
   end
 end
 
-function assign_rhs_type!(frame, stmt, rhs_type)
-  frame.ssavaluetypes[frame.pc] = rhs_type
-end
+assign_rhs_type!(frame, stmt, rhs_type) = frame.ssavaluetypes[frame.pc] = rhs_type
 
 function update_rettyp!(frame, rettyp)
   @return_if_unknown! frame.rettyp

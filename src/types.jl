@@ -87,13 +87,19 @@ end
 
 function Frame(mi::MethodInstance, slottypes::Vector, parentframe::Union{Nothing,Frame} = nothing)
   scope = mi.def::Method
-  src = Core.Compiler.typeinf_ext(mi, Base.get_world_counter())
+  src = typeinf_ext(mi, Base.get_world_counter())
   sparams = collect(mi.sparam_vals)
   caller = parentframe === nothing ? nothing : begin
     lin = lineinfonode(parentframe)
     FrameChain(lin, parentframe)
   end
   return Frame(scope, src, slottypes, sparams, caller)
+end
+
+function Frame(m::Method, @nospecialize(tt), sparams::SimpleVector, parentframe::Union{Nothing,Frame} = nothing)
+  mi = specialize_method(m, tt, sparams)
+  slottypes = collect(tt.parameters)
+  return Frame(mi, slottypes, parentframe)
 end
 
 # Report

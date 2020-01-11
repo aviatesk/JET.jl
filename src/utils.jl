@@ -43,10 +43,7 @@ leaf_lin(frame::Frame) = traverse(callee_lin, frame)
 # lookups
 # -------
 
-function lookup_type(frame::Frame, @nospecialize(x))
-  @warn "hit fallback lookup_type: $(typeof(x))"
-  return typeof′(x)
-end
+lookup_type(frame::Frame, @nospecialize(x)) = typeof′(x)
 lookup_type(frame::Frame, ssav::SSAValue) = frame.ssavaluetypes[ssav.id]
 lookup_type(frame::Frame, slot::SlotNumber) = frame.slottypes[slot.id]
 function lookup_type(frame::Frame, gr::GlobalRef)
@@ -106,4 +103,15 @@ macro return_if_unknown!(typ_ex)
     include_unknwon(typ) && return Unknown
     typ
   end
+end
+
+# function and methods
+# --------------------
+
+# adapted from Base.methods_including_ambiguous
+function matching_methods(@nospecialize(tt))
+  world = typemax(UInt)
+  min = UInt[typemin(UInt)]
+  max = UInt[typemax(UInt)]
+  return ccall(:jl_matching_methods, Any, (Any, Cint, Cint, UInt, Ptr{UInt}, Ptr{UInt}), tt, -1, 1, world, min, max)::Vector{Any}
 end
