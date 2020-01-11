@@ -61,6 +61,9 @@ function lookup_type(frame::Frame, ex::Expr)
     return frame.sparams[ex.args[1]]
   elseif head === :boundscheck
     return Bool
+  # TODO: TP current ignores exceptions
+  elseif head === :enter || head === :leave || head === :pop_exception
+    return Any
   end
   error("unimplmented expression lookup: $ex")
 end
