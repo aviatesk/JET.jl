@@ -104,6 +104,40 @@ function Frame(m::Method, @nospecialize(tt), sparams::SimpleVector, parentframe:
   return Frame(mi, slottypes, parentframe)
 end
 
+Base.show(io::IO, frame::Frame) = println(io, "frame of ", frame.scope)
+function Base.show(io::IO, ::MIME"text/plain", frame::Frame)
+  if (c = length(frame.reports)) > 0
+    println(io, "reports: ", c)
+    for r in frame.reports
+      print(io, "̇│ ", r)
+    end
+    println(io)
+  end
+
+  println(io, "scope: ", frame.scope)
+  println(io, "pc: ", frame.pc, " / ", frame.nstmts)
+  println(io, "code:")
+  for i in max(1,frame.pc-2):min(length(frame.src.code),frame.pc+2)
+    stmt = frame.src.code[i]
+    print(io, "│ ")
+    if i === frame.pc
+      printstyled(io, stmt; bold = true)
+    else
+      print(io, stmt)
+      if isassigned(frame.ssavaluetypes, i)
+        printstyled(io, "::", frame.ssavaluetypes[i]; color = :cyan)
+      else
+        printstyled(io, "::", "Unprofiled"; color = :light_black)
+      end
+    end
+    println(io)
+  end
+  print(io, "└─ ret")
+  printstyled(io, "::", frame.rettyp, '\n'; color = :cyan)
+  frame.caller !== nothing && println(io, pad("caller"), frame.caller.frame)
+  frame.callee !== nothing && println(io, pad("callee"), frame.callee.frame)
+end
+
 # Report
 # ------
 
