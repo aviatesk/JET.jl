@@ -55,6 +55,15 @@ function lookup_type(frame::Frame, gr::GlobalRef)
   end
 end
 lookup_type(frame::Frame, qn::QuoteNode) = typeof′(qn.value)
+function lookup_type(frame::Frame, ex::Expr)
+  head = ex.head
+  if head === :static_parameter
+    return frame.sparams[ex.args[1]]
+  elseif head === :boundscheck
+    return Bool
+  end
+  error("unimplmented expression lookup: $ex")
+end
 
 # TODO?:
 # maybe we want to make a temporary field `call_argtypes` in `Frame` and reuse
