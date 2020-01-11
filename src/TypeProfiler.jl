@@ -19,7 +19,7 @@ include("builtin.jl")
 function method_instance(f, args...)
   tt = Tuple{typeof(f), typeof.(args)...}
   mms = matching_methods(tt)
-  @assert length(mms) === 1 "multiple methods found"
+  @assert (n = length(mms)) === 1 "$(n === 0 ? "no" : "multiple") methods found: $tt"
 
   tt, sparams::SimpleVector, m::Method = mms[1]
   return specialize_method(m, tt, sparams)
@@ -31,7 +31,6 @@ function init(f, args...)
     mi = method_instance($f, $(args)...)
     frame = Frame(mi, [typeof($f), typeof.($args)...])
   end)
-  nothing
 end
 (init() = init(sum, "julia"))()
 function summer(A::AbstractVector{T}) where {T}

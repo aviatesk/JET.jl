@@ -18,10 +18,16 @@ function maybe_profile_builtin_call!(frame, call_ex, expand::Bool = false)
   @return_if_unknown! call_argtypes = collect_call_argtypes(frame, call_ex)
 
   ftyp = @inbounds call_argtypes[1]
-  ftyp <: Core.Builtin || return call_argtypes
+  !<:(ftyp, Core.Builtin) && return call_argtypes
 
   rettyp = frame.src.ssavaluetypes[frame.pc]
+
+  # Union{} means the inference catches an error in this call
   if rettyp == Union{}
+    # throw accepts any type of object and its return type is always annoated as Union{},
+    # so let's just ignore this call
+    ftyp == typeof(throw) && return rettyp
+
     tt = to_tuple_type(call_argtypes)
     @report!(frame, InvalidBuiltinCallErrorReport(tt))
   end
