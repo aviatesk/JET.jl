@@ -104,22 +104,28 @@ function Frame(m::Method, @nospecialize(tt), sparams::SimpleVector, parentframe:
   return Frame(mi, slottypes, parentframe)
 end
 
-Base.show(io::IO, frame::Frame) = println(io, "frame of ", frame.scope)
+function Base.show(io::IO, frame::Frame)
+  print(io, "Frame of ")
+  printstyled(io, frame.scope; bold = true)
+end
 function Base.show(io::IO, ::MIME"text/plain", frame::Frame)
   if (c = length(frame.reports)) > 0
-    println(io, "reports: ", c)
-    for r in frame.reports
-      print(io, "̇│ ", r)
+    println(io, "Reports: ", c)
+    for (i, r) in enumerate(frame.reports)
+      i === c ? print(io, "└─ ") : print(io, "├─ ")
+      println(io, r)
     end
     println(io)
   end
 
-  println(io, "scope: ", frame.scope)
-  println(io, "pc: ", frame.pc, " / ", frame.nstmts)
-  println(io, "code:")
-  for i in max(1,frame.pc-2):min(length(frame.src.code),frame.pc+2)
+  show(io, frame); println(io)
+  println(io, "├─ pc: ", frame.pc, "/", frame.nstmts)
+  println(io, "├─ code:")
+  s = max(1,frame.pc-2)
+  e = min(length(frame.src.code),frame.pc+2)
+  for i in s:e
     stmt = frame.src.code[i]
-    print(io, "│ ")
+    i === e ? print(io, "│  └─ ") : print(io, "│  ├─ ")
     if i === frame.pc
       printstyled(io, stmt; bold = true)
     else
@@ -184,6 +190,14 @@ end
 
 @specialize
 
+function Base.show(io::IO, report::T) where {T<:ErrorReport}
+  fs = filter(n -> n ∉ (:frame, :lin), fieldnames(T))
+  cs = [getfield(report, f) for f in fs]
+  c = join(string.(cs), ", ")
+  s = string(typeof(report).name.name, '(', c, ')')
+  print(io, s, " [", report.frame, ']')
+end
+
 """
     @report!(frame, reporttyp, args...)
     @report!(frame, reportcall)
@@ -219,11 +233,3 @@ macro report!(frame, exs...)
   end
 end
 report!(frame::Frame, report::ErrorReport) = push!(frame.reports, report)
-
-function Base.show(io::IO, report::T) where {T<:ErrorReport}
-  fs = filter(n -> n ∉ (:frame, :lin), fieldnames(T))
-  cs = [getfield(report, f) for f in fs]
-  c = join(string.(cs), ", ")
-  s = string(typeof(report).name.name, '(', c, ')',  " in ", scopeof(report.frame))
-  println(io, s)
-end
