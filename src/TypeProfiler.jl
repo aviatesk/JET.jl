@@ -5,7 +5,7 @@ module TypeProfiler
 using Core: SimpleVector, svec, MethodInstance, CodeInfo, LineInfoNode,
             GotoNode, PiNode, PhiNode, SlotNumber
 using Core.Compiler: SSAValue, tmerge, specialize_method, typeinf_ext
-using Base: is_expr, to_tuple_type
+using Base: is_expr, to_tuple_type, unwrap_unionall, rewrap_unionall
 
 include("types.jl")
 include("utils.jl")
