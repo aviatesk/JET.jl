@@ -134,7 +134,7 @@ struct InvalidBuiltinCallErrorReport <: ErrorReport
   tt::Type
 end
 
-struct MethodErrorReport <: ErrorReport
+struct NoMethodErrorReport <: ErrorReport
   frame::Frame
   lin::LineInfoNode
   tt::Type

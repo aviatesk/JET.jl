@@ -5,14 +5,14 @@ function profile_call!(frame, call_ex)
   tt = to_tuple_type(ret)
   mms = matching_methods(tt)
 
-  isempty(mms) && @report!(frame, MethodErrorReport(tt))
+  isempty(mms) && @report!(frame, NoMethodErrorReport(tt))
 
   # # TODO: report method ambiguity error
   # if all(isconcretetype, @view tt.parameters[2:end])
   #   ms = [mm[3]::Method for mm in mms]
   #   for (m1, m2) in Iterators.product(ms, ms)
   #     m1 == m2 && continue
-  #     Base.isambiguous(m1, m2) && @report!(frame, MethodErrorReport(tt, ms))
+  #     Base.isambiguous(m1, m2) && @report!(frame, MethodAmbiguityErrorReport(tt, ms))
   #   end
   # end
 
