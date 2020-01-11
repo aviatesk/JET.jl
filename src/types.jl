@@ -122,26 +122,16 @@ ErrorReport
 
 @nospecialize
 
+struct InvalidBuiltinCallErrorReport <: ErrorReport
+  frame::Frame
+  lin::LineInfoNode
+  tt::Type
+end
+
 struct MethodErrorReport <: ErrorReport
   frame::Frame
   lin::LineInfoNode
-  args::Type
-end
-
-struct ArgumentNumberErrorReport <: ErrorReport
-  frame::Frame
-  lin::LineInfoNode
-  ftyp::Type
-  expected::Int
-  profiled::Int
-end
-
-struct ArgumentTypeErrorReport <: ErrorReport
-  frame::Frame
-  lin::LineInfoNode
-  ftyp::Type
-  expected::Type
-  profiled::Type
+  tt::Type
 end
 
 struct ConditionErrorReport <: ErrorReport

@@ -1,46 +1,30 @@
 """
     ret = maybe_profile_builtin_call!(frame, call_ex, expand::Bool)
 
-If `ftyp` is a builtin function typ, profile it and return the profiled
-  type in a [`ProfiledType`](@ref) wrapper.
+If `ftyp` is a builtin function typ, profile it and return its return type.
 Otherwise, return `call_argtypes` that represents types of the (non-builtin) call.
 
-$(""# If `expand` is true, `Core._apply` calls will be resolved as a call to the applied function.
-)
+For this function to work, `frame.src` _**should**_ hold typed IR.
+Then a builtin call should already get through the abstract interpretation by
+  [`Core.Compiler.abstract_call_known`](@ref), and so let's just trust its result
+  and report an error if the return type is [`Union{}`](@ref)
 
 !!! warning
-
-    Most of the builtin functions are not implemented yet. For unimplemented functions,
-    TypeProfiler just _trust_s the inference and reuses the inferred types for now.
+    For [`Core.IntrinsicFunction`]s, [`Core.Compiler.builtin_tfunction`](@ref) only
+      performs really rough estimation of its return type.
+    Accordingly this function also can mis-profile errors in intrinsic function calls.
 """
 function maybe_profile_builtin_call!(frame, call_ex, expand::Bool = false)
   @return_if_unknown! call_argtypes = collect_call_argtypes(frame, call_ex)
 
   ftyp = @inbounds call_argtypes[1]
   ftyp <: Core.Builtin || return call_argtypes
-  if ftyp == Core.IntrinsicFunction
-    # TODO: identify intrinsic functions
-    return frame.src.ssavaluetypes[frame.pc]
-  else
-    # builtin functions
-    if ftyp == typeof(<:)
-      return profile_subtype_call!(frame, call_argtypes)
-    elseif ftyp == typeof(===)
-      return profile_equiv_call!(frame, call_argtypes)
-    elseif ftyp == typeof(ifelse)
-      return profile_ifelse_call!(frame, call_argtypes)
-    elseif ftyp == typeof(isa)
-      return profile_isa_call!(frame, call_argtypes)
-    elseif ftyp == typeof(isdefined)
-      return profile_isdefined_call!(frame, call_argtypes)
-    elseif ftyp == typeof(typeof)
-      return profile_typeof_call!(frame, call_argtypes)
-    else
-      @warn "unimplmented builtin call: $ftyp"
-      return frame.src.ssavaluetypes[frame.pc]
-    end
+
+  rettyp = frame.src.ssavaluetypes[frame.pc]
+  if rettyp == Union{}
+    tt = to_tuple_type(call_argtypes)
+    @report!(frame, InvalidBuiltinCallErrorReport(tt))
   end
 
-  @error "you shouldn't reach here: $call_ex"
-  return Unknown
+  return rettyp
 end
