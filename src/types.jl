@@ -227,7 +227,7 @@ where `reporttyp` specifies the [`ErrorReport`](@ref) type itself and `args...`
 macro report!(frame, exs...)
   if length(exs) === 1
     call_ex = exs[1]
-    @assert is_expr(call_ex, :call) && begin
+    @assert isexpr(call_ex, :call) && begin
       reporttyp = call_ex.args[1]
       endswith(string(reporttyp), "ErrorReport")
     end "invalid call: $call_ex"

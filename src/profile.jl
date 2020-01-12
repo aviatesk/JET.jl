@@ -2,7 +2,7 @@ function profile_call!(frame, call_ex)
   ret = maybe_profile_builtin_call!(frame, call_ex)
   ret isa Vector || return ret
 
-  tt = to_tuple_type(ret)
+  tt = to_tt(ret)
   mms = matching_methods(tt)
 
   isempty(mms) && @report!(frame, NoMethodErrorReport(tt))

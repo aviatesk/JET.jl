@@ -52,10 +52,10 @@ end
 # ------
 
 report_string(er::InvalidBuiltinCallErrorReport) =
-  string("invalid builtin function call: ", tt_signature(er.tt))
+  string("invalid builtin function call: ", tt_to_signature_str(er.tt))
 
 report_string(er::NoMethodErrorReport) =
-  string("no method matching signature: ", tt_signature(er.tt))
+  string("no method matching signature: ", tt_to_signature_str(er.tt))
 
 report_string(er::ConditionErrorReport) =
   string("non-boolean (", er.t, ") found in boolean context")

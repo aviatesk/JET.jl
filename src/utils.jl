@@ -40,52 +40,6 @@ leaf(frame::Frame) = traverse(callee, frame)
 leaf_frame(frame::Frame) = traverse(callee_frame, frame)
 leaf_lin(frame::Frame) = traverse(callee_lin, frame)
 
-# lookups
-# -------
-
-lookup_type(frame::Frame, @nospecialize(x)) = typeof′(x)
-lookup_type(frame::Frame, ssav::SSAValue) = frame.ssavaluetypes[ssav.id]
-lookup_type(frame::Frame, slot::SlotNumber) = frame.slottypes[slot.id]
-function lookup_type(frame::Frame, gr::GlobalRef)
-  if isdefined(gr.mod, gr.name)
-    typeof′(getfield(gr.mod, gr.name))
-  else
-    # TODO: error report
-    return Unknown
-  end
-end
-lookup_type(frame::Frame, qn::QuoteNode) = typeof′(qn.value)
-function lookup_type(frame::Frame, ex::Expr)
-  head = ex.head
-  if head === :static_parameter
-    return frame.sparams[ex.args[1]]
-  elseif head === :boundscheck
-    return Bool
-  # TODO: handle exceptions somehow
-  elseif head === :enter || head === :leave || head === :pop_exception
-    return Any
-  end
-  error("unimplmented expression lookup: $ex")
-end
-
-# TODO?:
-# maybe we want to make a temporary field `call_argtypes` in `Frame` and reuse
-# the previously allocated array for keeping the current call argtypes
-"""
-    collect_call_argtypes(frame::Frame, call_ex::Expr)
-
-Looks up for the types of function call arguments in `call_ex`.
-
-!!! note
-    `call_ex.head` should be `:call` or `:invoke`
-"""
-function collect_call_argtypes(frame::Frame, call_ex::Expr)
-  args = call_ex.head === :call ? call_ex.args :
-    call_ex.head === :invoke ? call_ex.args[2:end] :
-    return Type[]
-  return lookup_type.(Ref(frame), args)
-end
-
 # types
 # -----
 
@@ -129,14 +83,14 @@ function matching_methods(@nospecialize(tt))
 end
 
 # returns a call signature string from tt
-function tt_signature(@nospecialize(tt))
-  fn = ft_name(tt.parameters[1])
+function tt_to_signature_str(@nospecialize(tt))
+  fn = ft_to_fname(tt.parameters[1])
   args = join("::" .* string.(tt.parameters[2:end]), ", ")
   return string(fn, '(', args, ')')
 end
 
 # returns function name from its type
-function ft_name(@nospecialize(ft))
+function ft_to_fname(@nospecialize(ft))
   return if Core.Compiler.isconstType(ft)
     repr(ft.parameters[1])
   elseif ft isa DataType && isdefined(ft, :instance)

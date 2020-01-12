@@ -1,5 +1,3 @@
-using Base.Meta: isexpr
-
 # entry point
 # -----------
 
@@ -88,6 +86,37 @@ function profile_and_get_rhs_type!(frame, ex::Expr)
     error("unimplmented expression type: $ex")
   end
 end
+
+# lookups
+# -------
+
+lookup_type(frame::Frame, @nospecialize(x)) = typeof′(x)
+lookup_type(frame::Frame, ssav::SSAValue) = frame.ssavaluetypes[ssav.id]
+lookup_type(frame::Frame, slot::SlotNumber) = frame.slottypes[slot.id]
+function lookup_type(frame::Frame, gr::GlobalRef)
+  if isdefined(gr.mod, gr.name)
+    typeof′(getfield(gr.mod, gr.name))
+  else
+    # TODO: error report
+    return Unknown
+  end
+end
+lookup_type(frame::Frame, qn::QuoteNode) = typeof′(qn.value)
+function lookup_type(frame::Frame, ex::Expr)
+  head = ex.head
+  if head === :static_parameter
+    return frame.sparams[ex.args[1]]
+  elseif head === :boundscheck
+    return Bool
+  # TODO: handle exceptions somehow
+  elseif head === :enter || head === :leave || head === :pop_exception
+    return Any
+  end
+  error("unimplmented expression lookup: $ex")
+end
+
+# assignment and return
+# ---------------------
 
 assign_rhs_type!(frame, stmt, rhs_type) = frame.ssavaluetypes[frame.pc] = rhs_type
 
