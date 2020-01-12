@@ -25,8 +25,8 @@ function maybe_profile_builtin_call!(frame, call_ex)
 
   # Union{} means the inference catches an error in this call
   if rettyp == Union{}
-    # throw accepts any type of object and its return type is always annoated as Union{},
-    # so let's just ignore this call
+    # TODO: handle exceptions somehow
+    # throw accepts any type of object and TP currently just ignores them
     ftyp == typeof(throw) && return rettyp
 
     tt = to_tuple_type(call_argtypes)

@@ -13,3 +13,5 @@ in order of priority:
   * show handle untyped IRs
 - [ ] improve multiple applicable methods handling
 - [ ] replace `Core` types: enables profiling things in `Core.Compiler` module
+- [ ] support generated functions
+- somehow profiles possible exceptions ?
