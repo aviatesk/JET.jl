@@ -11,7 +11,7 @@ function print_report(io::IO, frame::Frame; view = :inline)
 
   n = length(reports)
   if n === 0
-    printstyled(io, "No errors !"; color = NOERROR_COLOR)
+    printstyled(io, "No errors !\n"; color = NOERROR_COLOR)
     return
   end
 
