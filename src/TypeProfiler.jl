@@ -12,6 +12,7 @@ include("utils.jl")
 include("interpret.jl")
 include("profile.jl")
 include("builtin.jl")
+include("print.jl")
 
 # for development
 # ---------------

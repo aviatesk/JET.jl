@@ -127,3 +127,21 @@ function matching_methods(@nospecialize(tt))
   max = UInt[typemax(UInt)]
   return ccall(:jl_matching_methods, Any, (Any, Cint, Cint, UInt, Ptr{UInt}, Ptr{UInt}), tt, -1, 1, world, min, max)::Vector{Any}
 end
+
+# returns a call signature string from tt
+function tt_signature(@nospecialize(tt))
+  fn = ft_name(tt.parameters[1])
+  args = join("::" .* string.(tt.parameters[2:end]), ", ")
+  return string(fn, '(', args, ')')
+end
+
+# returns function name from its type
+function ft_name(@nospecialize(ft))
+  return if Core.Compiler.isconstType(ft)
+    repr(ft.parameters[1])
+  elseif ft isa DataType && isdefined(ft, :instance)
+    repr(ft.instance)
+  else
+    repr(ft)
+  end
+end

@@ -198,7 +198,7 @@ end
 struct ConditionErrorReport <: ErrorReport
   frame::Frame
   lin::LineInfoNode
-  profiled::Type
+  t::Type
 end
 
 @specialize
