@@ -12,18 +12,18 @@ function prepare_frame(
     h in keys(parentframe.profiled) && return parentframe.profiled[h]
   end
 
-  scope = mi.def::Method
   src = typeinf_ext(mi, Base.get_world_counter())
   # keep inference result
   parentframe !== nothing && push!(parentframe.profiled, h => src.rettype)
 
   # XXX: is this really valid ?
-  sparams = rewrap_unionall.(mi.sparam_vals, scope.sig)
+  m = mi.def::Method
+  sparams = rewrap_unionall.(mi.sparam_vals, m.sig)
   caller = parentframe === nothing ? nothing : begin
     lin = lineinfonode(parentframe)
     FrameChain(lin, parentframe)
   end
-  return Frame(scope, src, slottypes, sparams, caller)
+  return Frame(mi, src, slottypes, sparams, caller)
 end
 
 function prepare_frame(

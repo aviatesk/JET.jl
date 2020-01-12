@@ -3,7 +3,7 @@
 
 nstmts(frame::Frame) = frame.nstmts
 scopeof(frame::Frame) = frame.scope
-moduleof(frame::Frame) = (s = scopeof(frame)) isa Module ? s : s.module
+moduleof(frame::Frame) = (s = scopeof(frame)) isa Module ? s : s.def.module
 rettyp(frame::Frame) = frame.rettyp === Union{} ?
   Unknown : # if Union{}, there was no `return` statement (which usually means an error occurs within)
   frame.rettyp

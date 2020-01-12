@@ -53,7 +53,7 @@ mutable struct Frame
   #= history =#
   profiled::Dict{UInt64,Type} # for avoiding to enter recursive calls
   #= frame info =#
-  scope::Union{Method,Module}
+  scope::Union{MethodInstance,Module}
   src::CodeInfo
   slottypes::Vector{Any} # MethodInstance.specTypes seems to be not always true
   sparams::Vector{Any}
@@ -72,12 +72,20 @@ end
 const FrameChain = _FrameChain{Frame}
 
 function Frame(
-  scope::Union{Method,Module}, src::CodeInfo, slottypes::Vector, sparams::Vector,
+  scope::Union{MethodInstance,Module}, src::CodeInfo, slottypes::Vector, sparams::Vector,
   caller::Union{Nothing,FrameChain} = nothing;
   generator::Bool = false, istoplevel::Bool = false,
 )
   reports = caller !== nothing ? caller.frame.reports : ErrorReport[]
-  profiled = caller !== nothing ? caller.frame.profiled : Dict{UInt64,Type}()
+  profiled = if caller !== nothing
+    caller.frame.profiled
+  else
+    if scope isa Module
+      Dict{UInt64,Type}()
+    else
+      Dict{UInt64,Type}(hash(scope::MethodInstance) => src.rettype)
+    end
+  end
   ssavaluetypes = Vector{Type}(undef, length(src.ssavaluetypes))
   nstmts = length(ssavaluetypes)
   return Frame(
@@ -90,8 +98,14 @@ function Frame(
 end
 
 function Base.show(io::IO, frame::Frame)
-  print(io, "Frame of ")
-  printstyled(io, frame.scope; bold = true)
+  scope = scopeof(frame)
+  if scope isa MethodInstance
+    printstyled(io, "Frame of ", scope; bold = true)
+    m = scope.def::Method
+    print(io, " in ", m.module, " at ", m.file, ':', m.line)
+  else
+    printstyled(io, "Frame in ", scope; bold = true)
+  end
 end
 function Base.show(io::IO, ::MIME"text/plain", frame::Frame)
   if (c = length(frame.reports)) > 0
