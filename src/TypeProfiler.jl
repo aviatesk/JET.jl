@@ -25,9 +25,10 @@ macro profile_call(ex)
   args = ex.args[2:end]
   quote
     let
-      (frame = prepare_frame($f, $(args...))) isa Frame || return frame
+      (frame = prepare_frame($(esc(f)), $(esc(args))...)) isa Frame || return frame
       evaluate_or_profile!(frame)
       print_report(frame)
+      return rettyp(frame)
     end
   end
 end
