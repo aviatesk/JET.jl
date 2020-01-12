@@ -1,85 +1,147 @@
+# Frame
+# -----
+
+nstmts(frame::Frame) = frame.nstmts
+scopeof(frame::Frame) = frame.scope
+moduleof(frame::Frame) = (s = scopeof(frame)) isa Module ? s : s.module
+rettyp(frame::Frame) = frame.rettyp === Union{} ?
+  Unknown : # if Union{}, there was no `return` statement (which usually means an error occurs within)
+  frame.rettyp
+
+pc_stmt(src::CodeInfo, pc::Int) = src.code[pc]
+pc_stmt(frame::Frame, pc::Int) = pc_stmt(frame.src, pc)
+pc_stmt(frame::Frame) = pc_stmt(frame, frame.pc)
+
+lineinfonode(frame::Frame) = frame.src.linetable[codeloc(frame)]
+codeloc(frame::Frame) = frame.src.codelocs[frame.pc]
+
+caller(frame::Frame) = frame.caller
+caller_frame(frame::Frame) = frame.caller === nothing ? nothing : frame.caller.frame
+caller_lin(frame::Frame) = frame.caller === nothing ? nothing : frame.caller.lin
+callee(frame::Frame) = frame.callee
+callee_frame(frame::Frame) = frame.callee === nothing ? nothing : frame.callee.frame
+callee_lin(frame::Frame) = frame.callee === nothing ? nothing : frame.callee.lin
+
+is_root(frame::Frame) = caller(frame) === nothing
+is_leaf(frame::Frame) = callee(frame) === nothing
+
+function traverse(traverser, init, stop_predicate = !isnothing)
+  cur = init
+  while (next = traverser(cur)) |> stop_predicate
+    cur = next
+  end
+  return cur
+end
+
+root(frame::Frame) = traverse(caller, frame)
+root_frame(frame::Frame) = traverse(caller_frame, frame)
+root_lin(frame::Frame) = traverse(caller_lin, frame)
+leaf(frame::Frame) = traverse(callee, frame)
+leaf_frame(frame::Frame) = traverse(callee_frame, frame)
+leaf_lin(frame::Frame) = traverse(callee_lin, frame)
+
 # lookups
 # -------
 
-"""
-    typ = lookup_type(frame::Frame, x)
-
-Looks up a previously-inferred type referenced as `SSAValue`, `SlotNumber`,
-  `Const`, `TypedSlot`, `QuoteNode`, `GlobalRef`, or `Symbol` for a binding in
-  a scope of `moduleof(frame)`.
-If none of the above apply, returns the direct type of `x`.
-"""
-function lookup_type(frame::Frame, @nospecialize(x))
-  ret = _lookup_type(frame, x)
-  # ensure all `Const` are stripped
-  return ret isa Const ? lookup_type(frame, ret.val) : ret
-end
-_lookup_type(frame::Frame, @nospecialize(x)) = typeof′(x) # fallback case8f
-_lookup_type(frame::Frame, ssav::SSAValue) = frame.framecode.src.ssavaluetypes[ssav.id]
-_lookup_type(frame::Frame, slot::SlotNumber) = frame.framecode.src.slottypes[slot.id]
-_lookup_type(frame::Frame, c::Const) = _lookup_type(frame, c.val) # cascade to its value
-_lookup_type(frame::Frame, tslot::TypedSlot) = tslot.typ
-_lookup_type(frame::Frame, node::QuoteNode) = typeof′(node.value)
-function _lookup_type(frame::Frame, ref::GlobalRef)
-  isdefined(ref.mod, ref.name) || return Undefined
-  return typeof′(getfield(ref.mod, ref.name))
-end
-function _lookup_type(frame::Frame, sym::Symbol)
-  mod = moduleof(frame)
-  isdefined(mod, sym) || return Undefiend
-  return typeof′(getfield(mod, sym))
-end
-function _lookup_type(frame::Frame, e::Expr)
-  head = e.head
-  if head === :the_exception
-    @error "exceptions are not supported"
-    return Undefined
-  elseif head === :static_parameter
-    arg = e.args[1]::Int
-    if isassigned(frame.framedata.sparams, arg)
-      return Type{frame.framedata.sparams[arg]}
-    else
-      syms = sparam_syms(frame.framecode.scope)
-      throw(UndefVarError(syms[arg]))
-    end
-  elseif head === :boundscheck
-    if length(e.args) === 0
-      return Bool
-    else
-      error("invalid boundscheck at ", e)
-    end
+lookup_type(frame::Frame, @nospecialize(x)) = typeof′(x)
+lookup_type(frame::Frame, ssav::SSAValue) = frame.ssavaluetypes[ssav.id]
+lookup_type(frame::Frame, slot::SlotNumber) = frame.slottypes[slot.id]
+function lookup_type(frame::Frame, gr::GlobalRef)
+  if isdefined(gr.mod, gr.name)
+    typeof′(getfield(gr.mod, gr.name))
   else
-    @error "invalid lookup expr: $e"
-    return Undefined
+    # TODO: error report
+    return Unknown
   end
 end
-
-# TODO: :foreigncall should be special cased
-"""
-    collect_call_arg_types(frame::Frame, call_expr::Expr; isfc::Bool = false)
-
-Looks up for the types of function call arguments in `call_expr`, while reusing
-  the already allocated array in `frame` (i.e. `frame.framedata.callargs`).
-"""
-function collect_call_arg_types(frame::Frame, call_expr::Expr; isfc::Bool = false)
-  arg_types = frame.framedata.callargs
-  resize!(arg_types, length(call_expr.args))
-
-  for (i, arg) in enumerate(call_expr.args)
-    arg_types[i] = lookup_type(frame, arg)
+lookup_type(frame::Frame, qn::QuoteNode) = typeof′(qn.value)
+function lookup_type(frame::Frame, ex::Expr)
+  head = ex.head
+  if head === :static_parameter
+    return frame.sparams[ex.args[1]]
+  elseif head === :boundscheck
+    return Bool
+  # TODO: handle exceptions somehow
+  elseif head === :enter || head === :leave || head === :pop_exception
+    return Any
   end
+  error("unimplmented expression lookup: $ex")
+end
 
-  return arg_types
+# TODO?:
+# maybe we want to make a temporary field `call_argtypes` in `Frame` and reuse
+# the previously allocated array for keeping the current call argtypes
+"""
+    collect_call_argtypes(frame::Frame, call_ex::Expr)
+
+Looks up for the types of function call arguments in `call_ex`.
+
+!!! note
+    `call_ex.head` should be `:call` or `:invoke`
+"""
+function collect_call_argtypes(frame::Frame, call_ex::Expr)
+  args = call_ex.head === :call ? call_ex.args :
+    call_ex.head === :invoke ? call_ex.args[2:end] :
+    return Type[]
+  return lookup_type.(Ref(frame), args)
 end
 
 # types
 # -----
 
 typeof′(@nospecialize(x)) = typeof(x)
-typeof′(x::Type{T}) where {T} = Type{T}
+typeof′(@nospecialize(x::Type{T})) where {T} = Type{T}
 typeof′(x::ProfiledType) = x.type
-typeof′(tpl::NTuple{N,ProfiledType}) where {N} = Tuple{typeof′.(tpl)...}
-typeof′(x::Core.IntrinsicFunction) = IntrinsicFunctionType(x)
+# typeof′(tpl::NTuple{N,ProfiledType}) where {N} = Tuple{typeof′.(tpl)...}
 
-unwrap_ProfiledType(@nospecialize(x)) = x
-unwrap_ProfiledType(x::ProfiledType) = x.type
+unwrap_pt(@nospecialize(x)) = x
+unwrap_pt(pt::ProfiledType) = pt.type
+
+include_unknwon(@nospecialize(typ::Type)) = typ == Unknown
+# XXX: introduce this ?
+# include_unknown(union::Union) = union.a == Unknown || include_unknown(union.b)
+include_unknwon(itr) = any(==(Unknown), itr)
+
+"""
+    @return_if_unknown! typ_ex
+
+Returns [`Unknown`](@ref) type immediatelly if `typ_ex` includes `Unknown`.
+
+See also: [`include_unknwon`](@ref)
+"""
+macro return_if_unknown!(typ_ex)
+  return quote
+    typ = $(esc(typ_ex))
+    include_unknwon(typ) && return Unknown
+    typ
+  end
+end
+
+# function and methods
+# --------------------
+
+# adapted from Base.methods_including_ambiguous
+function matching_methods(@nospecialize(tt))
+  world = typemax(UInt)
+  min = UInt[typemin(UInt)]
+  max = UInt[typemax(UInt)]
+  return ccall(:jl_matching_methods, Any, (Any, Cint, Cint, UInt, Ptr{UInt}, Ptr{UInt}), tt, -1, 1, world, min, max)::Vector{Any}
+end
+
+# returns a call signature string from tt
+function tt_signature(@nospecialize(tt))
+  fn = ft_name(tt.parameters[1])
+  args = join("::" .* string.(tt.parameters[2:end]), ", ")
+  return string(fn, '(', args, ')')
+end
+
+# returns function name from its type
+function ft_name(@nospecialize(ft))
+  return if Core.Compiler.isconstType(ft)
+    repr(ft.parameters[1])
+  elseif ft isa DataType && isdefined(ft, :instance)
+    repr(ft.instance)
+  else
+    repr(ft)
+  end
+end
