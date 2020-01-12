@@ -168,6 +168,13 @@ ErrorReport
 
 @nospecialize
 
+struct UndefVarErrorReport <: ErrorReport
+  frame::Frame
+  lin::LineInfoNode
+  mod::Module
+  name::Symbol
+end
+
 struct InvalidBuiltinCallErrorReport <: ErrorReport
   frame::Frame
   lin::LineInfoNode

@@ -13,8 +13,9 @@ in order of priority:
   * handle untyped IRs
   * splitting expressions like JuliaIntepreter.jl does
 - [ ] more reports
-  * [ ] `UndefVarError`
+  * [x] `UndefVarError`
   * [ ] method ambiguity error
+  * [ ] special case `getfield` call
   * more and more ...
 - [ ] improve multiple applicable methods handling
 - [ ] replace `Core` types: enables profiling things in `Core.Compiler` module

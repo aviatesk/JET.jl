@@ -51,14 +51,21 @@ end
 # report
 # ------
 
+function report_string(er::ErrorReport)
+  error("report_string(::$(typeof(er))) should be implemented")
+end
+
+report_string(er::UndefVarErrorReport) =
+  "variable $(er.mod).$(er.name) is not defined"
+
 report_string(er::InvalidBuiltinCallErrorReport) =
-  string("invalid builtin function call: ", tt_to_signature_str(er.tt))
+  "invalid builtin function call: $(tt_to_signature_str(er.tt))"
 
 report_string(er::NoMethodErrorReport) =
-  string("no method matching signature: ", tt_to_signature_str(er.tt))
+  "no method matching signature: $(tt_to_signature_str(er.tt))"
 
 report_string(er::ConditionErrorReport) =
-  string("non-boolean (", er.t, ") found in boolean context")
+  "non-boolean ($(er.t)) found in boolean context"
 
 # location
 # --------

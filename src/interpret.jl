@@ -97,10 +97,9 @@ lookup_type(frame::Frame, ssav::SSAValue) = frame.ssavaluetypes[ssav.id]
 lookup_type(frame::Frame, slot::SlotNumber) = frame.slottypes[slot.id]
 function lookup_type(frame::Frame, gr::GlobalRef)
   if isdefined(gr.mod, gr.name)
-    typeof′(getfield(gr.mod, gr.name))
+    return typeof′(getfield(gr.mod, gr.name))
   else
-    # TODO: error report
-    return Unknown
+    @report!(frame, UndefVarErrorReport(gr.mod, gr.name))
   end
 end
 lookup_type(frame::Frame, qn::QuoteNode) = typeof′(qn.value)
