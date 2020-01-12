@@ -1,7 +1,28 @@
 # entry
 # -----
 
-print_report(er::ErrorReport) = print_report(stdout, er; kwargs...)
+print_report(frame::Frame; kwargs...) = print_report(stdout, frame; kwargs...)
+function print_report(io::IO, frame::Frame)
+  reports = frame.reports
+
+  n = length(reports)
+  if n === 0
+    printstyled(io, "No errors !"; color = :green)
+    return
+  end
+
+  printstyled(io, n, " errors found\n"; color = :red)
+  wrote_lins = Set{UInt64}()
+  for er in reports
+    depth = print_callstack(io, er.lin, er.frame, wrote_lins; duplicate_lines = false)
+    ers = report_string(er)
+    printstyled(io, '│'^depth, ' '; color = :cyan)
+    printstyled(io, ers, '\n'; bold = true, color = :red)
+    printstyled(io, '│'^(depth-1), '└', '\n'; color = :cyan)
+  end
+end
+
+print_report(er::ErrorReport; kwargs...) = print_report(stdout, er; kwargs...)
 function print_report(io::IO, er::ErrorReport)
   ers = report_string(er)
   print(io, "Error: ")
@@ -9,6 +30,7 @@ function print_report(io::IO, er::ErrorReport)
 
   println(io, "Calltrace:")
   print_callstack(io, er.lin, er.frame)
+  return
 end
 
 # report
@@ -27,10 +49,14 @@ report_string(er::ConditionErrorReport) =
 # --------
 
 # IDEA: type annotate source lines with profiled types
-function print_callstack(io, lin, frame)
+function print_callstack(io, lin, frame, wrote_lins::Set{UInt64} = Set{UInt64}(); duplicate_lines::Bool = true)
+  lin_hash = hash(lin)
+  should_print = lin_hash ∉ wrote_lins || duplicate_lines
+  push!(wrote_lins, lin_hash)
+
   if lin.inlined_at === 0 && is_root(frame)
     # reached the initial statement of a root frame
-    print_location(io, lin, 0)
+    should_print && print_location(io, lin, 0)
     return 1
   end
 
@@ -44,23 +70,17 @@ function print_callstack(io, lin, frame)
   end
 
   # prewalk
-  depth = print_callstack(io, prev_lin, prev_frame)
-  print_location(io, lin, depth)
+  depth = print_callstack(io, prev_lin, prev_frame, wrote_lins; duplicate_lines = duplicate_lines)
+  should_print && print_location(io, lin, depth)
   return depth + 1
 end
 
 function print_location(io, lin, depth)
-  Base.with_output_color(:cyan, io) do io
-    print(io, '│'^depth)
-    print(io, "┌ @ ", lin.file, ":", lin.line)
-  end
+  loc = string('│'^depth, "┌ @ ", lin.file, ":", lin.line)
   path = fullpath(string(lin.file))
-  line = if !isfile(path)
-    string(lin.line)
-  else
-    strip(readlines(path)[lin.line])
-  end
-  println(io, ' ', line)
+  source_line = !isfile(path) ? string(lin.line) : strip(readlines(path)[lin.line])
+  printstyled(io, loc; color = :cyan)
+  println(io, ' ', source_line)
 end
 
 function basepath(filename)
