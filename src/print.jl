@@ -1,32 +1,47 @@
+const RAIL_COLORS = [:bold, :light_cyan, :light_green, :blue]
+const ERROR_COLOR = :light_red
+const NOERROR_COLOR = :light_green
+
 # entry
 # -----
 
 print_report(frame::Frame; kwargs...) = print_report(stdout, frame; kwargs...)
-function print_report(io::IO, frame::Frame)
+function print_report(io::IO, frame::Frame; view = :inline)
   reports = frame.reports
 
   n = length(reports)
   if n === 0
-    printstyled(io, "No errors !"; color = :green)
+    printstyled(io, "No errors !"; color = NOERROR_COLOR)
     return
   end
 
-  printstyled(io, n, " errors found\n"; color = :red)
-  wrote_lins = Set{UInt64}()
-  for er in reports
-    depth = print_callstack(io, er.lin, er.frame, wrote_lins; duplicate_lines = false)
-    ers = report_string(er)
-    printstyled(io, '│'^depth, ' '; color = :cyan)
-    printstyled(io, ers, '\n'; bold = true, color = :red)
-    printstyled(io, '│'^(depth-1), '└', '\n'; color = :cyan)
+  if view === :inline
+    printstyled(io, n, " errors found\n"; color = ERROR_COLOR)
+    wrote_lins = Set{UInt64}()
+    for er in reports
+      depth = print_callstack(io, er.lin, er.frame, wrote_lins; duplicate_lines = false)
+      print_rails(io, depth-1)
+      ers = report_string(er)
+      printstyled(io, "│ ", ers, '\n'; color = ERROR_COLOR)
+      print_rails(io, depth-1)
+      printstyled(io, '└', '\n'; color = ERROR_COLOR)
+    end
+  elseif view === :separate
+    for er in reports
+      print_report(io, er)
+      println()
+    end
+  else
+    error("keyword argument view should either of :inline or :separate")
   end
+  return
 end
 
 print_report(er::ErrorReport; kwargs...) = print_report(stdout, er; kwargs...)
 function print_report(io::IO, er::ErrorReport)
   ers = report_string(er)
   print(io, "Error: ")
-  printstyled(io, ers, '\n'; color = :red)
+  printstyled(io, ers, '\n'; color = ERROR_COLOR)
 
   println(io, "Calltrace:")
   print_callstack(io, er.lin, er.frame)
@@ -49,14 +64,17 @@ report_string(er::ConditionErrorReport) =
 # --------
 
 # IDEA: type annotate source lines with profiled types
-function print_callstack(io, lin, frame, wrote_lins::Set{UInt64} = Set{UInt64}(); duplicate_lines::Bool = true)
+print_callstack(io, lin, frame, wrote_lins::Set{UInt64} = Set{UInt64}(); kwargs...) =
+  _print_callstack(io, lin, lin, frame, wrote_lins; kwargs...)
+
+function _print_callstack(io, lin, err_lin, frame, wrote_lins::Set{UInt64} = Set{UInt64}(); duplicate_lines::Bool = true)
   lin_hash = hash(lin)
   should_print = lin_hash ∉ wrote_lins || duplicate_lines
   push!(wrote_lins, lin_hash)
 
   if lin.inlined_at === 0 && is_root(frame)
     # reached the initial statement of a root frame
-    should_print && print_location(io, lin, 0)
+    should_print && print_location(io, lin, err_lin, 0)
     return 1
   end
 
@@ -70,17 +88,32 @@ function print_callstack(io, lin, frame, wrote_lins::Set{UInt64} = Set{UInt64}()
   end
 
   # prewalk
-  depth = print_callstack(io, prev_lin, prev_frame, wrote_lins; duplicate_lines = duplicate_lines)
-  should_print && print_location(io, lin, depth)
+  depth = _print_callstack(io, prev_lin, err_lin, prev_frame, wrote_lins; duplicate_lines = duplicate_lines)
+  should_print && print_location(io, lin, err_lin, depth)
   return depth + 1
 end
 
-function print_location(io, lin, depth)
-  loc = string('│'^depth, "┌ @ ", lin.file, ":", lin.line)
+function print_location(io, lin, err_lin, depth)
+  # rail
+  print_rails(io, depth)
+  if lin == err_lin
+    printstyled(io, "┌ @ ", lin.file, ":", lin.line; color = ERROR_COLOR)
+  else
+    printstyled(io, "┌ @ ", lin.file, ":", lin.line; color = RAIL_COLORS[(depth+1) % length(RAIL_COLORS) + 1])
+  end
+
+  # source
   path = fullpath(string(lin.file))
   source_line = !isfile(path) ? string(lin.line) : strip(readlines(path)[lin.line])
-  printstyled(io, loc; color = :cyan)
   println(io, ' ', source_line)
+end
+
+function print_rails(io, depth)
+  n = length(RAIL_COLORS)
+  for i in 1:depth
+    c = RAIL_COLORS[i % n + 1]
+    printstyled(io, '│'; color = c)
+  end
 end
 
 function basepath(filename)
