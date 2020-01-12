@@ -138,10 +138,23 @@ function Base.show(io::IO, ::MIME"text/plain", frame::Frame)
     end
     println(io)
   end
-  print(io, "└─ ret")
-  printstyled(io, "::", frame.rettyp, '\n'; color = :cyan)
-  frame.caller !== nothing && println(io, pad("caller"), frame.caller.frame)
-  frame.callee !== nothing && println(io, pad("callee"), frame.callee.frame)
+  hascaller = frame.caller !== nothing
+  hascallee = frame.callee !== nothing
+  if (hascaller || hascallee)
+    print(io, "├─ ret"); printstyled(io, "::", frame.rettyp, '\n'; color = :cyan)
+  else
+    print(io, "└─ ret"); printstyled(io, "::", frame.rettyp; color = :cyan)
+  end
+  if hascaller
+    if hascallee
+      println(io, "├─ caller: ", frame.caller.frame)
+    else
+      print(io, "└─ caller: ", frame.caller.frame)
+    end
+  end
+  if hascallee
+    print(io, "└─ callee: ", frame.callee.frame)
+  end
 end
 
 # Report
