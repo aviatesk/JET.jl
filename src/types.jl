@@ -85,25 +85,6 @@ function Frame(
   )
 end
 
-function Frame(mi::MethodInstance, slottypes::Vector, parentframe::Union{Nothing,Frame} = nothing)
-  scope = mi.def::Method
-  src = typeinf_ext(mi, Base.get_world_counter())
-  # XXX: is this really valid ?
-  sparams = rewrap_unionall.(mi.sparam_vals, scope.sig)
-  caller = parentframe === nothing ? nothing : begin
-    lin = lineinfonode(parentframe)
-    FrameChain(lin, parentframe)
-  end
-  return Frame(scope, src, slottypes, sparams, caller)
-end
-
-function Frame(m::Method, @nospecialize(tt), sparams::SimpleVector, parentframe::Union{Nothing,Frame} = nothing)
-  mi = specialize_method(m, tt, sparams)
-  # XXX: is this really valid ?
-  slottypes = rewrap_unionall.(unwrap_unionall(tt).parameters, Ref(tt))
-  return Frame(mi, slottypes, parentframe)
-end
-
 function Base.show(io::IO, frame::Frame)
   print(io, "Frame of ")
   printstyled(io, frame.scope; bold = true)

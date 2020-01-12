@@ -13,6 +13,7 @@ const to_tt = Base.to_tuple_type
 
 include("types.jl")
 include("utils.jl")
+include("construct.jl")
 include("interpret.jl")
 include("builtin.jl")
 include("profile.jl")
@@ -29,17 +30,6 @@ macro profile_call(ex)
       print_report(frame)
     end
   end
-end
-
-# TODO: keyword args
-function prepare_frame(f, args...)
-  slottyps = Type[typeof(f), typeof.(args)...]
-  tt = to_tt(slottyps)
-  mms = matching_methods(tt)
-  @assert (n = length(mms)) === 1 "$(n === 0 ? "no" : "multiple") methods found: $tt"
-  tt, sparams::SimpleVector, m::Method = mms[1]
-  mi = specialize_method(m, tt, sparams)
-  return Frame(mi, slottyps)
 end
 
 end
