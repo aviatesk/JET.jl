@@ -36,8 +36,7 @@ function step_code!(frame, @nospecialize(stmt))
 end
 
 function profile_and_get_rhs_type!(frame, @nospecialize(stmt))
-  @error "unimplemented type statement: $stmt"
-  return Unknown
+  error("unimplemented type statement: $stmt")
 end
 profile_and_get_rhs_type!(frame, ::Nothing) = Nothing
 # ignore goto statement and just proceed to profile the next statement
@@ -70,7 +69,12 @@ function profile_and_get_rhs_type!(frame, ex::Expr)
     return typ.parameters[1]::Type
   elseif head === :gotoifnot
     return profile_gotoifnot!(frame, ex)
-  elseif head === :meta || head === :gc_preserve_begin || head === :gc_preserve_end
+  elseif (
+    head === :meta ||
+    head === (@static VERSION >= v"1.2.0-DEV.462" ? :loopinfo : :simdloop) ||
+    head === :gc_preserve_begin ||
+    head === :gc_preserve_end
+  )
     return Any
   elseif head === :unreachable
     # basically this is a sign of an error, but hopefully we profiled all of them
@@ -81,8 +85,7 @@ function profile_and_get_rhs_type!(frame, ex::Expr)
     rettyp = lookup_type(frame, retex)
     return update_rettyp!(frame, rettyp)
   else
-    @error "unimplmented expression type: $ex"
-    return Unknown
+    error("unimplmented expression type: $ex")
   end
 end
 
