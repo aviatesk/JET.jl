@@ -25,7 +25,7 @@ macro profile_call(ex)
   args = ex.args[2:end]
   quote
     let
-      frame = prepare_frame($f, $(args...))
+      (frame = prepare_frame($f, $(args...))) isa Frame || return frame
       evaluate_or_profile!(frame)
       print_report(frame)
     end

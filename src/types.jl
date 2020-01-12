@@ -50,6 +50,8 @@ end
 mutable struct Frame
   #= reports =#
   reports::Vector{ErrorReport} # will be referenced from leaf frames
+  #= history =#
+  profiled::Dict{UInt64,Type} # for avoiding to enter recursive calls
   #= frame info =#
   scope::Union{Method,Module}
   src::CodeInfo
@@ -75,10 +77,12 @@ function Frame(
   generator::Bool = false, istoplevel::Bool = false,
 )
   reports = caller !== nothing ? caller.frame.reports : ErrorReport[]
+  profiled = caller !== nothing ? caller.frame.profiled : Dict{UInt64,Type}()
   ssavaluetypes = Vector{Type}(undef, length(src.ssavaluetypes))
   nstmts = length(ssavaluetypes)
   return Frame(
     reports,
+    profiled,
     scope, src, slottypes, sparams, nstmts, generator, istoplevel,
     1, ssavaluetypes, Union{},
     caller, nothing,

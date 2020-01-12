@@ -1,10 +1,22 @@
+# main creation method
 function prepare_frame(
   mi::MethodInstance,
   slottypes::Vector,
   parentframe::Union{Nothing,Frame} = nothing,
 )
+  if parentframe !== nothing
+    # a frame of for this method instance has already been or will be profiled,
+    # so let's just trust the inference result for its return type and allow TP
+    # to avoid entering into recursive calls.
+    h = hash(mi)
+    h in keys(parentframe.profiled) && return parentframe.profiled[h]
+  end
+
   scope = mi.def::Method
   src = typeinf_ext(mi, Base.get_world_counter())
+  # keep inference result
+  parentframe !== nothing && push!(parentframe.profiled, h => src.rettype)
+
   # XXX: is this really valid ?
   sparams = rewrap_unionall.(mi.sparam_vals, scope.sig)
   caller = parentframe === nothing ? nothing : begin
