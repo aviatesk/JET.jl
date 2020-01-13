@@ -3,6 +3,7 @@ function profile_call!(frame, call_ex)
   ret isa Vector || return ret
 
   tt = to_tt(ret)
+  tt.parameters[1] == typeof(print) && return Nothing
   mms = matching_methods(tt)
 
   isempty(mms) && @report!(frame, NoMethodErrorReport(tt))

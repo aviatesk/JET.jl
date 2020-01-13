@@ -88,6 +88,8 @@ end
 
 # adapted from Base.methods_including_ambiguous
 function matching_methods(@nospecialize(tt))
+  # XXX: valid ?
+  tt.parameters[1] == Any && return Any[]
   world = typemax(UInt)
   min = UInt[typemin(UInt)]
   max = UInt[typemax(UInt)]

@@ -85,12 +85,11 @@ function profile_and_get_rhs_type!(frame, ex::Expr)
   elseif head === :enter || head === :leave || head === :pop_exception
     return Any
   elseif head === :throw_undef_if_not
-    # XXX:
-    # this approach obviously includes some false positive cases, e.g.
-    # variable existance is ensured by @isdefined -> assignment, etc.
-    name = ex.args[1]::Symbol
-    (mod = scopeof(frame)) isa Module || (mod = mod.def)
-    @report!(frame, UndefVarErrorReport(mod, name, true))
+    # # XXX:
+    # # :throw_undef_if_not includes lots of false positives as is
+    # name = ex.args[1]::Symbol
+    # (mod = scopeof(frame)) isa Module || (mod = mod.def)
+    # @report!(frame, UndefVarErrorReport(mod, name, true))
     return Any
   elseif head === :unreachable
     # basically this is a sign of an error, but hopefully we profiled all of them
