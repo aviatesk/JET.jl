@@ -99,6 +99,8 @@ function profile_and_get_rhs_type!(frame, ex::Expr)
     retex = ex.args[1]
     rettyp = lookup_type(frame, retex)
     return update_rettyp!(frame, rettyp)
+  elseif head === :static_parameter
+    return lookup_type(frame, ex)
   else
     error("unimplmented expression type: $ex")
   end

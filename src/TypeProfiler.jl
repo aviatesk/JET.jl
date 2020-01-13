@@ -26,6 +26,28 @@ include("builtin.jl")
 include("profile.jl")
 include("print.jl")
 
+# for deverlopment
+macro profile_call(frame, ex, kwargs...)
+  @assert isexpr(ex, :call) "function call expression should be given"
+  f = ex.args[1]
+  args = ex.args[2:end]
+  quote
+    let
+      maybe_newframe = prepare_frame($(esc(f)), $(map(esc, args)...))
+      !isa(maybe_newframe, Frame) && return maybe_newframe
+      frame = maybe_newframe::Frame
+      try
+        evaluate_or_profile!(frame)
+        print_report(frame; $(map(esc, kwargs)...))
+        global $(esc(frame)) = frame
+      catch err
+        global $(esc(frame)) = frame
+        rethrow(err)
+      end
+    end
+  end
+end
+
 macro profile_call(ex, kwargs...)
   @assert isexpr(ex, :call) "function call expression should be given"
   f = ex.args[1]
