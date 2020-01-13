@@ -1,6 +1,9 @@
-const RAIL_COLORS = [:bold, :light_cyan, :light_green, :blue]
+# colors
+# ------
+
 const ERROR_COLOR = :light_red
 const NOERROR_COLOR = :light_green
+const RAIL_COLORS = [:bold, :light_cyan, :light_green, :blue]
 
 # entry
 # -----
@@ -19,7 +22,7 @@ function print_report(io::IO, frame::Frame; view = :inline)
     printstyled(io, n, " errors found\n"; color = ERROR_COLOR)
     wrote_lins = Set{UInt64}()
     for er in reports
-      depth = print_callstack(io, er.lin, er.frame, wrote_lins; duplicate_lines = false)
+      depth = print_calltrace(io, er.lin, er.frame, wrote_lins; duplicate_lines = false)
       print_rails(io, depth-1)
       ers = report_string(er)
       printstyled(io, "│ ", ers, '\n'; color = ERROR_COLOR)
@@ -44,7 +47,7 @@ function print_report(io::IO, er::ErrorReport)
   printstyled(io, ers, '\n'; color = ERROR_COLOR)
 
   println(io, "Calltrace:")
-  print_callstack(io, er.lin, er.frame)
+  print_calltrace(io, er.lin, er.frame)
   return
 end
 
@@ -71,10 +74,10 @@ report_string(er::ConditionErrorReport) =
 # --------
 
 # IDEA: type annotate source lines with profiled types
-print_callstack(io, lin, frame, wrote_lins::Set{UInt64} = Set{UInt64}(); kwargs...) =
-  _print_callstack(io, lin, lin, frame, wrote_lins; kwargs...)
+print_calltrace(io, lin, frame, wrote_lins::Set{UInt64} = Set{UInt64}(); kwargs...) =
+  _print_calltrace(io, lin, lin, frame, wrote_lins; kwargs...)
 
-function _print_callstack(io, lin, err_lin, frame, wrote_lins::Set{UInt64} = Set{UInt64}(); duplicate_lines::Bool = true)
+function _print_calltrace(io, lin, err_lin, frame, wrote_lins::Set{UInt64} = Set{UInt64}(); duplicate_lines::Bool = true)
   lin_hash = hash(lin)
   should_print = lin_hash ∉ wrote_lins || duplicate_lines
   push!(wrote_lins, lin_hash)
@@ -95,7 +98,7 @@ function _print_callstack(io, lin, err_lin, frame, wrote_lins::Set{UInt64} = Set
   end
 
   # prewalk
-  depth = _print_callstack(io, prev_lin, err_lin, prev_frame, wrote_lins; duplicate_lines = duplicate_lines)
+  depth = _print_calltrace(io, prev_lin, err_lin, prev_frame, wrote_lins; duplicate_lines = duplicate_lines)
   should_print && print_location(io, lin, err_lin, depth)
   return depth + 1
 end
@@ -111,7 +114,7 @@ function print_location(io, lin, err_lin, depth)
 
   # source
   path = fullpath(string(lin.file))
-  source_line = !isfile(path) ? string(lin.line) : strip(readlines(path)[lin.line])
+  source_line = !isfile(path) ? "" : strip(readlines(path)[lin.line])
   println(io, ' ', source_line)
 end
 
@@ -123,11 +126,13 @@ function print_rails(io, depth)
   end
 end
 
-function basepath(filename)
-  srcdir = joinpath(Sys.BINDIR, "..","..","base")
-  releasedir = joinpath(Sys.BINDIR, "..","share","julia","base")
-  normpath(joinpath(isdir(srcdir) ? srcdir : releasedir, filename))
-end
+# path
+# ----
+
+const SRC_DIR = joinpath(Sys.BINDIR, "..", "..", "base")
+const RELEASE_DIR = joinpath(Sys.BINDIR, "..", "share", "julia", "base")
+basepath(filename) =
+  normpath(joinpath((@static isdir(SRC_DIR) ? SRC_DIR : RELEASE_DIR), filename))
 function fullpath(filename)
   path = isabspath(filename) ? filename : basepath(filename)
   return try

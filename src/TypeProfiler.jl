@@ -1,7 +1,8 @@
 module TypeProfiler
 
-# export profile_file, profile_text
-export @profile_call
+export
+  # profile_file, profile_text,
+  @profile_call
 
 using Core: SimpleVector, svec, MethodInstance, CodeInfo, LineInfoNode,
             GotoNode, PiNode, PhiNode, SlotNumber
@@ -25,7 +26,9 @@ macro profile_call(ex)
   args = ex.args[2:end]
   quote
     let
-      (frame = prepare_frame($(esc(f)), $(esc(args))...)) isa Frame || return frame
+      maybe_newframe = prepare_frame($(esc(f)), $(map(esc, args)...))
+      !isa(maybe_newframe, Frame) && return maybe_newframe
+      frame = maybe_newframe::Frame
       evaluate_or_profile!(frame)
       print_report(frame)
       return rettyp(frame)

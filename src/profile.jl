@@ -19,12 +19,12 @@ function profile_call!(frame, call_ex)
   # TODO: handle abstract argument types gracefully
   rettyp = Union{}
   for (tt, sparams::SimpleVector, m::Method) in mms
-    newframe_or_rettyp = prepare_frame(m, tt, sparams, frame)
-    if !isa(newframe_or_rettyp, Frame)
-      rettyp = tmerge(rettyp, newframe_or_rettyp)
+    maybe_newframe = prepare_frame(m, tt, sparams, frame)
+    if !isa(maybe_newframe, Frame)
+      rettyp = tmerge(rettyp, maybe_newframe)
       continue
     end
-    newframe = newframe_or_rettyp::Frame
+    newframe = maybe_newframe::Frame
     frame.callee = FrameChain(lineinfonode(frame), newframe)
     tmp_rettyp = evaluate_or_profile!(newframe)
     rettyp = tmerge(rettyp, tmp_rettyp)

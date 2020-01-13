@@ -53,9 +53,9 @@ function profile_and_get_rhs_type!(frame, ex::Expr)
   elseif head === :invoke
     mi = ex.args[1]::MethodInstance
     slottyps = collect_call_argtypes(frame, ex)
-    newframe_or_rettyp = prepare_frame(mi, slottyps, frame)
-    !isa(newframe_or_rettyp, Frame) && return newframe_or_rettyp
-    newframe = newframe_or_rettyp::Frame
+    maybe_newframe = prepare_frame(mi, slottyps, frame)
+    !isa(maybe_newframe, Frame) && return maybe_newframe
+    newframe = maybe_newframe::Frame
     frame.callee = FrameChain(lineinfonode(frame), newframe)
     rettyp = evaluate_or_profile!(newframe)
     frame.callee = nothing

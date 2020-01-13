@@ -36,9 +36,6 @@ function maybe_profile_builtin_call!(frame, call_ex)
   return rettyp
 end
 
-# TODO?:
-# maybe we want to make a temporary field `call_argtypes` in `Frame` and reuse
-# the previously allocated array for keeping the current call argtypes
 """
     collect_call_argtypes(frame::Frame, call_ex::Expr)
 
@@ -51,5 +48,8 @@ function collect_call_argtypes(frame::Frame, call_ex::Expr)
   args = call_ex.head === :call ? call_ex.args :
     call_ex.head === :invoke ? call_ex.args[2:end] :
     return Type[]
+  # TODO?
+  # maybe we want to make a temporary field `call_argtypes` in `Frame` and reuse
+  # the previously allocated array for keeping the current call argtypes
   return lookup_type.(Ref(frame), args)
 end
