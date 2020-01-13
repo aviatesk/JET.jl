@@ -114,7 +114,11 @@ function print_location(io, lin, err_lin, depth)
 
   # source
   path = fullpath(string(lin.file))
-  source_line = !isfile(path) ? "" : strip(readlines(path)[lin.line])
+  source_line = if isfile(path)
+    strip(readlines(path)[lin.line])
+  else
+    string("within `", lin.method, ''') # when the file doesn't exist, e.g. REPL
+  end
   println(io, ' ', source_line)
 end
 
