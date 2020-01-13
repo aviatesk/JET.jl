@@ -41,7 +41,7 @@ end
 # this method is basically only for testing
 # TODO: keyword args
 function prepare_frame(f, args...)
-  slottyps = Type[typeof(f), typeof.(args)...]
+  slottyps = Type[typeof′(f), typeof′.(args)...]
   tt = to_tt(slottyps)
   mms = matching_methods(tt)
   @assert (n = length(mms)) === 1 "$(n === 0 ? "no" : "multiple") methods found: $tt"
