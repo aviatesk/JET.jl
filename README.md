@@ -1,6 +1,6 @@
 ## behind the moar for performance ...
 
-TypeProfiler employs Julia's type inference for bug reports.
+TypeProfiler.jl employs Julia's type inference for bug reports.
 
 
 ### TODOs
@@ -8,14 +8,16 @@ TypeProfiler employs Julia's type inference for bug reports.
 in order of priority:
 
 - [x] show profiled results: TODO: more nicer printing
-- [ ] escape recursive calls
+- [x] escape recursive calls
+- [ ] be more sensible type treating: succeed to profile `print` call
 - [ ] toplevel executions
   * handle untyped IRs
   * splitting expressions like JuliaIntepreter.jl does
 - [ ] more reports
-  * [x] `UndefVarError`
+  * [ ] `UndefVarError`
+    + report `:throw_undef_if_not` ? (lots of false positives as is)
+    + special case `getfield`, `fieldtype`
   * [ ] method ambiguity error
-  * [ ] special case `getfield` call
   * more and more ...
 - [ ] improve multiple applicable methods handling
 - [ ] replace `Core` types: enables profiling things in `Core.Compiler` module
