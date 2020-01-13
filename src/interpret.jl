@@ -62,13 +62,14 @@ function profile_and_get_rhs_type!(frame, ex::Expr)
     frame.callee = nothing
     return rettyp
   # :foreigncall and :new are supposed to be statically computed, let's just trust the inference
+  # NOTE:
+  # for toplevel frame, maybe we need referene ex.args[1], etc, since
+  # src.ssavaluetypes may not have been computed
   elseif head === :foreigncall
-    typ = lookup_type(frame, ex.args[2]) # XXX: maybe Ref{T} case will break this ?
-    return typ.parameters[1]::Type
+    return frame.src.ssavaluetypes[frame.pc]::Type
   # constructor
   elseif head === :new
-    typ = lookup_type(frame, ex.args[1])
-    return typ.parameters[1]::Type
+    return frame.src.ssavaluetypes[frame.pc]::Type
   # goto
   elseif head === :gotoifnot
     return profile_gotoifnot!(frame, ex)
