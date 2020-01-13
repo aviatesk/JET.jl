@@ -108,15 +108,6 @@ function Base.show(io::IO, frame::Frame)
   end
 end
 function Base.show(io::IO, ::MIME"text/plain", frame::Frame)
-  if (c = length(frame.reports)) > 0
-    println(io, "Reports: ", c)
-    for (i, r) in enumerate(frame.reports)
-      i === c ? print(io, "└─ ") : print(io, "├─ ")
-      println(io, r)
-    end
-    println(io)
-  end
-
   hascaller = frame.caller !== nothing
   hascallee = frame.callee !== nothing
 
@@ -143,18 +134,26 @@ function Base.show(io::IO, ::MIME"text/plain", frame::Frame)
   if (hascaller || hascallee)
     print(io, "├─ ret"); printstyled(io, "::", frame.rettyp, '\n'; color = :cyan)
   else
-    print(io, "└─ ret"); printstyled(io, "::", frame.rettyp; color = :cyan)
+    print(io, "└─ ret"); printstyled(io, "::", frame.rettyp, '\n'; color = :cyan)
   end
 
   if hascaller
     if hascallee
       println(io, "├─ caller: ", frame.caller.frame)
     else
-      print(io, "└─ caller: ", frame.caller.frame)
+      println(io, "└─ caller: ", frame.caller.frame)
     end
   end
   if hascallee
-    print(io, "└─ callee: ", frame.callee.frame)
+    println(io, "└─ callee: ", frame.callee.frame)
+  end
+
+  if (c = length(frame.reports)) > 0
+    println(io, "Reports: ", c)
+    for (i, r) in enumerate(frame.reports)
+      i === c ? print(io, "└─ ") : print(io, "├─ ")
+      println(io, r)
+    end
   end
 end
 
