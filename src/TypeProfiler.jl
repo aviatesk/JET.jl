@@ -26,7 +26,7 @@ include("builtin.jl")
 include("profile.jl")
 include("print.jl")
 
-macro profile_call(ex)
+macro profile_call(ex, kwargs...)
   @assert isexpr(ex, :call) "function call expression should be given"
   f = ex.args[1]
   args = ex.args[2:end]
@@ -36,7 +36,7 @@ macro profile_call(ex)
       !isa(maybe_newframe, Frame) && return maybe_newframe
       frame = maybe_newframe::Frame
       evaluate_or_profile!(frame)
-      print_report(frame)
+      print_report(frame; $(map(esc, kwargs)...))
       return rettyp(frame)
     end
   end

@@ -3,7 +3,7 @@
 
 const ERROR_COLOR = :light_red
 const NOERROR_COLOR = :light_green
-const RAIL_COLORS = [:bold, :light_cyan, :light_green, :blue]
+const RAIL_COLORS = [:bold, :light_cyan, :light_green, :light_yellow]
 
 # entry
 # -----
