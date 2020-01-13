@@ -3,6 +3,7 @@ function profile_call!(frame, call_ex)
   ret isa Vector || return ret
 
   tt = to_tt(ret)
+  tt.parameters[1] == typeof(print) && return Nothing
   mms = matching_methods(tt)
 
   isempty(mms) && @report!(frame, NoMethodErrorReport(tt))
@@ -19,7 +20,12 @@ function profile_call!(frame, call_ex)
   # TODO: handle abstract argument types gracefully
   rettyp = Union{}
   for (tt, sparams::SimpleVector, m::Method) in mms
-    newframe = Frame(m, tt, sparams, frame)
+    maybe_newframe = prepare_frame(m, tt, sparams, frame)
+    if !isa(maybe_newframe, Frame)
+      rettyp = tmerge(rettyp, maybe_newframe)
+      continue
+    end
+    newframe = maybe_newframe::Frame
     frame.callee = FrameChain(lineinfonode(frame), newframe)
     tmp_rettyp = evaluate_or_profile!(newframe)
     rettyp = tmerge(rettyp, tmp_rettyp)

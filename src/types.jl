@@ -50,8 +50,10 @@ end
 mutable struct Frame
   #= reports =#
   reports::Vector{ErrorReport} # will be referenced from leaf frames
+  #= history =#
+  profiled::Dict{UInt64,Type} # for avoiding to enter recursive calls
   #= frame info =#
-  scope::Union{Method,Module}
+  scope::Union{MethodInstance,Module}
   src::CodeInfo
   slottypes::Vector{Any} # MethodInstance.specTypes seems to be not always true
   sparams::Vector{Any}
@@ -70,53 +72,44 @@ end
 const FrameChain = _FrameChain{Frame}
 
 function Frame(
-  scope::Union{Method,Module}, src::CodeInfo, slottypes::Vector, sparams::Vector,
+  scope::Union{MethodInstance,Module}, src::CodeInfo, slottypes::Vector, sparams::Vector,
   caller::Union{Nothing,FrameChain} = nothing;
   generator::Bool = false, istoplevel::Bool = false,
 )
   reports = caller !== nothing ? caller.frame.reports : ErrorReport[]
+  profiled = if caller !== nothing
+    caller.frame.profiled
+  else
+    if scope isa Module
+      Dict{UInt64,Type}()
+    else
+      Dict{UInt64,Type}(hash(scope::MethodInstance) => src.rettype)
+    end
+  end
   ssavaluetypes = Vector{Type}(undef, length(src.ssavaluetypes))
   nstmts = length(ssavaluetypes)
   return Frame(
     reports,
+    profiled,
     scope, src, slottypes, sparams, nstmts, generator, istoplevel,
     1, ssavaluetypes, Union{},
     caller, nothing,
   )
 end
 
-function Frame(mi::MethodInstance, slottypes::Vector, parentframe::Union{Nothing,Frame} = nothing)
-  scope = mi.def::Method
-  src = typeinf_ext(mi, Base.get_world_counter())
-  # XXX: is this really valid ?
-  sparams = rewrap_unionall.(mi.sparam_vals, scope.sig)
-  caller = parentframe === nothing ? nothing : begin
-    lin = lineinfonode(parentframe)
-    FrameChain(lin, parentframe)
-  end
-  return Frame(scope, src, slottypes, sparams, caller)
-end
-
-function Frame(m::Method, @nospecialize(tt), sparams::SimpleVector, parentframe::Union{Nothing,Frame} = nothing)
-  mi = specialize_method(m, tt, sparams)
-  # XXX: is this really valid ?
-  slottypes = rewrap_unionall.(unwrap_unionall(tt).parameters, Ref(tt))
-  return Frame(mi, slottypes, parentframe)
-end
-
 function Base.show(io::IO, frame::Frame)
-  print(io, "Frame of ")
-  printstyled(io, frame.scope; bold = true)
+  scope = scopeof(frame)
+  if scope isa MethodInstance
+    printstyled(io, "Frame of ", scope; bold = true)
+    m = scope.def::Method
+    print(io, " in ", m.module, " at ", m.file, ':', m.line)
+  else
+    printstyled(io, "Frame in ", scope; bold = true)
+  end
 end
 function Base.show(io::IO, ::MIME"text/plain", frame::Frame)
-  if (c = length(frame.reports)) > 0
-    println(io, "Reports: ", c)
-    for (i, r) in enumerate(frame.reports)
-      i === c ? print(io, "└─ ") : print(io, "├─ ")
-      println(io, r)
-    end
-    println(io)
-  end
+  hascaller = frame.caller !== nothing
+  hascallee = frame.callee !== nothing
 
   show(io, frame); println(io)
   println(io, "├─ pc: ", frame.pc, "/", frame.nstmts)
@@ -138,22 +131,29 @@ function Base.show(io::IO, ::MIME"text/plain", frame::Frame)
     end
     println(io)
   end
-  hascaller = frame.caller !== nothing
-  hascallee = frame.callee !== nothing
   if (hascaller || hascallee)
     print(io, "├─ ret"); printstyled(io, "::", frame.rettyp, '\n'; color = :cyan)
   else
-    print(io, "└─ ret"); printstyled(io, "::", frame.rettyp; color = :cyan)
+    print(io, "└─ ret"); printstyled(io, "::", frame.rettyp, '\n'; color = :cyan)
   end
+
   if hascaller
     if hascallee
       println(io, "├─ caller: ", frame.caller.frame)
     else
-      print(io, "└─ caller: ", frame.caller.frame)
+      println(io, "└─ caller: ", frame.caller.frame)
     end
   end
   if hascallee
-    print(io, "└─ callee: ", frame.callee.frame)
+    println(io, "└─ callee: ", frame.callee.frame)
+  end
+
+  if (c = length(frame.reports)) > 0
+    println(io, "Reports: ", c)
+    for (i, r) in enumerate(frame.reports)
+      i === c ? print(io, "└─ ") : print(io, "├─ ")
+      println(io, r)
+    end
   end
 end
 
@@ -182,6 +182,14 @@ See also: [`lineinfonode`](@ref), [`@report!`](@ref)
 ErrorReport
 
 @nospecialize
+
+struct UndefVarErrorReport <: ErrorReport
+  frame::Frame
+  lin::LineInfoNode
+  mod::Union{Module,Method}
+  name::Symbol
+  maybe::Bool
+end
 
 struct InvalidBuiltinCallErrorReport <: ErrorReport
   frame::Frame
@@ -230,7 +238,7 @@ macro report!(frame, exs...)
     @assert isexpr(call_ex, :call) && begin
       reporttyp = call_ex.args[1]
       endswith(string(reporttyp), "ErrorReport")
-    end "invalid call: $call_ex"
+    end "invalid call form: $call_ex"
     args = call_ex.args[2:end]
   else
     reporttyp = exs[1]
@@ -240,7 +248,7 @@ macro report!(frame, exs...)
 
   return quote
     lin = lineinfonode($(esc(frame)))
-    report = $reporttyp($(esc(frame)), lin, $(esc.(args)...))
+    report = $reporttyp($(esc(frame)), lin, $(map(esc, args)...))
     report!($(esc(frame)), report)
     return Unknown
   end

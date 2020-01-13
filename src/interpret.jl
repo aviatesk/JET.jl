@@ -40,39 +40,56 @@ profile_and_get_rhs_type!(frame, ::Nothing) = Nothing
 # ignore goto statement and just proceed to profile the next statement
 profile_and_get_rhs_type!(frame, gn::GotoNode) = Any
 # TODO:
-# use updated (i.e. profiled) types instead of inferred ones for Pi, Phi nodes
-# - Pi node check: pi.typ == frame.ssavaluetypes[pi.val]
-# - Phi node check: Core.tmerge(lookup_type.(phi.values)) == Core.tmerge(getindex.(frame.ssavaluetypes, phi.values))
-profile_and_get_rhs_type!(frame, pi::PiNode) = frame.src.ssavaluetypes[frame.pc]
-profile_and_get_rhs_type!(frame, phi::PhiNode) = frame.src.ssavaluetypes[frame.pc]
+# - store profiled types for Pi, Upsilon nodes
+# - use updated (i.e. profiled) types instead of inferred ones for Phi, PhiC nodes
+const ControlNode = Union{PiNode, PhiNode, PhiCNode, UpsilonNode}
+profile_and_get_rhs_type!(frame, node::ControlNode) =
+  frame.src.ssavaluetypes[frame.pc]
 profile_and_get_rhs_type!(frame, gr::GlobalRef) = lookup_type(frame, gr)
 function profile_and_get_rhs_type!(frame, ex::Expr)
   head = ex.head
+  # calls
   if head === :call
     return profile_call!(frame, ex)
   elseif head === :invoke
     mi = ex.args[1]::MethodInstance
     slottyps = collect_call_argtypes(frame, ex)
-    newframe = Frame(mi, slottyps, frame)
+    maybe_newframe = prepare_frame(mi, slottyps, frame)
+    !isa(maybe_newframe, Frame) && return maybe_newframe
+    newframe = maybe_newframe::Frame
     frame.callee = FrameChain(lineinfonode(frame), newframe)
     rettyp = evaluate_or_profile!(newframe)
     frame.callee = nothing
     return rettyp
-  # :new and :foreigncall are supposed to be statically computed, let's just trust the inference
-  elseif head === :new
-    typ = lookup_type(frame, ex.args[1])
-    return typ.parameters[1]::Type
+  # :foreigncall and :new are supposed to be statically computed, let's just trust the inference
+  # NOTE:
+  # for toplevel frame, maybe we need referene ex.args[1], etc, since
+  # src.ssavaluetypes may not have been computed
   elseif head === :foreigncall
-    typ = lookup_type(frame, ex.args[2]) # XXX: maybe Ref{T} case will break this ?
-    return typ.parameters[1]::Type
+    return frame.src.ssavaluetypes[frame.pc]::Type
+  # constructor
+  elseif head === :new
+    return frame.src.ssavaluetypes[frame.pc]::Type
+  # goto
   elseif head === :gotoifnot
     return profile_gotoifnot!(frame, ex)
+  # meta
   elseif (
     head === :meta ||
     head === (@static VERSION >= v"1.2.0-DEV.462" ? :loopinfo : :simdloop) ||
     head === :gc_preserve_begin ||
     head === :gc_preserve_end
   )
+    return Any
+  # TODO: handle exceptions somehow
+  elseif head === :enter || head === :leave || head === :pop_exception
+    return Any
+  elseif head === :throw_undef_if_not
+    # # XXX:
+    # # :throw_undef_if_not includes lots of false positives as is
+    # name = ex.args[1]::Symbol
+    # (mod = scopeof(frame)) isa Module || (mod = mod.def)
+    # @report!(frame, UndefVarErrorReport(mod, name, true))
     return Any
   elseif head === :unreachable
     # basically this is a sign of an error, but hopefully we profiled all of them
@@ -95,10 +112,9 @@ lookup_type(frame::Frame, ssav::SSAValue) = frame.ssavaluetypes[ssav.id]
 lookup_type(frame::Frame, slot::SlotNumber) = frame.slottypes[slot.id]
 function lookup_type(frame::Frame, gr::GlobalRef)
   if isdefined(gr.mod, gr.name)
-    typeof′(getfield(gr.mod, gr.name))
+    return typeof′(getfield(gr.mod, gr.name))
   else
-    # TODO: error report
-    return Unknown
+    @report!(frame, UndefVarErrorReport(gr.mod, gr.name, false))
   end
 end
 lookup_type(frame::Frame, qn::QuoteNode) = typeof′(qn.value)
