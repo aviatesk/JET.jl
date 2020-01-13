@@ -187,8 +187,9 @@ ErrorReport
 struct UndefVarErrorReport <: ErrorReport
   frame::Frame
   lin::LineInfoNode
-  mod::Module
+  mod::Union{Module,Method}
   name::Symbol
+  maybe::Bool
 end
 
 struct InvalidBuiltinCallErrorReport <: ErrorReport

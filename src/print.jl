@@ -58,8 +58,14 @@ function report_string(er::ErrorReport)
   error("report_string(::$(typeof(er))) should be implemented")
 end
 
-report_string(er::UndefVarErrorReport) =
-  "variable $(er.mod).$(er.name) is not defined"
+function report_string(er::UndefVarErrorReport)
+  be = er.maybe ? "may not be" : "is not"
+  return if er.mod isa Module
+    "variable $(er.mod).$(er.name) $be defined"
+  else
+    "variable $(er.name) $be defined in $(er.mod)"
+  end
+end
 
 report_string(er::InvalidBuiltinCallErrorReport) =
   "invalid builtin function call: $(tt_to_signature_str(er.tt))"
