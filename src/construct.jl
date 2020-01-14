@@ -33,7 +33,7 @@ function prepare_frame(
   parentframe::Union{Nothing,Frame} = nothing,
 )
   mi = specialize_method(m, tt, sparams)
-  # XXX: is this really valid ?
+  # XXX: tt can include UnionAll, so unwrap. But, is this really valid ?
   slottypes = rewrap_unionall.(unwrap_unionall(tt).parameters, Ref(tt))
   return prepare_frame(mi, slottypes, parentframe)
 end

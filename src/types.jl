@@ -212,7 +212,7 @@ end
 @specialize
 
 function Base.show(io::IO, report::T) where {T<:ErrorReport}
-  fs = filter(n -> n ∉ (:frame, :lin), fieldnames(T))
+  fs = filter(n -> n ∉ (:frame, :lin), collect(fieldnames(T)))
   cs = [getfield(report, f) for f in fs]
   c = join(string.(cs), ", ")
   s = string(typeof(report).name.name, '(', c, ')')

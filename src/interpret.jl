@@ -68,7 +68,7 @@ function profile_and_get_rhs_type!(frame, ex::Expr)
   elseif head === :foreigncall
     return frame.src.ssavaluetypes[frame.pc]::Type
   # constructor
-  elseif head === :new
+  elseif head === :new || head === :splatnew
     return frame.src.ssavaluetypes[frame.pc]::Type
   # goto
   elseif head === :gotoifnot
