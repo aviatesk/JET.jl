@@ -52,6 +52,7 @@ function profile_and_get_rhs_type!(frame, ex::Expr)
   if head === :call
     return profile_call!(frame, ex)
   elseif head === :invoke
+    # TODO: support special cased invokes: e.g. getproperty
     mi = ex.args[1]::MethodInstance
     slottyps = collect_call_argtypes(frame, ex)
     maybe_newframe = prepare_frame(mi, slottyps, frame)
@@ -131,6 +132,24 @@ function lookup_type(frame::Frame, ex::Expr)
     return Any
   end
   error("unimplmented expression lookup: $ex")
+end
+
+"""
+    collect_call_argtypes(frame::Frame, call_ex::Expr)
+
+Looks up for the types of function call arguments in `call_ex`.
+
+!!! note
+    `call_ex.head` should be `:call` or `:invoke`
+"""
+function collect_call_argtypes(frame::Frame, call_ex::Expr)
+  args = call_ex.head === :call ? call_ex.args :
+    call_ex.head === :invoke ? call_ex.args[2:end] :
+    return Type[]
+  # TODO?
+  # maybe we want to make a temporary field `call_argtypes` in `Frame` and reuse
+  # the previously allocated array for keeping the current call argtypes
+  return lookup_type.(Ref(frame), args)
 end
 
 # assignment and return

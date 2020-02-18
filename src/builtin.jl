@@ -33,23 +33,8 @@ function maybe_profile_builtin_call!(frame, call_ex)
     @report!(frame, InvalidBuiltinCallErrorReport(tt))
   end
 
+  # XXX:
+  # this includes false negative case, e.g. `getfield` will always return `Any` if its first
+  # argument is `Any`
   return rettyp
-end
-
-"""
-    collect_call_argtypes(frame::Frame, call_ex::Expr)
-
-Looks up for the types of function call arguments in `call_ex`.
-
-!!! note
-    `call_ex.head` should be `:call` or `:invoke`
-"""
-function collect_call_argtypes(frame::Frame, call_ex::Expr)
-  args = call_ex.head === :call ? call_ex.args :
-    call_ex.head === :invoke ? call_ex.args[2:end] :
-    return Type[]
-  # TODO?
-  # maybe we want to make a temporary field `call_argtypes` in `Frame` and reuse
-  # the previously allocated array for keeping the current call argtypes
-  return lookup_type.(Ref(frame), args)
 end

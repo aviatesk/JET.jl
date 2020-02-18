@@ -59,7 +59,7 @@ in order of priority:
 
 - [x] show profiled results: TODO: prettier printing
 - [x] escape recursive calls
-- [ ] balancing between Julia's inference approach and error profiling
+- [ ] balance between Julia's inference approach and error profiling
   * Julia's type inference allows abstract type (like `Any`) to slip into the inference process by various heuristics, in order to ensure its termination and obtain the performance
   * but this is obviously unideal for TP, since our basic stance is _"better safe than sorry"_, meaning ideally we want to find all the possible errors while revealing some uncertainty Julia's inference accepts
   * nevertheless, as far as TP relies on the Julia's inference, we need to achieve the conservative error profiling in the existence of abstract types, _somehow_
