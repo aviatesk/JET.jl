@@ -35,9 +35,23 @@ function profile_call!(frame, call_ex)
   return rettyp
 end
 
+# TODO: support special cased invokes: e.g. getproperty
+function profile_invoke!(frame, invoke_ex)
+  mi = invoke_ex.args[1]::MethodInstance
+  slottyps = collect_call_argtypes(frame, invoke_ex)
+  maybe_newframe = prepare_frame(mi, slottyps, frame)
+  !isa(maybe_newframe, Frame) && return maybe_newframe
+  newframe = maybe_newframe::Frame
+  frame.callee = FrameChain(lineinfonode(frame), newframe)
+  rettyp = evaluate_or_profile!(newframe)
+  frame.callee = nothing
+  return rettyp
+end
+
 function profile_gotoifnot!(frame, gotoifnot_ex)
   # just check the node is really `Bool` type
-  @return_if_unknown! condtyp = lookup_type(frame, gotoifnot_ex.args[1])
+  condtyp = lookup_type(frame, gotoifnot_ex.args[1])
   condtyp == Bool && return condtyp
+  condtyp == Unknown && return Unknown
   @report!(frame, ConditionErrorReport(condtyp))
 end

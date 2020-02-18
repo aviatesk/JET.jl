@@ -57,8 +57,9 @@ Char
 
 in order of priority:
 
-- [x] show profiled results: TODO: prettier printing
+- [x] show profiled results
 - [x] escape recursive calls
+- [ ] bug fixes: `TypeVar` etc. can serious errors within the current implementation
 - [ ] balance between Julia's inference approach and error profiling
   * Julia's type inference allows abstract type (like `Any`) to slip into the inference process by various heuristics, in order to ensure its termination and obtain the performance
   * but this is obviously unideal for TP, since our basic stance is _"better safe than sorry"_, meaning ideally we want to find all the possible errors while revealing some uncertainty Julia's inference accepts

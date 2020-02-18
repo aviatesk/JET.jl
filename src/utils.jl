@@ -63,27 +63,6 @@ typeof′(x::ProfiledType) = x.type
 unwrap_pt(@nospecialize(x)) = x
 unwrap_pt(pt::ProfiledType) = pt.type
 
-include_unknown(@nospecialize(typ::Type)) = typ == Unknown
-# XXX: introduce this ?
-# include_unknown(union::Union) = union.a == Unknown || include_unknown(union.b)
-include_unknown(itr) = any(==(Unknown), itr)
-include_unknown(tt::Tuple) = include_unknown(tt.parameters)
-
-"""
-    @return_if_unknown! typ_ex
-
-Returns [`Unknown`](@ref) type immediatelly if `typ_ex` includes `Unknown`.
-
-See also: [`include_unknwon`](@ref)
-"""
-macro return_if_unknown!(typ_ex)
-  return quote
-    typ = $(esc(typ_ex))
-    include_unknown(typ) && return Unknown
-    typ
-  end
-end
-
 # function and methods
 # --------------------
 

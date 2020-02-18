@@ -19,8 +19,8 @@ function evaluate_or_profile!(frame::Frame)
   return rettyp(frame)
 end
 
-# recursive call
-# --------------
+# abstract interpretation
+# -----------------------
 
 function step_code!(frame)
   frame.pc > nstmts(frame) && return nothing
@@ -40,8 +40,8 @@ profile_and_get_rhs_type!(frame, ::Nothing) = Nothing
 # ignore goto statement and just proceed to profile the next statement
 profile_and_get_rhs_type!(frame, gn::GotoNode) = Any
 # TODO:
-# - store profiled types for Pi, Upsilon nodes
-# - use updated (i.e. profiled) types instead of inferred ones for Phi, PhiC nodes
+# Store profiled types for Pi, Upsilon nodes, and then use updated (i.e. profiled)
+# types instead of inferred ones for Phi, PhiC nodes, respectively
 const ControlNode = Union{PiNode, PhiNode, PhiCNode, UpsilonNode}
 profile_and_get_rhs_type!(frame, node::ControlNode) =
   frame.src.ssavaluetypes[frame.pc]
@@ -52,16 +52,7 @@ function profile_and_get_rhs_type!(frame, ex::Expr)
   if head === :call
     return profile_call!(frame, ex)
   elseif head === :invoke
-    # TODO: support special cased invokes: e.g. getproperty
-    mi = ex.args[1]::MethodInstance
-    slottyps = collect_call_argtypes(frame, ex)
-    maybe_newframe = prepare_frame(mi, slottyps, frame)
-    !isa(maybe_newframe, Frame) && return maybe_newframe
-    newframe = maybe_newframe::Frame
-    frame.callee = FrameChain(lineinfonode(frame), newframe)
-    rettyp = evaluate_or_profile!(newframe)
-    frame.callee = nothing
-    return rettyp
+    return profile_invoke!(frame, ex)
   # :foreigncall and :new are supposed to be statically computed, let's just trust the inference
   # NOTE:
   # for toplevel frame, maybe we need referene ex.args[1], etc, since
@@ -97,8 +88,7 @@ function profile_and_get_rhs_type!(frame, ex::Expr)
     # up to here, so let's just ignore this
     return Unknown
   elseif head === :return
-    retex = ex.args[1]
-    rettyp = lookup_type(frame, retex)
+    rettyp = lookup_type(frame, ex.args[1])
     return update_rettyp!(frame, rettyp)
   elseif head === :static_parameter
     return lookup_type(frame, ex)
@@ -114,11 +104,8 @@ lookup_type(frame::Frame, @nospecialize(x)) = typeof′(x)
 lookup_type(frame::Frame, ssav::SSAValue) = frame.ssavaluetypes[ssav.id]
 lookup_type(frame::Frame, slot::SlotNumber) = frame.slottypes[slot.id]
 function lookup_type(frame::Frame, gr::GlobalRef)
-  if isdefined(gr.mod, gr.name)
-    return typeof′(getfield(gr.mod, gr.name))
-  else
-    @report!(frame, UndefVarErrorReport(gr.mod, gr.name, false))
-  end
+  isdefined(gr.mod, gr.name) && return typeof′(getfield(gr.mod, gr.name))
+  @report!(frame, UndefVarErrorReport(gr.mod, gr.name, false))
 end
 lookup_type(frame::Frame, qn::QuoteNode) = typeof′(qn.value)
 function lookup_type(frame::Frame, ex::Expr)
@@ -134,22 +121,29 @@ function lookup_type(frame::Frame, ex::Expr)
   error("unimplmented expression lookup: $ex")
 end
 
+# NOTE: problematic
 """
-    collect_call_argtypes(frame::Frame, call_ex::Expr)
+    collect_call_argtypes(frame::Frame, call_ex::Expr)::Vector
 
 Looks up for the types of function call arguments in `call_ex`.
 
 !!! note
     `call_ex.head` should be `:call` or `:invoke`
 """
-function collect_call_argtypes(frame::Frame, call_ex::Expr)
-  args = call_ex.head === :call ? call_ex.args :
-    call_ex.head === :invoke ? call_ex.args[2:end] :
+function collect_call_argtypes(frame::Frame, call_ex::Expr)::Vector
+  local args
+  if call_ex.head === :call
+    args = call_ex.args
+  elseif call_ex.head === :invoke
+    args = call_ex.args[2:end]
+  else
     return Type[]
+  end
   # TODO?
   # maybe we want to make a temporary field `call_argtypes` in `Frame` and reuse
   # the previously allocated array for keeping the current call argtypes
-  return lookup_type.(Ref(frame), args)
+  # return lookup_type.(Ref(frame), args)
+  return map(x -> lookup_type(frame, x), args)
 end
 
 # assignment and return
@@ -158,8 +152,7 @@ end
 assign_rhs_type!(frame, stmt, rhs_type) = frame.ssavaluetypes[frame.pc] = rhs_type
 
 function update_rettyp!(frame, rettyp)
-  @return_if_unknown! frame.rettyp
-  # let's ignore previously profiled types once we profile Unknown
-  rettyp == Unknown && return frame.rettyp = Unknown
+  frame.rettyp == Unknown && return Unknown # already an error profiled
+  rettyp == Unknown && return frame.rettyp = Unknown # ignore previously profiled types once we profile Unknown
   return frame.rettyp = tmerge(frame.rettyp, rettyp)
 end

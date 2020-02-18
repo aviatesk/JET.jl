@@ -1,3 +1,5 @@
+# TODO: implement type-check functions
+
 """
     ret = maybe_profile_builtin_call!(frame, call_ex)
 
@@ -16,14 +18,14 @@ Then a builtin call has already been through the abstract interpretation by
     Accordingly this function also can mis-profile errors in intrinsic function calls.
 """
 function maybe_profile_builtin_call!(frame, call_ex)
-  @return_if_unknown! call_argtypes = collect_call_argtypes(frame, call_ex)
+  call_argtypes = collect_call_argtypes(frame, call_ex)
+  any(==(Unknown), call_argtypes) && return Unknown
 
-  ftyp = @inbounds call_argtypes[1]
+  ftyp = call_argtypes[1]
   !<:(ftyp, Core.Builtin) && return call_argtypes
 
   rettyp = frame.src.ssavaluetypes[frame.pc]
-
-  # Union{} means the inference catches an error in this call
+  # Union{} usually means the inference catches an error in this call
   if rettyp == Union{}
     # TODO: handle exceptions somehow
     # throw accepts any type of object and TP currently just ignores them
@@ -33,8 +35,9 @@ function maybe_profile_builtin_call!(frame, call_ex)
     @report!(frame, InvalidBuiltinCallErrorReport(tt))
   end
 
-  # XXX:
-  # this includes false negative case, e.g. `getfield` will always return `Any` if its first
-  # argument is `Any`
+  # TODO:
+  # this pass should be validated with type-check functions for builtin calls
+  # just relying on Julia's inference result includes obvious false negative case,
+  # e.g. `getfield` will always return `Any` if its first argument is `Any`
   return rettyp
 end
