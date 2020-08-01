@@ -21,10 +21,12 @@ function profile_call!(frame, call_ex)
   rettyp = Union{}
   for (tt, sparams::SimpleVector, m::Method) in mms
     maybe_newframe = prepare_frame(m, tt, sparams, frame)
+
     if !isa(maybe_newframe, Frame)
-      rettyp = tmerge(rettyp, maybe_newframe)
+      rettyp = tmerge(rettyp, maybe_newframe) # cache hit
       continue
     end
+
     newframe = maybe_newframe::Frame
     frame.callee = FrameChain(lineinfonode(frame), newframe)
     tmp_rettyp = evaluate_or_profile!(newframe)
@@ -40,11 +42,14 @@ function profile_invoke!(frame, invoke_ex)
   mi = invoke_ex.args[1]::MethodInstance
   slottyps = collect_call_argtypes(frame, invoke_ex)
   maybe_newframe = prepare_frame(mi, slottyps, frame)
-  !isa(maybe_newframe, Frame) && return maybe_newframe
+
+  !isa(maybe_newframe, Frame) && return maybe_newframe # cache hit
+
   newframe = maybe_newframe::Frame
   frame.callee = FrameChain(lineinfonode(frame), newframe)
   rettyp = evaluate_or_profile!(newframe)
   frame.callee = nothing
+
   return rettyp
 end
 

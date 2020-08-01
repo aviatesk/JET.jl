@@ -16,18 +16,18 @@ lineinfonode(frame::Frame) = frame.src.linetable[codeloc(frame)]
 codeloc(frame::Frame) = frame.src.codelocs[frame.pc]
 
 caller(frame::Frame) = frame.caller
-caller_frame(frame::Frame) = frame.caller === nothing ? nothing : frame.caller.frame
+caller_frame(frame::Frame) = isnothing(frame.caller) ? nothing : frame.caller.frame
 caller_frame(frame::Frame, n::Int) = reduce(∘, ntuple(i -> caller_frame, n))(frame)
-caller_lin(frame::Frame) = frame.caller === nothing ? nothing : frame.caller.lin
+caller_lin(frame::Frame) = isnothing(frame.caller) ? nothing : frame.caller.lin
 caller_lin(frame::Frame, n::Int) = reduce(∘, ntuple(i -> caller_lin, n))(frame)
 callee(frame::Frame) = frame.callee
-callee_frame(frame::Frame) = frame.callee === nothing ? nothing : frame.callee.frame
+callee_frame(frame::Frame) = isnothing(frame.callee) ? nothing : frame.callee.frame
 callee_frame(frame::Frame, n::Int) = reduce(∘, ntuple(i -> callee_frame, n))(frame)
-callee_lin(frame::Frame) = frame.callee === nothing ? nothing : frame.callee.lin
+callee_lin(frame::Frame) = isnothing(frame.callee) ? nothing : frame.callee.lin
 callee_lin(frame::Frame, n::Int) = reduce(∘, ntuple(i -> callee_lin, n))(frame)
 
-is_root(frame::Frame) = caller(frame) === nothing
-is_leaf(frame::Frame) = callee(frame) === nothing
+is_root(frame::Frame) = isnothing(caller(frame))
+is_leaf(frame::Frame) = isnothing(callee(frame))
 
 function traverse(traverser, init, stop_predicate = !isnothing)
   cur = init
@@ -40,16 +40,19 @@ end
 root(frame::Frame) = root_frame(frame)
 root_frame(frame::Frame) = traverse(caller_frame, frame)
 root_lin(frame::Frame) = traverse(caller_lin, frame)
+
 leaf(frame::Frame) = leaf_frame(frame)
 leaf_frame(frame::Frame) = traverse(callee_frame, frame)
 leaf_lin(frame::Frame) = traverse(callee_lin, frame)
+
 function depth(frame::Frame; up::Bool = false)
-  depth::Int = 0
-  traverser = up ?
-    frame -> (depth += 1; caller_frame(frame)) :
-    frame -> (depth += 1; callee_frame(frame))
-  traverse(traverser, frame)
-  return depth
+  d::Int = 0
+  f = up ? caller_frame : callee_frame
+  traverse(frame) do frame
+    d += 1
+    f(frame)
+  end
+  return d
 end
 
 # types

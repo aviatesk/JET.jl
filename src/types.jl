@@ -71,32 +71,6 @@ end
 
 const FrameChain = _FrameChain{Frame}
 
-function Frame(
-  scope::Union{MethodInstance,Module}, src::CodeInfo, slottypes::Vector, sparams::Vector,
-  caller::Union{Nothing,FrameChain} = nothing;
-  generator::Bool = false, istoplevel::Bool = false,
-)
-  reports = caller !== nothing ? caller.frame.reports : ErrorReport[]
-  profiled = if caller !== nothing
-    caller.frame.profiled
-  else
-    if scope isa Module
-      Dict{UInt64,Type}()
-    else
-      Dict{UInt64,Type}(hash(scope::MethodInstance) => src.rettype)
-    end
-  end
-  ssavaluetypes = Vector{Type}(undef, length(src.ssavaluetypes))
-  nstmts = length(ssavaluetypes)
-  return Frame(
-    reports,
-    profiled,
-    scope, src, slottypes, sparams, nstmts, generator, istoplevel,
-    1, ssavaluetypes, Union{},
-    caller, nothing,
-  )
-end
-
 function Base.show(io::IO, frame::Frame)
   scope = scopeof(frame)
   if scope isa MethodInstance
