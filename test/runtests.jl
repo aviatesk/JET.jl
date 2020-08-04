@@ -2,6 +2,7 @@ using TypeProfiler
 # using Test
 
 @profile_call sum("julia")
+@profile_call sum([])
 
 fib(n) = n <= 2 ? n : fib(n - 1) + fib(n - 2)
 @profile_call fib(100) # never ends otherwise

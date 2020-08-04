@@ -1,5 +1,10 @@
 module TypeProfiler
 
+include("profiler/profiler.jl")
+
+using .Profiler
+
+#=
 export
   # profile_file, profile_text,
   @profile_call
@@ -60,5 +65,9 @@ macro profile_call(ex, kwargs...)
     end
   end end
 end
+=#
+
+export
+    @profile_call
 
 end
