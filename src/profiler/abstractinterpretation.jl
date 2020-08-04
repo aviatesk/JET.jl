@@ -5,17 +5,18 @@ get_cur_stmt(frame::InferenceState) = frame.src.code[frame.currpc]
 # and ideally the patching here is better to be upstreamed as much as possible
 
 function abstract_eval_special_value(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    if isa(e, QuoteNode)
-        return CC.AbstractEvalConstant((e::QuoteNode).value)
-    elseif isa(e, SSAValue)
-        return abstract_eval_ssavalue(e::SSAValue, sv.src)
-    elseif isa(e, Slot)
-        return vtypes[slot_id(e)].typ
-    elseif isa(e, GlobalRef)
-        return abstract_eval_global(interp, e.mod, e.name, sv)
+    ret = abstract_eval_special_value(interp.native, e, vtypes, sv)
+
+    # global ref check
+    if isa(e, GlobalRef)
+        m, s = e.mod, e.name
+        if !isdefined(m, s)
+            add_remark!(interp, sv, "$(s) not defined in module $(string(m))")
+            ret = Bottom # ret here is annotated by `Any` by `NativeInterpreter`, but here I would like to change it to `Bottom`
+        end
     end
 
-    return AbstractEvalConstant(e)
+    return ret
 end
 
 function abstract_eval_value(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
@@ -33,14 +34,4 @@ function abstract_eval_value(interp::TPInterpreter, @nospecialize(e), vtypes::Va
     end
 
     return ret
-end
-
-function abstract_eval_global(interp::TPInterpreter, M::Module, s::Symbol, sv::InferenceState)
-    # global ref check
-    return if !isdefined(M,s)
-        add_remark!(interp, sv, "$(s) not defined in module $(string(M))")
-        Bottom
-    else
-        isconst(M,s) ? AbstractEvalConstant(getfield(M,s)) : Any
-    end
 end
