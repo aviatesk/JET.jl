@@ -9,7 +9,8 @@ import Core.Compiler:
     lock_mi_inference, unlock_mi_inference, add_remark!, may_optimize, may_compress,
     may_discard_trees,
     # abstractinterpreter.jl
-    abstract_eval_special_value, abstract_eval_global
+    abstract_eval_special_value, abstract_eval_value, abstract_eval_value_expr,
+    abstract_eval_global
 
 # loaded symbols
 using Core:
@@ -17,12 +18,13 @@ using Core:
 
 using Core.Compiler:
     AbstractInterpreter, NativeInterpreter, InferenceState, InferenceResult,
-    Bottom,
+    Bottom, widenconst, ⊑,
     VarTable, AbstractEvalConstant, SSAValue, abstract_eval_ssavalue, Slot, slot_id,
-    GlobalRef,
+    GlobalRef, GotoIfNot,
     _methods_by_ftype, specialize_method, typeinf, to_tuple_type
 
-using Base.Meta: isexpr
+using Base.Meta:
+    isexpr
 
 
 include("abstractinterpreterinterface.jl")
