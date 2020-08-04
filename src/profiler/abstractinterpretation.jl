@@ -67,11 +67,7 @@ function abstract_eval_special_value(interp::TPInterpreter, @nospecialize(e), vt
 end
 
 function abstract_eval_value(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    ret = if isa(e, Expr)
-        abstract_eval_value_expr(interp, e, vtypes, sv)
-    else
-        abstract_eval_special_value(interp, e, vtypes, sv)
-    end
+    ret = invoke_native(abstract_eval_value, interp, e, vtypes, sv)
 
     # boolean-context check
     stmt = get_cur_stmt(sv)

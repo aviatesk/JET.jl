@@ -6,9 +6,7 @@ using TypeProfiler
 gr1(a) = return foo(a)
 @profile_call gr1(0)
 
-function gr2(a)
-    @isdefined(b) && return a
-end
+gr2(a) = @isdefined(b) && return a # will be lowered to `Expr(:isdefined)`
 @profile_call gr2(0)
 
 
@@ -33,11 +31,8 @@ boolcond() = (c = rand(Any[1,2,3])) ? c #=c is Any typed=# : nothing
 # old
 # ---
 
-@profile_call sum("julia")
-@profile_call sum([])
-
 fib(n) = n <= 2 ? n : fib(n - 1) + fib(n - 2)
-@profile_call fib(100) # never ends otherwise
+@profile_call fib(1000) # never ends otherwise
 
 fib′(n) = n <= 2 ? n : fib′′(n - 1) + fib′(n′ - 2)
-@profile_call fib′(100) # never ends otherwise
+@profile_call fib′(1000) # never ends otherwise
