@@ -3,8 +3,13 @@ using TypeProfiler
 # global ref
 # ----------
 
-foo(a) = return bar(a)
-@profile_call foo(nothing)
+globalrefcheck1(a) = return foo(a)
+@profile_call globalrefcheck1(0)
+
+function globalrefcheck2(a)
+    @isdefined(b) && return a
+end
+@profile_call globalrefcheck2(0)
 
 # boolean condition check
 # -----------------------

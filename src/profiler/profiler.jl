@@ -9,7 +9,9 @@ import Core.Compiler:
     lock_mi_inference, unlock_mi_inference, add_remark!, may_optimize, may_compress,
     may_discard_trees,
     # abstractinterpreter.jl
-    abstract_eval_special_value, abstract_eval_value, abstract_eval_value_expr
+    abstract_call,
+    abstract_eval_special_value, abstract_eval_value_expr, abstract_eval_value,
+    abstract_eval_statement
 
 # loaded symbols
 using Core:
