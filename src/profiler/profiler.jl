@@ -9,22 +9,23 @@ import Core.Compiler:
     lock_mi_inference, unlock_mi_inference, add_remark!, may_optimize, may_compress,
     may_discard_trees,
     # abstractinterpreter.jl
-    abstract_call,
+    abstract_call_gf_by_type, abstract_call_known, abstract_call,
     abstract_eval_special_value, abstract_eval_value_expr, abstract_eval_value,
     abstract_eval_statement
 
+# TODO: use `using` instead
 # loaded symbols
-using Core:
+import Core:
     MethodInstance
 
-using Core.Compiler:
+import Core.Compiler:
     AbstractInterpreter, NativeInterpreter, InferenceState, InferenceResult,
-    Bottom, widenconst, ⊑,
+    Bottom, widenconst, ⊑, isconstType, typeintersect, CallMeta, argtypes_to_type, Const,
     VarTable, AbstractEvalConstant, SSAValue, abstract_eval_ssavalue, Slot, slot_id,
     GlobalRef, GotoIfNot,
     _methods_by_ftype, specialize_method, typeinf, to_tuple_type
 
-using Base.Meta:
+import Base.Meta:
     isexpr
 
 

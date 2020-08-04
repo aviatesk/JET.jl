@@ -1,3 +1,10 @@
+# HACK:
+# call down to `NativeInterpreter`'s abstract call method while passing `TPInterpreter`
+function invoke_native(f, interp::TPInterpreter, args...; kwargs...)
+    argtypes = to_tuple_type((AbstractInterpreter, typeof.(args)...))
+    return invoke(f, argtypes, interp, args...; kwargs...)
+end
+
 get_cur_stmt(frame::InferenceState) = frame.src.code[frame.currpc]
 
 function check_global_ref!(interp::TPInterpreter, sv::InferenceState, m::Module, s::Symbol)
@@ -14,7 +21,7 @@ end
 # and ideally the patching here is better to be upstreamed as much as possible
 
 function abstract_eval_special_value(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    ret = abstract_eval_special_value(interp.native, e, vtypes, sv)
+    ret = invoke_native(abstract_eval_special_value, interp, e, vtypes, sv)
 
     # global ref check
     if isa(e, GlobalRef)
@@ -45,7 +52,7 @@ function abstract_eval_value(interp::TPInterpreter, @nospecialize(e), vtypes::Va
 end
 
 function abstract_eval_statement(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    ret = abstract_eval_statement(interp.native, e, vtypes, sv)
+    ret = invoke_native(abstract_eval_statement, interp, e, vtypes, sv)
 
     # global ref check
     if isa(e, Expr)
