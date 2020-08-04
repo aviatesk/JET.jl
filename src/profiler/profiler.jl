@@ -35,7 +35,7 @@ include("abstractinterpretation.jl")
 include("tfuncs.jl")
 
 
-function infer_function(interp::TPInterpreter, @nospecialize(tt::Type{<:Tuple}))
+function profile!(interp::TPInterpreter, @nospecialize(tt::Type{<:Tuple}))
     ms = _methods_by_ftype(tt, -1, typemax(UInt))
     (ms === false || length(ms) != 1) && error("Unable to find single applicable method for $tt")
 
@@ -57,19 +57,21 @@ function infer_function(interp::TPInterpreter, @nospecialize(tt::Type{<:Tuple}))
     return mi, result # and `interp` now holds traced information
 end
 
+function profile_call(f, args...)
+    interp = TPInterpreter()
+    tt = to_tuple_type(typeof.([f, args...]))
+    mi, res = profile!(interp, tt)
+    return interp, mi, res
+end
+
 macro profile_call(ex, kwargs...)
     @assert isexpr(ex, :call) "function call expression should be given"
     f = ex.args[1]
     args = ex.args[2:end]
-    return quote let
-        interp = TPInterpreter()
-        tt = to_tuple_type(typeof.([$(esc(f)), $(map(esc, args)...)]))
-        mi, res = infer_function(interp, tt)
-        interp, mi, res
-    end end
+    return :(profile_call($(esc(f)), $(map(esc, args)...)))
 end
 
 export
-    @profile_call
+    @profile_call, profile_call
 
 end  # module Profiler
