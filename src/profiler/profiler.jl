@@ -58,7 +58,7 @@ macro profile_call(ex, kwargs...)
     args = ex.args[2:end]
     return quote let
         interp = TPInterpreter()
-        tt = to_tuple_type(typeof.([$f, $(args)...]))
+        tt = to_tuple_type(typeof.([$(esc(f)), $(map(esc, args)...)]))
         mi, res = infer_function(interp, tt)
         interp, mi, res
     end end

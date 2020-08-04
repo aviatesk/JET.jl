@@ -1,5 +1,14 @@
 using TypeProfiler
-# using Test
+
+# global ref
+# ----------
+
+foo(a) = return bar(a)
+@profile_call foo(nothing)
+
+
+# old
+# ---
 
 @profile_call sum("julia")
 @profile_call sum([])
