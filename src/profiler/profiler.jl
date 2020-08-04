@@ -16,12 +16,13 @@ import Core.Compiler:
 # TODO: use `using` instead
 # loaded symbols
 import Core:
-    MethodInstance
+    MethodInstance, TypeofBottom
 
 import Core.Compiler:
     AbstractInterpreter, NativeInterpreter, InferenceState, InferenceResult,
-    Bottom, widenconst, ⊑, isconstType, typeintersect, CallMeta, argtypes_to_type, Const,
-    VarTable, AbstractEvalConstant, SSAValue, abstract_eval_ssavalue, Slot, slot_id,
+    Bottom, widenconst, ⊑, isconstType, typeintersect, Builtin, CallMeta, argtypes_to_type,
+    MethodMatchInfo, UnionSplitInfo, MethodLookupResult,
+    Const, VarTable, AbstractEvalConstant, SSAValue, abstract_eval_ssavalue, Slot, slot_id,
     GlobalRef, GotoIfNot,
     _methods_by_ftype, specialize_method, typeinf, to_tuple_type
 

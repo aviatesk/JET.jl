@@ -1,5 +1,6 @@
-# HACK:
-# call down to `NativeInterpreter`'s abstract call method while passing `TPInterpreter`
+# TODO: pass more complex data structures into `add_remark!`, and leave string convertion for error printing part
+
+# HACK: call down to `NativeInterpreter`'s abstract call method while passing `TPInterpreter`
 function invoke_native(f, interp::TPInterpreter, args...; kwargs...)
     argtypes = to_tuple_type((AbstractInterpreter, typeof.(args)...))
     return invoke(f, argtypes, interp, args...; kwargs...)
@@ -16,9 +17,43 @@ function check_global_ref!(interp::TPInterpreter, sv::InferenceState, m::Module,
     end
 end
 
+# returns a call signature string from tt
+function tt_to_signature_str(@nospecialize(tt::Type{<:Tuple}))
+    fn = ft_to_fname(tt.parameters[1])
+    args = join("::" .* string.(tt.parameters[2:end]), ", ")
+    return string(fn, '(', args, ')')
+end
+
+# returns function name from its type
+function ft_to_fname(@nospecialize(ft))
+    return if isconstType(ft)
+        repr(ft.parameters[1])
+    elseif ft isa DataType && isdefined(ft, :instance)
+        repr(ft.instance)
+    else
+        repr(ft)
+    end
+end
+
 # NOTE:
 # below is adapted from https://github.com/JuliaLang/julia/blob/1e6e65691254a7fe81f5da8706bb30aa6cb3f8d2/base/compiler/abstractinterpretation.jl
 # and ideally the patching here is better to be upstreamed as much as possible
+
+function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argtypes::Vector{Any}, @nospecialize(atype), sv::InferenceState,
+                                  max_methods::Int = InferenceParams(interp).MAX_METHODS)
+    ret = invoke_native(abstract_call_gf_by_type, interp, f, argtypes, atype, sv, max_methods)::CallMeta
+    info = ret.info
+
+    if isa(info, MethodMatchInfo) && isa(info.results, MethodLookupResult) && isempty(info.results.matches)
+        # so no method found
+        typeassert(ret.rt, TypeofBottom) # here just for asserting compatibility with native interpreter changes
+        add_remark!(interp, sv, string("no matching method found for signature: ", tt_to_signature_str(atype)))
+    elseif isa(info, UnionSplitInfo)
+        # TODO
+    end
+
+    return ret
+end
 
 function abstract_eval_special_value(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
     ret = invoke_native(abstract_eval_special_value, interp, e, vtypes, sv)

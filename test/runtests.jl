@@ -3,23 +3,32 @@ using TypeProfiler
 # global ref
 # ----------
 
-globalrefcheck1(a) = return foo(a)
-@profile_call globalrefcheck1(0)
+gr1(a) = return foo(a)
+@profile_call gr1(0)
 
-function globalrefcheck2(a)
+function gr2(a)
     @isdefined(b) && return a
 end
-@profile_call globalrefcheck2(0)
+@profile_call gr2(0)
+
 
 # boolean condition check
 # -----------------------
 
-foo(a) = a ? a : nothing
-foo() = (c = rand(Any[1,2,3])) ? c #=c is Any typed=# : nothing
+boolcond(a) = a ? a : nothing
+boolcond() = (c = rand(Any[1,2,3])) ? c #=c is Any typed=# : nothing
 
-@profile_call foo(1) # report
-@profile_call foo(true) # not report
-@profile_call foo() # not report because it's untyped
+@profile_call boolcond(1) # report
+@profile_call boolcond(true) # not report
+@profile_call boolcond() # not report because it's untyped
+
+
+# no method error
+# ---------------
+
+@profile_call sum("julia")
+@profile_call sum(Char[])
+@profile_call sum([]) # TODO: the actual error (i.e. no method for `zero(Any)` is buriled in "Too many methods matched")
 
 # old
 # ---
