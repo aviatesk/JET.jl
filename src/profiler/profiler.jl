@@ -57,16 +57,20 @@ function profile!(interp::TPInterpreter, @nospecialize(tt::Type{<:Tuple}))
     return mi, result # and `interp` now holds traced information
 end
 
+@nospecialize
 # TODO: keyword arguments
 
-profile_call(@nospecialize(f, args...)) =
-    return profile_call(to_tuple_type(typeof.([f, args...])))
+profile_call(f, args...) =
+    return profile_call(to_tuple_type(typeof′.([f, args...])))
 
-function profile_call(@nospecialize(tt::Type{<:Tuple}))
+function profile_call(tt::Type{<:Tuple})
     interp = TPInterpreter()
     mi, res = profile!(interp, tt)
     return interp, mi, res
 end
+
+typeof′(x) = typeof(x)
+typeof′(x::Type{T}) where {T} = Type{T}
 
 macro profile_call(ex)
     @assert isexpr(ex, :call) "function call expression should be given"
@@ -74,6 +78,8 @@ macro profile_call(ex)
     args = ex.args[2:end]
     return :(profile_call($(esc(f)), $(map(esc, args)...)))
 end
+
+@specialize
 
 export
     @profile_call, profile_call
