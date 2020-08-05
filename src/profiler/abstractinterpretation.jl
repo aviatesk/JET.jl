@@ -31,30 +31,40 @@ end
 # returns function name from its type
 function ft_to_fname(@nospecialize(ft))
     return if isconstType(ft)
-        repr(ft.parameters[1])
+        ft.parameters[1]
     elseif ft isa DataType && isdefined(ft, :instance)
-        repr(ft.instance)
+        ft.instance
     else
-        repr(ft)
-    end
+        ft
+    end |> string
 end
 
 # NOTE:
 # below is adapted from https://github.com/JuliaLang/julia/blob/1e6e65691254a7fe81f5da8706bb30aa6cb3f8d2/base/compiler/abstractinterpretation.jl
 # and ideally the patching here is better to be upstreamed as much as possible
 
+# TODO:
+# - report "too many method matched"
+# - maybe "cound not identify method table for call" won't happen since we eagerly propagate bottom for e.g. undef var case, etc.
 function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argtypes::Vector{Any}, @nospecialize(atype), sv::InferenceState,
                                   max_methods::Int = InferenceParams(interp).MAX_METHODS)
     ret = invoke_native(abstract_call_gf_by_type, interp, f, argtypes, atype, sv, max_methods)::CallMeta
 
-    # report no method error
+    # report no method error, notes:
     info = ret.info
-    if isa(info, MethodMatchInfo) && isa(info.results, MethodLookupResult) && isempty(info.results.matches)
-        # so no method found
-        typeassert(ret.rt, TypeofBottom) # return type is initialized as `Bottom`, and should never change in this pass
+    if isa(info, UnionSplitInfo)
+        # if `info` is `UnionSplitInfo`, but there won't be a case where `info.matches` is empty
+        for info in info.matches
+            if isa(info.results, MethodLookupResult) && isempty(info.results.matches)
+                # no method match for this union split
+                # ret.rt = Bottom # maybe we want to be more strict on error cases ? but such a check will be really against the nature of dynamic typing
+                add_remark!(interp, sv, string("for one of the union split cases, no matching method found for signature: ", tt_to_signature_str(atype)))
+            end
+        end
+    elseif isa(info, MethodMatchInfo) && isa(info.results, MethodLookupResult) && isempty(info.results.matches)
+        # really no method found
+        typeassert(ret.rt, TypeofBottom) # return type is initialized as `Bottom`, and should never change in these passes
         add_remark!(interp, sv, string("no matching method found for signature: ", tt_to_signature_str(atype)))
-    elseif isa(info, UnionSplitInfo)
-        # TODO
     end
 
     return ret
