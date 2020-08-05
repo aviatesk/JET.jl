@@ -1,4 +1,16 @@
 using TypeProfiler
+const CC = Core.Compiler
+
+
+# favorite
+# --------
+
+# never ends otherwise
+fib(n) = n ≤ 2 ? n : fib(n-1) + fib(n-2)
+@profile_call fib(100000) # ::Int
+@profile_call fib(100000.) # ::Float64
+@profile_call fib(100000 + 100000im) # report !
+
 
 # undef var
 # ---------
@@ -32,12 +44,3 @@ nonbool() = (c = rand(Any[1,2,3])) ? c #=c is Any typed=# : nothing
 # union splitting
 nomethod_partial(a) = sin(a)
 TypeProfiler.profile_call(Tuple{typeof(nomethod_partial), Union{Int,Char}})
-
-# old
-# ---
-
-fib(n) = n <= 2 ? n : fib(n - 1) + fib(n - 2)
-@profile_call fib(1000) # never ends otherwise
-
-fib′(n) = n <= 2 ? n : fib′′(n - 1) + fib′(n′ - 2)
-@profile_call fib′(1000) # never ends otherwise

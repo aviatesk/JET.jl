@@ -36,7 +36,8 @@ include("tfuncs.jl")
 
 
 function profile!(interp::TPInterpreter, @nospecialize(tt::Type{<:Tuple}))
-    ms = _methods_by_ftype(tt, -1, typemax(UInt))
+    # `get_world_counter` here will always make the method the newest as in REPL
+    ms = _methods_by_ftype(tt, -1, get_world_counter())
     (ms === false || length(ms) != 1) && error("Unable to find single applicable method for $tt")
 
     atypes, sparams, m = ms[1]
@@ -54,7 +55,7 @@ function profile!(interp::TPInterpreter, @nospecialize(tt::Type{<:Tuple}))
     # run type inference on this frame
     typeinf(interp, frame)
 
-    return mi, result # and `interp` now holds traced information
+    return frame, mi, result # and `interp` now holds traced information
 end
 
 @nospecialize
@@ -65,8 +66,7 @@ profile_call(f, args...) =
 
 function profile_call(tt::Type{<:Tuple})
     interp = TPInterpreter()
-    mi, res = profile!(interp, tt)
-    return interp, mi, res
+    return interp, profile!(interp, tt)
 end
 
 typeof′(x) = typeof(x)
