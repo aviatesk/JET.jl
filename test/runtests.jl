@@ -26,7 +26,7 @@ boolcond() = (c = rand(Any[1,2,3])) ? c #=c is Any typed=# : nothing
 
 @profile_call sum("julia")
 @profile_call sum(Char[])
-@profile_call sum([]) # TODO: the actual error (i.e. no method for `zero(Any)` is buriled in "Too many methods matched")
+@profile_call sum([]) # the actual error (i.e. no method for `zero(Any)`) is buriled in the "Too many methods matched" heuristic
 
 # old
 # ---

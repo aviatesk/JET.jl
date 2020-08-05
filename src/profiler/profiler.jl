@@ -8,7 +8,7 @@ import Core.Compiler:
     InferenceParams, OptimizationParams, get_world_counter, get_inference_cache, code_cache,
     lock_mi_inference, unlock_mi_inference, add_remark!, may_optimize, may_compress,
     may_discard_trees,
-    # abstractinterpreter.jl
+    # abstractinterpretation.jl
     abstract_call_gf_by_type, abstract_call_known, abstract_call,
     abstract_eval_special_value, abstract_eval_value_expr, abstract_eval_value,
     abstract_eval_statement
@@ -57,14 +57,18 @@ function profile!(interp::TPInterpreter, @nospecialize(tt::Type{<:Tuple}))
     return mi, result # and `interp` now holds traced information
 end
 
-function profile_call(f, args...)
+# TODO: keyword arguments
+
+profile_call(@nospecialize(f, args...)) =
+    return profile_call(to_tuple_type(typeof.([f, args...])))
+
+function profile_call(@nospecialize(tt::Type{<:Tuple}))
     interp = TPInterpreter()
-    tt = to_tuple_type(typeof.([f, args...]))
     mi, res = profile!(interp, tt)
     return interp, mi, res
 end
 
-macro profile_call(ex, kwargs...)
+macro profile_call(ex)
     @assert isexpr(ex, :call) "function call expression should be given"
     f = ex.args[1]
     args = ex.args[2:end]
