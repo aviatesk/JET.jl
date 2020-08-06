@@ -23,16 +23,19 @@ import Core.Compiler:
     Const, VarTable, SSAValue, abstract_eval_ssavalue, Slot, slot_id, GlobalRef, GotoIfNot,
     _methods_by_ftype, specialize_method, typeinf, to_tuple_type
 
-import Base.Meta:
-    isexpr
+import Base:
+    Meta.isexpr, Iterators.flatten
 
-
+include("errorreport.jl")
 include("abstractinterpreterinterface.jl")
 include("abstractinterpretation.jl")
 include("tfuncs.jl")
+include("print.jl")
 
 
-function profile!(interp::TPInterpreter, @nospecialize(tt::Type{<:Tuple}))
+@nospecialize
+
+function profile!(interp::TPInterpreter, tt::Type{<:Tuple})
     # `get_world_counter` here will always make the method the newest as in REPL
     ms = _methods_by_ftype(tt, -1, get_world_counter())
     (ms === false || length(ms) != 1) && error("Unable to find single applicable method for $tt")
@@ -52,18 +55,15 @@ function profile!(interp::TPInterpreter, @nospecialize(tt::Type{<:Tuple}))
     # run type inference on this frame
     typeinf(interp, frame)
 
-    return frame, mi, result # and `interp` now holds traced information
+    return frame # and `interp` now holds traced information
 end
 
-@nospecialize
 # TODO: keyword arguments
-
-profile_call(f, args...) =
-    return profile_call(to_tuple_type(typeof′.([f, args...])))
-
+profile_call(f, args...) = profile_call(to_tuple_type(typeof′.([f, args...])))
 function profile_call(tt::Type{<:Tuple})
     interp = TPInterpreter()
-    return interp, profile!(interp, tt)
+    frame = profile!(interp, tt)
+    return interp, frame
 end
 
 typeof′(x) = typeof(x)

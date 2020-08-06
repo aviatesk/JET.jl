@@ -1,6 +1,3 @@
-# TODO:
-# - pass more complex data structures into `add_remark!`, and do string convertion when printing error reports
-
 # HACK:
 # calls down to `NativeInterpreter`'s abstract interpretation method while passing `TPInterpreter`
 # so that its overloaded methods can be called within the sub/recursive method callls.
@@ -14,29 +11,11 @@ get_cur_stmt(frame::InferenceState) = frame.src.code[frame.currpc]
 # report undef var error
 function check_global_ref!(interp::TPInterpreter, sv::InferenceState, m::Module, s::Symbol)
     return if !isdefined(m, s)
-        add_remark!(interp, sv, "$(s) not defined in module $(string(m))")
+        add_remark!(interp, sv, UndefVarErrorReport(sv.linfo, m, s))
         true
     else
         false
     end
-end
-
-# returns a call signature string from tt
-function tt_to_signature_str(@nospecialize(tt::Type{<:Tuple}))
-    fn = ft_to_fname(tt.parameters[1])
-    args = join("::" .* string.(tt.parameters[2:end]), ", ")
-    return string(fn, '(', args, ')')
-end
-
-# returns function name from its type
-function ft_to_fname(@nospecialize(ft))
-    return if isconstType(ft)
-        ft.parameters[1]
-    elseif ft isa DataType && isdefined(ft, :instance)
-        ft.instance
-    else
-        ft
-    end |> string
 end
 
 # NOTE:
@@ -58,13 +37,13 @@ function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argty
             if isa(info.results, MethodLookupResult) && isempty(info.results.matches)
                 # no method match for this union split
                 # ret.rt = Bottom # maybe we want to be more strict on error cases ? but such a check will be really against the nature of dynamic typing
-                add_remark!(interp, sv, string("for one of the union split cases, no matching method found for signature: ", tt_to_signature_str(atype)))
+                add_remark!(interp, sv, NoMethodErrorReport(sv.linfo, atype, true))
             end
         end
     elseif isa(info, MethodMatchInfo) && isa(info.results, MethodLookupResult) && isempty(info.results.matches)
         # really no method found
         typeassert(ret.rt, TypeofBottom) # return type is initialized as `Bottom`, and should never change in these passes
-        add_remark!(interp, sv, string("no matching method found for signature: ", tt_to_signature_str(atype)))
+        add_remark!(interp, sv, NoMethodErrorReport(sv.linfo, atype, false))
     end
 
     return ret
@@ -75,7 +54,7 @@ function abstract_eval_special_value(interp::TPInterpreter, @nospecialize(e), vt
 
     # report undef var error
     if isa(e, GlobalRef)
-        check_global_ref!(interp, sv, e.mod, e.name) && (ret = Bottom) # ret here is annotated by `Any` by `NativeInterpreter`, but here I would like to change it to `Bottom`
+        check_global_ref!(interp, sv, e.mod, e.name) && (ret = Bottom) # ret here should annotated as `Any` by `NativeInterpreter`, but here I would like to be more conservative and change it to `Bottom`
     end
 
     return ret
@@ -89,7 +68,7 @@ function abstract_eval_value(interp::TPInterpreter, @nospecialize(e), vtypes::Va
     if isa(stmt, GotoIfNot)
         t = widenconst(ret)
         if !⊑(Bool, Bottom) && !⊑(Bool, t)
-            add_remark!(interp, sv, "non-boolean ($(t)) used in boolean context")
+            add_remark!(interp, sv, NonBooleanCondErrorReport(sv.linfo, t))
             ret = Bottom
         end
     end

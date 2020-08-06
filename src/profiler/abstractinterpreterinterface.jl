@@ -2,26 +2,38 @@
 
 struct TPInterpreter <: AbstractInterpreter
     native::NativeInterpreter
-    remarks::Vector{Tuple{MethodInstance,Int,String}}
+    reports::Vector{ErrorReport}
     optimize::Bool
+    compress::Bool
+    discard_trees::Bool
+
+    function TPInterpreter(world::UInt = get_world_counter();
+                           inf_params::InferenceParams = InferenceParams(),
+                           opt_params::OptimizationParams = OptimizationParams(),
+                           optimize::Bool = false,
+                           compress::Bool = false,
+                           discard_trees::Bool = false
+                           )
+        native = NativeInterpreter(world; inf_params, opt_params)
+        return new(native, [], optimize, compress, discard_trees)
+    end
 end
 
-TPInterpreter(; optimize = false) = TPInterpreter(NativeInterpreter(), [], optimize)
-
-InferenceParams(tpi::TPInterpreter) = InferenceParams(tpi.native)
-OptimizationParams(tpi::TPInterpreter) = OptimizationParams(tpi.native)
-get_world_counter(tpi::TPInterpreter) = get_world_counter(tpi.native)
-get_inference_cache(tpi::TPInterpreter) = get_inference_cache(tpi.native)
-code_cache(tpi::TPInterpreter) = code_cache(tpi.native)
+InferenceParams(interp::TPInterpreter) = InferenceParams(interp.native)
+OptimizationParams(interp::TPInterpreter) = OptimizationParams(interp.native)
+get_world_counter(interp::TPInterpreter) = get_world_counter(interp.native)
+get_inference_cache(interp::TPInterpreter) = get_inference_cache(interp.native)
+code_cache(interp::TPInterpreter) = code_cache(interp.native)
 
 # TP only works for runtime inference
 lock_mi_inference(::TPInterpreter, ::MethodInstance) = nothing
 unlock_mi_inference(::TPInterpreter, ::MethodInstance) = nothing
 
-function add_remark!(tpi::TPInterpreter, sv::InferenceState, remark)
-    push!(tpi.remarks, (sv.linfo, sv.currpc, remark))
+function add_remark!(interp::TPInterpreter, ::InferenceState, report::ErrorReport)
+    push!(interp.reports, report)
+    return
 end
 
-may_optimize(tpi::TPInterpreter) = tpi.optimize
-may_compress(::TPInterpreter) = false
-may_discard_trees(::TPInterpreter) = false
+may_optimize(interp::TPInterpreter) = interp.optimize
+may_compress(interp::TPInterpreter) = interp.compress
+may_discard_trees(interp::TPInterpreter) = interp.discard_trees
