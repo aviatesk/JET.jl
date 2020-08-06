@@ -24,7 +24,7 @@ import Core.Compiler:
     _methods_by_ftype, specialize_method, typeinf, to_tuple_type
 
 import Base:
-    Meta.isexpr, Iterators.flatten
+    Iterators.flatten
 
 include("errorreport.jl")
 include("abstractinterpreterinterface.jl")
@@ -69,16 +69,6 @@ end
 typeof′(x) = typeof(x)
 typeof′(x::Type{T}) where {T} = Type{T}
 
-macro profile_call(ex)
-    @assert isexpr(ex, :call) "function call expression should be given"
-    f = ex.args[1]
-    args = ex.args[2:end]
-    return :(profile_call($(esc(f)), $(map(esc, args)...)))
-end
-
 @specialize
-
-export
-    @profile_call, profile_call
 
 end  # module Profiler
