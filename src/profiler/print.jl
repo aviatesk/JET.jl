@@ -5,25 +5,29 @@
 # entry methods
 # -------------
 
-print_reports(io::IO, interp::TPInterpreter, frame::InferenceState; kwargs...) =
-    print_reports(io, interp.reports, frame; kwargs...)
+function print_reports(io::IO, interp::TPInterpreter; kwargs...)
+    print_reports(io, interp.reports; kwargs...)
+    return
+end
 
-function print_reports(io::IO, reports::Vector{<:ErrorReport}, frame::InferenceState;
-                       view::Symbol = :inline)
-    isempty(reports) && return printstyled(io, "No errors !\n"; color = NOERROR_COLOR)
+function print_reports(io::IO, reports::Vector{<:ErrorReport}; view::Symbol = :inline)
+    if isempty(reports)
+        printstyled(io, "No errors !\n"; color = NOERROR_COLOR)
+        return
+    end
 
     if view === :inline
-        printstyled(io, length(reports), " errors found\n"; color = ERROR_COLOR)
+        printstyled(io, string(pluralize(length(reports), "error"), " found", '\n'); color = ERROR_COLOR)
         wrote_linfos = Set{UInt64}()
         foreach(reports) do report
-            print_report(io, report, frame, wrote_linfos)
+            print_report(io, report, wrote_linfos)
         end
     elseif view === :separate
-        for report in reports
+        foreach(reports) do report
             print(io, "Error: ")
             printstyled(io, report_string(report), '\n'; color = ERROR_COLOR)
             println(io, "Calltrace:")
-            print_report(io, report, frame)
+            print_report(io, report)
         end
     else
         error("keyword argument `view` should either of :inline or :separate")
@@ -34,8 +38,8 @@ end
 
 print_reports(args...; kwargs...) = print_reports(stdout, args...; kwargs...)
 
-function print_report(io, report, frame, wrote_linfos = Set{UInt64}())
-    depth = print_calltrace(io, report.linfo, frame, wrote_linfos)
+function print_report(io, report, wrote_linfos = Set{UInt64}())
+    depth = print_calltrace(io, report.linfo, wrote_linfos)
     print_rails(io, depth - 1)
     printstyled(io, "│ ", report_string(report), '\n'; color = ERROR_COLOR)
     print_rails(io, depth - 1)
@@ -46,28 +50,56 @@ end
 # traverse backedges, collect locations
 # -------------------------------------
 
-function print_calltrace(io, linfo, frame, wrote_linfos)
-    root_lins = Set(flatten(filter(!isnothing, frame.stmt_edges)))
-    return _print_calltrace(io, linfo, linfo, wrote_linfos, root_lins)
-end
+print_calltrace(io, linfo, wrote_linfos) =
+    return _print_calltrace(io, linfo, linfo, wrote_linfos)
 
-function _print_calltrace(io, linfo, err_linfo, wrote_linfos, root_lins)
+function _print_calltrace(io, linfo, err_linfo, wrote_linfos)
     linfo_hash = hash(linfo)
     (should_print = linfo_hash ∉ wrote_linfos) && push!(wrote_linfos, linfo_hash)
     is_err = linfo == err_linfo
 
-    if linfo in root_lins
+    if !isdefined(linfo, :backedges) # root here
         should_print && print_location(io, linfo, 0, is_err)
         return 1
     end
 
-    @assert length(linfo.backedges) === 1
-    prev_linfo = first(linfo.backedges)
+    prev_linfo = get_latest_backedge!(linfo)
 
     # prewalk
-    depth = _print_calltrace(io, prev_linfo, err_linfo, wrote_linfos, root_lins)
+    depth = _print_calltrace(io, prev_linfo, err_linfo, wrote_linfos)
     should_print && print_location(io, linfo, depth, is_err)
     return depth + 1
+end
+
+function get_latest_backedge!(linfo)
+    isempty(linfo.backedges) && begin
+        @eval Main linfo = $linfo # for debugging
+        throw(ErrorException("no backedges found: $(linfo)"))
+    end
+
+    return if length(linfo.backedges) !== 1
+        # XXX:
+        # there may be cases when there're multiple backedges with different signatures ?
+        # such a case should be problematic and reported for inspection
+        unique(linfo.backedges) do backedge
+            backedge.def.sig
+        end |> length === 1 || begin
+            @eval Main linfo = $linfo # for debugging
+            ErrorException("multiple backedges with different signatures found: $(linfo.backedges)")
+        end |> throw
+
+        # we're here when profiled method defined multiple time with the same signature,
+        # and this can happen so often in an interactive session like REPL,
+        # let's just get the latest definion
+        msg = "more than one backedge found for: $(linfo.backedges)"
+        isinteractive() ? @debug(msg) : @warn(msg)
+
+        sort(linfo.backedges;
+             by = backedge -> backedge.def.primary_world,
+             rev = true)
+    else
+        linfo.backedges
+    end |> first
 end
 
 function print_location(io, linfo, depth, is_err)
@@ -84,7 +116,7 @@ function print_location(io, linfo, depth, is_err)
     source_line = if isfile(path)
         strip(readlines(path)[line])
     else
-        string("within `", linfo.def, ''') # when the file doesn't exist, e.g. REPL
+        string("within `", linfo.def, ''') # when the file doesn't exist, e.g. defined in REPL
     end
     println(io, ' ', source_line)
 
@@ -97,6 +129,9 @@ end
 const ERROR_COLOR = :light_red
 const NOERROR_COLOR = :light_green
 const RAIL_COLORS = [:bold, :light_cyan, :light_green, :light_yellow]
+
+pluralize(n::Integer, one::AbstractString, more::AbstractString = string(one, 's')) =
+    return string(n, ' ', isone(n) ? one : more)
 
 function print_rails(io, depth)
     n = length(RAIL_COLORS)

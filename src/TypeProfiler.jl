@@ -12,7 +12,7 @@ macro profile_call(ex)
 
     quote let
         interp, frame = Profiler.profile_call($(esc(f)), $(map(esc, args)...))
-        Profiler.print_reports(interp, frame)
+        Profiler.print_reports(interp)
         frame.result.result
     end end
 end
