@@ -1,7 +1,5 @@
 module Profiler
 
-const CC = Core.Compiler
-
 # overloads
 import Core.Compiler:
     # `AbstractInterpreter` API defined in abstractinterpreterinterface.jl
@@ -22,8 +20,7 @@ import Core.Compiler:
     AbstractInterpreter, NativeInterpreter, InferenceState, InferenceResult,
     Bottom, widenconst, ⊑, isconstType, typeintersect, Builtin, CallMeta, argtypes_to_type,
     MethodMatchInfo, UnionSplitInfo, MethodLookupResult,
-    Const, VarTable, AbstractEvalConstant, SSAValue, abstract_eval_ssavalue, Slot, slot_id,
-    GlobalRef, GotoIfNot,
+    Const, VarTable, SSAValue, abstract_eval_ssavalue, Slot, slot_id, GlobalRef, GotoIfNot,
     _methods_by_ftype, specialize_method, typeinf, to_tuple_type
 
 import Base.Meta:
