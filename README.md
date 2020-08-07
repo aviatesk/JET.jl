@@ -2,6 +2,10 @@
 
 TypeProfiler.jl employs Julia's type inference for bug reports.
 
+!!! note
+    TypeProfiler.jl needs Julia v1.6, especially [this commit](https://github.com/JuliaLang/julia/commit/d5cf73ffffbab40ae06cc1ec99cac9d8e3d2b6a2);
+    as such I recommend you give a try on this package with Julia built from source after the commit.
+
 ```julia
 julia> using TypeProfiler
 
@@ -50,36 +54,82 @@ julia> @profile_call sum("julia")
 │││││││││││││││ no matching method found for signature: zero(::Type{Char})
 ││││││││││││││└
  Char
+
+julia> ary = Union{Symbol,Int}[:one, 1]
+
+julia> @profile_call sum(ary) # can profile on abstract-typed inputs
+14 errors found
+┌ @ reducedim.jl:867 @inline ($fname)(a::AbstractArray; dims=:, kw...) = ($_fname)(a, dims; kw...)
+│┌ @ reducedim.jl:867 @inline ($fname)(a::AbstractArray; dims=:, kw...) = ($_fname)(a, dims; kw...)
+││┌ @ reducedim.jl:871 ($_fname)(a, ::Colon; kw...) = ($_fname)(identity, a, :; kw...)
+│││┌ @ reducedim.jl:871 ($_fname)(a, ::Colon; kw...) = ($_fname)(identity, a, :; kw...)
+││││┌ @ reducedim.jl:872 ($_fname)(f, a, ::Colon; kw...) = mapreduce(f, $op, a; kw...)
+│││││┌ @ reducedim.jl:872 ($_fname)(f, a, ::Colon; kw...) = mapreduce(f, $op, a; kw...)
+││││││┌ @ reducedim.jl:310 mapreduce(f, op, A::AbstractArrayOrBroadcasted; dims=:, init=_InitialValue()) =
+│││││││┌ @ reducedim.jl:310 mapreduce(f, op, A::AbstractArrayOrBroadcasted; dims=:, init=_InitialValue()) =
+││││││││┌ @ reducedim.jl:318 _mapreduce_dim(f, op, ::_InitialValue, A::AbstractArrayOrBroadcasted, ::Colon) =
+│││││││││┌ @ reduce.jl:396 function _mapreduce(f, op, ::IndexLinear, A::AbstractArrayOrBroadcasted)
+││││││││││┌ @ reduce.jl:351 mapreduce_empty_iter(f, op, itr, ItrEltype) =
+│││││││││││┌ @ reduce.jl:355 @inline reduce_empty_iter(op, itr, ::HasEltype) = reduce_empty(op, eltype(itr))
+││││││││││││┌ @ reduce.jl:329 reduce_empty(op::MappingRF, ::Type{T}) where {T} = mapreduce_empty(op.f, op.rf, T)
+│││││││││││││┌ @ reduce.jl:343 mapreduce_empty(::typeof(identity), op, T) = reduce_empty(op, T)
+││││││││││││││┌ @ reduce.jl:320 reduce_empty(::typeof(add_sum), ::Type{T}) where {T} = reduce_empty(+, T)
+│││││││││││││││┌ @ reduce.jl:311 reduce_empty(::typeof(+), ::Type{T}) where {T} = zero(T)
+││││││││││││││││ no matching method found for signature: zero(::Type{Union{Int64, Symbol}})
+│││││││││││││││└
+││││││││││┌ @ reduce.jl:24 add_sum(x, y) = x + y
+│││││││││││ no matching method found for signature: +(::Symbol, ::Int64)
+││││││││││└
+││││││││││┌ @ reduce.jl:24 add_sum(x, y) = x + y
+│││││││││││ no matching method found for signature: +(::Int64, ::Symbol)
+││││││││││└
+││││││││││┌ @ reduce.jl:24 add_sum(x, y) = x + y
+│││││││││││ no matching method found for signature: +(::Symbol, ::Symbol)
+││││││││││└
+││││││││││┌ @ reduce.jl:24 add_sum(x, y) = x + y
+│││││││││││ no matching method found for signature: +(::Int64, ::Symbol)
+││││││││││└
+││││││││││┌ @ reduce.jl:24 add_sum(x, y) = x + y
+│││││││││││ no matching method found for signature: +(::Int64, ::Symbol)
+││││││││││└
+││││││││││┌ @ reduce.jl:257 mapreduce_impl(f, op, A::AbstractArrayOrBroadcasted, ifirst::Integer, ilast::Integer) =
+│││││││││││┌ @ reduce.jl:233 @noinline function mapreduce_impl(f, op, A::AbstractArrayOrBroadcasted,
+││││││││││││┌ @ reduce.jl:24 add_sum(x, y) = x + y
+│││││││││││││ no matching method found for signature: +(::Symbol, ::Int64)
+││││││││││││└
+││││││││││││┌ @ reduce.jl:24 add_sum(x, y) = x + y
+│││││││││││││ no matching method found for signature: +(::Int64, ::Symbol)
+││││││││││││└
+││││││││││││┌ @ reduce.jl:24 add_sum(x, y) = x + y
+│││││││││││││ no matching method found for signature: +(::Symbol, ::Symbol)
+││││││││││││└
+││││││││││││┌ @ reduce.jl:24 add_sum(x, y) = x + y
+│││││││││││││ no matching method found for signature: +(::Int64, ::Symbol)
+││││││││││││└
+││││││││││││┌ @ reduce.jl:24 add_sum(x, y) = x + y
+│││││││││││││ no matching method found for signature: +(::Int64, ::Symbol)
+││││││││││││└
+││││││││││││┌ @ reduce.jl:24 add_sum(x, y) = x + y
+│││││││││││││ no matching method found for signature: +(::Symbol, ::Int64)
+││││││││││││└
+││││││││││││┌ @ reduce.jl:24 add_sum(x, y) = x + y
+│││││││││││││ no matching method found for signature: +(::Int64, ::Symbol)
+││││││││││││└
+││││││││││││┌ @ reduce.jl:24 add_sum(x, y) = x + y
+│││││││││││││ no matching method found for signature: +(::Symbol, ::Symbol)
+││││││││││││└
+ Union{Int64, Symbol}
 ```
 
 ### TODOs
 
 in order of priority:
-
-- [x] show profiled results
-- [x] escape recursive calls
-- [ ] bug fixes: `TypeVar` etc. can serious errors within the current implementation
-- [ ] toplevel executions
-  - handle untyped IRs while splitting expressions as JuliaIntepreter.jl does
-  - then, TP will be able to profile a file directly like an usual static linter
-- [ ] more reports
-  - [ ] `UndefVarError`
-    - [x] report `GlobalRef` for really undefined variable
-    - report `:throw_undef_if_not` ? (includes lots of false positives as is)
-  - [ ] method ambiguity error
-  - more and more ...
-- [ ] don't trace into "primitive" functions in `Core` and `Base`: with the similar approach to https://github.com/FluxML/Mjolnir.jl/tree/9435d98673752cec4e222e31a6b9f38edcd7d5e0/src/lib
-- [ ] balance between Julia's inference approach and error profiling
+- setup a type-level virtual machine and enable profiling on toplevel code
+- more reports
+  * invalid built-in function calls
+  * report some cases of `throw`, e.g. `rand('1')::ArgumentError("Sampler for this object is not defined")`
+- balance between Julia's inference approach and error profiling ?
   - Julia's type inference allows abstract type (like `Any`) to slip into the inference process by various heuristics, in order to ensure its termination and obtain the performance
-  - but this is obviously unideal for TP, since our basic stance is _"better safe than sorry"_, meaning ideally we want to find all the possible errors while revealing some uncertainty Julia's inference accepts
-  - nevertheless, as far as TP relies on the Julia's inference, we need to achieve the conservative error profiling in the existence of abstract types, _somehow_
-  - as a consequence, TP will be able to profile, e.g.:
-    - [ ] `print`
-    - [ ] `sort`
-- [ ] support generated functions
-- [ ] replace `Core` types: enables profiling things in `Core.Compiler` module
-
-### Ideas
-
-- report performance pitfalls
-- somehow profiles possible exceptions ?
+  - but this is somewhat unideal in the context of bug reports, since the stance would be _"better safe than sorry"_, meaning we ideally want to find all the possible errors while revealing some uncertainty Julia's inference accepts
+- maybe we need some additional setup for supporting generated functions
+- report performance pitfalls ?

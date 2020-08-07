@@ -1,3 +1,4 @@
+@doc read(normpath(dirname(@__DIR__), "README.md"), String)
 module TypeProfiler
 
 include("profiler/profiler.jl")
