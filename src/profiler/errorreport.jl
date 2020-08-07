@@ -35,15 +35,18 @@ struct NonBooleanCondErrorReport <: ErrorReport
     t::Type
 end
 
-@specialize
+"""
+    NativeRemark <: ErrorReport
 
-# function Base.show(io::IO, report::T) where {T<:ErrorReport}
-#     fs = filter(n -> n ∉ (:frame, :lin), collect(fieldnames(T)))
-#     cs = [getfield(report, f) for f in fs]
-#     c = join(string.(cs), ", ")
-#     s = string(typeof(report).name.name, '(', c, ')')
-#     print(io, s, " [", report.frame, ']')
-# end
+This special `ErrorReport` is just for wrapping remarks from `NativeInterpreter`.
+Ideally all of them should be covered by the other "real" `ErrorReport`s.
+"""
+struct NativeRemark <: ErrorReport
+    linfo::MethodInstance
+    s::String
+end
+
+@specialize
 
 # report string
 # -------------
@@ -59,6 +62,7 @@ report_string(er::UndefVarErrorReport) =
     "variable $(er.mod).$(er.name) is not defined"
 report_string(er::NonBooleanCondErrorReport) =
     "non-boolean ($(er.t)) used in boolean context"
+report_string(r::NativeRemark) = r.s
 
 # returns a call signature string from tt
 function tt_to_signature_str(@nospecialize(tt::Type{<:Tuple}))

@@ -10,14 +10,21 @@ function print_reports(io::IO, interp::TPInterpreter; kwargs...)
     return
 end
 
-function print_reports(io::IO, reports::Vector{<:ErrorReport}; view::Symbol = :inline)
+function print_reports(io::IO, reports::Vector{<:ErrorReport};
+                       view::Symbol = :inline,
+                       filter_native_remarks::Bool = true)
+    if filter_native_remarks
+        reports = filter(r->!isa(r, NativeRemark), reports)
+    end
+
     if isempty(reports)
         printstyled(io, "No errors !\n"; color = NOERROR_COLOR)
         return
     end
 
     if view === :inline
-        printstyled(io, string(pluralize(length(reports), "error"), " found", '\n'); color = ERROR_COLOR)
+        s = string(pluralize(length(reports), "error"), " found")
+        printstyled(io, s, '\n'; color = ERROR_COLOR)
         wrote_linfos = Set{UInt64}()
         foreach(reports) do report
             print_report(io, report, wrote_linfos)
@@ -25,7 +32,8 @@ function print_reports(io::IO, reports::Vector{<:ErrorReport}; view::Symbol = :i
     elseif view === :separate
         foreach(reports) do report
             print(io, "Error: ")
-            printstyled(io, report_string(report), '\n'; color = ERROR_COLOR)
+            s = report_string(report)
+            printstyled(io, s, '\n'; color = ERROR_COLOR)
             println(io, "Calltrace:")
             print_report(io, report)
         end
@@ -71,22 +79,25 @@ function _print_calltrace(io, linfo, err_linfo, wrote_linfos)
     return depth + 1
 end
 
+# FIXME:
+# this backedge traverse is fragile and doesn't work in cases when trying to show `NativeRemark`s,
+# e.g. `@profile_call sum([])`
 function get_latest_backedge!(linfo)
-    isempty(linfo.backedges) && begin
-        @eval Main linfo = $linfo # for debugging
-        throw(ErrorException("no backedges found: $(linfo)"))
+    if isempty(linfo.backedges)
+        @error "no backedges found for this linfo"
+        throw(linfo)
     end
 
-    return if length(linfo.backedges) !== 1
+    ret = if length(linfo.backedges) !== 1
         # XXX:
         # there may be cases when there're multiple backedges with different signatures ?
         # such a case should be problematic and reported for inspection
         unique(linfo.backedges) do backedge
             backedge.def.sig
         end |> length === 1 || begin
-            @eval Main linfo = $linfo # for debugging
-            ErrorException("multiple backedges with different signatures found: $(linfo.backedges)")
-        end |> throw
+            @error "multiple backedges with different signatures found for this linfo"
+            throw(linfo)
+        end
 
         # we're here when profiled method defined multiple time with the same signature,
         # and this can happen so often in an interactive session like REPL,
@@ -100,6 +111,13 @@ function get_latest_backedge!(linfo)
     else
         linfo.backedges
     end |> first
+
+    if linfo == ret
+        @error "recursive backedge detected"
+        throw(linfo)
+    end
+
+    return ret
 end
 
 function print_location(io, linfo, depth, is_err)

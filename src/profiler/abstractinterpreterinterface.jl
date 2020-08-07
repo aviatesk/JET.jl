@@ -33,6 +33,10 @@ function add_remark!(interp::TPInterpreter, ::InferenceState, report::ErrorRepor
     push!(interp.reports, report)
     return
 end
+function add_remark!(interp::TPInterpreter, sv::InferenceState, s::String)
+    add_remark!(interp, sv, NativeRemark(sv.linfo, s))
+    return
+end
 
 may_optimize(interp::TPInterpreter) = interp.optimize
 may_compress(interp::TPInterpreter) = interp.compress
