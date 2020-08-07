@@ -47,10 +47,11 @@ end
 print_reports(args...; kwargs...) = print_reports(stdout, args...; kwargs...)
 
 function print_report(io, report, wrote_linfos = Set{UInt64}())
-    depth = print_calltrace(io, report.linfo, wrote_linfos)
-    print_rails(io, depth - 1)
+    print_calltrace(io, report.acs, wrote_linfos)
+    n = length(report.acs) - 1
+    print_rails(io, n)
     printstyled(io, "│ ", report_string(report), '\n'; color = ERROR_COLOR)
-    print_rails(io, depth - 1)
+    print_rails(io, n)
     printstyled(io, '└', '\n'; color = ERROR_COLOR)
     return
 end
@@ -58,66 +59,23 @@ end
 # traverse backedges, collect locations
 # -------------------------------------
 
-print_calltrace(io, linfo, wrote_linfos) =
-    return _print_calltrace(io, linfo, linfo, wrote_linfos)
+function print_calltrace(io, linfos, wrote_linfos, depth = 0)
+    i = depth + 1
+    linfo = linfos[i]
 
-function _print_calltrace(io, linfo, err_linfo, wrote_linfos)
     linfo_hash = hash(linfo)
-    (should_print = linfo_hash ∉ wrote_linfos) && push!(wrote_linfos, linfo_hash)
-    is_err = linfo == err_linfo
+    should_print = linfo_hash ∉ wrote_linfos
+    push!(wrote_linfos, linfo_hash)
 
-    if !isdefined(linfo, :backedges) # root here
-        should_print && print_location(io, linfo, 0, is_err)
-        return 1
+    if length(linfos) == i # error here
+        print_location(io, linfo, depth, true)
+        return
     end
 
-    prev_linfo = get_latest_backedge!(linfo)
-
-    # prewalk
-    depth = _print_calltrace(io, prev_linfo, err_linfo, wrote_linfos)
-    should_print && print_location(io, linfo, depth, is_err)
-    return depth + 1
-end
-
-# FIXME:
-# this backedge traverse is fragile and doesn't work in cases when trying to show `NativeRemark`s,
-# e.g. `@profile_call sum([])`
-function get_latest_backedge!(linfo)
-    if isempty(linfo.backedges)
-        @error "no backedges found for this linfo"
-        throw(linfo)
-    end
-
-    ret = if length(linfo.backedges) !== 1
-        # XXX:
-        # there may be cases when there're multiple backedges with different signatures ?
-        # such a case should be problematic and reported for inspection
-        unique(linfo.backedges) do backedge
-            backedge.def.sig
-        end |> length === 1 || begin
-            @error "multiple backedges with different signatures found for this linfo"
-            throw(linfo)
-        end
-
-        # we're here when profiled method defined multiple time with the same signature,
-        # and this can happen so often in an interactive session like REPL,
-        # let's just get the latest definion
-        msg = "more than one backedge found for: $(linfo.backedges)"
-        isinteractive() ? @debug(msg) : @warn(msg)
-
-        sort(linfo.backedges;
-             by = backedge -> backedge.def.primary_world,
-             rev = true)
-    else
-        linfo.backedges
-    end |> first
-
-    if linfo == ret
-        @error "recursive backedge detected"
-        throw(linfo)
-    end
-
-    return ret
+    # print current frame adn go into deeper
+    should_print && print_location(io, linfo, depth, false)
+    print_calltrace(io, linfos, wrote_linfos, depth + 1)
+    return
 end
 
 function print_location(io, linfo, depth, is_err)

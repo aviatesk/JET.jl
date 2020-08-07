@@ -11,7 +11,7 @@ get_cur_stmt(frame::InferenceState) = frame.src.code[frame.currpc]
 # report undef var error
 function check_global_ref!(interp::TPInterpreter, sv::InferenceState, m::Module, s::Symbol)
     return if !isdefined(m, s)
-        add_remark!(interp, sv, UndefVarErrorReport(sv.linfo, m, s))
+        add_remark!(interp, sv, UndefVarErrorReport(sv, m, s))
         true
     else
         false
@@ -37,13 +37,13 @@ function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argty
             if isa(info.results, MethodLookupResult) && isempty(info.results.matches)
                 # no method match for this union split
                 # ret.rt = Bottom # maybe we want to be more strict on error cases ? but such a check will be really against the nature of dynamic typing
-                add_remark!(interp, sv, NoMethodErrorReport(sv.linfo, atype, true))
+                add_remark!(interp, sv, NoMethodErrorReport(sv, atype, true))
             end
         end
     elseif isa(info, MethodMatchInfo) && isa(info.results, MethodLookupResult) && isempty(info.results.matches)
         # really no method found
         typeassert(ret.rt, TypeofBottom) # return type is initialized as `Bottom`, and should never change in these passes
-        add_remark!(interp, sv, NoMethodErrorReport(sv.linfo, atype, false))
+        add_remark!(interp, sv, NoMethodErrorReport(sv, atype, false))
     end
 
     return ret
@@ -68,7 +68,7 @@ function abstract_eval_value(interp::TPInterpreter, @nospecialize(e), vtypes::Va
     if isa(stmt, GotoIfNot)
         t = widenconst(ret)
         if !⊑(Bool, Bottom) && !⊑(Bool, t)
-            add_remark!(interp, sv, NonBooleanCondErrorReport(sv.linfo, t))
+            add_remark!(interp, sv, NonBooleanCondErrorReport(sv, t))
             ret = Bottom
         end
     end

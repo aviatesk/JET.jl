@@ -1,37 +1,71 @@
 # error reports
 # -------------
 
-@nospecialize
-
 """
     abstract type ErrorReport end
 
 Abstract type of all the error reports that TypeProfiler.jl states.
 All `ErrorReport`s are required to:
-- have `linfo::MethodInstance` field -- keeps its location
-- provides `report_string` method -- converts this `ErrorReport` into readable text
+- have `acs::Vector{MethodInstance}` field -- keeps abstract call stack of this error (from call site to error location)
+- provide `report_string` method -- converts this `ErrorReport` into readable text
+
+!!! note
+    All concrete `ErrorReport` types are supposed to be declared with `@reportdef` macro.
 """
 abstract type ErrorReport end
 
-struct NoMethodErrorReport <: ErrorReport
-    linfo::MethodInstance
+const AbstractCallStack = Vector{MethodInstance}
+
+macro reportdef(structex)
+    @assert isexpr(structex, :struct, 3) "struct expression should be given"
+    typedecl, body = structex.args[2:3]
+    @assert isexpr(typedecl, :<:, 2) && __module__.eval(last(typedecl.args)) <: ErrorReport "error report should be declared as subtype of ErrorReport"
+    T = first(typedecl.args)
+
+    flds = filter(x->!isa(x, LineNumberNode), body.args)
+    @assert first(flds) == :(acs::AbstractCallStack) "the first field of error report should be `acs::AbstractCallStack`"
+
+    sigs = map(flds[2:end]) do x
+        isexpr(x, :(::)) ? first(x.args) : x
+    end
+    constructor = :(
+        function $(T)(sv::InferenceState, $(sigs...))
+            @nospecialize $(sigs...)
+            acs = trace_abstract_call_stack!(sv)
+            return new(acs, $(sigs...))
+        end
+    )
+    push!(body.args, constructor)
+
+    return structex
+end
+
+# traces the current abstract call stack
+function trace_abstract_call_stack!(sv, acs = MethodInstance[])
+    isnothing(sv.parent) || trace_abstract_call_stack!(sv.parent, acs) # prewalk
+    push!(acs, sv.linfo)
+    return acs
+end
+
+@reportdef struct NoMethodErrorReport <: ErrorReport
+    acs::AbstractCallStack
     tt::Type
     unionsplit::Bool
 end
 
-struct InvalidBuiltinCallErrorReport <: ErrorReport
-    linfo::MethodInstance
+@reportdef struct InvalidBuiltinCallErrorReport <: ErrorReport
+    acs::AbstractCallStack
     tt::Type
 end
 
-struct UndefVarErrorReport <: ErrorReport
-    linfo::MethodInstance
+@reportdef struct UndefVarErrorReport <: ErrorReport
+    acs::AbstractCallStack
     mod::Module
     name::Symbol
 end
 
-struct NonBooleanCondErrorReport <: ErrorReport
-    linfo::MethodInstance
+@reportdef struct NonBooleanCondErrorReport <: ErrorReport
+    acs::AbstractCallStack
     t::Type
 end
 
@@ -41,12 +75,10 @@ end
 This special `ErrorReport` is just for wrapping remarks from `NativeInterpreter`.
 Ideally all of them should be covered by the other "real" `ErrorReport`s.
 """
-struct NativeRemark <: ErrorReport
-    linfo::MethodInstance
+@reportdef struct NativeRemark <: ErrorReport
+    acs::AbstractCallStack
     s::String
 end
-
-@specialize
 
 # report string
 # -------------

@@ -24,7 +24,7 @@ import Core.Compiler:
     _methods_by_ftype, specialize_method, typeinf, to_tuple_type
 
 import Base:
-    Iterators.flatten
+    Meta.isexpr, Iterators.flatten
 
 include("errorreport.jl")
 include("abstractinterpreterinterface.jl")

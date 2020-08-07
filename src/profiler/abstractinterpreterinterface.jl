@@ -34,7 +34,7 @@ function add_remark!(interp::TPInterpreter, ::InferenceState, report::ErrorRepor
     return
 end
 function add_remark!(interp::TPInterpreter, sv::InferenceState, s::String)
-    add_remark!(interp, sv, NativeRemark(sv.linfo, s))
+    add_remark!(interp, sv, NativeRemark(sv, s))
     return
 end
 
