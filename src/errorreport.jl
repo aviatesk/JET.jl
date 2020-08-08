@@ -1,21 +1,36 @@
 # error reports
 # -------------
 
-"""
-    abstract type ErrorReport end
-
-Abstract type of all the error reports that TypeProfiler.jl states.
-All `ErrorReport`s are required to:
-- have `acs::Vector{MethodInstance}` field -- keeps abstract call stack of this error (from call site to error location)
-- provide `report_string` method -- converts this `ErrorReport` into readable text
-
-!!! note
-    All concrete `ErrorReport` types are supposed to be declared with `@reportdef` macro.
-"""
 abstract type ErrorReport end
 
 const AbstractCallStack = Vector{MethodInstance}
 
+"""
+    abstract type ErrorReport end
+    const AbstractCallStack = Vector{MethodInstance}
+
+Abstract type of all the error reports that TypeProfiler.jl states.
+All `ErrorReport`s are required to:
+- have `acs::AbstractCallStack` field -- keeps abstract call stack of this error
+  (from call site to error location), which can be collected by "tracking up"
+  the `InferenceState` chain.
+- provide `report_string` method -- converts this `ErrorReport` into readable text.
+
+!!! note
+    All concrete `ErrorReport` are supposed to be declared via [`@reportdef`](@ref) macro.
+"""
+ErrorReport, AbstractCallStack
+
+"""
+    @reportdef struct SomeErrorReport <: ErrorReport
+        acs::AbstractCallStack
+        ...
+    end
+
+Asserts necessary a declaration of concrete `ErrorReport` structs, and adds its inner
+  constructor that accepts `sv::InferenceState` as a first argument and collect
+  `AbstractCallStack` from it.
+"""
 macro reportdef(structex)
     @assert isexpr(structex, :struct, 3) "struct expression should be given"
     typedecl, body = structex.args[2:3]
@@ -25,14 +40,16 @@ macro reportdef(structex)
     flds = filter(x->!isa(x, LineNumberNode), body.args)
     @assert first(flds) == :(acs::AbstractCallStack) "the first field of error report should be `acs::AbstractCallStack`"
 
-    sigs = map(flds[2:end]) do x
-        isexpr(x, :(::)) ? first(x.args) : x
-    end
+    args = flds[2:end]
+    sigs = _get_sig.(args)
+    nospecialize_sigs = sigs[findall(_should_not_specialize, args)]
+    nospecialize_ex = isempty(nospecialize_sigs) ? quote end : :(@nospecialize $(nospecialize_sigs...))
     constructor = :(
-        function $(T)(sv::InferenceState, $(sigs...))
-            @nospecialize $(sigs...)
-            acs = trace_abstract_call_stack!(sv)
-            return new(acs, $(sigs...))
+        # we give up hygiene here because `@nospecialize` only works on escaped signatures
+        function $(T)(sv::InferenceState, $(map(esc, sigs)...))
+            $(nospecialize_ex)
+            acs = _track_abstract_call_stack!(sv)
+            return new(acs, $(map(esc, sigs)...))
         end
     )
     push!(body.args, constructor)
@@ -40,9 +57,12 @@ macro reportdef(structex)
     return structex
 end
 
+_get_sig(x) = isexpr(x, :(::)) ? first(x.args) : x
+_should_not_specialize(x) = isexpr(x, :(::)) && last(x.args) in (:Type, :Function)
+
 # traces the current abstract call stack
-function trace_abstract_call_stack!(sv, acs = MethodInstance[])
-    isnothing(sv.parent) || trace_abstract_call_stack!(sv.parent, acs) # prewalk
+function _track_abstract_call_stack!(sv, acs = MethodInstance[])
+    isnothing(sv.parent) || _track_abstract_call_stack!(sv.parent, acs) # prewalk
     push!(acs, sv.linfo)
     return acs
 end

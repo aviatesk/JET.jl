@@ -5,7 +5,7 @@
 # entry methods
 # -------------
 
-function print_reports(io::IO, interp::TPInterpreter; kwargs...)
+function print_reports(io::IO, interp::Profiler.TPInterpreter; kwargs...)
     print_reports(io, interp.reports; kwargs...)
     return
 end

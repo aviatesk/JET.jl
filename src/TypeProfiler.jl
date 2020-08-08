@@ -1,10 +1,21 @@
 @doc read(normpath(dirname(@__DIR__), "README.md"), String)
 module TypeProfiler
 
-include("profiler/profiler.jl")
+using Core:
+    MethodInstance
+
+using Core.Compiler:
+    InferenceState, isconstType
 
 using Base:
-    Meta.isexpr
+    Meta.isexpr, to_tuple_type
+
+include("errorreport.jl")
+include("profiler/profiler.jl")
+include("virtualmachine/virtualmachine.jl")
+include("print.jl")
+
+using ..Profiler
 
 macro profile_call(ex, kwargs...)
     @assert isexpr(ex, :call) "function call expression should be given"
@@ -12,11 +23,25 @@ macro profile_call(ex, kwargs...)
     args = ex.args[2:end]
 
     quote let
-        interp, frame = Profiler.profile_call($(esc(f)), $(map(esc, args)...))
-        Profiler.print_reports(interp; $(map(esc, kwargs)...))
-        frame.result.result
+        interp, frame = profile_call($(esc(f)), $(map(esc, args)...))
+        print_reports(interp; $(map(esc, kwargs)...))
+        get_rettyp(frame)
     end end
 end
+
+@nospecialize
+
+function profile_call(f, args...; kwargs...)
+    tt = to_tuple_type(typeof′.([f, args...]))
+    return Profiler.profile_call!(tt; kwargs...)
+end
+
+typeof′(x) = typeof(x)
+typeof′(x::Type{T}) where {T} = Type{T}
+
+@specialize
+
+get_rettyp(frame::InferenceState) = frame.result.result
 
 export
     @profile_call

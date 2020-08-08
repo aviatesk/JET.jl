@@ -17,27 +17,28 @@ import Core:
     MethodInstance, TypeofBottom
 
 import Core.Compiler:
-    AbstractInterpreter, NativeInterpreter, InferenceState, InferenceResult,
-    Bottom, widenconst, ⊑, isconstType, typeintersect, Builtin, CallMeta, argtypes_to_type,
-    MethodMatchInfo, UnionSplitInfo, MethodLookupResult,
-    Const, VarTable, SSAValue, abstract_eval_ssavalue, Slot, slot_id, GlobalRef, GotoIfNot,
-    _methods_by_ftype, specialize_method, typeinf, to_tuple_type
+    AbstractInterpreter, NativeInterpreter, InferenceState, InferenceResult, Bottom,
+    widenconst, ⊑, typeintersect, Builtin, CallMeta, argtypes_to_type, MethodMatchInfo,
+    UnionSplitInfo, MethodLookupResult, Const, VarTable, SSAValue, abstract_eval_ssavalue,
+    Slot, slot_id, GlobalRef, GotoIfNot, _methods_by_ftype, specialize_method, typeinf
 
 import Base:
-    Meta.isexpr, Iterators.flatten
+    Meta.isexpr, Iterators.flatten, to_tuple_type
 
-include("errorreport.jl")
+import ..TypeProfiler:
+    ErrorReport, NoMethodErrorReport, InvalidBuiltinCallErrorReport, UndefVarErrorReport,
+    NonBooleanCondErrorReport, NativeRemark
+
 include("abstractinterpreterinterface.jl")
 include("abstractinterpretation.jl")
 include("tfuncs.jl")
-include("print.jl")
-
 
 @nospecialize
 
-function profile!(interp::TPInterpreter, tt::Type{<:Tuple})
+# TODO: handle multiple applicable methods
+function profile!(interp::TPInterpreter, tt::Type{<:Tuple}, world::UInt = get_world_counter(interp))
     # `get_world_counter` here will always make the method the newest as in REPL
-    ms = _methods_by_ftype(tt, -1, get_world_counter())
+    ms = _methods_by_ftype(tt, -1, world)
     (ms === false || length(ms) != 1) && error("Unable to find single applicable method for $tt")
 
     atypes, sparams, m = ms[1]
@@ -49,7 +50,6 @@ function profile!(interp::TPInterpreter, tt::Type{<:Tuple})
     result = InferenceResult(mi)
 
     # create an InferenceState to begin inference, give it a world that is always newest
-    world = get_world_counter()
     frame = InferenceState(result, #=cached=# true, interp)
 
     # run type inference on this frame
@@ -58,16 +58,14 @@ function profile!(interp::TPInterpreter, tt::Type{<:Tuple})
     return frame # and `interp` now holds traced information
 end
 
-# TODO: keyword arguments
-profile_call(f, args...) = profile_call(to_tuple_type(typeof′.([f, args...])))
-function profile_call(tt::Type{<:Tuple})
-    interp = TPInterpreter()
+function profile_call!(tt::Type{<:Tuple}, world = get_world_counter(); kwargs...)
+    interp = TPInterpreter(world; kwargs...)
+    return profile_call!(interp, tt)
+end
+function profile_call!(interp::TPInterpreter, tt::Type{<:Tuple})
     frame = profile!(interp, tt)
     return interp, frame
 end
-
-typeof′(x) = typeof(x)
-typeof′(x::Type{T}) where {T} = Type{T}
 
 @specialize
 
