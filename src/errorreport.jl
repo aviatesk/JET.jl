@@ -27,9 +27,8 @@ ErrorReport, AbstractCallStack
         ...
     end
 
-Asserts necessary a declaration of concrete `ErrorReport` structs, and adds its inner
-  constructor that accepts `sv::InferenceState` as a first argument and collect
-  `AbstractCallStack` from it.
+Asserts a declaration of concrete `ErrorReport` structs, and adds its inner constructor that
+  accepts `sv::InferenceState` as a first argument and collect `AbstractCallStack` from it.
 """
 macro reportdef(structex)
     @assert isexpr(structex, :struct, 3) "struct expression should be given"

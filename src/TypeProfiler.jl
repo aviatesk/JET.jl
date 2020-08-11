@@ -23,9 +23,9 @@ macro profile_call(ex, kwargs...)
     args = ex.args[2:end]
 
     quote let
-        interp, frame = profile_call($(esc(f)), $(map(esc, args)...))
-        print_reports(interp; $(map(esc, kwargs)...))
-        get_rettyp(frame)
+        interp, frame = $(profile_call)($(esc(f)), $(map(esc, args)...))
+        $(print_reports)(interp; $(map(esc, kwargs)...))
+        $(get_rettyp)(frame)
     end end
 end
 
@@ -33,7 +33,7 @@ end
 
 function profile_call(f, args...; kwargs...)
     tt = to_tuple_type(typeof′.([f, args...]))
-    return Profiler.profile_call!(tt; kwargs...)
+    return Profiler.profile_call_gf!(tt; kwargs...)
 end
 
 typeof′(x) = typeof(x)

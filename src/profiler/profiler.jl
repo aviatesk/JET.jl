@@ -33,11 +33,15 @@ include("abstractinterpreterinterface.jl")
 include("abstractinterpretation.jl")
 include("tfuncs.jl")
 
-@nospecialize
-
 # TODO: handle multiple applicable methods
-function profile!(interp::TPInterpreter, tt::Type{<:Tuple}, world::UInt = get_world_counter(interp))
-    # `get_world_counter` here will always make the method the newest as in REPL
+# FIXME: cached method specializations won't let abstract interpretation to happen and so suppress error reports
+# maybe we can do either of
+# - always invalidate cached method specializations
+# - or attach error reports to each method specializations and use that when using cached method specialization cache
+function profile_call_gf!(interp::TPInterpreter,
+                          @nospecialize(tt::Type{<:Tuple}),
+                          world::UInt = get_world_counter(interp)
+                          )
     ms = _methods_by_ftype(tt, -1, world)
     (ms === false || length(ms) != 1) && error("Unable to find single applicable method for $tt")
 
@@ -55,18 +59,12 @@ function profile!(interp::TPInterpreter, tt::Type{<:Tuple}, world::UInt = get_wo
     # run type inference on this frame
     typeinf(interp, frame)
 
-    return frame # and `interp` now holds traced information
-end
-
-function profile_call!(tt::Type{<:Tuple}, world = get_world_counter(); kwargs...)
-    interp = TPInterpreter(world; kwargs...)
-    return profile_call!(interp, tt)
-end
-function profile_call!(interp::TPInterpreter, tt::Type{<:Tuple})
-    frame = profile!(interp, tt)
     return interp, frame
 end
+profile_call_gf!(@nospecialize(tt::Type{<:Tuple}), world::UInt = get_world_counter(); kwargs...) =
+    return profile_call_gf!(TPInterpreter(world; kwargs...), tt)
 
-@specialize
+# TODO:
+# profile_call_builtin!
 
 end  # module Profiler
