@@ -31,9 +31,9 @@ end
 
 @nospecialize
 
-function profile_call(f, args...; kwargs...)
+function profile_call(f, args...)
     tt = to_tuple_type(typeof′.([f, args...]))
-    return Profiler.profile_call_gf!(tt; kwargs...)
+    return profile_call_gf(tt)
 end
 
 typeof′(x) = typeof(x)

@@ -33,11 +33,17 @@ include("abstractinterpreterinterface.jl")
 include("abstractinterpretation.jl")
 include("tfuncs.jl")
 
-# TODO: handle multiple applicable methods
+# TODO?:
+# - handle multiple applicable methods
+# - `profile_call_builtin!`
+
 # FIXME: cached method specializations won't let abstract interpretation to happen and so suppress error reports
 # maybe we can do either of
 # - always invalidate cached method specializations
 # - or attach error reports to each method specializations and use that when using cached method specialization cache
+
+profile_call_gf(@nospecialize(tt::Type{<:Tuple}), world::UInt = get_world_counter(); kwargs...) =
+    return profile_call_gf!(TPInterpreter(world; kwargs...), tt)
 function profile_call_gf!(interp::TPInterpreter,
                           @nospecialize(tt::Type{<:Tuple}),
                           world::UInt = get_world_counter(interp)
@@ -61,10 +67,8 @@ function profile_call_gf!(interp::TPInterpreter,
 
     return interp, frame
 end
-profile_call_gf!(@nospecialize(tt::Type{<:Tuple}), world::UInt = get_world_counter(); kwargs...) =
-    return profile_call_gf!(TPInterpreter(world; kwargs...), tt)
 
-# TODO:
-# profile_call_builtin!
+export
+    profile_call_gf, profile_call_gf!
 
 end  # module Profiler
