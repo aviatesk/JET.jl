@@ -3,7 +3,7 @@
 
 abstract type ErrorReport end
 
-function print_reports(io, reports, filter_native_remarks = true, kwargs...)
+function print_reports(io, reports; filter_native_remarks = true, kwargs...)
     if filter_native_remarks
         reports = filter(r->!isa(r, Profiler.NativeRemark), reports)
     end
