@@ -63,7 +63,7 @@ end
 
 @reportdef struct UndefVarErrorReport <: InferenceErrorReport
     acs::AbstractCallStack
-    mod::Module
+    mod::Union{Nothing,Module}
     name::Symbol
 end
 
@@ -146,7 +146,8 @@ report_string(er::NoMethodErrorReport) = er.unionsplit ?
     "no matching method found for signature: $(tt_to_signature_str(er.tt))"
 report_string(er::InvalidBuiltinCallErrorReport) =
     "invalid builtin function call: $(tt_to_signature_str(er.tt))"
-report_string(er::UndefVarErrorReport) =
+report_string(er::UndefVarErrorReport) = isnothing(er.mod) ?
+    "variable $(er.name) is not defined" :
     "variable $(er.mod).$(er.name) is not defined"
 report_string(er::NonBooleanCondErrorReport) =
     "non-boolean ($(er.t)) used in boolean context"
