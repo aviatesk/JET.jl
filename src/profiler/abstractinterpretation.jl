@@ -73,7 +73,7 @@ function abstract_eval_value(interp::TPInterpreter, @nospecialize(e), vtypes::Va
     stmt = get_cur_stmt(sv)
     if isa(stmt, GotoIfNot)
         t = widenconst(ret)
-        if !⊑(Bool, Bottom) && !⊑(Bool, t)
+        if t !== Bottom && !⊑(Bool, t)
             add_remark!(interp, sv, NonBooleanCondErrorReport(sv, t))
             ret = Bottom
         end
