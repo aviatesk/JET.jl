@@ -16,7 +16,7 @@ import Base:
 """
     transform_for_profiling!(mod::Module, ex::Expr)
 
-Transform the given toplevel `ex::Expr` so that final output can be wrapped into a lambda
+Transform the given toplevel `ex::Expr` so that final output can be wrapped into a virtual
   function and profiled:
 - extract toplevel "defintions" and directly evaluate them in a given `mod::Module`
 - expand macros
@@ -26,7 +26,7 @@ function transform_for_profiling!(mod::Module, ex::Expr)
     @assert ex.head === :toplevel
     walk_and_transform!(ex, Symbol[]) do x, scope
         # TODO: report errors in macro expansion
-        if MacroTools.isexpr(x, :macrocall)
+        if isexpr(x, :macrocall)
             x = macroexpand(mod, x)
         end
 
@@ -53,13 +53,28 @@ function walk_and_transform!(f, x, scope)
 end
 
 function istopleveldef(ex, scope)
-    # always hoist
-    isexpr(ex, :macro) && return true
-    isexpr(ex, :abstract) && return true
-    isexpr(ex, :struct) && return true
-    isexpr(ex, :primitive) && return true
+    if :quote ∉ scope
+        if isexpr(ex, TOPLEVEL_EXS)
+            if :function ∉ scope
+                return true
+            else
+                error("syntax: \"$(ex.head)\" expression not at top level") # TODO: report
+            end
+        end
+    end
 
     !islocalscope(scope) && isfuncdef(ex) && return true # only hoist function when in really toplevel
+
+    return false
+end
+
+const TOPLEVEL_EXS = (:macro, :abstract, :struct, :primitive)
+
+const LOCAL_SCOPES = (:let, :quote, :if, :try, :for, :while)
+function islocalscope(scope)
+    for s in scope
+        s in LOCAL_SCOPES && return true
+    end
 
     return false
 end
@@ -67,15 +82,6 @@ end
 function isfuncdef(ex)
     isexpr(ex, :function) && return true
     isexpr(ex, :(=)) && isexpr(first(ex.args), :call) && return true # short form
-
-    return false
-end
-
-const LOCAL_SCOPES = (:let, :quote, :if, :try, :for, :while)
-function islocalscope(scope)
-    for s in scope
-        s in LOCAL_SCOPES && return true
-    end
 
     return false
 end
