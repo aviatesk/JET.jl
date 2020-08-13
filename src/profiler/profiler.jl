@@ -9,7 +9,7 @@ import Core.Compiler:
     # abstractinterpretation.jl
     abstract_call_gf_by_type, abstract_call_known, abstract_call,
     abstract_eval_special_value, abstract_eval_value_expr, abstract_eval_value,
-    abstract_eval_statement
+    abstract_eval_statement, typeinf_local
 
 import ..TypeProfiler:
     print_report
