@@ -3,7 +3,7 @@
 #   TP will try to expand any macro, but since macros can access to any global object and so
 #   any macro expansion including access to global variables will fail as far as TP avoids
 #   evaluation of them but just profiles/preserves their types.
-module VirtualMachine
+module VirtualProcess
 
 # loaded symbols
 import Base:
@@ -60,4 +60,4 @@ end
 export
     profile_file, profile_text
 
-end  # module VirtualMachine
+end  # module VirtualProcess

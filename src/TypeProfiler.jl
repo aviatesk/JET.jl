@@ -3,9 +3,9 @@ module TypeProfiler
 
 include("common.jl")
 include("profiler/profiler.jl")
-include("virtualmachine/virtualmachine.jl")
+include("virtualprocess/virtualprocess.jl")
 
-using .Profiler, .VirtualMachine
+using .Profiler, .VirtualProcess
 
 export
     profile_file, profile_text, @profile_call
