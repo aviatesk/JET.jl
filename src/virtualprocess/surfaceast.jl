@@ -5,17 +5,16 @@ function parse_to_toplevel(s, filename)
 
     # if there's any syntax error, try to identify all the syntax error location
     reports = ToplevelErrorReport[]
-    index = 1
-    line = 1
+    index = line = 1
     while begin
             ex, nextindex = _parse_string(s, filename, index, :statement)
             !isnothing(ex)
         end
         line += count(==('\n'), s[index:nextindex-1])
         report = if isexpr(ex, :error)
-            report = SyntaxErrorReport(string("syntax: ", first(ex.args)), line)
+            SyntaxErrorReport(string("syntax: ", first(ex.args)), line)
         elseif isexpr(ex, :incomplete)
-            report = SyntaxErrorReport(first(ex.args), line)
+            SyntaxErrorReport(first(ex.args), line)
         else
             nothing
         end
@@ -51,7 +50,6 @@ function transform_for_profiling!(mod::Module, toplevelex::Expr)
             return x
         end
 
-        # TODO: report errors in macro expansion
         if isexpr(x, :macrocall)
             x = try
                 macroexpand(mod, x)
@@ -61,12 +59,11 @@ function transform_for_profiling!(mod::Module, toplevelex::Expr)
             end
         end
 
-
         if :quote in scope
             # always escape inside expression
             x
 
-        elseif isexpr(x, TOPLEVEL_EXS)
+        elseif isexpr(x, (:macro, :abstract, :struct, :primitive))
             # toplevel expressions other than functions
             leftover = if :function ∉ scope
                 try
@@ -119,12 +116,9 @@ function walk_and_transform!(f, x, scope)
     return x
 end
 
-const TOPLEVEL_EXS = (:macro, :abstract, :struct, :primitive)
-
-const LOCAL_SCOPES = (:let, :quote, :if, :try, :for, :while)
 function islocalscope(scope)
     for s in scope
-        s in LOCAL_SCOPES && return true
+        s in (:let, :quote, :if, :try, :for, :while) && return true
     end
 
     return false
