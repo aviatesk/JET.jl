@@ -14,8 +14,8 @@ Parses `s` into a toplevel expression and transforms the resulting expression so
 Returns `Vector{<:ToplevelErrorReport}` if there are any error found during the text parsing
  and AST transformation.
 The AST transformation includes:
+- expand macros in a given `mod::Module`
 - extract toplevel "defintions" and directly evaluate them in a given `mod::Module`
-- expand macros
 - remove `const` annotations
 """
 function parse_and_transform(mod::Module,

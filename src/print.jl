@@ -49,7 +49,6 @@ end
 
 print_report(io, report::SyntaxErrorReport) = Base.display_error(report.err, []) # don't show stacktrace for syntax errors
 # TODO:
-# - crop internal backtraces
 # - add context information, i.e. during macroexpansion, defining something
 print_report(io, report::ActualErrorWrapped) = Base.display_error(report.err, report.bt)
 
