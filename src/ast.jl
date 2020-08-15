@@ -140,7 +140,13 @@ end
 
 function isfuncdef(ex)
     isexpr(ex, :function) && return true
-    isexpr(ex, :(=)) && isexpr(first(ex.args), :call) && return true # short form
+
+    # short form
+    if isexpr(ex, :(=))
+        farg = first(ex.args)
+        isexpr(farg, :call) && return true
+        isexpr(farg, :where) && isexpr(first(farg.args), :call) && return true
+    end
 
     return false
 end
