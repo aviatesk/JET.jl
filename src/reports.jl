@@ -13,19 +13,19 @@ end
 # wraps general errors from actual Julia process
 struct ActualErrorWrapped <: ToplevelErrorReport
     err
-    bt::Vector{Union{Ptr{Nothing},Base.InterpreterIP}}
+    st::Vector{Base.StackTraces.StackFrame}
     file::String
     line::Int
 
     # default constructor
-    ActualErrorWrapped(err, bt, file, line) = new(err, bt, file, line)
+    ActualErrorWrapped(err, st, file, line) = new(err, st, file, line)
 
     # bypass syntax error
-    function ActualErrorWrapped(err::ErrorException, bt, file, line)
+    function ActualErrorWrapped(err::ErrorException, st, file, line)
         return if startswith(err.msg, "syntax: ")
             SyntaxErrorReport(err.msg, file, line)
         else
-            new(err, bt, file, line)
+            new(err, st, file, line)
         end
     end
 end

@@ -33,24 +33,24 @@ function parse_and_transform(mod::Module,
     line::Int = 1
     file::String = filename
     function macroexpand_with_err_handling(mod, x)
-        function err_handler(err)
-            bt = crop_backtrace(catch_backtrace(), #=XXX=# 3)
-            push!(reports, ActualErrorWrapped(err, bt, file, line))
+        f() = macroexpand(mod, x)
+        function err_handler(err, st)
+            # `4` corresponds to `with_err_handling`, `f`, `macroexpand` and its kwfunc
+            st = crop_stacktrace(st, 4)
+            push!(reports, ActualErrorWrapped(err, st, file, line))
             return nothing
         end
-        with_err_handling(err_handler) do
-            macroexpand(mod, x)
-        end
+        with_err_handling(f, err_handler)
     end
     function eval_with_err_handling(mod, x)
-        function err_handler(err)
-            bt = crop_backtrace(catch_backtrace(), #=XXX=# 4)
-            push!(reports, ActualErrorWrapped(err, bt, file, line))
+        f() = Core.eval(mod, x)
+        function err_handler(err, st)
+            # `3` corresponds to `with_err_handling`, `f` and `eval`
+            st = crop_stacktrace(st, 3)
+            push!(reports, ActualErrorWrapped(err, st, file, line))
             return nothing
         end
-        with_err_handling(err_handler) do
-            return Core.eval(mod, x)
-        end
+        with_err_handling(f, err_handler)
     end
 
     ret = walk_and_transform!(ex, Symbol[]) do x, scope
@@ -158,22 +158,19 @@ end
     return try
         f()
     catch err
-        err_handler(err)
+        bt = catch_backtrace()
+        st = stacktrace(bt)
+        err_handler(err, st)
     end
 end
 
-function crop_backtrace(bt, offset)
-    i = find_frame_index(bt, @__FILE__, with_err_handling)
-    return bt[1:(isnothing(i) ? end : i - offset)]
+function crop_stacktrace(st, offset)
+    i = find_frame_index(st, @__FILE__, with_err_handling)
+    return st[1:(isnothing(i) ? end : i - offset)]
 end
 
-find_frame_index(st::Vector{Base.StackTraces.StackFrame}, file, func) =
-    return findfirst(frame -> frame.file === Symbol(file) && frame.func === Symbol(func), st)
-function find_frame_index(bt::Vector{<:Union{Base.InterpreterIP,Ptr{Cvoid}}}, file, func)
-    for (i, ip) in enumerate(bt)
-        st = Base.StackTraces.lookup(ip)
-        ind = find_frame_index(st, file, func)
-        isnothing(ind) || return i
+function find_frame_index(st, file, func)
+    return findfirst(st) do frame
+        return frame.file === Symbol(file) && frame.func === Symbol(func)
     end
-    return
 end

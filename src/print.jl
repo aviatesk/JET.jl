@@ -59,9 +59,14 @@ function print_reports(io, reports::Vector{<:ToplevelErrorReport};
     return
 end
 
-print_report(io, report::SyntaxErrorReport) = Base.display_error(report.err, []) # don't show stacktrace for syntax errors
+print_report(io, report::SyntaxErrorReport) = showerror′(io, report.err) # don't show stacktrace for syntax errors
 # TODO: add context information, i.e. during macroexpansion, defining something
-print_report(io, report::ActualErrorWrapped) = Base.display_error(report.err, report.bt)
+print_report(io, report::ActualErrorWrapped) = showerror′(io, report.err, report.st)
+
+function showerror′(io, er, bt = nothing)
+    showerror(IOContext(io, :limit => true), er, bt, backtrace = !isnothing(bt))
+    println(io)
+end
 
 # inference
 # ---------
