@@ -1,3 +1,5 @@
+# TODO: absolute pass mode
+
 # utility
 # -------
 
@@ -7,6 +9,9 @@ const RAIL_COLORS = [:bold, :light_cyan, :light_green, :light_yellow]
 
 pluralize(n::Integer, one::AbstractString, more::AbstractString = string(one, 's')) =
     return string(n, ' ', isone(n) ? one : more)
+
+printlnstyled(args...; kwarg...) = printstyled(args..., '\n'; kwarg...)
+printsuccess(io) = printstyled(io, "No errors !\n"; color = NOERROR_COLOR)
 
 function print_rails(io, depth)
     n = length(RAIL_COLORS)
@@ -32,16 +37,22 @@ end
 # toplevel
 # --------
 
-function print_reports(io, reports::Vector{<:ToplevelErrorReport})
-    isempty(reports) && return
+function print_reports(io, reports::Vector{<:ToplevelErrorReport};
+                       print_toplevel_sucess = false)
+    isempty(reports) && return print_toplevel_sucess ? printsuccess(io) : nothing
 
-    s = string(pluralize(length(reports), "toplevel error"), " found")
-    printstyled(io, s, '\n'; color = ERROR_COLOR)
+    color = ERROR_COLOR
+    colsize = last(displaysize(io)) ÷ 2
+
+    s = string(pluralize(length(reports), "toplevel error"), " found", '\n')
+    printlnstyled(io, s; color)
 
     foreach(reports) do report
-        printstyled(io, " @ ", report.file, ':', report.line, '\n')
+        s = string("┌ @ ", report.file, ":", report.line, ' ')
+        printlnstyled(io, s; color)
         print_report(io, report)
-        println("---")
+        s = rpad('└', length(s), '—')
+        printlnstyled(io, s; color)
     end
 
     return
@@ -55,33 +66,32 @@ print_report(io, report::ActualErrorWrapped) = Base.display_error(report.err, re
 # inference
 # ---------
 
-function print_reports(io, reports; filter_native_remarks = true, kwargs...)
+function print_reports(io, reports; filter_native_remarks = true)
     if filter_native_remarks
         reports = filter(r->!isa(r, NativeRemark), reports)
     end
 
-    if isempty(reports)
-        printstyled(io, "No errors !\n"; color = NOERROR_COLOR)
-        return
-    end
+    isempty(reports) && return printsuccess(io)
 
-    s = string(pluralize(length(reports), "error"), " found")
-    printstyled(io, s, '\n'; color = ERROR_COLOR)
+    s = string(pluralize(length(reports), "error"), " found", '\n')
+    printlnstyled(io, s; color = ERROR_COLOR)
     wrote_linfos = Set{UInt64}()
     foreach(reports) do report
-        print_report(io, report, wrote_linfos; kwargs...)
+        print_report(io, report, wrote_linfos)
     end
 
     return
 end
 
-function print_report(io, report::InferenceErrorReport, wrote_linfos; kwargs...)
-    print_calltrace(io, report.acs, wrote_linfos)
+function print_report(io, report::InferenceErrorReport, wrote_linfos)
     n = length(report.acs) - 1
+    color = ERROR_COLOR
+
+    print_calltrace(io, report.acs, wrote_linfos)
     print_rails(io, n)
-    printstyled(io, "│ ", report_string(report), '\n'; color = ERROR_COLOR)
+    printlnstyled(io, "│ ", report_string(report); color)
     print_rails(io, n)
-    printstyled(io, '└', '\n'; color = ERROR_COLOR)
+    printlnstyled(io, '└'; color)
 
     return
 end
