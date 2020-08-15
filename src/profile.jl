@@ -11,18 +11,18 @@
 #   TP will try to expand any macro, but any macro expansion including access to global
 #   variables will fail since TP just infers their types and avoids the actual evaluation
 
-function profile_file(io::IO, filename::AbstractString, mod::Module = Main)
+function profile_file(io::IO, filename::AbstractString, mod::Module = Main; kwargs...)
     text = read(filename, String)
-    profile_text(io, text, filename, mod)
+    profile_text(io, text, filename, mod; kwargs...)
 end
-profile_file(args...) = profile_file(stdout, args...)
+profile_file(args...; kwargs...) = profile_file(stdout, args...; kwargs...)
 
-function profile_text(io::IO, text::AbstractString, filename::AbstractString, mod::Module = Main)
+function profile_text(io::IO, text::AbstractString, filename::AbstractString, mod::Module = Main; kwargs...)
     virtualmod = generate_virtual_module(mod)
     reports = report_errors(virtualmod, text, filename)
-    print_reports(io, reports)
+    print_reports(io, reports; kwargs...)
 end
-profile_text(args...) = profile_text(stdout, args...)
+profile_text(args...; kwargs...) = profile_text(stdout, args...; kwargs...)
 
 function report_errors(mod, text, filename)
     ret = parse_and_transform(mod, text, filename)

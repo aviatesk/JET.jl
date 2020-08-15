@@ -38,7 +38,8 @@ end
 # --------
 
 function print_reports(io, reports::Vector{<:ToplevelErrorReport};
-                       print_toplevel_sucess = false)
+                       print_toplevel_sucess = false,
+                       __kwargs...)
     isempty(reports) && return print_toplevel_sucess ? printsuccess(io) : nothing
 
     color = ERROR_COLOR
@@ -59,14 +60,15 @@ function print_reports(io, reports::Vector{<:ToplevelErrorReport};
 end
 
 print_report(io, report::SyntaxErrorReport) = Base.display_error(report.err, []) # don't show stacktrace for syntax errors
-# TODO:
-# - add context information, i.e. during macroexpansion, defining something
+# TODO: add context information, i.e. during macroexpansion, defining something
 print_report(io, report::ActualErrorWrapped) = Base.display_error(report.err, report.bt)
 
 # inference
 # ---------
 
-function print_reports(io, reports; filter_native_remarks = true)
+function print_reports(io, reports::Vector{<:InferenceErrorReport};
+                       filter_native_remarks = true,
+                       __kwargs...)
     if filter_native_remarks
         reports = filter(r->!isa(r, NativeRemark), reports)
     end
