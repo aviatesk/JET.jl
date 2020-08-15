@@ -10,8 +10,7 @@ import Base:
     parse_input_line, Meta.isexpr, Meta._parse_string
 
 import ..TypeProfiler:
-    ErrorReport, ERROR_COLOR,  NOERROR_COLOR, RAIL_COLORS, print_rails, fullpath,
-    print_reports
+    ErrorReport, ERROR_COLOR,  NOERROR_COLOR, RAIL_COLORS, print_rails, fullpath, pluralize
 
 using ..TypeProfiler.Profiler
 
@@ -26,21 +25,19 @@ profile_file(args...) = profile_file(stdout, args...)
 
 function profile_text(io::IO, text::AbstractString, filename::AbstractString, mod::Module = Main)
     virtualmod = generate_virtual_module(mod)
-    reports = _profile_text(virtualmod, text, filename)
+    reports = report_errors(virtualmod, text, filename)
     print_reports(io, reports)
 end
 profile_text(args...) = profile_text(stdout, args...)
 
-function _profile_text(mod, text, filename)
-    ret = parse_to_toplevel(text, filename)
-    ret isa Vector{ToplevelErrorReport} && return ret
-
-    ret = transform_for_profiling!(mod, ret)
-    ret isa Vector{ToplevelErrorReport} && return ret
+function report_errors(mod, text, filename)
+    ret = parse_and_transform(mod, text, filename)
+    isa(ret, Vector{<:ToplevelErrorReport}) && return ret
 
     λ = generate_virtual_lambda(mod, ret)
+    # Core.eval(@__MODULE__, :(λ = $(λ)))
     interp, = profile_call(λ)
-    return interp.reports
+    return fix_virtual_traces!(interp.reports)
 end
 
 generate_virtual_module(actualmod::Module) =
@@ -49,12 +46,16 @@ generate_virtual_module(actualmod::Module) =
 function generate_virtual_lambda(mod::Module, toplevelex::Expr)
     @assert isexpr(toplevelex, :toplevel) "toplevel expression should be given"
 
-    ex = quote
-        function ()
-            $(toplevelex.args...)
-        end
-    end
+    ex = :(function ()
+        $(toplevelex.args...)
+    end)
     return Core.eval(mod, ex)
+end
+
+# TODO:
+# - report errors in virtual lambda as toplevel error
+function fix_virtual_traces!(reports)
+    return reports
 end
 
 export

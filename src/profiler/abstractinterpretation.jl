@@ -105,7 +105,7 @@ function abstract_eval_statement(interp::TPInterpreter, @nospecialize(e), vtypes
 end
 
 # FIXME: this is such an horrible and super fragile copy-and-paste ...
-# the whole point is to allow abstract interpretation to continue even after there is an
+# the whole point is to not let abstract interpretation to halt even after there is an
 # obvious error point found (, which is usually represented by `Bottom`-annotated type and
 # triggers early-loop-escape in the native implementation), and allow TP to collect
 # as much errors as possible; so the only diffs are:

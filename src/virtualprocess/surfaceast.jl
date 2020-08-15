@@ -1,52 +1,42 @@
-function parse_to_toplevel(s, filename)
-    ex = parse_input_line(s; filename)
-
-    isexpr(ex, (:error, :incomplete)) || return ex
-
-    # if there's any syntax error, try to identify all the syntax error location
-    reports = ToplevelErrorReport[]
-    index = line = 1
-    while begin
-            ex, nextindex = _parse_string(s, filename, index, :statement)
-            !isnothing(ex)
-        end
-        line += count(==('\n'), s[index:nextindex-1])
-        report = if isexpr(ex, :error)
-            SyntaxErrorReport(string("syntax: ", first(ex.args)), line)
-        elseif isexpr(ex, :incomplete)
-            SyntaxErrorReport(first(ex.args), line)
-        else
-            nothing
-        end
-        isnothing(report) || push!(reports, report)
-        index = nextindex
-    end
-    return reports
-end
-
 # TODO:
 # - `module`
 # - `using`, `import`, `__init__`
 # - special case `include` call
 
 """
-    transform_for_profiling!(mod::Module, toplevelex::Expr)
+    parse_and_transform(mod::Module, s::AbstractString, filename::AbstractString) ->
+      Union{Expr,Vector{<:ToplevelErrorReport}}
 
-Transform the given toplevel `toplevelex::Expr` so that final output can be wrapped into a virtual
-  function and profiled:
+Parses `s` into a toplevel expression and transforms the resulting expression so that the
+  final output expression can be wrapped into a virtual function to be profiled in
+  `mod::Module`.
+
+Returns `Vector{<:ToplevelErrorReport}` if there are any error found during the text parsing
+ and AST transformation.
+The AST transformation includes:
 - extract toplevel "defintions" and directly evaluate them in a given `mod::Module`
 - expand macros
 - remove `const` annotations
 """
-function transform_for_profiling!(mod::Module, toplevelex::Expr)
-    @assert isexpr(toplevelex, :toplevel) "toplevel expression should be given"
+function parse_and_transform(mod::Module,
+                             s::AbstractString,
+                             filename::AbstractString
+                             )::Union{Expr,Vector{<:ToplevelErrorReport}}
+    ex = parse_input_line(s; filename)
+
+    # if there's any syntax error, try to identify all the syntax error location
+    isexpr(ex, (:error, :incomplete)) && return collect_syntax_errors(s, filename)
+
+    @assert isexpr(ex, :toplevel)
 
     reports = ToplevelErrorReport[]
     line = 1
+    file = filename
 
-    ret = walk_and_transform!(toplevelex, Symbol[]) do x, scope
+    ret = walk_and_transform!(ex, Symbol[]) do x, scope
         if x isa LineNumberNode
-            line = x.line # updatet
+            line = x.line # update
+            # file = x.file # NOTE: will be needed when this function handles `include` calls
             return x
         end
 
@@ -54,7 +44,8 @@ function transform_for_profiling!(mod::Module, toplevelex::Expr)
             x = try
                 macroexpand(mod, x)
             catch err
-                push!(reports, ActualErrorWrapped(err, line))
+                bt = catch_backtrace()
+                push!(reports, ActualErrorWrapped(err, bt, file, line))
                 nothing
             end
         end
@@ -69,11 +60,12 @@ function transform_for_profiling!(mod::Module, toplevelex::Expr)
                 try
                     Core.eval(mod, x)
                 catch err
-                    push!(reports, ActualErrorWrapped(err, line))
+                    bt = catch_backtrace()
+                    push!(reports, ActualErrorWrapped(err, bt, file, line))
                     nothing
                 end
             else
-                report = SyntaxErrorReport("syntax: \"$(toplevelex.head)\" expression not at top level", line)
+                report = SyntaxErrorReport("syntax: \"$(x.head)\" expression not at top level", file, line)
                 push!(reports, report)
                 nothing
             end
@@ -84,7 +76,8 @@ function transform_for_profiling!(mod::Module, toplevelex::Expr)
             leftover = try
                 Core.eval(mod, x)
             catch err
-                push!(reports, ActualErrorWrapped(err, line))
+                bt = catch_backtrace()
+                push!(reports, ActualErrorWrapped(err, bt, file, line))
                 nothing
             end
             :($(leftover))
@@ -103,6 +96,27 @@ function transform_for_profiling!(mod::Module, toplevelex::Expr)
     else
         reports # non-empty `reports` means critical errors happened
     end
+end
+
+function collect_syntax_errors(s, filename)
+    reports = SyntaxErrorReport[]
+    index = line = 1
+    while begin
+            ex, nextindex = _parse_string(s, filename, index, :statement)
+            !isnothing(ex)
+        end
+        line += count(==('\n'), s[index:nextindex-1])
+        report = if isexpr(ex, :error)
+            SyntaxErrorReport(string("syntax: ", first(ex.args)), filename, line)
+        elseif isexpr(ex, :incomplete)
+            SyntaxErrorReport(first(ex.args), filename, line)
+        else
+            nothing
+        end
+        isnothing(report) || push!(reports, report)
+        index = nextindex
+    end
+    return reports
 end
 
 function walk_and_transform!(f, x, scope)
