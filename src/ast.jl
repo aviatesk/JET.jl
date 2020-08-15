@@ -29,9 +29,29 @@ function parse_and_transform(mod::Module,
 
     @assert isexpr(ex, :toplevel)
 
-    reports = ToplevelErrorReport[]
-    line = 1
-    file = filename
+    reports::Vector{ToplevelErrorReport} = ToplevelErrorReport[]
+    line::Int = 1
+    file::String = filename
+    function macroexpand_with_err_handling(mod, x)
+        function err_handler(err)
+            bt = crop_backtrace(catch_backtrace(), #=XXX=# 3)
+            push!(reports, ActualErrorWrapped(err, bt, file, line))
+            return nothing
+        end
+        with_err_handling(err_handler) do
+            macroexpand(mod, x)
+        end
+    end
+    function eval_with_err_handling(mod, x)
+        function err_handler(err)
+            bt = crop_backtrace(catch_backtrace(), #=XXX=# 4)
+            push!(reports, ActualErrorWrapped(err, bt, file, line))
+            return nothing
+        end
+        with_err_handling(err_handler) do
+            return Core.eval(mod, x)
+        end
+    end
 
     ret = walk_and_transform!(ex, Symbol[]) do x, scope
         if x isa LineNumberNode
@@ -41,13 +61,7 @@ function parse_and_transform(mod::Module,
         end
 
         if isexpr(x, :macrocall)
-            x = try
-                macroexpand(mod, x)
-            catch err
-                bt = catch_backtrace()
-                push!(reports, ActualErrorWrapped(err, bt, file, line))
-                nothing
-            end
+            x = macroexpand_with_err_handling(mod, x)
         end
 
         if :quote in scope
@@ -57,13 +71,7 @@ function parse_and_transform(mod::Module,
         elseif isexpr(x, (:macro, :abstract, :struct, :primitive))
             # toplevel expressions other than functions
             leftover = if :function ∉ scope
-                try
-                    Core.eval(mod, x)
-                catch err
-                    bt = catch_backtrace()
-                    push!(reports, ActualErrorWrapped(err, bt, file, line))
-                    nothing
-                end
+                eval_with_err_handling(mod, x)
             else
                 report = SyntaxErrorReport("syntax: \"$(x.head)\" expression not at top level", file, line)
                 push!(reports, report)
@@ -72,14 +80,8 @@ function parse_and_transform(mod::Module,
             :($(leftover))
 
         elseif !islocalscope(scope) && isfuncdef(x)
-            # hoist function
-            leftover = try
-                Core.eval(mod, x)
-            catch err
-                bt = catch_backtrace()
-                push!(reports, ActualErrorWrapped(err, bt, file, line))
-                nothing
-            end
+            # hoist functiono
+            leftover = eval_with_err_handling(mod, x)
             :($(leftover))
 
         elseif isexpr(x, :const)
@@ -149,4 +151,29 @@ function isfuncdef(ex)
     end
 
     return false
+end
+
+# don't inline this so we can find it in the stacktrace
+@noinline function with_err_handling(f, err_handler)
+    return try
+        f()
+    catch err
+        err_handler(err)
+    end
+end
+
+function crop_backtrace(bt, offset)
+    i = find_frame_index(bt, @__FILE__, with_err_handling)
+    return bt[1:(isnothing(i) ? end : i - offset)]
+end
+
+find_frame_index(st::Vector{Base.StackTraces.StackFrame}, file, func) =
+    return findfirst(frame -> frame.file === Symbol(file) && frame.func === Symbol(func), st)
+function find_frame_index(bt::Vector{<:Union{Base.InterpreterIP,Ptr{Cvoid}}}, file, func)
+    for (i, ip) in enumerate(bt)
+        st = Base.StackTraces.lookup(ip)
+        ind = find_frame_index(st, file, func)
+        isnothing(ind) || return i
+    end
+    return
 end
