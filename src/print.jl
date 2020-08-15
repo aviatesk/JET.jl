@@ -1,90 +1,80 @@
-# types
-# -----
+# utility
+# -------
 
-abstract type InferenceErrorReport <: ErrorReport end
+const ERROR_COLOR = :light_red
+const NOERROR_COLOR = :light_green
+const RAIL_COLORS = [:bold, :light_cyan, :light_green, :light_yellow]
 
-const AbstractCallStack = Vector{MethodInstance}
+pluralize(n::Integer, one::AbstractString, more::AbstractString = string(one, 's')) =
+    return string(n, ' ', isone(n) ? one : more)
 
-"""
-    @reportdef struct SomeErrorReport <: InferenceErrorReport
-        acs::AbstractCallStack
-        ...
+function print_rails(io, depth)
+    n = length(RAIL_COLORS)
+    for i = 1:depth
+        color = RAIL_COLORS[i%n+1]
+        printstyled(io, '│'; color)
+    end
+    return
+end
+
+const SRC_DIR = normpath(Sys.BINDIR, "..", "..", "base")
+const RELEASE_DIR = normpath(Sys.BINDIR, "..", "share", "julia", "base")
+basepath(filename) = normpath((@static isdir(SRC_DIR) ? SRC_DIR : RELEASE_DIR), filename)
+function fullpath(filename)
+    path = isabspath(filename) ? filename : basepath(filename)
+    return try
+        realpath(path)
+    catch
+        path
+    end
+end
+
+# toplevel
+# --------
+
+function print_reports(io, reports::Vector{<:ToplevelErrorReport})
+    isempty(reports) && return
+
+    s = string(pluralize(length(reports), "toplevel error"), " found")
+    printstyled(io, s, '\n'; color = ERROR_COLOR)
+
+    foreach(reports) do report
+        printstyled(io, " @ ", report.file, ':', report.line, '\n')
+        print_report(io, report)
+        println("---")
     end
 
-Asserts a declaration of concrete `InferenceErrorReport` structs, and adds its inner constructor
-  that accepts `sv::InferenceState` as a first argument and collect `AbstractCallStack` from it.
-"""
-macro reportdef(structex)
-    @assert isexpr(structex, :struct, 3) "struct expression should be given"
-    typedecl, body = structex.args[2:3]
-    @assert isexpr(typedecl, :<:, 2) && __module__.eval(last(typedecl.args)) <: InferenceErrorReport "error report should be declared as subtype of ErrorReport"
-    T = first(typedecl.args)
-
-    flds = filter(x->!isa(x, LineNumberNode), body.args)
-    @assert first(flds) == :(acs::AbstractCallStack) "the first field of error report should be `acs::AbstractCallStack`"
-
-    args = flds[2:end]
-    sigs = _get_sig.(args)
-    nospecialize_sigs = sigs[findall(_should_not_specialize, args)]
-    nospecialize_ex = isempty(nospecialize_sigs) ? quote end : :(@nospecialize $(nospecialize_sigs...))
-    constructor = :(
-        # we give up hygiene here because `@nospecialize` only works on escaped signatures
-        function $(T)(sv::InferenceState, $(map(esc, sigs)...))
-            $(nospecialize_ex)
-            acs = _track_abstract_call_stack!(sv)
-            return new(acs, $(map(esc, sigs)...))
-        end
-    )
-    push!(body.args, constructor)
-
-    return structex
+    return
 end
 
-_get_sig(x) = isexpr(x, :(::)) ? first(x.args) : x
-_should_not_specialize(x) = isexpr(x, :(::)) && last(x.args) in (:Type, :Function)
+print_report(io, report::SyntaxErrorReport) = Base.display_error(report.err, []) # don't show stacktrace for syntax errors
+# TODO:
+# - crop internal backtraces
+# - add context information, i.e. during macroexpansion, defining something
+print_report(io, report::ActualErrorWrapped) = Base.display_error(report.err, report.bt)
 
-# traces the current abstract call stack
-function _track_abstract_call_stack!(sv, acs = MethodInstance[])
-    isnothing(sv.parent) || _track_abstract_call_stack!(sv.parent, acs) # prewalk
-    push!(acs, sv.linfo)
-    return acs
+# inference
+# ---------
+
+function print_reports(io, reports; filter_native_remarks = true, kwargs...)
+    if filter_native_remarks
+        reports = filter(r->!isa(r, NativeRemark), reports)
+    end
+
+    if isempty(reports)
+        printstyled(io, "No errors !\n"; color = NOERROR_COLOR)
+        return
+    end
+
+    s = string(pluralize(length(reports), "error"), " found")
+    printstyled(io, s, '\n'; color = ERROR_COLOR)
+    wrote_linfos = Set{UInt64}()
+    foreach(reports) do report
+        print_report(io, report, wrote_linfos; kwargs...)
+    end
+
+    return
 end
-
-@reportdef struct NoMethodErrorReport <: InferenceErrorReport
-    acs::AbstractCallStack
-    tt::Type
-    unionsplit::Bool
-end
-
-@reportdef struct InvalidBuiltinCallErrorReport <: InferenceErrorReport
-    acs::AbstractCallStack
-    tt::Type
-end
-
-@reportdef struct UndefVarErrorReport <: InferenceErrorReport
-    acs::AbstractCallStack
-    mod::Union{Nothing,Module}
-    name::Symbol
-end
-
-@reportdef struct NonBooleanCondErrorReport <: InferenceErrorReport
-    acs::AbstractCallStack
-    t::Type
-end
-
-"""
-    NativeRemark <: InferenceErrorReport
-
-This special `InferenceErrorReport` is just for wrapping remarks from `NativeInterpreter`.
-Ideally all of them should be covered by the other "real" `ErrorReport`s.
-"""
-@reportdef struct NativeRemark <: InferenceErrorReport
-    acs::AbstractCallStack
-    s::String
-end
-
-# print
-# -----
 
 function print_report(io, report::InferenceErrorReport, wrote_linfos; kwargs...)
     print_calltrace(io, report.acs, wrote_linfos)
