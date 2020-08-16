@@ -1,4 +1,6 @@
-# TODO: absolute pass mode
+# TODO:
+# - absolute pass mode
+# - disable color output (setup keyword argument like `color = get(io, :color, false)`) ?
 
 # utility
 # -------
@@ -11,7 +13,6 @@ pluralize(n::Integer, one::AbstractString, more::AbstractString = string(one, 's
     return string(n, ' ', isone(n) ? one : more)
 
 printlnstyled(args...; kwarg...) = printstyled(args..., '\n'; kwarg...)
-printsuccess(io) = printstyled(io, "No errors !\n"; color = NOERROR_COLOR)
 
 function print_rails(io, depth)
     n = length(RAIL_COLORS)
@@ -37,10 +38,20 @@ end
 # toplevel
 # --------
 
-function print_reports(io, reports::Vector{<:ToplevelErrorReport};
+function print_reports(io,
+                       reports::Vector{<:ToplevelErrorReport},
+                       postprocess = nothing;
                        print_toplevel_sucess = false,
                        __kwargs...)
-    isempty(reports) && return print_toplevel_sucess ? printsuccess(io) : nothing
+    isempty(reports) && return if print_toplevel_sucess
+        printstyled(io, "No toplevel errors !\n"; color = NOERROR_COLOR)
+    end
+
+    if !isnothing(postprocess)
+        buffer = IOBuffer()
+        target = io
+        io = IOContext(buffer, :color => true)
+    end
 
     color = ERROR_COLOR
     colsize = last(displaysize(io)) ÷ 2
@@ -54,6 +65,11 @@ function print_reports(io, reports::Vector{<:ToplevelErrorReport};
         print_report(io, report)
         s = rpad('└', length(s), '—')
         printlnstyled(io, s; color)
+    end
+
+    if !isnothing(postprocess)
+        s = String(take!(buffer))
+        print(target, postprocess(s))
     end
 
     return
@@ -71,20 +87,33 @@ end
 # inference
 # ---------
 
-function print_reports(io, reports::Vector{<:InferenceErrorReport};
+function print_reports(io,
+                       reports::Vector{<:InferenceErrorReport},
+                       postprocess = nothing; # TODO
                        filter_native_remarks = true,
                        __kwargs...)
     if filter_native_remarks
         reports = filter(r->!isa(r, NativeRemark), reports)
     end
 
-    isempty(reports) && return printsuccess(io)
+    if !isnothing(postprocess)
+        buffer = IOBuffer()
+        target = io
+        io = IOContext(buffer, :color => true)
+    end
+
+    isempty(reports) && return printstyled(io, "No errors !\n"; color = NOERROR_COLOR)
 
     s = string(pluralize(length(reports), "error"), " found", '\n')
     printlnstyled(io, s; color = ERROR_COLOR)
     wrote_linfos = Set{UInt64}()
     foreach(reports) do report
         print_report(io, report, wrote_linfos)
+    end
+
+    if !isnothing(postprocess)
+        s = String(take!(buffer))
+        print(target, postprocess(s))
     end
 
     return

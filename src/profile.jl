@@ -20,7 +20,17 @@ profile_file(args...; kwargs...) = profile_file(stdout, args...; kwargs...)
 function profile_text(io::IO, text::AbstractString, filename::AbstractString, mod::Module = Main; kwargs...)
     virtualmod = generate_virtual_module(mod)
     reports = report_errors(virtualmod, text, filename)
-    print_reports(io, reports; kwargs...)
+    # fix_virtual_traces!(reports, mod, virtualmod)
+
+    # fix virtual module printing based on string manipulation, because "actual" modules may
+    # not be loaded into this process once TP comes to be able to profile modules other than
+    # Main
+    postprocess = let
+        virtual = string(virtualmod)
+        actual = string(mod)
+        (s::String) -> replace(s, virtual => actual)
+    end
+    print_reports(io, reports, postprocess; kwargs...)
 end
 profile_text(args...; kwargs...) = profile_text(stdout, args...; kwargs...)
 
@@ -31,7 +41,7 @@ function report_errors(mod, text, filename)
     λ = generate_virtual_lambda(mod, ret)
     # Core.eval(@__MODULE__, :(λ = $(λ)))
     interp, = profile_call(λ)
-    return fix_virtual_traces!(interp.reports)
+    return interp.reports
 end
 
 generate_virtual_module(actualmod::Module) =
@@ -48,9 +58,12 @@ end
 
 # TODO:
 # - report errors in virtual lambda as toplevel error
-function fix_virtual_traces!(reports)
-    return reports
+# - fix modules ?
+fix_virtual_traces!(reports, actual, virtual) = foreach(reports) do report
+    fix_virtual_trace!(report, actual, virtual)
 end
+fix_virtual_trace!(report::InferenceErrorReport) = return
+fix_virtual_trace!(args...) = return # fallback
 
 # inference
 # ---------
