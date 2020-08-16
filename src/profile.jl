@@ -20,7 +20,6 @@ profile_file(args...; kwargs...) = profile_file(stdout, args...; kwargs...)
 function profile_text(io::IO, text::AbstractString, filename::AbstractString, mod::Module = Main; kwargs...)
     virtualmod = generate_virtual_module(mod)
     reports = report_errors(virtualmod, text, filename)
-    # fix_virtual_traces!(reports, mod, virtualmod)
 
     # fix virtual module printing based on string manipulation, because "actual" modules may
     # not be loaded into this process once TP comes to be able to profile modules other than
@@ -50,20 +49,10 @@ generate_virtual_module(actualmod::Module) =
 function generate_virtual_lambda(mod::Module, toplevelex::Expr)
     @assert isexpr(toplevelex, :toplevel) "toplevel expression should be given"
 
-    ex = :(function ()
-        $(toplevelex.args...)
-    end)
+    body = Expr(:block, toplevelex.args...)
+    ex = Expr(:function, #=lambda=# Expr(:tuple), body)
     return Core.eval(mod, ex)
 end
-
-# TODO:
-# - report errors in virtual lambda as toplevel error
-# - fix modules ?
-fix_virtual_traces!(reports, actual, virtual) = foreach(reports) do report
-    fix_virtual_trace!(report, actual, virtual)
-end
-fix_virtual_trace!(report::InferenceErrorReport) = return
-fix_virtual_trace!(args...) = return # fallback
 
 # inference
 # ---------
