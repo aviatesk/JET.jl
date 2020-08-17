@@ -91,9 +91,14 @@ function print_reports(io,
                        reports::Vector{<:InferenceErrorReport},
                        postprocess = nothing; # TODO
                        filter_native_remarks = true,
+                       print_inference_sucess = true,
                        __kwargs...)
     if filter_native_remarks
         reports = filter(r->!isa(r, NativeRemark), reports)
+    end
+
+    isempty(reports) && return if print_inference_sucess
+        printstyled(io, "No errors !\n"; color = NOERROR_COLOR)
     end
 
     if !isnothing(postprocess)
@@ -101,8 +106,6 @@ function print_reports(io,
         target = io
         io = IOContext(buffer, :color => true)
     end
-
-    isempty(reports) && return printstyled(io, "No errors !\n"; color = NOERROR_COLOR)
 
     s = string(pluralize(length(reports), "error"), " found", '\n')
     printlnstyled(io, s; color = ERROR_COLOR)

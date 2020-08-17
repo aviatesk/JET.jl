@@ -26,8 +26,8 @@ function profile_text(io::IO, text::AbstractString, filename::AbstractString, mo
     # Main
     postprocess = let
         virtual = string(virtualmod)
-        actual = string(mod)
-        (s::String) -> replace(s, virtual => actual)
+        actual  = string(mod)
+        s      -> replace(s, virtual => actual)
     end
     print_reports(io, reports, postprocess; kwargs...)
 end
@@ -50,7 +50,7 @@ function generate_virtual_lambda(mod::Module, toplevelex::Expr)
     @assert isexpr(toplevelex, :toplevel) "toplevel expression should be given"
 
     body = Expr(:block, toplevelex.args...)
-    ex = Expr(:function, #=lambda=# Expr(:tuple), body)
+    ex = Expr(:function, #=nullary lambda=# Expr(:tuple), body)
     return Core.eval(mod, ex)
 end
 
