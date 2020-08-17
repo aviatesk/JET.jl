@@ -41,13 +41,13 @@ function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argty
             if isa(info.results, MethodLookupResult) && isempty(info.results.matches)
                 # no method match for this union split
                 # ret.rt = Bottom # maybe we want to be more strict on error cases ? but such a check will be really against the nature of dynamic typing
-                add_remark!(interp, sv, NoMethodErrorReport(sv, atype, true))
+                add_remark!(interp, sv, NoMethodErrorReport(sv, true))
             end
         end
     elseif isa(info, MethodMatchInfo) && isa(info.results, MethodLookupResult) && isempty(info.results.matches)
         # really no method found
         typeassert(ret.rt, TypeofBottom) # return type is initialized as `Bottom`, and should never change in these passes
-        add_remark!(interp, sv, NoMethodErrorReport(sv, atype, false))
+        add_remark!(interp, sv, NoMethodErrorReport(sv, false))
     end
 
     return ret

@@ -33,75 +33,109 @@ end
 # inference
 # ---------
 
+# TODO: maybe we want to use https://github.com/aviatesk/Mixin.jl
 abstract type InferenceErrorReport end
 
-const AbstractCallStack = Vector{MethodInstance}
+const VirtualFrame = NamedTuple{(:file,:line,:sig),Tuple{Symbol,Int,String}}
+const VirtualStackTrace = Vector{VirtualFrame}
 
-"""
-    @reportdef struct SomeInferenceErrorReport <: InferenceErrorReport
-        acs::AbstractCallStack
-        ...
+# helps inference
+function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
+    return if sym === :st
+        getfield(er, sym)::VirtualStackTrace
+    elseif sym === :msg
+        getfield(er, sym)::String
+    elseif sym === :sig
+        getfield(er, sym)::String
+    else
+        getfield(er, sym) # fallback
     end
-
-Asserts a declaration of concrete `InferenceErrorReport` structs, and adds its inner constructor
-  that accepts `sv::InferenceState` as a first argument and collect `AbstractCallStack` from it.
-"""
-macro reportdef(structex)
-    @assert isexpr(structex, :struct, 3) "struct expression should be given"
-    typedecl, body = structex.args[2:3]
-    @assert isexpr(typedecl, :<:, 2) && __module__.eval(last(typedecl.args)) <: InferenceErrorReport "error report should be declared as subtype of InferenceErrorReport"
-    T = first(typedecl.args)
-
-    flds = filter(x->!isa(x, LineNumberNode), body.args)
-    @assert first(flds) == :(acs::AbstractCallStack) "the first field of error report should be `acs::AbstractCallStack`"
-
-    args = flds[2:end]
-    sigs = _get_sig.(args)
-    nospecialize_sigs = sigs[findall(_should_not_specialize, args)]
-    nospecialize_ex = isempty(nospecialize_sigs) ? quote end : :(@nospecialize $(nospecialize_sigs...))
-    constructor = :(
-        # we give up hygiene here because `@nospecialize` only works on escaped signatures
-        function $(T)(sv::InferenceState, $(map(esc, sigs)...))
-            $(nospecialize_ex)
-            acs = _track_abstract_call_stack!(sv)
-            return new(acs, $(map(esc, sigs)...))
-        end
-    )
-    push!(body.args, constructor)
-
-    return structex
 end
 
-_get_sig(x) = isexpr(x, :(::)) ? first(x.args) : x
-_should_not_specialize(x) = isexpr(x, :(::)) && last(x.args) in (:Type, :Function)
+# macro reportdef(structex)
+#     @assert isexpr(structex, :struct, 3) "struct expression should be given"
+#     typedecl, body = structex.args[2:3]
+#     @assert isexpr(typedecl, :<:, 2) && __module__.eval(last(typedecl.args)) <: InferenceErrorReport "error report should be declared as subtype of InferenceErrorReport"
+#     T = first(typedecl.args)
+#
+#     flds = filter(x->!isa(x, LineNumberNode), body.args)
+#     @assert first(flds) == :(st::VirtualStackTrace) "the first field of error report should be `st::VirtualStackTrace`"
+#
+#     args = flds[2:end]
+#     sigsyms = _get_sigsym.(args)
+#     nospecialize_sigs = sigsyms[findall(_should_not_specialize, args)]
+#     nospecialize_ex = isempty(nospecialize_sigs) ? quote end : :(@nospecialize $(nospecialize_sigs...))
+#     return quote
+#         struct $(T) <: InferenceErrorReport
+#             st::VirtualStackTrace
+#             msg::String
+#             sig::String
+#
+#             # we give up hygiene here because `@nospecialize` only works on escaped signatures
+#             function $(T)(sv::InferenceState, $(map(esc, sigsyms)...))
+#                 $(nospecialize_ex)
+#                 st = _track_abstract_call_stack!(sv)
+#                 msg = get_msg($(T), sv, $(map(esc, sigsyms)...))
+#                 sig = get_sig(sv)
+#                 return new(st, msg, sig)
+#             end
+#         end
+#     end
+# end
+#
+# _get_sigsym(x) = isexpr(x, :(::)) ? first(x.args) : x
+# _should_not_specialize(x) = isexpr(x, :(::)) && last(x.args) in (:Type, :Function)
 
-# traces the current abstract call stack
-function _track_abstract_call_stack!(sv, acs = MethodInstance[])
-    isnothing(sv.parent) || _track_abstract_call_stack!(sv.parent, acs) # prewalk
-    push!(acs, sv.linfo)
-    return acs
+struct NoMethodErrorReport <: InferenceErrorReport
+    st::VirtualStackTrace
+    msg::String
+    sig::String
+
+    function NoMethodErrorReport(sv::InferenceState, unionsplit)
+        st = _track_abstract_call_stack!(sv)
+        msg = get_msg(NoMethodErrorReport, sv, unionsplit)
+        sig = get_sig(sv)
+        return new(st, msg, sig)
+    end
 end
 
-@reportdef struct NoMethodErrorReport <: InferenceErrorReport
-    acs::AbstractCallStack
-    tt::Type
-    unionsplit::Bool
+struct InvalidBuiltinCallErrorReport <: InferenceErrorReport
+    st::VirtualStackTrace
+    msg::String
+    sig::String
+
+    function InvalidBuiltinCallErrorReport(sv::InferenceState)
+        st = _track_abstract_call_stack!(sv)
+        msg = get_msg(InvalidBuiltinCallErrorReport, sv)
+        sig = get_sig(sv)
+        return new(st, msg, sig)
+    end
 end
 
-@reportdef struct InvalidBuiltinCallErrorReport <: InferenceErrorReport
-    acs::AbstractCallStack
-    tt::Type
+struct UndefVarErrorReport <: InferenceErrorReport
+    st::VirtualStackTrace
+    msg::String
+    sig::String
+
+    function UndefVarErrorReport(sv::InferenceState, mod, name)
+        st = _track_abstract_call_stack!(sv)
+        msg = get_msg(UndefVarErrorReport, sv, mod, name)
+        sig = get_sig(sv)
+        return new(st, msg, sig)
+    end
 end
 
-@reportdef struct UndefVarErrorReport <: InferenceErrorReport
-    acs::AbstractCallStack
-    mod::Union{Nothing,Module}
-    name::Symbol
-end
+struct NonBooleanCondErrorReport <: InferenceErrorReport
+    st::VirtualStackTrace
+    msg::String
+    sig::String
 
-@reportdef struct NonBooleanCondErrorReport <: InferenceErrorReport
-    acs::AbstractCallStack
-    t::Type
+    function NonBooleanCondErrorReport(sv::InferenceState, @nospecialize(t))
+        st = _track_abstract_call_stack!(sv)
+        msg = get_msg(NonBooleanCondErrorReport, sv, t)
+        sig = get_sig(sv)
+        return new(st, msg, sig)
+    end
 end
 
 """
@@ -110,7 +144,86 @@ end
 This special `InferenceErrorReport` is just for wrapping remarks from `NativeInterpreter`.
 Ideally all of them should be covered by the other `InferenceErrorReport`s.
 """
-@reportdef struct NativeRemark <: InferenceErrorReport
-    acs::AbstractCallStack
-    s::String
+struct NativeRemark <: InferenceErrorReport
+    st::VirtualStackTrace
+    msg::String
+    sig::String
+
+    function NativeRemark(sv::InferenceState, s)
+        st = _track_abstract_call_stack!(sv)
+        msg = get_msg(NativeRemark, sv, s)
+        sig = get_sig(sv)
+        return new(st, msg, sig)
+    end
 end
+
+# traces the current abstract call stack
+function _track_abstract_call_stack!(sv, st = VirtualFrame[])::VirtualStackTrace
+    sig = if isnothing(sv.parent)
+        get_sig(sv.result.linfo) # get signature from method instance
+    else
+        _track_abstract_call_stack!(sv.parent, st) # prewalk
+        get_sig(sv.parent)
+    end
+    file, line = get_file_line(sv.linfo)
+    push!(st, (; file, line, sig))
+    return st
+end
+
+get_file_line(mi::MethodInstance) = get_file_line(mi.def)
+get_file_line(m::Method) = m.file, m.line
+get_file_line(m::Module) = error("get_file_line(::Module) unimplemented")
+
+# for the top frame
+# adapted from https://github.com/JuliaLang/julia/blob/58febaaf2fe38d90d41c170bc2f416a76eac46f5/base/show.jl#L945-L958
+function get_sig(linfo::MethodInstance)
+    io = IOBuffer()
+    def = linfo.def
+    if isa(def, Method)
+        if isdefined(def, :generator) && linfo === def.generator
+            show(io, def)
+        else
+            Base.show_tuple_as_call(io, def.name, linfo.specTypes)
+        end
+    else
+        print(io, "Toplevel MethodInstance thunk")
+    end
+    return String(take!(io))
+end
+
+# FIXME: obviously these implementations are not exhaustive
+get_sig(sv::InferenceState) = get_sig(sv, get_cur_stmt(sv))
+function get_sig(sv::InferenceState, expr::Expr)
+    head = expr.head
+    return if head === :call
+        f = get_sig(sv, first(expr.args))
+        sig = join(get_sig.(Ref(sv), expr.args[2:end]), ", ")
+        string(f, '(', sig, ')')
+    elseif head === :(=)
+        # lhs = get_sig(sv, first(expr.args), false)
+        rhs = get_sig(sv, last(expr.args))
+        string(rhs)
+    elseif head === :static_parameter
+        string("::", widenconst(sv.sptypes[first(expr.args)]))
+    else
+        string(expr)
+    end
+end
+get_sig(sv::InferenceState, ssa::SSAValue) = string('%', ssa.id, "::", widenconst(sv.src.ssavaluetypes[ssa.id]))
+get_sig(sv::InferenceState, slot::SlotNumber) = string(sv.src.slotnames[slot.id], "::", widenconst(sv.slottypes[slot.id]))
+get_sig(::InferenceState, gr::GlobalRef) = string(gr.mod, '.', gr.name)
+get_sig(sv::InferenceState, gotoifnot::GotoIfNot) = string("goto %", gotoifnot.dest, " if not ", get_sig(sv, gotoifnot.cond))
+get_sig(::InferenceState, qn::QuoteNode) = string(qn, "::", typeof(qn.value))
+get_sig(::InferenceState, @nospecialize(x)) = repr(x; context = :compact => true)
+
+get_msg(::Type{NoMethodErrorReport}, sv, unionsplit) = unionsplit ?
+    "for one of the union split cases, no matching method found for signature" :
+    "no matching method found for signature"
+get_msg(::Type{InvalidBuiltinCallErrorReport}, sv) =
+    "invalid builtin function call"
+get_msg(::Type{UndefVarErrorReport}, sv, mod, name) = isnothing(mod) ?
+    "variable $(name) is not defined" :
+    "variable $(mod).$(name) is not defined"
+get_msg(::Type{NonBooleanCondErrorReport}, sv, @nospecialize(t)) =
+    "non-boolean ($(t)) used in boolean context"
+get_msg(::Type{NativeRemark}, sv, s) = s

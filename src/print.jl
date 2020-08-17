@@ -123,92 +123,47 @@ function print_reports(io,
 end
 
 function print_report(io, report::InferenceErrorReport, wrote_linfos)
-    n = length(report.acs) - 1
+    n = length(report.st) - 1
     color = ERROR_COLOR
 
-    print_calltrace(io, report.acs, wrote_linfos)
+    print_calltrace(io, report.st, wrote_linfos)
     print_rails(io, n)
-    printlnstyled(io, "│ ", report_string(report); color)
+    printstyled(io, "│ ", report.msg, ": "; color)
+    println(io, report.sig)
     print_rails(io, n)
     printlnstyled(io, '└'; color)
 
     return
 end
 
-# traverse abstract call stack, collect locations
-# - TODO: maybe we want to show callsites instead of method sigs in a calltrace
-# - TODO: method sigs or callsites can be type annotated with profiled types
+# traverse abstract call stack, print frames
 
-function print_calltrace(io, linfos, wrote_linfos, depth = 0)
+function print_calltrace(io, st, wrote_linfos, depth = 0)
     i = depth + 1
-    linfo = linfos[i]
+    frame = st[i]
 
-    linfo_hash = hash(linfo)
+    linfo_hash = hash(frame)
     should_print = linfo_hash ∉ wrote_linfos
     push!(wrote_linfos, linfo_hash)
 
-    if length(linfos) == i # error here
-        print_location(io, linfo, depth, true)
+    if length(st) == i # error here
+        print_frame(io, frame, depth, true)
         return
     end
 
     # print current frame adn go into deeper
-    should_print && print_location(io, linfo, depth, false)
-    print_calltrace(io, linfos, wrote_linfos, depth + 1)
+    should_print && print_frame(io, frame, depth, false)
+    print_calltrace(io, st, wrote_linfos, depth + 1)
     return
 end
 
-function print_location(io, linfo, depth, is_err)
-    file, line = get_file_line(linfo)
-
+function print_frame(io, (file, line, sig), depth, is_err)
     # rail
     print_rails(io, depth)
 
     color = is_err ? ERROR_COLOR : RAIL_COLORS[(depth+1)%length(RAIL_COLORS)+1]
     printstyled(io, "┌ @ ", file, ":", line; color)
-
-    # source
-    path = fullpath(string(file))
-    source_line = if isfile(path)
-        strip(readlines(path)[line])
-    else
-        string("within `", linfo.def, ''') # when the file doesn't exist, e.g. defined in REPL
-    end
-    println(io, ' ', source_line)
+    println(io, ' ', sig)
 
     return
 end
-
-report_string(er::NoMethodErrorReport) = er.unionsplit ?
-    "for one of the union split cases, no matching method found for signature: $(tt_to_signature_str(er.tt))" :
-    "no matching method found for signature: $(tt_to_signature_str(er.tt))"
-report_string(er::InvalidBuiltinCallErrorReport) =
-    "invalid builtin function call: $(tt_to_signature_str(er.tt))"
-report_string(er::UndefVarErrorReport) = isnothing(er.mod) ?
-    "variable $(er.name) is not defined" :
-    "variable $(er.mod).$(er.name) is not defined"
-report_string(er::NonBooleanCondErrorReport) =
-    "non-boolean ($(er.t)) used in boolean context"
-report_string(r::NativeRemark) = r.s
-
-# returns a call signature string from tt
-function tt_to_signature_str(@nospecialize(tt::Type{<:Tuple}))
-    fn = ft_to_fname(tt.parameters[1])
-    args = join("::" .* string.(tt.parameters[2:end]), ", ")
-    return string(fn, '(', args, ')')
-end
-
-# returns function name from its type
-function ft_to_fname(@nospecialize(ft))
-    return if isconstType(ft)
-        ft.parameters[1]
-    elseif ft isa DataType && isdefined(ft, :instance)
-        ft.instance
-    else
-        ft
-    end |> string
-end
-
-get_file_line(mi::MethodInstance) = get_file_line(mi.def)
-get_file_line(m::Method) = (; m.file, m.line)
-get_file_line(m::Module) = error("get_file_line(::Module) unimplemented")

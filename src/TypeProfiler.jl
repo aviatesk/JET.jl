@@ -19,14 +19,14 @@ import Core.Compiler:
 
 # TODO: really use `using` instead
 import Core:
-    MethodInstance, TypeofBottom
-
+    TypeofBottom
+    
 import Core.Compiler:
-    AbstractInterpreter, NativeInterpreter, InferenceState, InferenceResult, NOT_FOUND,
-    Bottom, widenconst, ⊑, isconstType, typeintersect, Builtin, CallMeta, argtypes_to_type,
-    MethodMatchInfo, UnionSplitInfo, MethodLookupResult, Const, VarTable, SSAValue,
-    abstract_eval_ssavalue, Slot, slot_id, GlobalRef, GotoIfNot, _methods_by_ftype,
-    specialize_method, typeinf
+    AbstractInterpreter, NativeInterpreter, InferenceState, InferenceResult, CodeInfo,
+    MethodInstance, Bottom, NOT_FOUND, MethodMatchInfo, UnionSplitInfo, MethodLookupResult,
+    Const, VarTable, SSAValue, SlotNumber, Slot, slot_id, GlobalRef, GotoIfNot, widenconst,
+    isconstType, typeintersect, ⊑, Builtin, CallMeta,
+    argtypes_to_type, abstract_eval_ssavalue, _methods_by_ftype, specialize_method, typeinf
 
 import Base:
     parse_input_line, to_tuple_type
