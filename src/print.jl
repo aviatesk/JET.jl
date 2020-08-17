@@ -1,6 +1,4 @@
-# TODO:
-# - absolute pass mode
-# - disable color output (setup keyword argument like `color = get(io, :color, false)`) ?
+# TODO: absolute pass mode
 
 # utility
 # -------
@@ -40,37 +38,40 @@ end
 
 function print_reports(io,
                        reports::Vector{<:ToplevelErrorReport},
-                       postprocess = nothing;
+                       postprocess = identity;
                        print_toplevel_sucess = false,
+                       color = get(io, :color, false),
                        __kwargs...)
     isempty(reports) && return if print_toplevel_sucess
         printstyled(io, "No toplevel errors !\n"; color = NOERROR_COLOR)
     end
 
-    if !isnothing(postprocess)
-        buffer = IOBuffer()
-        target = io
-        io = IOContext(buffer, :color => true)
-    end
-
+    hascolor = color
     color = ERROR_COLOR
-    colsize = last(displaysize(io)) ÷ 2
+
+    buf = IOBuffer()
+    ioctx = IOContext(buf, :color => hascolor)
 
     s = string(pluralize(length(reports), "toplevel error"), " found", '\n')
-    printlnstyled(io, s; color)
+    printlnstyled(ioctx, s; color)
 
-    foreach(reports) do report
+    tmpbuf = IOBuffer()
+    tmpioctx = IOContext(tmpbuf, :color => hascolor)
+    rail = (printstyled(tmpioctx, "│ "; color); String(take!(tmpbuf)))
+    for report in reports
         s = string("┌ @ ", report.file, ":", report.line, ' ')
-        printlnstyled(io, s; color)
-        print_report(io, report)
-        s = rpad('└', length(s), '—')
-        printlnstyled(io, s; color)
+        printlnstyled(ioctx, s; color)
+
+        print_report(tmpioctx, report)
+        errlines = strip(String(take!(tmpbuf)))
+        println(ioctx, join(string.(rail, split(errlines, '\n')), '\n'))
+
+        s = string('└', '─'^(length(s)-1))
+        printlnstyled(ioctx, s; color)
     end
 
-    if !isnothing(postprocess)
-        s = String(take!(buffer))
-        print(target, postprocess(s))
-    end
+    s = String(take!(buf))
+    print(io, postprocess(s))
 
     return
 end
@@ -89,9 +90,10 @@ end
 
 function print_reports(io,
                        reports::Vector{<:InferenceErrorReport},
-                       postprocess = nothing; # TODO
+                       postprocess = identity;
                        filter_native_remarks = true,
                        print_inference_sucess = true,
+                       color = get(io, :color, false),
                        __kwargs...)
     if filter_native_remarks
         reports = filter(r->!isa(r, NativeRemark), reports)
@@ -101,23 +103,19 @@ function print_reports(io,
         printstyled(io, "No errors !\n"; color = NOERROR_COLOR)
     end
 
-    if !isnothing(postprocess)
-        buffer = IOBuffer()
-        target = io
-        io = IOContext(buffer, :color => true)
-    end
+    hascolor = color
+    buf = IOBuffer()
+    ioctx = IOContext(buf, :color => hascolor)
 
     s = string(pluralize(length(reports), "error"), " found", '\n')
-    printlnstyled(io, s; color = ERROR_COLOR)
+    printlnstyled(ioctx, s; color = ERROR_COLOR)
     wrote_linfos = Set{UInt64}()
-    foreach(reports) do report
-        print_report(io, report, wrote_linfos)
+    for report in reports
+        print_report(ioctx, report, wrote_linfos)
     end
 
-    if !isnothing(postprocess)
-        s = String(take!(buffer))
-        print(target, postprocess(s))
-    end
+    s = String(take!(buf))
+    print(io, postprocess(s))
 
     return
 end
