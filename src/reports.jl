@@ -210,9 +210,14 @@ function get_sig(sv::InferenceState, expr::Expr)
     end
 end
 get_sig(sv::InferenceState, ssa::SSAValue) = string('%', ssa.id, "::", widenconst(sv.src.ssavaluetypes[ssa.id]))
-get_sig(sv::InferenceState, slot::SlotNumber) = string(sv.src.slotnames[slot.id], "::", widenconst(sv.slottypes[slot.id]))
+function get_sig(sv::InferenceState, slot::SlotNumber)
+    ss = string(sv.src.slotnames[slot.id])
+    isempty(ss) && (ss = string(slot)) # fallback if no explicit slotname
+    string(ss, "::", widenconst(sv.slottypes[slot.id]))
+end
 get_sig(::InferenceState, gr::GlobalRef) = string(gr.mod, '.', gr.name)
 get_sig(sv::InferenceState, gotoifnot::GotoIfNot) = string("goto %", gotoifnot.dest, " if not ", get_sig(sv, gotoifnot.cond))
+get_sig(sv::InferenceState, ret::ReturnNode) = string("return ", get_sig(sv, ret.val))
 get_sig(::InferenceState, qn::QuoteNode) = string(qn, "::", typeof(qn.value))
 get_sig(::InferenceState, @nospecialize(x)) = repr(x; context = :compact => true)
 

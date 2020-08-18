@@ -20,12 +20,12 @@ import Core.Compiler:
 # TODO: really use `using` instead
 import Core:
     TypeofBottom
-    
+
 import Core.Compiler:
     AbstractInterpreter, NativeInterpreter, InferenceState, InferenceResult, CodeInfo,
     MethodInstance, Bottom, NOT_FOUND, MethodMatchInfo, UnionSplitInfo, MethodLookupResult,
-    Const, VarTable, SSAValue, SlotNumber, Slot, slot_id, GlobalRef, GotoIfNot, widenconst,
-    isconstType, typeintersect, ⊑, Builtin, CallMeta,
+    Const, VarTable, SSAValue, SlotNumber, Slot, slot_id, GlobalRef, GotoIfNot, ReturnNode,
+    widenconst, isconstType, typeintersect, ⊑, Builtin, CallMeta,
     argtypes_to_type, abstract_eval_ssavalue, _methods_by_ftype, specialize_method, typeinf
 
 import Base:
