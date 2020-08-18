@@ -1,5 +1,3 @@
-# TODO: absolute pass mode
-
 # utility
 # -------
 
@@ -21,16 +19,13 @@ function print_rails(io, depth)
     return
 end
 
+# FIXME: we may need something like this for stdlibs as well, or just always use `RELEASE_DIR`
 const SRC_DIR = normpath(Sys.BINDIR, "..", "..", "base")
 const RELEASE_DIR = normpath(Sys.BINDIR, "..", "share", "julia", "base")
-basepath(filename) = normpath((@static isdir(SRC_DIR) ? SRC_DIR : RELEASE_DIR), filename)
-function fullpath(filename)
-    path = isabspath(filename) ? filename : basepath(filename)
-    return try
-        realpath(path)
-    catch
-        path
-    end
+expandbasepath(filename) = normpath((@static isdir(SRC_DIR) ? SRC_DIR : RELEASE_DIR), filename)
+function tofullpath(filename::AbstractString)
+    path = abspath(filename)
+    return isfile(path) ? path : expandbasepath(filename)
 end
 
 # toplevel
@@ -41,6 +36,7 @@ function print_reports(io,
                        postprocess = identity;
                        print_toplevel_sucess = false,
                        color = get(io, :color, false),
+                       fullpath = false,
                        __kwargs...)
     isempty(reports) && return if print_toplevel_sucess
         printstyled(io, "No toplevel errors !\n"; color = NOERROR_COLOR)
@@ -59,7 +55,7 @@ function print_reports(io,
     tmpioctx = IOContext(tmpbuf, :color => hascolor)
     rail = (printstyled(tmpioctx, "│ "; color); String(take!(tmpbuf)))
     for report in reports
-        s = string("┌ @ ", report.file, ":", report.line, ' ')
+        s = string("┌ @ ", (fullpath ? tofullpath : identity)(string(report.file)), ":", report.line, ' ')
         printlnstyled(ioctx, s; color)
 
         print_report(tmpioctx, report)
@@ -94,6 +90,7 @@ function print_reports(io,
                        filter_native_remarks = true,
                        print_inference_sucess = true,
                        color = get(io, :color, false),
+                       fullpath = false,
                        __kwargs...)
     if filter_native_remarks
         reports = filter(r->!isa(r, NativeRemark), reports)
@@ -111,7 +108,7 @@ function print_reports(io,
     printlnstyled(ioctx, s; color = ERROR_COLOR)
     wrote_linfos = Set{UInt64}()
     for report in reports
-        print_report(ioctx, report, wrote_linfos)
+        print_report(ioctx, report, wrote_linfos; fullpath)
     end
 
     s = String(take!(buf))
@@ -120,11 +117,11 @@ function print_reports(io,
     return
 end
 
-function print_report(io, report::InferenceErrorReport, wrote_linfos)
+function print_report(io, report::InferenceErrorReport, wrote_linfos; kwargs...)
     n = length(report.st) - 1
     color = ERROR_COLOR
 
-    print_calltrace(io, report.st, wrote_linfos)
+    print_calltrace(io, report.st, wrote_linfos; kwargs...)
     print_rails(io, n)
     printstyled(io, "│ ", report.msg, ": "; color)
     println(io, report.sig)
@@ -136,7 +133,7 @@ end
 
 # traverse abstract call stack, print frames
 
-function print_calltrace(io, st, wrote_linfos, depth = 0)
+function print_calltrace(io, st, wrote_linfos, depth = 0; kwargs...)
     i = depth + 1
     frame = st[i]
 
@@ -145,22 +142,22 @@ function print_calltrace(io, st, wrote_linfos, depth = 0)
     push!(wrote_linfos, linfo_hash)
 
     if length(st) == i # error here
-        print_frame(io, frame, depth, true)
-        return
+        return print_frame(io, frame, depth, true; kwargs...)
     end
 
     # print current frame adn go into deeper
-    should_print && print_frame(io, frame, depth, false)
-    print_calltrace(io, st, wrote_linfos, depth + 1)
+    should_print && print_frame(io, frame, depth, false; kwargs...)
+    print_calltrace(io, st, wrote_linfos, depth + 1; kwargs...)
+
     return
 end
 
-function print_frame(io, (file, line, sig), depth, is_err)
+function print_frame(io, (file, line, sig), depth, is_err; fullpath = false)
     # rail
     print_rails(io, depth)
 
     color = is_err ? ERROR_COLOR : RAIL_COLORS[(depth+1)%length(RAIL_COLORS)+1]
-    printstyled(io, "┌ @ ", file, ":", line; color)
+    printstyled(io, "┌ @ ", (fullpath ? tofullpath : identity)(string(file)), ":", line; color)
     println(io, ' ', sig)
 
     return
