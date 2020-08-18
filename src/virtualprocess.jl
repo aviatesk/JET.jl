@@ -4,18 +4,17 @@
 # - special case `include` call
 
 """
-    parse_and_transform(mod::Module, s::AbstractString, filename::AbstractString) ->
-      Union{Expr,Vector{<:ToplevelErrorReport}}
+    parse_and_transform(mod::Module, s::AbstractString, filename::AbstractString) -> Union{Expr,Vector{<:ToplevelErrorReport}}
 
 Parses `s` into a toplevel expression and transforms the resulting expression so that the
   final output expression can be wrapped into a virtual function to be profiled in
-  `mod::Module`.
+  `mod`.
 
 Returns `Vector{<:ToplevelErrorReport}` if there are any error found during the text parsing
  and AST transformation.
 The AST transformation includes:
-- expand macros in a given `mod::Module`
-- extract toplevel "defintions" and directly evaluate them in a given `mod::Module`
+- expand macros in a given `mod`
+- extract toplevel "defintions" and directly evaluate them in a given `mod`
 - remove `const` annotations
 """
 function parse_and_transform(mod::Module,
@@ -32,44 +31,46 @@ function parse_and_transform(mod::Module,
     reports::Vector{ToplevelErrorReport} = ToplevelErrorReport[]
     line::Int = 1
     file::String = filename
-    function macroexpand_with_err_handling(mod, x)
-        f() = macroexpand(mod, x)
-        function err_handler(err, st)
-            # `4` corresponds to `with_err_handling`, `f`, `macroexpand` and its kwfunc
-            st = crop_stacktrace(st, 4)
-            push!(reports, ActualErrorWrapped(err, st, file, line))
-            return nothing
-        end
-        with_err_handling(f, err_handler)
+    function macroexpand_err_handler(err, st)
+        # `4` corresponds to `with_err_handling`, `f`, `macroexpand` and its kwfunc
+        st = crop_stacktrace(st, 4)
+        push!(reports, ActualErrorWrapped(err, st, file, line))
+        return nothing
     end
-    function eval_with_err_handling(mod, x)
-        f() = Core.eval(mod, x)
-        function err_handler(err, st)
-            # `3` corresponds to `with_err_handling`, `f` and `eval`
-            st = crop_stacktrace(st, 3)
-            push!(reports, ActualErrorWrapped(err, st, file, line))
-            return nothing
-        end
-        with_err_handling(f, err_handler)
+    macroexpand_with_err_handling(mod, x) = return with_err_handling(macroexpand_err_handler) do
+        macroexpand(mod, x)
+    end
+    function eval_err_handler(err, st)
+        # `3` corresponds to `with_err_handling`, `f` and `eval`
+        st = crop_stacktrace(st, 3)
+        push!(reports, ActualErrorWrapped(err, st, file, line))
+        return nothing
+    end
+    eval_with_err_handling(mod, x) = return with_err_handling(eval_err_handler) do
+        Core.eval(mod, x)
     end
 
     ret = walk_and_transform!(ex, Symbol[]) do x, scope
+        # update file/line info
         if x isa LineNumberNode
-            line = x.line # update
+            line = x.line
             # file = x.file # NOTE: will be needed when this function handles `include` calls
             return x
         end
 
+        # expand macro
         if isexpr(x, :macrocall)
             x = macroexpand_with_err_handling(mod, x)
         end
 
+        # always escape inside expression
         if :quote in scope
-            # always escape inside expression
             x
 
+        # evaluate these toplevel expressions only when not in function scope:
+        # owe need this because otherwise these invalid expressions can be "extracted" and
+        # evaled wrongly while they actually cause syntax errors
         elseif isexpr(x, (:macro, :abstract, :struct, :primitive))
-            # toplevel expressions other than functions
             leftover = if :function ∉ scope
                 eval_with_err_handling(mod, x)
             else
@@ -79,13 +80,13 @@ function parse_and_transform(mod::Module,
             end
             :($(leftover))
 
+        # hoist toplevel function definitions
         elseif !islocalscope(scope) && isfuncdef(x)
-            # hoist functiono
             leftover = eval_with_err_handling(mod, x)
             :($(leftover))
 
+        # remove `const` annotation
         elseif isexpr(x, :const)
-            # remove `const` annotation
             first(x.args)
 
         else
@@ -125,7 +126,7 @@ function walk_and_transform!(f, x, scope)
     x = f(x, scope)
     x isa Expr || return x
     push!(scope, x.head)
-    foreach(enumerate(x.args)) do (i, ex)
+    for (i, ex) in enumerate(x.args)
         x.args[i] = walk_and_transform!(f, ex, scope)
     end
     pop!(scope)
