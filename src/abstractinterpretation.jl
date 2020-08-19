@@ -40,7 +40,7 @@ function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argty
         for info in info.matches
             if isa(info.results, MethodLookupResult) && isempty(info.results.matches)
                 # no method match for this union split
-                # ret.rt = Bottom # maybe we want to be more strict on error cases ? but such a check will be really against the nature of dynamic typing
+                # ret.rt = Bottom # maybe we want to be more strict on error cases ?
                 add_remark!(interp, sv, NoMethodErrorReport(sv, true))
             end
         end
@@ -86,23 +86,12 @@ function abstract_eval_value(interp::TPInterpreter, @nospecialize(e), vtypes::Va
     return ret
 end
 
-function abstract_eval_statement(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    ret = invoke_native(abstract_eval_statement, interp, e, vtypes, sv)
-
-    # report undef var error
-    if isa(e, Expr)
-        if e.head === :isdefined
-            sym = e.args[1]
-            if isa(sym, Symbol)
-                check_global_ref!(interp, sv, sv.mod, sym) && (ret = Bottom)
-            elseif isa(sym, GlobalRef)
-                check_global_ref!(interp, sv, sym.mod, sym.name) && (ret = Bottom)
-            end
-        end
-    end
-
-    return ret
-end
+# overload this to profile on e.g. `Expr(:new, ...)`
+# function abstract_eval_statement(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
+#     ret = invoke_native(abstract_eval_statement, interp, e, vtypes, sv)
+#
+#     return ret
+# end
 
 # FIXME: this is such an horrible and super fragile copy-and-paste ...
 # the whole point is to not let abstract interpretation to halt even after there is an

@@ -74,16 +74,14 @@ typeof′(x::Type{T}) where {T} = Type{T}
 # so may suppress error reports
 #
 # mre would be
-# ```julia
-# julia> @profile_call sum("julia") # error reported
-# julia> sum("julia") # cause actual error
-# julia> @profile_call sum("julia") # error won't reported again
-# ```
+# julia> @profile_call sum("julia") # errors will be reported
+# julia> sum("julia")               # cause actual error
+# julia> @profile_call sum("julia") # errors get surpressed and won't be reported again
 #
 # maybe we can do either of
 # - always invalidate cached method specializations
 # - or attach error reports to each method specializations and use that when using cached method specialization cache
-#
+
 # TODO:
 # - handle multiple applicable methods ?
 # - `profile_call_builtin!` ?
