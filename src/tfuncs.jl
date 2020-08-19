@@ -3,7 +3,9 @@ function builtin_tfunction(interp::TPInterpreter, @nospecialize(f), argtypes::Ar
                            sv::Union{InferenceState,Nothing})
     ret = invoke_native(builtin_tfunction, interp, f, argtypes, sv)
 
-    if ret === Bottom
+    if f === throw
+        # TODO: needs a special case here
+    elseif ret === Bottom
         add_remark!(interp, sv, InvalidBuiltinCallErrorReport(sv))
     end
 

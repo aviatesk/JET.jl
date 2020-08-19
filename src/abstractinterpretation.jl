@@ -58,11 +58,13 @@ function abstract_eval_special_value(interp::TPInterpreter, @nospecialize(e), vt
 
     # report undef var error
     if isa(e, Slot)
-        id = slot_id(e)
-        if vtypes[id].undef
-            s = sv.src.slotnames[id]
-            add_remark!(interp, sv, UndefVarErrorReport(sv, Main, s))
-        end
+        # id = slot_id(e)
+        # s = sv.src.slotnames[id]
+        # t = vtypes[id].typ
+        # if t === NOT_FOUND || t === Bottom
+        #     s = sv.src.slotnames[id]
+        #     add_remark!(interp, sv, UndefVarErrorReport(sv, sv.mod, s))
+        # end
     elseif isa(e, GlobalRef)
         check_global_ref!(interp, sv, e.mod, e.name) && (ret = Bottom) # ret here should annotated as `Any` by `NativeInterpreter`, but here I would like to be more conservative and change it to `Bottom`
     end
