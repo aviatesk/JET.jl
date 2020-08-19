@@ -213,7 +213,7 @@ get_sig(sv::InferenceState, ssa::SSAValue) = string('%', ssa.id, "::", widencons
 function get_sig(sv::InferenceState, slot::SlotNumber)
     ss = string(sv.src.slotnames[slot.id])
     isempty(ss) && (ss = string(slot)) # fallback if no explicit slotname
-    string(ss, "::", widenconst(sv.slottypes[slot.id]))
+    return string(ss, "::", widenconst(sv.slottypes[slot.id]))
 end
 get_sig(::InferenceState, gr::GlobalRef) = string(gr.mod, '.', gr.name)
 get_sig(sv::InferenceState, gotoifnot::GotoIfNot) = string("goto %", gotoifnot.dest, " if not ", get_sig(sv, gotoifnot.cond))

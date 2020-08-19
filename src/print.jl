@@ -96,6 +96,8 @@ function print_reports(io,
         reports = filter(r->!isa(r, NativeRemark), reports)
     end
 
+    uniquify_reports!(reports)
+
     isempty(reports) && return if print_inference_sucess
         printstyled(io, "No errors !\n"; color = NOERROR_COLOR)
     end
@@ -117,46 +119,53 @@ function print_reports(io,
     return
 end
 
-function print_report(io, report::InferenceErrorReport, wrote_linfos; kwargs...)
-    n = length(report.st) - 1
+# FIXME:
+# this is a dirty fix for duplicated reports; see comments above of the overwriting of
+# `typeinf_local` in src/abstractinterpretation.jl
+function uniquify_reports!(reports::Vector{<:InferenceErrorReport})
+    return unique!(reports) do report
+        return last(report.st), report.msg, report.sig # uniquify keys
+    end
+end
+
+# traverse abstract call stack, print frames
+function print_report(io, report::InferenceErrorReport, wrote_linfos, depth = 1; kwargs...)
+    if length(report.st) == depth # error here
+        return print_error_frame(io, report, depth; kwargs...)
+    end
+
+    frame = report.st[depth]
+
+    # cache current frame info
+    linfo_hash = hash(frame)
+    should_print = linfo_hash ∉ wrote_linfos
+    push!(wrote_linfos, linfo_hash)
+
+    # print current frame and go into deeper
+    should_print && print_frame(io, frame, depth, false; kwargs...)
+    print_report(io, report, wrote_linfos, depth + 1; kwargs...)
+
+    return
+end
+
+function print_error_frame(io, report, depth; kwargs...)
+    frame = report.st[depth]
     color = ERROR_COLOR
 
-    print_calltrace(io, report.st, wrote_linfos; kwargs...)
-    print_rails(io, n)
+    print_frame(io, frame, depth, true; kwargs...)
+    print_rails(io, depth-1)
     printstyled(io, "│ ", report.msg, ": "; color)
     println(io, report.sig)
-    print_rails(io, n)
+    print_rails(io, depth-1)
     printlnstyled(io, '└'; color)
 
     return
 end
 
-# traverse abstract call stack, print frames
-
-function print_calltrace(io, st, wrote_linfos, depth = 0; kwargs...)
-    i = depth + 1
-    frame = st[i]
-
-    linfo_hash = hash(frame)
-    should_print = linfo_hash ∉ wrote_linfos
-    push!(wrote_linfos, linfo_hash)
-
-    if length(st) == i # error here
-        return print_frame(io, frame, depth, true; kwargs...)
-    end
-
-    # print current frame adn go into deeper
-    should_print && print_frame(io, frame, depth, false; kwargs...)
-    print_calltrace(io, st, wrote_linfos, depth + 1; kwargs...)
-
-    return
-end
-
 function print_frame(io, (file, line, sig), depth, is_err; fullpath = false)
-    # rail
-    print_rails(io, depth)
+    print_rails(io, depth-1)
 
-    color = is_err ? ERROR_COLOR : RAIL_COLORS[(depth+1)%length(RAIL_COLORS)+1]
+    color = is_err ? ERROR_COLOR : RAIL_COLORS[(depth)%length(RAIL_COLORS)+1]
     printstyled(io, "┌ @ ", (fullpath ? tofullpath : identity)(string(file)), ":", line; color)
     println(io, ' ', sig)
 

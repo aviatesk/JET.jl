@@ -86,20 +86,24 @@ function abstract_eval_value(interp::TPInterpreter, @nospecialize(e), vtypes::Va
     return ret
 end
 
-# overload this to profile on e.g. `Expr(:new, ...)`
+# # overload this to profile on e.g. `Expr(:new, ...)`
 # function abstract_eval_statement(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
 #     ret = invoke_native(abstract_eval_statement, interp, e, vtypes, sv)
 #
 #     return ret
 # end
 
-# FIXME: this is such an horrible and super fragile copy-and-paste ...
+# FIXME:
+# this is such an super fragile and problematic copy-and-paste;
 # the whole point is to not let abstract interpretation to halt even after there is an
 # obvious error point found (, which is usually represented by `Bottom`-annotated type and
 # triggers early-loop-escape in the native implementation), and allow TP to collect as much
 # errors as possible; so the only diffs are:
 # - the first argument changed to `TPInterpreter`
 # - comment out 3 early-loop-escapes
+#
+# ... and actually this introduces one obvious bug that `typeinf_local(::TPInterpreter, ::InferenceState)`
+# sometimes runs the same inference routine twice, which leads to duplicated error reports
 
 __init__() = Core.eval(Core.Compiler, quote
 
