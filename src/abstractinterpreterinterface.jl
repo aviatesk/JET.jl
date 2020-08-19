@@ -2,7 +2,7 @@
 
 struct TPInterpreter <: AbstractInterpreter
     native::NativeInterpreter
-    reports::Vector{ErrorReport}
+    reports::Vector{InferenceErrorReport}
     optimize::Bool
     compress::Bool
     discard_trees::Bool
@@ -29,7 +29,7 @@ code_cache(interp::TPInterpreter) = code_cache(interp.native)
 lock_mi_inference(::TPInterpreter, ::MethodInstance) = nothing
 unlock_mi_inference(::TPInterpreter, ::MethodInstance) = nothing
 
-function add_remark!(interp::TPInterpreter, ::InferenceState, report::ErrorReport)
+function add_remark!(interp::TPInterpreter, ::InferenceState, report::InferenceErrorReport)
     push!(interp.reports, report)
     return
 end

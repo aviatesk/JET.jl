@@ -1,24 +1,54 @@
 @doc read(normpath(dirname(@__DIR__), "README.md"), String)
 module TypeProfiler
 
-include("profiler/profiler.jl")
+# imports
+# -------
 
-using Base:
-    Meta.isexpr
+import Core.Compiler:
+    # `AbstractInterpreter` API defined in abstractinterpreterinterface.jl
+    InferenceParams, OptimizationParams, get_world_counter, get_inference_cache, code_cache,
+    lock_mi_inference, unlock_mi_inference, add_remark!, may_optimize, may_compress,
+    may_discard_trees,
+    # abstractinterpretation.jl
+    abstract_call_gf_by_type, abstract_call_known, abstract_call,
+    abstract_eval_special_value, abstract_eval_value_expr, abstract_eval_value,
+    abstract_eval_statement, builtin_tfunction, typeinf_local
 
-macro profile_call(ex, kwargs...)
-    @assert isexpr(ex, :call) "function call expression should be given"
-    f = ex.args[1]
-    args = ex.args[2:end]
+# usings
+# ------
 
-    quote let
-        interp, frame = Profiler.profile_call($(esc(f)), $(map(esc, args)...))
-        Profiler.print_reports(interp; $(map(esc, kwargs)...))
-        frame.result.result
-    end end
-end
+# TODO: really use `using` instead
+import Core:
+    TypeofBottom
+
+import Core.Compiler:
+    AbstractInterpreter, NativeInterpreter, InferenceState, InferenceResult, CodeInfo,
+    MethodInstance, Bottom, NOT_FOUND, MethodMatchInfo, UnionSplitInfo, MethodLookupResult,
+    Const, VarTable, SSAValue, SlotNumber, Slot, slot_id, GlobalRef, GotoIfNot, ReturnNode,
+    widenconst, isconstType, typeintersect, ⊑, Builtin, CallMeta,
+    argtypes_to_type, abstract_eval_ssavalue, _methods_by_ftype, specialize_method, typeinf
+
+import Base:
+    parse_input_line, to_tuple_type
+
+import Base.Meta:
+    isexpr, _parse_string
+
+# includes
+# --------
+
+include("reports.jl")
+include("virtualprocess.jl")
+include("abstractinterpreterinterface.jl")
+include("abstractinterpretation.jl")
+include("tfuncs.jl")
+include("print.jl")
+include("profile.jl")
+
+# exports
+# -------
 
 export
-    @profile_call
+    profile_file, profile_text, @profile_call
 
 end
