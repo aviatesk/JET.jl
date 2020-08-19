@@ -82,9 +82,9 @@ julia> profile_file("demo.jl")
 Hooray !
 TypeProfiler.jl tries to find possible error points (e.g. `MethodError: no method matching isless(::String, ::Int64)`) given toplevel call sigutures of generic functions (e.g. `fib("1000")`).
 
-Note that TypeProfiler.jl can find these errors while demo.jl is so ridiculous (especially the `fib(1000)` part) that it never terminates in actual execution.
-This is because TypeProfiler.jl profiles code only on _type level_.
-This technique is often called "abstract interpretation" and TypeProfiler.jl internally uses Julia's native abstract interpreter implementation (for its JIT compiling), so it can profile code as fast/correctly as our Julia's code generation.
+Note that TP can find these errors while demo.jl is so ridiculous (especially the `fib(1000)` part) that it never terminates in actual execution.
+This is because TP profiles code only on _type level_.
+This technique is often called "abstract interpretation" and TP internally uses Julia's native abstract interpreter implementation (for its JIT compiling), so it can profile code as fast/correctly as our Julia's code generation.
 
 Lastly let's modify demo.jl so that it works nicely:
 
@@ -138,8 +138,8 @@ No errors !
 
 ### TODOs
 
-- watch mode
 - handle `import/using`, `include` etc.
+- watch mode
 - more reports
   * more correct error reports in general
   * report some cases of `throw`, e.g. `rand('1')::ArgumentError("Sampler for this object is not defined")`
