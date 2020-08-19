@@ -18,29 +18,23 @@ end
 profile_file(args...; kwargs...) = profile_file(stdout, args...; kwargs...)
 
 function profile_text(io::IO, text::AbstractString, filename::AbstractString, mod::Module = Main; kwargs...)
-    virtualmod = generate_virtual_module(mod)
-    reports = report_errors(virtualmod, text, filename)
-
-    # fix virtual module printing based on string manipulation, because "actual" modules may
-    # not be loaded into this process once TP comes to be able to profile modules other than
-    # Main
-    postprocess = let
-        virtual = string(virtualmod)
-        actual  = string(mod)
-        s      -> replace(s, virtual => actual)
-    end
+    reports, postprocess = report_errors(mod, text, filename)
     print_reports(io, reports, postprocess; kwargs...)
 end
 profile_text(args...; kwargs...) = profile_text(stdout, args...; kwargs...)
 
 function report_errors(mod, text, filename)
-    ret = parse_and_transform(mod, text, filename)
-    isa(ret, Vector{<:ToplevelErrorReport}) && return ret
+    virtualmod = generate_virtual_module(mod)
 
-    λ = generate_virtual_lambda(mod, ret)
+    ret = parse_and_transform(virtualmod, text, filename)
+    isa(ret, Vector{<:ToplevelErrorReport}) && return ret, identity
+
+    λ = generate_virtual_lambda(virtualmod, ret)
     # Core.eval(@__MODULE__, :(λ = $(λ)))
     interp, = profile_call(λ)
-    return interp.reports
+    postprocess = generate_postprocess(λ, virtualmod, mod)
+
+    return interp.reports, postprocess
 end
 
 generate_virtual_module(actualmod::Module) =
@@ -52,6 +46,19 @@ function generate_virtual_lambda(mod::Module, toplevelex::Expr)
     body = Expr(:block, toplevelex.args...)
     ex = Expr(:function, #=nullary lambda=# Expr(:tuple), body)
     return Core.eval(mod, ex)
+end
+
+# fix virtual λ / module printing based on string manipulation; the "actual" modules may not
+# be loaded into this process once TP comes to be able to profile modules other than Main
+function generate_postprocess(@nospecialize(λ), virtualmod::Module, actualmod::Module)
+    callsig = string("(::", typeof(λ), ")()")
+    callfix = s -> replace(s, callsig => "top-level scope")
+
+    virtual = string(virtualmod)
+    actual  = string(actualmod)
+    modfix  = s -> replace(s, virtual => actual)
+
+    return s -> (modfix ∘ callfix)(s)
 end
 
 # inference
