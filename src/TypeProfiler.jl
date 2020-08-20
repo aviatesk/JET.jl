@@ -34,6 +34,8 @@ import Base:
 import Base.Meta:
     isexpr, _parse_string
 
+using FileWatching
+
 # includes
 # --------
 
@@ -44,11 +46,12 @@ include("abstractinterpretation.jl")
 include("tfuncs.jl")
 include("print.jl")
 include("profile.jl")
+include("watch.jl")
 
 # exports
 # -------
 
 export
-    profile_file, profile_text, @profile_call
+    profile_file, profile_and_watch_file, profile_text, @profile_call
 
 end

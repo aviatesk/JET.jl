@@ -11,19 +11,32 @@
 #   TP will try to expand any macro, but any macro expansion including access to global
 #   variables will fail since TP just infers their types and avoids the actual evaluation
 
-function profile_file(io::IO, filename::AbstractString, mod::Module = Main; kwargs...)
+function profile_file(io::IO,
+                      filename::AbstractString,
+                      mod::Module = Main;
+                      kwargs...)
     text = read(filename, String)
     profile_text(io, text, filename, mod; kwargs...)
 end
 profile_file(args...; kwargs...) = profile_file(stdout, args...; kwargs...)
 
-function profile_text(io::IO, text::AbstractString, filename::AbstractString, mod::Module = Main; kwargs...)
-    reports, postprocess = report_errors(mod, text, filename)
-    print_reports(io, reports, postprocess; kwargs...)
+function profile_text(io::IO,
+                      text::AbstractString,
+                      filename::AbstractString = "top-level",
+                      mod::Module = Main;
+                      log_profiling_timing::Bool = false,
+                      kwargs...)
+    reports, postprocess = report_errors(mod, text, filename; log_profiling_timing)
+    return print_reports(io, filename, reports, postprocess; kwargs...)
 end
 profile_text(args...; kwargs...) = profile_text(stdout, args...; kwargs...)
 
-function report_errors(mod, text, filename)
+function report_errors(mod, text, filename; log_profiling_timing = false)
+    if log_profiling_timing
+        @info "profiling $(filename) ..."
+        s = time()
+    end
+
     virtualmod = generate_virtual_module(mod)
 
     ret = parse_and_transform(virtualmod, text, filename)
@@ -33,6 +46,11 @@ function report_errors(mod, text, filename)
     # Core.eval(@__MODULE__, :(λ = $(λ)))
     interp, = profile_call(λ)
     postprocess = generate_postprocess(λ, virtualmod, mod)
+
+    if log_profiling_timing
+        sec = round(time() - s; digits = 3)
+        @info "profiling finished in $(sec) sec"
+    end
 
     return interp.reports, postprocess
 end
