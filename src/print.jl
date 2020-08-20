@@ -4,6 +4,8 @@
 const ERROR_COLOR = :light_red
 const NOERROR_COLOR = :light_green
 const RAIL_COLORS = [:bold, :light_cyan, :light_green, :light_yellow]
+const LEFT_ROOF  = "═════ "
+const RIGHT_ROOF = " ═════"
 
 pluralize(n::Integer, one::AbstractString, more::AbstractString = string(one, 's')) =
     return string(n, ' ', isone(n) ? one : more)
@@ -31,15 +33,19 @@ end
 # toplevel
 # --------
 
-function print_reports(io,
+function print_reports(io::IO,
+                       filename::AbstractString,
                        reports::Vector{<:ToplevelErrorReport},
                        postprocess = identity;
-                       print_toplevel_sucess = false,
-                       color = get(io, :color, false),
-                       fullpath = false,
+                       print_toplevel_sucess::Bool = false,
+                       color::Bool = get(io, :color, false),
+                       fullpath::Bool = false,
                        __kwargs...)
-    isempty(reports) && return if print_toplevel_sucess
-        printstyled(io, "No toplevel errors !\n"; color = NOERROR_COLOR)
+    if isempty(reports)
+        if print_toplevel_sucess
+            printlnstyled(io, "No toplevel errors !"; color = NOERROR_COLOR)
+        end
+        return false
     end
 
     hascolor = color
@@ -48,8 +54,10 @@ function print_reports(io,
     buf = IOBuffer()
     ioctx = IOContext(buf, :color => hascolor)
 
-    s = string(pluralize(length(reports), "toplevel error"), " found", '\n')
-    printlnstyled(ioctx, s; color)
+    s = string(pluralize(length(reports), "toplevel error"), " found in ",
+               (fullpath ? tofullpath : identity)(filename)
+               )
+    printlnstyled(ioctx, LEFT_ROOF, s, RIGHT_ROOF; color)
 
     tmpbuf = IOBuffer()
     tmpioctx = IOContext(tmpbuf, :color => hascolor)
@@ -69,7 +77,7 @@ function print_reports(io,
     s = String(take!(buf))
     print(io, postprocess(s))
 
-    return
+    return true
 end
 
 print_report(io, report::SyntaxErrorReport) = showerror′(io, report.err) # don't show stacktrace for syntax errors
@@ -84,13 +92,14 @@ end
 # inference
 # ---------
 
-function print_reports(io,
+function print_reports(io::IO,
+                       filename::AbstractString,
                        reports::Vector{<:InferenceErrorReport},
                        postprocess = identity;
-                       filter_native_remarks = true,
-                       print_inference_sucess = true,
-                       color = get(io, :color, false),
-                       fullpath = false,
+                       filter_native_remarks::Bool = true,
+                       print_inference_sucess::Bool = true,
+                       color::Bool = get(io, :color, false),
+                       fullpath::Bool = false,
                        __kwargs...)
     if filter_native_remarks
         reports = filter(r->!isa(r, NativeRemark), reports)
@@ -98,16 +107,22 @@ function print_reports(io,
 
     uniquify_reports!(reports)
 
-    isempty(reports) && return if print_inference_sucess
-        printstyled(io, "No errors !\n"; color = NOERROR_COLOR)
+    if isempty(reports)
+        if print_inference_sucess
+            printlnstyled(io, "No errors !"; color = NOERROR_COLOR)
+        end
+        return false
     end
 
     hascolor = color
     buf = IOBuffer()
     ioctx = IOContext(buf, :color => hascolor)
 
-    s = string(pluralize(length(reports), "error"), " found", '\n')
-    printlnstyled(ioctx, s; color = ERROR_COLOR)
+    s = string(pluralize(length(reports), "toplevel error"), " found in ",
+               (fullpath ? tofullpath : identity)(filename)
+               )
+    printlnstyled(ioctx, LEFT_ROOF, s, RIGHT_ROOF; color = ERROR_COLOR)
+
     wrote_linfos = Set{UInt64}()
     for report in reports
         print_report(ioctx, report, wrote_linfos; fullpath)
@@ -116,7 +131,7 @@ function print_reports(io,
     s = String(take!(buf))
     print(io, postprocess(s))
 
-    return
+    return true
 end
 
 # FIXME:

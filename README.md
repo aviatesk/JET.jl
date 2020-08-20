@@ -50,9 +50,10 @@ You can have TypeProfiler.jl detect possible errors:
 ```julia
 julia> using TypeProfiler
 
-julia> profile_file("demo.jl")
-6 errors found
-
+julia> profile_and_watch_file("demo.jl")
+[ Info: profiling demo.jl ...
+[ Info: profiling finished in 3.277 sec
+═════ 6 toplevel errors found in demo.jl ═════
 ┌ @ demo.jl:8 top-level scope
 │┌ @ demo.jl:8 Main.fib("1000")
 ││┌ @ operators.jl:326 Main.≤(n::String, 2)
@@ -86,52 +87,55 @@ Note that TP can find these errors while demo.jl is so ridiculous (especially th
 This is because TP profiles code only on _type level_.
 This technique is often called "abstract interpretation" and TP internally uses Julia's native abstract interpreter implementation (for its JIT compiling), so it can profile code as fast/correctly as our Julia's code generation.
 
-Lastly let's modify demo.jl so that it works nicely:
+Lastly let's apply the following diff to demo.jl so that it works nicely:
 
-> demo.jl
+> git diff --no-index demo.jl demo-fixed.jl
 
-```julia
-# fibonacci
-# ---------
+```diff
+diff --git a/demo.jl b/demo-fixed.jl
+index a5e3004..75b53e0 100644
+--- a/demo.jl
++++ b/demo-fixed.jl
+@@ -5,11 +5,18 @@
+ # fibonacci
+ # ---------
 
-# cache, cache, cache
-function fib(n::T) where {T<:Number}
-    cache = Dict(zero(T)=>zero(T), one(T)=>one(T))
-    return _fib(n, cache)
-end
-_fib(n, cache) = if haskey(cache, n)
-    cache[n]
-else
-    cache[n] = _fib(n-1, cache) + _fib(n-2, cache)
-end
+-fib(n) = n ≤ 2 ? n : fib(n-1) + fib(n-2)
++# cache, cache, cache
++function fib(n::T) where {T<:Number}
++    cache = Dict(zero(T)=>zero(T), one(T)=>one(T))
++    return _fib(n, cache)
++end
++_fib(n, cache) = if haskey(cache, n)
++    cache[n]
++else
++    cache[n] = _fib(n-1, cache) + _fib(n-2, cache)
++end
 
-fib(BigInt(1000))
+-fib("1000") # obvious errors
+-fib(m)      # undef var
+-fib(1000)   # never terminates in ordinal execution
++fib(BigInt(1000))
 
 
-# language features
-# -----------------
+ # language features
+@@ -27,8 +34,8 @@ end
 
-struct Ty{T}
-    fld::T
-end
+ @inline bar(n::T)     where {T<:Number} = n < 0 ? zero(T) : one(T)
+-@inline bar(v::Ty{T}) where {T<:Number} = bar(v.fdl) # typo "fdl"
++@inline bar(v::Ty{T}) where {T<:Number} = bar(v.fld) # typo fixed
+ @inline bar(v::Ty)                      = bar(convert(Number, v.fld))
 
-function foo(a)
-    v = Ty(a)
-    return bar(v)
-end
-
-@inline bar(n::T)     where {T<:Number} = n < 0 ? zero(T) : one(T)
-@inline bar(v::Ty{T}) where {T<:Number} = bar(v.fld) # typo fixed
-@inline bar(v::Ty)                      = bar(convert(Number, v.fld))
-
-foo(1.2)
-foo('1') # `Char` will be converted to `UInt32`
+ foo(1.2)
+-foo("1") # `String` can't be converted to `Number`
++foo('1') # `Char` will be converted to `UInt32`
 ```
 
-Now TP won't complain anything:
+If you save the file, TP will automatically trigger profiling, and this time, won't complain anything:
 
 ```julia
-julia> profile_file("_demo_fixed.jl")
+[ Info: profiling demo.jl ...
+[ Info: profiling finished in 1.738 sec
 No errors !
 ```
 
@@ -139,7 +143,6 @@ No errors !
 ### TODOs
 
 - handle `import/using`, `include` etc.
-- watch mode
 - more reports
   * more correct error reports in general
   * report some cases of `throw`, e.g. `rand('1')::ArgumentError("Sampler for this object is not defined")`
