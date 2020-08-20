@@ -50,9 +50,10 @@ You can have TypeProfiler.jl detect possible errors:
 ```julia
 julia> using TypeProfiler
 
-julia> profile_file("demo.jl")
-6 errors found
-
+julia> profile_and_watch_file("demo.jl")
+[ Info: profiling demo.jl ...
+[ Info: profiling finished in 3.277 sec
+═════ 6 toplevel errors found in demo.jl ═════
 ┌ @ demo.jl:8 top-level scope
 │┌ @ demo.jl:8 Main.fib("1000")
 ││┌ @ operators.jl:326 Main.≤(n::String, 2)
@@ -128,10 +129,11 @@ foo(1.2)
 foo('1') # `Char` will be converted to `UInt32`
 ```
 
-Now TP won't complain anything:
+If you save the file, TP will automatically trigger profiling, and this time, won't complain anything:
 
 ```julia
-julia> profile_file("_demo_fixed.jl")
+[ Info: profiling demo.jl ...
+[ Info: profiling finished in 1.738 sec
 No errors !
 ```
 
@@ -139,7 +141,6 @@ No errors !
 ### TODOs
 
 - handle `import/using`, `include` etc.
-- watch mode
 - more reports
   * more correct error reports in general
   * report some cases of `throw`, e.g. `rand('1')::ArgumentError("Sampler for this object is not defined")`
