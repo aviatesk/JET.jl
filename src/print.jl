@@ -43,7 +43,7 @@ function print_reports(io::IO,
                        __kwargs...)
     if isempty(reports)
         if print_toplevel_sucess
-            printstyled(io, "No toplevel errors !\n"; color = NOERROR_COLOR)
+            printlnstyled(io, "No toplevel errors !"; color = NOERROR_COLOR)
         end
         return false
     end
@@ -109,7 +109,7 @@ function print_reports(io::IO,
 
     if isempty(reports)
         if print_inference_sucess
-            printstyled(io, "No errors !\n"; color = NOERROR_COLOR)
+            printlnstyled(io, "No errors !"; color = NOERROR_COLOR)
         end
         return false
     end
