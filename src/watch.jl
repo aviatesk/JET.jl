@@ -18,8 +18,8 @@ function profile_and_watch_file(io::IO, filename::AbstractString, args...;
         end
 
         t = watch_file(filename)
-        if t.renamed
-            @info "$(filename) has been renamed"
+        if !isfile(filename)
+            @info "$(filename) has been removed"
             return
         end
         # keep profiling
