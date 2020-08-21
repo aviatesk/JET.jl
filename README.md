@@ -144,7 +144,9 @@ No errors !
 
 ### TODOs
 
-- handle `import/using`, `include` etc.
+- profiling on a package (without actual loading)
+  * support `module`
+  * special case `include` calls
 - more reports
   * more correct error reports in general
   * report some cases of `throw`, e.g. `rand('1')::ArgumentError("Sampler for this object is not defined")`
