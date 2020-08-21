@@ -34,10 +34,14 @@ import Base:
 import Base.Meta:
     isexpr, _parse_string
 
-using FileWatching
+using FileWatching, Requires
 
 # includes
 # --------
+
+const INIT_HOOKS = Function[]
+push_inithook!(f) = push!(INIT_HOOKS, f)
+__init__() = foreach(f->f(), INIT_HOOKS)
 
 include("reports.jl")
 include("virtualprocess.jl")

@@ -107,7 +107,8 @@ end
 # ... and actually this introduces one obvious bug that `typeinf_local(::TPInterpreter, ::InferenceState)`
 # sometimes runs the same inference routine twice, which leads to duplicated error reports
 
-__init__() = Core.eval(Core.Compiler, quote
+push_inithook!() do
+Core.eval(Core.Compiler, quote
 
 # make as much progress on `frame` as possible (without handling cycles)
 function typeinf_local(interp::$(TPInterpreter), frame::InferenceState)
@@ -291,4 +292,5 @@ function typeinf_local(interp::$(TPInterpreter), frame::InferenceState)
     nothing
 end
 
-end) # __init__() = Core.eval(Core.Compiler, quote
+end) # Core.eval(Core.Compiler, quote
+end  # push_inithook!() do
