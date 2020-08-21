@@ -7,9 +7,9 @@
 
 fib(n) = n ≤ 2 ? n : fib(n-1) + fib(n-2)
 
-fib("1000") # obvious errors
-fib(m)      # undef var
 fib(1000)   # never terminates in ordinal execution
+fib(m)      # undef var
+fib("1000") # obvious type error
 
 
 # language features

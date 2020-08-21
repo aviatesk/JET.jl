@@ -20,9 +20,9 @@ Say you have this strange and buggy file and want to know where to fix:
 
 fib(n) = n ≤ 2 ? n : fib(n-1) + fib(n-2)
 
-fib("1000") # obvious errors
-fib(m)      # undef var
 fib(1000)   # never terminates in ordinal execution
+fib(m)      # undef var
+fib("1000") # obvious type error
 
 
 # language features
@@ -51,9 +51,12 @@ You can have TypeProfiler.jl detect possible errors:
 julia> using TypeProfiler
 
 julia> profile_and_watch_file("demo.jl")
-[ Info: profiling demo.jl ...
-[ Info: profiling finished in 3.277 sec
-═════ 6 toplevel errors found in demo.jl ═════
+
+profiling demo.jl ... (finished in 3.412 sec)
+═════ 6 possible errors found in demo.jl ═════
+┌ @ demo.jl:8 top-level scope
+│ variable Main.m is not defined: Main.fib(Main.m)
+└
 ┌ @ demo.jl:8 top-level scope
 │┌ @ demo.jl:8 Main.fib("1000")
 ││┌ @ operators.jl:326 Main.≤(n::String, 2)
@@ -66,9 +69,6 @@ julia> profile_and_watch_file("demo.jl")
 │┌ @ demo.jl:8 Main.fib("1000")
 ││ no matching method found for signature: Main.-(n::String, 2)
 │└
-┌ @ demo.jl:8 top-level scope
-│ variable Main.m is not defined: Main.fib(Main.m)
-└
 │┌ @ demo.jl:23 Main.foo(1.2)
 ││┌ @ demo.jl:30 Main.bar(v::Union{})
 │││┌ @ Base.jl:33 Base.getproperty(v::Main.Ty{Float64}, :fdl::Symbol)
@@ -81,11 +81,11 @@ julia> profile_and_watch_file("demo.jl")
 ```
 
 Hooray !
-TypeProfiler.jl tries to find possible error points (e.g. `MethodError: no method matching isless(::String, ::Int64)`) given toplevel call sigutures of generic functions (e.g. `fib("1000")`).
+TypeProfiler.jl found possible error points (e.g. `MethodError: no method matching isless(::String, ::Int64)`) given toplevel call signatures of generic functions (e.g. `fib("1000")`).
 
-Note that TP can find these errors while demo.jl is so ridiculous (especially the `fib(1000)` part) that it never terminates in actual execution.
-This is because TP profiles code only on _type level_.
-This technique is often called "abstract interpretation" and TP internally uses Julia's native abstract interpreter implementation (for its JIT compiling), so it can profile code as fast/correctly as our Julia's code generation.
+Note that TP can find these errors while demo.jl is so ridiculous (especially the `fib` implementation) that it would never terminate in actual execution.
+That is possible because TP profiles code only on _type level_.
+This technique is often called "abstract interpretation" and TP internally uses Julia's native abstract interpreter implementation (for its JIT compile), so it can profile code as fast/correctly as Julia's code generation.
 
 Lastly let's apply the following diff to demo.jl so that it works nicely:
 
@@ -93,10 +93,10 @@ Lastly let's apply the following diff to demo.jl so that it works nicely:
 
 ```diff
 diff --git a/demo.jl b/demo-fixed.jl
-index a5e3004..75b53e0 100644
+index 8552439..a92b7d2 100644
 --- a/demo.jl
 +++ b/demo-fixed.jl
-@@ -5,11 +5,18 @@
+@@ -5,11 +5,21 @@
  # fibonacci
  # ---------
 
@@ -112,14 +112,17 @@ index a5e3004..75b53e0 100644
 +    cache[n] = _fib(n-1, cache) + _fib(n-2, cache)
 +end
 
--fib("1000") # obvious errors
--fib(m)      # undef var
 -fib(1000)   # never terminates in ordinal execution
-+fib(BigInt(1000))
+-fib(m)      # undef var
+-fib("1000") # obvious type error
++fib(BigInt(1000)) # will terminate in ordinal execution as well
++m = 1000          # define m
++fib(m)
++fib(parse(Int, "1000"))
 
 
  # language features
-@@ -27,8 +34,8 @@ end
+@@ -27,8 +37,8 @@ end
 
  @inline bar(n::T)     where {T<:Number} = n < 0 ? zero(T) : one(T)
 -@inline bar(v::Ty{T}) where {T<:Number} = bar(v.fdl) # typo "fdl"
@@ -134,8 +137,7 @@ index a5e3004..75b53e0 100644
 If you save the file, TP will automatically trigger profiling, and this time, won't complain anything:
 
 ```julia
-[ Info: profiling demo.jl ...
-[ Info: profiling finished in 1.738 sec
+profiling demo.jl ... (finished in 1.913 sec)
 No errors !
 ```
 

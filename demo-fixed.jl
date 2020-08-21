@@ -16,7 +16,10 @@ else
     cache[n] = _fib(n-1, cache) + _fib(n-2, cache)
 end
 
-fib(BigInt(1000))
+fib(BigInt(1000)) # will terminate in ordinal execution as well
+m = 1000          # define m
+fib(m)
+fib(parse(Int, "1000"))
 
 
 # language features
