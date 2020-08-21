@@ -1,7 +1,7 @@
 # TODO:
-# - `module`
-# - `using`, `import`, `__init__`
-# - special case `include` call
+# profiling on unloaded package
+# - support `module`
+# - special case `__init__`/`include` calls
 
 """
     parse_and_transform(actualmod::Module,
@@ -19,14 +19,15 @@ Returns `Vector{<:ToplevelErrorReport}` if there are any error found during the 
 The AST transformation includes:
 - try to extract toplevel "defintions" and directly evaluate them in a context of
   `virtualmod`; toplevel "defintions" include:
-  * toplevel function definition
-  * macro definition
-  * struct, abstract and primitive type definition
+  * toplevel `function` definition
+  * `macro` definition
+  * `struct`, `abstract` and `primitive` type definition
+  * `import`/`using` statements
 - try to expand macros in a context of `virtualmod`
 - fix self-referring dot accessors (i.e. those referring to `actualmod`) so that it can be
   constant-propagated in abstract interpretation (otherwise they will be annotated as `Any`
   because they'will actually be resolved in a context of `virtualmod`)
-- remove `const` annotations (`const` annotations are not allowed in a function body)
+- remove `const` annotations (they are not allowed in a function body)
 """
 function parse_and_transform(actualmod::Module,
                              virtualmod::Module,
@@ -86,9 +87,20 @@ function parse_and_transform(actualmod::Module,
             x
 
         # evaluate these toplevel expressions only when not in function scope:
-        # owe need this because otherwise these invalid expressions can be "extracted" and
+        # we need this because otherwise these invalid expressions can be "extracted" and
         # evaled wrongly while they actually cause syntax errors
         elseif isexpr(x, (:macro, :abstract, :struct, :primitive))
+            leftover = if :function ∉ scope
+                eval_with_err_handling(virtualmod, x)
+            else
+                report = SyntaxErrorReport("syntax: \"$(x.head)\" expression not at top level", file, line)
+                push!(reports, report)
+                nothing
+            end
+            :($(leftover))
+
+        # TODO: enable profiling on module (i.e. without actual loading, combined with `include` support)
+        elseif isexpr(x, (:import, :using))
             leftover = if :function ∉ scope
                 eval_with_err_handling(virtualmod, x)
             else

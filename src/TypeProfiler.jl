@@ -29,15 +29,19 @@ import Core.Compiler:
     argtypes_to_type, abstract_eval_ssavalue, _methods_by_ftype, specialize_method, typeinf
 
 import Base:
-    parse_input_line, to_tuple_type
+    parse_input_line, to_tuple_type, Fix1, Fix2
 
 import Base.Meta:
     isexpr, _parse_string
 
-using FileWatching
+using FileWatching, Requires
 
 # includes
 # --------
+
+const INIT_HOOKS = Function[]
+push_inithook!(f) = push!(INIT_HOOKS, f)
+__init__() = foreach(f->f(), INIT_HOOKS)
 
 include("reports.jl")
 include("virtualprocess.jl")
