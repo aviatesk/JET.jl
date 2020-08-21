@@ -3,9 +3,19 @@
 
 const ERROR_COLOR = :light_red
 const NOERROR_COLOR = :light_green
-const RAIL_COLORS = [:bold, :light_cyan, :light_green, :light_yellow]
+const RAIL_COLORS = (
+    # preserve yellow for future performance linting
+    45, # light blue
+    123, # light cyan
+    150, # ???
+    215, # orange
+    231, # white
+)
+const N_RAILS = length(RAIL_COLORS)
 const LEFT_ROOF  = "═════ "
 const RIGHT_ROOF = " ═════"
+const HEADER_COLOR = :reverse
+const ERROR_SIG_COLOR = :bold
 
 pluralize(n::Integer, one::AbstractString, more::AbstractString = string(one, 's')) =
     return string(n, ' ', isone(n) ? one : more)
@@ -13,9 +23,8 @@ pluralize(n::Integer, one::AbstractString, more::AbstractString = string(one, 's
 printlnstyled(args...; kwarg...) = printstyled(args..., '\n'; kwarg...)
 
 function print_rails(io, depth)
-    n = length(RAIL_COLORS)
     for i = 1:depth
-        color = RAIL_COLORS[i%n+1]
+        color = RAIL_COLORS[i%N_RAILS+1]
         printstyled(io, '│'; color)
     end
     return
@@ -57,7 +66,7 @@ function print_reports(io::IO,
     s = string(pluralize(length(reports), "toplevel error"), " found in ",
                (fullpath ? tofullpath : identity)(filename)
                )
-    printlnstyled(ioctx, LEFT_ROOF, s, RIGHT_ROOF; color)
+    printlnstyled(ioctx, LEFT_ROOF, s, RIGHT_ROOF; color = HEADER_COLOR)
 
     tmpbuf = IOBuffer()
     tmpioctx = IOContext(tmpbuf, :color => hascolor)
@@ -121,7 +130,7 @@ function print_reports(io::IO,
     s = string(pluralize(length(reports), "possible error"), " found in ",
                (fullpath ? tofullpath : identity)(filename)
                )
-    printlnstyled(ioctx, LEFT_ROOF, s, RIGHT_ROOF; color = ERROR_COLOR)
+    printlnstyled(ioctx, LEFT_ROOF, s, RIGHT_ROOF; color = HEADER_COLOR)
 
     wrote_linfos = Set{UInt64}()
     for report in reports
@@ -170,7 +179,7 @@ function print_error_frame(io, report, depth; kwargs...)
     print_frame(io, frame, depth, true; kwargs...)
     print_rails(io, depth-1)
     printstyled(io, "│ ", report.msg, ": "; color)
-    println(io, report.sig)
+    printlnstyled(io, report.sig; color = :bold)
     print_rails(io, depth-1)
     printlnstyled(io, '└'; color)
 
@@ -180,7 +189,7 @@ end
 function print_frame(io, (file, line, sig), depth, is_err; fullpath = false)
     print_rails(io, depth-1)
 
-    color = is_err ? ERROR_COLOR : RAIL_COLORS[(depth)%length(RAIL_COLORS)+1]
+    color = is_err ? ERROR_COLOR : RAIL_COLORS[(depth)%N_RAILS+1]
     printstyled(io, "┌ @ ", (fullpath ? tofullpath : identity)(string(file)), ":", line; color)
     println(io, ' ', sig)
 
