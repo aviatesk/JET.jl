@@ -29,7 +29,7 @@ import Core.Compiler:
     argtypes_to_type, abstract_eval_ssavalue, _methods_by_ftype, specialize_method, typeinf
 
 import Base:
-    parse_input_line, to_tuple_type
+    parse_input_line, to_tuple_type, Fix1, Fix2
 
 import Base.Meta:
     isexpr, _parse_string

@@ -73,13 +73,13 @@ end
 # be loaded into this process once TP comes to be able to profile modules other than Main
 function generate_postprocess(@nospecialize(λ), virtualmod::Module, actualmod::Module)
     callsig = string("(::", typeof(λ), ")()")
-    callfix = s -> replace(s, callsig => "top-level scope")
+    callfix = Fix2(replace, callsig => "top-level scope")
 
     virtual = string(virtualmod)
     actual  = string(actualmod)
-    modfix  = s -> replace(s, virtual => actual)
+    modfix  = Fix2(replace, virtual => actual)
 
-    return s -> (modfix ∘ callfix)(s)
+    return modfix ∘ callfix
 end
 
 # inference
