@@ -4,22 +4,34 @@
 # - special case `include` call
 
 """
-    parse_and_transform(mod::Module, s::AbstractString, filename::AbstractString) -> Union{Expr,Vector{<:ToplevelErrorReport}}
+    parse_and_transform(actualmod::Module,
+                        virtualmod::Module,
+                        s::AbstractString,
+                        filename::AbstractString,
+                        ) -> Union{Expr,Vector{<:ToplevelErrorReport}}
 
 Parses `s` into a toplevel expression and transforms the resulting expression so that the
   final output expression can be wrapped into a virtual function to be profiled in
-  `mod`.
-
+  `virtualmod`.
 Returns `Vector{<:ToplevelErrorReport}` if there are any error found during the text parsing
  and AST transformation.
+
 The AST transformation includes:
-- expand macros in a given `mod`
-- extract toplevel "defintions" and directly evaluate them in a given `mod`
-- remove `const` annotations
+- try to extract toplevel "defintions" and directly evaluate them in a context of
+  `virtualmod`; toplevel "defintions" include:
+  * toplevel function definition
+  * macro definition
+  * struct, abstract and primitive type definition
+- try to expand macros in a context of `virtualmod`
+- fix self-referring dot accessors (i.e. those referring to `actualmod`) so that it can be
+  constant-propagated in abstract interpretation (otherwise they will be annotated as `Any`
+  because they'will actually be resolved in a context of `virtualmod`)
+- remove `const` annotations (`const` annotations are not allowed in a function body)
 """
-function parse_and_transform(mod::Module,
+function parse_and_transform(actualmod::Module,
+                             virtualmod::Module,
                              s::AbstractString,
-                             filename::AbstractString
+                             filename::AbstractString,
                              )::Union{Expr,Vector{<:ToplevelErrorReport}}
     ex = parse_input_line(s; filename)
 
@@ -50,6 +62,12 @@ function parse_and_transform(mod::Module,
         Core.eval(mod, x)
     end
 
+    # defined constant self-referring variable so that global references using it can be
+    # constant propagated
+    actualmodsym = Symbol(actualmod)
+    constmodsym  = gensym(actualmodsym)
+    Core.eval(virtualmod, :(const $(constmodsym) = $(actualmodsym)))
+
     ret = walk_and_transform!(ex, Symbol[]) do x, scope
         # update file/line info
         if x isa LineNumberNode
@@ -60,7 +78,7 @@ function parse_and_transform(mod::Module,
 
         # expand macro
         if isexpr(x, :macrocall)
-            x = macroexpand_with_err_handling(mod, x)
+            x = macroexpand_with_err_handling(virtualmod, x)
         end
 
         # always escape inside expression
@@ -72,7 +90,7 @@ function parse_and_transform(mod::Module,
         # evaled wrongly while they actually cause syntax errors
         elseif isexpr(x, (:macro, :abstract, :struct, :primitive))
             leftover = if :function ∉ scope
-                eval_with_err_handling(mod, x)
+                eval_with_err_handling(virtualmod, x)
             else
                 report = SyntaxErrorReport("syntax: \"$(x.head)\" expression not at top level", file, line)
                 push!(reports, report)
@@ -82,12 +100,17 @@ function parse_and_transform(mod::Module,
 
         # hoist toplevel function definitions
         elseif !islocalscope(scope) && isfuncdef(x)
-            leftover = eval_with_err_handling(mod, x)
+            leftover = eval_with_err_handling(virtualmod, x)
             :($(leftover))
 
         # remove `const` annotation
         elseif isexpr(x, :const)
             first(x.args)
+
+        # fix self-referring global references
+        elseif isexpr(x, :.) && first(x.args) === actualmodsym
+            x.args[1] = constmodsym
+            x
 
         else
             x

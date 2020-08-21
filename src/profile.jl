@@ -31,16 +31,16 @@ function profile_text(io::IO,
 end
 profile_text(args...; kwargs...) = profile_text(stdout, args...; kwargs...)
 
-function report_errors(mod, text, filename)
-    virtualmod = generate_virtual_module(mod)
+function report_errors(actualmod, text, filename)
+    virtualmod = generate_virtual_module(actualmod)
 
-    ret = parse_and_transform(virtualmod, text, filename)
+    ret = parse_and_transform(actualmod, virtualmod, text, filename)
     isa(ret, Vector{<:ToplevelErrorReport}) && return ret, identity
 
     λ = generate_virtual_lambda(virtualmod, ret)
     # Core.eval(@__MODULE__, :(λ = $(λ)))
     interp, = profile_call(λ)
-    postprocess = generate_postprocess(λ, virtualmod, mod)
+    postprocess = generate_postprocess(λ, virtualmod, actualmod)
 
     return interp.reports, postprocess
 end
