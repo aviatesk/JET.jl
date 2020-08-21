@@ -24,19 +24,14 @@ function profile_text(io::IO,
                       text::AbstractString,
                       filename::AbstractString = "top-level",
                       mod::Module = Main;
-                      log_profiling_timing::Bool = false,
+                      profiling_logger::Union{Nothing,IO} = nothing,
                       kwargs...)
-    reports, postprocess = report_errors(mod, text, filename; log_profiling_timing)
+    reports, postprocess = report_errors(profiling_logger, mod, text, filename)
     return print_reports(io, filename, reports, postprocess; kwargs...)
 end
 profile_text(args...; kwargs...) = profile_text(stdout, args...; kwargs...)
 
-function report_errors(mod, text, filename; log_profiling_timing = false)
-    if log_profiling_timing
-        @info "profiling $(filename) ..."
-        s = time()
-    end
-
+function report_errors(mod, text, filename)
     virtualmod = generate_virtual_module(mod)
 
     ret = parse_and_transform(virtualmod, text, filename)
@@ -47,12 +42,20 @@ function report_errors(mod, text, filename; log_profiling_timing = false)
     interp, = profile_call(λ)
     postprocess = generate_postprocess(λ, virtualmod, mod)
 
-    if log_profiling_timing
-        sec = round(time() - s; digits = 3)
-        @info "profiling finished in $(sec) sec"
-    end
-
     return interp.reports, postprocess
+end
+
+report_errors(::Nothing, args...) = return report_errors(args...)
+function report_errors(logger::IO, args...)
+    print(logger, "profiling $(#=filename=# last(args)) ...")
+    s = time()
+
+    ret = report_errors(args...)
+
+    sec = round(time() - s; digits = 3)
+    println(logger, " (finished in $(sec) sec)")
+
+    return ret
 end
 
 generate_virtual_module(actualmod::Module) =

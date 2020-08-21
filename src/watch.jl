@@ -1,6 +1,6 @@
 profile_and_watch_file(args...; kwargs...) = profile_and_watch_file(stdout, args...; kwargs...)
 function profile_and_watch_file(io::IO, filename::AbstractString, args...;
-                                log_profiling_timing::Bool = true,
+                                profiling_logger::Union{Nothing,IO} = io,
                                 print_inference_sucess::Bool = true,
                                 kwargs...
                                 )
@@ -8,7 +8,7 @@ function profile_and_watch_file(io::IO, filename::AbstractString, args...;
     while true
         try
             errored = profile_file(io, filename, args...;
-                                   log_profiling_timing,
+                                   profiling_logger,
                                    # no success message after profiling without error found
                                    # unless specified manually
                                    print_inference_sucess = print_inference_sucess && errored,

@@ -118,7 +118,7 @@ function print_reports(io::IO,
     buf = IOBuffer()
     ioctx = IOContext(buf, :color => hascolor)
 
-    s = string(pluralize(length(reports), "toplevel error"), " found in ",
+    s = string(pluralize(length(reports), "possible error"), " found in ",
                (fullpath ? tofullpath : identity)(filename)
                )
     printlnstyled(ioctx, LEFT_ROOF, s, RIGHT_ROOF; color = ERROR_COLOR)
