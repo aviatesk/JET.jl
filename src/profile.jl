@@ -48,14 +48,15 @@ function report_errors(actualmod, text, filename)
     virtualmod = generate_virtual_module(actualmod)
 
     ret = parse_and_transform(actualmod, virtualmod, text, filename)
-    isa(ret, Vector{<:ToplevelErrorReport}) && return ret, identity
+    if isa(ret, Vector{<:ToplevelErrorReport})
+        return ret, generate_postprocess(virtualmod, actualmod)
+    end
 
     λ = generate_virtual_lambda(virtualmod, ret)
     # Core.eval(@__MODULE__, :(λ = $(λ)))
     interp, = profile_call(λ)
-    postprocess = generate_postprocess(λ, virtualmod, actualmod)
 
-    return interp.reports, postprocess
+    return interp.reports, generate_postprocess(λ, virtualmod, actualmod)
 end
 
 generate_virtual_module(actualmod::Module) =
@@ -69,17 +70,23 @@ function generate_virtual_lambda(mod::Module, toplevelex::Expr)
     return Core.eval(mod, ex)
 end
 
-# fix virtual λ / module printing based on string manipulation; the "actual" modules may not
-# be loaded into this process once TP comes to be able to profile modules other than Main
-function generate_postprocess(@nospecialize(λ), virtualmod::Module, actualmod::Module)
-    callsig = string("(::", typeof(λ), ")()")
-    callfix = Fix2(replace, callsig => "top-level scope")
+# fix virtual λ / module printing based on string manipulation:
+# the "actual" modules may not be loaded into this process
+function generate_postprocess(@nospecialize(λ), virtualmod, actualmod)
+    modfix  = generate_postprocess(virtualmod, actualmod)
+    callfix = generate_postprocess(λ)
+    return modfix ∘ callfix
+end
 
+function generate_postprocess(virtualmod, actualmod)
     virtual = string(virtualmod)
     actual  = string(actualmod)
-    modfix  = Fix2(replace, virtual => actual)
+    return Fix2(replace, virtual => actual)
+end
 
-    return modfix ∘ callfix
+function generate_postprocess(@nospecialize(λ))
+    callsig = string("(::", typeof(λ), ")()")
+    return Fix2(replace, callsig => "top-level scope")
 end
 
 # inference

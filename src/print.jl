@@ -64,8 +64,7 @@ function print_reports(io::IO,
     ioctx = IOContext(buf, :color => hascolor)
 
     s = string(pluralize(length(reports), "toplevel error"), " found in ",
-               (fullpath ? tofullpath : identity)(filename)
-               )
+               (fullpath ? tofullpath : identity)(filename))
     printlnstyled(ioctx, LEFT_ROOF, s, RIGHT_ROOF; color = HEADER_COLOR)
 
     tmpbuf = IOBuffer()
@@ -89,14 +88,10 @@ function print_reports(io::IO,
     return true
 end
 
-print_report(io, report::SyntaxErrorReport) = showerror′(io, report.err) # don't show stacktrace for syntax errors
+# don't show stacktrace for syntax errors
+print_report(io, report::SyntaxErrorReport) = showerror(io, report.err)
 # TODO: add context information, i.e. during macroexpansion, defining something
-print_report(io, report::ActualErrorWrapped) = showerror′(io, report.err, report.st)
-
-function showerror′(io, er, bt = nothing)
-    showerror(IOContext(io, :limit => true), er, bt, backtrace = !isnothing(bt))
-    println(io)
-end
+print_report(io, report::ActualErrorWrapped) = showerror(io, report.err, report.st)
 
 # inference
 # ---------
@@ -128,8 +123,7 @@ function print_reports(io::IO,
     ioctx = IOContext(buf, :color => hascolor)
 
     s = string(pluralize(length(reports), "possible error"), " found in ",
-               (fullpath ? tofullpath : identity)(filename)
-               )
+               (fullpath ? tofullpath : identity)(filename))
     printlnstyled(ioctx, LEFT_ROOF, s, RIGHT_ROOF; color = HEADER_COLOR)
 
     wrote_linfos = Set{UInt64}()
