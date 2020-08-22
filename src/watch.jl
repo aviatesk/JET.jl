@@ -4,8 +4,7 @@ function profile_and_watch_file(io::IO,
                                 args...;
                                 profiling_logger::Union{Nothing,IO} = io,
                                 print_inference_sucess::Bool = true,
-                                kwargs...
-                                )
+                                kwargs...)
     errored = true
     while true
         do_prehooks(errored,

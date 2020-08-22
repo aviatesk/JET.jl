@@ -59,7 +59,7 @@ function report_errors(logger::IO, args...)
 end
 
 generate_virtual_module(actualmod::Module) =
-    return Core.eval(actualmod, :(module $(gensym(:TypeProfilerVirtualModule)) end))
+    return Core.eval(actualmod, :(module $(gensym(:TypeProfilerVirtualModule)) end))::Module
 
 function generate_virtual_lambda(mod::Module, toplevelex::Expr)
     @assert isexpr(toplevelex, :toplevel) "toplevel expression should be given"
