@@ -45,7 +45,7 @@ end
 function print_reports(io::IO,
                        filename::AbstractString,
                        reports::Vector{<:ToplevelErrorReport},
-                       @nospecialize(postprocess) = identity;
+                       @nospecialize(postprocess = identity);
                        print_toplevel_sucess::Bool = false,
                        color::Bool = get(io, :color, false),
                        fullpath::Bool = false,
@@ -104,7 +104,7 @@ end
 function print_reports(io::IO,
                        filename::AbstractString,
                        reports::Vector{<:InferenceErrorReport},
-                       @nospecialize(postprocess) = identity;
+                       @nospecialize(postprocess = identity);
                        filter_native_remarks::Bool = true,
                        print_inference_sucess::Bool = true,
                        color::Bool = get(io, :color, false),

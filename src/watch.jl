@@ -24,7 +24,8 @@ function profile_and_watch_file(io::IO,
                                    print_inference_sucess = print_inference_sucess && errored,
                                    kwargs...)
         catch err
-            @error "internal error occured:" err
+            @error "internal error occured:"
+            showerror(stderr, err, catch_backtrace())
         end
 
         t = watch_file(filename)

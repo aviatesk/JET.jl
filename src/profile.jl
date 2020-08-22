@@ -31,6 +31,19 @@ function profile_text(io::IO,
 end
 profile_text(args...; kwargs...) = profile_text(stdout, args...; kwargs...)
 
+report_errors(::Nothing, args...) = return report_errors(args...)
+function report_errors(logger::IO, args...)
+    print(logger, "profiling $(#=filename=# last(args)) ...")
+    s = time()
+
+    ret = report_errors(args...)
+
+    sec = round(time() - s; digits = 3)
+    println(logger, " (finished in $(sec) sec)")
+
+    return ret
+end
+
 function report_errors(actualmod, text, filename)
     virtualmod = generate_virtual_module(actualmod)
 
@@ -43,19 +56,6 @@ function report_errors(actualmod, text, filename)
     postprocess = generate_postprocess(λ, virtualmod, actualmod)
 
     return interp.reports, postprocess
-end
-
-report_errors(::Nothing, args...) = return report_errors(args...)
-function report_errors(logger::IO, args...)
-    print(logger, "profiling $(#=filename=# last(args)) ...")
-    s = time()
-
-    ret = report_errors(args...)
-
-    sec = round(time() - s; digits = 3)
-    println(logger, " (finished in $(sec) sec)")
-
-    return ret
 end
 
 generate_virtual_module(actualmod::Module) =
