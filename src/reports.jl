@@ -74,7 +74,7 @@ end
 #             # we give up hygiene here because `@nospecialize` only works on escaped signatures
 #             function $(T)(sv::InferenceState, $(map(esc, sigsyms)...))
 #                 $(nospecialize_ex)
-#                 st = _track_abstract_call_stack!(sv)
+#                 st = track_abstract_call_stack!(sv)
 #                 msg = get_msg($(T), sv, $(map(esc, sigsyms)...))
 #                 sig = get_sig(sv)
 #                 return new(st, msg, sig)
@@ -92,7 +92,7 @@ struct NoMethodErrorReport <: InferenceErrorReport
     sig::String
 
     function NoMethodErrorReport(sv::InferenceState, unionsplit)
-        st = _track_abstract_call_stack!(sv)
+        st = track_abstract_call_stack!(sv)
         msg = get_msg(NoMethodErrorReport, sv, unionsplit)
         sig = get_sig(sv)
         return new(st, msg, sig)
@@ -105,7 +105,7 @@ struct InvalidBuiltinCallErrorReport <: InferenceErrorReport
     sig::String
 
     function InvalidBuiltinCallErrorReport(sv::InferenceState)
-        st = _track_abstract_call_stack!(sv)
+        st = track_abstract_call_stack!(sv)
         msg = get_msg(InvalidBuiltinCallErrorReport, sv)
         sig = get_sig(sv)
         return new(st, msg, sig)
@@ -118,7 +118,7 @@ struct UndefVarErrorReport <: InferenceErrorReport
     sig::String
 
     function UndefVarErrorReport(sv::InferenceState, mod, name)
-        st = _track_abstract_call_stack!(sv)
+        st = track_abstract_call_stack!(sv)
         msg = get_msg(UndefVarErrorReport, sv, mod, name)
         sig = get_sig(sv)
         return new(st, msg, sig)
@@ -131,7 +131,7 @@ struct NonBooleanCondErrorReport <: InferenceErrorReport
     sig::String
 
     function NonBooleanCondErrorReport(sv::InferenceState, @nospecialize(t))
-        st = _track_abstract_call_stack!(sv)
+        st = track_abstract_call_stack!(sv)
         msg = get_msg(NonBooleanCondErrorReport, sv, t)
         sig = get_sig(sv)
         return new(st, msg, sig)
@@ -150,7 +150,7 @@ struct NativeRemark <: InferenceErrorReport
     sig::String
 
     function NativeRemark(sv::InferenceState, s)
-        st = _track_abstract_call_stack!(sv)
+        st = track_abstract_call_stack!(sv)
         msg = get_msg(NativeRemark, sv, s)
         sig = get_sig(sv)
         return new(st, msg, sig)
@@ -158,11 +158,11 @@ struct NativeRemark <: InferenceErrorReport
 end
 
 # traces the current abstract call stack
-function _track_abstract_call_stack!(sv, st = VirtualFrame[])::VirtualStackTrace
+function track_abstract_call_stack!(sv, st = VirtualFrame[])::VirtualStackTrace
     sig = if isnothing(sv.parent)
         get_sig(sv.result.linfo) # get signature from method instance
     else
-        _track_abstract_call_stack!(sv.parent, st) # prewalk
+        track_abstract_call_stack!(sv.parent, st) # prewalk
         get_sig(sv.parent)
     end
     file, line = get_file_line(sv.linfo)
