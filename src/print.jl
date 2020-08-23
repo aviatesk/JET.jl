@@ -30,6 +30,13 @@ function print_rails(io, depth)
     return
 end
 
+function with_bufferring(f, args...)
+    buf = IOBuffer()
+    io = IOContext(buf, args...)
+    f(io)
+    return String(take!(buf))
+end
+
 # FIXME: we may need something like this for stdlibs as well, or just always use `RELEASE_DIR`
 const SRC_DIR = normpath(Sys.BINDIR, "..", "..", "base")
 const RELEASE_DIR = normpath(Sys.BINDIR, "..", "share", "julia", "base")
@@ -57,33 +64,33 @@ function print_reports(io::IO,
         return false
     end
 
-    hascolor = color
+    arg = :color => color
     color = ERROR_COLOR
 
-    buf = IOBuffer()
-    ioctx = IOContext(buf, :color => hascolor)
+    s = with_bufferring(arg) do io
+        s = string(pluralize(length(reports), "toplevel error"), " found in ",
+                   (fullpath ? tofullpath : identity)(filename))
+        printlnstyled(io, LEFT_ROOF, s, RIGHT_ROOF; color = HEADER_COLOR)
 
-    s = string(pluralize(length(reports), "toplevel error"), " found in ",
-               (fullpath ? tofullpath : identity)(filename))
-    printlnstyled(ioctx, LEFT_ROOF, s, RIGHT_ROOF; color = HEADER_COLOR)
+        rail = with_bufferring(arg) do io
+            printstyled(io, "│ "; color)
+        end
 
-    tmpbuf = IOBuffer()
-    tmpioctx = IOContext(tmpbuf, :color => hascolor)
-    rail = (printstyled(tmpioctx, "│ "; color); String(take!(tmpbuf)))
-    for report in reports
-        s = string("┌ @ ", (fullpath ? tofullpath : identity)(string(report.file)), ":", report.line, ' ')
-        printlnstyled(ioctx, s; color)
+        for report in reports
+            s = string("┌ @ ", (fullpath ? tofullpath : identity)(string(report.file)), ":", report.line, ' ')
+            printlnstyled(io, s; color)
 
-        print_report(tmpioctx, report)
-        errlines = strip(String(take!(tmpbuf)))
-        println(ioctx, join(string.(rail, split(errlines, '\n')), '\n'))
+            errlines = with_bufferring(arg) do io
+                print_report(io, report)
+            end |> strip
+            println(io, join(string.(rail, split(errlines, '\n')), '\n'))
 
-        s = string('└', '─'^(length(s)-1))
-        printlnstyled(ioctx, s; color)
-    end
+            s = string('└', '─'^(length(s)-1))
+            printlnstyled(io, s; color)
+        end
+    end |> postprocess
 
-    s = String(take!(buf))
-    print(io, postprocess(s))
+    print(io, s)
 
     return true
 end
@@ -118,21 +125,18 @@ function print_reports(io::IO,
         return false
     end
 
-    hascolor = color
-    buf = IOBuffer()
-    ioctx = IOContext(buf, :color => hascolor)
+    s = with_bufferring(:color => color) do io
+        s = string(pluralize(length(reports), "possible error"), " found in ",
+                   (fullpath ? tofullpath : identity)(filename))
+        printlnstyled(io, LEFT_ROOF, s, RIGHT_ROOF; color = HEADER_COLOR)
 
-    s = string(pluralize(length(reports), "possible error"), " found in ",
-               (fullpath ? tofullpath : identity)(filename))
-    printlnstyled(ioctx, LEFT_ROOF, s, RIGHT_ROOF; color = HEADER_COLOR)
+        wrote_linfos = Set{UInt64}()
+        for report in reports
+            print_report(io, report, wrote_linfos; fullpath)
+        end
+    end |> postprocess
 
-    wrote_linfos = Set{UInt64}()
-    for report in reports
-        print_report(ioctx, report, wrote_linfos; fullpath)
-    end
-
-    s = String(take!(buf))
-    print(io, postprocess(s))
+    print(io, s)
 
     return true
 end
