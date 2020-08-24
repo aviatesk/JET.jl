@@ -56,7 +56,7 @@ function report_errors(actualmod, text, filename)
     # Core.eval(@__MODULE__, :(λ = $(λ)))
     interp, = profile_call(λ)
 
-    return interp.reports, generate_postprocess(λ, virtualmod, actualmod)
+    return interp.reports, generate_postprocess(virtualmod, actualmod)
 end
 
 generate_virtual_module(actualmod::Module) =
@@ -70,23 +70,12 @@ function generate_virtual_lambda(mod::Module, toplevelex::Expr)
     return Core.eval(mod, ex)
 end
 
-# fix virtual λ / module printing based on string manipulation:
-# the "actual" modules may not be loaded into this process
-function generate_postprocess(@nospecialize(λ), virtualmod, actualmod)
-    modfix  = generate_postprocess(virtualmod, actualmod)
-    callfix = generate_postprocess(λ)
-    return modfix ∘ callfix
-end
-
+# fix virtual module printing based on string manipulation; the "actual" modules may not be
+# loaded into this process
 function generate_postprocess(virtualmod, actualmod)
     virtual = string(virtualmod)
     actual  = string(actualmod)
     return Fix2(replace, virtual => actual)
-end
-
-function generate_postprocess(@nospecialize(λ))
-    callsig = string("(::", typeof(λ), ")()")
-    return Fix2(replace, callsig => "top-level scope")
 end
 
 # inference
