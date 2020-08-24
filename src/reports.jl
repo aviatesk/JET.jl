@@ -159,20 +159,18 @@ end
 
 # traces the current abstract call stack
 function track_abstract_call_stack!(sv, st = VirtualFrame[])::VirtualStackTrace
-    sig = if isnothing(sv.parent)
-        get_sig(sv.result.linfo) # get signature from method instance
-    else
-        track_abstract_call_stack!(sv.parent, st) # prewalk
-        get_sig(sv.parent)
-    end
-    file, line = get_file_line(sv.linfo)
+    istoplevelframe(sv) || track_abstract_call_stack!(sv.parent, st) # prewalk
+    sig = get_sig(sv)
+    file, line = get_file_line(sv)
     push!(st, (; file, line, sig))
     return st
 end
 
-get_file_line(mi::MethodInstance) = get_file_line(mi.def)
-get_file_line(m::Method) = m.file, m.line
-get_file_line(m::Module) = error("get_file_line(::Module) unimplemented")
+function get_file_line(frame::InferenceState)
+    loc = frame.src.codelocs[frame.currpc]
+    linfo = frame.src.linetable[loc]
+    return linfo.file, linfo.line
+end
 
 # for the top frame
 # adapted from https://github.com/JuliaLang/julia/blob/58febaaf2fe38d90d41c170bc2f416a76eac46f5/base/show.jl#L945-L958
@@ -223,7 +221,7 @@ get_sig(::InferenceState, @nospecialize(x)) = repr(x; context = :compact => true
 
 get_msg(::Type{NoMethodErrorReport}, sv, unionsplit) = unionsplit ?
     "for one of the union split cases, no matching method found for signature" :
-    "no matching method found for signature"
+    "no matching method found for call signature"
 get_msg(::Type{InvalidBuiltinCallErrorReport}, sv) =
     "invalid builtin function call"
 get_msg(::Type{UndefVarErrorReport}, sv, mod, name) = isnothing(mod) ?
