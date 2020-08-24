@@ -96,13 +96,13 @@ This technique is often called "abstract interpretation" and TP internally uses 
 
 Lastly let's apply the following diff to demo.jl so that it works nicely:
 
-> git apply fix-demo.diff
+> fix-demo.jl.diff
 
 ```diff
 diff --git a/demo.jl b/demo-fixed.jl
 index d2b188a..1d1b3da 100644
 --- a/demo.jl
-+++ b/demo-fixed.jl
++++ b/demo.jl
 @@ -5,11 +5,21 @@
  # fibonacci
  # ---------
@@ -142,7 +142,9 @@ index d2b188a..1d1b3da 100644
 +foo('1') # `Char` will be converted to `UInt32`
 ```
 
-If you save the file, TP will automatically trigger profiling, and this time, won't complain anything:
+If you apply the diff (i.e. update and save the demo.jl), TP will automatically re-trigger profiling, and this time, won't complain anything:
+
+> git apply fix-demo.diff
 
 ```julia
 profiling demo.jl ... (finished in 5.146 sec)
