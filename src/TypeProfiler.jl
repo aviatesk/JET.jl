@@ -34,6 +34,9 @@ import Base:
 import Base.Meta:
     isexpr, _parse_string
 
+import Base.Iterators:
+    flatten
+
 using FileWatching, Requires
 
 # includes

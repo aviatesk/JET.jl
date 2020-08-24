@@ -59,7 +59,7 @@ julia> using TypeProfiler
 julia> profile_and_watch_file("demo.jl")
 
 profiling demo.jl ... (finished in 2.745 sec)
-═════ 6 possible errors found in demo.jl ═════
+═════ 6 possible errors found ═════
 ┌ @ demo.jl:11 Main.fib(Main.m)
 │ variable Main.m is not defined: Main.fib(Main.m)
 └
@@ -96,7 +96,7 @@ This technique is often called "abstract interpretation" and TP internally uses 
 
 Lastly let's apply the following diff to demo.jl so that it works nicely:
 
-> git diff --no-index demo.jl demo-fixed.jl
+> git apply fix-demo.diff
 
 ```diff
 diff --git a/demo.jl b/demo-fixed.jl
@@ -136,7 +136,7 @@ index d2b188a..1d1b3da 100644
 -@inline bar(v::Ty{T}) where {T<:Number} = bar(v.fdl) # typo "fdl"
 +@inline bar(v::Ty{T}) where {T<:Number} = bar(v.fld) # typo fixed
  @inline bar(v::Ty)                      = bar(convert(Number, v.fld))
- 
+
  foo(1.2)
 -foo("1") # `String` can't be converted to `Number`
 +foo('1') # `Char` will be converted to `UInt32`
@@ -145,16 +145,14 @@ index d2b188a..1d1b3da 100644
 If you save the file, TP will automatically trigger profiling, and this time, won't complain anything:
 
 ```julia
-profiling demo.jl ... (finished in 1.913 sec)
+profiling demo.jl ... (finished in 5.146 sec)
 No errors !
 ```
 
 
 ### TODOs
 
-- profiling on a package (without actual loading)
-  * support `module`
-  * special case `include` calls
+- support `module` expressions, profiling on a package (without actual loading)
 - more reports
   * more correct error reports in general
   * report some cases of `throw`, e.g. `rand('1')::ArgumentError("Sampler for this object is not defined")`

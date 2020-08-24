@@ -1,4 +1,5 @@
-# define `AbstractInterpreter` API
+# `AbstractInterpreter` API
+# -------------------------
 
 struct TPInterpreter <: AbstractInterpreter
     native::NativeInterpreter
@@ -7,15 +8,21 @@ struct TPInterpreter <: AbstractInterpreter
     compress::Bool
     discard_trees::Bool
 
+    # TypeProfiler.jl specific
+    istoplevel::Bool
+    virtualglobalvartable::Dict{Module,Dict{Symbol,Any}} # maybe we don't need this nested dicts
+
     function TPInterpreter(world::UInt = get_world_counter();
                            inf_params::InferenceParams = InferenceParams(),
                            opt_params::OptimizationParams = OptimizationParams(),
                            optimize::Bool = false,
                            compress::Bool = false,
-                           discard_trees::Bool = false
+                           discard_trees::Bool = false,
+                           istoplevel::Bool = false,
+                           virtualglobalvartable::AbstractDict = Dict()
                            )
         native = NativeInterpreter(world; inf_params, opt_params)
-        return new(native, [], optimize, compress, discard_trees)
+        return new(native, [], optimize, compress, discard_trees, istoplevel, virtualglobalvartable)
     end
 end
 
@@ -41,3 +48,19 @@ end
 may_optimize(interp::TPInterpreter) = interp.optimize
 may_compress(interp::TPInterpreter) = interp.compress
 may_discard_trees(interp::TPInterpreter) = interp.discard_trees
+
+# TypeProfiler.jl specific
+# ------------------------
+
+istoplevel(interp::TPInterpreter) = interp.istoplevel
+function getvirtualglobalvar(interp, mod, sym)
+    haskey(interp.virtualglobalvartable, mod) || return nothing
+    return get(interp.virtualglobalvartable[mod], sym, nothing)
+end
+function setvirtualglobalvar!(interp, frame, lhs::Slot, @nospecialize(rhs))
+    mod = frame.mod
+    haskey(interp.virtualglobalvartable, mod) || (interp.virtualglobalvartable[mod] = Dict())
+
+    sym = frame.src.slotnames[lhs.id]
+    interp.virtualglobalvartable[mod][sym] = rhs
+end
