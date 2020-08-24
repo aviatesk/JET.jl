@@ -107,9 +107,7 @@ end
 
 works as `typeinf_local(::AbstractInterpreter, ::InferenceState)` (i.e. "make as much
   progress on `frame` as possible (without handling cycles)") but with few of tweaks for the
-  TypeProfiler.jl's abstract interpretation.
-
-this is such an super fragile and problematic copy-and-paste; the points are:
+  TypeProfiler.jl's abstract interpretation:
 1. to not let abstract interpretation to halt even after there is an obvious error point
    found (, which is usually represented by `Bottom`-annotated type and triggers
    early-loop-escape in the native implementation), and allow TP to collect as much errors
@@ -121,11 +119,12 @@ this is such an super fragile and problematic copy-and-paste; the points are:
 
 so the actual diffs are:
 - the first argument changed to `TPInterpreter`
-- comment out 3 early-loop-escapes
-- do "virtual global variable assignment" for toplevel frames
+- the 3 early-loop-escapes points get commented out
+- "virtual global variable assignment" for toplevel frames added
 
 !!! danger "FIXME:"
-    ... and actually this introduces one obvious bug that `typeinf_local(::TPInterpreter, ::InferenceState)`
+    ... well, this is such an super fragile and problematic copy-and-paste, and  actually
+    this introduces one obvious bug that `typeinf_local(::TPInterpreter, ::InferenceState)`
     sometimes runs the same inference routine twice, which leads to duplicated error reports
 """
 function typeinf_local(::TPInterpreter, ::InferenceState) end

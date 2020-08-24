@@ -33,7 +33,7 @@ profile_text(args...; kwargs...) = profile_text(stdout, args...; kwargs...)
 
 report_errors(::Nothing, args...) = return report_errors(args...)
 function report_errors(logger::IO, args...)
-    print(logger, "profiling $(#=filename=# last(args)) ...")
+    print(logger, "profiling from $(#=filename=# last(args)) ...")
     s = time()
 
     ret = report_errors(args...)
