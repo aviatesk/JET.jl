@@ -23,6 +23,8 @@ function check_global_ref!(interp::TPInterpreter, sv::InferenceState, m::Module,
     end
 end
 
+istoplevelframe(frame::InferenceState) = isnothing(frame.parent)
+
 # overloads
 # ---------
 

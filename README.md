@@ -15,6 +15,10 @@ Say you have this strange and buggy file and want to know where to fix:
 > demo.jl
 
 ```julia
+########
+# demo #
+########
+
 # fibonacci
 # ---------
 
@@ -28,6 +32,7 @@ fib("1000") # obvious type error
 # language features
 # -----------------
 
+# user-defined types
 struct Ty{T}
     fld::T
 end
@@ -37,6 +42,7 @@ function foo(a)
     return bar(v)
 end
 
+# macros will be expanded
 @inline bar(n::T)     where {T<:Number} = n < 0 ? zero(T) : one(T)
 @inline bar(v::Ty{T}) where {T<:Number} = bar(v.fdl) # typo "fdl"
 @inline bar(v::Ty)                      = bar(convert(Number, v.fld))
@@ -52,31 +58,32 @@ julia> using TypeProfiler
 
 julia> profile_and_watch_file("demo.jl")
 
-profiling demo.jl ... (finished in 3.412 sec)
+profiling demo.jl ... (finished in 2.745 sec)
 ═════ 6 possible errors found in demo.jl ═════
-┌ @ demo.jl:8 top-level scope
+┌ @ demo.jl:11 Main.fib(Main.m)
 │ variable Main.m is not defined: Main.fib(Main.m)
 └
-┌ @ demo.jl:8 top-level scope
-│┌ @ demo.jl:8 Main.fib("1000")
-││┌ @ operators.jl:326 Main.≤(n::String, 2)
-│││┌ @ operators.jl:277 Base.<(x::String, y::Int64)
-││││ no matching method found for signature: Base.isless(x::String, y::Int64)
+┌ @ demo.jl:12 Main.fib("1000")
+│┌ @ demo.jl:8 Main.≤(n::String, 2)
+││┌ @ operators.jl:326 Base.<(x::String, y::Int64)
+│││┌ @ operators.jl:277 Base.isless(x::String, y::Int64)
+││││ no matching method found for call signature: Base.isless(x::String, y::Int64)
 │││└
-│┌ @ demo.jl:8 Main.fib("1000")
-││ no matching method found for signature: Main.-(n::String, 1)
+│┌ @ demo.jl:8 Main.-(n::String, 1)
+││ no matching method found for call signature: Main.-(n::String, 1)
 │└
-│┌ @ demo.jl:8 Main.fib("1000")
-││ no matching method found for signature: Main.-(n::String, 2)
+│┌ @ demo.jl:8 Main.-(n::String, 2)
+││ no matching method found for call signature: Main.-(n::String, 2)
 │└
-│┌ @ demo.jl:23 Main.foo(1.2)
-││┌ @ demo.jl:30 Main.bar(v::Union{})
-│││┌ @ Base.jl:33 Base.getproperty(v::Main.Ty{Float64}, :fdl::Symbol)
+┌ @ demo.jl:33 Main.foo(1.2)
+│┌ @ demo.jl:25 Main.bar(v::Union{})
+││┌ @ demo.jl:30 Base.getproperty(v::Main.Ty{Float64}, :fdl::Symbol)
+│││┌ @ Base.jl:33 Base.getfield(x::Main.Ty{Float64}, f::Symbol)
 ││││ invalid builtin function call: Base.getfield(x::Main.Ty{Float64}, f::Symbol)
 │││└
-│┌ @ demo.jl:23 Main.foo("1")
-││┌ @ demo.jl:31 Main.bar(v::Union{})
-│││ no matching method found for signature: Main.convert(Main.Number, %2::String)
+┌ @ demo.jl:34 Main.foo("1")
+││┌ @ demo.jl:31 Main.convert(Main.Number, %2::String)
+│││ no matching method found for call signature: Main.convert(Main.Number, %2::String)
 ││└
 ```
 
@@ -93,7 +100,7 @@ Lastly let's apply the following diff to demo.jl so that it works nicely:
 
 ```diff
 diff --git a/demo.jl b/demo-fixed.jl
-index 8552439..a92b7d2 100644
+index d2b188a..1d1b3da 100644
 --- a/demo.jl
 +++ b/demo-fixed.jl
 @@ -5,11 +5,21 @@
@@ -124,11 +131,12 @@ index 8552439..a92b7d2 100644
  # language features
 @@ -27,8 +37,8 @@ end
 
+ # macros will be expanded
  @inline bar(n::T)     where {T<:Number} = n < 0 ? zero(T) : one(T)
 -@inline bar(v::Ty{T}) where {T<:Number} = bar(v.fdl) # typo "fdl"
 +@inline bar(v::Ty{T}) where {T<:Number} = bar(v.fld) # typo fixed
  @inline bar(v::Ty)                      = bar(convert(Number, v.fld))
-
+ 
  foo(1.2)
 -foo("1") # `String` can't be converted to `Number`
 +foo('1') # `Char` will be converted to `UInt32`
