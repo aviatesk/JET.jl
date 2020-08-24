@@ -60,7 +60,14 @@ function report_errors(actualmod, text, filename)
     # run profiler on each included file, otherwise file/line number information gets messed
     # we can manually fix them, but we will need this kind of logic in the future module
     # handling as well, so let's take this way
-    λs = generate_virtual_lambda.(Ref(virtualmod), map(a->a.transformed, ret))
+
+    # filter out empty expression, i.e. there is nothing to profile
+    exs = filter(!Fix2(isexpr, :empty), map(a->a.transformed, ret))
+
+    # XXX:
+    # we need to create TPInterpreter __after__ creating `λs`, otherwise world age error
+    # not sure why `TPInterpreter(typemax(UInt); istoplevel = true)` doesn't help ...
+    λs  = generate_virtual_lambda.(Ref(virtualmod), exs)
     interp = TPInterpreter(; istoplevel = true)
     for λ in λs
         profile_call_gf!(interp, Tuple{typeof(λ)})
@@ -69,10 +76,10 @@ function report_errors(actualmod, text, filename)
     return included_files, interp.reports, generate_postprocess(virtualmod, actualmod)
 end
 
-generate_virtual_module(actualmod::Module) =
+generate_virtual_module(actualmod) =
     return Core.eval(actualmod, :(module $(gensym(:TypeProfilerVirtualModule)) end))::Module
 
-function generate_virtual_lambda(mod::Module, toplevelex::Expr)
+function generate_virtual_lambda(mod, toplevelex)
     @assert isexpr(toplevelex, :toplevel) "toplevel expression should be given"
 
     body = Expr(:block, toplevelex.args...)

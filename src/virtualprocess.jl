@@ -27,7 +27,8 @@ Parses `s` into a toplevel expression and transforms the resulting expression so
 
 Returns `Vector{Transformed}` where `Transformed`-element keeps the following information:
 - `filename`: file that has been parsed
-- `transformed`: transformed `:toplevel` expression
+- `transformed`: transformed `:toplevel` expression, or `:empty` expression if nothing has
+  been parsed
 - `reports`: errors found during the text parsing and AST transformation
 
 The AST transformation includes:
@@ -56,6 +57,9 @@ function parse_and_transform(actualmod::Module,
     if isexpr(ex, (:error, :incomplete))
         reports = collect_syntax_errors(s, filename)
         push!(ret, (; filename, transformed = ex, reports))
+        return ret
+    elseif isnothing(ex)
+        push!(ret, (; filename, transformed = Expr(:empty), reports = []))
         return ret
     end
 
