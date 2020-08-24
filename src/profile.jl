@@ -7,7 +7,7 @@
 # - and then run the inference on it and collect possible error points (`profile_call`)
 #
 # known limitations:
-# - macro including access to global variables:
+# - macro expansion and `include` calls including access to global variables:
 #   TP will try to expand any macro, but any macro expansion including access to global
 #   variables will fail since TP just infers their types and avoids the actual evaluation
 

@@ -146,25 +146,21 @@ function parse_and_transform(actualmod::Module,
 
         # handle `include` call
         if isinclude(x)
-            # can't correctly eval expressions with accessing global variables, etc
+            # TODO: maybe find a way to handle two args `include` calls
             include_file = eval_with_err_handling(virtualmod, last(x.args))
 
-            # error happened when evaling
-            isnothing(include_file) && return nothing
+            isnothing(include_file) && return nothing # error happened when evaling `include` args
 
             include_file = normpath(dirname(filename), include_file)
-            if isfile(include_file)
-                include_text = read(include_file, String)
+            read_ex      = :(read($(include_file), String))
+            include_text = eval_with_err_handling(virtualmod, read_ex)
 
-                parse_and_transform(actualmod, virtualmod, include_text, include_file, ret)
+            isnothing(include_text) && return nothing # typically no file error
 
-                # try to get last expression
-                include_transformed = last(ret).transformed
-                isexpr(include_transformed, :toplevel) || return nothing
-                return last(include_transformed.args)
-            else
-                error("implement error report for this pass") # TODO
-            end
+            parse_and_transform(actualmod, virtualmod, include_text, include_file, ret)
+
+            # TODO: actually, we need to try to get the last profiling result from  `last(ret).transformed` here
+            return nothing
         end
 
         # fix self-referring global references
