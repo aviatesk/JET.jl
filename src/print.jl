@@ -50,7 +50,6 @@ end
 # --------
 
 function print_reports(io::IO,
-                       filename::AbstractString,
                        reports::Vector{<:ToplevelErrorReport},
                        @nospecialize(postprocess = identity);
                        print_toplevel_sucess::Bool = false,
@@ -68,8 +67,7 @@ function print_reports(io::IO,
     color = ERROR_COLOR
 
     s = with_bufferring(arg) do io
-        s = string(pluralize(length(reports), "toplevel error"), " found in ",
-                   (fullpath ? tofullpath : identity)(filename))
+        s = string(pluralize(length(reports), "toplevel error"), " found")
         printlnstyled(io, LEFT_ROOF, s, RIGHT_ROOF; color = HEADER_COLOR)
 
         rail = with_bufferring(arg) do io
@@ -104,7 +102,6 @@ print_report(io, report::ActualErrorWrapped) = showerror(io, report.err, report.
 # ---------
 
 function print_reports(io::IO,
-                       filename::AbstractString,
                        reports::Vector{<:InferenceErrorReport},
                        @nospecialize(postprocess = identity);
                        filter_native_remarks::Bool = true,
@@ -126,8 +123,7 @@ function print_reports(io::IO,
     end
 
     s = with_bufferring(:color => color) do io
-        s = string(pluralize(length(reports), "possible error"), " found in ",
-                   (fullpath ? tofullpath : identity)(filename))
+        s = string(pluralize(length(reports), "possible error"), " found")
         printlnstyled(io, LEFT_ROOF, s, RIGHT_ROOF; color = HEADER_COLOR)
 
         wrote_linfos = Set{UInt64}()
@@ -146,7 +142,15 @@ end
 # `typeinf_local` in src/abstractinterpretation.jl
 function uniquify_reports!(reports::Vector{<:InferenceErrorReport})
     return unique!(reports) do report
-        return last(report.st), report.msg, report.sig # uniquify keys
+        # uniquify keys
+        return (
+            # caller
+            first(report.st),
+            # error
+            last(report.st),
+            report.msg,
+            report.sig
+        )
     end
 end
 

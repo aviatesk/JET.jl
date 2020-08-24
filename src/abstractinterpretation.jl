@@ -68,7 +68,12 @@ function abstract_eval_special_value(interp::TPInterpreter, @nospecialize(e), vt
         #     add_remark!(interp, sv, UndefVarErrorReport(sv, sv.mod, s))
         # end
     elseif isa(e, GlobalRef)
-        check_global_ref!(interp, sv, e.mod, e.name) && (ret = Bottom) # ret here should annotated as `Any` by `NativeInterpreter`, but here I would like to be more conservative and change it to `Bottom`
+        vgv = getvirtualglobalvar(interp, e.mod, e.name)
+        if isnothing(vgv)
+            check_global_ref!(interp, sv, e.mod, e.name) && (ret = Bottom) # ret here should annotated as `Any` by `NativeInterpreter`, but here I would like to be more conservative and change it to `Bottom`
+        else
+            ret = vgv
+        end
     end
 
     return ret
@@ -97,17 +102,33 @@ end
 #     return ret
 # end
 
-# FIXME:
-# this is such an super fragile and problematic copy-and-paste;
-# the whole point is to not let abstract interpretation to halt even after there is an
-# obvious error point found (, which is usually represented by `Bottom`-annotated type and
-# triggers early-loop-escape in the native implementation), and allow TP to collect as much
-# errors as possible; so the only diffs are:
-# - the first argument changed to `TPInterpreter`
-# - comment out 3 early-loop-escapes
-#
-# ... and actually this introduces one obvious bug that `typeinf_local(::TPInterpreter, ::InferenceState)`
-# sometimes runs the same inference routine twice, which leads to duplicated error reports
+"""
+    typeinf_local(::TPInterpreter, ::InferenceState)
+
+works as `typeinf_local(::AbstractInterpreter, ::InferenceState)` (i.e. "make as much
+  progress on `frame` as possible (without handling cycles)") but with few of tweaks for the
+  TypeProfiler.jl's abstract interpretation.
+
+this is such an super fragile and problematic copy-and-paste; the points are:
+1. to not let abstract interpretation to halt even after there is an obvious error point
+   found (, which is usually represented by `Bottom`-annotated type and triggers
+   early-loop-escape in the native implementation), and allow TP to collect as much errors
+   as possible
+2. to keep traced types of (virtual) global variables in toplevel frames (, which are
+   technically wrapped into a single virtual function, but originally globals) in the
+   `TPInterpreter.virtualglobalvartable` so that they can be referred across profiling on
+   different virtual functions
+
+so the actual diffs are:
+- the first argument changed to `TPInterpreter`
+- comment out 3 early-loop-escapes
+- do "virtual global variable assignment" for toplevel frames
+
+!!! danger "FIXME:"
+    ... and actually this introduces one obvious bug that `typeinf_local(::TPInterpreter, ::InferenceState)`
+    sometimes runs the same inference routine twice, which leads to duplicated error reports
+"""
+function typeinf_local(::TPInterpreter, ::InferenceState) end
 
 push_inithook!() do
 Core.eval(Core.Compiler, quote
@@ -231,6 +252,10 @@ function typeinf_local(interp::$(TPInterpreter), frame::InferenceState)
                     lhs = stmt.args[1]
                     if isa(lhs, Slot)
                         changes = StateUpdate(lhs, VarState(t, false), changes)
+                        # virtual global variable assignment
+                        if $(istoplevelframe)(frame)
+                            $(setvirtualglobalvar!)(interp, frame, lhs, t)
+                        end
                     end
                 elseif hd === :method
                     fname = stmt.args[1]

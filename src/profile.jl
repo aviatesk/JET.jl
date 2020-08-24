@@ -16,7 +16,7 @@ function profile_file(io::IO,
                       mod::Module = Main;
                       kwargs...)
     text = read(filename, String)
-    profile_text(io, text, filename, mod; kwargs...)
+    return profile_text(io, text, filename, mod; kwargs...)
 end
 profile_file(args...; kwargs...) = profile_file(stdout, args...; kwargs...)
 
@@ -26,8 +26,8 @@ function profile_text(io::IO,
                       mod::Module = Main;
                       profiling_logger::Union{Nothing,IO} = nothing,
                       kwargs...)
-    reports, postprocess = report_errors(profiling_logger, mod, text, filename)
-    return print_reports(io, filename, reports, postprocess; kwargs...)
+    included_files, reports, postprocess = report_errors(profiling_logger, mod, text, filename)
+    return included_files, print_reports(io, reports, postprocess; kwargs...)
 end
 profile_text(args...; kwargs...) = profile_text(stdout, args...; kwargs...)
 
@@ -48,15 +48,25 @@ function report_errors(actualmod, text, filename)
     virtualmod = generate_virtual_module(actualmod)
 
     ret = parse_and_transform(actualmod, virtualmod, text, filename)
-    if isa(ret, Vector{<:ToplevelErrorReport})
-        return ret, generate_postprocess(virtualmod, actualmod)
+
+    included_files = map(a->a.filename, ret)
+    reportsary = map(a->a.reports, ret)
+    # non-empty `reports` means critical errors happened during the AST transformation
+    if any(!isempty, reportsary)
+        reports = collect(flatten(filter!(!isempty, reportsary)))
+        return included_files, reports, generate_postprocess(virtualmod, actualmod)
     end
 
-    λ = generate_virtual_lambda(virtualmod, ret)
-    # Core.eval(@__MODULE__, :(λ = $(λ)))
-    interp, = profile_call(λ)
+    # run profiler on each included file, otherwise file/line number information gets messed
+    # we can manually fix them, but we will need this kind of logic in the future module
+    # handling as well, so let's take this way
+    λs = generate_virtual_lambda.(Ref(virtualmod), map(a->a.transformed, ret))
+    interp = TPInterpreter(; istoplevel = true)
+    for λ in λs
+        profile_call_gf!(interp, Tuple{typeof(λ)})
+    end
 
-    return interp.reports, generate_postprocess(virtualmod, actualmod)
+    return included_files, interp.reports, generate_postprocess(virtualmod, actualmod)
 end
 
 generate_virtual_module(actualmod::Module) =
@@ -80,18 +90,6 @@ end
 
 # inference
 # ---------
-
-@nospecialize
-
-function profile_call(f, args...)
-    tt = to_tuple_type(typeof′.([f, args...]))
-    return profile_call_gf(tt)
-end
-
-typeof′(x) = typeof(x)
-typeof′(x::Type{T}) where {T} = Type{T}
-
-@specialize
 
 # FIXME:
 # cached method specializations won't let abstract interpretation to happen again and
@@ -137,6 +135,18 @@ function profile_call_gf!(interp::TPInterpreter,
 end
 
 # utility for interactive session
+@nospecialize
+
+function profile_call(f, args...)
+    tt = to_tuple_type(typeof′.([f, args...]))
+    return profile_call_gf(tt)
+end
+
+typeof′(x) = typeof(x)
+typeof′(x::Type{T}) where {T} = Type{T}
+
+@specialize
+
 macro profile_call(ex, kwargs...)
     @assert Meta.isexpr(ex, :call) "function call expression should be given"
     f = ex.args[1]

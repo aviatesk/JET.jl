@@ -2,44 +2,42 @@ profile_and_watch_file(args...; kwargs...) = profile_and_watch_file(stdout, args
 function profile_and_watch_file(io::IO,
                                 filename::AbstractString,
                                 args...;
-                                profiling_logger::Union{Nothing,IO} = io,
-                                print_inference_sucess::Bool = true,
+                                profiling_logger::Union{Nothing,IO} = io, # enable logger by default for watch mode
                                 kwargs...)
-    errored = true
     while true
-        do_prehooks(errored,
-                    io,
+        do_prehooks(io,
                     filename,
                     args...;
                     profiling_logger,
-                    print_inference_sucess,
                     kwargs...)
 
-        try
+        included_files, _ = try
             println(io)
-            errored = profile_file(io, filename, args...;
-                                   profiling_logger,
-                                   # no success message after profiling without error found
-                                   # unless specified manually
-                                   print_inference_sucess = print_inference_sucess && errored,
-                                   kwargs...)
+            profile_file(io, filename, args...;
+                         profiling_logger,
+                         kwargs...)
         catch err
             @error "internal error occured:"
             showerror(stderr, err, catch_backtrace())
+            [filename], true
         end
 
-        t = watch_file(filename)
+        # TODO: is there a way to abort tasks that are defeated in the race ?
+        watch_chn = Channel{FileWatching.FileEvent}()
+        for file in included_files
+            @async put!(watch_chn, watch_file(file))
+        end
+        take!(watch_chn) # wait until any of the scheduled tasks fulfilled
+
         if !isfile(filename)
             @info "$(filename) has been removed"
             return
         end
 
-        do_posthooks(errored,
-                     io,
+        do_posthooks(io,
                      filename,
                      args...;
                      profiling_logger,
-                     print_inference_sucess,
                      kwargs...)
     end
 end
