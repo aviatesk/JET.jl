@@ -4,7 +4,7 @@ TypeProfiler.jl employs Julia's type inference for bug reports.
 
 !!! note
     TypeProfiler.jl needs Julia v1.6, especially [this commit](https://github.com/JuliaLang/julia/commit/d5cf73ffffbab40ae06cc1ec99cac9d8e3d2b6a2);
-    as such I recommend you give a try on this package with [nighlty](https://julialang.org/downloads/nightlies/)
+    as such I recommend you give a try on this package with [nightly](https://julialang.org/downloads/nightlies/)
     or [building from source](https://github.com/JuliaLang/julia) after the commit.
 
 
