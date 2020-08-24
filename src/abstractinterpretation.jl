@@ -11,7 +11,9 @@ function invoke_native(f, interp::TPInterpreter, args...; kwargs...)
     return invoke(f, argtypes, interp, args...; kwargs...)
 end
 
-get_cur_stmt(frame::InferenceState) = frame.src.code[frame.currpc]
+get_cur_pc(frame::InferenceState)        = frame.currpc
+get_cur_stmt(frame::InferenceState)      = frame.src.code[get_cur_pc(frame)]
+get_cur_varstates(frame::InferenceState) = frame.stmt_types[get_cur_pc(frame)]
 
 # report undef var error
 function check_global_ref!(interp::TPInterpreter, sv::InferenceState, m::Module, s::Symbol)

@@ -167,7 +167,7 @@ function track_abstract_call_stack!(sv, st = VirtualFrame[])::VirtualStackTrace
 end
 
 function get_file_line(frame::InferenceState)
-    loc = frame.src.codelocs[frame.currpc]
+    loc = frame.src.codelocs[get_cur_pc(frame)]
     linfo = frame.src.linetable[loc]
     return linfo.file, linfo.line
 end
@@ -207,11 +207,16 @@ function get_sig(sv::InferenceState, expr::Expr)
         string(expr)
     end
 end
-get_sig(sv::InferenceState, ssa::SSAValue) = string('%', ssa.id, "::", widenconst(sv.src.ssavaluetypes[ssa.id]))
+function get_sig(sv::InferenceState, ssa::SSAValue)
+    ssa_sig = get_sig(sv, sv.src.code[ssa.id])
+    typ     = widenconst(sv.src.ssavaluetypes[ssa.id])
+    return string(ssa_sig, "::", typ)
+end
 function get_sig(sv::InferenceState, slot::SlotNumber)
-    ss = string(sv.src.slotnames[slot.id])
-    isempty(ss) && (ss = string(slot)) # fallback if no explicit slotname
-    return string(ss, "::", widenconst(sv.slottypes[slot.id]))
+    slot_sig = string(sv.src.slotnames[slot.id])
+    isempty(slot_sig) && (slot_sig = string(slot)) # fallback if no explicit slotname
+    typ = widenconst(get_cur_varstates(sv)[slot.id].typ)
+    return string(slot_sig, "::", typ)
 end
 get_sig(::InferenceState, gr::GlobalRef) = string(gr.mod, '.', gr.name)
 get_sig(sv::InferenceState, gotoifnot::GotoIfNot) = string("goto %", gotoifnot.dest, " if not ", get_sig(sv, gotoifnot.cond))

@@ -76,14 +76,15 @@ profiling from demo.jl ... (finished in 2.745 sec)
 ││ no matching method found for call signature: Main.-(n::String, 2)
 │└
 ┌ @ demo.jl:33 Main.foo(1.2)
-│┌ @ demo.jl:25 Main.bar(v::Union{})
+│┌ @ demo.jl:25 Main.bar(v::Main.Ty{Float64})
 ││┌ @ demo.jl:30 Base.getproperty(v::Main.Ty{Float64}, :fdl::Symbol)
 │││┌ @ Base.jl:33 Base.getfield(x::Main.Ty{Float64}, f::Symbol)
 ││││ invalid builtin function call: Base.getfield(x::Main.Ty{Float64}, f::Symbol)
 │││└
 ┌ @ demo.jl:34 Main.foo("1")
-││┌ @ demo.jl:31 Main.convert(Main.Number, %2::String)
-│││ no matching method found for call signature: Main.convert(Main.Number, %2::String)
+│┌ @ demo.jl:25 Main.bar(v::Main.Ty{String})
+││┌ @ demo.jl:31 Main.convert(Main.Number, Base.getproperty(v::Main.Ty{String}, :fld::Symbol)::String)
+│││ no matching method found for call signature: Main.convert(Main.Number, Base.getproperty(v::Main.Ty{String}, :fld::Symbol)::String)
 ││└
 ```
 
