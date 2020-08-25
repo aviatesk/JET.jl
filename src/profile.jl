@@ -62,13 +62,13 @@ function report_errors(actualmod, text, filename)
     # handling as well, so let's take this way
 
     # filter out empty expression, i.e. there is nothing to profile
-    exs = filter(!Fix2(isexpr, :empty), map(a->a.transformed, ret))
+    toplevelexs = filter(!Fix2(isexpr, :empty), map(a->a.transformed, ret))
 
     # XXX:
     # we need to create TPInterpreter __after__ creating `λs`, otherwise world age error
     # not sure why `TPInterpreter(typemax(UInt); istoplevel = true)` doesn't help ...
-    λs  = generate_virtual_lambda.(Ref(virtualmod), exs)
-    interp = TPInterpreter(; istoplevel = true)
+    λs     = flatten(generate_virtual_lambdas.(Ref(virtualmod), toplevelexs))
+    interp = TPInterpreter(; istoplevel = true) # enable virtual global assignments
     for λ in λs
         profile_call_gf!(interp, Tuple{typeof(λ)})
     end
@@ -79,13 +79,22 @@ end
 generate_virtual_module(actualmod) =
     return Core.eval(actualmod, :(module $(gensym(:TypeProfilerVirtualModule)) end))::Module
 
-function generate_virtual_lambda(mod, toplevelex)
+function generate_virtual_lambdas(mod, toplevelex)
     @assert isexpr(toplevelex, :toplevel) "toplevel expression should be given"
 
-    body = Expr(:block, toplevelex.args...)
-    ex = Expr(:function, #=nullary lambda=# Expr(:tuple), body)
-    return Core.eval(mod, ex)
+    lnns    = filter(islnn, toplevelex.args)
+    bodyexs = filter(!islnn, toplevelex.args)
+
+    @assert length(lnns) == length(bodyexs) "expressions and line number nodes unmatched"
+
+    return map(zip(lnns, bodyexs)) do (lnn, bodyex)
+        funcbody = Expr(:block, lnn, bodyex)
+        funcex   = Expr(:function, #=nullary lambda=# Expr(:tuple), funcbody)
+        Core.eval(mod, funcex)::Function
+    end
 end
+
+const islnn = Fix2(isa, LineNumberNode)
 
 # fix virtual module printing based on string manipulation; the "actual" modules may not be
 # loaded into this process
@@ -162,8 +171,6 @@ macro profile_call(ex, kwargs...)
     quote let
         interp, frame = $(profile_call)($(esc(f)), $(map(esc, args)...))
         $(print_reports)(stdout, interp.reports; $(map(esc, kwargs)...))
-        $(get_rettyp)(frame)
+        $(get_result)(frame) # maybe want to widen const ?
     end end
 end
-
-get_rettyp(frame::InferenceState) = frame.result.result # want to unwrap const ?

@@ -163,7 +163,7 @@ end
 
 # traces the current abstract call stack
 function track_abstract_call_stack!(sv, st = VirtualFrame[])::VirtualStackTrace
-    istoplevelframe(sv) || track_abstract_call_stack!(sv.parent, st) # prewalk
+    isroot(sv) || track_abstract_call_stack!(sv.parent, st) # prewalk
     sig = get_sig(sv)
     file, line = get_file_line(sv)
     push!(st, (; file, line, sig))
