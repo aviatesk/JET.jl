@@ -62,30 +62,30 @@ profiling from demo.jl ... (finished in 2.745 sec)
 ═════ 6 possible errors found ═════
 ┌ @ demo.jl:11 Main.fib(Main.m)
 │ variable Main.m is not defined: Main.fib(Main.m)
-└
+└──────────────
 ┌ @ demo.jl:12 Main.fib("1000")
 │┌ @ demo.jl:8 Main.≤(n::String, 2)
 ││┌ @ operators.jl:326 Base.<(x::String, y::Int64)
 │││┌ @ operators.jl:277 Base.isless(x::String, y::Int64)
 ││││ no matching method found for call signature: Base.isless(x::String, y::Int64)
-│││└
+│││└────────────────────
 │┌ @ demo.jl:8 Main.-(n::String, 1)
 ││ no matching method found for call signature: Main.-(n::String, 1)
-│└
+│└─────────────
 │┌ @ demo.jl:8 Main.-(n::String, 2)
 ││ no matching method found for call signature: Main.-(n::String, 2)
-│└
+│└─────────────
 ┌ @ demo.jl:33 Main.foo(1.2)
 │┌ @ demo.jl:25 Main.bar(v::Main.Ty{Float64})
 ││┌ @ demo.jl:30 Base.getproperty(v::Main.Ty{Float64}, :fdl::Symbol)
 │││┌ @ Base.jl:33 Base.getfield(x::Main.Ty{Float64}, f::Symbol)
 ││││ invalid builtin function call: Base.getfield(x::Main.Ty{Float64}, f::Symbol)
-│││└
+│││└──────────────
 ┌ @ demo.jl:34 Main.foo("1")
 │┌ @ demo.jl:25 Main.bar(v::Main.Ty{String})
 ││┌ @ demo.jl:31 Main.convert(Main.Number, Base.getproperty(v::Main.Ty{String}, :fld::Symbol)::String)
 │││ no matching method found for call signature: Main.convert(Main.Number, Base.getproperty(v::Main.Ty{String}, :fld::Symbol)::String)
-││└
+││└──────────────
 ```
 
 Hooray !

@@ -126,8 +126,15 @@ function print_reports(io::IO,
         s = string(pluralize(length(reports), "possible error"), " found")
         printlnstyled(io, LEFT_ROOF, s, RIGHT_ROOF; color = HEADER_COLOR)
 
+        # don't duplicated virtual stack frames for reports from the same toplevel frame
+        toplevel_linfo_hash = hash(:dummy)
         wrote_linfos = Set{UInt64}()
         for report in reports
+            new_toplevel_linfo_hash = hash(first(report.st))
+            if toplevel_linfo_hash != new_toplevel_linfo_hash
+                toplevel_linfo_hash = new_toplevel_linfo_hash
+                wrote_linfos = Set{UInt64}()
+            end
             print_report(io, report, wrote_linfos; fullpath)
         end
     end |> postprocess
@@ -178,12 +185,12 @@ function print_error_frame(io, report, depth; kwargs...)
     frame = report.st[depth]
     color = ERROR_COLOR
 
-    print_frame(io, frame, depth, true; kwargs...)
+    len = print_frame(io, frame, depth, true; kwargs...)
     print_rails(io, depth-1)
     printstyled(io, "│ ", report.msg, ": "; color)
     printlnstyled(io, report.sig; color = :bold)
     print_rails(io, depth-1)
-    printlnstyled(io, '└'; color)
+    printlnstyled(io, '└', '─'^len; color)
 
     return
 end
@@ -192,8 +199,9 @@ function print_frame(io, (file, line, sig), depth, is_err; fullpath = false)
     print_rails(io, depth-1)
 
     color = is_err ? ERROR_COLOR : RAIL_COLORS[(depth)%N_RAILS+1]
-    printstyled(io, "┌ @ ", (fullpath ? tofullpath : identity)(string(file)), ":", line; color)
+    s = string("┌ @ ", (fullpath ? tofullpath : identity)(string(file)), ":", line)
+    printstyled(io, s; color)
     println(io, ' ', sig)
 
-    return
+    return length(s) # the length of frame info string
 end
