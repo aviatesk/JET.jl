@@ -37,10 +37,9 @@ function with_bufferring(f, args...)
     return String(take!(buf))
 end
 
-# FIXME: we may need something like this for stdlibs as well, or just always use `RELEASE_DIR`
-const SRC_DIR = normpath(Sys.BINDIR, "..", "..", "base")
-const RELEASE_DIR = normpath(Sys.BINDIR, "..", "share", "julia", "base")
-expandbasepath(filename) = normpath((@static isdir(SRC_DIR) ? SRC_DIR : RELEASE_DIR), filename)
+# we may need something like this for stdlibs as well ?
+expandbasepath(filename) =
+    return normpath(Sys.BINDIR::String, Base.DATAROOTDIR, "julia", "base", filename)
 function tofullpath(filename::AbstractString)
     path = abspath(filename)
     return isfile(path) ? path : expandbasepath(filename)
