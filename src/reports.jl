@@ -36,7 +36,11 @@ end
 # TODO: maybe we want to use https://github.com/aviatesk/Mixin.jl
 abstract type InferenceErrorReport end
 
-const VirtualFrame = NamedTuple{(:file,:line,:sig),Tuple{Symbol,Int,String}}
+const VirtualFrame = @NamedTuple begin
+    file::Symbol
+    line::Int
+    sig::String
+end
 const VirtualStackTrace = Vector{VirtualFrame}
 
 # helps inference

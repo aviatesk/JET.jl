@@ -66,7 +66,7 @@ function print_reports(io::IO,
     arg = :color => color
     color = ERROR_COLOR
 
-    s = with_bufferring(arg) do io
+    with_bufferring(arg) do io
         s = string(pluralize(length(reports), "toplevel error"), " found")
         printlnstyled(io, LEFT_ROOF, s, RIGHT_ROOF; color = HEADER_COLOR)
 
@@ -86,9 +86,7 @@ function print_reports(io::IO,
             s = string('└', '─'^(length(s)-1))
             printlnstyled(io, s; color)
         end
-    end |> postprocess
-
-    print(io, s)
+    end |> postprocess |> Fix1(print, io)
 
     return true
 end
@@ -122,7 +120,7 @@ function print_reports(io::IO,
         return false
     end
 
-    s = with_bufferring(:color => color) do io
+    with_bufferring(:color => color) do io
         s = string(pluralize(length(reports), "possible error"), " found")
         printlnstyled(io, LEFT_ROOF, s, RIGHT_ROOF; color = HEADER_COLOR)
 
@@ -137,9 +135,7 @@ function print_reports(io::IO,
             end
             print_report(io, report, wrote_linfos; fullpath)
         end
-    end |> postprocess
-
-    print(io, s)
+    end |> postprocess |> Fix1(print, io)
 
     return true
 end

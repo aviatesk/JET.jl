@@ -5,13 +5,10 @@
 # - respect evaluation order; currently `parse_and_transform` evaluates "toplevel definitions"
 #   in batch but it misses errors because of "not-yet-defined" definitions
 
-const Transformed = let
-    sym2typ = (
-        :filename    => String,
-        :transformed => Expr,
-        :reports     => Vector{ToplevelErrorReport}
-    )
-    NamedTuple{first.(sym2typ), to_tuple_type(last.(sym2typ))}
+const Transformed = @NamedTuple begin
+    filename::String
+    transformed::Expr
+    reports::Vector{ToplevelErrorReport}
 end
 
 """
