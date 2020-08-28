@@ -14,6 +14,8 @@ end
 get_cur_pc(frame::InferenceState)        = frame.currpc
 get_cur_stmt(frame::InferenceState)      = frame.src.code[get_cur_pc(frame)]
 get_cur_varstates(frame::InferenceState) = frame.stmt_types[get_cur_pc(frame)]
+get_result(frame::InferenceState)        = frame.result.result
+isroot(frame::InferenceState)            = isnothing(frame.parent)
 
 # report undef var error
 function check_global_ref!(interp::TPInterpreter, sv::InferenceState, m::Module, s::Symbol)
@@ -24,8 +26,6 @@ function check_global_ref!(interp::TPInterpreter, sv::InferenceState, m::Module,
         false
     end
 end
-
-istoplevelframe(frame::InferenceState) = isnothing(frame.parent)
 
 # overloads
 # ---------
@@ -104,221 +104,42 @@ end
 #     return ret
 # end
 
-"""
-    typeinf_local(::TPInterpreter, ::InferenceState)
+# works as the native (i.e. "make as much progress on `frame` as possible (without handling
+# cycles)", but when `interp` is profiling on virtual toplevel lambda and `frame` is in
+# virtual toplevel (i.e. when `isroot(frame) === true`), keep the traced types of  `SlotNumber`s
+# (which are originally global variables) in `TPInterpreter.virtualglobalvartable` so that
+# they can be referred across profilings on different virtual (toplevel) functions
+#
+# NOTE:
+# virtual global assignments should happen here because `SlotNumber`s can be optimized away
+# after the optimization happens
+function typeinf_local(interp::TPInterpreter, frame::InferenceState)
+    ret = invoke_native(typeinf_local, interp, frame)
 
-works as `typeinf_local(::AbstractInterpreter, ::InferenceState)` (i.e. "make as much
-  progress on `frame` as possible (without handling cycles)") but with few of tweaks for the
-  TypeProfiler.jl's abstract interpretation:
-1. to not let abstract interpretation to halt even after there is an obvious error point
-   found (, which is usually represented by `Bottom`-annotated type and triggers
-   early-loop-escape in the native implementation), and allow TP to collect as much errors
-   as possible
-2. to keep traced types of (virtual) global variables in toplevel frames (, which are
-   technically wrapped into a single virtual function, but originally globals) in the
-   `TPInterpreter.virtualglobalvartable` so that they can be referred across profiling on
-   different virtual functions
-
-so the actual diffs are:
-- the first argument changed to `TPInterpreter`
-- the 3 early-loop-escapes points get commented out
-- "virtual global variable assignment" for toplevel frames added
-
-!!! danger "FIXME:"
-    ... well, this is such an super fragile and problematic copy-and-paste, and  actually
-    this introduces one obvious bug that `typeinf_local(::TPInterpreter, ::InferenceState)`
-    sometimes runs the same inference routine twice, which leads to duplicated error reports
-"""
-function typeinf_local(::TPInterpreter, ::InferenceState) end
-
-push_inithook!() do
-Core.eval(Core.Compiler, quote
-
-# make as much progress on `frame` as possible (without handling cycles)
-function typeinf_local(interp::$(TPInterpreter), frame::InferenceState)
-    @assert !frame.inferred
-    frame.dont_work_on_me = true # mark that this function is currently on the stack
-    W = frame.ip
-    s = frame.stmt_types
-    n = frame.nstmts
-    while frame.pc´´ <= n
-        # make progress on the active ip set
-        local pc::Int = frame.pc´´ # current program-counter
-        while true # inner loop optimizes the common case where it can run straight from pc to pc + 1
-            #print(pc,": ",s[pc],"\n")
-            local pc´::Int = pc + 1 # next program-counter (after executing instruction)
-            if pc == frame.pc´´
-                # need to update pc´´ to point at the new lowest instruction in W
-                min_pc = _bits_findnext(W.bits, pc + 1)
-                frame.pc´´ = min_pc == -1 ? n + 1 : min_pc
-            end
-            delete!(W, pc)
-            frame.currpc = pc
-            frame.cur_hand = frame.handler_at[pc]
-            frame.stmt_edges[pc] === nothing || empty!(frame.stmt_edges[pc])
-            stmt = frame.src.code[pc]
-            changes = s[pc]::VarTable
-            t = nothing
-
-            hd = isa(stmt, Expr) ? stmt.head : nothing
-
-            if isa(stmt, NewvarNode)
-                sn = slot_id(stmt.slot)
-                changes[sn] = VarState(Bottom, true)
-            elseif isa(stmt, GotoNode)
-                pc´ = (stmt::GotoNode).label
-            elseif isa(stmt, GotoIfNot)
-                condt = abstract_eval_value(interp, stmt.cond, s[pc], frame)
-                # if condt === Bottom
-                #     break
-                # end
-                condval = maybe_extract_const_bool(condt)
-                l = stmt.dest::Int
-                # constant conditions
-                if condval === true
-                elseif condval === false
-                    pc´ = l
-                else
-                    # general case
-                    frame.handler_at[l] = frame.cur_hand
-                    changes_else = changes
-                    if isa(condt, Conditional)
-                        if condt.elsetype !== Any && condt.elsetype !== changes[slot_id(condt.var)]
-                            changes_else = StateUpdate(condt.var, VarState(condt.elsetype, false), changes_else)
-                        end
-                        if condt.vtype !== Any && condt.vtype !== changes[slot_id(condt.var)]
-                            changes = StateUpdate(condt.var, VarState(condt.vtype, false), changes)
-                        end
-                    end
-                    newstate_else = stupdate!(s[l], changes_else)
-                    if newstate_else !== false
-                        # add else branch to active IP list
-                        if l < frame.pc´´
-                            frame.pc´´ = l
-                        end
-                        push!(W, l)
-                        s[l] = newstate_else
-                    end
-                end
-            elseif isa(stmt, ReturnNode)
-                pc´ = n + 1
-                rt = widenconditional(abstract_eval_value(interp, stmt.val, s[pc], frame))
-                if !isa(rt, Const) && !isa(rt, Type) && !isa(rt, PartialStruct)
-                    # only propagate information we know we can store
-                    # and is valid inter-procedurally
-                    rt = widenconst(rt)
-                elseif isa(rt, Const) && rt.actual
-                    rt = Const(rt.val)
-                end
-                if tchanged(rt, frame.bestguess)
-                    # new (wider) return type for frame
-                    frame.bestguess = tmerge(frame.bestguess, rt)
-                    for (caller, caller_pc) in frame.cycle_backedges
-                        # notify backedges of updated type information
-                        typeassert(caller.stmt_types[caller_pc], VarTable) # we must have visited this statement before
-                        if !(caller.src.ssavaluetypes[caller_pc] === Any)
-                            # no reason to revisit if that call-site doesn't affect the final result
-                            if caller_pc < caller.pc´´
-                                caller.pc´´ = caller_pc
-                            end
-                            push!(caller.ip, caller_pc)
-                        end
-                    end
-                end
-            elseif hd === :enter
-                l = stmt.args[1]::Int
-                frame.cur_hand = Pair{Any,Any}(l, frame.cur_hand)
-                # propagate type info to exception handler
-                old = s[l]
-                new = s[pc]::Array{Any,1}
-                newstate_catch = stupdate!(old, new)
-                if newstate_catch !== false
-                    if l < frame.pc´´
-                        frame.pc´´ = l
-                    end
-                    push!(W, l)
-                    s[l] = newstate_catch
-                end
-                typeassert(s[l], VarTable)
-                frame.handler_at[l] = frame.cur_hand
-            elseif hd === :leave
-                for i = 1:((stmt.args[1])::Int)
-                    frame.cur_hand = (frame.cur_hand::Pair{Any,Any}).second
-                end
-            else
-                if hd === :(=)
-                    t = abstract_eval_statement(interp, stmt.args[2], changes, frame)
-                    # t === Bottom && break
-                    frame.src.ssavaluetypes[pc] = t
-                    lhs = stmt.args[1]
-                    if isa(lhs, Slot)
-                        changes = StateUpdate(lhs, VarState(t, false), changes)
-                        # virtual global variable assignment
-                        if $(istoplevelframe)(frame)
-                            $(setvirtualglobalvar!)(interp, frame, lhs, t)
-                        end
-                    end
-                elseif hd === :method
-                    fname = stmt.args[1]
-                    if isa(fname, Slot)
-                        changes = StateUpdate(fname, VarState(Any, false), changes)
-                    end
-                elseif hd === :inbounds || hd === :meta || hd === :loopinfo || hd === :code_coverage_effect
-                    # these do not generate code
-                else
-                    t = abstract_eval_statement(interp, stmt, changes, frame)
-                    # t === Bottom && break
-                    if !isempty(frame.ssavalue_uses[pc])
-                        record_ssa_assign(pc, t, frame)
-                    else
-                        frame.src.ssavaluetypes[pc] = t
-                    end
-                end
-                if frame.cur_hand !== nothing && isa(changes, StateUpdate)
-                    # propagate new type info to exception handler
-                    # the handling for Expr(:enter) propagates all changes from before the try/catch
-                    # so this only needs to propagate any changes
-                    l = frame.cur_hand.first::Int
-                    if stupdate1!(s[l]::VarTable, changes::StateUpdate) !== false
-                        if l < frame.pc´´
-                            frame.pc´´ = l
-                        end
-                        push!(W, l)
-                    end
-                end
-            end
-
-            if t === nothing
-                # mark other reached expressions as `Any` to indicate they don't throw
-                frame.src.ssavaluetypes[pc] = Any
-            end
-
-            pc´ > n && break # can't proceed with the fast-path fall-through
-            frame.handler_at[pc´] = frame.cur_hand
-            newstate = stupdate!(s[pc´], changes)
-            if isa(stmt, GotoNode) && frame.pc´´ < pc´
-                # if we are processing a goto node anyways,
-                # (such as a terminator for a loop, if-else, or try block),
-                # consider whether we should jump to an older backedge first,
-                # to try to traverse the statements in approximate dominator order
-                if newstate !== false
-                    s[pc´] = newstate
-                end
-                push!(W, pc´)
-                pc = frame.pc´´
-            elseif newstate !== false
-                s[pc´] = newstate
-                pc = pc´
-            elseif pc´ in W
-                pc = pc´
-            else
-                break
-            end
+    # virtual global variable assignment
+    if istoplevel(interp) && isroot(frame)
+        for (pc, stmt) in enumerate(frame.src.code)
+            isexpr(stmt, :(=)) && setvirtualglobalvar!(interp, frame, pc, stmt)
         end
     end
-    frame.dont_work_on_me = false
-    nothing
+
+    return ret
 end
 
-end) # Core.eval(Core.Compiler, quote
-end  # push_inithook!() do
+istoplevel(interp::TPInterpreter) = interp.istoplevel
+
+function getvirtualglobalvar(interp, mod, sym)
+    haskey(interp.virtualglobalvartable, mod) || return nothing
+    return get(interp.virtualglobalvartable[mod], sym, nothing)
+end
+
+function setvirtualglobalvar!(interp, frame, pc, stmt)
+    mod = frame.mod
+    haskey(interp.virtualglobalvartable, mod) || (interp.virtualglobalvartable[mod] = Dict())
+
+    slt = first(stmt.args)::Slot
+    lhs = frame.src.slotnames[slt.id]::Symbol
+    rhs = frame.src.ssavaluetypes[pc]
+
+    interp.virtualglobalvartable[mod][lhs] = rhs
+end

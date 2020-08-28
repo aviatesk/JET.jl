@@ -48,19 +48,3 @@ end
 may_optimize(interp::TPInterpreter) = interp.optimize
 may_compress(interp::TPInterpreter) = interp.compress
 may_discard_trees(interp::TPInterpreter) = interp.discard_trees
-
-# TypeProfiler.jl specific
-# ------------------------
-
-istoplevel(interp::TPInterpreter) = interp.istoplevel
-function getvirtualglobalvar(interp, mod, sym)
-    haskey(interp.virtualglobalvartable, mod) || return nothing
-    return get(interp.virtualglobalvartable[mod], sym, nothing)
-end
-function setvirtualglobalvar!(interp, frame, lhs::Slot, @nospecialize(rhs))
-    mod = frame.mod
-    haskey(interp.virtualglobalvartable, mod) || (interp.virtualglobalvartable[mod] = Dict())
-
-    sym = frame.src.slotnames[lhs.id]
-    interp.virtualglobalvartable[mod][sym] = rhs
-end
