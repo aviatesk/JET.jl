@@ -59,7 +59,7 @@ julia> using TypeProfiler
 julia> profile_and_watch_file("demo.jl")
 
 profiling from demo.jl ... (finished in 2.745 sec)
-═════ 6 possible errors found ═════
+════ 4 possible errors found ═════
 ┌ @ demo.jl:11 Main.fib(Main.m)
 │ variable Main.m is not defined: Main.fib(Main.m)
 └──────────────
@@ -69,12 +69,6 @@ profiling from demo.jl ... (finished in 2.745 sec)
 │││┌ @ operators.jl:277 Base.isless(x::String, y::Int64)
 ││││ no matching method found for call signature: Base.isless(x::String, y::Int64)
 │││└────────────────────
-│┌ @ demo.jl:8 Main.-(n::String, 1)
-││ no matching method found for call signature: Main.-(n::String, 1)
-│└─────────────
-│┌ @ demo.jl:8 Main.-(n::String, 2)
-││ no matching method found for call signature: Main.-(n::String, 2)
-│└─────────────
 ┌ @ demo.jl:33 Main.foo(1.2)
 │┌ @ demo.jl:25 Main.bar(v::Main.Ty{Float64})
 ││┌ @ demo.jl:30 Base.getproperty(v::Main.Ty{Float64}, :fdl::Symbol)
@@ -145,7 +139,7 @@ index d2b188a..1d1b3da 100644
 
 If you apply the diff (i.e. update and save the demo.jl), TP will automatically re-trigger profiling, and this time, won't complain anything:
 
-> git apply fix-demo.diff
+> git apply fix-demo.jl.diff
 
 ```julia
 profiling from demo.jl ... (finished in 5.146 sec)
