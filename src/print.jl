@@ -101,15 +101,10 @@ print_report(io, report::ActualErrorWrapped) = showerror(io, report.err, report.
 function print_reports(io::IO,
                        reports::Vector{<:InferenceErrorReport},
                        @nospecialize(postprocess = identity);
-                       filter_native_remarks::Bool = true,
                        print_inference_sucess::Bool = true,
                        color::Bool = get(io, :color, false),
                        fullpath::Bool = false,
                        __kwargs...)
-    if filter_native_remarks
-        reports = filter(r->!isa(r, NativeRemark), reports)
-    end
-
     uniquify_reports!(reports)
 
     if isempty(reports)
