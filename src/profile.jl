@@ -25,18 +25,24 @@ function profile_text(io::IO,
                       filename::AbstractString = "top-level",
                       mod::Module = Main;
                       profiling_logger::Union{Nothing,IO} = nothing,
+                      filter_native_remarks::Bool = true,
                       kwargs...)
-    included_files, reports, postprocess = report_errors(profiling_logger, mod, text, filename)
+    included_files, reports, postprocess = report_errors(profiling_logger,
+                                                         mod,
+                                                         text,
+                                                         filename;
+                                                         filter_native_remarks
+                                                         )
     return included_files, print_reports(io, reports, postprocess; kwargs...)
 end
 profile_text(args...; kwargs...) = profile_text(stdout, args...; kwargs...)
 
-report_errors(::Nothing, args...) = return report_errors(args...)
-function report_errors(logger::IO, args...)
+report_errors(::Nothing, args...; kwargs...) = return report_errors(args...; kwargs...)
+function report_errors(logger::IO, args...; kwargs...)
     print(logger, "profiling from $(#=filename=# last(args)) ...")
     s = time()
 
-    ret = report_errors(args...)
+    ret = report_errors(args...; kwargs...)
 
     sec = round(time() - s; digits = 3)
     println(logger, " (finished in $(sec) sec)")
@@ -44,7 +50,7 @@ function report_errors(logger::IO, args...)
     return ret
 end
 
-function report_errors(actualmod, text, filename)
+function report_errors(actualmod, text, filename; filter_native_remarks = true)
     virtualmod = generate_virtual_module(actualmod)
 
     ret = parse_and_transform(actualmod, virtualmod, text, filename)
@@ -68,7 +74,10 @@ function report_errors(actualmod, text, filename)
     # we need to create TPInterpreter __after__ creating `λs`, otherwise world age error
     # not sure why `TPInterpreter(typemax(UInt); istoplevel = true)` doesn't help ...
     λs     = flatten(generate_virtual_lambdas.(Ref(virtualmod), toplevelexs))
-    interp = TPInterpreter(; istoplevel = true) # enable virtual global assignments
+    interp = TPInterpreter(;
+                           istoplevel = true, # enable virtual global assignments
+                           filter_native_remarks
+                           )
     for λ in λs
         profile_call_gf!(interp, Tuple{typeof(λ)})
     end

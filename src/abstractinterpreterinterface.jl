@@ -11,6 +11,7 @@ struct TPInterpreter <: AbstractInterpreter
     # TypeProfiler.jl specific
     istoplevel::Bool
     virtualglobalvartable::Dict{Module,Dict{Symbol,Any}} # maybe we don't need this nested dicts
+    filter_native_remarks::Bool
 
     function TPInterpreter(world::UInt = get_world_counter();
                            inf_params::InferenceParams = InferenceParams(),
@@ -19,10 +20,19 @@ struct TPInterpreter <: AbstractInterpreter
                            compress::Bool = false,
                            discard_trees::Bool = false,
                            istoplevel::Bool = false,
-                           virtualglobalvartable::AbstractDict = Dict()
+                           virtualglobalvartable::AbstractDict = Dict(),
+                           filter_native_remarks::Bool = true,
                            )
         native = NativeInterpreter(world; inf_params, opt_params)
-        return new(native, [], optimize, compress, discard_trees, istoplevel, virtualglobalvartable)
+        return new(native,
+                   [],
+                   optimize,
+                   compress,
+                   discard_trees,
+                   istoplevel,
+                   virtualglobalvartable,
+                   filter_native_remarks
+                   )
     end
 end
 
@@ -41,6 +51,7 @@ function add_remark!(interp::TPInterpreter, ::InferenceState, report::InferenceE
     return
 end
 function add_remark!(interp::TPInterpreter, sv::InferenceState, s::String)
+    interp.filter_native_remarks && return
     add_remark!(interp, sv, NativeRemark(sv, s))
     return
 end
