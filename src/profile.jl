@@ -45,7 +45,9 @@ function report_errors(logger::IO, args...; kwargs...)
     ret = report_errors(args...; kwargs...)
 
     sec = round(time() - s; digits = 3)
-    println(logger, " (finished in $(sec) sec)")
+
+    print(logger, '\b'^3)
+    println(logger, "(finished in $(sec) sec)")
 
     return ret
 end

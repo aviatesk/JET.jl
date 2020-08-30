@@ -58,7 +58,7 @@ julia> using TypeProfiler
 
 julia> profile_and_watch_file("demo.jl")
 
-profiling from demo.jl ... (finished in 2.745 sec)
+profiling from demo.jl (finished in 2.745 sec)
 ════ 4 possible errors found ═════
 ┌ @ demo.jl:11 Main.fib(Main.m)
 │ variable Main.m is not defined: Main.fib(Main.m)
@@ -142,7 +142,7 @@ If you apply the diff (i.e. update and save the demo.jl), TP will automatically 
 > git apply fix-demo.jl.diff
 
 ```julia
-profiling from demo.jl ... (finished in 4.09 sec)
+profiling from demo.jl (finished in 4.09 sec)
 No errors !
 ```
 
