@@ -84,13 +84,13 @@ macro reportdef(ex)
 
         cache_report! = let msg = msg, sig = sig, interp = #= interp =# $(args[2])
             function (sv, st)
-                # key = hash(sv.linfo)
-                if haskey(TPCACHE, sv.linfo)
-                    _, cached_reports = TPCACHE[sv.linfo]
+                key = hash(sv.linfo)
+                if haskey(TPCACHE, key)
+                    _, cached_reports = TPCACHE[key]
                 else
                     id = get_id(interp)
                     cached_reports = InferenceReportCache[]
-                    TPCACHE[sv.linfo] = id => cached_reports
+                    TPCACHE[key] = id => cached_reports
                 end
 
                 push!(cached_reports, InferenceReportCache{$(T)}(view(st, :), msg, sig))

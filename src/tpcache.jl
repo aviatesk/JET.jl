@@ -6,7 +6,8 @@ struct InferenceReportCache{T<:InferenceErrorReport}
     msg::String
     sig::String
 end
-const TPCACHE = Dict{MethodInstance,Pair{Symbol,Vector{InferenceReportCache}}}()
+
+const TPCACHE = Dict{UInt,Pair{Symbol,Vector{InferenceReportCache}}}()
 
 get_id(interp::TPInterpreter) = interp.id
 
@@ -37,9 +38,9 @@ function CC.get(tpc::TPCache, mi::MethodInstance, default)
 
     # cache hit, we need to append already-profiled error reports if exist
     if ret !== default
-        # key = hash(mi)
-        if haskey(TPCACHE, mi)
-            id, cached_reports = TPCACHE[mi]
+        key = hash(mi)
+        if haskey(TPCACHE, key)
+            id, cached_reports = TPCACHE[key]
 
             # don't append duplicated reports from the same inference process
             if id !== get_id(tpc.interp)
