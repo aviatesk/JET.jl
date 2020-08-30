@@ -207,7 +207,7 @@ function print_signature(io, sig; kwargs...)
     return
 end
 _print_signature(io, a::Union{AbstractChar,AbstractString}; kwargs...) = printstyled(io, a; kwargs...)
-function _print_signature(io, @nospecialize(typ::Type); kwargs...)
+function _print_signature(io, @nospecialize(typ); kwargs...)
     printstyled(io, "::", string(typ); color = TYPE_ANNOTATION_COLOR, kwargs...)
 
     return
