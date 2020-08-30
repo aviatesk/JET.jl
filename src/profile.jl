@@ -118,19 +118,6 @@ end
 # inference
 # ---------
 
-# FIXME:
-# cached method specializations won't let abstract interpretation to happen again and
-# so may suppress error reports
-#
-# mre would be
-# julia> @profile_call sum("julia") # errors will be reported
-# julia> sum("julia")               # cause actual error
-# julia> @profile_call sum("julia") # errors get surpressed and won't be reported again
-#
-# maybe we can do either of
-# - always invalidate cached method specializations
-# - or attach error reports to each method specializations and use that when using cached method specialization cache
-
 # TODO:
 # - handle multiple applicable methods ?
 # - `profile_call_builtin!` ?
