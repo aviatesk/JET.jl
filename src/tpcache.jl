@@ -4,7 +4,7 @@
 struct InferenceReportCache{T<:InferenceErrorReport}
     st::ViewedVirtualStackTrace
     msg::String
-    sig::String
+    sig::Vector{Any}
 end
 
 const TPCACHE = Dict{UInt,Pair{Symbol,Vector{InferenceReportCache}}}()
