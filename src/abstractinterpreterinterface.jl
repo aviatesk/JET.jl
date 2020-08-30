@@ -3,7 +3,6 @@
 
 struct TPInterpreter <: AbstractInterpreter
     native::NativeInterpreter
-    reports::Vector{InferenceErrorReport}
     optimize::Bool
     compress::Bool
     discard_trees::Bool
@@ -14,6 +13,7 @@ struct TPInterpreter <: AbstractInterpreter
     istoplevel::Bool
     virtualglobalvartable::Dict{Module,Dict{Symbol,Any}} # maybe we don't need this nested dicts
     filter_native_remarks::Bool
+    reports::Vector{InferenceErrorReport}
 
     function TPInterpreter(world::UInt = get_world_counter();
                            inf_params::InferenceParams = InferenceParams(),
@@ -32,7 +32,6 @@ struct TPInterpreter <: AbstractInterpreter
         native = NativeInterpreter(world; inf_params, opt_params)
         id     = gensym(:TPInterpreterID)
         return new(native,
-                   [],
                    optimize,
                    compress,
                    discard_trees,
@@ -41,6 +40,7 @@ struct TPInterpreter <: AbstractInterpreter
                    istoplevel,
                    virtualglobalvartable,
                    filter_native_remarks,
+                   [],
                    )
     end
 end
