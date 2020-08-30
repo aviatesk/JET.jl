@@ -142,7 +142,7 @@ If you apply the diff (i.e. update and save the demo.jl), TP will automatically 
 > git apply fix-demo.jl.diff
 
 ```julia
-profiling from demo.jl ... (finished in 5.146 sec)
+profiling from demo.jl ... (finished in 4.09 sec)
 No errors !
 ```
 
