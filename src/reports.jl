@@ -42,6 +42,18 @@ const VirtualFrame = @NamedTuple begin
     sig::String
 end
 const VirtualStackTrace = Vector{VirtualFrame}
+const ViewedVirtualStackTrace = typeof(view(VirtualStackTrace(), :))
+
+"""
+    const VirtualFrame = NamedTuple{(:file,:line,:sig),Tuple{Symbol,Int,String}}
+    const VirtualStackTrace = Vector{VirtualFrame}
+    const ViewedVirtualStackTrace = typeof(view(VirtualStackTrace(), :))
+
+- `VirtualStackTrace` represents virtual back trace of profiled errors (supposed to be
+  ordered from call site to error point
+- `ViewedVirtualStackTrace` is view of `VirtualStackTrace` and will be kept in [`TPCACHE`](@ref)
+"""
+VirtualFrame, VirtualStackTrace, ViewedVirtualStackTrace
 
 # helps inference
 function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
@@ -56,91 +68,65 @@ function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
     end
 end
 
-# macro reportdef(structex)
-#     @assert isexpr(structex, :struct, 3) "struct expression should be given"
-#     typedecl, body = structex.args[2:3]
-#     @assert isexpr(typedecl, :<:, 2) && __module__.eval(last(typedecl.args)) <: InferenceErrorReport "error report should be declared as subtype of InferenceErrorReport"
-#     T = first(typedecl.args)
-#
-#     flds = filter(x->!isa(x, LineNumberNode), body.args)
-#     @assert first(flds) == :(st::VirtualStackTrace) "the first field of error report should be `st::VirtualStackTrace`"
-#
-#     args = flds[2:end]
-#     sigsyms = _get_sigsym.(args)
-#     nospecialize_sigs = sigsyms[findall(_should_not_specialize, args)]
-#     nospecialize_ex = isempty(nospecialize_sigs) ? quote end : :(@nospecialize $(nospecialize_sigs...))
-#     return quote
-#         struct $(T) <: InferenceErrorReport
-#             st::VirtualStackTrace
-#             msg::String
-#             sig::String
-#
-#             # we give up hygiene here because `@nospecialize` only works on escaped signatures
-#             function $(T)(sv::InferenceState, $(map(esc, sigsyms)...))
-#                 $(nospecialize_ex)
-#                 st = track_abstract_call_stack!(sv)
-#                 msg = get_msg($(T), sv, $(map(esc, sigsyms)...))
-#                 sig = get_sig(sv)
-#                 return new(st, msg, sig)
-#             end
-#         end
-#     end
-# end
-#
-# _get_sigsym(x) = isexpr(x, :(::)) ? first(x.args) : x
-# _should_not_specialize(x) = isexpr(x, :(::)) && last(x.args) in (:Type, :Function)
+macro reportdef(ex)
+    T = first(ex.args)
+    args = map(ex.args) do x
+        # unwrap @nospecialize
+        isexpr(x, :macrocall) && first(x.args) === Symbol("@nospecialize") && (x = last(x.args))
+        # handle default arguments
+        isexpr(x, :(=)) && return first(x.args)
+        return x
+    end
 
-struct NoMethodErrorReport <: InferenceErrorReport
-    st::VirtualStackTrace
-    msg::String
-    sig::String
+    constructor_body = quote
+        msg = get_msg(#= T, interp, sv, ... =# $(args...))
+        sig = get_sig(#= sv =# $(args[3]))
 
-    function NoMethodErrorReport(sv::InferenceState, unionsplit)
-        st = track_abstract_call_stack!(sv)
-        msg = get_msg(NoMethodErrorReport, sv, unionsplit)
-        sig = get_sig(sv)
-        return new(st, msg, sig)
+        cache_report! = let msg = msg, sig = sig, interp = #= interp =# $(args[2])
+            function (sv, st)
+                # key = hash(sv.linfo)
+                if haskey(TPCACHE, sv.linfo)
+                    _, cached_reports = TPCACHE[sv.linfo]
+                else
+                    id = get_id(interp)
+                    cached_reports = InferenceReportCache[]
+                    TPCACHE[sv.linfo] = id => cached_reports
+                end
+
+                push!(cached_reports, InferenceReportCache{$(T)}(view(st, :), msg, sig))
+            end
+        end
+
+        st = track_abstract_call_stack!(cache_report!, #= sv =# $(args[3]))
+
+        return new(reverse(st), msg, sig)
+    end
+    constructor_ex = Expr(:function, ex, constructor_body)
+
+    return quote
+        struct $(T) <: InferenceErrorReport
+            st::VirtualStackTrace
+            msg::String
+            sig::String
+
+            # inner constructor (from abstract interpretation)
+            $(constructor_ex)
+
+            # inner constructor (from cache)
+            function $(T)(st::VirtualStackTrace, msg::AbstractString, sig::AbstractString)
+                new(reverse(st), msg, sig)
+            end
+        end
     end
 end
 
-struct InvalidBuiltinCallErrorReport <: InferenceErrorReport
-    st::VirtualStackTrace
-    msg::String
-    sig::String
+@reportdef NoMethodErrorReport(interp, sv, unionsplit)
 
-    function InvalidBuiltinCallErrorReport(sv::InferenceState)
-        st = track_abstract_call_stack!(sv)
-        msg = get_msg(InvalidBuiltinCallErrorReport, sv)
-        sig = get_sig(sv)
-        return new(st, msg, sig)
-    end
-end
+@reportdef InvalidBuiltinCallErrorReport(interp, sv)
 
-struct UndefVarErrorReport <: InferenceErrorReport
-    st::VirtualStackTrace
-    msg::String
-    sig::String
+@reportdef UndefVarErrorReport(interp, sv, mod, name)
 
-    function UndefVarErrorReport(sv::InferenceState, mod, name)
-        st = track_abstract_call_stack!(sv)
-        msg = get_msg(UndefVarErrorReport, sv, mod, name)
-        sig = get_sig(sv)
-        return new(st, msg, sig)
-    end
-end
-
-struct NonBooleanCondErrorReport <: InferenceErrorReport
-    st::VirtualStackTrace
-    msg::String
-    sig::String
-
-    function NonBooleanCondErrorReport(sv::InferenceState, @nospecialize(t))
-        st = track_abstract_call_stack!(sv)
-        msg = get_msg(NonBooleanCondErrorReport, sv, t)
-        sig = get_sig(sv)
-        return new(st, msg, sig)
-    end
-end
+@reportdef NonBooleanCondErrorReport(interp, sv, @nospecialize(t))
 
 """
     NativeRemark <: InferenceErrorReport
@@ -148,53 +134,45 @@ end
 This special `InferenceErrorReport` is just for wrapping remarks from `NativeInterpreter`.
 Ideally all of them should be covered by the other `InferenceErrorReport`s.
 """
-struct NativeRemark <: InferenceErrorReport
-    st::VirtualStackTrace
-    msg::String
-    sig::String
-
-    function NativeRemark(sv::InferenceState, s)
-        st = track_abstract_call_stack!(sv)
-        msg = get_msg(NativeRemark, sv, s)
-        sig = get_sig(sv)
-        return new(st, msg, sig)
-    end
-end
+@reportdef NativeRemark(interp, sv, s)
 
 # traces the current abstract call stack
-function track_abstract_call_stack!(sv, st = VirtualFrame[])::VirtualStackTrace
-    isroot(sv) || track_abstract_call_stack!(sv.parent, st) # prewalk
+function track_abstract_call_stack!(f::Function, sv, st = VirtualFrame[])
     sig = get_sig(sv)
     file, line = get_file_line(sv)
-    push!(st, (; file, line, sig))
+    frame = (; file, line, sig)
+
+    push!(st, frame)
+    f(sv, st)
+
+    isroot(sv) || track_abstract_call_stack!(f, sv.parent, st) # postwalk
+
     return st
 end
 
 function get_file_line(frame::InferenceState)
-    loc = frame.src.codelocs[get_cur_pc(frame)]
-    linfo = frame.src.linetable[loc]
+    linfo = get_cur_linfo(frame)
     return linfo.file, linfo.line
 end
 
-# for the top frame
-# adapted from https://github.com/JuliaLang/julia/blob/58febaaf2fe38d90d41c170bc2f416a76eac46f5/base/show.jl#L945-L958
-function get_sig(linfo::MethodInstance)
-    io = IOBuffer()
-    def = linfo.def
-    if isa(def, Method)
-        if isdefined(def, :generator) && linfo === def.generator
-            show(io, def)
-        else
-            Base.show_tuple_as_call(io, def.name, linfo.specTypes)
-        end
-    else
-        print(io, "Toplevel MethodInstance thunk")
-    end
-    return String(take!(io))
-end
+get_sig(sv::InferenceState) = return get_sig(sv, get_cur_stmt(sv))
 
-# FIXME: obviously these implementations are not exhaustive
-get_sig(sv::InferenceState) = get_sig(sv, get_cur_stmt(sv))
+# # adapted from https://github.com/JuliaLang/julia/blob/58febaaf2fe38d90d41c170bc2f416a76eac46f5/base/show.jl#L945-L958
+# function get_sig(linfo::MethodInstance)
+#     io = IOBuffer()
+#     def = linfo.def
+#     if isa(def, Method)
+#         if isdefined(def, :generator) && linfo === def.generator
+#             show(io, def)
+#         else
+#             Base.show_tuple_as_call(io, def.name, linfo.specTypes)
+#         end
+#     else
+#         print(io, "Toplevel MethodInstance thunk")
+#     end
+#     return String(take!(io))
+# end
+
 function get_sig(sv::InferenceState, expr::Expr)
     head = expr.head
     return if head === :call
@@ -213,8 +191,8 @@ function get_sig(sv::InferenceState, expr::Expr)
 end
 function get_sig(sv::InferenceState, ssa::SSAValue)
     ssa_sig = get_sig(sv, sv.src.code[ssa.id])
-    typ     = widenconst(sv.src.ssavaluetypes[ssa.id])
-    return string(ssa_sig, "::", typ)
+    typ     = string(widenconst(sv.src.ssavaluetypes[ssa.id]))
+    return endswith(ssa_sig, typ) ? ssa_sig : string(ssa_sig, "::", typ)
 end
 function get_sig(sv::InferenceState, slot::SlotNumber)
     slot_sig = string(sv.src.slotnames[slot.id])
@@ -228,14 +206,27 @@ get_sig(sv::InferenceState, ret::ReturnNode) = string("return ", get_sig(sv, ret
 get_sig(::InferenceState, qn::QuoteNode) = string(qn, "::", typeof(qn.value))
 get_sig(::InferenceState, @nospecialize(x)) = repr(x; context = :compact => true)
 
-get_msg(::Type{NoMethodErrorReport}, sv, unionsplit) = unionsplit ?
+get_msg(::Type{NoMethodErrorReport}, interp, sv, unionsplit) = unionsplit ?
     "for one of the union split cases, no matching method found for signature" :
     "no matching method found for call signature"
-get_msg(::Type{InvalidBuiltinCallErrorReport}, sv) =
+get_msg(::Type{InvalidBuiltinCallErrorReport}, interp, sv) =
     "invalid builtin function call"
-get_msg(::Type{UndefVarErrorReport}, sv, mod, name) = isnothing(mod) ?
+get_msg(::Type{UndefVarErrorReport}, interp, sv, mod, name) = isnothing(mod) ?
     "variable $(name) is not defined" :
     "variable $(mod).$(name) is not defined"
-get_msg(::Type{NonBooleanCondErrorReport}, sv, @nospecialize(t)) =
+get_msg(::Type{NonBooleanCondErrorReport}, interp, sv, @nospecialize(t)) =
     "non-boolean ($(t)) used in boolean context"
-get_msg(::Type{NativeRemark}, sv, s) = s
+get_msg(::Type{NativeRemark}, interp, sv, s) = s
+
+# utils
+# -----
+
+# NOTE: these methods assume `frame` is not inlined
+
+get_cur_pc(frame::InferenceState) = return frame.currpc
+get_cur_stmt(frame::InferenceState) = frame.src.code[get_cur_pc(frame)]
+get_cur_loc(frame::InferenceState) = frame.src.codelocs[get_cur_pc(frame)]
+get_cur_linfo(frame::InferenceState) = frame.src.linetable[get_cur_loc(frame)]
+get_cur_varstates(frame::InferenceState) = frame.stmt_types[get_cur_pc(frame)]
+get_result(frame::InferenceState) = frame.result.result
+isroot(frame::InferenceState) = isnothing(frame.parent)
