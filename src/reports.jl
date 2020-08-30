@@ -39,13 +39,17 @@ abstract type InferenceErrorReport end
 const VirtualFrame = @NamedTuple begin
     file::Symbol
     line::Int
-    sig::String
+    sig::Vector{Any}
 end
 const VirtualStackTrace = Vector{VirtualFrame}
 const ViewedVirtualStackTrace = typeof(view(VirtualStackTrace(), :))
 
 """
-    const VirtualFrame = NamedTuple{(:file,:line,:sig),Tuple{Symbol,Int,String}}
+    const VirtualFrame = @NamedTuple begin
+        file::Symbol
+        line::Int
+        sig::Vector{Any}
+    end
     const VirtualStackTrace = Vector{VirtualFrame}
     const ViewedVirtualStackTrace = typeof(view(VirtualStackTrace(), :))
 
@@ -62,7 +66,7 @@ function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
     elseif sym === :msg
         getfield(er, sym)::String
     elseif sym === :sig
-        getfield(er, sym)::String
+        getfield(er, sym)::Vector{Any}
     else
         getfield(er, sym) # fallback
     end
@@ -107,13 +111,13 @@ macro reportdef(ex)
         struct $(T) <: InferenceErrorReport
             st::VirtualStackTrace
             msg::String
-            sig::String
+            sig::Vector{Any}
 
             # inner constructor (from abstract interpretation)
             $(constructor_ex)
 
             # inner constructor (from cache)
-            function $(T)(st::VirtualStackTrace, msg::AbstractString, sig::AbstractString)
+            function $(T)(st::VirtualStackTrace, msg::AbstractString, sig::AbstractVector)
                 new(reverse(st), msg, sig)
             end
         end
@@ -155,8 +159,6 @@ function get_file_line(frame::InferenceState)
     return linfo.file, linfo.line
 end
 
-get_sig(sv::InferenceState) = return get_sig(sv, get_cur_stmt(sv))
-
 # # adapted from https://github.com/JuliaLang/julia/blob/58febaaf2fe38d90d41c170bc2f416a76eac46f5/base/show.jl#L945-L958
 # function get_sig(linfo::MethodInstance)
 #     io = IOBuffer()
@@ -173,38 +175,59 @@ get_sig(sv::InferenceState) = return get_sig(sv, get_cur_stmt(sv))
 #     return String(take!(io))
 # end
 
-function get_sig(sv::InferenceState, expr::Expr)
+get_sig(sv::InferenceState) = return _get_sig(sv, get_cur_stmt(sv))
+
+_get_sig(args...) = first(_get_sig_type(args...))
+
+function _get_sig_type(sv::InferenceState, expr::Expr)
     head = expr.head
     return if head === :call
-        f = get_sig(sv, first(expr.args))
-        sig = join(get_sig.(Ref(sv), expr.args[2:end]), ", ")
-        string(f, '(', sig, ')')
+        sig = _get_sig(sv, first(expr.args))
+        push!(sig, '(')
+        for arg in expr.args[2:end]
+            arg_sig = _get_sig(sv, arg)
+            append!(sig, arg_sig)
+            push!(sig, ", ")
+        end
+        pop!(sig); push!(sig, ')')
+        sig, nothing
     elseif head === :(=)
-        # lhs = get_sig(sv, first(expr.args), false)
-        rhs = get_sig(sv, last(expr.args))
-        string(rhs)
+        _get_sig_type(sv, last(expr.args))
     elseif head === :static_parameter
-        string("::", widenconst(sv.sptypes[first(expr.args)]))
+        typ = widenconst(sv.sptypes[first(expr.args)])
+        Any[typ], typ
     else
-        string(expr)
+        Any[string(expr)], nothing
     end
 end
-function get_sig(sv::InferenceState, ssa::SSAValue)
-    ssa_sig = get_sig(sv, sv.src.code[ssa.id])
-    typ     = string(widenconst(sv.src.ssavaluetypes[ssa.id]))
-    return endswith(ssa_sig, typ) ? ssa_sig : string(ssa_sig, "::", typ)
+function _get_sig_type(sv::InferenceState, ssa::SSAValue)
+    sig, sig_typ = _get_sig_type(sv, sv.src.code[ssa.id])
+    typ = widenconst(sv.src.ssavaluetypes[ssa.id])
+    sig_typ == typ || push!(sig, typ)
+    return sig, typ
 end
-function get_sig(sv::InferenceState, slot::SlotNumber)
-    slot_sig = string(sv.src.slotnames[slot.id])
-    isempty(slot_sig) && (slot_sig = string(slot)) # fallback if no explicit slotname
+function _get_sig_type(sv::InferenceState, slot::SlotNumber)
+    sig = string(sv.src.slotnames[slot.id])
+    if isempty(sig)
+        sig = string(slot) # fallback if no explicit slotname
+    end
     typ = widenconst(get_cur_varstates(sv)[slot.id].typ)
-    return string(slot_sig, "::", typ)
+    return Any[sig, typ], typ
 end
-get_sig(::InferenceState, gr::GlobalRef) = string(gr.mod, '.', gr.name)
-get_sig(sv::InferenceState, gotoifnot::GotoIfNot) = string("goto %", gotoifnot.dest, " if not ", get_sig(sv, gotoifnot.cond))
-get_sig(sv::InferenceState, ret::ReturnNode) = string("return ", get_sig(sv, ret.val))
-get_sig(::InferenceState, qn::QuoteNode) = string(qn, "::", typeof(qn.value))
-get_sig(::InferenceState, @nospecialize(x)) = repr(x; context = :compact => true)
+_get_sig_type(::InferenceState, gr::GlobalRef) = Any[string(gr.mod, '.', gr.name)], nothing
+function _get_sig_type(sv::InferenceState, gotoifnot::GotoIfNot)
+    sig  = Any[string("goto %", gotoifnot.dest, " if not "), _get_sig(sv, gotoifnot.cond)...]
+    return sig, nothing
+end
+function _get_sig_type(sv::InferenceState, ret::ReturnNode)
+    sig = Any["return ", _get_sig(sv, ret.val)...]
+    return sig, nothing
+end
+function _get_sig_type(::InferenceState, qn::QuoteNode)
+    typ = typeof(qn.value)
+    return Any[string(qn), typ], typ
+end
+_get_sig_type(::InferenceState, @nospecialize(x)) = Any[repr(x; context = :compact => true)], nothing
 
 get_msg(::Type{NoMethodErrorReport}, interp, sv, unionsplit) = unionsplit ?
     "for one of the union split cases, no matching method found for signature" :

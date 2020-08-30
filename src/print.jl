@@ -16,6 +16,7 @@ const LEFT_ROOF  = "═════ "
 const RIGHT_ROOF = " ═════"
 const HEADER_COLOR = :reverse
 const ERROR_SIG_COLOR = :bold
+const TYPE_ANNOTATION_COLOR = :light_cyan
 
 pluralize(n::Integer, one::AbstractString, more::AbstractString = string(one, 's')) =
     return string(n, ' ', isone(n) ? one : more)
@@ -178,7 +179,8 @@ function print_error_frame(io, report, depth; kwargs...)
     len = print_frame(io, frame, depth, true; kwargs...)
     print_rails(io, depth-1)
     printstyled(io, "│ ", report.msg, ": "; color)
-    printlnstyled(io, report.sig; color = :bold)
+    print_signature(io, report.sig; bold = true)
+
     print_rails(io, depth-1)
     printlnstyled(io, '└', '─'^len; color)
 
@@ -190,8 +192,23 @@ function print_frame(io, (file, line, sig), depth, is_err; fullpath = false)
 
     color = is_err ? ERROR_COLOR : RAIL_COLORS[(depth)%N_RAILS+1]
     s = string("┌ @ ", (fullpath ? tofullpath : identity)(string(file)), ":", line)
-    printstyled(io, s; color)
-    println(io, ' ', sig)
+    printstyled(io, s, ' '; color)
+    print_signature(io, sig)
 
     return length(s) # the length of frame info string
+end
+
+function print_signature(io, sig; kwargs...)
+    for a in sig
+        _print_signature(io, a; kwargs...)
+    end
+    println(io)
+
+    return
+end
+_print_signature(io, a::Union{AbstractChar,AbstractString}; kwargs...) = printstyled(io, a; kwargs...)
+function _print_signature(io, @nospecialize(typ::Type); kwargs...)
+    printstyled(io, "::", string(typ); color = TYPE_ANNOTATION_COLOR, kwargs...)
+
+    return
 end
