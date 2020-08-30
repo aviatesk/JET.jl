@@ -6,7 +6,7 @@ function builtin_tfunction(interp::TPInterpreter, @nospecialize(f), argtypes::Ar
     if f === throw
         # TODO: needs a special case here
     elseif ret === Bottom
-        add_remark!(interp, sv, InvalidBuiltinCallErrorReport(sv))
+        add_remark!(interp, sv, InvalidBuiltinCallErrorReport(interp, sv))
     end
 
     return ret

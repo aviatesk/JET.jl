@@ -12,17 +12,20 @@ import Core.Compiler:
     # abstractinterpretation.jl
     abstract_call_gf_by_type, abstract_call_known, abstract_call,
     abstract_eval_special_value, abstract_eval_value_expr, abstract_eval_value,
-    abstract_eval_statement, builtin_tfunction, typeinf_local
+    abstract_eval_statement, builtin_tfunction, typeinf_local, typeinf_edge,
+    # tpcache.jl
+    WorldView
 
 # usings
 # ------
 
 # TODO: really use `using` instead
 import Core:
-    TypeofBottom
+    TypeofBottom, SimpleVector
 
 import Core.Compiler:
     AbstractInterpreter, NativeInterpreter, InferenceState, InferenceResult, CodeInfo,
+    InternalCodeCache, CodeInstance, WorldRange,
     MethodInstance, Bottom, NOT_FOUND, MethodMatchInfo, UnionSplitInfo, MethodLookupResult,
     Const, VarTable, SSAValue, SlotNumber, Slot, slot_id, GlobalRef, GotoIfNot, ReturnNode,
     widenconst, isconstType, typeintersect, ⊑, Builtin, CallMeta,
@@ -39,6 +42,8 @@ import Base.Iterators:
 
 using FileWatching, Requires
 
+const CC = Core.Compiler
+
 # includes
 # --------
 
@@ -51,6 +56,7 @@ include("virtualprocess.jl")
 include("abstractinterpreterinterface.jl")
 include("abstractinterpretation.jl")
 include("tfuncs.jl")
+include("tpcache.jl")
 include("print.jl")
 include("profile.jl")
 include("watch.jl")

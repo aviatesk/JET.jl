@@ -11,16 +11,10 @@ function invoke_native(f, interp::TPInterpreter, args...; kwargs...)
     return invoke(f, argtypes, interp, args...; kwargs...)
 end
 
-get_cur_pc(frame::InferenceState)        = frame.currpc
-get_cur_stmt(frame::InferenceState)      = frame.src.code[get_cur_pc(frame)]
-get_cur_varstates(frame::InferenceState) = frame.stmt_types[get_cur_pc(frame)]
-get_result(frame::InferenceState)        = frame.result.result
-isroot(frame::InferenceState)            = isnothing(frame.parent)
-
 # report undef var error
 function check_global_ref!(interp::TPInterpreter, sv::InferenceState, m::Module, s::Symbol)
     return if !isdefined(m, s)
-        add_remark!(interp, sv, UndefVarErrorReport(sv, m, s))
+        add_remark!(interp, sv, UndefVarErrorReport(interp, sv, m, s))
         true
     else
         false
@@ -45,13 +39,13 @@ function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argty
             if isa(info.results, MethodLookupResult) && isempty(info.results.matches)
                 # no method match for this union split
                 # ret.rt = Bottom # maybe we want to be more strict on error cases ?
-                add_remark!(interp, sv, NoMethodErrorReport(sv, true))
+                add_remark!(interp, sv, NoMethodErrorReport(interp, sv, true))
             end
         end
     elseif isa(info, MethodMatchInfo) && isa(info.results, MethodLookupResult) && isempty(info.results.matches)
         # really no method found
         typeassert(ret.rt, TypeofBottom) # return type is initialized as `Bottom`, and should never change in these passes
-        add_remark!(interp, sv, NoMethodErrorReport(sv, false))
+        add_remark!(interp, sv, NoMethodErrorReport(interp, sv, false))
     end
 
     return ret
@@ -67,7 +61,7 @@ function abstract_eval_special_value(interp::TPInterpreter, @nospecialize(e), vt
         # t = vtypes[id].typ
         # if t === NOT_FOUND || t === Bottom
         #     s = sv.src.slotnames[id]
-        #     add_remark!(interp, sv, UndefVarErrorReport(sv, sv.mod, s))
+        #     add_remark!(interp, sv, UndefVarErrorReport(interp, sv, sv.mod, s))
         # end
     elseif isa(e, GlobalRef)
         vgv = getvirtualglobalvar(interp, e.mod, e.name)
@@ -89,7 +83,7 @@ function abstract_eval_value(interp::TPInterpreter, @nospecialize(e), vtypes::Va
     if isa(stmt, GotoIfNot)
         t = widenconst(ret)
         if t !== Bottom && !⊑(Bool, t)
-            add_remark!(interp, sv, NonBooleanCondErrorReport(sv, t))
+            add_remark!(interp, sv, NonBooleanCondErrorReport(interp, sv, t))
             ret = Bottom
         end
     end
@@ -114,6 +108,8 @@ end
 # virtual global assignments should happen here because `SlotNumber`s can be optimized away
 # after the optimization happens
 function typeinf_local(interp::TPInterpreter, frame::InferenceState)
+    set_current_frame!(interp, frame)
+
     ret = invoke_native(typeinf_local, interp, frame)
 
     # virtual global variable assignment
@@ -143,3 +139,21 @@ function setvirtualglobalvar!(interp, frame, pc, stmt)
 
     interp.virtualglobalvartable[mod][lhs] = rhs
 end
+
+function typeinf_edge(interp::TPInterpreter, method::Method, @nospecialize(atypes), sparams::SimpleVector, caller::InferenceState)
+    set_current_frame!(interp, caller)
+
+    ret = invoke_native(typeinf_edge, interp, method, atypes, sparams, caller)
+
+    return ret
+end
+
+"""
+    set_current_frame!(interp::TPInterpreter, frame::InferenceState)
+    get_current_frame(interp::TPInterpreter)
+
+The setter and getter of a frame that `interp` is currently profiling.
+Current frame is needed when we assemble virtual stack frame from cached error reports.
+"""
+set_current_frame!(interp::TPInterpreter, frame::InferenceState) = interp.frame[] = frame
+get_current_frame(interp::TPInterpreter) = interp.frame[]
