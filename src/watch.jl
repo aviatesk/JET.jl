@@ -17,6 +17,7 @@ function profile_and_watch_file(io::IO,
                          profiling_logger,
                          kwargs...)
         catch err
+            println(io)
             @error "internal error occured:"
             showerror(stderr, err, catch_backtrace())
             [filename], true
