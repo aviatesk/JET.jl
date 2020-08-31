@@ -136,6 +136,9 @@ function setvirtualglobalvar!(interp, frame, pc, stmt)
     slt = first(stmt.args)::Slot
     lhs = frame.src.slotnames[slt.id]::Symbol
     rhs = frame.src.ssavaluetypes[pc]
+    if rhs === NOT_FOUND
+        rhs = Bottom
+    end
 
     interp.virtualglobalvartable[mod][lhs] = rhs
 end
