@@ -1,9 +1,10 @@
 # TODO:
+# - respect evaluation order; currently `parse_and_transform` evaluates "toplevel definitions"
+#   in batch but it misses errors because of "not-yet-defined" definitions
+# - handle toplevel `if/else` correctly
 # - profiling on unloaded package
 #   * support `module`
 #   * special case `__init__` calls
-# - respect evaluation order; currently `parse_and_transform` evaluates "toplevel definitions"
-#   in batch but it misses errors because of "not-yet-defined" definitions
 
 const Transformed = @NamedTuple begin
     filename::String
@@ -103,9 +104,7 @@ function parse_and_transform(actualmod::Module,
         end
 
         # always escape inside expression
-        if :quote in scope
-            return x
-        end
+        :quote in scope && return x
 
         # evaluate these toplevel expressions only when not in function scope:
         # we need this because otherwise these invalid expressions can be "extracted" and
@@ -138,7 +137,13 @@ function parse_and_transform(actualmod::Module,
 
         # remove `const` annotation
         if isexpr(x, :const)
-            return first(x.args)
+            return if !islocalscope(scope)
+                first(x.args)
+            else
+                report = SyntaxErrorReport("unsupported `const` declaration on local variable", filename, line)
+                push!(reports, report)
+                nothing
+            end
         end
 
         # handle `include` call
@@ -206,9 +211,10 @@ function walk_and_transform!(f, x, scope)
     return x
 end
 
+# TODO: how should we handle toplevel `if/else` ?
 function islocalscope(scope)
     for s in scope
-        s in (:let, :quote, :if, :try, :for, :while) && return true
+        s in (:quote, :let, :try, :for, :while) && return true
     end
 
     return false
