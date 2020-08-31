@@ -200,7 +200,7 @@ function _get_sig_type(sv::InferenceState, expr::Expr)
         _get_sig_type(sv, last(expr.args))
     elseif head === :static_parameter
         typ = widenconst(sv.sptypes[first(expr.args)])
-        Any[typ], typ
+        Any['_', typ], typ
     else
         Any[string(expr)], nothing
     end
