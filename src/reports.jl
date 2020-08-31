@@ -182,14 +182,19 @@ _get_sig(args...) = first(_get_sig_type(args...))
 function _get_sig_type(sv::InferenceState, expr::Expr)
     head = expr.head
     return if head === :call
-        sig = _get_sig(sv, first(expr.args))
+        f = first(expr.args)
+        args = expr.args[2:end]
+        nargs = length(args)
+
+        sig = _get_sig(sv, f)
         push!(sig, '(')
-        for arg in expr.args[2:end]
+        for (i, arg) in enumerate(args)
             arg_sig = _get_sig(sv, arg)
             append!(sig, arg_sig)
-            push!(sig, ", ")
+            i ≠ nargs && push!(sig, ", ")
         end
-        pop!(sig); push!(sig, ')')
+        push!(sig, ')')
+
         sig, nothing
     elseif head === :(=)
         _get_sig_type(sv, last(expr.args))
