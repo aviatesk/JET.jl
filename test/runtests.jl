@@ -6,6 +6,7 @@ import TypeProfiler:
     UndefVarErrorReport, NonBooleanCondErrorReport, NativeRemark
 
 
+const FIXTURE_DIR = normpath(@__DIR__, "fixtures")
 gen_mod() = Core.eval(@__MODULE__, :(module $(gensym(:TypeProfilerTest)) end))
 
 @testset "virtualprocess" begin

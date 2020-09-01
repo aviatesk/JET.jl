@@ -1,4 +1,19 @@
-@testset "toplevel definitions" begin
+@testset "syntax error reports" begin
+    let
+        s = """
+        begin begin end
+        """
+
+        virtualmod = gen_mod()
+
+        ret = virtual_process!(TPInterpreter(), Main, virtualmod, s, "top-level")
+
+        @test !isempty(ret.toplevel_error_reports)
+        @test first(ret.toplevel_error_reports) isa SyntaxErrorReport
+    end
+end
+
+@testset "\"toplevel definitions\"" begin
     let
         s = """
         # function
@@ -78,7 +93,7 @@
     end
 end
 
-@testset "hoisting" begin
+@testset "hoisting \"toplevel definitions\"" begin
     let
         s = """
         let
@@ -180,7 +195,7 @@ end
     end
 end
 
-@testset "remove const" begin
+@testset "remove `const`" begin
     let
         s = """
         const s = "julia"
@@ -209,6 +224,49 @@ end
 
         @test !isempty(ret.toplevel_error_reports)
         @test first(ret.toplevel_error_reports) isa SyntaxErrorReport
+    end
+end
+
+@testset "handle `include`" begin
+    let
+        f1 = normpath(FIXTURE_DIR, "include1.jl")
+        f2 = normpath(FIXTURE_DIR, "include1.jl")
+        s = read(f1, String)
+
+        virtualmod = gen_mod()
+
+        ret = virtual_process!(TPInterpreter(), Main, virtualmod, s, f1)
+
+        @test f1 in ret.included_files
+        @test f2 in ret.included_files
+        @test isdefined(virtualmod, :foo)
+        @test isempty(ret.toplevel_error_reports)
+        @test isempty(ret.inference_error_reports)
+    end
+
+    let
+        f = normpath(FIXTURE_DIR, "nonexistinclude.jl")
+        s = read(f, String)
+
+        virtualmod = gen_mod()
+
+        ret = virtual_process!(TPInterpreter(), Main, virtualmod, s, f)
+
+        @test f in ret.included_files
+        @test !isempty(ret.toplevel_error_reports)
+        @test first(ret.toplevel_error_reports) isa ActualErrorWrapped
+        @test !isempty(ret.inference_error_reports)
+        @test first(ret.inference_error_reports) isa UndefVarErrorReport
+    end
+
+    let
+        f = normpath(FIXTURE_DIR, "recursiveinclude.jl")
+        s = read(f, String)
+
+        virtualmod = gen_mod()
+
+        # TODO: report instead
+        @test_broken ret = virtual_process!(TPInterpreter(), Main, virtualmod, s, f)
     end
 end
 
