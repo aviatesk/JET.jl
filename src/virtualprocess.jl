@@ -1,6 +1,8 @@
 # TODO:
 # - respect evaluation order; currently `parse_and_transform` evaluates "toplevel definitions"
 #   in batch but it misses errors because of "not-yet-defined" definitions
+# - makes local blocks virtually local; currently their local variable definitions leak into
+#   global -- e.g. we should disable `toplevel` field when profiling a `let` block
 # - handle toplevel `if/else` correctly
 # - profiling on unloaded package
 #   * support `module`
@@ -211,14 +213,8 @@ function walk_and_transform!(f, x, scope)
     return x
 end
 
-# TODO: how should we handle toplevel `if/else` ?
-function islocalscope(scope)
-    for s in scope
-        s in (:quote, :let, :try, :for, :while) && return true
-    end
-
-    return false
-end
+# TODO: disable virtual global variable assignment when profiling these blocks
+islocalscope(scope) = return any(in((:quote, :let, :try, :for, :while)), scope)
 
 function isfuncdef(ex)
     isexpr(ex, :function) && return true
@@ -233,7 +229,7 @@ function isfuncdef(ex)
     return false
 end
 
-isinclude(ex) = isexpr(ex, :call) && first(ex.args) === :include
+isinclude(ex) = return isexpr(ex, :call) && first(ex.args) === :include
 
 # don't inline this so we can find it in the stacktrace
 @noinline function with_err_handling(f, err_handler)
