@@ -1,77 +1,95 @@
 # TODO:
-# - respect evaluation order; currently `parse_and_transform` evaluates "toplevel definitions"
-#   in batch but it misses errors because of "not-yet-defined" definitions
-# - makes local blocks virtually local; currently their local variable definitions leak into
-#   global -- e.g. we should disable `toplevel` field when profiling a `let` block
 # - handle toplevel `if/else` correctly
 # - profiling on unloaded package
 #   * support `module`
 #   * special case `__init__` calls
 
-const Transformed = @NamedTuple begin
-    filename::String
-    transformed::Expr
-    reports::Vector{ToplevelErrorReport}
+const VirtualProcessResult = @NamedTuple begin
+    included_files::Set{String}
+    toplevel_error_reports::Vector{ToplevelErrorReport}
+    inference_error_reports::Vector{InferenceErrorReport}
 end
 
+generate_virtual_process_result() = return (; included_files = Set{String}(),
+                                              toplevel_error_reports = ToplevelErrorReport[],
+                                              inference_error_reports = InferenceErrorReport[],
+                                              )::VirtualProcessResult
+
 """
-    parse_and_transform(actualmod::Module,
-                        virtualmod::Module,
-                        s::AbstractString,
-                        filename::AbstractString,
-                        ret::Vector{Transformed} = Transformed[],
-                        ) -> Vector{Transformed}
+    virtual_process!(interp::TPInterpreter,
+                     actualmod::Module,
+                     virtualmod::Module,
+                     s::AbstractString,
+                     filename::AbstractString,
+                     ret::VirtualProcessResult = generate_virtual_process_result(),
+                     )::VirtualProcessResult
 
-Parses `s` into a toplevel expression and transforms the resulting expression so that the
-  output expression can be wrapped into a virtual function to be profiled in `virtualmod`.
+simulates execution of `s` and profiles error reports, and returns `VirtualProcessResult`,
+which keeps the following information:
+- `included_files::Set{String}`: files that has been profiled
+- `toplevel_error_reports::Vector{ToplevelErrorReport}`: toplevel errors found during the
+   text parsing and AST transformation; these reports are "critical" and should have
+   precedence over `inference_error_reports`
+- `inference_error_reports::Vector{InferenceErrorReport}`: possible error reports found by
+  `TPInterpreter`
 
-Returns `Vector{Transformed}` where `Transformed`-element keeps the following information:
-- `filename`: file that has been parsed
-- `transformed`: transformed `:toplevel` expression, or `:empty` expression if nothing has
-  been parsed
-- `reports`: errors found during the text parsing and AST transformation
+this function first parses `s` and then iterate following steps on each code block
+1. if it is "toplevel defititions", e.g. definitions of `macro`, `struct`, `function`, etc.,
+   just _evaluates_ it in a context of `virtualmod`
+2. if not, _transforms_ it so that it can be profiled with a context of `virtualmod`
 
-The AST transformation includes:
-- try to extract toplevel "defintions" and directly evaluate them in a context of
-  `virtualmod`; toplevel "defintions" include:
+the _transform_ includes:
+- hoist "toplevel defintions" into toplevel and extract them from local blocks, so that
+  remaining code block can be wrapped into a virtual function, which will be profiled;
+  "toplevel defintions" include:
   * toplevel `function` definition
   * `macro` definition
   * `struct`, `abstract` and `primitive` type definition
   * `import`/`using` statements
-  * handle `include`
 - try to expand macros in a context of `virtualmod`
+- handle `include` by recursively calling this function on the `include`d file
 - fix self-referring dot accessors (i.e. those referring to `actualmod`) so that it can be
-  constant-propagated in abstract interpretation (otherwise they will be annotated as `Any`
-  because they'will actually be resolved in a context of `virtualmod`)
-- remove `const` annotations (they are not allowed in a function body)
+  constant-propagated in profiling i.e. abstract interpretation (otherwise they will be
+  annotated as `Any` because they'will actually be resolved in a context of `virtualmod`)
+- remove `const` annotations so that remaining code block can be wrapped into a virtual
+  function (they are not allowed in a function body)
+
+!!! warning
+    this approach involves following limitations:
+    - if code is directly evaluated but it has an access to global objects, it will just
+      result in error since global objects don't have actual values
+    - if hoisted "toplevel definitions" have access to objects in a local scope, the hoisting
+      will yield error
 """
-function parse_and_transform(actualmod::Module,
-                             virtualmod::Module,
-                             s::AbstractString,
-                             filename::AbstractString,
-                             ret::Vector{Transformed} = Transformed[],
-                             )::Vector{Transformed}
-    ex = parse_input_line(s; filename)
+function virtual_process!(interp::TPInterpreter,
+                          actualmod::Module,
+                          virtualmod::Module,
+                          s::AbstractString,
+                          filename::AbstractString,
+                          ret::VirtualProcessResult = generate_virtual_process_result(),
+                          )::VirtualProcessResult
+    filename in ret.included_files && error("recursive `include` call found") # TODO: report instead of error
+    push!(ret.included_files, filename)
+
+    toplevelex = parse_input_line(s; filename)
 
     # if there's any syntax error, try to identify all the syntax error location
-    if isexpr(ex, (:error, :incomplete))
-        reports = collect_syntax_errors(s, filename)
-        push!(ret, (; filename, transformed = ex, reports))
+    if isexpr(toplevelex, (:error, :incomplete))
+        append!(ret.toplevel_error_reports, collect_syntax_errors(s, filename))
         return ret
-    elseif isnothing(ex)
-        push!(ret, (; filename, transformed = Expr(:empty), reports = []))
+    # just return if there is nothing to profile
+    elseif isnothing(toplevelex)
         return ret
     end
 
-    @assert isexpr(ex, :toplevel)
+    @assert isexpr(toplevelex, :toplevel)
 
-    reports::Vector{ToplevelErrorReport} = ToplevelErrorReport[]
     line::Int = 1
     filename::String = filename
     function macroexpand_err_handler(err, st)
         # `4` corresponds to `with_err_handling`, `f`, `macroexpand` and its kwfunc
         st = crop_stacktrace(st, 4)
-        push!(reports, ActualErrorWrapped(err, st, filename, line))
+        push!(ret.toplevel_error_reports, ActualErrorWrapped(err, st, filename, line))
         return nothing
     end
     macroexpand_with_err_handling(mod, x) = return with_err_handling(macroexpand_err_handler) do
@@ -80,7 +98,7 @@ function parse_and_transform(actualmod::Module,
     function eval_err_handler(err, st)
         # `3` corresponds to `with_err_handling`, `f` and `eval`
         st = crop_stacktrace(st, 3)
-        push!(reports, ActualErrorWrapped(err, st, filename, line))
+        push!(ret.toplevel_error_reports, ActualErrorWrapped(err, st, filename, line))
         return nothing
     end
     eval_with_err_handling(mod, x) = return with_err_handling(eval_err_handler) do
@@ -93,25 +111,20 @@ function parse_and_transform(actualmod::Module,
     constmodsym  = gensym(actualmodsym)
     Core.eval(virtualmod, :(const $(constmodsym) = $(actualmodsym)))
 
-    function walker(x, scope)
-        # update line info
-        if x isa LineNumberNode
-            line = x.line
-            return x
-        end
+    function transform!(x, scope)
+        # always escape inside expression
+        :quote in scope && return x
 
         # expand macro
         if isexpr(x, :macrocall)
             x = macroexpand_with_err_handling(virtualmod, x)
         end
 
-        # always escape inside expression
-        :quote in scope && return x
-
-        # evaluate these toplevel expressions only when not in function scope:
-        # we need this because otherwise these invalid expressions can be "extracted" and
-        # evaled wrongly while they actually cause syntax errors
-        if isexpr(x, (:macro, :abstract, :struct, :primitive))
+        # evaluate these toplevel expressions only when not in function scope, otherwise
+        # these invalid expressions can be "extracted" and evaled wrongly while they actually
+        # cause syntax errors
+        # TODO: :export
+        if isexpr(x, (:macro, :abstract, :struct, :primitive, :import, :using))
             return if :function ∉ scope
                 eval_with_err_handling(virtualmod, x)
             else
@@ -121,23 +134,13 @@ function parse_and_transform(actualmod::Module,
             end
         end
 
-        # TODO: enable profiling on module (i.e. without actual loading, combined with `include` support)
-        if isexpr(x, (:import, :using))
-            return if :function ∉ scope
-                eval_with_err_handling(virtualmod, x)
-            else
-                report = SyntaxErrorReport("syntax: \"$(x.head)\" expression not at top level", filename, line)
-                push!(reports, report)
-                nothing
-            end
-        end
-
-        # hoist toplevel function definitions
-        if !islocalscope(scope) && isfuncdef(x)
-            return eval_with_err_handling(virtualmod, x)
-        end
+        # evaluate toplevel function definitions
+        !islocalscope(scope) && isfuncdef(x) && return eval_with_err_handling(virtualmod, x)
 
         # remove `const` annotation
+        # NOTE:
+        # needs to be handled here, otherwise invalid `const` annotations can propagate into
+        # `generate_virtual_lambda` (e.g. within `let` block)
         if isexpr(x, :const)
             return if !islocalscope(scope)
                 first(x.args)
@@ -161,9 +164,9 @@ function parse_and_transform(actualmod::Module,
 
             isnothing(include_text) && return nothing # typically no file error
 
-            parse_and_transform(actualmod, virtualmod, include_text, include_file, ret)
+            virtual_process!(interp, actualmod, virtualmod, include_text, include_file, ret)
 
-            # TODO: actually, we need to try to get the last profiling result from  `last(ret).transformed` here
+            # TODO: actually, here we need to try to get the last profiling result of the `virtual_process!` call above
             return nothing
         end
 
@@ -176,9 +179,59 @@ function parse_and_transform(actualmod::Module,
         return x
     end
 
-    transformed = walk_and_transform!(walker, ex, Symbol[])
-    push!(ret, (; filename, transformed, reports))
+    # transform, and then profile sequentially
+    for x in toplevelex.args
+        # update line info
+        if islnn(x)
+            line = x.line
+            continue
+        end
+
+        x = walk_and_transform!(transform!, x, Symbol[])
+
+        shouldprofile(x) || continue
+
+        λ = generate_virtual_lambda(virtualmod, LineNumberNode(line, filename), x)
+
+        interp = TPInterpreter(; # world age gets updated to take in `λ`
+                               inf_params            = InferenceParams(interp),
+                               opt_params            = OptimizationParams(interp),
+                               optimize              = may_optimize(interp),
+                               compress              = may_compress(interp),
+                               discard_trees         = may_discard_trees(interp),
+                               istoplevel            = !isa(x, Symbol) && !islocalscope(x), # disable virtual global variable assignment when profiling non-toplevel blocks
+                               virtualglobalvartable = interp.virtualglobalvartable, # pass on virtual global variable table
+                               filter_native_remarks = interp.filter_native_remarks,
+                               )
+
+        profile_call_gf!(interp, Tuple{typeof(λ)})
+
+        append!(ret.inference_error_reports, interp.reports) # correct error reports
+    end
+
     return ret
+end
+
+# don't inline this so we can find it in the stacktrace
+@noinline function with_err_handling(f, err_handler)
+    return try
+        f()
+    catch err
+        bt = catch_backtrace()
+        st = stacktrace(bt)
+        err_handler(err, st)
+    end
+end
+
+function crop_stacktrace(st, offset)
+    i = find_frame_index(st, @__FILE__, with_err_handling)
+    return st[1:(isnothing(i) ? end : i - offset)]
+end
+
+function find_frame_index(st, file, func)
+    return findfirst(st) do frame
+        return frame.file === Symbol(file) && frame.func === Symbol(func)
+    end
 end
 
 function collect_syntax_errors(s, filename)
@@ -213,8 +266,9 @@ function walk_and_transform!(f, x, scope)
     return x
 end
 
-# TODO: disable virtual global variable assignment when profiling these blocks
-islocalscope(scope) = return any(in((:quote, :let, :try, :for, :while)), scope)
+islocalscope(scopes)        = any(islocalscope, scopes)
+islocalscope(scope::Expr)   = islocalscope(scope.head)
+islocalscope(scope::Symbol) = scope in (:quote, :let, :try, :for, :while)
 
 function isfuncdef(ex)
     isexpr(ex, :function) && return true
@@ -229,26 +283,19 @@ function isfuncdef(ex)
     return false
 end
 
-isinclude(ex) = return isexpr(ex, :call) && first(ex.args) === :include
+isinclude(ex) = isexpr(ex, :call) && first(ex.args) === :include
 
-# don't inline this so we can find it in the stacktrace
-@noinline function with_err_handling(f, err_handler)
-    return try
-        f()
-    catch err
-        bt = catch_backtrace()
-        st = stacktrace(bt)
-        err_handler(err, st)
-    end
-end
+islnn(x) = x isa LineNumberNode
 
-function crop_stacktrace(st, offset)
-    i = find_frame_index(st, @__FILE__, with_err_handling)
-    return st[1:(isnothing(i) ? end : i - offset)]
-end
+shouldprofile(@nospecialize(_)) = false
+shouldprofile(::Expr)           = true
+shouldprofile(::Symbol)         = true
 
-function find_frame_index(st, file, func)
-    return findfirst(st) do frame
-        return frame.file === Symbol(file) && frame.func === Symbol(func)
-    end
+generate_virtual_module(actualmod) =
+    return Core.eval(actualmod, :(module $(gensym(:TypeProfilerVirtualModule)) end))::Module
+
+function generate_virtual_lambda(mod, lnn, x)
+    funcbody = Expr(:block, lnn, x)
+    funcex   = Expr(:function, #=nullary lambda=# Expr(:tuple), funcbody)
+    return Core.eval(mod, funcex)::Function
 end

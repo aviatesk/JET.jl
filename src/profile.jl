@@ -55,57 +55,15 @@ end
 function report_errors(actualmod, text, filename; filter_native_remarks = true)
     virtualmod = generate_virtual_module(actualmod)
 
-    ret = parse_and_transform(actualmod, virtualmod, text, filename)
+    interp = TPInterpreter(; filter_native_remarks) # dummy
+    ret = virtual_process!(interp, actualmod, virtualmod, text, filename)
 
-    included_files = map(a->a.filename, ret)
-    reportsary = map(a->a.reports, ret)
-    # non-empty `reports` means critical errors happened during the AST transformation
-    if any(!isempty, reportsary)
-        reports = collect(flatten(filter!(!isempty, reportsary)))
-        return included_files, reports, generate_postprocess(virtualmod, actualmod)
-    end
-
-    # run profiler on each included file, otherwise file/line number information gets messed
-    # we can manually fix them, but we will need this kind of logic in the future module
-    # handling as well, so let's take this way
-
-    # filter out empty expression, i.e. there is nothing to profile
-    toplevelexs = filter(!Fix2(isexpr, :empty), map(a->a.transformed, ret))
-
-    # XXX:
-    # we need to create TPInterpreter __after__ creating `λs`, otherwise world age error
-    # not sure why `TPInterpreter(typemax(UInt); istoplevel = true)` doesn't help ...
-    λs     = flatten(generate_virtual_lambdas.(Ref(virtualmod), toplevelexs))
-    interp = TPInterpreter(;
-                           istoplevel = true, # enable virtual global assignments
-                           filter_native_remarks
-                           )
-    for λ in λs
-        profile_call_gf!(interp, Tuple{typeof(λ)})
-    end
-
-    return included_files, interp.reports, generate_postprocess(virtualmod, actualmod)
+    return ret.included_files,
+           # non-empty `ret.toplevel_error_reports` means critical errors happened during
+           # the AST transformation, so they always have precedence over `ret.inference_error_reports`
+           !isempty(ret.toplevel_error_reports) ? ret.toplevel_error_reports : ret.inference_error_reports,
+           generate_postprocess(virtualmod, actualmod)
 end
-
-generate_virtual_module(actualmod) =
-    return Core.eval(actualmod, :(module $(gensym(:TypeProfilerVirtualModule)) end))::Module
-
-function generate_virtual_lambdas(mod, toplevelex)
-    @assert isexpr(toplevelex, :toplevel) "toplevel expression should be given"
-
-    lnns    = filter(islnn, toplevelex.args)
-    bodyexs = filter(!islnn, toplevelex.args)
-
-    @assert length(lnns) == length(bodyexs) "expressions and line number nodes unmatched"
-
-    return map(zip(lnns, bodyexs)) do (lnn, bodyex)
-        funcbody = Expr(:block, lnn, bodyex)
-        funcex   = Expr(:function, #=nullary lambda=# Expr(:tuple), funcbody)
-        Core.eval(mod, funcex)::Function
-    end
-end
-
-const islnn = Fix2(isa, LineNumberNode)
 
 # fix virtual module printing based on string manipulation; the "actual" modules may not be
 # loaded into this process
