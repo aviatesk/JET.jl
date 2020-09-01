@@ -52,13 +52,13 @@ push_inithook!(f) = push!(INIT_HOOKS, f)
 __init__() = foreach(f->f(), INIT_HOOKS)
 
 include("reports.jl")
-include("virtualprocess.jl")
 include("abstractinterpreterinterface.jl")
 include("abstractinterpretation.jl")
 include("tfuncs.jl")
 include("tpcache.jl")
 include("print.jl")
 include("profile.jl")
+include("virtualprocess.jl")
 include("watch.jl")
 
 # exports
