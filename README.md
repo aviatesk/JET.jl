@@ -1,3 +1,6 @@
+![CI](https://github.com/aviatesk/TypeProfiler.jl/workflows/CI/badge.svg)
+[![codecov](https://codecov.io/gh/aviatesk/TypeProfiler.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/aviatesk/TypeProfiler.jl)
+
 ## behind the moar for performance ...
 
 TypeProfiler.jl employs Julia's type inference for bug reports.
@@ -150,6 +153,7 @@ No errors !
 ### TODOs
 
 - support `module` expressions, profiling on a package (without actual loading, i.e. without Revise.jl integration)
+- documentation
 - more accurate error reports
   * built-in function calls
   * report some cases of `throw`, e.g. `rand('1')::ArgumentError("Sampler for this object is not defined")`
