@@ -1,7 +1,11 @@
 @testset "syntax error reports" begin
     let
         s = """
-        begin begin end
+        begin
+            c = rand(Bool)
+        end
+
+        end
         """
 
         virtualmod = gen_mod()
