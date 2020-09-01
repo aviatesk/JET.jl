@@ -142,14 +142,13 @@ If you apply the diff (i.e. update and save the demo.jl), TP will automatically 
 > git apply fix-demo.jl.diff
 
 ```julia
-profiling from demo.jl (finished in 4.09 sec)
+profiling from demo.jl (finished in 3.521 sec)
 No errors !
 ```
 
 
 ### TODOs
 
-- sequential virtual process, instead of batch-based virtual process; will handle overwriting of function, correctly
 - support `module` expressions, profiling on a package (without actual loading, i.e. without Revise.jl integration)
 - more accurate error reports
   * built-in function calls

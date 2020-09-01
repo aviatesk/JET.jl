@@ -21,7 +21,6 @@ generate_virtual_process_result() = return (; included_files = Set{String}(),
                      virtualmod::Module,
                      s::AbstractString,
                      filename::AbstractString,
-                     ret::VirtualProcessResult = generate_virtual_process_result(),
                      )::VirtualProcessResult
 
 simulates execution of `s` and profiles error reports, and returns `VirtualProcessResult`,
