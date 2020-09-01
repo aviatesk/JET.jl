@@ -108,7 +108,7 @@ function virtual_process!(interp::TPInterpreter,
     # constant propagated
     actualmodsym = Symbol(actualmod)
     constmodsym  = gensym(actualmodsym)
-    Core.eval(virtualmod, :(const $(constmodsym) = $(actualmodsym)))
+    Core.eval(virtualmod, :(const $(constmodsym) = $(actualmod)))
 
     function transform!(x, scope)
         # always escape inside expression
@@ -128,7 +128,7 @@ function virtual_process!(interp::TPInterpreter,
                 eval_with_err_handling(virtualmod, x)
             else
                 report = SyntaxErrorReport("syntax: \"$(x.head)\" expression not at top level", filename, line)
-                push!(reports, report)
+                push!(ret.toplevel_error_reports, report)
                 nothing
             end
         end
@@ -145,7 +145,7 @@ function virtual_process!(interp::TPInterpreter,
                 first(x.args)
             else
                 report = SyntaxErrorReport("unsupported `const` declaration on local variable", filename, line)
-                push!(reports, report)
+                push!(ret.toplevel_error_reports, report)
                 nothing
             end
         end
