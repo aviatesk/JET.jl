@@ -1,10 +1,13 @@
 using Test, TypeProfiler, InteractiveUtils
 import TypeProfiler:
     TPInterpreter, virtual_process!, report_errors,
-    ToplevelErrorReport, SyntaxErrorReport, ActualErrorWrapped,
-    InferenceErrorReport, NoMethodErrorReport, InvalidBuiltinCallErrorReport,
-    UndefVarErrorReport, NonBooleanCondErrorReport, NativeRemark
+    ToplevelErrorReport, InferenceErrorReport
 
+for sym in Symbol.(last.(Base.Fix2(split, '.').(string.(vcat(subtypes(TypeProfiler, ToplevelErrorReport),
+                                                             subtypes(TypeProfiler, InferenceErrorReport),
+                                                             )))))
+    Core.eval(@__MODULE__, :(import TypeProfiler: $(sym)))
+end
 
 const FIXTURE_DIR = normpath(@__DIR__, "fixtures")
 gen_mod() = Core.eval(@__MODULE__, :(module $(gensym(:TypeProfilerTest)) end))

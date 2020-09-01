@@ -264,13 +264,39 @@ end
     end
 
     let
-        f = normpath(FIXTURE_DIR, "recursiveinclude.jl")
+        f = normpath(FIXTURE_DIR, "selfrecursiveinclude.jl")
         s = read(f, String)
 
         virtualmod = gen_mod()
 
-        # TODO: report instead
-        @test_broken ret = virtual_process!(TPInterpreter(), Main, virtualmod, s, f)
+        ret = virtual_process!(TPInterpreter(), Main, virtualmod, s, f)
+
+        @test f in ret.included_files
+        @test !isempty(ret.toplevel_error_reports)
+        @test first(ret.toplevel_error_reports) isa RecursiveIncludeErrorReport
+    end
+
+    let
+        f1 = normpath(FIXTURE_DIR, "chainrecursiveinclude1.jl")
+        f2 = normpath(FIXTURE_DIR, "chainrecursiveinclude2.jl")
+        s = read(f1, String)
+
+        virtualmod = gen_mod()
+
+        ret = virtual_process!(TPInterpreter(), Main, virtualmod, s, f1)
+
+        @test f1 in ret.included_files
+        @test f2 in ret.included_files
+        @test !isempty(ret.toplevel_error_reports)
+        let
+            report = first(ret.toplevel_error_reports)
+            @test report isa RecursiveIncludeErrorReport
+            @test report.duplicated_file == f1
+            @test f1 in report.files
+            @test f2 in report.files
+            @test report.file == f2
+            @test report.line == 1
+        end
     end
 end
 

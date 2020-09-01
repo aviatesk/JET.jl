@@ -67,7 +67,6 @@ function virtual_process!(interp::TPInterpreter,
                           filename::AbstractString,
                           ret::VirtualProcessResult = generate_virtual_process_result(),
                           )::VirtualProcessResult
-    filename in ret.included_files && error("recursive `include` call found") # TODO: report instead of error
     push!(ret.included_files, filename)
 
     toplevelex = parse_input_line(s; filename)
@@ -158,6 +157,14 @@ function virtual_process!(interp::TPInterpreter,
             isnothing(include_file) && return nothing # error happened when evaling `include` args
 
             include_file = normpath(dirname(filename), include_file)
+
+            # handle recursive `include` calls
+            if include_file in ret.included_files
+                report = RecursiveIncludeErrorReport(include_file, ret.included_files, filename, line)
+                push!(ret.toplevel_error_reports, report)
+                return nothing
+            end
+            
             read_ex      = :(read($(include_file), String))
             include_text = eval_with_err_handling(virtualmod, read_ex)
 

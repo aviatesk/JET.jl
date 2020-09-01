@@ -10,6 +10,13 @@ struct SyntaxErrorReport <: ToplevelErrorReport
     SyntaxErrorReport(msg::AbstractString, file, line) = new(ErrorException(msg), file, line)
 end
 
+struct RecursiveIncludeErrorReport <: ToplevelErrorReport
+    duplicated_file::String
+    files::Set{String}
+    file::String
+    line::Int
+end
+
 # wraps general errors from actual Julia process
 struct ActualErrorWrapped <: ToplevelErrorReport
     err
