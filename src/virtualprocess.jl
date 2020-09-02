@@ -15,12 +15,14 @@ generate_virtual_process_result() = return (; included_files = Set{String}(),
                                               inference_error_reports = InferenceErrorReport[],
                                               )::VirtualProcessResult
 
+const TYPEPROFILERJL_SELF_REFERENCE_SYM = :TYPEPROFILERJL_SELF_REFERENCE_SYM
+
 """
-    virtual_process!(interp::TPInterpreter,
-                     actualmod::Module,
-                     virtualmod::Module,
-                     s::AbstractString,
+    virtual_process!(s::AbstractString,
                      filename::AbstractString,
+                     interp::TPInterpreter,
+                     actualmodsym::Symbol,
+                     virtualmod::Module,
                      )::VirtualProcessResult
 
 simulates execution of `s` and profiles error reports, and returns `VirtualProcessResult`,
@@ -47,24 +49,23 @@ the _transform_ includes:
   * `import`/`using` statements
 - try to expand macros in a context of `virtualmod`
 - handle `include` by recursively calling this function on the `include`d file
-- fix self-referring dot accessors (i.e. those referring to `actualmod`) so that it can be
-  constant-propagated in profiling i.e. abstract interpretation (otherwise they will be
-  annotated as `Any` because they'will actually be resolved in a context of `virtualmod`)
+- replace self-reference of `actualmodsym` with that of `virtualmod`
 - remove `const` annotations so that remaining code block can be wrapped into a virtual
   function (they are not allowed in a function body)
 
 !!! warning
     this approach involves following limitations:
-    - if code is directly evaluated but it has an access to global objects, it will just
-      result in error since global objects don't have actual values
-    - if hoisted "toplevel definitions" have access to objects in a local scope, the hoisting
-      will yield error
+    - if code is directly evaluated but it also includes an evaluation of global objects,
+      it will just result in error since global objects don't have actual values
+    - if hoisted "toplevel definitions" have access to objects in a local scope, the
+      hoisting will just be wrong
+    - dynamic `include`, `using`, `import`, `module`, etc. can't be resolved correctly
 """
-function virtual_process!(interp::TPInterpreter,
-                          actualmod::Module,
-                          virtualmod::Module,
-                          s::AbstractString,
+function virtual_process!(s::AbstractString,
                           filename::AbstractString,
+                          actualmodsym::Symbol,
+                          virtualmod::Module,
+                          interp::TPInterpreter,
                           ret::VirtualProcessResult = generate_virtual_process_result(),
                           )::VirtualProcessResult
     push!(ret.included_files, filename)
@@ -80,7 +81,26 @@ function virtual_process!(interp::TPInterpreter,
         return ret
     end
 
+    return virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp, ret)
+end
+
+function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp, ret)
     @assert isexpr(toplevelex, :toplevel)
+
+    # define constant self-referring variable of `virtualmod` so that we can replace
+    # self-reference of the original `actualmodsym` with it
+    # NOTE: this needs to be "ordinal" identifier for `import`/`using`, etc
+    Core.eval(virtualmod, :(const $(TYPEPROFILERJL_SELF_REFERENCE_SYM) = $(virtualmod)))
+
+    # postwalk and do transformations that should be done for all atoms
+    # fix self-reference of `actualmodsym` with that of `virtualmod`;
+    # this needs to be done for all atoms in advance of the following transformations
+    toplevelex = postwalk_and_transform!(toplevelex, Symbol[:toplevel]) do x, scope
+        # TODO: this doesn't work when `actualmodsym` is supposed to be a local variable, find a workaround
+        x === actualmodsym && return TYPEPROFILERJL_SELF_REFERENCE_SYM
+
+        return x
+    end
 
     line::Int = 1
     filename::String = filename
@@ -103,12 +123,7 @@ function virtual_process!(interp::TPInterpreter,
         Core.eval(mod, x)
     end
 
-    # define constant self-referring variable so that global references using it can be
-    # constant propagated
-    actualmodsym = Symbol(actualmod)
-    constmodsym  = gensym(actualmodsym)
-    Core.eval(virtualmod, :(const $(constmodsym) = $(actualmod)))
-
+    # prewalk, and some transformations assume that it doesn't happen in local scopes
     function transform!(x, scope)
         # always escape inside expression
         :quote in scope && return x
@@ -118,11 +133,34 @@ function virtual_process!(interp::TPInterpreter,
             x = macroexpand_with_err_handling(virtualmod, x)
         end
 
-        # evaluate these toplevel expressions only when not in function scope, otherwise
-        # these invalid expressions can be "extracted" and evaled wrongly while they actually
-        # cause syntax errors
+        # handle `module` definitions
+        if isexpr(x, :module)
+            if !(isone(length(scope)) && first(scope) === :toplevel)
+                report = SyntaxErrorReport("syntax: \"module\" expression not at top level", filename, line)
+                push!(ret.toplevel_error_reports, report)
+                return nothing
+            end
+
+            newblk = x.args[3]
+            @assert isexpr(newblk, :block)
+            newtoplevelex = Expr(:toplevel, newblk.args...)
+
+            newactualmodsym = x.args[2]
+            x.args[3] = Expr(:block) # empty module's code body
+            newvirtualmod = eval_with_err_handling(virtualmod, x)
+
+            isnothing(newvirtualmod) && return nothing # error happened, e.g. duplicated naming
+
+            virtual_process!(newtoplevelex, filename, newactualmodsym, newvirtualmod, interp, ret)
+
+            return newvirtualmod
+        end
+
+        # hoist and evaluate these toplevel expressions; this shouldn't happen when in
+        # function scope, since then they will be wrongly hoisted and evaluated while they
+        # actually cause syntax errors
         # TODO: :export
-        if isexpr(x, (:macro, :abstract, :struct, :primitive, :import, :using))
+        if istopleveldef(x)
             return if :function ∉ scope
                 eval_with_err_handling(virtualmod, x)
             else
@@ -136,9 +174,6 @@ function virtual_process!(interp::TPInterpreter,
         !islocalscope(scope) && isfuncdef(x) && return eval_with_err_handling(virtualmod, x)
 
         # remove `const` annotation
-        # NOTE:
-        # needs to be handled here, otherwise invalid `const` annotations can propagate into
-        # `generate_virtual_lambda` (e.g. within `let` block)
         if isexpr(x, :const)
             return if !islocalscope(scope)
                 first(x.args)
@@ -149,7 +184,7 @@ function virtual_process!(interp::TPInterpreter,
             end
         end
 
-        # handle `include` call
+        # handle static `include` call
         if isinclude(x)
             # TODO: maybe find a way to handle two args `include` calls
             include_file = eval_with_err_handling(virtualmod, last(x.args))
@@ -164,22 +199,16 @@ function virtual_process!(interp::TPInterpreter,
                 push!(ret.toplevel_error_reports, report)
                 return nothing
             end
-            
+
             read_ex      = :(read($(include_file), String))
             include_text = eval_with_err_handling(virtualmod, read_ex)
 
             isnothing(include_text) && return nothing # typically no file error
 
-            virtual_process!(interp, actualmod, virtualmod, include_text, include_file, ret)
+            virtual_process!(include_text, include_file, actualmodsym, virtualmod, interp, ret)
 
             # TODO: actually, here we need to try to get the last profiling result of the `virtual_process!` call above
             return nothing
-        end
-
-        # fix self-referring global references
-        if isexpr(x, :.) && first(x.args) === actualmodsym
-            x.args[1] = constmodsym
-            return x
         end
 
         return x
@@ -193,7 +222,7 @@ function virtual_process!(interp::TPInterpreter,
             continue
         end
 
-        x = walk_and_transform!(transform!, x, Symbol[])
+        x = prewalk_and_transform!(transform!, x, Symbol[:toplevel])
 
         shouldprofile(x) || continue
 
@@ -261,20 +290,25 @@ function collect_syntax_errors(s, filename)
     return reports
 end
 
-function walk_and_transform!(f, x, scope)
-    x = f(x, scope)
-    x isa Expr || return x
+function walk_and_transform!(pre, f, x, scope)
+    x = pre ? f(x, scope) : x
+    x isa Expr || return f(x, scope)
     push!(scope, x.head)
     for (i, ex) in enumerate(x.args)
-        x.args[i] = walk_and_transform!(f, ex, scope)
+        x.args[i] = walk_and_transform!(pre, f, ex, scope)
     end
     pop!(scope)
+    x = pre ? x : f(x, scope)
     return x
 end
+prewalk_and_transform!(args...) = walk_and_transform!(true, args...)
+postwalk_and_transform!(args...) = walk_and_transform!(false, args...)
+
+istopleveldef(x) = isexpr(x, (:macro, :abstract, :struct, :primitive, :import, :using))
 
 islocalscope(scopes)        = any(islocalscope, scopes)
 islocalscope(scope::Expr)   = islocalscope(scope.head)
-islocalscope(scope::Symbol) = scope in (:quote, :let, :try, :for, :while)
+islocalscope(scope::Symbol) = scope in (:quote, :let, :try, :for, :while, :macro, :abstract, :struct, :primitive, :function)
 
 function isfuncdef(ex)
     isexpr(ex, :function) && return true

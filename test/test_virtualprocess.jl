@@ -1,3 +1,11 @@
+function profile!(s, virtualmod;
+                  filename = "top-level",
+                  actualmodsym = :Main,
+                  interp = TPInterpreter(),
+                  )
+    return virtual_process!(s, filename, actualmodsym, virtualmod, interp)
+end
+
 @testset "syntax error reports" begin
     let
         s = """
@@ -10,10 +18,10 @@
 
         virtualmod = gen_mod()
 
-        ret = virtual_process!(TPInterpreter(), Main, virtualmod, s, "top-level")
+        res = profile!(s, virtualmod)
 
-        @test !isempty(ret.toplevel_error_reports)
-        @test first(ret.toplevel_error_reports) isa SyntaxErrorReport
+        @test !isempty(res.toplevel_error_reports)
+        @test first(res.toplevel_error_reports) isa SyntaxErrorReport
     end
 end
 
@@ -60,7 +68,7 @@ end
         """
         virtualmod = gen_mod()
 
-        virtual_process!(TPInterpreter(), Main, virtualmod, s, "top-level")
+        profile!(s, virtualmod)
 
         @test isdefined(virtualmod, :foo)
         @test !isdefined(virtualmod, :foo′)
@@ -88,12 +96,12 @@ end
 
         virtualmod = gen_mod()
 
-        ret = virtual_process!(TPInterpreter(), Main, virtualmod, s, "top-level")
+        res = profile!(s, virtualmod)
 
         @test !isdefined(virtualmod, :foo) # global variables aren't evaluated
         @test isdefined(virtualmod, :Foo)
-        @test isempty(ret.toplevel_error_reports)
-        @test isempty(ret.inference_error_reports)
+        @test isempty(res.toplevel_error_reports)
+        @test isempty(res.inference_error_reports)
     end
 end
 
@@ -109,11 +117,11 @@ end
 
         virtualmod = gen_mod()
 
-        ret = virtual_process!(TPInterpreter(), Main, virtualmod, s, "top-level")
+        res = profile!(s, virtualmod)
 
         @test isdefined(virtualmod, :Foo)
-        @test isempty(ret.toplevel_error_reports)
-        @test isempty(ret.inference_error_reports)
+        @test isempty(res.toplevel_error_reports)
+        @test isempty(res.inference_error_reports)
     end
 
     # "toplevel definitions" can't resolve access to local objects
@@ -131,11 +139,11 @@ end
 
         virtualmod = gen_mod()
 
-        ret = virtual_process!(TPInterpreter(), Main, virtualmod, s, "top-level")
+        res = profile!(s, virtualmod)
 
         @test !isdefined(virtualmod, :i)
-        @test isempty(ret.toplevel_error_reports)
-        @test_broken isempty(ret.inference_error_reports)
+        @test isempty(res.toplevel_error_reports)
+        @test_broken isempty(res.inference_error_reports)
     end
 end
 
@@ -148,11 +156,11 @@ end
 
         virtualmod = gen_mod()
 
-        ret = virtual_process!(TPInterpreter(), Main, virtualmod, s, "top-level")
+        res = profile!(s, virtualmod)
 
         @test isdefined(virtualmod, :foo)
-        @test isempty(ret.toplevel_error_reports)
-        @test isempty(ret.inference_error_reports)
+        @test isempty(res.toplevel_error_reports)
+        @test isempty(res.inference_error_reports)
     end
 
     let
@@ -168,11 +176,11 @@ end
 
         virtualmod = gen_mod()
 
-        ret = virtual_process!(TPInterpreter(), Main, virtualmod, s, "top-level")
+        res = profile!(s, virtualmod)
 
         @test isdefined(virtualmod, Symbol("@foo"))
-        @test isempty(ret.toplevel_error_reports)
-        @test isempty(ret.inference_error_reports)
+        @test isempty(res.toplevel_error_reports)
+        @test isempty(res.inference_error_reports)
     end
 
     # macro expansions with access to global variables will fail
@@ -191,11 +199,11 @@ end
 
         virtualmod = gen_mod()
 
-        ret = virtual_process!(TPInterpreter(), Main, virtualmod, s, "top-level")
+        res = profile!(s, virtualmod)
 
         @test isdefined(virtualmod, Symbol("@foo"))
-        @test_broken isempty(ret.toplevel_error_reports)
-        @test isempty(ret.inference_error_reports)
+        @test_broken isempty(res.toplevel_error_reports)
+        @test isempty(res.inference_error_reports)
     end
 end
 
@@ -208,10 +216,10 @@ end
 
         virtualmod = gen_mod()
 
-        ret = virtual_process!(TPInterpreter(), Main, virtualmod, s, "top-level")
+        res = profile!(s, virtualmod)
 
-        @test isempty(ret.toplevel_error_reports)
-        @test !isempty(ret.inference_error_reports)
+        @test isempty(res.toplevel_error_reports)
+        @test !isempty(res.inference_error_reports)
     end
 
     let
@@ -224,10 +232,10 @@ end
 
         virtualmod = gen_mod()
 
-        ret = virtual_process!(TPInterpreter(), Main, virtualmod, s, "top-level")
+        res = profile!(s, virtualmod)
 
-        @test !isempty(ret.toplevel_error_reports)
-        @test first(ret.toplevel_error_reports) isa SyntaxErrorReport
+        @test !isempty(res.toplevel_error_reports)
+        @test first(res.toplevel_error_reports) isa SyntaxErrorReport
     end
 end
 
@@ -239,13 +247,13 @@ end
 
         virtualmod = gen_mod()
 
-        ret = virtual_process!(TPInterpreter(), Main, virtualmod, s, f1)
+        res = profile!(s, virtualmod; filename = f1)
 
-        @test f1 in ret.included_files
-        @test f2 in ret.included_files
+        @test f1 in res.included_files
+        @test f2 in res.included_files
         @test isdefined(virtualmod, :foo)
-        @test isempty(ret.toplevel_error_reports)
-        @test isempty(ret.inference_error_reports)
+        @test isempty(res.toplevel_error_reports)
+        @test isempty(res.inference_error_reports)
     end
 
     let
@@ -254,13 +262,13 @@ end
 
         virtualmod = gen_mod()
 
-        ret = virtual_process!(TPInterpreter(), Main, virtualmod, s, f)
+        res = profile!(s, virtualmod; filename = f)
 
-        @test f in ret.included_files
-        @test !isempty(ret.toplevel_error_reports)
-        @test first(ret.toplevel_error_reports) isa ActualErrorWrapped
-        @test !isempty(ret.inference_error_reports)
-        @test first(ret.inference_error_reports) isa UndefVarErrorReport
+        @test f in res.included_files
+        @test !isempty(res.toplevel_error_reports)
+        @test first(res.toplevel_error_reports) isa ActualErrorWrapped
+        @test !isempty(res.inference_error_reports)
+        @test first(res.inference_error_reports) isa UndefVarErrorReport
     end
 
     let
@@ -269,11 +277,11 @@ end
 
         virtualmod = gen_mod()
 
-        ret = virtual_process!(TPInterpreter(), Main, virtualmod, s, f)
+        res = profile!(s, virtualmod; filename = f)
 
-        @test f in ret.included_files
-        @test !isempty(ret.toplevel_error_reports)
-        @test first(ret.toplevel_error_reports) isa RecursiveIncludeErrorReport
+        @test f in res.included_files
+        @test !isempty(res.toplevel_error_reports)
+        @test first(res.toplevel_error_reports) isa RecursiveIncludeErrorReport
     end
 
     let
@@ -283,13 +291,13 @@ end
 
         virtualmod = gen_mod()
 
-        ret = virtual_process!(TPInterpreter(), Main, virtualmod, s, f1)
+        res = profile!(s, virtualmod; filename = f1)
 
-        @test f1 in ret.included_files
-        @test f2 in ret.included_files
-        @test !isempty(ret.toplevel_error_reports)
+        @test f1 in res.included_files
+        @test f2 in res.included_files
+        @test !isempty(res.toplevel_error_reports)
         let
-            report = first(ret.toplevel_error_reports)
+            report = first(res.toplevel_error_reports)
             @test report isa RecursiveIncludeErrorReport
             @test report.duplicated_file == f1
             @test f1 in report.files
