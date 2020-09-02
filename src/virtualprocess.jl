@@ -93,7 +93,7 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
     Core.eval(virtualmod, :(const $(TYPEPROFILERJL_SELF_REFERENCE_SYM) = $(virtualmod)))
 
     # postwalk and do transformations that should be done for all atoms
-    # fix self-reference of `actualmodsym` with that of `virtualmod`;
+    # replace self-reference of `actualmodsym` with that of `virtualmod`;
     # this needs to be done for all atoms in advance of the following transformations
     toplevelex = postwalk_and_transform!(toplevelex, Symbol[:toplevel]) do x, scope
         # TODO: this doesn't work when `actualmodsym` is supposed to be a local variable, find a workaround
@@ -104,14 +104,16 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
 
     line::Int = 1
     filename::String = filename
+    interp::TPInterpreter = interp
+
     function macroexpand_err_handler(err, st)
         # `4` corresponds to `with_err_handling`, `f`, `macroexpand` and its kwfunc
         st = crop_stacktrace(st, 4)
         push!(ret.toplevel_error_reports, ActualErrorWrapped(err, st, filename, line))
         return nothing
     end
-    macroexpand_with_err_handling(mod, x) = return with_err_handling(macroexpand_err_handler) do
-        macroexpand(mod, x)
+    macroexpand_with_err_handling(mod, x) = with_err_handling(macroexpand_err_handler) do
+        return macroexpand(mod, x)
     end
     function eval_err_handler(err, st)
         # `3` corresponds to `with_err_handling`, `f` and `eval`
@@ -119,8 +121,19 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
         push!(ret.toplevel_error_reports, ActualErrorWrapped(err, st, filename, line))
         return nothing
     end
-    eval_with_err_handling(mod, x) = return with_err_handling(eval_err_handler) do
-        Core.eval(mod, x)
+    eval_with_err_handling(mod, x) = with_err_handling(eval_err_handler) do
+        return Core.eval(mod, x)
+    end
+    usemodule_with_err_handling(interp, mod, x) = with_err_handling(eval_err_handler) do
+        # TODO: handle imports of global variables
+        # if the importing of this global variable failed (because they don't not actually
+        # get evaluated and thus not exist in `virtualmod`), but we can continue profiling
+        # rather than throwing a toplevel error as far as we know its type (,which is kept
+        # in `interp.virtualglobalvartable`).
+        # To handle this, we need to restore `Module` object from arbitrary module usage
+        # expressions, which can be a bit complicated
+
+        return Core.eval(mod, x)
     end
 
     # prewalk, and some transformations assume that it doesn't happen in local scopes
@@ -133,47 +146,12 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
             x = macroexpand_with_err_handling(virtualmod, x)
         end
 
-        # handle `module` definitions
-        if isexpr(x, :module)
-            if !(isone(length(scope)) && first(scope) === :toplevel)
-                report = SyntaxErrorReport("syntax: \"module\" expression not at top level", filename, line)
-                push!(ret.toplevel_error_reports, report)
-                return nothing
-            end
-
-            newblk = x.args[3]
-            @assert isexpr(newblk, :block)
-            newtoplevelex = Expr(:toplevel, newblk.args...)
-
-            x.args[3] = Expr(:block) # empty module's code body
-            newvirtualmod = eval_with_err_handling(virtualmod, x)
-
-            isnothing(newvirtualmod) && return nothing # error happened, e.g. duplicated naming
-
-            virtual_process!(newtoplevelex, filename, actualmodsym, newvirtualmod, interp, ret)
-
-            return newvirtualmod
-        end
-
-        # hoist and evaluate these toplevel expressions and handle module usage
-        #
+        # hoist and evaluate these toplevel expressions
         # these shouldn't happen when in function scope, since then they can be wrongly
         # hoisted and evaluated when they're wrapped in closures, while they actually cause
         # syntax errors; if they're in other "toplevel definition"s, they will just cause
         # error when the defition gets evaluated
-
         if istopleveldef(x)
-            return if :function ∉ scope
-                eval_with_err_handling(virtualmod, x)
-            else
-                report = SyntaxErrorReport("syntax: \"$(x.head)\" expression not at top level", filename, line)
-                push!(ret.toplevel_error_reports, report)
-                nothing
-            end
-        end
-
-        # TODO: support package loading
-        if ismoduleusage(x)
             return if :function ∉ scope
                 eval_with_err_handling(virtualmod, x)
             else
@@ -232,6 +210,41 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
         # update line info
         if islnn(x)
             line = x.line
+            continue
+        end
+
+        # handle `:module` definition and module usage;
+        # should happen here because modules need to be loaded sequentially while
+        # "toplevel definitions" inside of the loaded modules shouldn't be evaluated in a
+        # context of `virtualmod`
+
+        # handle `:module` definition; they should always happen in toplevel
+        if isexpr(x, :module)
+            newblk = x.args[3]
+            @assert isexpr(newblk, :block)
+            newtoplevelex = Expr(:toplevel, newblk.args...)
+
+            x.args[3] = Expr(:block) # empty module's code body
+            newvirtualmod = eval_with_err_handling(virtualmod, x)
+
+            isnothing(newvirtualmod) && return nothing # error happened, e.g. duplicated naming
+
+            virtual_process!(newtoplevelex, filename, actualmodsym, newvirtualmod, interp, ret)
+
+            continue
+        end
+
+        # handle module usage
+        # TODO: support package loading
+        if ismoduleusage(x)
+            for ex in to_single_usages(x)
+                usemodule_with_err_handling(interp, virtualmod, ex)
+            end
+
+            continue
+        elseif isexport(x)
+            eval_with_err_handling(virtualmod, x)
+
             continue
         end
 
@@ -319,7 +332,8 @@ postwalk_and_transform!(args...) = walk_and_transform!(false, args...)
 
 istopleveldef(x) = isexpr(x, (:macro, :abstract, :struct, :primitive))
 
-ismoduleusage(x) = isexpr(x, (:import, :using, :export))
+ismoduleusage(x) = isexpr(x, (:import, :using))
+isexport(x) = isexpr(x, :export)
 
 islocalscope(scopes)        = any(islocalscope, scopes)
 islocalscope(scope::Expr)   = islocalscope(scope.head)
@@ -353,4 +367,21 @@ function generate_virtual_lambda(mod, lnn, x)
     funcbody = Expr(:block, lnn, x)
     funcex   = Expr(:function, #=nullary lambda=# Expr(:tuple), funcbody)
     return Core.eval(mod, funcex)::Function
+end
+
+function to_single_usages(x)
+    if length(x.args) != 1
+        # using A, B
+        return Expr.(x.head, x.args)
+    else
+        arg = x.args[1]
+        if arg.head === :.
+            # using A
+            return [x]
+        elseif arg.head === :(:)
+            # using A: sym1, sym2, ...
+            args = Expr.(arg.head, Ref(first(arg.args)), arg.args[2:end])
+            return Expr.(x.head, args)
+        end
+    end
 end
