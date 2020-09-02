@@ -1,4 +1,8 @@
 using Test, TypeProfiler, InteractiveUtils
+
+import Core.Compiler:
+    widenconst
+
 import TypeProfiler:
     TPInterpreter, virtual_process!, report_errors, getvirtualglobalvar,
     ToplevelErrorReport, InferenceErrorReport
@@ -42,6 +46,9 @@ end
     include("test_virtualprocess.jl")
 end
 
+@testset "abstractinterpretation.jl" begin
+    include("test_abstractinterpretation.jl")
+end
 # # favorite
 # # --------
 #
