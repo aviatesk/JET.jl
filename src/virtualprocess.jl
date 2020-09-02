@@ -10,10 +10,10 @@ const VirtualProcessResult = @NamedTuple begin
     inference_error_reports::Vector{InferenceErrorReport}
 end
 
-generate_virtual_process_result() = return (; included_files = Set{String}(),
-                                              toplevel_error_reports = ToplevelErrorReport[],
-                                              inference_error_reports = InferenceErrorReport[],
-                                              )::VirtualProcessResult
+generate_virtual_process_result() = (; included_files = Set{String}(),
+                                       toplevel_error_reports = ToplevelErrorReport[],
+                                       inference_error_reports = InferenceErrorReport[],
+                                       )::VirtualProcessResult
 
 const TYPEPROFILERJL_SELF_REFERENCE_SYM = :TYPEPROFILERJL_SELF_REFERENCE_SYM
 
@@ -23,7 +23,7 @@ const TYPEPROFILERJL_SELF_REFERENCE_SYM = :TYPEPROFILERJL_SELF_REFERENCE_SYM
                      interp::TPInterpreter,
                      actualmodsym::Symbol,
                      virtualmod::Module,
-                     )::VirtualProcessResult
+                     )::Tuple{VirtualProcessResult,TPInterpreter}
 
 simulates execution of `s` and profiles error reports, and returns `VirtualProcessResult`,
 which keeps the following information:
@@ -67,7 +67,7 @@ function virtual_process!(s::AbstractString,
                           virtualmod::Module,
                           interp::TPInterpreter,
                           ret::VirtualProcessResult = generate_virtual_process_result(),
-                          )::VirtualProcessResult
+                          )::Tuple{VirtualProcessResult,TPInterpreter}
     push!(ret.included_files, filename)
 
     toplevelex = parse_input_line(s; filename)
@@ -75,10 +75,10 @@ function virtual_process!(s::AbstractString,
     # if there's any syntax error, try to identify all the syntax error location
     if isexpr(toplevelex, (:error, :incomplete))
         append!(ret.toplevel_error_reports, collect_syntax_errors(s, filename))
-        return ret
+        return ret, interp
     # just return if there is nothing to profile
     elseif isnothing(toplevelex)
-        return ret
+        return ret, interp
     end
 
     return virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp, ret)
@@ -270,7 +270,7 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
         append!(ret.inference_error_reports, interp.reports) # correct error reports
     end
 
-    return ret
+    return ret, interp
 end
 
 # don't inline this so we can find it in the stacktrace

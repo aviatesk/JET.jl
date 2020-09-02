@@ -1,12 +1,3 @@
-function profile_toplevel!(s,
-                           virtualmod = gen_virtualmod();
-                           filename = "top-level",
-                           actualmodsym = :Main,
-                           interp = TPInterpreter(),
-                           )
-    return virtual_process!(s, filename, actualmodsym, virtualmod, interp)
-end
-
 @testset "syntax error reports" begin
     let
         s = """
@@ -17,7 +8,7 @@ end
         end
         """
 
-        res = profile_toplevel!(s)
+        res, interp = profile_toplevel!(s)
 
         @test !isempty(res.toplevel_error_reports)
         @test first(res.toplevel_error_reports) isa SyntaxErrorReport
@@ -93,9 +84,11 @@ end
         """
 
         virtualmod = gen_virtualmod()
-        res = profile_toplevel!(s, virtualmod)
+        res, interp = profile_toplevel!(s, virtualmod)
 
-        @test !isdefined(virtualmod, :foo) # global variables aren't evaluated
+        # global variables aren't evaluated but kept in `interp` instead
+        @test !isdefined(virtualmod, :foo)
+        @test !isnothing(getvirtualglobalvar(interp, virtualmod, :foo))
         @test isdefined(virtualmod, :Foo)
         @test isempty(res.toplevel_error_reports)
         @test isempty(res.inference_error_reports)
@@ -113,7 +106,7 @@ end
         """
 
         virtualmod = gen_virtualmod()
-        res = profile_toplevel!(s, virtualmod)
+        res, interp = profile_toplevel!(s, virtualmod)
 
         @test isdefined(virtualmod, :Foo)
         @test isempty(res.toplevel_error_reports)
@@ -134,9 +127,10 @@ end
         """
 
         virtualmod = gen_virtualmod()
-        res = profile_toplevel!(s, virtualmod)
+        res, interp = profile_toplevel!(s, virtualmod)
 
         @test !isdefined(virtualmod, :i)
+        @test isnothing(getvirtualglobalvar(interp, virtualmod, :i))
         @test isempty(res.toplevel_error_reports)
         @test_broken isempty(res.inference_error_reports)
     end
@@ -150,7 +144,7 @@ end
         """
 
         virtualmod = gen_virtualmod()
-        res = profile_toplevel!(s, virtualmod)
+        res, interp = profile_toplevel!(s, virtualmod)
 
         @test isdefined(virtualmod, :foo)
         @test isempty(res.toplevel_error_reports)
@@ -169,7 +163,7 @@ end
         """
 
         virtualmod = gen_virtualmod()
-        res = profile_toplevel!(s, virtualmod)
+        res, interp = profile_toplevel!(s, virtualmod)
 
         @test isdefined(virtualmod, Symbol("@foo"))
         @test isempty(res.toplevel_error_reports)
@@ -191,7 +185,7 @@ end
         """
 
         virtualmod = gen_virtualmod()
-        res = profile_toplevel!(s, virtualmod)
+        res, interp = profile_toplevel!(s, virtualmod)
 
         @test isdefined(virtualmod, Symbol("@foo"))
         @test_broken isempty(res.toplevel_error_reports)
@@ -206,7 +200,7 @@ end
         sum(s)
         """
 
-        res = profile_toplevel!(s)
+        res, interp = profile_toplevel!(s)
 
         @test isempty(res.toplevel_error_reports)
         test_sum_over_string(res)
@@ -220,7 +214,7 @@ end
         end
         """
 
-        res = profile_toplevel!(s)
+        res, interp = profile_toplevel!(s)
 
         @test !isempty(res.toplevel_error_reports)
         @test first(res.toplevel_error_reports) isa SyntaxErrorReport
@@ -234,7 +228,7 @@ end
         s = read(f1, String)
 
         virtualmod = gen_virtualmod()
-        res = profile_toplevel!(s, virtualmod; filename = f1)
+        res, interp = profile_toplevel!(s, virtualmod; filename = f1)
 
         @test f1 in res.included_files
         @test f2 in res.included_files
@@ -247,7 +241,7 @@ end
         f = normpath(FIXTURE_DIR, "nonexistinclude.jl")
         s = read(f, String)
 
-        res = profile_toplevel!(s; filename = f)
+        res, interp = profile_toplevel!(s; filename = f)
 
         @test f in res.included_files
         @test !isempty(res.toplevel_error_reports)
@@ -260,7 +254,7 @@ end
         f = normpath(FIXTURE_DIR, "selfrecursiveinclude.jl")
         s = read(f, String)
 
-        res = profile_toplevel!(s; filename = f)
+        res, interp = profile_toplevel!(s; filename = f)
 
         @test f in res.included_files
         @test !isempty(res.toplevel_error_reports)
@@ -272,7 +266,7 @@ end
         f2 = normpath(FIXTURE_DIR, "chainrecursiveinclude2.jl")
         s = read(f1, String)
 
-        res = profile_toplevel!(s; filename = f1)
+        res, interp = profile_toplevel!(s; filename = f1)
 
         @test f1 in res.included_files
         @test f2 in res.included_files
@@ -301,7 +295,7 @@ end
                                        end
                                        """
                                        )
-    res = profile_toplevel!(s)
+    res, interp = profile_toplevel!(s)
     @test isempty(res.toplevel_error_reports)
 end
 
@@ -319,7 +313,7 @@ end
         end
         """
 
-        res = profile_toplevel!(s)
+        res, interp = profile_toplevel!(s)
 
         @test isempty(res.toplevel_error_reports)
         @test !isempty(res.inference_error_reports)
@@ -345,7 +339,7 @@ end
         end # module foo
         """
 
-        res = profile_toplevel!(s)
+        res, interp = profile_toplevel!(s)
 
         @test isempty(res.toplevel_error_reports)
         @test !isempty(res.inference_error_reports)
@@ -370,7 +364,7 @@ end
         end # module foo
         """
 
-        res = profile_toplevel!(s)
+        res, interp = profile_toplevel!(s)
 
         @test isempty(res.toplevel_error_reports)
         test_sum_over_string(res)
@@ -393,7 +387,7 @@ end
         end # module foo
         """
 
-        res = profile_toplevel!(s)
+        res, interp = profile_toplevel!(s)
 
         @test isempty(res.toplevel_error_reports)
         test_sum_over_string(res)
@@ -417,7 +411,7 @@ end
         end # module foo
         """
 
-        res = profile_toplevel!(s)
+        res, interp = profile_toplevel!(s)
 
         @test isempty(res.toplevel_error_reports)
         @test_broken !isempty(res.inference_error_reports)
@@ -442,7 +436,7 @@ end
         end # module foo
         """
 
-        res = profile_toplevel!(s)
+        res, interp = profile_toplevel!(s)
 
         # TODO: fix usage of virtual global variables
         @test_broken isempty(res.toplevel_error_reports)
@@ -465,7 +459,7 @@ end
         bar("julia") # -> NoMethodErrorReports
         """
 
-        res = profile_toplevel!(s)
+        res, interp = profile_toplevel!(s)
 
         @test isempty(res.toplevel_error_reports)
         test_sum_over_string(res)
@@ -473,9 +467,6 @@ end
 end
 
 @testset "sequential" begin
-    collect_report_errors(s; actualmod = Main, filename = "top-level", kwargs...) =
-        return report_errors(actualmod, s, filename; kwargs...)[2]
-
     let
         s = """
         foo(1:1000)
@@ -483,9 +474,9 @@ end
         foo(a) = length(a)
         """
 
-        rps = collect_report_errors(s)
-        @test length(rps) === 1
-        @test first(rps) isa UndefVarErrorReport
+        res, interp = profile_toplevel!(s)
+        @test length(res.inference_error_reports) === 1
+        @test first(res.inference_error_reports) isa UndefVarErrorReport
     end
 
     let
@@ -497,7 +488,44 @@ end
         foo(1:1000)  # should not error too
         """
 
-        rps = collect_report_errors(s)
-        @test isempty(rps)
+        res, interp = profile_toplevel!(s)
+        @test isempty(res.inference_error_reports)
+    end
+end
+
+@testset "virtual global variables" begin
+    let
+        s = """
+        var = rand(Bool)
+        const constvar = rand(Bool)
+        """
+
+        virtualmod = gen_virtualmod()
+        res, interp = profile_toplevel!(s, virtualmod)
+        @test !isnothing(getvirtualglobalvar(interp, virtualmod, :var))
+        @test !isnothing(getvirtualglobalvar(interp, virtualmod, :constvar))
+    end
+
+    # local variables shouldn't leak into global
+    @testset "no global leak" for s in ("""
+                                        let
+                                            localvar = rand(Bool)
+                                        end
+                                        """,
+                                        """
+                                        for i = 1:100
+                                            localvar = i
+                                        end
+                                        """,
+                                        """
+                                        while true
+                                            localvar = rand(Bool)
+                                        end
+                                        """
+                                        )
+
+        virtualmod = gen_virtualmod()
+        res, interp = profile_toplevel!(s, virtualmod)
+        @test isnothing(getvirtualglobalvar(interp, virtualmod, :localvar))
     end
 end

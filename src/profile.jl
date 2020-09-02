@@ -57,7 +57,7 @@ function report_errors(actualmod, text, filename; filter_native_remarks = true)
 
     interp = TPInterpreter(; filter_native_remarks) # dummy
     actualmodsym = Symbol(actualmod)
-    ret = virtual_process!(text, filename, actualmodsym, virtualmod, interp)
+    ret, interp = virtual_process!(text, filename, actualmodsym, virtualmod, interp)
 
     return ret.included_files,
            # non-empty `ret.toplevel_error_reports` means critical errors happened during

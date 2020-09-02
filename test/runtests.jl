@@ -1,6 +1,6 @@
 using Test, TypeProfiler, InteractiveUtils
 import TypeProfiler:
-    TPInterpreter, virtual_process!, report_errors,
+    TPInterpreter, virtual_process!, report_errors, getvirtualglobalvar,
     ToplevelErrorReport, InferenceErrorReport
 
 for sym in Symbol.(last.(Base.Fix2(split, '.').(string.(vcat(subtypes(TypeProfiler, ToplevelErrorReport),
@@ -28,6 +28,15 @@ function test_sum_over_string(ers::AbstractVector)
     end
 end
 test_sum_over_string(res::TypeProfiler.VirtualProcessResult) = test_sum_over_string(res.inference_error_reports)
+
+function profile_toplevel!(s,
+                           virtualmod = gen_virtualmod();
+                           filename = "top-level",
+                           actualmodsym = :Main,
+                           interp = TPInterpreter(),
+                           )
+    return virtual_process!(s, filename, actualmodsym, virtualmod, interp)
+end
 
 @testset "virtualprocess.jl" begin
     include("test_virtualprocess.jl")
