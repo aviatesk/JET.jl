@@ -1,15 +1,5 @@
-# toplevel
-# --------
-
-# basic approach:
-# - transforms toplevel expressions so that it can be wrapped into a single virtual function
-#   (`parse_and_transform`)
-# - and then run the inference on it and collect possible error points (`profile_call`)
-#
-# known limitations:
-# - macro expansion and `include` calls including access to global variables:
-#   TP will try to expand any macro, but any macro expansion including access to global
-#   variables will fail since TP just infers their types and avoids the actual evaluation
+# entry
+# -----
 
 function profile_file(io::IO,
                       filename::AbstractString,
@@ -109,7 +99,9 @@ function profile_call_gf!(interp::TPInterpreter,
     return interp, frame
 end
 
-# utility for interactive session
+# inference helper
+# ----------------
+
 @nospecialize
 
 function profile_call(f, args...)
