@@ -71,7 +71,9 @@ end
 function generate_postprocess(virtualmod, actualmod)
     virtual = string(virtualmod)
     actual  = string(actualmod)
-    return Fix2(replace, virtual => actual)
+    return actualmod == Main ?
+        Fix2(replace, "Main." => "") ∘ Fix2(replace, virtual => actual) :
+        Fix2(replace, virtual => actual)
 end
 
 # inference
