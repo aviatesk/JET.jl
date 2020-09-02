@@ -145,22 +145,35 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
             @assert isexpr(newblk, :block)
             newtoplevelex = Expr(:toplevel, newblk.args...)
 
-            newactualmodsym = x.args[2]
             x.args[3] = Expr(:block) # empty module's code body
             newvirtualmod = eval_with_err_handling(virtualmod, x)
 
             isnothing(newvirtualmod) && return nothing # error happened, e.g. duplicated naming
 
-            virtual_process!(newtoplevelex, filename, newactualmodsym, newvirtualmod, interp, ret)
+            virtual_process!(newtoplevelex, filename, actualmodsym, newvirtualmod, interp, ret)
 
             return newvirtualmod
         end
 
-        # hoist and evaluate these toplevel expressions; this shouldn't happen when in
-        # function scope, since then they will be wrongly hoisted and evaluated while they
-        # actually cause syntax errors
-        # TODO: :export
+        # hoist and evaluate these toplevel expressions and handle module usage
+        #
+        # these shouldn't happen when in function scope, since then they can be wrongly
+        # hoisted and evaluated when they're wrapped in closures, while they actually cause
+        # syntax errors; if they're in other "toplevel definition"s, they will just cause
+        # error when the defition gets evaluated
+
         if istopleveldef(x)
+            return if :function ∉ scope
+                eval_with_err_handling(virtualmod, x)
+            else
+                report = SyntaxErrorReport("syntax: \"$(x.head)\" expression not at top level", filename, line)
+                push!(ret.toplevel_error_reports, report)
+                nothing
+            end
+        end
+
+        # TODO: support package loading
+        if ismoduleusage(x)
             return if :function ∉ scope
                 eval_with_err_handling(virtualmod, x)
             else
@@ -304,7 +317,9 @@ end
 prewalk_and_transform!(args...) = walk_and_transform!(true, args...)
 postwalk_and_transform!(args...) = walk_and_transform!(false, args...)
 
-istopleveldef(x) = isexpr(x, (:macro, :abstract, :struct, :primitive, :import, :using))
+istopleveldef(x) = isexpr(x, (:macro, :abstract, :struct, :primitive))
+
+ismoduleusage(x) = isexpr(x, (:import, :using, :export))
 
 islocalscope(scopes)        = any(islocalscope, scopes)
 islocalscope(scope::Expr)   = islocalscope(scope.head)

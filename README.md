@@ -152,11 +152,11 @@ No errors !
 
 ### TODOs
 
-- support `module` expressions, profiling on a package (without actual loading, i.e. without Revise.jl integration)
 - documentation
 - more accurate error reports
   * built-in function calls
   * report some cases of `throw`, e.g. `rand('1')::ArgumentError("Sampler for this object is not defined")`
+- support virtual package loading (without actual loading, circumventing Revise.jl's limitation)
 - balance between Julia's inference approach and error profiling ?
   - Julia's type inference allows abstract type (like `Any`) to slip into the inference process by various heuristics, in order to ensure its termination and obtain the performance
   - but this is somewhat unideal in the context of bug reports, since the stance would be _"better safe than sorry"_, meaning we ideally want to find all the possible errors while revealing some uncertainty Julia's inference accepts
