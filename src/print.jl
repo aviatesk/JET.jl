@@ -95,7 +95,7 @@ end
 print_report(io, report::SyntaxErrorReport) = showerror(io, report.err)
 function print_report(io, report::RecursiveIncludeErrorReport)
     printstyled(io, "ERROR: "; bold = true, color = ERROR_COLOR)
-    println(io, "recursive `include` call detected in ", report.file)
+    println(io, "recursive `include` call detected:")
     println(io, " ⚈  duplicated file: ", report.duplicated_file)
     println(io, " ⚈ `included` files: ", join(report.files, ' '))
 end

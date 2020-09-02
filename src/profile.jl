@@ -56,7 +56,8 @@ function report_errors(actualmod, text, filename; filter_native_remarks = true)
     virtualmod = generate_virtual_module(actualmod)
 
     interp = TPInterpreter(; filter_native_remarks) # dummy
-    ret = virtual_process!(interp, actualmod, virtualmod, text, filename)
+    actualmodsym = Symbol(actualmod)
+    ret = virtual_process!(text, filename, actualmodsym, virtualmod, interp)
 
     return ret.included_files,
            # non-empty `ret.toplevel_error_reports` means critical errors happened during
@@ -70,7 +71,9 @@ end
 function generate_postprocess(virtualmod, actualmod)
     virtual = string(virtualmod)
     actual  = string(actualmod)
-    return Fix2(replace, virtual => actual)
+    return actualmod == Main ?
+        Fix2(replace, "Main." => "") ∘ Fix2(replace, virtual => actual) :
+        Fix2(replace, virtual => actual)
 end
 
 # inference

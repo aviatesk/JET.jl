@@ -3,6 +3,17 @@
 
 abstract type ToplevelErrorReport end
 
+# `ToplevelErrorReport` interface
+function Base.getproperty(er::ToplevelErrorReport, sym::Symbol)
+    return if sym === :file
+        getfield(er, sym)::String
+    elseif sym === :line
+        getfield(er, sym)::Int
+    else
+        getfield(er, sym) # fallback
+    end
+end
+
 struct SyntaxErrorReport <: ToplevelErrorReport
     err::ErrorException
     file::String
@@ -66,7 +77,7 @@ const ViewedVirtualStackTrace = typeof(view(VirtualStackTrace(), :))
 """
 VirtualFrame, VirtualStackTrace, ViewedVirtualStackTrace
 
-# helps inference
+# `InferenceErrorReport` interface
 function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
     return if sym === :st
         getfield(er, sym)::VirtualStackTrace
