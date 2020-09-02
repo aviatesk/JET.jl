@@ -398,13 +398,13 @@ end
         s = """
         module foo
 
-        const bar = sum
+        const bar = "julia"
 
         module baz
 
         using ..foo
 
-        foo.bar("julia") # -> NoMethodErrorReports
+        sum(foo.bar) # -> NoMethodErrorReports
 
         end # module bar
 
@@ -414,8 +414,7 @@ end
         res, interp = profile_toplevel!(s)
 
         @test isempty(res.toplevel_error_reports)
-        @test_broken !isempty(res.inference_error_reports)
-        # test_sum_over_string(res) # TODO: propagate `getfield` correctly
+        test_sum_over_string(res)
     end
 
     # usage of global variables

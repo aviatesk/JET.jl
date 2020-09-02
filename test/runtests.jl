@@ -4,7 +4,8 @@ import Core.Compiler:
     widenconst
 
 import TypeProfiler:
-    TPInterpreter, virtual_process!, report_errors, getvirtualglobalvar,
+    TPInterpreter, generate_virtual_lambda, profile_call, profile_call_gf!,
+    virtual_process!, report_errors, getvirtualglobalvar,
     ToplevelErrorReport, InferenceErrorReport
 
 for sym in Symbol.(last.(Base.Fix2(split, '.').(string.(vcat(subtypes(TypeProfiler, ToplevelErrorReport),
@@ -42,6 +43,10 @@ function profile_toplevel!(s,
     return virtual_process!(s, filename, actualmodsym, virtualmod, interp)
 end
 
+macro gen_lambda(ex)
+    return :($(generate_virtual_lambda)($(__module__), $(__source__), $(QuoteNode(ex))))
+end
+
 @testset "virtualprocess.jl" begin
     include("test_virtualprocess.jl")
 end
@@ -49,6 +54,11 @@ end
 @testset "abstractinterpretation.jl" begin
     include("test_abstractinterpretation.jl")
 end
+
+@testset "tfuncs.jl" begin
+    include("test_tfuncs.jl")
+end
+
 # # favorite
 # # --------
 #
