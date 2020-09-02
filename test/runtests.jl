@@ -9,10 +9,27 @@ for sym in Symbol.(last.(Base.Fix2(split, '.').(string.(vcat(subtypes(TypeProfil
     Core.eval(@__MODULE__, :(import TypeProfiler: $(sym)))
 end
 
-const FIXTURE_DIR = normpath(@__DIR__, "fixtures")
-gen_mod() = Core.eval(@__MODULE__, :(module $(gensym(:TypeProfilerTest)) end))
 
-@testset "virtualprocess" begin
+const FIXTURE_DIR = normpath(@__DIR__, "fixtures")
+gen_virtualmod() = Core.eval(@__MODULE__, :(module $(gensym(:TypeProfilerTestVirtualModule)) end))
+
+const ERROR_REPORTS_FOR_SUM_OVER_STRING = let
+    interp, frame = TypeProfiler.profile_call(sum, "julia")
+    @test !isempty(interp.reports)
+    interp.reports
+end
+
+function test_sum_over_string(ers::AbstractVector)
+    @test !isempty(ers)
+    for target in ERROR_REPORTS_FOR_SUM_OVER_STRING
+        @test any(ers) do er
+            return er.msg == target.msg && er.sig == target.sig
+        end
+    end
+end
+test_sum_over_string(res::TypeProfiler.VirtualProcessResult) = test_sum_over_string(res.inference_error_reports)
+
+@testset "virtualprocess.jl" begin
     include("test_virtualprocess.jl")
 end
 

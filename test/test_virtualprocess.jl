@@ -1,24 +1,10 @@
-function profile!(s, virtualmod;
-                  filename = "top-level",
-                  actualmodsym = :Main,
-                  interp = TPInterpreter(),
-                  )
+function profile_toplevel!(s,
+                           virtualmod = gen_virtualmod();
+                           filename = "top-level",
+                           actualmodsym = :Main,
+                           interp = TPInterpreter(),
+                           )
     return virtual_process!(s, filename, actualmodsym, virtualmod, interp)
-end
-
-const ERROR_REPORTS_FOR_SUM_OVER_STRING = let
-    res = profile!("sum(\"julia\")", Main)
-    @test !isempty(res.inference_error_reports)
-    res.inference_error_reports
-end
-
-function test_sum_over_string(res)
-    @test !isempty(res.inference_error_reports)
-    for target in ERROR_REPORTS_FOR_SUM_OVER_STRING
-        @test any(res.inference_error_reports) do er
-            return er.msg == target.msg && er.sig == target.sig
-        end
-    end
 end
 
 @testset "syntax error reports" begin
@@ -31,9 +17,7 @@ end
         end
         """
 
-        virtualmod = gen_mod()
-
-        res = profile!(s, virtualmod)
+        res = profile_toplevel!(s)
 
         @test !isempty(res.toplevel_error_reports)
         @test first(res.toplevel_error_reports) isa SyntaxErrorReport
@@ -81,9 +65,8 @@ end
             end
         end
         """
-        virtualmod = gen_mod()
-
-        profile!(s, virtualmod)
+        virtualmod = gen_virtualmod()
+        profile_toplevel!(s, virtualmod)
 
         @test isdefined(virtualmod, :foo)
         @test !isdefined(virtualmod, :foo′)
@@ -109,9 +92,8 @@ end
         Foo()
         """
 
-        virtualmod = gen_mod()
-
-        res = profile!(s, virtualmod)
+        virtualmod = gen_virtualmod()
+        res = profile_toplevel!(s, virtualmod)
 
         @test !isdefined(virtualmod, :foo) # global variables aren't evaluated
         @test isdefined(virtualmod, :Foo)
@@ -130,9 +112,8 @@ end
         end
         """
 
-        virtualmod = gen_mod()
-
-        res = profile!(s, virtualmod)
+        virtualmod = gen_virtualmod()
+        res = profile_toplevel!(s, virtualmod)
 
         @test isdefined(virtualmod, :Foo)
         @test isempty(res.toplevel_error_reports)
@@ -152,9 +133,8 @@ end
         end
         """
 
-        virtualmod = gen_mod()
-
-        res = profile!(s, virtualmod)
+        virtualmod = gen_virtualmod()
+        res = profile_toplevel!(s, virtualmod)
 
         @test !isdefined(virtualmod, :i)
         @test isempty(res.toplevel_error_reports)
@@ -169,9 +149,8 @@ end
         foo(10)
         """
 
-        virtualmod = gen_mod()
-
-        res = profile!(s, virtualmod)
+        virtualmod = gen_virtualmod()
+        res = profile_toplevel!(s, virtualmod)
 
         @test isdefined(virtualmod, :foo)
         @test isempty(res.toplevel_error_reports)
@@ -189,9 +168,8 @@ end
         @foo sin()
         """
 
-        virtualmod = gen_mod()
-
-        res = profile!(s, virtualmod)
+        virtualmod = gen_virtualmod()
+        res = profile_toplevel!(s, virtualmod)
 
         @test isdefined(virtualmod, Symbol("@foo"))
         @test isempty(res.toplevel_error_reports)
@@ -212,9 +190,8 @@ end
         @foo sin()
         """
 
-        virtualmod = gen_mod()
-
-        res = profile!(s, virtualmod)
+        virtualmod = gen_virtualmod()
+        res = profile_toplevel!(s, virtualmod)
 
         @test isdefined(virtualmod, Symbol("@foo"))
         @test_broken isempty(res.toplevel_error_reports)
@@ -229,9 +206,7 @@ end
         sum(s)
         """
 
-        virtualmod = gen_mod()
-
-        res = profile!(s, virtualmod)
+        res = profile_toplevel!(s)
 
         @test isempty(res.toplevel_error_reports)
         test_sum_over_string(res)
@@ -245,9 +220,7 @@ end
         end
         """
 
-        virtualmod = gen_mod()
-
-        res = profile!(s, virtualmod)
+        res = profile_toplevel!(s)
 
         @test !isempty(res.toplevel_error_reports)
         @test first(res.toplevel_error_reports) isa SyntaxErrorReport
@@ -260,9 +233,8 @@ end
         f2 = normpath(FIXTURE_DIR, "include1.jl")
         s = read(f1, String)
 
-        virtualmod = gen_mod()
-
-        res = profile!(s, virtualmod; filename = f1)
+        virtualmod = gen_virtualmod()
+        res = profile_toplevel!(s, virtualmod; filename = f1)
 
         @test f1 in res.included_files
         @test f2 in res.included_files
@@ -275,9 +247,7 @@ end
         f = normpath(FIXTURE_DIR, "nonexistinclude.jl")
         s = read(f, String)
 
-        virtualmod = gen_mod()
-
-        res = profile!(s, virtualmod; filename = f)
+        res = profile_toplevel!(s; filename = f)
 
         @test f in res.included_files
         @test !isempty(res.toplevel_error_reports)
@@ -290,9 +260,7 @@ end
         f = normpath(FIXTURE_DIR, "selfrecursiveinclude.jl")
         s = read(f, String)
 
-        virtualmod = gen_mod()
-
-        res = profile!(s, virtualmod; filename = f)
+        res = profile_toplevel!(s; filename = f)
 
         @test f in res.included_files
         @test !isempty(res.toplevel_error_reports)
@@ -304,9 +272,7 @@ end
         f2 = normpath(FIXTURE_DIR, "chainrecursiveinclude2.jl")
         s = read(f1, String)
 
-        virtualmod = gen_mod()
-
-        res = profile!(s, virtualmod; filename = f1)
+        res = profile_toplevel!(s; filename = f1)
 
         @test f1 in res.included_files
         @test f2 in res.included_files
@@ -335,8 +301,7 @@ end
                                        end
                                        """
                                        )
-    virtualmod = gen_mod()
-    res = profile!(s, virtualmod)
+    res = profile_toplevel!(s)
     @test isempty(res.toplevel_error_reports)
 end
 
@@ -354,9 +319,7 @@ end
         end
         """
 
-        virtualmod = gen_mod()
-
-        res = profile!(s, virtualmod)
+        res = profile_toplevel!(s)
 
         @test isempty(res.toplevel_error_reports)
         @test !isempty(res.inference_error_reports)
@@ -382,9 +345,7 @@ end
         end # module foo
         """
 
-        virtualmod = gen_mod()
-
-        res = profile!(s, virtualmod)
+        res = profile_toplevel!(s)
 
         @test isempty(res.toplevel_error_reports)
         @test !isempty(res.inference_error_reports)
@@ -409,9 +370,7 @@ end
         end # module foo
         """
 
-        virtualmod = gen_mod()
-
-        res = profile!(s, virtualmod)
+        res = profile_toplevel!(s)
 
         @test isempty(res.toplevel_error_reports)
         test_sum_over_string(res)
@@ -434,9 +393,7 @@ end
         end # module foo
         """
 
-        virtualmod = gen_mod()
-
-        res = profile!(s, virtualmod)
+        res = profile_toplevel!(s)
 
         @test isempty(res.toplevel_error_reports)
         test_sum_over_string(res)
@@ -460,9 +417,7 @@ end
         end # module foo
         """
 
-        virtualmod = gen_mod()
-
-        res = profile!(s, virtualmod)
+        res = profile_toplevel!(s)
 
         @test isempty(res.toplevel_error_reports)
         @test_broken !isempty(res.inference_error_reports)
@@ -487,9 +442,7 @@ end
         end # module foo
         """
 
-        virtualmod = gen_mod()
-
-        res = profile!(s, virtualmod)
+        res = profile_toplevel!(s)
 
         # TODO: fix usage of virtual global variables
         @test_broken isempty(res.toplevel_error_reports)
@@ -512,9 +465,7 @@ end
         bar("julia") # -> NoMethodErrorReports
         """
 
-        virtualmod = gen_mod()
-
-        res = profile!(s, virtualmod)
+        res = profile_toplevel!(s)
 
         @test isempty(res.toplevel_error_reports)
         test_sum_over_string(res)
