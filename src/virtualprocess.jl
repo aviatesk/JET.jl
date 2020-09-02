@@ -125,7 +125,7 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
         return Core.eval(mod, x)
     end
     usemodule_with_err_handling(interp, mod, x) = with_err_handling(eval_err_handler) do
-        # TODO: handle imports of global variables
+        # TODO: handle imports of virtual global variables
         # if the importing of this global variable failed (because they don't not actually
         # get evaluated and thus not exist in `virtualmod`), but we can continue profiling
         # rather than throwing a toplevel error as far as we know its type (,which is kept

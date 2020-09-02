@@ -6,6 +6,21 @@ function profile!(s, virtualmod;
     return virtual_process!(s, filename, actualmodsym, virtualmod, interp)
 end
 
+const ERROR_REPORTS_FOR_SUM_OVER_STRING = let
+    res = profile!("sum(\"julia\")", Main)
+    @test !isempty(res.inference_error_reports)
+    res.inference_error_reports
+end
+
+function test_sum_over_string(res)
+    @test !isempty(res.inference_error_reports)
+    for target in ERROR_REPORTS_FOR_SUM_OVER_STRING
+        @test any(res.inference_error_reports) do er
+            return er.msg == target.msg && er.sig == target.sig
+        end
+    end
+end
+
 @testset "syntax error reports" begin
     let
         s = """
@@ -219,7 +234,7 @@ end
         res = profile!(s, virtualmod)
 
         @test isempty(res.toplevel_error_reports)
-        @test !isempty(res.inference_error_reports)
+        test_sum_over_string(res)
     end
 
     let
@@ -305,6 +320,204 @@ end
             @test report.file == f2
             @test report.line == 1
         end
+    end
+end
+
+@testset "module definition" for s in ("""
+                                       module foo end
+                                       """,
+                                       """
+                                       baremodule foo end
+                                       """,
+                                       """
+                                       module foo
+                                       module bar end
+                                       end
+                                       """
+                                       )
+    virtualmod = gen_mod()
+    res = profile!(s, virtualmod)
+    @test isempty(res.toplevel_error_reports)
+end
+
+@testset "module usage" begin
+    # using
+    let
+        s = """
+        module foo
+
+        using Base.Meta: isexpr
+
+        isexpr(:(foo(bar)), :call)
+        isexpr2(:(foo(bar)), :call)
+
+        end
+        """
+
+        virtualmod = gen_mod()
+
+        res = profile!(s, virtualmod)
+
+        @test isempty(res.toplevel_error_reports)
+        @test !isempty(res.inference_error_reports)
+        @test first(res.inference_error_reports) isa UndefVarErrorReport
+        @test occursin("isexpr2", first(res.inference_error_reports).msg)
+    end
+
+    # sequential usage
+    let
+        s = """
+        module foo
+
+        bar(s) = sum(s)
+
+        module baz
+
+        using ..foo
+
+        bar("julia") # -> UndefVarErrorReport
+
+        end # module bar
+
+        end # module foo
+        """
+
+        virtualmod = gen_mod()
+
+        res = profile!(s, virtualmod)
+
+        @test isempty(res.toplevel_error_reports)
+        @test !isempty(res.inference_error_reports)
+        @test first(res.inference_error_reports) isa UndefVarErrorReport
+    end
+
+    # usage of global objects
+    let
+        s = """
+        module foo
+
+        bar(s) = sum(s)
+
+        module baz
+
+        using ..foo
+
+        foo.bar("julia") # -> NoMethodErrorReports
+
+        end # module bar
+
+        end # module foo
+        """
+
+        virtualmod = gen_mod()
+
+        res = profile!(s, virtualmod)
+
+        @test isempty(res.toplevel_error_reports)
+        test_sum_over_string(res)
+    end
+
+    let
+        s = """
+        module foo
+
+        bar(s) = sum(s)
+
+        module baz
+
+        using ..foo: bar
+
+        bar("julia") # -> NoMethodErrorReports
+
+        end # module bar
+
+        end # module foo
+        """
+
+        virtualmod = gen_mod()
+
+        res = profile!(s, virtualmod)
+
+        @test isempty(res.toplevel_error_reports)
+        test_sum_over_string(res)
+    end
+
+    # usage of global variables
+    let
+        s = """
+        module foo
+
+        const bar = sum
+
+        module baz
+
+        using ..foo
+
+        foo.bar("julia") # -> NoMethodErrorReports
+
+        end # module bar
+
+        end # module foo
+        """
+
+        virtualmod = gen_mod()
+
+        res = profile!(s, virtualmod)
+
+        @test isempty(res.toplevel_error_reports)
+        @test_broken !isempty(res.inference_error_reports)
+        # test_sum_over_string(res) # TODO: propagate `getfield` correctly
+    end
+
+    # usage of global variables
+    let
+        s = """
+        module foo
+
+        const bar = sum
+
+        module baz
+
+        using ..foo: bar
+
+        bar("julia") # -> NoMethodErrorReports
+
+        end # module bar
+
+        end # module foo
+        """
+
+        virtualmod = gen_mod()
+
+        res = profile!(s, virtualmod)
+
+        # TODO: fix usage of virtual global variables
+        @test_broken isempty(res.toplevel_error_reports)
+        # test_sum_over_string(res)
+    end
+
+    # export
+    let
+        s = """
+        module foo
+
+        bar(s) = sum(s)
+
+        export bar
+
+        end
+
+        using .foo
+
+        bar("julia") # -> NoMethodErrorReports
+        """
+
+        virtualmod = gen_mod()
+
+        res = profile!(s, virtualmod)
+
+        @test isempty(res.toplevel_error_reports)
+        test_sum_over_string(res)
     end
 end
 
