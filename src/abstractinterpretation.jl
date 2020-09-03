@@ -160,3 +160,21 @@ Current frame is needed when we assemble virtual stack frame from cached error r
 """
 set_current_frame!(interp::TPInterpreter, frame::InferenceState) = interp.frame[] = frame
 get_current_frame(interp::TPInterpreter) = interp.frame[]
+
+# here we can work on `InferenceState` that inference already ran on it,
+# and also maybe optimization has been done
+function finish(me::InferenceState, interp::TPInterpreter)
+    ret = invoke(finish, Tuple{InferenceState,AbstractInterpreter}, me, interp)
+
+    # report `throw`s only if there is no circumvent pass, which is represented by
+    # `Bottom`-annotated return type inference with non-empty `throw` blocks
+    if get_result(me) === Bottom
+        throw_calls = filter(is_throw_call′, me.src.code)
+        isempty(throw_calls) || add_remark!(interp, me, ExceptionReport(me, interp, throw_calls))
+    end
+
+    return ret
+end
+
+is_throw_call′(@nospecialize(_)) = false
+is_throw_call′(e::Expr)          = is_throw_call(e)
