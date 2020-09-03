@@ -28,7 +28,7 @@ struct RecursiveIncludeErrorReport <: ToplevelErrorReport
     line::Int
 end
 
-# wraps general errors from actual Julia process
+# wraps general errors from actual execution
 struct ActualErrorWrapped <: ToplevelErrorReport
     err
     st::Vector{Base.StackTraces.StackFrame}

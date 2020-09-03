@@ -316,7 +316,7 @@ function collect_syntax_errors(s, filename)
     return reports
 end
 
-function walk_and_transform!(pre, f, x, scope)
+function walk_and_transform!(pre, @nospecialize(f), x, scope)
     x = pre ? f(x, scope) : x
     x isa Expr || return f(x, scope)
     push!(scope, x.head)
@@ -354,7 +354,8 @@ end
 
 isinclude(ex) = isexpr(ex, :call) && first(ex.args) === :include
 
-islnn(x) = x isa LineNumberNode
+islnn(@nospecialize(_)) = false
+islnn(::LineNumberNode) = true
 
 shouldprofile(@nospecialize(_)) = false
 shouldprofile(::Expr)           = true
