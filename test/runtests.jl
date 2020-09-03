@@ -1,10 +1,13 @@
+# %% setup
+# --------
+
 using Test, TypeProfiler, InteractiveUtils
 
 import Core.Compiler:
     widenconst
 
 import TypeProfiler:
-    TPInterpreter, generate_virtual_lambda, profile_call, profile_call_gf!,
+    TPInterpreter, generate_virtual_lambda, profile_call, profile_call_gf, profile_call_gf!,
     virtual_process!, report_errors, getvirtualglobalvar,
     ToplevelErrorReport, InferenceErrorReport
 
@@ -43,19 +46,18 @@ function profile_toplevel!(s,
     return virtual_process!(s, filename, actualmodsym, virtualmod, interp)
 end
 
-macro gen_lambda(ex)
-    return :($(generate_virtual_lambda)($(__module__), $(__source__), $(QuoteNode(ex))))
-end
+# %% test body
+# ------------
 
-@testset "virtualprocess.jl" begin
+@testset "virtual process" begin
     include("test_virtualprocess.jl")
 end
 
-@testset "abstractinterpretation.jl" begin
+@testset "abstract interpretation" begin
     include("test_abstractinterpretation.jl")
 end
 
-@testset "tfuncs.jl" begin
+@testset "tfuncs" begin
     include("test_tfuncs.jl")
 end
 

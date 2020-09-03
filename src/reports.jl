@@ -137,6 +137,47 @@ end
 @reportdef NonBooleanCondErrorReport(interp, sv, @nospecialize(t))
 
 """
+    ExceptionReport <: InferenceErrorReport
+
+Represents general `Exception`s traced during inference. They are reported only when there's
+  "inevitable" [`throw`](@ref) calls found by inter-frame analysis.
+"""
+struct ExceptionReport <: InferenceErrorReport
+    st::VirtualStackTrace
+    msg::String
+    sig::Vector{Any}
+
+    # the constructors below are needed to be special cased, since `ExceptionReport` is
+    # reported _after_ the inference on `sv::InferenceState` has been done rather than
+    # during abstract interpretation
+
+    # inner constructor (from abstract interpretation)
+    function ExceptionReport(sv::InferenceState, interp, throw_calls)
+        msg = get_msg(ExceptionReport, interp, sv, throw_calls)
+        sig = get_sig(ExceptionReport, interp, sv, throw_calls)
+
+        cache_report! = generate_report_cacher(ExceptionReport, msg, sig, interp)
+
+        st = let
+            local sig = Any["unreachable"]
+            file, line = get_file_line(sv.linfo) # just use this frame's location
+            frame = (; file, line, sig)
+            st = VirtualFrame[frame]
+            cache_report!(sv, st)
+
+            isroot(sv) ? st : track_abstract_call_stack!(cache_report!, sv.parent, st) # postwalk
+        end
+
+        return new(reverse(st), msg, sig)
+    end
+
+    # inner constructor (from cache)
+    function ExceptionReport(st::VirtualStackTrace, msg::AbstractString, sig::AbstractVector)
+        return new(reverse(st), msg, sig)
+    end
+end
+
+"""
     NativeRemark <: InferenceErrorReport
 
 This special `InferenceErrorReport` is just for wrapping remarks from `NativeInterpreter`.
@@ -196,6 +237,18 @@ get_file_line(linfo::MethodInstance) = linfo.def.file, linfo.def.line
 # entry
 get_sig(::Type{<:InferenceErrorReport}, interp, sv, @nospecialize(args...)) = get_sig(sv)
 get_sig(sv::InferenceState) = _get_sig(sv, get_cur_stmt(sv))
+
+# special case `ExceptionReport`: there might be multiple throw calls in frame
+function get_sig(::Type{ExceptionReport}, interp, sv, throw_calls)
+    sig = Any[]
+    ncalls = length(throw_calls)
+    for (i, call) in enumerate(throw_calls)
+        call_sig = _get_sig(sv, call)
+        append!(sig, call_sig)
+        i ≠ ncalls && push!(sig, ", ")
+    end
+    return sig
+end
 
 _get_sig(args...) = first(_get_sig_type(args...))
 
@@ -264,6 +317,14 @@ get_msg(::Type{UndefVarErrorReport}, interp, sv, mod, name) = isnothing(mod) ?
     "variable $(mod).$(name) is not defined"
 get_msg(::Type{NonBooleanCondErrorReport}, interp, sv, @nospecialize(t)) =
     "non-boolean ($(t)) used in boolean context"
+function get_msg(::Type{ExceptionReport}, interp, sv, throw_blocks)
+    n = length(throw_blocks)
+    return if isone(n)
+        "will throw"
+    else
+        "will throw either of"
+    end
+end
 get_msg(::Type{NativeRemark}, interp, sv, s) = s
 
 # utils

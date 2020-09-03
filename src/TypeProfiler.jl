@@ -12,7 +12,7 @@ import Core.Compiler:
     # abstractinterpretation.jl
     abstract_call_gf_by_type, abstract_call_known, abstract_call,
     abstract_eval_special_value, abstract_eval_value_expr, abstract_eval_value,
-    abstract_eval_statement, builtin_tfunction, typeinf_local, typeinf_edge,
+    abstract_eval_statement, builtin_tfunction, typeinf_local, typeinf_edge, finish,
     # tpcache.jl
     WorldView
 
@@ -28,7 +28,7 @@ import Core.Compiler:
     InternalCodeCache, CodeInstance, WorldRange,
     MethodInstance, Bottom, NOT_FOUND, MethodMatchInfo, UnionSplitInfo, MethodLookupResult,
     Const, VarTable, SSAValue, SlotNumber, Slot, slot_id, GlobalRef, GotoIfNot, ReturnNode,
-    widenconst, isconstType, typeintersect, ⊑, Builtin, CallMeta,
+    widenconst, isconstType, typeintersect, ⊑, Builtin, CallMeta, is_throw_call,
     argtypes_to_type, abstract_eval_ssavalue, _methods_by_ftype, specialize_method, typeinf
 
 import Base:
