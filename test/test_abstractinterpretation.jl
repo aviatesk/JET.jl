@@ -37,7 +37,7 @@ end
         @test isempty(interp.reports)
     end
 
-    # constant propagation helps exclude false negatives sometimes
+    # constant propagation sometimes helps exclude false negatives
     let
         foo(a) = a ≤ 0 ? throw("a is $(a)") : a
         λ = () -> foo(0)

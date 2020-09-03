@@ -140,7 +140,7 @@ end
     ExceptionReport <: InferenceErrorReport
 
 Represents general `Exception`s traced during inference. They are reported only when there's
-  no circumvent pass found.
+  "inevitable" [`throw`](@ref) calls found by inter-frame analysis.
 """
 struct ExceptionReport <: InferenceErrorReport
     st::VirtualStackTrace

@@ -11,10 +11,20 @@ const TPCACHE = Dict{UInt,Pair{Symbol,Vector{InferenceReportCache}}}()
 
 get_id(interp::TPInterpreter) = interp.id
 
-function get_report_cache(sv, cache::InferenceReportCache{T}) where {T<:InferenceErrorReport}
+function restore_cached_report!(cache::InferenceReportCache{T}, interp) where {T<:InferenceErrorReport}
+    sv = get_current_frame(interp)
     cur_st = track_abstract_call_stack!((args...)->nothing, sv)
     st = vcat(cache.st, cur_st)
-    return T(st, cache.msg, cache.sig)
+    report = T(st, cache.msg, cache.sig)
+    push!(interp.reports, report)
+end
+
+function restore_cached_report!(cache::InferenceReportCache{ExceptionReport}, interp)
+    sv = get_current_frame(interp)
+    cur_st = track_abstract_call_stack!((args...)->nothing, sv)
+    st = vcat(cache.st, cur_st)
+    report = ExceptionReport(st, cache.msg, cache.sig)
+    push!(interp.exceptionreports, length(interp.reports) => report)
 end
 
 # code cache interface
@@ -44,10 +54,8 @@ function CC.get(tpc::TPCache, mi::MethodInstance, default)
 
             # don't append duplicated reports from the same inference process
             if id !== get_id(tpc.interp)
-                frame = get_current_frame(tpc.interp)
                 for cache in cached_reports
-                    report = get_report_cache(frame, cache)
-                    push!(tpc.interp.reports, report)
+                    restore_cached_report!(cache, tpc.interp)
                 end
             end
         end

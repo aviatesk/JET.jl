@@ -1,3 +1,6 @@
+# %% setup
+# --------
+
 using Test, TypeProfiler, InteractiveUtils
 
 import Core.Compiler:
@@ -43,9 +46,8 @@ function profile_toplevel!(s,
     return virtual_process!(s, filename, actualmodsym, virtualmod, interp)
 end
 
-macro gen_lambda(ex)
-    return :($(generate_virtual_lambda)($(__module__), $(__source__), $(QuoteNode(ex))))
-end
+# %% test body
+# ------------
 
 @testset "virtualprocess.jl" begin
     include("test_virtualprocess.jl")
