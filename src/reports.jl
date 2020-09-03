@@ -102,23 +102,9 @@ macro reportdef(ex)
 
     constructor_body = quote
         msg = get_msg(#= T, interp, sv, ... =# $(args...))
-        sig = get_sig(#= sv =# $(args[3]))
+        sig = get_sig(#= T, interp, sv, ... =# $(args...))
 
-        cache_report! = let msg = msg, sig = sig, interp = #= interp =# $(args[2])
-            function (sv, st)
-                key = hash(sv.linfo)
-                if haskey(TPCACHE, key)
-                    _, cached_reports = TPCACHE[key]
-                else
-                    id = get_id(interp)
-                    cached_reports = InferenceReportCache[]
-                    TPCACHE[key] = id => cached_reports
-                end
-
-                push!(cached_reports, InferenceReportCache{$(T)}(view(st, :), msg, sig))
-            end
-        end
-
+        cache_report! = generate_report_cacher($(T), msg, sig, #= interp =# $(args[2]))
         st = track_abstract_call_stack!(cache_report!, #= sv =# $(args[3]))
 
         return new(reverse(st), msg, sig)
@@ -136,7 +122,7 @@ macro reportdef(ex)
 
             # inner constructor (from cache)
             function $(T)(st::VirtualStackTrace, msg::AbstractString, sig::AbstractVector)
-                new(reverse(st), msg, sig)
+                return new(reverse(st), msg, sig)
             end
         end
     end
@@ -158,6 +144,21 @@ Ideally all of them should be covered by the other `InferenceErrorReport`s.
 """
 @reportdef NativeRemark(interp, sv, s)
 
+function generate_report_cacher(T, msg, sig, interp)
+    return function (sv, st)
+        key = hash(sv.linfo)
+        if haskey(TPCACHE, key)
+            _, cached_reports = TPCACHE[key]
+        else
+            id = get_id(interp)
+            cached_reports = InferenceReportCache[]
+            TPCACHE[key] = id => cached_reports
+        end
+
+        push!(cached_reports, InferenceReportCache{T}(view(st, :), msg, sig))
+    end
+end
+
 # traces the current abstract call stack
 function track_abstract_call_stack!(f::Function, sv, st = VirtualFrame[])
     sig = get_sig(sv)
@@ -172,10 +173,9 @@ function track_abstract_call_stack!(f::Function, sv, st = VirtualFrame[])
     return st
 end
 
-function get_file_line(frame::InferenceState)
-    linfo = get_cur_linfo(frame)
-    return linfo.file, linfo.line
-end
+get_file_line(frame::InferenceState) = get_file_line(get_cur_linfo(frame))
+get_file_line(linfo::LineInfoNode)   = linfo.file, linfo.line
+get_file_line(linfo::MethodInstance) = linfo.def.file, linfo.def.line
 
 # # adapted from https://github.com/JuliaLang/julia/blob/58febaaf2fe38d90d41c170bc2f416a76eac46f5/base/show.jl#L945-L958
 # function get_sig(linfo::MethodInstance)
@@ -193,7 +193,9 @@ end
 #     return String(take!(io))
 # end
 
-get_sig(sv::InferenceState) = return _get_sig(sv, get_cur_stmt(sv))
+# entry
+get_sig(::Type{<:InferenceErrorReport}, interp, sv, @nospecialize(args...)) = get_sig(sv)
+get_sig(sv::InferenceState) = _get_sig(sv, get_cur_stmt(sv))
 
 _get_sig(args...) = first(_get_sig_type(args...))
 

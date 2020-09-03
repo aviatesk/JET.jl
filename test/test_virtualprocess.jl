@@ -159,7 +159,7 @@ end
             return ex
         end
 
-        @foo sin()
+        @foo sin() # otherwise NoMethodError
         """
 
         virtualmod = gen_virtualmod()

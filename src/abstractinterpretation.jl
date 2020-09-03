@@ -112,7 +112,7 @@ function typeinf_local(interp::TPInterpreter, frame::InferenceState)
 
     ret = invoke_native(typeinf_local, interp, frame)
 
-    # virtual global variable assignment
+    # assign virtual global variable for toplevel frames
     if istoplevel(interp) && isroot(frame)
         for (pc, stmt) in enumerate(frame.src.code)
             isexpr(stmt, :(=)) && setvirtualglobalvar!(interp, frame, pc, stmt)

@@ -21,7 +21,7 @@ import Core.Compiler:
 
 # TODO: really use `using` instead
 import Core:
-    TypeofBottom, SimpleVector
+    TypeofBottom, SimpleVector, LineInfoNode
 
 import Core.Compiler:
     AbstractInterpreter, NativeInterpreter, InferenceState, InferenceResult, CodeInfo,
