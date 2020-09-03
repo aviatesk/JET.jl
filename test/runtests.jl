@@ -4,7 +4,7 @@ import Core.Compiler:
     widenconst
 
 import TypeProfiler:
-    TPInterpreter, generate_virtual_lambda, profile_call, profile_call_gf!,
+    TPInterpreter, generate_virtual_lambda, profile_call, profile_call_gf, profile_call_gf!,
     virtual_process!, report_errors, getvirtualglobalvar,
     ToplevelErrorReport, InferenceErrorReport
 

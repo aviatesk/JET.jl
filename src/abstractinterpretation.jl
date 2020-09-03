@@ -166,6 +166,12 @@ get_current_frame(interp::TPInterpreter) = interp.current_frame[]
 function finish(me::InferenceState, interp::TPInterpreter)
     ret = invoke(finish, Tuple{InferenceState,AbstractInterpreter}, me, interp)
 
+    # report `throw` calls "appropriately" by simple inter-frame analysis
+    # the basic stance here is really conservative so we don't report them unless they
+    # will be inevitably called can won't be caught by `try/catch` in frame at any level
+    # NOTE:
+    # this is better to happen here (after the optimization) to reduce the chance of false
+    # negative reports
     if get_result(me) === Bottom
         # report `throw`s only if there is no circumvent pass, which is represented by
         # `Bottom`-annotated return type inference with non-empty `throw` blocks
