@@ -158,19 +158,29 @@ end
 The setter and getter of a frame that `interp` is currently profiling.
 Current frame is needed when we assemble virtual stack frame from cached error reports.
 """
-set_current_frame!(interp::TPInterpreter, frame::InferenceState) = interp.frame[] = frame
-get_current_frame(interp::TPInterpreter) = interp.frame[]
+set_current_frame!(interp::TPInterpreter, frame::InferenceState) = interp.current_frame[] = frame
+get_current_frame(interp::TPInterpreter) = interp.current_frame[]
 
 # here we can work on `InferenceState` that inference already ran on it,
 # and also maybe optimization has been done
 function finish(me::InferenceState, interp::TPInterpreter)
     ret = invoke(finish, Tuple{InferenceState,AbstractInterpreter}, me, interp)
 
-    # report `throw`s only if there is no circumvent pass, which is represented by
-    # `Bottom`-annotated return type inference with non-empty `throw` blocks
     if get_result(me) === Bottom
-        throw_calls = filter(is_throw_call′, me.src.code)
-        isempty(throw_calls) || add_remark!(interp, me, ExceptionReport(me, interp, throw_calls))
+        if isroot(me)
+            # if return type is `Bottom`-annotated for root frame, this means some error(s)
+            # get propagated here, let's report `ExceptionReport` if exist
+            for (i, (idx, report)) in enumerate(interp.exceptionreports)
+                insert!(interp.reports, idx + i, report)
+            end
+        else
+            # report `throw`s only if there is no circumvent pass, which is represented by
+            # `Bottom`-annotated return type inference with non-empty `throw` blocks
+            throw_calls = filter(is_throw_call′, me.src.code)
+            if !isempty(throw_calls)
+                push!(interp.exceptionreports, length(interp.reports) => ExceptionReport(me, interp, throw_calls))
+            end
+        end
     end
 
     return ret

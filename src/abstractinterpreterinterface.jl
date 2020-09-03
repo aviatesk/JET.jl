@@ -8,8 +8,13 @@ struct TPInterpreter <: AbstractInterpreter
     discard_trees::Bool
 
     # TypeProfiler.jl specific
-    id::Symbol                 # for escaping reporting duplicated cached reports
-    frame::Ref{InferenceState} # for constructing virtual stack frame from cached reports
+    # for escaping reporting duplicated cached reports
+    id::Symbol
+    # for constructing virtual stack frame from cached reports
+    current_frame::Ref{InferenceState}
+    # keeping reports from frame that always `throw`
+    exceptionreports::Vector{Pair{Int,ExceptionReport}}
+
     istoplevel::Bool
     virtualglobalvartable::Dict{Module,Dict{Symbol,Any}} # maybe we don't need this nested dicts
     filter_native_remarks::Bool
@@ -37,6 +42,7 @@ struct TPInterpreter <: AbstractInterpreter
                    discard_trees,
                    id,
                    Ref{InferenceState}(),
+                   [],
                    istoplevel,
                    virtualglobalvartable,
                    filter_native_remarks,
