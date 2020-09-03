@@ -201,7 +201,7 @@ function generate_report_cacher(T, msg, sig, interp)
 end
 
 # traces the current abstract call stack
-function track_abstract_call_stack!(f::Function, sv, st = VirtualFrame[])
+function track_abstract_call_stack!(f::Function, sv::InferenceState, st = VirtualFrame[])
     sig = get_sig(sv)
     file, line = get_file_line(sv)
     frame = (; file, line, sig)
@@ -213,6 +213,10 @@ function track_abstract_call_stack!(f::Function, sv, st = VirtualFrame[])
 
     return st
 end
+track_abstract_call_stack!(sv::InferenceState, st = VirtualFrame[]) =
+    track_abstract_call_stack!(dummy_cacher, sv, st)
+
+dummy_cacher(args...) = return
 
 get_file_line(frame::InferenceState) = get_file_line(get_cur_linfo(frame))
 get_file_line(linfo::LineInfoNode)   = linfo.file, linfo.line
