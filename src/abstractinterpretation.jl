@@ -167,18 +167,18 @@ function finish(me::InferenceState, interp::TPInterpreter)
     ret = invoke(finish, Tuple{InferenceState,AbstractInterpreter}, me, interp)
 
     if get_result(me) === Bottom
+        # report `throw`s only if there is no circumvent pass, which is represented by
+        # `Bottom`-annotated return type inference with non-empty `throw` blocks
+        throw_calls = filter(is_throw_call′, me.src.code)
+        if !isempty(throw_calls)
+            push!(interp.exceptionreports, length(interp.reports) => ExceptionReport(me, interp, throw_calls))
+        end
+
         if isroot(me)
             # if return type is `Bottom`-annotated for root frame, this means some error(s)
             # get propagated here, let's report `ExceptionReport` if exist
             for (i, (idx, report)) in enumerate(interp.exceptionreports)
                 insert!(interp.reports, idx + i, report)
-            end
-        else
-            # report `throw`s only if there is no circumvent pass, which is represented by
-            # `Bottom`-annotated return type inference with non-empty `throw` blocks
-            throw_calls = filter(is_throw_call′, me.src.code)
-            if !isempty(throw_calls)
-                push!(interp.exceptionreports, length(interp.reports) => ExceptionReport(me, interp, throw_calls))
             end
         end
     end
