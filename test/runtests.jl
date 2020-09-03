@@ -49,15 +49,15 @@ end
 # %% test body
 # ------------
 
-@testset "virtualprocess.jl" begin
+@testset "virtual process" begin
     include("test_virtualprocess.jl")
 end
 
-@testset "abstractinterpretation.jl" begin
+@testset "abstract interpretation" begin
     include("test_abstractinterpretation.jl")
 end
 
-@testset "tfuncs.jl" begin
+@testset "tfuncs" begin
     include("test_tfuncs.jl")
 end
 

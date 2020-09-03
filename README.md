@@ -156,7 +156,7 @@ No errors !
 - more accurate error reports (especially builtin-calls, i.e. setup our own `tfunc`s)
 - report some cases of `throw` _appropriately_
   * e.g. we want to get reports for `rand(::Char) -> throw(ArgumentError("Sampler for this object is not defined"))`, while not for `sin(::Float64) -> throw(DomainError(x, "sin(x) is only defined for finite x."))`
-  * to address above case, we need some "inter-frame" analysis
+  * the above case is already half-solved by a simple inter-frame analysis with there's possibility of false negatives
 - report performance pitfalls
 - incremental profiling (for fast watch mode)
 - support virtual package loading (without actual loading, circumventing Revise.jl's limitation)
