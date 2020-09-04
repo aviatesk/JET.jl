@@ -35,12 +35,7 @@ struct TPInterpreter <: AbstractInterpreter
     reports::Vector{InferenceErrorReport}
 
     function TPInterpreter(world::UInt = get_world_counter();
-                           inf_params::InferenceParams = InferenceParams(;
-                               # turn off this to get profiles on `throw` blocks,
-                               # this might be good to default to `true` since `throw` calls
-                               # themselves will be reported anyway
-                               unoptimize_throw_blocks = true,
-                           ),
+                           inf_params::InferenceParams = gen_inf_params(),
                            opt_params::OptimizationParams = OptimizationParams(;
                                inlining = false,
                            ),
@@ -67,6 +62,19 @@ struct TPInterpreter <: AbstractInterpreter
                    filter_native_remarks,
                    [],
                    )
+    end
+end
+
+function gen_inf_params()
+    return @static if VERSION ≥ v"1.6.0-DEV.837"
+        InferenceParams(;
+            # turn off this to get profiles on `throw` blocks,
+            # this might be good to default to `true` since `throw` calls
+            # themselves will be reported anyway
+            unoptimize_throw_blocks = true,
+        )
+    else
+        InferenceParams()
     end
 end
 
