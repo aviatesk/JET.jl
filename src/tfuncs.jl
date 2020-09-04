@@ -8,7 +8,7 @@ function builtin_tfunction(interp::TPInterpreter, @nospecialize(f), argtypes::Ar
         mod, sym = map(a->a.val, argtypes)
 
         if mod isa Module && sym isa Symbol
-            ret = getvirtualglobalvar(interp, mod, sym)
+            ret = get_virtual_globalvar(interp, mod, sym)
         end
     end
 

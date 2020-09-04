@@ -5,10 +5,10 @@
         sum(s)
         """
 
-        virtualmod = gen_virtualmod()
-        res, interp = profile_toplevel!(s, virtualmod)
+        vmod = gen_virtualmod()
+        res, interp = profile_toplevel!(s, vmod)
 
-        @test widenconst(getvirtualglobalvar(interp, virtualmod, :s)) == String
+        @test widenconst(get_virtual_globalvar(interp, vmod, :s)) == String
         test_sum_over_string(res)
     end
 end

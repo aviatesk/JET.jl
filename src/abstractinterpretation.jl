@@ -64,7 +64,7 @@ function abstract_eval_special_value(interp::TPInterpreter, @nospecialize(e), vt
         #     add_remark!(interp, sv, UndefVarErrorReport(interp, sv, sv.mod, s))
         # end
     elseif isa(e, GlobalRef)
-        vgv = getvirtualglobalvar(interp, e.mod, e.name)
+        vgv = get_virtual_globalvar(interp, e.mod, e.name)
         if isnothing(vgv)
             check_global_ref!(interp, sv, e.mod, e.name) && (ret = Bottom) # ret here should annotated as `Any` by `NativeInterpreter`, but here I would like to be more conservative and change it to `Bottom`
         else
@@ -101,7 +101,7 @@ end
 # works as the native (i.e. "make as much progress on `frame` as possible (without handling
 # cycles)", but when `interp` is profiling on virtual toplevel lambda and `frame` is in
 # virtual toplevel (i.e. when `isroot(frame) === true`), keep the traced types of  `SlotNumber`s
-# (which are originally global variables) in `TPInterpreter.virtualglobalvartable` so that
+# (which are originally global variables) in `TPInterpreter.virtual_globalvar_table` so that
 # they can be referred across profilings on different virtual (toplevel) functions
 #
 # NOTE:
@@ -115,7 +115,7 @@ function typeinf_local(interp::TPInterpreter, frame::InferenceState)
     # assign virtual global variable for toplevel frames
     if istoplevel(interp) && isroot(frame)
         for (pc, stmt) in enumerate(frame.src.code)
-            isexpr(stmt, :(=)) && setvirtualglobalvar!(interp, frame, pc, stmt)
+            isexpr(stmt, :(=)) && set_virtual_globalvar!(interp, frame, pc, stmt)
         end
     end
 
@@ -124,14 +124,14 @@ end
 
 istoplevel(interp::TPInterpreter) = interp.istoplevel
 
-function getvirtualglobalvar(interp, mod, sym)
-    haskey(interp.virtualglobalvartable, mod) || return nothing
-    return get(interp.virtualglobalvartable[mod], sym, nothing)
+function get_virtual_globalvar(interp, mod, sym)
+    haskey(interp.virtual_globalvar_table, mod) || return nothing
+    return get(interp.virtual_globalvar_table[mod], sym, nothing)
 end
 
-function setvirtualglobalvar!(interp, frame, pc, stmt)
+function set_virtual_globalvar!(interp, frame, pc, stmt)
     mod = frame.mod
-    haskey(interp.virtualglobalvartable, mod) || (interp.virtualglobalvartable[mod] = Dict())
+    haskey(interp.virtual_globalvar_table, mod) || (interp.virtual_globalvar_table[mod] = Dict())
 
     slt = first(stmt.args)::Slot
     lhs = frame.src.slotnames[slt.id]::Symbol
@@ -140,7 +140,7 @@ function setvirtualglobalvar!(interp, frame, pc, stmt)
         rhs = Bottom
     end
 
-    interp.virtualglobalvartable[mod][lhs] = rhs
+    interp.virtual_globalvar_table[mod][lhs] = rhs
 end
 
 function typeinf_edge(interp::TPInterpreter, method::Method, @nospecialize(atypes), sparams::SimpleVector, caller::InferenceState)
@@ -177,13 +177,13 @@ function finish(me::InferenceState, interp::TPInterpreter)
         # `Bottom`-annotated return type inference with non-empty `throw` blocks
         throw_calls = filter(is_throw_call′, me.src.code)
         if !isempty(throw_calls)
-            push!(interp.exceptionreports, length(interp.reports) => ExceptionReport(me, interp, throw_calls))
+            push!(interp.exception_reports, length(interp.reports) => ExceptionReport(me, interp, throw_calls))
         end
 
         if isroot(me)
             # if return type is `Bottom`-annotated for root frame, this means some error(s)
             # get propagated here, let's report `ExceptionReport` if exist
-            for (i, (idx, report)) in enumerate(interp.exceptionreports)
+            for (i, (idx, report)) in enumerate(interp.exception_reports)
                 insert!(interp.reports, idx + i, report)
             end
         end

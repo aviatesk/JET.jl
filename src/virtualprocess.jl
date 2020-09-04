@@ -129,7 +129,7 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
         # if the importing of this global variable failed (because they don't not actually
         # get evaluated and thus not exist in `virtualmod`), but we can continue profiling
         # rather than throwing a toplevel error as far as we know its type (,which is kept
-        # in `interp.virtualglobalvartable`).
+        # in `interp.virtual_globalvar_table`).
         # To handle this, we need to restore `Module` object from arbitrary module usage
         # expressions, which can be a bit complicated
 
@@ -255,14 +255,14 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
         λ = generate_virtual_lambda(virtualmod, LineNumberNode(line, filename), x)
 
         interp = TPInterpreter(; # world age gets updated to take in `λ`
-                               inf_params            = InferenceParams(interp),
-                               opt_params            = OptimizationParams(interp),
-                               optimize              = may_optimize(interp),
-                               compress              = may_compress(interp),
-                               discard_trees         = may_discard_trees(interp),
-                               istoplevel            = !isa(x, Symbol) && !islocalscope(x), # disable virtual global variable assignment when profiling non-toplevel blocks
-                               virtualglobalvartable = interp.virtualglobalvartable, # pass on virtual global variable table
-                               filter_native_remarks = interp.filter_native_remarks,
+                               inf_params              = InferenceParams(interp),
+                               opt_params              = OptimizationParams(interp),
+                               optimize                = may_optimize(interp),
+                               compress                = may_compress(interp),
+                               discard_trees           = may_discard_trees(interp),
+                               istoplevel              = !isa(x, Symbol) && !islocalscope(x), # disable virtual global variable assignment when profiling non-toplevel blocks
+                               virtual_globalvar_table = interp.virtual_globalvar_table, # pass on virtual global variable table
+                               filter_native_remarks   = interp.filter_native_remarks,
                                )
 
         profile_call_gf!(interp, Tuple{typeof(λ)})

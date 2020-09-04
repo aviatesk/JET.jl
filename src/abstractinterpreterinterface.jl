@@ -13,10 +13,10 @@ struct TPInterpreter <: AbstractInterpreter
     # for constructing virtual stack frame from cached reports
     current_frame::Ref{InferenceState}
     # keeping reports from frame that always `throw`
-    exceptionreports::Vector{Pair{Int,ExceptionReport}}
+    exception_reports::Vector{Pair{Int,ExceptionReport}}
 
     istoplevel::Bool
-    virtualglobalvartable::Dict{Module,Dict{Symbol,Any}} # maybe we don't need this nested dicts
+    virtual_globalvar_table::Dict{Module,Dict{Symbol,Any}} # maybe we don't need this nested dicts
     filter_native_remarks::Bool
     reports::Vector{InferenceErrorReport}
 
@@ -34,7 +34,7 @@ struct TPInterpreter <: AbstractInterpreter
                            compress::Bool = false,
                            discard_trees::Bool = false,
                            istoplevel::Bool = false,
-                           virtualglobalvartable::AbstractDict = Dict(),
+                           virtual_globalvar_table::AbstractDict = Dict(),
                            filter_native_remarks::Bool = true,
                            )
         @assert !opt_params.inlining "inlining should be disabled"
@@ -49,7 +49,7 @@ struct TPInterpreter <: AbstractInterpreter
                    Ref{InferenceState}(),
                    [],
                    istoplevel,
-                   virtualglobalvartable,
+                   virtual_globalvar_table,
                    filter_native_remarks,
                    [],
                    )

@@ -56,18 +56,18 @@ end
             end
         end
         """
-        virtualmod = gen_virtualmod()
-        profile_toplevel!(s, virtualmod)
+        vmod = gen_virtualmod()
+        profile_toplevel!(s, vmod)
 
-        @test isdefined(virtualmod, :foo)
-        @test !isdefined(virtualmod, :foo′)
-        @test isdefined(virtualmod, Symbol("@foo"))
-        @test isdefined(virtualmod, :Foo)
-        @test isdefined(virtualmod, :Foo1)
-        @test isdefined(virtualmod, :Foo2)
-        @test isdefined(virtualmod, :Foo3)
-        @test isdefined(virtualmod, :Fix1)
-        @test !isempty(methodswith(getfield(virtualmod, :Foo), getproperty))
+        @test isdefined(vmod, :foo)
+        @test !isdefined(vmod, :foo′)
+        @test isdefined(vmod, Symbol("@foo"))
+        @test isdefined(vmod, :Foo)
+        @test isdefined(vmod, :Foo1)
+        @test isdefined(vmod, :Foo2)
+        @test isdefined(vmod, :Foo3)
+        @test isdefined(vmod, :Fix1)
+        @test !isempty(methodswith(getfield(vmod, :Foo), getproperty))
     end
 
     # "toplevel definitions" with access to global objects
@@ -83,13 +83,13 @@ end
         Foo()
         """
 
-        virtualmod = gen_virtualmod()
-        res, interp = profile_toplevel!(s, virtualmod)
+        vmod = gen_virtualmod()
+        res, interp = profile_toplevel!(s, vmod)
 
         # global variables aren't evaluated but kept in `interp` instead
-        @test !isdefined(virtualmod, :foo)
-        @test !isnothing(getvirtualglobalvar(interp, virtualmod, :foo))
-        @test isdefined(virtualmod, :Foo)
+        @test !isdefined(vmod, :foo)
+        @test !isnothing(get_virtual_globalvar(interp, vmod, :foo))
+        @test isdefined(vmod, :Foo)
         @test isempty(res.toplevel_error_reports)
         @test isempty(res.inference_error_reports)
     end
@@ -105,10 +105,10 @@ end
         end
         """
 
-        virtualmod = gen_virtualmod()
-        res, interp = profile_toplevel!(s, virtualmod)
+        vmod = gen_virtualmod()
+        res, interp = profile_toplevel!(s, vmod)
 
-        @test isdefined(virtualmod, :Foo)
+        @test isdefined(vmod, :Foo)
         @test isempty(res.toplevel_error_reports)
         @test isempty(res.inference_error_reports)
     end
@@ -126,11 +126,11 @@ end
         end
         """
 
-        virtualmod = gen_virtualmod()
-        res, interp = profile_toplevel!(s, virtualmod)
+        vmod = gen_virtualmod()
+        res, interp = profile_toplevel!(s, vmod)
 
-        @test !isdefined(virtualmod, :i)
-        @test isnothing(getvirtualglobalvar(interp, virtualmod, :i))
+        @test !isdefined(vmod, :i)
+        @test isnothing(get_virtual_globalvar(interp, vmod, :i))
         @test isempty(res.toplevel_error_reports)
         @test_broken isempty(res.inference_error_reports)
     end
@@ -143,10 +143,10 @@ end
         foo(10)
         """
 
-        virtualmod = gen_virtualmod()
-        res, interp = profile_toplevel!(s, virtualmod)
+        vmod = gen_virtualmod()
+        res, interp = profile_toplevel!(s, vmod)
 
-        @test isdefined(virtualmod, :foo)
+        @test isdefined(vmod, :foo)
         @test isempty(res.toplevel_error_reports)
         @test isempty(res.inference_error_reports)
     end
@@ -162,10 +162,10 @@ end
         @foo sin() # otherwise NoMethodError
         """
 
-        virtualmod = gen_virtualmod()
-        res, interp = profile_toplevel!(s, virtualmod)
+        vmod = gen_virtualmod()
+        res, interp = profile_toplevel!(s, vmod)
 
-        @test isdefined(virtualmod, Symbol("@foo"))
+        @test isdefined(vmod, Symbol("@foo"))
         @test isempty(res.toplevel_error_reports)
         @test isempty(res.inference_error_reports)
     end
@@ -184,10 +184,10 @@ end
         @foo sin()
         """
 
-        virtualmod = gen_virtualmod()
-        res, interp = profile_toplevel!(s, virtualmod)
+        vmod = gen_virtualmod()
+        res, interp = profile_toplevel!(s, vmod)
 
-        @test isdefined(virtualmod, Symbol("@foo"))
+        @test isdefined(vmod, Symbol("@foo"))
         @test_broken isempty(res.toplevel_error_reports)
         @test isempty(res.inference_error_reports)
     end
@@ -227,12 +227,12 @@ end
         f2 = normpath(FIXTURE_DIR, "include1.jl")
         s = read(f1, String)
 
-        virtualmod = gen_virtualmod()
-        res, interp = profile_toplevel!(s, virtualmod; filename = f1)
+        vmod = gen_virtualmod()
+        res, interp = profile_toplevel!(s, vmod; filename = f1)
 
         @test f1 in res.included_files
         @test f2 in res.included_files
-        @test isdefined(virtualmod, :foo)
+        @test isdefined(vmod, :foo)
         @test isempty(res.toplevel_error_reports)
         @test isempty(res.inference_error_reports)
     end
@@ -499,10 +499,10 @@ end
         const constvar = rand(Bool)
         """
 
-        virtualmod = gen_virtualmod()
-        res, interp = profile_toplevel!(s, virtualmod)
-        @test !isnothing(getvirtualglobalvar(interp, virtualmod, :var))
-        @test !isnothing(getvirtualglobalvar(interp, virtualmod, :constvar))
+        vmod = gen_virtualmod()
+        res, interp = profile_toplevel!(s, vmod)
+        @test !isnothing(get_virtual_globalvar(interp, vmod, :var))
+        @test !isnothing(get_virtual_globalvar(interp, vmod, :constvar))
     end
 
     # local variables shouldn't leak into global
@@ -523,8 +523,8 @@ end
                                         """
                                         )
 
-        virtualmod = gen_virtualmod()
-        res, interp = profile_toplevel!(s, virtualmod)
-        @test isnothing(getvirtualglobalvar(interp, virtualmod, :localvar))
+        vmod = gen_virtualmod()
+        res, interp = profile_toplevel!(s, vmod)
+        @test isnothing(get_virtual_globalvar(interp, vmod, :localvar))
     end
 end

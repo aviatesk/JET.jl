@@ -18,7 +18,7 @@ end
 
 function restore_cached_report!(cache::InferenceReportCache{ExceptionReport}, interp)
     report = restore_cached_report(ExceptionReport, cache, interp)
-    push!(interp.exceptionreports, length(interp.reports) => report)
+    push!(interp.exception_reports, length(interp.reports) => report)
 end
 
 function restore_cached_report(T, cache, interp)
