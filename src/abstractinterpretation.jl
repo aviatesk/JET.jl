@@ -161,14 +161,14 @@ Current frame is needed when we assemble virtual stack frame from cached error r
 set_current_frame!(interp::TPInterpreter, frame::InferenceState) = interp.current_frame[] = frame
 get_current_frame(interp::TPInterpreter) = interp.current_frame[]
 
-# here we can work on `InferenceState` that inference already ran on it,
+# in this overload we can work on `InferenceState` that inference already ran on,
 # and also maybe optimization has been done
 function finish(me::InferenceState, interp::TPInterpreter)
     ret = invoke(finish, Tuple{InferenceState,AbstractInterpreter}, me, interp)
 
     # report `throw` calls "appropriately" by simple inter-frame analysis
     # the basic stance here is really conservative so we don't report them unless they
-    # will be inevitably called can won't be caught by `try/catch` in frame at any level
+    # will be inevitably called and won't be caught by `try/catch` in frame at any level
     # NOTE:
     # this is better to happen here (after the optimization) to reduce the chance of false
     # negative reports
@@ -182,7 +182,8 @@ function finish(me::InferenceState, interp::TPInterpreter)
 
         if isroot(me)
             # if return type is `Bottom`-annotated for root frame, this means some error(s)
-            # get propagated here, let's report `ExceptionReport` if exist
+            # aren't caught by at any level and get propagated here, and so let's report
+            # `ExceptionReport` if exist
             for (i, (idx, report)) in enumerate(interp.exception_reports)
                 insert!(interp.reports, idx + i, report)
             end

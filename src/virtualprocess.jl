@@ -10,10 +10,10 @@ const VirtualProcessResult = @NamedTuple begin
     inference_error_reports::Vector{InferenceErrorReport}
 end
 
-generate_virtual_process_result() = (; included_files = Set{String}(),
-                                       toplevel_error_reports = ToplevelErrorReport[],
-                                       inference_error_reports = InferenceErrorReport[],
-                                       )::VirtualProcessResult
+gen_virtual_process_result() = (; included_files = Set{String}(),
+                                  toplevel_error_reports = ToplevelErrorReport[],
+                                  inference_error_reports = InferenceErrorReport[],
+                                  )::VirtualProcessResult
 
 const TYPEPROFILERJL_SELF_REFERENCE_SYM = :TYPEPROFILERJL_SELF_REFERENCE_SYM
 
@@ -66,7 +66,7 @@ function virtual_process!(s::AbstractString,
                           actualmodsym::Symbol,
                           virtualmod::Module,
                           interp::TPInterpreter,
-                          ret::VirtualProcessResult = generate_virtual_process_result(),
+                          ret::VirtualProcessResult = gen_virtual_process_result(),
                           )::Tuple{VirtualProcessResult,TPInterpreter}
     push!(ret.included_files, filename)
 
@@ -252,7 +252,7 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
 
         shouldprofile(x) || continue
 
-        λ = generate_virtual_lambda(virtualmod, LineNumberNode(line, filename), x)
+        λ = gen_virtual_lambda(virtualmod, LineNumberNode(line, filename), x)
 
         interp = TPInterpreter(; # world age gets updated to take in `λ`
                                inf_params              = InferenceParams(interp),
@@ -361,10 +361,10 @@ shouldprofile(@nospecialize(_)) = false
 shouldprofile(::Expr)           = true
 shouldprofile(::Symbol)         = true
 
-generate_virtual_module(actualmod) =
-    return Core.eval(actualmod, :(module $(gensym(:TypeProfilerVirtualModule)) end))::Module
+gen_virtual_module(actualmod) =
+    Core.eval(actualmod, :(module $(gensym(:TypeProfilerVirtualModule)) end))::Module
 
-function generate_virtual_lambda(mod, lnn, x)
+function gen_virtual_lambda(mod, lnn, x)
     funcbody = Expr(:block, lnn, x)
     funcex   = Expr(:function, #=nullary lambda=# Expr(:tuple), funcbody)
     return Core.eval(mod, funcex)::Function

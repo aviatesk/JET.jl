@@ -36,9 +36,7 @@ struct TPInterpreter <: AbstractInterpreter
 
     function TPInterpreter(world::UInt = get_world_counter();
                            inf_params::InferenceParams = gen_inf_params(),
-                           opt_params::OptimizationParams = OptimizationParams(;
-                               inlining = false,
-                           ),
+                           opt_params::OptimizationParams = gen_opt_params(),
                            optimize::Bool = true,
                            compress::Bool = false,
                            discard_trees::Bool = false,
@@ -68,7 +66,7 @@ end
 function gen_inf_params()
     return @static if VERSION ≥ v"1.6.0-DEV.837"
         InferenceParams(;
-            # turn off this to get profiles on `throw` blocks,
+            # turn this off to get profiles on `throw` blocks,
             # this might be good to default to `true` since `throw` calls
             # themselves will be reported anyway
             unoptimize_throw_blocks = true,
@@ -76,6 +74,14 @@ function gen_inf_params()
     else
         InferenceParams()
     end
+end
+
+function gen_opt_params()
+    return OptimizationParams(;
+        # inlining should be disable for `TPInterpreter`, otherwise virtual stack frame
+        # traversing will fail for frames after optimizer runs on
+        inlining = false,
+    )
 end
 
 InferenceParams(interp::TPInterpreter) = InferenceParams(interp.native)

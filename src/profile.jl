@@ -43,7 +43,7 @@ function report_errors(logger::IO, args...; kwargs...)
 end
 
 function report_errors(actualmod, text, filename; filter_native_remarks = true)
-    virtualmod = generate_virtual_module(actualmod)
+    virtualmod = gen_virtual_module(actualmod)
 
     interp = TPInterpreter(; filter_native_remarks) # dummy
     actualmodsym = Symbol(actualmod)
@@ -53,12 +53,12 @@ function report_errors(actualmod, text, filename; filter_native_remarks = true)
            # non-empty `ret.toplevel_error_reports` means critical errors happened during
            # the AST transformation, so they always have precedence over `ret.inference_error_reports`
            !isempty(ret.toplevel_error_reports) ? ret.toplevel_error_reports : ret.inference_error_reports,
-           generate_postprocess(virtualmod, actualmod)
+           gen_postprocess(virtualmod, actualmod)
 end
 
 # fix virtual module printing based on string manipulation; the "actual" modules may not be
 # loaded into this process
-function generate_postprocess(virtualmod, actualmod)
+function gen_postprocess(virtualmod, actualmod)
     virtual = string(virtualmod)
     actual  = string(actualmod)
     return actualmod == Main ?

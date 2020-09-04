@@ -104,7 +104,7 @@ macro reportdef(ex)
         msg = get_msg(#= T, interp, sv, ... =# $(args...))
         sig = get_sig(#= T, interp, sv, ... =# $(args...))
 
-        cache_report! = generate_report_cacher($(T), msg, sig, #= interp =# $(args[2]))
+        cache_report! = gen_report_cacher($(T), msg, sig, #= interp =# $(args[2]))
         st = track_abstract_call_stack!(cache_report!, #= sv =# $(args[3]))
 
         return new(reverse(st), msg, sig)
@@ -156,7 +156,7 @@ struct ExceptionReport <: InferenceErrorReport
         msg = get_msg(ExceptionReport, interp, sv, throw_calls)
         sig = get_sig(ExceptionReport, interp, sv, throw_calls)
 
-        cache_report! = generate_report_cacher(ExceptionReport, msg, sig, interp)
+        cache_report! = gen_report_cacher(ExceptionReport, msg, sig, interp)
 
         # we can't just call `track_abstract_call_stack(cache_report!, sv)` here since this
         # constructor is supposed to be called _after_ the type inference on `sv` has been
@@ -188,7 +188,7 @@ Ideally all of them should be covered by the other `InferenceErrorReport`s.
 """
 @reportdef NativeRemark(interp, sv, s)
 
-function generate_report_cacher(T, msg, sig, interp)
+function gen_report_cacher(T, msg, sig, interp)
     return function (sv, st)
         key = hash(sv.linfo)
         if haskey(TPCACHE, key)
