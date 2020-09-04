@@ -2,12 +2,17 @@
 # -------------------------
 
 struct TPInterpreter <: AbstractInterpreter
+    #= native =#
+
     native::NativeInterpreter
     optimize::Bool
     compress::Bool
     discard_trees::Bool
 
-    # TypeProfiler.jl specific
+    #= TypeProfiler.jl specific =#
+
+    # caching
+    # -------
     # for escaping reporting duplicated cached reports
     id::Symbol
     # for constructing virtual stack frame from cached reports
@@ -15,9 +20,18 @@ struct TPInterpreter <: AbstractInterpreter
     # keeping reports from frame that always `throw`
     exception_reports::Vector{Pair{Int,ExceptionReport}}
 
+    # virtual toplevel execution
+    # --------------------------
+    # tracks this the currrent frame is toplevel (and should assign virtual global variables)
     istoplevel::Bool
+    # keeps virtual global variables
     virtual_globalvar_table::Dict{Module,Dict{Symbol,Any}} # maybe we don't need this nested dicts
+
+    # profiling
+    # ---------
+    # disabling caching of native remarks can speed up profiling time
     filter_native_remarks::Bool
+    # reports found so far
     reports::Vector{InferenceErrorReport}
 
     function TPInterpreter(world::UInt = get_world_counter();
