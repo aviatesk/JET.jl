@@ -12,19 +12,20 @@ const TPCACHE = Dict{UInt,Pair{Symbol,Vector{InferenceReportCache}}}()
 get_id(interp::TPInterpreter) = interp.id
 
 function restore_cached_report!(cache::InferenceReportCache{T}, interp) where {T<:InferenceErrorReport}
-    sv = get_current_frame(interp)
-    cur_st = track_abstract_call_stack!(sv)
-    st = vcat(cache.st, cur_st)
-    report = T(st, cache.msg, cache.sig)
+    report = T(ExceptionReport, cache, interp)
     push!(interp.reports, report)
 end
 
 function restore_cached_report!(cache::InferenceReportCache{ExceptionReport}, interp)
+    report = restore_cached_report(ExceptionReport, cache, interp)
+    push!(interp.exceptionreports, length(interp.reports) => report)
+end
+
+function restore_cached_report(T, cache, interp)
     sv = get_current_frame(interp)
     cur_st = track_abstract_call_stack!(sv)
     st = vcat(cache.st, cur_st)
-    report = ExceptionReport(st, cache.msg, cache.sig)
-    push!(interp.exceptionreports, length(interp.reports) => report)
+    return T(st, cache.msg, cache.sig)
 end
 
 # code cache interface

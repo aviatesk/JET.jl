@@ -158,6 +158,9 @@ struct ExceptionReport <: InferenceErrorReport
 
         cache_report! = generate_report_cacher(ExceptionReport, msg, sig, interp)
 
+        # we can't just call `track_abstract_call_stack(cache_report!, sv)` here since this
+        # constructor is supposed to be called _after_ the type inference on `sv` has been
+        # done and the program pointer has proceeded to the end
         st = let
             local sig = Any["unreachable"]
             file, line = get_file_line(sv.linfo) # just use this frame's location
