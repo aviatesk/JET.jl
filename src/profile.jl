@@ -99,14 +99,14 @@ function profile_call_gf!(interp::TPInterpreter,
     return interp, frame
 end
 
-# inference helper
-# ----------------
+# for testing, interactive session
+# --------------------------------
 
 @nospecialize
 
-function profile_call(f, args...)
-    tt = to_tuple_type(typeof′.([f, args...]))
-    return profile_call_gf(tt)
+function profile_call(f, argtypes...; kwargs...)
+    tt = to_tuple_type([typeof′(f), argtypes...])
+    return profile_call_gf(tt; kwargs...)
 end
 
 typeof′(x) = typeof(x)
@@ -119,8 +119,8 @@ macro profile_call(ex, kwargs...)
     f = ex.args[1]
     args = ex.args[2:end]
 
-    quote let
-        interp, frame = $(profile_call)($(esc(f)), $(map(esc, args)...))
+    return quote let
+        interp, frame = $(profile_call)($(esc(f)), $(typeof′).($(map(esc, args)...)))
         $(print_reports)(stdout, interp.reports; $(map(esc, kwargs)...))
         $(get_result)(frame) # maybe want to widen const ?
     end end

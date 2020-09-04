@@ -24,7 +24,7 @@ end
     # throws in deep level
     let
         foo(a) = throw(a)
-        interp, frame = profile_call((a)->foo(a), 1)
+        interp, frame = profile_call(()->foo("foo"))
         @test !isempty(interp.reports)
         @test first(interp.reports) isa ExceptionReport
     end
@@ -32,16 +32,14 @@ end
     # don't report possibly false negative `throw`s
     let
         foo(a) = a ≤ 0 ? throw("a is $(a)") : a
-        λ = a -> foo(a)
-        interp, frame = profile_call_gf(Tuple{typeof(λ),Int})
+        interp, frame = profile_call(foo, Int)
         @test isempty(interp.reports)
     end
 
     # constant propagation sometimes helps exclude false negatives
     let
         foo(a) = a ≤ 0 ? throw("a is $(a)") : a
-        λ = () -> foo(0)
-        interp, frame = profile_call_gf(Tuple{typeof(λ)})
+        interp, frame = profile_call(()->foo(0))
         @test !isempty(interp.reports)
         @test first(interp.reports) isa ExceptionReport
     end
@@ -49,12 +47,17 @@ end
     # end to end
     let
         # this should report `throw(ArgumentError("Sampler for this object is not defined")`
-        interp, frame = profile_call(rand, '1')
+        interp, frame = profile_call(rand, Char)
         @test !isempty(interp.reports)
         @test first(interp.reports) isa ExceptionReport
 
         # this should not report `throw(DomainError(x, "sin(x) is only defined for finite x."))`
-        interp, frame = profile_call(sin, 1)
+        interp, frame = profile_call(sin, Int)
         @test isempty(interp.reports)
+
+        # again, constant propagation sometimes can exclude false negatives
+        interp, frame = profile_call(()->sin(Inf))
+        @test !isempty(interp.reports)
+        @test first(interp.reports) isa ExceptionReport
     end
 end

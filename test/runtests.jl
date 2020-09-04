@@ -7,7 +7,7 @@ import Core.Compiler:
     widenconst
 
 import TypeProfiler:
-    TPInterpreter, gen_virtual_lambda, profile_call, profile_call_gf, profile_call_gf!,
+    TPInterpreter, gen_virtual_lambda, profile_call,
     virtual_process!, report_errors, get_virtual_globalvar,
     ToplevelErrorReport, InferenceErrorReport
 
@@ -22,7 +22,7 @@ const FIXTURE_DIR = normpath(@__DIR__, "fixtures")
 gen_virtualmod() = Core.eval(@__MODULE__, :(module $(gensym(:TypeProfilerTestVirtualModule)) end))
 
 const ERROR_REPORTS_FOR_SUM_OVER_STRING = let
-    interp, frame = TypeProfiler.profile_call(sum, "julia")
+    interp, frame = profile_call(sum, String)
     @test !isempty(interp.reports)
     interp.reports
 end
