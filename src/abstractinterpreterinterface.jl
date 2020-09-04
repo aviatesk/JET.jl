@@ -66,9 +66,8 @@ end
 function gen_inf_params()
     return @static if VERSION ≥ v"1.6.0-DEV.837"
         InferenceParams(;
-            # turn this off to get profiles on `throw` blocks,
-            # this might be good to default to `true` since `throw` calls
-            # themselves will be reported anyway
+            # turn this off to get profiles on `throw` blocks, this might be good to default
+            # to `true` since `throw` calls themselves will be reported anyway
             unoptimize_throw_blocks = true,
         )
     else
