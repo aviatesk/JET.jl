@@ -12,7 +12,7 @@ const TPCACHE = Dict{UInt,Pair{Symbol,Vector{InferenceReportCache}}}()
 get_id(interp::TPInterpreter) = interp.id
 
 function restore_cached_report!(cache::InferenceReportCache{T}, interp) where {T<:InferenceErrorReport}
-    report = T(ExceptionReport, cache, interp)
+    report = restore_cached_report(T, cache, interp)
     push!(interp.reports, report)
 end
 
