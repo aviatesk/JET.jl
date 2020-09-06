@@ -12,7 +12,9 @@ import Core.Compiler:
     # abstractinterpretation.jl
     abstract_call_gf_by_type, abstract_call_known, abstract_call,
     abstract_eval_special_value, abstract_eval_value_expr, abstract_eval_value,
-    abstract_eval_statement, builtin_tfunction, typeinf_local, typeinf_edge, finish,
+    abstract_eval_statement, typeinf_local, typeinf_edge, finish,
+    # tfuncs.jl
+    builtin_tfunction, return_type_tfunc,
     # tpcache.jl
     WorldView
 

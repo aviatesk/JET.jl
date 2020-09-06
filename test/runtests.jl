@@ -7,7 +7,7 @@ import Core.Compiler:
     widenconst
 
 import TypeProfiler:
-    TPInterpreter, gen_virtual_lambda, profile_call,
+    TPInterpreter, gen_virtual_lambda, profile_call, get_result,
     virtual_process!, report_errors, get_virtual_globalvar,
     ToplevelErrorReport, InferenceErrorReport
 
@@ -17,11 +17,12 @@ for sym in Symbol.(last.(Base.Fix2(split, '.').(string.(vcat(subtypes(TypeProfil
     Core.eval(@__MODULE__, :(import TypeProfiler: $(sym)))
 end
 
+const CC = Core.Compiler
 
 const FIXTURE_DIR = normpath(@__DIR__, "fixtures")
 gen_virtualmod() = Core.eval(@__MODULE__, :(module $(gensym(:TypeProfilerTestVirtualModule)) end))
 
-const ERROR_REPORTS_FOR_SUM_OVER_STRING = let
+const ERROR_REPORTS_FROM_SUM_OVER_STRING = let
     interp, frame = profile_call(sum, String)
     @test !isempty(interp.reports)
     interp.reports
@@ -29,7 +30,7 @@ end
 
 function test_sum_over_string(ers::AbstractVector)
     @test !isempty(ers)
-    for target in ERROR_REPORTS_FOR_SUM_OVER_STRING
+    for target in ERROR_REPORTS_FROM_SUM_OVER_STRING
         @test any(ers) do er
             return er.msg == target.msg && er.sig == target.sig
         end
