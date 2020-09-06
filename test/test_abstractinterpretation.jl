@@ -1,3 +1,37 @@
+@testset "union-split method matching" begin
+    # if there is no method matching case in union-split, it should be reported
+    let
+        # NOTE: we can't just wrap them into `let`, closures can't be inferred correctly
+        m = gen_virtualmod()
+        interp, frame = Core.eval(m, quote
+            foo(a::Integer) = :Integer
+            foo(a::AbstractString) = "AbstractString"
+
+            $(profile_call)(a->foo(a), Union{Nothing,Int})
+        end)
+
+        @test !isempty(interp.reports)
+        @test any(Fix2(isa, NoMethodErrorReport), interp.reports)
+    end
+
+    # constant propagation should limit false positive union-split no method reports
+    let
+        m = gen_virtualmod()
+        interp, frame = Core.eval(m, quote
+            mutable struct P
+                s::String
+                i::Int
+            end
+            foo(p, v) = setproperty!(p, :i, v)
+
+            # we don't want `for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)` report for this
+            $(profile_call)(foo, P, Int)
+        end)
+
+        @test_broken isempty(interp.reports)
+    end
+end
+
 @testset "inference with virtual global variable" begin
     let
         s = """

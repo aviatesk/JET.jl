@@ -17,6 +17,9 @@ for sym in Symbol.(last.(Base.Fix2(split, '.').(string.(vcat(subtypes(TypeProfil
     Core.eval(@__MODULE__, :(import TypeProfiler: $(sym)))
 end
 
+import Base:
+    Fix1, Fix2
+
 const CC = Core.Compiler
 
 const FIXTURE_DIR = normpath(@__DIR__, "fixtures")
