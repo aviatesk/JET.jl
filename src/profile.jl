@@ -104,10 +104,12 @@ end
 
 @nospecialize
 
-function profile_call(f, argtypes...; kwargs...)
+function profile_call(f, argtypes::Type...; kwargs...)
     tt = to_tuple_type([typeof′(f), argtypes...])
     return profile_call_gf(tt; kwargs...)
 end
+
+profile_call(f, argtypes; kwargs...) = profile_call(f, argtypes...; kwargs...)
 
 typeof′(x) = typeof(x)
 typeof′(x::Type{T}) where {T} = Type{T}
@@ -120,7 +122,8 @@ macro profile_call(ex, kwargs...)
     args = ex.args[2:end]
 
     return quote let
-        interp, frame = $(profile_call)($(esc(f)), $(typeof′).($(map(esc, args)...)))
+        argtypes = $(typeof′).(($(map(esc, args)...),))
+        interp, frame = $(profile_call)($(esc(f)), argtypes)
         $(print_reports)(stdout, interp.reports; $(map(esc, kwargs)...))
         $(get_result)(frame) # maybe want to widen const ?
     end end
