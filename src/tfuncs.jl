@@ -13,7 +13,8 @@ function builtin_tfunction(interp::TPInterpreter, @nospecialize(f), argtypes::Ar
     end
 
     if f === throw
-        # TODO: needs a special case here
+        # NOTE: handled in `finish(me::InferenceState, interp::TPInterpreter)`
+        return ret
     elseif ret === Bottom
         add_remark!(interp, sv, InvalidBuiltinCallErrorReport(interp, sv))
     end

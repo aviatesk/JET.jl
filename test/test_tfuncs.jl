@@ -48,7 +48,6 @@ end
         interp, frame = profile_call(()->Dict('a' => 1,
                                               :b => 2)
                                      )
-        @show interp.reports
         @test isempty(interp.reports)
     end
 end
