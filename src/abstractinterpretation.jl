@@ -177,7 +177,7 @@ function finish(me::InferenceState, interp::TPInterpreter)
         # `Bottom`-annotated return type inference with non-empty `throw` blocks
         throw_calls = filter(is_throw_call′, me.src.code)
         if !isempty(throw_calls)
-            push!(interp.exception_reports, length(interp.reports) => ExceptionReport(me, interp, throw_calls))
+            push!(interp.exception_reports, length(interp.reports) => ExceptionReport(interp, me, throw_calls))
         end
 
         if isroot(me)

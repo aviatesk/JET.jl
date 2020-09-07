@@ -152,7 +152,7 @@ struct ExceptionReport <: InferenceErrorReport
     # during abstract interpretation
 
     # inner constructor (from abstract interpretation)
-    function ExceptionReport(sv::InferenceState, interp, throw_calls)
+    function ExceptionReport(interp, sv, throw_calls)
         msg = get_msg(ExceptionReport, interp, sv, throw_calls)
         sig = get_sig(ExceptionReport, interp, sv, throw_calls)
 
