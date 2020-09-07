@@ -22,13 +22,13 @@
                 s::String
                 i::Int
             end
-            foo(p, v) = setproperty!(p, :i, v)
+            foo(p, v) = p.i = v
 
-            # we don't want `for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)` report for this
+            # we don't want "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)" report for this
             $(profile_call)(foo, P, Int)
         end)
 
-        @test_broken isempty(interp.reports)
+        @test isempty(interp.reports)
     end
 end
 

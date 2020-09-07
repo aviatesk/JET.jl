@@ -53,16 +53,18 @@ end
 # %% test body
 # ------------
 
-@testset "virtual process" begin
-    include("test_virtualprocess.jl")
-end
+@testset "TypeProfiler.jl" begin
+    @testset "virtual process" begin
+        include("test_virtualprocess.jl")
+    end
 
-@testset "abstract interpretation" begin
-    include("test_abstractinterpretation.jl")
-end
+    @testset "abstract interpretation" begin
+        include("test_abstractinterpretation.jl")
+    end
 
-@testset "tfuncs" begin
-    include("test_tfuncs.jl")
+    @testset "tfuncs" begin
+        include("test_tfuncs.jl")
+    end
 end
 
 # # favorite

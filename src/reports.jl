@@ -94,20 +94,21 @@ macro reportdef(ex)
     T = first(ex.args)
     args = map(ex.args) do x
         # unwrap @nospecialize
-        isexpr(x, :macrocall) && first(x.args) === Symbol("@nospecialize") && (x = last(x.args))
+        isexpr(x, :macrocall) && first(x.args) === Symbol("@nospecialize") && (x = esc(last(x.args))) # `esc` is needed because `@nospecialize` escapes its argument anyway
         # handle default arguments
         isexpr(x, :(=)) && return first(x.args)
         return x
     end
+    spec_args = args[4:end] # those additional, specific fields
 
     constructor_body = quote
         msg = get_msg(#= T, interp, sv, ... =# $(args...))
         sig = get_sig(#= T, interp, sv, ... =# $(args...))
 
-        cache_report! = gen_report_cacher($(T), msg, sig, #= interp =# $(args[2]))
+        cache_report! = gen_report_cacher(msg, sig, #= T, interp, sv, ... =# $(args...))
         st = track_abstract_call_stack!(cache_report!, #= sv =# $(args[3]))
 
-        return new(reverse(st), msg, sig)
+        return new(reverse(st), msg, sig, $(spec_args...))
     end
     constructor_ex = Expr(:function, ex, constructor_body)
 
@@ -116,25 +117,26 @@ macro reportdef(ex)
             st::VirtualStackTrace
             msg::String
             sig::Vector{Any}
+            $(spec_args...)
 
             # inner constructor (from abstract interpretation)
             $(constructor_ex)
 
             # inner constructor (from cache)
-            function $(T)(st::VirtualStackTrace, msg::AbstractString, sig::AbstractVector)
-                return new(reverse(st), msg, sig)
+            function $(T)(st::VirtualStackTrace, msg::AbstractString, sig::AbstractVector, @nospecialize(args::NTuple{N, Any} where N))
+                return new(reverse(st), msg, sig, $(esc(:(args...)))) # `esc` is needed because `@nospecialize` escapes its argument anyway
             end
         end
     end
 end
 
-@reportdef NoMethodErrorReport(interp, sv, unionsplit)
+@reportdef NoMethodErrorReport(interp, sv, unionsplit::Bool, @nospecialize(atype::Type))
 
 @reportdef InvalidBuiltinCallErrorReport(interp, sv)
 
-@reportdef UndefVarErrorReport(interp, sv, mod, name)
+@reportdef UndefVarErrorReport(interp, sv, mod::Module, name::Symbol)
 
-@reportdef NonBooleanCondErrorReport(interp, sv, @nospecialize(t))
+@reportdef NonBooleanCondErrorReport(interp, sv, @nospecialize(t::Type))
 
 """
     ExceptionReport <: InferenceErrorReport
@@ -146,6 +148,7 @@ struct ExceptionReport <: InferenceErrorReport
     st::VirtualStackTrace
     msg::String
     sig::Vector{Any}
+    throw_calls::Vector{Any}
 
     # the constructors below are needed to be special cased, since `ExceptionReport` is
     # reported _after_ the inference on `sv::InferenceState` has been done rather than
@@ -156,7 +159,7 @@ struct ExceptionReport <: InferenceErrorReport
         msg = get_msg(ExceptionReport, interp, sv, throw_calls)
         sig = get_sig(ExceptionReport, interp, sv, throw_calls)
 
-        cache_report! = gen_report_cacher(ExceptionReport, msg, sig, interp)
+        cache_report! = gen_report_cacher(msg, sig, ExceptionReport, interp, sv, throw_calls)
 
         # we can't just call `track_abstract_call_stack(cache_report!, sv)` here since this
         # constructor is supposed to be called _after_ the type inference on `sv` has been
@@ -171,12 +174,12 @@ struct ExceptionReport <: InferenceErrorReport
             isroot(sv) ? st : track_abstract_call_stack!(cache_report!, sv.parent, st) # postwalk
         end
 
-        return new(reverse(st), msg, sig)
+        return new(reverse(st), msg, sig, throw_calls)
     end
 
     # inner constructor (from cache)
-    function ExceptionReport(st::VirtualStackTrace, msg::AbstractString, sig::AbstractVector)
-        return new(reverse(st), msg, sig)
+    function ExceptionReport(st::VirtualStackTrace, msg::AbstractString, sig::AbstractVector, args::Tuple{Vector{Any}})
+        return new(reverse(st), msg, sig, first(args))
     end
 end
 
@@ -186,9 +189,9 @@ end
 This special `InferenceErrorReport` is just for wrapping remarks from `NativeInterpreter`.
 Ideally all of them should be covered by the other `InferenceErrorReport`s.
 """
-@reportdef NativeRemark(interp, sv, s)
+@reportdef NativeRemark(interp, sv, s::String)
 
-function gen_report_cacher(T, msg, sig, interp)
+function gen_report_cacher(msg, sig, T, interp, #= sv =# _, args...)
     return function (sv, st)
         key = hash(sv.linfo)
         if haskey(TPCACHE, key)
@@ -199,7 +202,7 @@ function gen_report_cacher(T, msg, sig, interp)
             TPCACHE[key] = id => cached_reports
         end
 
-        push!(cached_reports, InferenceReportCache{T}(view(st, :), msg, sig))
+        push!(cached_reports, InferenceReportCache{T}(view(st, :), msg, sig, args))
     end
 end
 
@@ -314,7 +317,7 @@ function _get_sig_type(::InferenceState, qn::QuoteNode)
 end
 _get_sig_type(::InferenceState, @nospecialize(x)) = Any[repr(x; context = :compact => true)], nothing
 
-get_msg(::Type{NoMethodErrorReport}, interp, sv, unionsplit) = unionsplit ?
+get_msg(::Type{NoMethodErrorReport}, interp, sv, unionsplit, @nospecialize(atype)) = unionsplit ?
     "for one of the union split cases, no matching method found for signature" :
     "no matching method found for call signature"
 get_msg(::Type{InvalidBuiltinCallErrorReport}, interp, sv) =

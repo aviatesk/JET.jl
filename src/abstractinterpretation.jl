@@ -1,5 +1,5 @@
 #=
-overloads functions in https://github.com/JuliaLang/julia/blob/fb2e1efd8de5040119be005ec67c66b7e9838156/base/compiler/abstractinterpretation.jl
+overloads functions in https://github.com/JuliaLang/julia/blob/a108d6cb8fdc7924fe2b8d831251142386cb6525/base/compiler/abstractinterpretation.jl
 so that `TPInterpreter` collects possible error points detected during the inference
 =#
 
@@ -9,16 +9,6 @@ so that `TPInterpreter` collects possible error points detected during the infer
 function invoke_native(f, interp::TPInterpreter, args...; kwargs...)
     argtypes = to_tuple_type((AbstractInterpreter, typeof.(args)...))
     return invoke(f, argtypes, interp, args...; kwargs...)
-end
-
-# report undef var error
-function check_global_ref!(interp::TPInterpreter, sv::InferenceState, m::Module, s::Symbol)
-    return if !isdefined(m, s)
-        add_remark!(interp, sv, UndefVarErrorReport(interp, sv, m, s))
-        true
-    else
-        false
-    end
 end
 
 # overloads
@@ -31,24 +21,46 @@ function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argty
                                   max_methods::Int = InferenceParams(interp).MAX_METHODS)
     ret = invoke_native(abstract_call_gf_by_type, interp, f, argtypes, atype, sv, max_methods)::CallMeta
 
-    # report no method error, notes:
     info = ret.info
+
+    # throw away previously-reported union-split no method errors that are revealed as
+    # false positive by constant propagation; constant propagation always happens _after_
+     # abstract interpretation with only using types (i.e. `atype`), and so the false positive
+      # candidates are supposed to be reported in `interp.reports` at this point
+    # watch on: https://github.com/JuliaLang/julia/blob/a108d6cb8fdc7924fe2b8d831251142386cb6525/base/compiler/abstractinterpretation.jl#L153
+    if CC.any(sv.result.overridden_by_const) && isa(info, MethodMatchInfo)
+        inds = findall(interp.reports) do report
+            return isa(report, NoMethodErrorReport) &&
+                report.unionsplit &&
+                atype ⊑ report.atype
+        end
+        isempty(inds) || deleteat!(interp.reports, inds)
+    end
+
+    # report no method error
     if isa(info, UnionSplitInfo)
         # if `info` is `UnionSplitInfo`, but there won't be a case where `info.matches` is empty
         for info in info.matches
-            if isa(info.results, MethodLookupResult) && isempty(info.results.matches)
+            if is_empty_match(info)
                 # no method match for this union split
                 # ret.rt = Bottom # maybe we want to be more strict on error cases ?
-                add_remark!(interp, sv, NoMethodErrorReport(interp, sv, true))
+                add_remark!(interp, sv, NoMethodErrorReport(interp, sv, true, atype))
             end
         end
-    elseif isa(info, MethodMatchInfo) && isa(info.results, MethodLookupResult) && isempty(info.results.matches)
-        # really no method found
-        typeassert(ret.rt, TypeofBottom) # return type is initialized as `Bottom`, and should never change in these passes
-        add_remark!(interp, sv, NoMethodErrorReport(interp, sv, false))
+    elseif isa(info, MethodMatchInfo) && is_empty_match(info)
+        # really no method found, and so the return type should have never changed from its
+        # initialization (i.e. `Bottom`)
+        # typeassert(ret.rt, TypeofBottom)
+        add_remark!(interp, sv, NoMethodErrorReport(interp, sv, false, atype))
     end
 
     return ret
+end
+
+function is_empty_match(info::MethodMatchInfo)
+    res = info.results
+    isa(res, MethodLookupResult) || return false # when does this happen ?
+    return isempty(res.matches)
 end
 
 function abstract_eval_special_value(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
@@ -64,9 +76,14 @@ function abstract_eval_special_value(interp::TPInterpreter, @nospecialize(e), vt
         #     add_remark!(interp, sv, UndefVarErrorReport(interp, sv, sv.mod, s))
         # end
     elseif isa(e, GlobalRef)
-        vgv = get_virtual_globalvar(interp, e.mod, e.name)
+        mod, sym = e.mod, e.name
+        vgv = get_virtual_globalvar(interp, mod, sym)
         if isnothing(vgv)
-            check_global_ref!(interp, sv, e.mod, e.name) && (ret = Bottom) # ret here should annotated as `Any` by `NativeInterpreter`, but here I would like to be more conservative and change it to `Bottom`
+            if !isdefined(mod, sym)
+                add_remark!(interp, sv, UndefVarErrorReport(interp, sv, mod, sym))
+                # typeassert(ret, Any)
+                ret = Bottom # ret here should annotated as `Any` by `NativeInterpreter`, but here I would like to be more conservative and change it to `Bottom`
+            end
         else
             ret = vgv
         end
@@ -103,7 +120,6 @@ end
 # virtual toplevel (i.e. when `isroot(frame) === true`), keep the traced types of  `SlotNumber`s
 # (which are originally global variables) in `TPInterpreter.virtual_globalvar_table` so that
 # they can be referred across profilings on different virtual (toplevel) functions
-#
 # NOTE:
 # virtual global assignments should happen here because `SlotNumber`s can be optimized away
 # after the optimization happens
