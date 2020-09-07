@@ -34,7 +34,25 @@ function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argty
                 report.unionsplit &&
                 atype ⊑ report.atype
         end
-        isempty(inds) || deleteat!(interp.reports, inds)
+        if !isempty(inds)
+            # false positive reports revealed
+            deleteat!(interp.reports, inds)
+
+            # exclude them from cache as well
+            prewalk_inf_frame(sv) do frame
+                key = hash(frame.linfo)
+                if haskey(TPCACHE, key)
+                    id, cached_reports = TPCACHE[key]
+                    # @assert id === get_id(interp)
+                    cached_inds = findall(cached_reports) do cached_report
+                        return isa(cached_report, InferenceReportCache{NoMethodErrorReport}) &&
+                            first(#= unionsplit =# cached_report.args) &&
+                            atype ⊑ last(#= atype =# cached_report.args)
+                    end
+                    deleteat!(cached_reports, cached_inds)
+                end
+            end
+        end
     end
 
     # report no method error

@@ -207,20 +207,33 @@ function gen_report_cacher(msg, sig, T, interp, #= sv =# _, args...)
 end
 
 # traces the current abstract call stack
-function track_abstract_call_stack!(f::Function, sv::InferenceState, st = VirtualFrame[])
-    sig = get_sig(sv)
-    file, line = get_file_line(sv)
-    frame = (; file, line, sig)
+function track_abstract_call_stack!(@nospecialize(cacher), sv::InferenceState, st = VirtualFrame[])
+    walker = let cacher = cacher, st = st
+        function (frame)
+            sig = get_sig(frame)
+            file, line = get_file_line(frame)
+            virtualframe = (; file, line, sig)
+            push!(st, virtualframe)
 
-    push!(st, frame)
-    f(sv, st)
-
-    isroot(sv) || track_abstract_call_stack!(f, sv.parent, st) # postwalk
+            cacher(frame, st)
+        end
+    end
+    prewalk_inf_frame(walker, sv)
 
     return st
 end
 track_abstract_call_stack!(sv::InferenceState, st = VirtualFrame[]) =
     track_abstract_call_stack!(dummy_cacher, sv, st)
+
+function prewalk_inf_frame(@nospecialize(f), frame::InferenceState)
+    ret = f(frame)
+    isroot(frame) || prewalk_inf_frame(f, frame.parent)
+    return ret
+end
+function postwalk_inf_frame(@nospecialize(f), frame::InferenceState)
+    isroot(frame) || prewalk_inf_frame(f, frame.parent)
+    return f(frame)
+end
 
 dummy_cacher(args...) = return
 

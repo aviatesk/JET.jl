@@ -50,6 +50,13 @@ function profile_toplevel!(s,
     return virtual_process!(s, filename, actualmodsym, virtualmod, interp)
 end
 
+function profile_file!(filename,
+                       virtualmod = gen_virtualmod();
+                       actualmodsym = :Main,
+                       interp = TPInterpreter())
+    return virtual_process!(read(filename, String), filename, actualmodsym, virtualmod, interp)
+end
+
 # %% test body
 # ------------
 

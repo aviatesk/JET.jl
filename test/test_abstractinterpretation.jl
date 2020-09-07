@@ -36,6 +36,28 @@
         @test isempty(interp.reports)
     end
 
+    # the false positive reports should be threw away from cache as well
+    let
+        m = gen_virtualmod()
+        interp, frame = Core.eval(m, quote
+            mutable struct P
+                i::Int
+                s::String
+            end
+            foo(p, i) = p.i = i
+            bar(args...) = foo(args...)
+
+            $(profile_call)(bar, P, Int)
+        end)
+
+        # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)" should be threw away
+        @test isempty(interp.reports)
+
+        # works for cache (`abstract_call_gf_by_type` won't run on `foo` this time)
+        interp, frame = Core.eval(m, :($(profile_call)(bar, P, Int)))
+        @test isempty(interp.reports)
+    end
+
     # false-positive punishing using constant propagation should only be applied those're
     # really revealed to be false positive
     let
