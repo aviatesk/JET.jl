@@ -5,6 +5,7 @@ struct InferenceReportCache{T<:InferenceErrorReport}
     st::ViewedVirtualStackTrace
     msg::String
     sig::Vector{Any}
+    args::NTuple{N, Any} where N # additional field that keeps information specific to `T`
 end
 
 const TPCACHE = Dict{UInt,Pair{Symbol,Vector{InferenceReportCache}}}()
@@ -25,7 +26,7 @@ function restore_cached_report(T, cache, interp)
     sv = get_current_frame(interp)
     cur_st = track_abstract_call_stack!(sv)
     st = vcat(cache.st, cur_st)
-    return T(st, cache.msg, cache.sig)
+    return T(st, cache.msg, cache.sig, cache.args)
 end
 
 # code cache interface

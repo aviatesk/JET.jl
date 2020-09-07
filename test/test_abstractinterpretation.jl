@@ -1,3 +1,114 @@
+@testset "union-split method matching" begin
+    # if there is no method matching case in union-split, it should be reported
+    let
+        # NOTE: we can't just wrap them into `let`, closures can't be inferred correctly
+        m = gen_virtualmod()
+        interp, frame = Core.eval(m, quote
+            foo(a::Integer) = :Integer
+            foo(a::AbstractString) = "AbstractString"
+
+            $(profile_call)(a->foo(a), Union{Nothing,Int})
+        end)
+
+        @test length(interp.reports) === 1
+        report = first(interp.reports)
+        @test report isa NoMethodErrorReport && report.atype === Tuple{typeof(m.foo), Union{Nothing,Int}}
+    end
+
+    # constant propagation should limit false positive union-split no method reports
+    let
+        m = gen_virtualmod()
+        interp, frame = Core.eval(m, quote
+            mutable struct P
+                i::Int
+                s::String
+            end
+            foo(p, i) = p.i = i
+
+            $(profile_call)(foo, P, Int)
+        end)
+
+        # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)" should be threw away
+        @test isempty(interp.reports)
+
+        # works for cache
+        interp, frame = Core.eval(m, :($(profile_call)(foo, P, Int)))
+        @test isempty(interp.reports)
+    end
+
+    # the false positive reports should be threw away from cache as well
+    let
+        m = gen_virtualmod()
+        interp, frame = Core.eval(m, quote
+            mutable struct P
+                i::Int
+                s::String
+            end
+            foo(p, i) = p.i = i
+            bar(args...) = foo(args...)
+
+            $(profile_call)(bar, P, Int)
+        end)
+
+        # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)" should be threw away
+        @test isempty(interp.reports)
+
+        # works for cache (`abstract_call_gf_by_type` won't run on `foo` this time)
+        interp, frame = Core.eval(m, :($(profile_call)(bar, P, Int)))
+        @test isempty(interp.reports)
+    end
+
+    # false-positive punishing using constant propagation should only be applied those're
+    # really revealed to be false positive
+    let
+        m = gen_virtualmod()
+        interp, frame = Core.eval(m, quote
+            mutable struct P
+                i::Int
+                s::String
+            end
+            function foo(p, i, s)
+                p.i = i
+                p.s = s
+            end
+
+            $(profile_call)(foo, P, Int, #= invalid =# Int)
+        end)
+
+        # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)" should be threw away, while
+        # "no matching method found for call signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{String}, v::Int64)" should be kept
+        @test length(interp.reports) === 1
+        report = first(interp.reports)
+        @test report isa NoMethodErrorReport && report.atype === Tuple{typeof(convert), Type{String}, Int}
+    end
+
+    # constant propagation should narrow down union-split no method error to single no method matching error
+    let
+        m = gen_virtualmod()
+        interp, frame = Core.eval(m, quote
+            mutable struct P
+                i::Int
+                s::String
+            end
+            function foo(p, i, s)
+                p.i = i
+                p.s = s
+            end
+
+            $(profile_call)(foo, P, String, Int)
+        end)
+
+        # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::String)" should be narrowed down to "no matching method found for call signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{Int}, v::String)"
+        @test !isempty(interp.reports)
+        @test any(interp.reports) do report
+            return report isa NoMethodErrorReport &&
+                report.atype === Tuple{typeof(convert), Type{Int}, String}
+        end
+        # "no matching method found for call signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{String}, v::Int)"
+        # won't be reported since `typeinf` early escapes on `Bottom`-annotated statement
+    end
+end
+
 @testset "inference with virtual global variable" begin
     let
         s = """

@@ -17,6 +17,9 @@ for sym in Symbol.(last.(Base.Fix2(split, '.').(string.(vcat(subtypes(TypeProfil
     Core.eval(@__MODULE__, :(import TypeProfiler: $(sym)))
 end
 
+import Base:
+    Fix1, Fix2
+
 const CC = Core.Compiler
 
 const FIXTURE_DIR = normpath(@__DIR__, "fixtures")
@@ -47,19 +50,28 @@ function profile_toplevel!(s,
     return virtual_process!(s, filename, actualmodsym, virtualmod, interp)
 end
 
+function profile_file!(filename,
+                       virtualmod = gen_virtualmod();
+                       actualmodsym = :Main,
+                       interp = TPInterpreter())
+    return virtual_process!(read(filename, String), filename, actualmodsym, virtualmod, interp)
+end
+
 # %% test body
 # ------------
 
-@testset "virtual process" begin
-    include("test_virtualprocess.jl")
-end
+@testset "TypeProfiler.jl" begin
+    @testset "virtual process" begin
+        include("test_virtualprocess.jl")
+    end
 
-@testset "abstract interpretation" begin
-    include("test_abstractinterpretation.jl")
-end
+    @testset "abstract interpretation" begin
+        include("test_abstractinterpretation.jl")
+    end
 
-@testset "tfuncs" begin
-    include("test_tfuncs.jl")
+    @testset "tfuncs" begin
+        include("test_tfuncs.jl")
+    end
 end
 
 # # favorite

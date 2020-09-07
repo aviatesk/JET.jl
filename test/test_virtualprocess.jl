@@ -239,9 +239,7 @@ end
 
     let
         f = normpath(FIXTURE_DIR, "nonexistinclude.jl")
-        s = read(f, String)
-
-        res, interp = profile_toplevel!(s; filename = f)
+        res, interp = profile_file!(f)
 
         @test f in res.included_files
         @test !isempty(res.toplevel_error_reports)
@@ -252,9 +250,7 @@ end
 
     let
         f = normpath(FIXTURE_DIR, "selfrecursiveinclude.jl")
-        s = read(f, String)
-
-        res, interp = profile_toplevel!(s; filename = f)
+        res, interp = profile_file!(f)
 
         @test f in res.included_files
         @test !isempty(res.toplevel_error_reports)
@@ -264,9 +260,7 @@ end
     let
         f1 = normpath(FIXTURE_DIR, "chainrecursiveinclude1.jl")
         f2 = normpath(FIXTURE_DIR, "chainrecursiveinclude2.jl")
-        s = read(f1, String)
-
-        res, interp = profile_toplevel!(s; filename = f1)
+        res, interp = profile_file!(f1)
 
         @test f1 in res.included_files
         @test f2 in res.included_files
