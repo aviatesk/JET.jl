@@ -1,8 +1,3 @@
-#=
-overloads functions in https://github.com/JuliaLang/julia/blob/a108d6cb8fdc7924fe2b8d831251142386cb6525/base/compiler/abstractinterpretation.jl
-so that `TPInterpreter` collects possible error points detected during the inference
-=#
-
 # HACK:
 # calls down to `NativeInterpreter`'s abstract interpretation method while passing `TPInterpreter`
 # so that its overloaded methods can be called within the sub/recursive method callls.
@@ -20,8 +15,12 @@ end
 is_throw_call′(@nospecialize(_)) = false
 is_throw_call′(e::Expr)          = is_throw_call(e)
 
-# overloads
-# ---------
+is_unreachable(@nospecialize(_)) = false
+is_unreachable(rn::ReturnNode)   = !isdefined(rn, :val)
+
+# overloads abstractinterpretation.jl
+# -----------------------------------
+# ref: https://github.com/JuliaLang/julia/blob/26c79b2e74d35434737bc33bc09d2e0f6e27372b/base/compiler/abstractinterpretation.jl
 
 # TODO:
 # - report "too many method matched"
@@ -87,23 +86,13 @@ end
 function abstract_eval_special_value(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
     ret = invoke_native(abstract_eval_special_value, interp, e, vtypes, sv)
 
-    # if isa(e, Slot)
-    #     id = slot_id(e)
-    #     s = sv.src.slotnames[id]
-    #     t = vtypes[id].typ
-    #     if t === NOT_FOUND || t === Bottom
-    #         s = sv.src.slotnames[id]
-    #         add_remark!(interp, sv, UndefVarErrorReport(interp, sv, sv.mod, s))
-    #     end
-    # end
-
     # report (global) undef var error
     if isa(e, GlobalRef)
         mod, sym = e.mod, e.name
         vgv = get_virtual_globalvar(interp, mod, sym)
         if isnothing(vgv)
             if !isdefined(mod, sym)
-                add_remark!(interp, sv, UndefVarErrorReport(interp, sv, mod, sym))
+                add_remark!(interp, sv, GlobalUndefVarErrorReport(interp, sv, mod, sym))
                 # typeassert(ret, Any)
                 ret = Bottom # ret here should annotated as `Any` by `NativeInterpreter`, but here I would like to be more conservative and change it to `Bottom`
             end
@@ -182,14 +171,6 @@ function set_virtual_globalvar!(interp, frame, pc, stmt)
     interp.virtual_globalvar_table[mod][lhs] = rhs
 end
 
-function typeinf_edge(interp::TPInterpreter, method::Method, @nospecialize(atypes), sparams::SimpleVector, caller::InferenceState)
-    set_current_frame!(interp, caller)
-
-    ret = invoke_native(typeinf_edge, interp, method, atypes, sparams, caller)
-
-    return ret
-end
-
 """
     set_current_frame!(interp::TPInterpreter, frame::InferenceState)
     get_current_frame(interp::TPInterpreter)
@@ -200,26 +181,53 @@ Current frame is needed when we assemble virtual stack frame from cached error r
 set_current_frame!(interp::TPInterpreter, frame::InferenceState) = interp.current_frame[] = frame
 get_current_frame(interp::TPInterpreter) = interp.current_frame[]
 
-# in this overload we can work on `InferenceState` that inference already ran on,
-# and also maybe optimization has been done
-function finish(me::InferenceState, interp::TPInterpreter)
-    ret = invoke(finish, Tuple{InferenceState,AbstractInterpreter}, me, interp)
+# overloads typeinfer.jl
+# ----------------------
+# ref: https://github.com/JuliaLang/julia/blob/26c79b2e74d35434737bc33bc09d2e0f6e27372b/base/compiler/typeinfer.jl
+
+# in this overload we can work on `CodeInfo` (and also `InferenceState`) where type inference
+# (and maybe optimization) already ran on
+function typeinf(interp::TPInterpreter, frame::InferenceState)
+    set_current_frame!(interp, frame)
+
+    ret = invoke_native(typeinf, interp, frame)
+
+    # report (local) undef var error
+    # this only works when optimization is enabled, just because `:throw_undef_if_not` and
+    # `:(unreachable)` are introduced by `optimize`
+    stmts = frame.src.code
+    for (idx, stmt) in enumerate(stmts)
+        if isa(stmt, Expr) && stmt.head === :throw_undef_if_not
+            sym, _ = stmt.args
+            next_idx = idx + 1
+            if checkbounds(Bool, stmts, next_idx) && @inbounds is_unreachable(stmts[next_idx])
+                # the optimization so far has found this statement is never reachable;
+                # TP reports it since it will invoke undef var error at runtime, or will just
+                # be dead code otherwise
+
+                add_remark!(interp, frame, LocalUndefVarErrorReport(interp, frame, sym))
+            # else
+                # by excluding this pass, TP accepts some false negatives (i.e. don't report
+                # those that may actually happen on execution)
+            end
+        end
+    end
 
     # report `throw` calls "appropriately" by simple inter-frame analysis
     # the basic stance here is really conservative so we don't report them unless they
     # will be inevitably called and won't be caught by `try/catch` in frame at any level
     # NOTE:
-    # this is better to happen here (after the optimization) to reduce the chance of false
-    # negative reports
-    if get_result(me) === Bottom
+    # this is better to happen here because constant propagation can reduce the chance of
+    # false negative reports by excluding unreachable control flows
+    if get_result(frame) === Bottom
         # report `throw`s only if there is no circumvent pass, which is represented by
         # `Bottom`-annotated return type inference with non-empty `throw` blocks
-        throw_calls = filter(is_throw_call′, me.src.code)
+        throw_calls = filter(is_throw_call′, frame.src.code)
         if !isempty(throw_calls)
-            push!(interp.exception_reports, length(interp.reports) => ExceptionReport(interp, me, throw_calls))
+            push!(interp.exception_reports, length(interp.reports) => ExceptionReport(interp, frame, throw_calls))
         end
 
-        if isroot(me)
+        if isroot(frame)
             # if return type is `Bottom`-annotated for root frame, this means some error(s)
             # aren't caught by at any level and get propagated here, and so let's report
             # `ExceptionReport` if exist
@@ -228,6 +236,14 @@ function finish(me::InferenceState, interp::TPInterpreter)
             end
         end
     end
+
+    return ret
+end
+
+function typeinf_edge(interp::TPInterpreter, method::Method, @nospecialize(atypes), sparams::SimpleVector, caller::InferenceState)
+    set_current_frame!(interp, caller)
+
+    ret = invoke_native(typeinf_edge, interp, method, atypes, sparams, caller)
 
     return ret
 end

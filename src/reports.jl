@@ -90,23 +90,36 @@ function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
     end
 end
 
-macro reportdef(ex)
+macro reportdef(ex, track_from_frame = false)
     T = first(ex.args)
     args = map(ex.args) do x
         # unwrap @nospecialize
-        isexpr(x, :macrocall) && first(x.args) === Symbol("@nospecialize") && (x = esc(last(x.args))) # `esc` is needed because `@nospecialize` escapes its argument anyway
-        # handle default arguments
-        isexpr(x, :(=)) && return first(x.args)
+        # `esc` is needed because `@nospecialize` escapes its argument anyway
+        isexpr(x, :macrocall) && first(x.args) === Symbol("@nospecialize") && (x = esc(last(x.args)))
         return x
     end
     spec_args = args[4:end] # those additional, specific fields
+
+    # `from_statement` should be used when report is constructed _during_ the inference
+    from_statement = :(track_abstract_call_stack!(cache_report!, #= sv =# $(args[3])))
+    # `from_frame` should be used when report is constructed _after_ the inference on
+    # `sv::InferenceState` has been done
+    from_frame = :(let
+        local sig = get_sig($(#= sv =# args[3]).linfo)
+        file, line = get_file_line($(#= sv =# args[3]).linfo) # just use this frame's location
+        frame = (; file, line, sig)
+        st = VirtualFrame[frame]
+        cache_report!($(#= sv =# args[3]), st)
+
+        isroot($(#= sv =# args[3])) ? st : track_abstract_call_stack!(cache_report!, $(#= sv =# args[3]).parent, st) # postwalk
+    end)
 
     constructor_body = quote
         msg = get_msg(#= T, interp, sv, ... =# $(args...))
         sig = get_sig(#= T, interp, sv, ... =# $(args...))
 
         cache_report! = gen_report_cacher(msg, sig, #= T, interp, sv, ... =# $(args...))
-        st = track_abstract_call_stack!(cache_report!, #= sv =# $(args[3]))
+        st = $(track_from_frame ? from_frame : from_statement)
 
         return new(reverse(st), msg, sig, $(spec_args...))
     end
@@ -134,7 +147,9 @@ end
 
 @reportdef InvalidBuiltinCallErrorReport(interp, sv)
 
-@reportdef UndefVarErrorReport(interp, sv, mod::Module, name::Symbol)
+@reportdef GlobalUndefVarErrorReport(interp, sv, mod::Module, name::Symbol)
+
+@reportdef LocalUndefVarErrorReport(interp, sv, name::Symbol) true
 
 @reportdef NonBooleanCondErrorReport(interp, sv, @nospecialize(t::Type))
 
@@ -144,44 +159,7 @@ end
 Represents general `Exception`s traced during inference. They are reported only when there's
   "inevitable" [`throw`](@ref) calls found by inter-frame analysis.
 """
-struct ExceptionReport <: InferenceErrorReport
-    st::VirtualStackTrace
-    msg::String
-    sig::Vector{Any}
-    throw_calls::Vector{Any}
-
-    # the constructors below are needed to be special cased, since `ExceptionReport` is
-    # reported _after_ the inference on `sv::InferenceState` has been done rather than
-    # during abstract interpretation
-
-    # inner constructor (from abstract interpretation)
-    function ExceptionReport(interp, sv, throw_calls)
-        msg = get_msg(ExceptionReport, interp, sv, throw_calls)
-        sig = get_sig(ExceptionReport, interp, sv, throw_calls)
-
-        cache_report! = gen_report_cacher(msg, sig, ExceptionReport, interp, sv, throw_calls)
-
-        # we can't just call `track_abstract_call_stack(cache_report!, sv)` here since this
-        # constructor is supposed to be called _after_ the type inference on `sv` has been
-        # done and the program pointer has proceeded to the end
-        st = let
-            local sig = Any["unreachable"]
-            file, line = get_file_line(sv.linfo) # just use this frame's location
-            frame = (; file, line, sig)
-            st = VirtualFrame[frame]
-            cache_report!(sv, st)
-
-            isroot(sv) ? st : track_abstract_call_stack!(cache_report!, sv.parent, st) # postwalk
-        end
-
-        return new(reverse(st), msg, sig, throw_calls)
-    end
-
-    # inner constructor (from cache)
-    function ExceptionReport(st::VirtualStackTrace, msg::AbstractString, sig::AbstractVector, args::Tuple{Vector{Any}})
-        return new(reverse(st), msg, sig, first(args))
-    end
-end
+@reportdef ExceptionReport(interp, sv, throw_calls::Vector{Any}) true
 
 """
     NativeRemark <: InferenceErrorReport
@@ -241,27 +219,32 @@ get_file_line(frame::InferenceState) = get_file_line(get_cur_linfo(frame))
 get_file_line(linfo::LineInfoNode)   = linfo.file, linfo.line
 get_file_line(linfo::MethodInstance) = linfo.def.file, linfo.def.line
 
-# # adapted from https://github.com/JuliaLang/julia/blob/58febaaf2fe38d90d41c170bc2f416a76eac46f5/base/show.jl#L945-L958
-# function get_sig(linfo::MethodInstance)
-#     io = IOBuffer()
-#     def = linfo.def
-#     if isa(def, Method)
-#         if isdefined(def, :generator) && linfo === def.generator
-#             show(io, def)
-#         else
-#             Base.show_tuple_as_call(io, def.name, linfo.specTypes)
-#         end
-#     else
-#         print(io, "Toplevel MethodInstance thunk")
-#     end
-#     return String(take!(io))
-# end
+# adapted from https://github.com/JuliaLang/julia/blob/519b04e4ada9b07c85427e303d3ce4c823a0310f/base/show.jl#L974-L987
+function get_sig(l::MethodInstance)
+    def = l.def
+    ret = if isa(def, Method)
+        if isdefined(def, :generator) && l === def.generator
+            # print(io, "MethodInstance generator for ")
+            # show(io, def)
+            sprint(show, def)
+        else
+            # print(io, "MethodInstance for ")
+            # show_tuple_as_call(io, def.name, l.specTypes)
+            sprint(Base.show_tuple_as_call, def.name, l.specTypes)
+        end
+    else
+        # print(io, "Toplevel MethodInstance thunk")
+        "toplevel MethodInstance thunk"
+    end
+    return Any[ret]
+end
 
 # entry
 get_sig(::Type{<:InferenceErrorReport}, interp, sv, @nospecialize(args...)) = get_sig(sv)
 get_sig(sv::InferenceState) = _get_sig(sv, get_cur_stmt(sv))
 
-# special case `ExceptionReport`: there might be multiple throw calls in frame
+# special cased entries
+get_sig(::Type{LocalUndefVarErrorReport}, interp, sv, name) = Any[""] # TODO
 function get_sig(::Type{ExceptionReport}, interp, sv, throw_calls)
     sig = Any[]
     ncalls = length(throw_calls)
@@ -320,8 +303,8 @@ function _get_sig_type(sv::InferenceState, gotoifnot::GotoIfNot)
     sig  = Any[string("goto %", gotoifnot.dest, " if not "), _get_sig(sv, gotoifnot.cond)...]
     return sig, nothing
 end
-function _get_sig_type(sv::InferenceState, ret::ReturnNode)
-    sig = Any["return ", _get_sig(sv, ret.val)...]
+function _get_sig_type(sv::InferenceState, rn::ReturnNode)
+    sig = is_unreachable(rn) ? Any["unreachable"] : Any["return ", _get_sig(sv, rn.val)...]
     return sig, nothing
 end
 function _get_sig_type(::InferenceState, qn::QuoteNode)
@@ -331,21 +314,22 @@ end
 _get_sig_type(::InferenceState, @nospecialize(x)) = Any[repr(x; context = :compact => true)], nothing
 
 get_msg(::Type{NoMethodErrorReport}, interp, sv, unionsplit, @nospecialize(atype)) = unionsplit ?
-    "for one of the union split cases, no matching method found for signature" :
-    "no matching method found for call signature"
+    "for one of the union split cases, no matching method found for signature: " :
+    "no matching method found for call signature: "
 get_msg(::Type{InvalidBuiltinCallErrorReport}, interp, sv) =
-    "invalid builtin function call"
-get_msg(::Type{UndefVarErrorReport}, interp, sv, mod, name) = isnothing(mod) ?
-    "variable $(name) is not defined" :
-    "variable $(mod).$(name) is not defined"
+    "invalid builtin function call: "
+get_msg(::Type{GlobalUndefVarErrorReport}, interp, sv, mod, name) =
+    "variable $(mod).$(name) is not defined: "
+get_msg(::Type{LocalUndefVarErrorReport}, interp, sv, name) =
+    "variable $(name) may raise UndefVarError"
 get_msg(::Type{NonBooleanCondErrorReport}, interp, sv, @nospecialize(t)) =
-    "non-boolean ($(t)) used in boolean context"
+    "non-boolean ($(t)) used in boolean context: "
 function get_msg(::Type{ExceptionReport}, interp, sv, throw_blocks)
     n = length(throw_blocks)
     return if isone(n)
-        "will throw"
+        "will throw: "
     else
-        "will throw either of"
+        "will throw either of: "
     end
 end
 get_msg(::Type{NativeRemark}, interp, sv, s) = s

@@ -245,7 +245,7 @@ end
         @test !isempty(res.toplevel_error_reports)
         @test first(res.toplevel_error_reports) isa ActualErrorWrapped
         @test !isempty(res.inference_error_reports)
-        @test first(res.inference_error_reports) isa UndefVarErrorReport
+        @test first(res.inference_error_reports) isa GlobalUndefVarErrorReport
     end
 
     let
@@ -311,7 +311,7 @@ end
 
         @test isempty(res.toplevel_error_reports)
         @test !isempty(res.inference_error_reports)
-        @test first(res.inference_error_reports) isa UndefVarErrorReport
+        @test first(res.inference_error_reports) isa GlobalUndefVarErrorReport
         @test occursin("isexpr2", first(res.inference_error_reports).msg)
     end
 
@@ -326,7 +326,7 @@ end
 
         using ..foo
 
-        bar("julia") # -> UndefVarErrorReport
+        bar("julia") # -> GlobalUndefVarErrorReport
 
         end # module bar
 
@@ -337,7 +337,7 @@ end
 
         @test isempty(res.toplevel_error_reports)
         @test !isempty(res.inference_error_reports)
-        @test first(res.inference_error_reports) isa UndefVarErrorReport
+        @test first(res.inference_error_reports) isa GlobalUndefVarErrorReport
     end
 
     # usage of global objects
@@ -469,7 +469,7 @@ end
 
         res, interp = profile_toplevel!(s)
         @test length(res.inference_error_reports) === 1
-        @test first(res.inference_error_reports) isa UndefVarErrorReport
+        @test first(res.inference_error_reports) isa GlobalUndefVarErrorReport
     end
 
     let

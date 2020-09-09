@@ -83,14 +83,6 @@ end
 # @profile_call fib(100000.) # ::Float64
 # @profile_call fib(100000 + 100000im) # report !
 #
-#
-# # undef var
-# # ---------
-#
-# undef(a) = return foo(a)
-# @profile_call undef(0)
-#
-#
 # # non-boolean condition
 # # ---------------------
 #
@@ -109,10 +101,3 @@ end
 # @profile_call sum("julia")
 # @profile_call sum(Char[])
 # @profile_call sum([]) # the actual error (i.e. no method for `zero(Any)`) gets buriled in the "Too many methods matched" heuristic
-#
-# # union splitting
-# nomethod_partial(a) = sin(a)
-# let
-#     interp, frame = profile_call_gf(Tuple{typeof(nomethod_partial), Union{Int,Char}})
-#     print_reports(stdout, interp.reports)
-# end

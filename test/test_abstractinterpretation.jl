@@ -109,6 +109,109 @@
     end
 end
 
+@testset "report undefined slots" begin
+    let
+        interp, frame = profile_call(Bool) do b
+            if b
+                bar = rand(Int)
+                return bar
+            end
+            return bar # undefined in this pass
+        end
+        @test length(interp.reports) === 1
+        @test first(interp.reports) isa LocalUndefVarErrorReport
+        @test first(interp.reports).name === :bar
+    end
+
+    # deeper level
+    let
+        m = gen_virtualmod()
+        interp, frame = Core.eval(m, quote
+            function foo(b)
+                if b
+                    bar = rand(Int)
+                    return bar
+                end
+                return bar # undefined in this pass
+            end
+            baz(a) = foo(a)
+            $(profile_call)(baz, Bool)
+        end)
+        @test length(interp.reports) === 1
+        @test first(interp.reports) isa LocalUndefVarErrorReport
+        @test first(interp.reports).name === :bar
+
+        # works when cached
+        interp, frame = Core.eval(m, :($(profile_call)(baz, Bool)))
+        @test length(interp.reports) === 1
+        @test first(interp.reports) isa LocalUndefVarErrorReport
+        @test first(interp.reports).name === :bar
+    end
+
+    # try to exclude false negatives as possible (by collecting reports in after-optimization pass)
+    let
+        interp, frame = profile_call(Bool) do b
+            if b
+                bar = rand()
+            end
+
+            return if b
+                return bar # this shouldn't be reported
+            else
+                return nothing
+            end
+        end
+        @test isempty(interp.reports)
+    end
+
+    let
+        interp, frame = profile_call(Bool) do b
+            if b
+                bar = rand()
+            end
+
+            return if b
+                return nothing
+            else
+                # ideally we want to have report for this pass, but tons of work will be
+                # needed to report this pass
+                return bar
+            end
+        end
+        @test_broken length(interp.reports) === 1 &&
+            first(interp.reports) isa LocalUndefVarErrorReport &&
+            first(interp.reports).name === :bar
+    end
+end
+
+@testset "report undefined (global) variables" begin
+    let
+        interp, frame = profile_call(()->foo)
+        @test length(interp.reports) === 1
+        @test first(interp.reports) isa GlobalUndefVarErrorReport
+        @test first(interp.reports).name === :foo
+    end
+
+    # deeper level
+    let
+        m = gen_virtualmod()
+        interp, frame = Core.eval(m, quote
+            foo(bar) = bar + baz
+            qux(a) = foo(a)
+            $(profile_call)(qux, Int)
+        end)
+        @test length(interp.reports) === 1
+        @test first(interp.reports) isa GlobalUndefVarErrorReport
+        @test first(interp.reports).name === :baz
+
+        # works when cached
+        interp, frame = Core.eval(m, :($(profile_call)(qux, Int)))
+        @test length(interp.reports) === 1
+        @test first(interp.reports) isa GlobalUndefVarErrorReport
+        @test first(interp.reports).name === :baz
+    end
+end
+
 @testset "inference with virtual global variable" begin
     let
         s = """
