@@ -134,7 +134,7 @@ end
 
 @reportdef InvalidBuiltinCallErrorReport(interp, sv)
 
-@reportdef UndefVarErrorReport(interp, sv, mod::Module, name::Symbol)
+@reportdef GlobalUndefVarErrorReport(interp, sv, mod::Module, name::Symbol)
 
 @reportdef NonBooleanCondErrorReport(interp, sv, @nospecialize(t::Type))
 
@@ -335,7 +335,7 @@ get_msg(::Type{NoMethodErrorReport}, interp, sv, unionsplit, @nospecialize(atype
     "no matching method found for call signature"
 get_msg(::Type{InvalidBuiltinCallErrorReport}, interp, sv) =
     "invalid builtin function call"
-get_msg(::Type{UndefVarErrorReport}, interp, sv, mod, name) = isnothing(mod) ?
+get_msg(::Type{GlobalUndefVarErrorReport}, interp, sv, mod, name) = isnothing(mod) ?
     "variable $(name) is not defined" :
     "variable $(mod).$(name) is not defined"
 get_msg(::Type{NonBooleanCondErrorReport}, interp, sv, @nospecialize(t)) =

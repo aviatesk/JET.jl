@@ -20,6 +20,9 @@ end
 is_throw_call′(@nospecialize(_)) = false
 is_throw_call′(e::Expr)          = is_throw_call(e)
 
+is_unreachable(@nospecialize(_)) = false
+is_unreachable(rn::ReturnNode)   = !isdefined(rn, :val)
+
 # overloads
 # ---------
 
@@ -87,23 +90,13 @@ end
 function abstract_eval_special_value(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
     ret = invoke_native(abstract_eval_special_value, interp, e, vtypes, sv)
 
-    # if isa(e, Slot)
-    #     id = slot_id(e)
-    #     s = sv.src.slotnames[id]
-    #     t = vtypes[id].typ
-    #     if t === NOT_FOUND || t === Bottom
-    #         s = sv.src.slotnames[id]
-    #         add_remark!(interp, sv, UndefVarErrorReport(interp, sv, sv.mod, s))
-    #     end
-    # end
-
     # report (global) undef var error
     if isa(e, GlobalRef)
         mod, sym = e.mod, e.name
         vgv = get_virtual_globalvar(interp, mod, sym)
         if isnothing(vgv)
             if !isdefined(mod, sym)
-                add_remark!(interp, sv, UndefVarErrorReport(interp, sv, mod, sym))
+                add_remark!(interp, sv, GlobalUndefVarErrorReport(interp, sv, mod, sym))
                 # typeassert(ret, Any)
                 ret = Bottom # ret here should annotated as `Any` by `NativeInterpreter`, but here I would like to be more conservative and change it to `Bottom`
             end
@@ -200,8 +193,7 @@ Current frame is needed when we assemble virtual stack frame from cached error r
 set_current_frame!(interp::TPInterpreter, frame::InferenceState) = interp.current_frame[] = frame
 get_current_frame(interp::TPInterpreter) = interp.current_frame[]
 
-# in this overload we can work on `InferenceState` that inference already ran on,
-# and also maybe optimization has been done
+# in this overload we can work on `InferenceState` where inference already ran on,
 function finish(me::InferenceState, interp::TPInterpreter)
     ret = invoke(finish, Tuple{InferenceState,AbstractInterpreter}, me, interp)
 
@@ -209,8 +201,8 @@ function finish(me::InferenceState, interp::TPInterpreter)
     # the basic stance here is really conservative so we don't report them unless they
     # will be inevitably called and won't be caught by `try/catch` in frame at any level
     # NOTE:
-    # this is better to happen here (after the optimization) to reduce the chance of false
-    # negative reports
+    # this is better to happen here because constant propagation can reduce the chance of
+    # false negative reports by excluding unreachable control flows
     if get_result(me) === Bottom
         # report `throw`s only if there is no circumvent pass, which is represented by
         # `Bottom`-annotated return type inference with non-empty `throw` blocks
@@ -225,6 +217,39 @@ function finish(me::InferenceState, interp::TPInterpreter)
             # `ExceptionReport` if exist
             for (i, (idx, report)) in enumerate(interp.exception_reports)
                 insert!(interp.reports, idx + i, report)
+            end
+        end
+    end
+
+    return ret
+end
+
+# in this overload we can work on `CodeInfo` (and also `InferenceState`) where the
+# optimization already ran on
+function finish(src::CodeInfo, interp::TPInterpreter)
+    ret = invoke(finish, Tuple{CodeInfo,AbstractInterpreter}, src, interp)
+
+    # report (local) undef var error
+    # this should be done here since `:throw_undef_if_not` and `:(unreachable)` are just
+    # introduced by abstract interpretation
+    for (i, stmt) in enumerate(src.code)
+        if isa(stmt, Expr) && stmt.head === :throw_undef_if_not
+            sym, val = stmt.args
+            if val === false
+                # the abstract interpretation so far has found this statement is never
+                # reachable; TP reports it since it will invoke undef var error at runtime,
+                # or will just be dead code otherwise
+
+                frame = get_current_frame(interp)
+
+                # @assert begin
+                #     is_unreachable(src.code[i+1])
+                # end
+
+                add_remark!(interp, sv, LocalUndefVarErrorReport(interp, sv, nothing, sym))
+            # else
+                # this pass includes false positive (i.e. don't error on runtime), so TP just
+                # ignores it for now
             end
         end
     end
