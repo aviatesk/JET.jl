@@ -195,15 +195,15 @@ function typeinf(interp::TPInterpreter, frame::InferenceState)
     # report (local) undef var error
     # this only works when optimization is enabled, just because `:throw_undef_if_not` and
     # `:(unreachable)` are introduced by `optimize`
-    for (i, stmt) in enumerate(frame.src.code)
+    stmts = frame.src.code
+    for (idx, stmt) in enumerate(stmts)
         if isa(stmt, Expr) && stmt.head === :throw_undef_if_not
-            sym, val = stmt.args
-            if val === false
+            sym, _ = stmt.args
+            next_idx = idx + 1
+            if checkbounds(Bool, stmts, next_idx) && @inbounds is_unreachable(stmts[next_idx])
                 # the optimization so far has found this statement is never reachable;
                 # TP reports it since it will invoke undef var error at runtime, or will just
                 # be dead code otherwise
-
-                # @assert is_unreachable(frame.src.code[i+1])
 
                 add_remark!(interp, frame, LocalUndefVarErrorReport(interp, frame, sym))
             # else
