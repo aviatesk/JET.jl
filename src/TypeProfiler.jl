@@ -9,14 +9,16 @@ import Core.Compiler:
     InferenceParams, OptimizationParams, get_world_counter, get_inference_cache, code_cache,
     lock_mi_inference, unlock_mi_inference, add_remark!, may_optimize, may_compress,
     may_discard_trees,
+    # cicache.jl
+    WorldView,
+    # tfuncs.jl
+    builtin_tfunction, return_type_tfunc,
     # abstractinterpretation.jl
     abstract_call_gf_by_type, abstract_call_known, abstract_call,
     abstract_eval_special_value, abstract_eval_value_expr, abstract_eval_value,
-    abstract_eval_statement, typeinf_local, typeinf_edge, finish,
-    # tfuncs.jl
-    builtin_tfunction, return_type_tfunc,
-    # tpcache.jl
-    WorldView
+    abstract_eval_statement, typeinf_local,
+    # typeinfer.jl
+    typeinf, typeinf_edge
 
 # usings
 # ------

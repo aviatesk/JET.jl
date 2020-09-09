@@ -1,8 +1,3 @@
-#=
-overloads functions in https://github.com/JuliaLang/julia/blob/a108d6cb8fdc7924fe2b8d831251142386cb6525/base/compiler/abstractinterpretation.jl
-so that `TPInterpreter` collects possible error points detected during the inference
-=#
-
 # HACK:
 # calls down to `NativeInterpreter`'s abstract interpretation method while passing `TPInterpreter`
 # so that its overloaded methods can be called within the sub/recursive method callls.
@@ -23,8 +18,9 @@ is_throw_call′(e::Expr)          = is_throw_call(e)
 is_unreachable(@nospecialize(_)) = false
 is_unreachable(rn::ReturnNode)   = !isdefined(rn, :val)
 
-# overloads
-# ---------
+# overloads abstractinterpretation.jl
+# -----------------------------------
+# ref: https://github.com/JuliaLang/julia/blob/26c79b2e74d35434737bc33bc09d2e0f6e27372b/base/compiler/abstractinterpretation.jl
 
 # TODO:
 # - report "too many method matched"
@@ -175,14 +171,6 @@ function set_virtual_globalvar!(interp, frame, pc, stmt)
     interp.virtual_globalvar_table[mod][lhs] = rhs
 end
 
-function typeinf_edge(interp::TPInterpreter, method::Method, @nospecialize(atypes), sparams::SimpleVector, caller::InferenceState)
-    set_current_frame!(interp, caller)
-
-    ret = invoke_native(typeinf_edge, interp, method, atypes, sparams, caller)
-
-    return ret
-end
-
 """
     set_current_frame!(interp::TPInterpreter, frame::InferenceState)
     get_current_frame(interp::TPInterpreter)
@@ -193,17 +181,35 @@ Current frame is needed when we assemble virtual stack frame from cached error r
 set_current_frame!(interp::TPInterpreter, frame::InferenceState) = interp.current_frame[] = frame
 get_current_frame(interp::TPInterpreter) = interp.current_frame[]
 
-# in this overload we can work on `InferenceState` where type inference already ran on
-function finish(me::InferenceState, interp::TPInterpreter)
-    ret = invoke(finish, Tuple{InferenceState,AbstractInterpreter}, me, interp)
+# overloads typeinfer.jl
+# ----------------------
+# ref: https://github.com/JuliaLang/julia/blob/26c79b2e74d35434737bc33bc09d2e0f6e27372b/base/compiler/typeinfer.jl
+
+# in this overload we can work on `CodeInfo` (and also `InferenceState`) where type inference
+# (and maybe optimization) already ran on
+function typeinf(interp::TPInterpreter, frame::InferenceState)
+    set_current_frame!(interp, frame)
+
+    ret = invoke_native(typeinf, interp, frame)
 
     # report (local) undef var error
-    # this should be done here since additional slot properties about undefined variables
-    # are added by `type_annotate!`
-    for (i, slotflag) in enumerate(me.src.slotflags)
-        if (slotflag & (CC.SLOT_STATICUNDEF | CC.SLOT_STATICUNDEF)) != 0
-            sym = me.src.slotnames[i]
-            add_remark!(interp, me, LocalUndefVarErrorReport(interp, me, sym))
+    # this only works when optimization is enabled, just because `:throw_undef_if_not` and
+    # `:(unreachable)` are introduced by `optimize`
+    for (i, stmt) in enumerate(frame.src.code)
+        if isa(stmt, Expr) && stmt.head === :throw_undef_if_not
+            sym, val = stmt.args
+            if val === false
+                # the optimization so far has found this statement is never reachable;
+                # TP reports it since it will invoke undef var error at runtime, or will just
+                # be dead code otherwise
+
+                # @assert is_unreachable(frame.src.code[i+1])
+
+                add_remark!(interp, frame, LocalUndefVarErrorReport(interp, frame, sym))
+            # else
+                # by excluding this pass, TP accepts some false negatives (i.e. don't report
+                # those that may actually happen on execution)
+            end
         end
     end
 
@@ -213,15 +219,15 @@ function finish(me::InferenceState, interp::TPInterpreter)
     # NOTE:
     # this is better to happen here because constant propagation can reduce the chance of
     # false negative reports by excluding unreachable control flows
-    if get_result(me) === Bottom
+    if get_result(frame) === Bottom
         # report `throw`s only if there is no circumvent pass, which is represented by
         # `Bottom`-annotated return type inference with non-empty `throw` blocks
-        throw_calls = filter(is_throw_call′, me.src.code)
+        throw_calls = filter(is_throw_call′, frame.src.code)
         if !isempty(throw_calls)
-            push!(interp.exception_reports, length(interp.reports) => ExceptionReport(interp, me, throw_calls))
+            push!(interp.exception_reports, length(interp.reports) => ExceptionReport(interp, frame, throw_calls))
         end
 
-        if isroot(me)
+        if isroot(frame)
             # if return type is `Bottom`-annotated for root frame, this means some error(s)
             # aren't caught by at any level and get propagated here, and so let's report
             # `ExceptionReport` if exist
@@ -234,8 +240,10 @@ function finish(me::InferenceState, interp::TPInterpreter)
     return ret
 end
 
-# # in this overload we can work on `CodeInfo` (and also `InferenceState`) where the
-# # optimization already ran on
-# function finish(src::CodeInfo, interp::TPInterpreter)
-#     ret = invoke(finish, Tuple{CodeInfo,AbstractInterpreter}, src, interp)
-# end
+function typeinf_edge(interp::TPInterpreter, method::Method, @nospecialize(atypes), sparams::SimpleVector, caller::InferenceState)
+    set_current_frame!(interp, caller)
+
+    ret = invoke_native(typeinf_edge, interp, method, atypes, sparams, caller)
+
+    return ret
+end
