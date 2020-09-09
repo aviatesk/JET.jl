@@ -11,6 +11,15 @@ function invoke_native(f, interp::TPInterpreter, args...; kwargs...)
     return invoke(f, argtypes, interp, args...; kwargs...)
 end
 
+function is_empty_match(info::MethodMatchInfo)
+    res = info.results
+    isa(res, MethodLookupResult) || return false # when does this happen ?
+    return isempty(res.matches)
+end
+
+is_throw_call′(@nospecialize(_)) = false
+is_throw_call′(e::Expr)          = is_throw_call(e)
+
 # overloads
 # ---------
 
@@ -46,8 +55,8 @@ function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argty
                     # @assert id === get_id(interp)
                     cached_inds = findall(cached_reports) do cached_report
                         return isa(cached_report, InferenceReportCache{NoMethodErrorReport}) &&
-                            first(#= unionsplit =# cached_report.args) &&
-                            atype ⊑ last(#= atype =# cached_report.args)
+                            first(#= unionsplit =# cached_report.args)::Bool &&
+                            atype ⊑ last(#= atype =# cached_report.args)::Type
                     end
                     deleteat!(cached_reports, cached_inds)
                 end
@@ -75,25 +84,21 @@ function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argty
     return ret
 end
 
-function is_empty_match(info::MethodMatchInfo)
-    res = info.results
-    isa(res, MethodLookupResult) || return false # when does this happen ?
-    return isempty(res.matches)
-end
-
 function abstract_eval_special_value(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
     ret = invoke_native(abstract_eval_special_value, interp, e, vtypes, sv)
 
-    # report undef var error
-    if isa(e, Slot)
-        # id = slot_id(e)
-        # s = sv.src.slotnames[id]
-        # t = vtypes[id].typ
-        # if t === NOT_FOUND || t === Bottom
-        #     s = sv.src.slotnames[id]
-        #     add_remark!(interp, sv, UndefVarErrorReport(interp, sv, sv.mod, s))
-        # end
-    elseif isa(e, GlobalRef)
+    # if isa(e, Slot)
+    #     id = slot_id(e)
+    #     s = sv.src.slotnames[id]
+    #     t = vtypes[id].typ
+    #     if t === NOT_FOUND || t === Bottom
+    #         s = sv.src.slotnames[id]
+    #         add_remark!(interp, sv, UndefVarErrorReport(interp, sv, sv.mod, s))
+    #     end
+    # end
+
+    # report (global) undef var error
+    if isa(e, GlobalRef)
         mod, sym = e.mod, e.name
         vgv = get_virtual_globalvar(interp, mod, sym)
         if isnothing(vgv)
@@ -226,6 +231,3 @@ function finish(me::InferenceState, interp::TPInterpreter)
 
     return ret
 end
-
-is_throw_call′(@nospecialize(_)) = false
-is_throw_call′(e::Expr)          = is_throw_call(e)

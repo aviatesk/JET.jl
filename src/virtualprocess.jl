@@ -205,11 +205,13 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
         return x
     end
 
+    lnn = LineNumberNode(0, filename)
+
     # transform, and then profile sequentially
     for x in toplevelex.args
         # update line info
         if islnn(x)
-            line = x.line
+            lnn = x
             continue
         end
 
@@ -252,7 +254,7 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
 
         shouldprofile(x) || continue
 
-        λ = gen_virtual_lambda(virtualmod, LineNumberNode(line, filename), x)
+        λ = gen_virtual_lambda(virtualmod, lnn, x)
 
         interp = TPInterpreter(; # world age gets updated to take in `λ`
                                inf_params              = InferenceParams(interp),
