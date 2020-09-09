@@ -105,7 +105,7 @@ macro reportdef(ex, track_from_frame = false)
     from_statement = :(track_abstract_call_stack!(cache_report!, #= sv =# $(args[3])))
     # `from_frame` should be used when report is constructed _after_ the inference on
     # `sv::InferenceState` has been done
-    from_frame =     :(let
+    from_frame = :(let
         local sig = get_sig($(#= sv =# args[3]).linfo)
         file, line = get_file_line($(#= sv =# args[3]).linfo) # just use this frame's location
         frame = (; file, line, sig)
