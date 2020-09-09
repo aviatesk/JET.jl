@@ -193,9 +193,19 @@ Current frame is needed when we assemble virtual stack frame from cached error r
 set_current_frame!(interp::TPInterpreter, frame::InferenceState) = interp.current_frame[] = frame
 get_current_frame(interp::TPInterpreter) = interp.current_frame[]
 
-# in this overload we can work on `InferenceState` where inference already ran on,
+# in this overload we can work on `InferenceState` where type inference already ran on
 function finish(me::InferenceState, interp::TPInterpreter)
     ret = invoke(finish, Tuple{InferenceState,AbstractInterpreter}, me, interp)
+
+    # report (local) undef var error
+    # this should be done here since additional slot properties about undefined variables
+    # are added by `type_annotate!`
+    for (i, slotflag) in enumerate(me.src.slotflags)
+        if (slotflag & (CC.SLOT_STATICUNDEF | CC.SLOT_STATICUNDEF)) != 0
+            sym = me.src.slotnames[i]
+            add_remark!(interp, me, LocalUndefVarErrorReport(interp, me, sym))
+        end
+    end
 
     # report `throw` calls "appropriately" by simple inter-frame analysis
     # the basic stance here is really conservative so we don't report them unless they
@@ -224,35 +234,8 @@ function finish(me::InferenceState, interp::TPInterpreter)
     return ret
 end
 
-# in this overload we can work on `CodeInfo` (and also `InferenceState`) where the
-# optimization already ran on
-function finish(src::CodeInfo, interp::TPInterpreter)
-    ret = invoke(finish, Tuple{CodeInfo,AbstractInterpreter}, src, interp)
-
-    # report (local) undef var error
-    # this should be done here since `:throw_undef_if_not` and `:(unreachable)` are just
-    # introduced by abstract interpretation
-    for (i, stmt) in enumerate(src.code)
-        if isa(stmt, Expr) && stmt.head === :throw_undef_if_not
-            sym, val = stmt.args
-            if val === false
-                # the abstract interpretation so far has found this statement is never
-                # reachable; TP reports it since it will invoke undef var error at runtime,
-                # or will just be dead code otherwise
-
-                frame = get_current_frame(interp)
-
-                # @assert begin
-                #     is_unreachable(src.code[i+1])
-                # end
-
-                add_remark!(interp, sv, LocalUndefVarErrorReport(interp, sv, nothing, sym))
-            # else
-                # this pass includes false positive (i.e. don't error on runtime), so TP just
-                # ignores it for now
-            end
-        end
-    end
-
-    return ret
-end
+# # in this overload we can work on `CodeInfo` (and also `InferenceState`) where the
+# # optimization already ran on
+# function finish(src::CodeInfo, interp::TPInterpreter)
+#     ret = invoke(finish, Tuple{CodeInfo,AbstractInterpreter}, src, interp)
+# end

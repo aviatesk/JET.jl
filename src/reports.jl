@@ -150,6 +150,8 @@ end
 
 @reportdef GlobalUndefVarErrorReport(interp, sv, mod::Module, name::Symbol)
 
+@reportdef LocalUndefVarErrorReport(interp, sv, name::Symbol) true
+
 @reportdef NonBooleanCondErrorReport(interp, sv, @nospecialize(t::Type))
 
 """
@@ -242,7 +244,8 @@ end
 get_sig(::Type{<:InferenceErrorReport}, interp, sv, @nospecialize(args...)) = get_sig(sv)
 get_sig(sv::InferenceState) = _get_sig(sv, get_cur_stmt(sv))
 
-# special case `ExceptionReport`: there might be multiple throw calls in frame
+# special cased entries
+get_sig(::Type{LocalUndefVarErrorReport}, interp, sv, name) = Any[""] # TODO
 function get_sig(::Type{ExceptionReport}, interp, sv, throw_calls)
     sig = Any[]
     ncalls = length(throw_calls)
@@ -301,8 +304,8 @@ function _get_sig_type(sv::InferenceState, gotoifnot::GotoIfNot)
     sig  = Any[string("goto %", gotoifnot.dest, " if not "), _get_sig(sv, gotoifnot.cond)...]
     return sig, nothing
 end
-function _get_sig_type(sv::InferenceState, ret::ReturnNode)
-    sig = Any["return ", _get_sig(sv, ret.val)...]
+function _get_sig_type(sv::InferenceState, rn::ReturnNode)
+    sig = is_unreachable(rn) ? Any["unreachable"] : Any["return ", _get_sig(sv, rn.val)...]
     return sig, nothing
 end
 function _get_sig_type(::InferenceState, qn::QuoteNode)
@@ -312,21 +315,22 @@ end
 _get_sig_type(::InferenceState, @nospecialize(x)) = Any[repr(x; context = :compact => true)], nothing
 
 get_msg(::Type{NoMethodErrorReport}, interp, sv, unionsplit, @nospecialize(atype)) = unionsplit ?
-    "for one of the union split cases, no matching method found for signature" :
-    "no matching method found for call signature"
+    "for one of the union split cases, no matching method found for signature: " :
+    "no matching method found for call signature: "
 get_msg(::Type{InvalidBuiltinCallErrorReport}, interp, sv) =
-    "invalid builtin function call"
-get_msg(::Type{GlobalUndefVarErrorReport}, interp, sv, mod, name) = isnothing(mod) ?
-    "variable $(name) is not defined" :
-    "variable $(mod).$(name) is not defined"
+    "invalid builtin function call: "
+get_msg(::Type{GlobalUndefVarErrorReport}, interp, sv, mod, name) =
+    "variable $(mod).$(name) is not defined: "
+get_msg(::Type{LocalUndefVarErrorReport}, interp, sv, name) =
+    "variable $(name) may raise UndefVarError"
 get_msg(::Type{NonBooleanCondErrorReport}, interp, sv, @nospecialize(t)) =
-    "non-boolean ($(t)) used in boolean context"
+    "non-boolean ($(t)) used in boolean context: "
 function get_msg(::Type{ExceptionReport}, interp, sv, throw_blocks)
     n = length(throw_blocks)
     return if isone(n)
-        "will throw"
+        "will throw: "
     else
-        "will throw either of"
+        "will throw either of: "
     end
 end
 get_msg(::Type{NativeRemark}, interp, sv, s) = s
