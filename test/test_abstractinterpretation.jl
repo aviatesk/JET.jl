@@ -147,6 +147,41 @@ end
         @test first(interp.reports) isa LocalUndefVarErrorReport
         @test first(interp.reports).name === :bar
     end
+
+    # try to exclude false negatives as possible (by collecting reports in after-optimization pass)
+    let
+        interp, frame = profile_call(Bool) do b
+            if b
+                bar = rand()
+            end
+
+            return if b
+                return bar # this shouldn't be reported
+            else
+                return nothing
+            end
+        end
+        @test isempty(interp.reports)
+    end
+
+    let
+        interp, frame = profile_call(Bool) do b
+            if b
+                bar = rand()
+            end
+
+            return if b
+                return nothing
+            else
+                # ideally we want to have report for this pass, but tons of work will be
+                # needed to report this pass
+                return bar
+            end
+        end
+        @test_broken length(interp.reports) === 1 &&
+            first(interp.reports) isa LocalUndefVarErrorReport &&
+            first(interp.reports).name === :bar
+    end
 end
 
 @testset "report undefined (global) variables" begin
