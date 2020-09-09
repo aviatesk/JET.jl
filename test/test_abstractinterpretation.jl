@@ -109,6 +109,74 @@
     end
 end
 
+@testset "report undefined slots" begin
+    let
+        interp, frame = profile_call(Bool) do b
+            if b
+                bar = rand(Int)
+                return bar
+            end
+            return bar # undefined in this pass
+        end
+        @test length(interp.reports) === 1
+        @test first(interp.reports) isa LocalUndefVarErrorReport
+        @test first(interp.reports).name === :bar
+    end
+
+    # deeper level
+    let
+        m = gen_virtualmod()
+        interp, frame = Core.eval(m, quote
+            function foo(b)
+                if b
+                    bar = rand(Int)
+                    return bar
+                end
+                return bar # undefined in this pass
+            end
+            baz(a) = foo(a)
+            $(profile_call)(baz, Bool)
+        end)
+        @test length(interp.reports) === 1
+        @test first(interp.reports) isa LocalUndefVarErrorReport
+        @test first(interp.reports).name === :bar
+
+        # works when cached
+        interp, frame = Core.eval(m, :($(profile_call)(baz, Bool)))
+        @test length(interp.reports) === 1
+        @test first(interp.reports) isa LocalUndefVarErrorReport
+        @test first(interp.reports).name === :bar
+    end
+end
+
+@testset "report undefined (global) variables" begin
+    let
+        interp, frame = profile_call(()->foo)
+        @test length(interp.reports) === 1
+        @test first(interp.reports) isa GlobalUndefVarErrorReport
+        @test first(interp.reports).name === :foo
+    end
+
+    # deeper level
+    let
+        m = gen_virtualmod()
+        interp, frame = Core.eval(m, quote
+            foo(bar) = bar + baz
+            qux(a) = foo(a)
+            $(profile_call)(qux, Int)
+        end)
+        @test length(interp.reports) === 1
+        @test first(interp.reports) isa GlobalUndefVarErrorReport
+        @test first(interp.reports).name === :baz
+
+        # works when cached
+        interp, frame = Core.eval(m, :($(profile_call)(qux, Int)))
+        @test length(interp.reports) === 1
+        @test first(interp.reports) isa GlobalUndefVarErrorReport
+        @test first(interp.reports).name === :baz
+    end
+end
+
 @testset "inference with virtual global variable" begin
     let
         s = """
