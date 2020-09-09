@@ -94,9 +94,8 @@ macro reportdef(ex, track_from_frame = false)
     T = first(ex.args)
     args = map(ex.args) do x
         # unwrap @nospecialize
-        isexpr(x, :macrocall) && first(x.args) === Symbol("@nospecialize") && (x = esc(last(x.args))) # `esc` is needed because `@nospecialize` escapes its argument anyway
-        # handle default arguments
-        isexpr(x, :(=)) && return first(x.args)
+        # `esc` is needed because `@nospecialize` escapes its argument anyway
+        isexpr(x, :macrocall) && first(x.args) === Symbol("@nospecialize") && (x = esc(last(x.args)))
         return x
     end
     spec_args = args[4:end] # those additional, specific fields
