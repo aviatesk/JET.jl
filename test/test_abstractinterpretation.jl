@@ -258,6 +258,21 @@ end
         @test first(interp.reports) isa ExceptionReport
     end
 
+    # don't report if there the other crical error exist
+    let
+        m = gen_virtualmod()
+        interp, frame = Core.eval(m, quote
+            foo(a) = sum(a) # should be reported
+            bar(a) = throw(a) # shouldn't be reported first
+            $(profile_call)(Bool, String) do b, s
+                b && foo(s)
+                bar(s)
+            end
+        end)
+        @test length(interp.reports) === 2
+        test_sum_over_string(interp.reports)
+    end
+
     # end to end
     let
         # this should report `throw(ArgumentError("Sampler for this object is not defined")`

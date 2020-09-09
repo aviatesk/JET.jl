@@ -229,11 +229,16 @@ function typeinf(interp::TPInterpreter, frame::InferenceState)
 
         if isroot(frame)
             # if return type is `Bottom`-annotated for root frame, this means some error(s)
-            # aren't caught by at any level and get propagated here, and so let's report
-            # `ExceptionReport` if exist
-            for (i, (idx, report)) in enumerate(interp.exception_reports)
-                insert!(interp.reports, idx + i, report)
-            end
+            # aren't caught by at any level and get propagated here
+
+            # # just append collected `ExceptionReport`s
+            # for (i, (idx, report)) in enumerate(interp.exception_reports)
+            #     insert!(interp.reports, idx + i, report)
+            # end
+
+            # only report `ExceptionReport`s if there is no other error reported
+            # TODO: change behaviour according to severity of collected report, e.g. don't count into `NativeRemark`
+            isempty(interp.reports) && append!(interp.reports, last.(interp.exception_reports))
         end
     end
 
