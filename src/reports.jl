@@ -90,7 +90,7 @@ function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
     end
 end
 
-macro reportdef(ex, track_from_frame = false)
+macro reportdef(ex, kwargs...)
     T = first(ex.args)
     args = map(ex.args) do x
         # unwrap @nospecialize
@@ -99,6 +99,14 @@ macro reportdef(ex, track_from_frame = false)
         return x
     end
     spec_args = args[4:end] # those additional, specific fields
+
+    local track_from_frame::Bool = false
+    for ex in kwargs
+        @assert isexpr(ex, :(=))
+        if first(ex.args) === :track_from_frame
+            track_from_frame = last(ex.args)
+        end
+    end
 
     # `from_statement` should be used when report is constructed _during_ the inference
     from_statement = :(track_abstract_call_stack!(cache_report!, #= sv =# $(args[3])))
@@ -149,7 +157,7 @@ end
 
 @reportdef GlobalUndefVarErrorReport(interp, sv, mod::Module, name::Symbol)
 
-@reportdef LocalUndefVarErrorReport(interp, sv, name::Symbol) true
+@reportdef LocalUndefVarErrorReport(interp, sv, name::Symbol) track_from_frame = true
 
 @reportdef NonBooleanCondErrorReport(interp, sv, @nospecialize(t::Type))
 
@@ -159,7 +167,7 @@ end
 Represents general `Exception`s traced during inference. They are reported only when there's
   "inevitable" [`throw`](@ref) calls found by inter-frame analysis.
 """
-@reportdef ExceptionReport(interp, sv, throw_calls::Vector{Any}) true
+@reportdef ExceptionReport(interp, sv, throw_calls::Vector{Any}) track_from_frame = true
 
 """
     NativeRemark <: InferenceErrorReport
