@@ -127,48 +127,50 @@ end
 #     return ret
 # end
 
-# works as the native (i.e. "make as much progress on `frame` as possible (without handling
-# cycles)", but when `interp` is profiling on virtual toplevel lambda and `frame` is in
-# virtual toplevel (i.e. when `isroot(frame) === true`), keep the traced types of  `SlotNumber`s
-# (which are originally global variables) in `TPInterpreter.virtual_globalvar_table` so that
-# they can be referred across profilings on different virtual (toplevel) functions
-# NOTE:
-# virtual global assignments should happen here because `SlotNumber`s can be optimized away
-# after the optimization happens
 function typeinf_local(interp::TPInterpreter, frame::InferenceState)
     set_current_frame!(interp, frame)
 
     ret = invoke_native(typeinf_local, interp, frame)
 
-    # assign virtual global variable for toplevel frames
-    if istoplevel(interp) && isroot(frame)
-        for (pc, stmt) in enumerate(frame.src.code)
-            isexpr(stmt, :(=)) && set_virtual_globalvar!(interp, frame, pc, stmt)
-        end
+    # assign virtual global variable
+    # TODO: maybe move this into the `typeinf` overload ?
+    # currently this needs to be done here since `set_virtual_globalvar!` assumes we can
+    # access to the type of lhs via `frame.src.ssavaluetypes`, which doesn't hold true after
+    # optimization
+    for (pc, stmt) in enumerate(frame.src.code)
+        is_global_assign(stmt) && set_virtual_globalvar!(interp, frame, pc, stmt)
     end
 
     return ret
 end
 
-istoplevel(interp::TPInterpreter) = interp.istoplevel
+is_global_assign(@nospecialize(_)) = false
+is_global_assign(ex::Expr)         = isexpr(ex, :(=)) && first(ex.args) isa GlobalRef
 
 function get_virtual_globalvar(interp, mod, sym)
-    haskey(interp.virtual_globalvar_table, mod) || return nothing
-    return get(interp.virtual_globalvar_table[mod], sym, nothing)
+    vgvt4mod = get(interp.virtual_globalvar_table, mod, nothing)
+    isnothing(vgvt4mod) && return nothing
+    id2vgv = get(vgvt4mod, sym, nothing)
+    isnothing(id2vgv) && return nothing
+    return last(id2vgv)
 end
 
 function set_virtual_globalvar!(interp, frame, pc, stmt)
-    mod = frame.mod
-    haskey(interp.virtual_globalvar_table, mod) || (interp.virtual_globalvar_table[mod] = Dict())
+    gr = first(stmt.args)::GlobalRef
+    vgvt4mod = get!(interp.virtual_globalvar_table, gr.mod, Dict())
 
-    slt = first(stmt.args)::Slot
-    lhs = frame.src.slotnames[slt.id]::Symbol
-    rhs = frame.src.ssavaluetypes[pc]
-    if rhs === NOT_FOUND
-        rhs = Bottom
+    sym = gr.name
+    id = get_id(interp)
+    prev_id, prev_typ = get!(vgvt4mod, sym, id => Bottom)
+
+    typ = frame.src.ssavaluetypes[pc]
+    if typ === NOT_FOUND
+        typ = Bottom
     end
 
-    interp.virtual_globalvar_table[mod][lhs] = rhs
+    vgvt4mod[sym] = id => id === prev_id ?
+                          tmerge(prev_typ, typ) :
+                          typ
 end
 
 """

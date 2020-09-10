@@ -20,6 +20,9 @@ end
 import Base:
     Fix1, Fix2
 
+import Core.Compiler:
+    ⊑
+
 const CC = Core.Compiler
 
 const FIXTURE_DIR = normpath(@__DIR__, "fixtures")

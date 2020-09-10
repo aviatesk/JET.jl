@@ -11,10 +11,11 @@ struct TPInterpreter <: AbstractInterpreter
 
     #= TypeProfiler.jl specific =#
 
+    # for escaping reporting duplicated cached reports, sequential assignment of virtual global variable
+    id::Symbol
+
     # caching
     # -------
-    # for escaping reporting duplicated cached reports
-    id::Symbol
     # for constructing virtual stack frame from cached reports
     current_frame::Ref{InferenceState}
     # keeping reports from frame that always `throw`
@@ -22,10 +23,8 @@ struct TPInterpreter <: AbstractInterpreter
 
     # virtual toplevel execution
     # --------------------------
-    # tracks this the currrent frame is toplevel (and should assign virtual global variables)
-    istoplevel::Bool
-    # keeps virtual global variables
-    virtual_globalvar_table::Dict{Module,Dict{Symbol,Any}} # maybe we don't need this nested dicts
+    # module -> (sym -> (id => type))
+    virtual_globalvar_table::Dict{Module,Dict{Symbol,Pair{Symbol,Any}}}
 
     # profiling
     # ---------
@@ -40,7 +39,6 @@ struct TPInterpreter <: AbstractInterpreter
                            optimize::Bool = true,
                            compress::Bool = false,
                            discard_trees::Bool = false,
-                           istoplevel::Bool = false,
                            virtual_globalvar_table::AbstractDict = Dict(),
                            filter_native_remarks::Bool = true,
                            )
@@ -55,7 +53,6 @@ struct TPInterpreter <: AbstractInterpreter
                    id,
                    Ref{InferenceState}(),
                    [],
-                   istoplevel,
                    virtual_globalvar_table,
                    filter_native_remarks,
                    [],

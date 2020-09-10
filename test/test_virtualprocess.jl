@@ -499,26 +499,209 @@ end
         @test !isnothing(get_virtual_globalvar(interp, vmod, :constvar))
     end
 
-    # local variables shouldn't leak into global
-    @testset "no global leak" for s in ("""
-                                        let
-                                            localvar = rand(Bool)
-                                        end
-                                        """,
-                                        """
-                                        for i = 1:100
-                                            localvar = i
-                                        end
-                                        """,
-                                        """
-                                        while true
-                                            localvar = rand(Bool)
-                                        end
-                                        """
-                                        )
+    @testset "union assignment" begin
+        let
+            vmod = gen_virtualmod()
+            interp, frame = Core.eval(vmod, :($(profile_call)() do
+                global globalvar
+                if rand(Bool)
+                    globalvar = "String"
+                else
+                    globalvar = :Symbol
+                end
+            end))
 
-        vmod = gen_virtualmod()
-        res, interp = profile_toplevel!(s, vmod)
-        @test isnothing(get_virtual_globalvar(interp, vmod, :localvar))
+            @test get_virtual_globalvar(interp, vmod, :globalvar) === Union{String,Symbol}
+        end
+
+        let
+            vmod = gen_virtualmod()
+            s = """
+            if rand(Bool)
+                globalvar = "String"
+            else
+                globalvar = :Symbol
+            end
+
+            foo(s::AbstractString) = length(s)
+            foo(globalvar) # union-split no method matching error should be reported
+            """
+            res, interp = profile_toplevel!(s, vmod)
+
+            @test get_virtual_globalvar(interp, vmod, :globalvar) === Union{String,Symbol}
+            @test length(res.inference_error_reports) === 1
+            er = first(res.inference_error_reports)
+            @test er isa NoMethodErrorReport &&
+                er.unionsplit # should be true
+        end
+
+        # sequential
+        let
+            vmod = gen_virtualmod()
+            s = """
+            if rand(Bool)
+                globalvar = "String"
+            else
+                globalvar = :Symbol
+            end
+
+            foo(s::AbstractString) = length(s)
+            foo(globalvar) # union-split no method matching error should be reported
+
+            globalvar = 10
+            foo(globalvar) # no method matching error should be reported
+            """
+            res, interp = profile_toplevel!(s, vmod)
+
+            @test get_virtual_globalvar(interp, vmod, :globalvar) ⊑ Int
+            @test length(res.inference_error_reports) === 2
+            let er = first(res.inference_error_reports)
+                @test er isa NoMethodErrorReport &&
+                er.unionsplit
+            end
+            let er = last(res.inference_error_reports)
+                @test er isa NoMethodErrorReport &&
+                !er.unionsplit
+            end
+        end
+    end
+
+    @testset "scope" begin
+        # function
+        # --------
+
+        let
+            vmod = gen_virtualmod()
+            interp, frame = Core.eval(vmod, :($(profile_call)() do
+                localvar = rand(Bool)
+                global globalvar = localvar
+            end))
+            @test isnothing(get_virtual_globalvar(interp, vmod, :localvar))
+            @test !isnothing(get_virtual_globalvar(interp, vmod, :globalvar))
+        end
+
+        # blocks
+        # ------
+
+        let s = """
+                begin
+                    globalvar = rand(Bool)
+                end
+                """
+            vmod = gen_virtualmod()
+            res, interp = profile_toplevel!(s, vmod)
+            @test !isnothing(get_virtual_globalvar(interp, vmod, :globalvar))
+        end
+
+        let s = """
+                begin
+                    local localvar = rand(Bool)
+                    globalvar = localvar
+                end
+                """
+            vmod = gen_virtualmod()
+            res, interp = profile_toplevel!(s, vmod)
+            @test isnothing(get_virtual_globalvar(interp, vmod, :localvar))
+            @test !isnothing(get_virtual_globalvar(interp, vmod, :globalvar))
+        end
+
+        let s = """
+                begin
+                    local localvar
+                    localvar = rand(Bool) # this shouldn't be annotated as `global`
+                    globalvar = localvar
+                end
+                """
+            vmod = gen_virtualmod()
+            @test_broken try
+                res, interp = profile_toplevel!(s, vmod)
+                @test isnothing(get_virtual_globalvar(interp, vmod, :localvar))
+                @test !isnothing(get_virtual_globalvar(interp, vmod, :globalvar))
+            catch
+                false
+            end
+        end
+
+        let s = """
+                globalvar2 = begin
+                    local localvar = rand(Bool)
+                    globalvar1 = localvar
+                end
+                """
+            vmod = gen_virtualmod()
+            res, interp = profile_toplevel!(s, vmod)
+            @test isnothing(get_virtual_globalvar(interp, vmod, :locbalvar))
+            @test !isnothing(get_virtual_globalvar(interp, vmod, :globalvar1))
+            @test !isnothing(get_virtual_globalvar(interp, vmod, :globalvar2))
+        end
+
+        let s = """
+                let
+                    localvar = rand(Bool)
+                end
+                """
+            vmod = gen_virtualmod()
+            res, interp = profile_toplevel!(s, vmod)
+            @test isnothing(get_virtual_globalvar(interp, vmod, :localvar))
+        end
+
+        let s = """
+                globalvar = let
+                    localvar = rand(Bool)
+                    localvar
+                end
+                """
+            vmod = gen_virtualmod()
+            res, interp = profile_toplevel!(s, vmod)
+            @test isnothing(get_virtual_globalvar(interp, vmod, :localvar))
+            @test !isnothing(get_virtual_globalvar(interp, vmod, :globalvar))
+        end
+
+        # loops
+        # -----
+
+        let s = """
+                for i = 1:100
+                    localvar = i
+                end
+                """
+            vmod = gen_virtualmod()
+            res, interp = profile_toplevel!(s, vmod)
+            @test isnothing(get_virtual_globalvar(interp, vmod, :localvar))
+        end
+
+        let s = """
+                for i in 1:10
+                    localvar = rand(i)
+                    global globalvar = localvar
+                end
+                """
+            vmod = gen_virtualmod()
+            res, interp = profile_toplevel!(s, vmod)
+            @test isnothing(get_virtual_globalvar(interp, vmod, :localvar))
+            @test !isnothing(get_virtual_globalvar(interp, vmod, :globalvar))
+        end
+
+        let s = """
+                while true
+                    localvar = rand(Bool)
+                end
+                """
+            vmod = gen_virtualmod()
+            res, interp = profile_toplevel!(s, vmod)
+            @test isnothing(get_virtual_globalvar(interp, vmod, :localvar))
+        end
+
+        let s = """
+                while true
+                    localvar = rand()
+                    global globalvar = localvar
+                end
+                """
+            vmod = gen_virtualmod()
+            res, interp = profile_toplevel!(s, vmod)
+            @test isnothing(get_virtual_globalvar(interp, vmod, :localvar))
+            @test !isnothing(get_virtual_globalvar(interp, vmod, :globalvar))
+        end
     end
 end
