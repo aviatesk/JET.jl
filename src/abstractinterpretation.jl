@@ -127,20 +127,16 @@ end
 #     return ret
 # end
 
-# works as the native (i.e. "make as much progress on `frame` as possible (without handling
-# cycles)", but when `interp` is profiling on virtual toplevel lambda and `frame` is in
-# virtual toplevel (i.e. when `isroot(frame) === true`), keep the traced types of  `SlotNumber`s
-# (which are originally global variables) in `TPInterpreter.virtual_globalvar_table` so that
-# they can be referred across profilings on different virtual (toplevel) functions
-# NOTE:
-# virtual global assignments should happen here because `SlotNumber`s can be optimized away
-# after the optimization happens
 function typeinf_local(interp::TPInterpreter, frame::InferenceState)
     set_current_frame!(interp, frame)
 
     ret = invoke_native(typeinf_local, interp, frame)
 
-    # assign virtual global variable for toplevel frames
+    # assign virtual global variable
+    # TODO: maybe move this into the `typeinf` overload ?
+    # currently this needs to be done here since `set_virtual_globalvar!` assumes we can
+    # access to the type of lhs via `frame.src.ssavaluetypes`, which doesn't hold true after
+    # optimization
     for (pc, stmt) in enumerate(frame.src.code)
         is_global_assign(stmt) && set_virtual_globalvar!(interp, frame, pc, stmt)
     end

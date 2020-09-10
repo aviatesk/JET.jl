@@ -50,8 +50,11 @@ the _transform_ includes:
 - try to expand macros in a context of `virtualmod`
 - handle `include` by recursively calling this function on the `include`d file
 - replace self-reference of `actualmodsym` with that of `virtualmod`
-- remove `const` annotations so that remaining code block can be wrapped into a virtual
-  function (they are not allowed in a function body)
+- tweak assignments
+  * remove `const` annotations so that remaining code block can be wrapped into a virtual
+    function (they are not allowed in a function body)
+  * annotate regular assignments with `global`, which virtual global variable assignment looks
+    for during abstract interpretation (see [`typeinf_local(interp::TPInterpreter, frame::InferenceState)`](@ref))
 
 !!! warning
     this approach involves following limitations:
