@@ -142,11 +142,15 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
         :quote in scope && return x
 
         # expand macro
+        # ------------
+
         if isexpr(x, :macrocall)
             x = macroexpand_with_err_handling(virtualmod, x)
         end
 
-        # hoist and evaluate these toplevel expressions
+        # hoist and evaluate toplevel expressions
+        # ---------------------------------------
+
         # these shouldn't happen when in function scope, since then they can be wrongly
         # hoisted and evaluated when they're wrapped in closures, while they actually cause
         # syntax errors; if they're in other "toplevel definition"s, they will just cause
@@ -162,12 +166,17 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
         end
 
         # evaluate toplevel function definitions
+        # --------------------------------------
+
         !islocalscope(scope) && isfuncdef(x) && return eval_with_err_handling(virtualmod, x)
 
-        # remove `const` annotation
+        # tweak assignments
+        # -----------------
+
+        # remove `const` annotation, annotate `global` instead
         if isexpr(x, :const)
             return if !islocalscope(scope)
-                first(x.args)
+                Expr(:global, first(x.args))
             else
                 report = SyntaxErrorReport("unsupported `const` declaration on local variable", filename, line)
                 push!(ret.toplevel_error_reports, report)
@@ -175,7 +184,12 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
             end
         end
 
-        # handle static `include` call
+        # annotate `global`s for regular assignments in global scope
+        !(islocalscope(scope) || is_already_scoped(scope)) && is_assignment(x) && return Expr(:global, x)
+
+        # handle static `include` calls
+        # -----------------------------
+
         if isinclude(x)
             # TODO: maybe find a way to handle two args `include` calls
             include_file = eval_with_err_handling(virtualmod, last(x.args))
@@ -262,7 +276,6 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
                                optimize                = may_optimize(interp),
                                compress                = may_compress(interp),
                                discard_trees           = may_discard_trees(interp),
-                               istoplevel              = !isa(x, Symbol) && !islocalscope(x), # disable virtual global variable assignment when profiling non-toplevel blocks
                                virtual_globalvar_table = interp.virtual_globalvar_table, # pass on virtual global variable table
                                filter_native_remarks   = interp.filter_native_remarks,
                                )
@@ -353,6 +366,9 @@ function isfuncdef(ex)
 
     return false
 end
+
+is_already_scoped(scope) = last(scope) in (:local, :global)
+is_assignment(x) = isexpr(x, :(=)) && Base.isidentifier(first(x.args))
 
 isinclude(ex) = isexpr(ex, :call) && first(ex.args) === :include
 

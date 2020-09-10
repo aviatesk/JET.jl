@@ -141,16 +141,15 @@ function typeinf_local(interp::TPInterpreter, frame::InferenceState)
     ret = invoke_native(typeinf_local, interp, frame)
 
     # assign virtual global variable for toplevel frames
-    if istoplevel(interp) && isroot(frame)
-        for (pc, stmt) in enumerate(frame.src.code)
-            isexpr(stmt, :(=)) && set_virtual_globalvar!(interp, frame, pc, stmt)
-        end
+    for (pc, stmt) in enumerate(frame.src.code)
+        is_global_assign(stmt) && set_virtual_globalvar!(interp, frame, pc, stmt)
     end
 
     return ret
 end
 
-istoplevel(interp::TPInterpreter) = interp.istoplevel
+is_global_assign(@nospecialize(_)) = false
+is_global_assign(ex::Expr)         = isexpr(ex, :(=)) && first(ex.args) isa GlobalRef
 
 function get_virtual_globalvar(interp, mod, sym)
     haskey(interp.virtual_globalvar_table, mod) || return nothing
@@ -158,17 +157,16 @@ function get_virtual_globalvar(interp, mod, sym)
 end
 
 function set_virtual_globalvar!(interp, frame, pc, stmt)
-    mod = frame.mod
-    haskey(interp.virtual_globalvar_table, mod) || (interp.virtual_globalvar_table[mod] = Dict())
+    gr = first(stmt.args)::GlobalRef
+    vgvt = get!(interp.virtual_globalvar_table, gr.mod, Dict())
 
-    slt = first(stmt.args)::Slot
-    lhs = frame.src.slotnames[slt.id]::Symbol
+    lhs = gr.name
     rhs = frame.src.ssavaluetypes[pc]
     if rhs === NOT_FOUND
         rhs = Bottom
     end
 
-    interp.virtual_globalvar_table[mod][lhs] = rhs
+    vgvt[lhs] = rhs
 end
 
 """

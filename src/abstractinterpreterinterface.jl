@@ -22,10 +22,7 @@ struct TPInterpreter <: AbstractInterpreter
 
     # virtual toplevel execution
     # --------------------------
-    # tracks this the currrent frame is toplevel (and should assign virtual global variables)
-    istoplevel::Bool
-    # keeps virtual global variables
-    virtual_globalvar_table::Dict{Module,Dict{Symbol,Any}} # maybe we don't need this nested dicts
+    virtual_globalvar_table::Dict{Module,Dict{Symbol,Any}}
 
     # profiling
     # ---------
@@ -40,7 +37,6 @@ struct TPInterpreter <: AbstractInterpreter
                            optimize::Bool = true,
                            compress::Bool = false,
                            discard_trees::Bool = false,
-                           istoplevel::Bool = false,
                            virtual_globalvar_table::AbstractDict = Dict(),
                            filter_native_remarks::Bool = true,
                            )
@@ -55,7 +51,6 @@ struct TPInterpreter <: AbstractInterpreter
                    id,
                    Ref{InferenceState}(),
                    [],
-                   istoplevel,
                    virtual_globalvar_table,
                    filter_native_remarks,
                    [],
