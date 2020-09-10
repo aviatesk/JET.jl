@@ -148,21 +148,29 @@ is_global_assign(@nospecialize(_)) = false
 is_global_assign(ex::Expr)         = isexpr(ex, :(=)) && first(ex.args) isa GlobalRef
 
 function get_virtual_globalvar(interp, mod, sym)
-    haskey(interp.virtual_globalvar_table, mod) || return nothing
-    return get(interp.virtual_globalvar_table[mod], sym, nothing)
+    vgvt4mod = get(interp.virtual_globalvar_table, mod, nothing)
+    isnothing(vgvt4mod) && return nothing
+    id2vgv = get(vgvt4mod, sym, nothing)
+    isnothing(id2vgv) && return nothing
+    return last(id2vgv)
 end
 
 function set_virtual_globalvar!(interp, frame, pc, stmt)
     gr = first(stmt.args)::GlobalRef
-    vgvt = get!(interp.virtual_globalvar_table, gr.mod, Dict())
+    vgvt4mod = get!(interp.virtual_globalvar_table, gr.mod, Dict())
 
-    lhs = gr.name
-    rhs = frame.src.ssavaluetypes[pc]
-    if rhs === NOT_FOUND
-        rhs = Bottom
+    sym = gr.name
+    id = get_id(interp)
+    prev_id, prev_typ = get!(vgvt4mod, sym, id => Bottom)
+
+    typ = frame.src.ssavaluetypes[pc]
+    if typ === NOT_FOUND
+        typ = Bottom
     end
 
-    vgvt[lhs] = rhs
+    vgvt4mod[sym] = id => id === prev_id ?
+                          tmerge(prev_typ, typ) :
+                          typ
 end
 
 """
