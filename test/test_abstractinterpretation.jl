@@ -1,4 +1,4 @@
-@testset "union-split method matching" begin
+@testset "report on union-split method matching" begin
     # if there is no method matching case in union-split, it should be reported
     let
         # NOTE: we can't just wrap them into `let`, closures can't be inferred correctly
@@ -209,6 +209,33 @@ end
         @test length(interp.reports) === 1
         @test first(interp.reports) isa GlobalUndefVarErrorReport
         @test first(interp.reports).name === :baz
+    end
+end
+
+@testset "report non-boolean condition error" begin
+    let
+        interp, frame = profile_call(Int) do a
+            a ? a : nothing
+        end
+        @test length(interp.reports) === 1
+        er = first(interp.reports)
+        @test er isa NonBooleanCondErrorReport
+        @test er.t === Int
+    end
+
+    let
+        interp, frame = profile_call(Any) do a
+            a ? a : nothing
+        end
+        @test isempty(interp.reports)
+    end
+
+    let
+        interp, frame = profile_call() do
+            anyary = Any[1,2,3]
+            first(anyary) ? first(anyary) : nothing
+        end
+        @test isempty(interp.reports) # very untyped, we can't report on this ...
     end
 end
 

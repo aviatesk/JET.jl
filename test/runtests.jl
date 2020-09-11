@@ -86,17 +86,6 @@ end
 # @profile_call fib(100000.) # ::Float64
 # @profile_call fib(100000 + 100000im) # report !
 #
-# # non-boolean condition
-# # ---------------------
-#
-# nonbool(a) = a ? a : nothing
-# nonbool() = (c = rand(Any[1,2,3])) #=c is Any typed=# ? c : nothing
-#
-# @profile_call nonbool(1) # report
-# @profile_call nonbool(true) # not report
-# @profile_call nonbool() # can't report because it's untyped
-#
-#
 # # no matching method
 # # ------------------
 #
