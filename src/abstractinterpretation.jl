@@ -120,25 +120,13 @@ function abstract_eval_value(interp::TPInterpreter, @nospecialize(e), vtypes::Va
     return ret
 end
 
-# # overload this to profile on e.g. `Expr(:new, ...)`
-# function abstract_eval_statement(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-#     ret = invoke_native(abstract_eval_statement, interp, e, vtypes, sv)
-#
-#     return ret
-# end
-
-function typeinf_local(interp::TPInterpreter, frame::InferenceState)
-    set_current_frame!(interp, frame)
-
-    ret = invoke_native(typeinf_local, interp, frame)
+function abstract_eval_statement(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
+    ret = invoke_native(abstract_eval_statement, interp, e, vtypes, sv)
 
     # assign virtual global variable
-    # TODO: maybe move this into the `typeinf` overload ?
-    # currently this needs to be done here since `set_virtual_globalvar!` assumes we can
-    # access to the type of lhs via `frame.src.ssavaluetypes`, which doesn't hold true after
-    # optimization
-    for (pc, stmt) in enumerate(frame.src.code)
-        is_global_assign(stmt) && set_virtual_globalvar!(interp, frame, pc, stmt)
+    stmt = get_cur_stmt(sv)
+    if is_global_assign(stmt)
+        set_virtual_globalvar!(interp, sv, first((stmt::Expr).args)::GlobalRef, ret)
     end
 
     return ret
@@ -155,22 +143,28 @@ function get_virtual_globalvar(interp, mod, sym)
     return last(id2vgv)
 end
 
-function set_virtual_globalvar!(interp, frame, pc, stmt)
-    gr = first(stmt.args)::GlobalRef
+function set_virtual_globalvar!(interp, frame, gr, @nospecialize(t))
     vgvt4mod = get!(interp.virtual_globalvar_table, gr.mod, Dict())
 
     sym = gr.name
     id = get_id(interp)
-    prev_id, prev_typ = get!(vgvt4mod, sym, id => Bottom)
+    prev_id, prev_t = get!(vgvt4mod, sym, id => Bottom)
 
-    typ = frame.src.ssavaluetypes[pc]
-    if typ === NOT_FOUND
-        typ = Bottom
+    if t === NOT_FOUND
+        t = Bottom
     end
 
     vgvt4mod[sym] = id => id === prev_id ?
-                          tmerge(prev_typ, typ) :
-                          typ
+                          tmerge(prev_t, t) :
+                          t
+end
+
+function typeinf_local(interp::TPInterpreter, frame::InferenceState)
+    set_current_frame!(interp, frame)
+
+    ret = invoke_native(typeinf_local, interp, frame)
+
+    return ret
 end
 
 """

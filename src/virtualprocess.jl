@@ -40,21 +40,22 @@ this function first parses `s` and then iterate following steps on each code blo
 2. if not, _transforms_ it so that it can be profiled with a context of `virtualmod`
 
 the _transform_ includes:
-- hoist "toplevel defintions" into toplevel and extract them from local blocks, so that
-  remaining code block can be wrapped into a virtual function, which will be profiled;
-  "toplevel defintions" include:
+- extract "toplevel defintions" from local blocks and hoist them into toplevel, so that
+  remaining code block can be wrapped into a virtual function, which `TPInterpreter` will
+  later profile on; "toplevel defintions" includes:
   * toplevel `function` definition
   * `macro` definition
-  * `struct`, `abstract` and `primitive` type definition
+  * `struct`, `abstract type` and `primitive type` definition
   * `import`/`using` statements
 - try to expand macros in a context of `virtualmod`
-- handle `include` by recursively calling this function on the `include`d file
-- replace self-reference of `actualmodsym` with that of `virtualmod`
-- tweak assignments
+- handle `include` calls by recursively calling this function on the included file
+- replace self-reference of `actualmodsym` with that of `virtualmod` to help type inference
+- tweak toplevel assignments
   * remove `const` annotations so that remaining code block can be wrapped into a virtual
     function (they are not allowed in a function body)
-  * annotate regular assignments with `global`, which virtual global variable assignment looks
-    for during abstract interpretation (see [`typeinf_local(interp::TPInterpreter, frame::InferenceState)`](@ref))
+  * annotate regular assignments with `global`, on which `TPInterpreter` will do virtual
+    global variable assignment during abstract interpretation
+    (see [`typeinf_local(interp::TPInterpreter, frame::InferenceState)`](@ref))
 
 !!! warning
     this approach involves following limitations:
