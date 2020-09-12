@@ -4,12 +4,11 @@
 HACK: calls down to `NativeInterpreter`'s abstract interpretation method while passing
   `TPInterpreter` so that subsequent methods that are oveloaded against `TPInterpreter` can
   be called from the native method.
-`ex` is supposed to be the function definition signature of the target native method, which
 
+`ex` is supposed to be the function definition signature of the target native method, which
   can be copy-and-pasted from the native compiler code.
 
-> example: calls down to `NativeInterpreter`'s `abstract_call_gf_by_type` method.
-
+e.g. calls down to `NativeInterpreter`'s `abstract_call_gf_by_type` method:
 ```julia
 ret = @invoke_native abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f), argtypes::Vector{Any}, @nospecialize(atype), sv::InferenceState,
                                               max_methods::Int = InferenceParams(interp).MAX_METHODS)
