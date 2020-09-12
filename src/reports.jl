@@ -94,11 +94,12 @@ macro reportdef(ex, kwargs...)
     T = first(ex.args)
     args = map(ex.args) do x
         # unwrap @nospecialize
-        # `esc` is needed because `@nospecialize` escapes its argument anyway
-        isexpr(x, :macrocall) && first(x.args) === Symbol("@nospecialize") && (x = esc(last(x.args)))
+        if isexpr(x, :macrocall) && first(x.args) === Symbol("@nospecialize")
+            x = esc(last(x.args)) # `esc` is needed because `@nospecialize` escapes its argument anyway
+        end
         return x
     end
-    spec_args = args[4:end] # those additional, specific fields
+    spec_args = args[4:end] # keep those additional, specific fields
 
     local track_from_frame::Bool = false
     for ex in kwargs
@@ -108,28 +109,35 @@ macro reportdef(ex, kwargs...)
         end
     end
 
+    sv = args[3]
     # `from_statement` should be used when report is constructed _during_ the inference
-    from_statement = :(track_abstract_call_stack!(cache_report!, #= sv =# $(args[3])))
+    from_statement = :(track_abstract_call_stack!(cache_report!, $(sv)))
     # `from_frame` should be used when report is constructed _after_ the inference on
     # `sv::InferenceState` has been done
     from_frame = :(let
-        local sig = get_sig($(#= sv =# args[3]).linfo)
-        file, line = get_file_line($(#= sv =# args[3]).linfo) # just use this frame's location
+        local sig = get_sig($(sv).linfo)
+        file, line = get_file_line($(sv).linfo) # just use this frame's location
         frame = (; file, line, sig)
         st = VirtualFrame[frame]
-        cache_report!($(#= sv =# args[3]), st)
+        cache_report!($(sv), st)
 
-        isroot($(#= sv =# args[3])) ? st : track_abstract_call_stack!(cache_report!, $(#= sv =# args[3]).parent, st) # postwalk
+        isroot($(sv)) ? st : track_abstract_call_stack!(cache_report!, $(sv).parent, st) # postwalk
     end)
 
+    function strip_type_annotations(x)
+        isexpr(x, :escape) && return Expr(:escape, strip_type_annotations(first(x.args))) # keep escape
+        return isexpr(x, :(::)) ? first(x.args) : x
+    end
+    args′ = strip_type_annotations.(args)
+    spec_args′ = strip_type_annotations.(spec_args)
     constructor_body = quote
-        msg = get_msg(#= T, interp, sv, ... =# $(args...))
-        sig = get_sig(#= T, interp, sv, ... =# $(args...))
+        msg = get_msg(#= T, interp, sv, ... =# $(args′...))
+        sig = get_sig(#= T, interp, sv, ... =# $(args′...))
 
-        cache_report! = gen_report_cacher(msg, sig, #= T, interp, sv, ... =# $(args...))
+        cache_report! = gen_report_cacher(msg, sig, #= T, interp, sv, ... =# $(args′...))
         st = $(track_from_frame ? from_frame : from_statement)
 
-        return new(reverse(st), msg, sig, $(spec_args...))
+        return new(reverse(st), msg, sig, $(spec_args′...))
     end
     constructor_ex = Expr(:function, ex, constructor_body)
 
@@ -144,8 +152,8 @@ macro reportdef(ex, kwargs...)
             $(constructor_ex)
 
             # inner constructor (from cache)
-            function $(T)(st::VirtualStackTrace, msg::AbstractString, sig::AbstractVector, @nospecialize(args::NTuple{N, Any} where N))
-                return new(reverse(st), msg, sig, $(esc(:(args...)))) # `esc` is needed because `@nospecialize` escapes its argument anyway
+            function $(T)(st::VirtualStackTrace, msg::AbstractString, sig::AbstractVector, @nospecialize(spec_args::NTuple{N, Any} where N))
+                return new(reverse(st), msg, sig, $(esc(:(spec_args...)))) # `esc` is needed because `@nospecialize` escapes its argument anyway
             end
         end
     end
