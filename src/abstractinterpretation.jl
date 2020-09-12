@@ -33,8 +33,8 @@ function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argty
 
     # throw away previously-reported union-split no method errors that are revealed as
     # false positive by constant propagation; constant propagation always happens _after_
-     # abstract interpretation with only using types (i.e. `atype`), and so the false positive
-      # candidates are supposed to be reported in `interp.reports` at this point
+    # abstract interpretation with only using types (i.e. `atype`), and so the false positive
+    # candidates are supposed to be reported in `interp.reports` at this point
     # watch on: https://github.com/JuliaLang/julia/blob/a108d6cb8fdc7924fe2b8d831251142386cb6525/base/compiler/abstractinterpretation.jl#L153
     if CC.any(sv.result.overridden_by_const) && isa(info, MethodMatchInfo)
         inds = findall(interp.reports) do report
@@ -124,9 +124,10 @@ function abstract_eval_statement(interp::TPInterpreter, @nospecialize(e), vtypes
     ret = invoke_native(abstract_eval_statement, interp, e, vtypes, sv)
 
     # assign virtual global variable
+    # NOTE: this can introduce wrong side effects, and should be limited to toplevel frames ?
     stmt = get_cur_stmt(sv)
     if is_global_assign(stmt)
-        set_virtual_globalvar!(interp, sv, first((stmt::Expr).args)::GlobalRef, ret)
+        set_virtual_globalvar!(interp, first((stmt::Expr).args)::GlobalRef, ret)
     end
 
     return ret
@@ -143,7 +144,7 @@ function get_virtual_globalvar(interp, mod, sym)
     return last(id2vgv)
 end
 
-function set_virtual_globalvar!(interp, frame, gr, @nospecialize(t))
+function set_virtual_globalvar!(interp, gr, @nospecialize(t))
     vgvt4mod = get!(interp.virtual_globalvar_table, gr.mod, Dict())
 
     sym = gr.name

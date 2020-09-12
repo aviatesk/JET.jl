@@ -29,7 +29,7 @@ profile_text(args...; kwargs...) = profile_text(stdout, args...; kwargs...)
 
 report_errors(::Nothing, args...; kwargs...) = return report_errors(args...; kwargs...)
 function report_errors(logger::IO, args...; kwargs...)
-    print(logger, "profiling from $(#=filename=# last(args)) ...")
+    print(logger, "profiling from ", #= filename =# last(args), " ...")
     s = time()
 
     ret = report_errors(args...; kwargs...)
@@ -80,20 +80,16 @@ function profile_call_gf!(interp::TPInterpreter,
                           world::UInt = get_world_counter(interp)
                           )
     ms = _methods_by_ftype(tt, -1, world)
-    (ms === false || length(ms) != 1) && error("Unable to find single applicable method for $tt")
+    @assert !(ms === false || length(ms) != 1) "unable to find single applicable method for $(tt)"
 
-    atypes, sparams, m = ms[1]
+    atypes, sparams, m = first(ms)
 
-    # grab the appropriate method instance for these types
     mi = specialize_method(m, atypes, sparams)
 
-    # create an InferenceResult to hold the result
     result = InferenceResult(mi)
 
-    # create an InferenceState to begin inference, give it a world that is always newest
-    frame = InferenceState(result, #=cached=# true, interp)
+    frame = InferenceState(result, #= cached =# true, interp)
 
-    # run type inference on this frame
     typeinf(interp, frame)
 
     return interp, frame
@@ -117,8 +113,8 @@ typeof′(x::Type{T}) where {T} = Type{T}
 @specialize
 
 macro profile_call(ex, kwargs...)
-    @assert Meta.isexpr(ex, :call) "function call expression should be given"
-    f = ex.args[1]
+    @assert isexpr(ex, :call) "function call expression should be given"
+    f = first(ex.args)
     args = ex.args[2:end]
 
     return quote let
