@@ -1,9 +1,34 @@
-# HACK:
-# calls down to `NativeInterpreter`'s abstract interpretation method while passing `TPInterpreter`
-# so that its overloaded methods can be called within the sub/recursive method callls.
-function invoke_native(f, interp::TPInterpreter, args...; kwargs...)
-    argtypes = to_tuple_type((AbstractInterpreter, typeof.(args)...))
-    return invoke(f, argtypes, interp, args...; kwargs...)
+"""
+    @invoke_native ex
+
+HACK: calls down to `NativeInterpreter`'s abstract interpretation method while passing
+  `TPInterpreter` so that subsequent methods that are oveloaded against `TPInterpreter` can
+  be called from the native method.
+`ex` is supposed to be the function definition signature of the target native method, which
+
+  can be copy-and-pasted from the native compiler code.
+
+> example: calls down to `NativeInterpreter`'s `abstract_call_gf_by_type` method.
+
+```julia
+ret = @invoke_native abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f), argtypes::Vector{Any}, @nospecialize(atype), sv::InferenceState,
+                                              max_methods::Int = InferenceParams(interp).MAX_METHODS)
+```
+"""
+macro invoke_native(ex)
+    f = first(ex.args)
+    # TODO: maybe we need to handle kwargs too here
+    arg2typs = map(ex.args[2:end]) do x
+        if isexpr(x, :macrocall) && first(x.args) === Symbol("@nospecialize")
+            x = last(x.args)
+        elseif isexpr(x, :kw)
+            x = first(x.args)
+        end
+        return isexpr(x, :(::)) ? (first(x.args), last(x.args)) : (x, Any)
+    end
+    args = first.(arg2typs)
+    typs = last.(arg2typs)
+    return esc(:(invoke($(f), Tuple{$(typs...)}, $(args...))))
 end
 
 function is_empty_match(info::MethodMatchInfo)
@@ -27,7 +52,8 @@ is_unreachable(rn::ReturnNode)   = !isdefined(rn, :val)
 # - maybe "cound not identify method table for call" won't happen since we eagerly propagate bottom for e.g. undef var case, etc.
 function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argtypes::Vector{Any}, @nospecialize(atype), sv::InferenceState,
                                   max_methods::Int = InferenceParams(interp).MAX_METHODS)
-    ret = invoke_native(abstract_call_gf_by_type, interp, f, argtypes, atype, sv, max_methods)::CallMeta
+    ret = @invoke_native abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f), argtypes::Vector{Any}, @nospecialize(atype), sv::InferenceState,
+                                                  max_methods::Int = InferenceParams(interp).MAX_METHODS)
 
     info = ret.info
 
@@ -84,7 +110,7 @@ function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argty
 end
 
 function abstract_eval_special_value(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    ret = invoke_native(abstract_eval_special_value, interp, e, vtypes, sv)
+    ret = @invoke_native abstract_eval_special_value(interp::AbstractInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
 
     # report (global) undef var error
     if isa(e, GlobalRef)
@@ -105,7 +131,7 @@ function abstract_eval_special_value(interp::TPInterpreter, @nospecialize(e), vt
 end
 
 function abstract_eval_value(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    ret = invoke_native(abstract_eval_value, interp, e, vtypes, sv)
+    ret = @invoke_native abstract_eval_value(interp::AbstractInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
 
     # report non-boolean condition error
     stmt = get_cur_stmt(sv)
@@ -121,7 +147,7 @@ function abstract_eval_value(interp::TPInterpreter, @nospecialize(e), vtypes::Va
 end
 
 function abstract_eval_statement(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    ret = invoke_native(abstract_eval_statement, interp, e, vtypes, sv)
+    ret = @invoke_native abstract_eval_statement(interp::AbstractInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
 
     # assign virtual global variable
     # NOTE: this can introduce wrong side effects, and should be limited to toplevel frames ?
@@ -163,7 +189,7 @@ end
 function typeinf_local(interp::TPInterpreter, frame::InferenceState)
     set_current_frame!(interp, frame)
 
-    ret = invoke_native(typeinf_local, interp, frame)
+    ret = @invoke_native typeinf_local(interp::AbstractInterpreter, frame::InferenceState)
 
     return ret
 end
@@ -187,7 +213,7 @@ get_current_frame(interp::TPInterpreter) = interp.current_frame[]
 function typeinf(interp::TPInterpreter, frame::InferenceState)
     set_current_frame!(interp, frame)
 
-    ret = invoke_native(typeinf, interp, frame)
+    ret = @invoke_native typeinf(interp::AbstractInterpreter, frame::InferenceState)
 
     # report (local) undef var error
     # this only works when optimization is enabled, just because `:throw_undef_if_not` and
@@ -245,7 +271,7 @@ end
 function typeinf_edge(interp::TPInterpreter, method::Method, @nospecialize(atypes), sparams::SimpleVector, caller::InferenceState)
     set_current_frame!(interp, caller)
 
-    ret = invoke_native(typeinf_edge, interp, method, atypes, sparams, caller)
+    ret = @invoke_native typeinf_edge(interp::AbstractInterpreter, method::Method, @nospecialize(atypes), sparams::SimpleVector, caller::InferenceState)
 
     return ret
 end
