@@ -1,7 +1,8 @@
 # just relies on the native tfuncs, maybe there're lots of edge cases
 function builtin_tfunction(interp::TPInterpreter, @nospecialize(f), argtypes::Array{Any,1},
                            sv::Union{InferenceState,Nothing})
-    ret = invoke_native(builtin_tfunction, interp, f, argtypes, sv)
+    ret = @invoke_native builtin_tfunction(interp::AbstractInterpreter, @nospecialize(f), argtypes::Array{Any,1},
+                                           sv::Union{InferenceState,Nothing})
 
     # propagate virtual global variable
     if f === getfield && ret == Any && length(argtypes) == 2 && all(a->isa(a, Const), argtypes)
@@ -33,7 +34,7 @@ function return_type_tfunc(interp::TPInterpreter, argtypes::Vector{Any}, sv::Inf
         add_remark!(interp, sv, NoMethodErrorReport(interp, sv, false, argtypes_to_type(argtypes) #= this is not necessary to be computed correctly, though =#))
         return Bottom
     else
-        # don't recursively pass on `TPInterpreter` via `invoke_native`
+        # don't recursively pass on `TPInterpreter` via `@invoke_native`
         return return_type_tfunc(interp.native, argtypes, sv)
     end
 end
