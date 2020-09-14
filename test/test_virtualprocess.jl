@@ -8,7 +8,7 @@
         end
         """
 
-        res, interp = profile_toplevel!(s)
+        res, interp = profile_toplevel(s)
 
         @test !isempty(res.toplevel_error_reports)
         @test first(res.toplevel_error_reports) isa SyntaxErrorReport
@@ -17,47 +17,46 @@ end
 
 @testset "\"toplevel definitions\"" begin
     let
-        s = """
-        # function
-        foo() = nothing
+        vmod = gen_virtualmod()
+        @profile_toplevel vmod begin
+            # function
+            foo() = nothing
 
-        # local function, shouldn't be evaluated
-        let
-            c = rand(Bool)
-            foo′(a) = a || c
-        end
+            # local function, shouldn't be evaluated
+            let
+                c = rand(Bool)
+                foo′(a) = a || c
+            end
 
-        # macro
-        macro foo(ex) ex end
+            # macro
+            macro foo(ex) ex end
 
-        # abstract type
-        abstract type Foo end
+            # abstract type
+            abstract type Foo end
 
-        # struct
-        struct Foo1 <: Foo
-            val::Int
-        end
-        mutable struct Foo2 <: Foo
-            val::Int
-        end
+            # struct
+            struct Foo1 <: Foo
+                val::Int
+            end
+            mutable struct Foo2 <: Foo
+                val::Int
+            end
 
-        # primitive type
-        primitive type Foo3 32 end
+            # primitive type
+            primitive type Foo3 32 end
 
-        # import, using
-        using Base: Fix1
-        import Base: getproperty
+            # import, using
+            using Base: Fix1
+            import Base: getproperty
 
-        function getproperty(foo::Foo, sym::Symbol)
-            return if sym === :val
-                getfield(foo, sym)::Int
-            else
-                getfield(foo, sym)
+            function getproperty(foo::Foo, sym::Symbol)
+                return if sym === :val
+                    getfield(foo, sym)::Int
+                else
+                    getfield(foo, sym)
+                end
             end
         end
-        """
-        vmod = gen_virtualmod()
-        profile_toplevel!(s, vmod)
 
         @test isdefined(vmod, :foo)
         @test !isdefined(vmod, :foo′)
@@ -72,19 +71,17 @@ end
 
     # "toplevel definitions" with access to global objects
     let
-        s = """
-        foo = rand(Bool)
-
-        struct Foo
-            b::Bool
-            Foo(b = foo) = new(b)
-        end
-
-        Foo()
-        """
-
         vmod = gen_virtualmod()
-        res, interp = profile_toplevel!(s, vmod)
+        res, interp = @profile_toplevel vmod begin
+            foo = rand(Bool)
+
+            struct Foo
+                b::Bool
+                Foo(b = foo) = new(b)
+            end
+
+            Foo()
+        end
 
         # global variables aren't evaluated but kept in `interp` instead
         @test !isdefined(vmod, :foo)
@@ -97,16 +94,14 @@ end
 
 @testset "hoisting \"toplevel definitions\"" begin
     let
-        s = """
-        let
-            struct Foo end
-            foo(::Foo) = :Foo
-            foo(Foo.instance)
-        end
-        """
-
         vmod = gen_virtualmod()
-        res, interp = profile_toplevel!(s, vmod)
+        res, interp = @profile_toplevel vmod begin
+            let
+                struct Foo end
+                foo(::Foo) = :Foo
+                foo(Foo.instance)
+            end
+        end
 
         @test isdefined(vmod, :Foo)
         @test isempty(res.toplevel_error_reports)
@@ -115,19 +110,17 @@ end
 
     # "toplevel definitions" can't resolve access to local objects
     let
-        s = """
-        let
-            i = 1
-            struct Foo
-                val::Int
-                Foo(val = i) = new(val)
-            end
-            foo = Foo()
-        end
-        """
-
         vmod = gen_virtualmod()
-        res, interp = profile_toplevel!(s, vmod)
+        res, interp = @profile_toplevel vmod begin
+            let
+                i = 1
+                struct Foo
+                    val::Int
+                    Foo(val = i) = new(val)
+                end
+                foo = Foo()
+            end
+        end
 
         @test !isdefined(vmod, :i)
         @test isnothing(get_virtual_globalvar(interp, vmod, :i))
@@ -138,13 +131,11 @@ end
 
 @testset "macro expansions" begin
     let
-        s = """
-        @inline foo(a) = identity(a)
-        foo(10)
-        """
-
         vmod = gen_virtualmod()
-        res, interp = profile_toplevel!(s, vmod)
+        res, interp = @profile_toplevel vmod begin
+            @inline foo(a) = identity(a)
+            foo(10)
+        end
 
         @test isdefined(vmod, :foo)
         @test isempty(res.toplevel_error_reports)
@@ -152,18 +143,16 @@ end
     end
 
     let
-        s = """
-        macro foo(ex)
-            @assert Meta.isexpr(ex, :call)
-            push!(ex.args, 1)
-            return ex
-        end
-
-        @foo sin() # otherwise NoMethodError
-        """
-
         vmod = gen_virtualmod()
-        res, interp = profile_toplevel!(s, vmod)
+        res, interp = @profile_toplevel vmod begin
+            macro foo(ex)
+                @assert Meta.isexpr(ex, :call)
+                push!(ex.args, 1)
+                return ex
+            end
+
+            @foo sin() # otherwise NoMethodError
+        end
 
         @test isdefined(vmod, Symbol("@foo"))
         @test isempty(res.toplevel_error_reports)
@@ -172,20 +161,18 @@ end
 
     # macro expansions with access to global variables will fail
     let
-        s = """
-        const arg = 1
-
-        macro foo(ex)
-            @assert Meta.isexpr(ex, :call)
-            push!(ex.args, arg)
-            return ex
-        end
-
-        @foo sin()
-        """
-
         vmod = gen_virtualmod()
-        res, interp = profile_toplevel!(s, vmod)
+        res, interp = @profile_toplevel vmod begin
+            const arg = 1
+
+            macro foo(ex)
+                @assert Meta.isexpr(ex, :call)
+                push!(ex.args, arg)
+                return ex
+            end
+
+            @foo sin()
+        end
 
         @test isdefined(vmod, Symbol("@foo"))
         @test_broken isempty(res.toplevel_error_reports)
@@ -195,26 +182,22 @@ end
 
 @testset "remove `const`" begin
     let
-        s = """
-        const s = "julia"
-        sum(s)
-        """
-
-        res, interp = profile_toplevel!(s)
+        res, interp = @profile_toplevel begin
+            const s = "julia"
+            sum(s)
+        end
 
         @test isempty(res.toplevel_error_reports)
         test_sum_over_string(res)
     end
 
     let
-        s = """
-        let
-            const s = "julia"
-            sum(s)
+        res, interp = @profile_toplevel begin
+            let
+                const s = "julia"
+                sum(s)
+            end
         end
-        """
-
-        res, interp = profile_toplevel!(s)
 
         @test !isempty(res.toplevel_error_reports)
         @test first(res.toplevel_error_reports) isa SyntaxErrorReport
@@ -225,10 +208,9 @@ end
     let
         f1 = normpath(FIXTURE_DIR, "include1.jl")
         f2 = normpath(FIXTURE_DIR, "include1.jl")
-        s = read(f1, String)
 
         vmod = gen_virtualmod()
-        res, interp = profile_toplevel!(s, vmod; filename = f1)
+        res, interp = profile_file′(f1, vmod)
 
         @test f1 in res.included_files
         @test f2 in res.included_files
@@ -239,7 +221,7 @@ end
 
     let
         f = normpath(FIXTURE_DIR, "nonexistinclude.jl")
-        res, interp = profile_file!(f)
+        res, interp = profile_file′(f)
 
         @test f in res.included_files
         @test !isempty(res.toplevel_error_reports)
@@ -250,7 +232,7 @@ end
 
     let
         f = normpath(FIXTURE_DIR, "selfrecursiveinclude.jl")
-        res, interp = profile_file!(f)
+        res, interp = profile_file′(f)
 
         @test f in res.included_files
         @test !isempty(res.toplevel_error_reports)
@@ -260,7 +242,7 @@ end
     let
         f1 = normpath(FIXTURE_DIR, "chainrecursiveinclude1.jl")
         f2 = normpath(FIXTURE_DIR, "chainrecursiveinclude2.jl")
-        res, interp = profile_file!(f1)
+        res, interp = profile_file′(f1)
 
         @test f1 in res.included_files
         @test f2 in res.included_files
@@ -289,25 +271,23 @@ end
                                        end
                                        """
                                        )
-    res, interp = profile_toplevel!(s)
+    res, interp = profile_toplevel(s)
     @test isempty(res.toplevel_error_reports)
 end
 
 @testset "module usage" begin
     # using
     let
-        s = """
-        module foo
+        res, interp = @profile_toplevel begin
+            module foo
 
-        using Base.Meta: isexpr
+            using Base.Meta: isexpr
 
-        isexpr(:(foo(bar)), :call)
-        isexpr2(:(foo(bar)), :call)
+            isexpr(:(foo(bar)), :call)
+            isexpr2(:(foo(bar)), :call)
 
+            end
         end
-        """
-
-        res, interp = profile_toplevel!(s)
 
         @test isempty(res.toplevel_error_reports)
         @test !isempty(res.inference_error_reports)
@@ -317,23 +297,21 @@ end
 
     # sequential usage
     let
-        s = """
-        module foo
+        res, interp = @profile_toplevel begin
+            module foo
 
-        bar(s) = sum(s)
+            bar(s) = sum(s)
 
-        module baz
+            module baz
 
-        using ..foo
+            using ..foo
 
-        bar("julia") # -> GlobalUndefVarErrorReport
+            bar("julia") # -> GlobalUndefVarErrorReport
 
-        end # module bar
+            end # module bar
 
-        end # module foo
-        """
-
-        res, interp = profile_toplevel!(s)
+            end # module foo
+        end
 
         @test isempty(res.toplevel_error_reports)
         @test !isempty(res.inference_error_reports)
@@ -342,70 +320,42 @@ end
 
     # usage of global objects
     let
-        s = """
-        module foo
+        res, interp = @profile_toplevel begin
+            module foo
 
-        bar(s) = sum(s)
+            bar(s) = sum(s)
 
-        module baz
+            module baz
 
-        using ..foo
+            using ..foo
 
-        foo.bar("julia") # -> NoMethodErrorReports
+            foo.bar("julia") # -> NoMethodErrorReports
 
-        end # module bar
+            end # module bar
 
-        end # module foo
-        """
-
-        res, interp = profile_toplevel!(s)
+            end # module foo
+        end
 
         @test isempty(res.toplevel_error_reports)
         test_sum_over_string(res)
     end
 
     let
-        s = """
-        module foo
+        res, interp = @profile_toplevel begin
+            module foo
 
-        bar(s) = sum(s)
+            bar(s) = sum(s)
 
-        module baz
+            module baz
 
-        using ..foo: bar
+            using ..foo: bar
 
-        bar("julia") # -> NoMethodErrorReports
+            bar("julia") # -> NoMethodErrorReports
 
-        end # module bar
+            end # module bar
 
-        end # module foo
-        """
-
-        res, interp = profile_toplevel!(s)
-
-        @test isempty(res.toplevel_error_reports)
-        test_sum_over_string(res)
-    end
-
-    # usage of global variables
-    let
-        s = """
-        module foo
-
-        const bar = "julia"
-
-        module baz
-
-        using ..foo
-
-        sum(foo.bar) # -> NoMethodErrorReports
-
-        end # module bar
-
-        end # module foo
-        """
-
-        res, interp = profile_toplevel!(s)
+            end # module foo
+        end
 
         @test isempty(res.toplevel_error_reports)
         test_sum_over_string(res)
@@ -413,23 +363,43 @@ end
 
     # usage of global variables
     let
-        s = """
-        module foo
+        res, interp = @profile_toplevel begin
+            module foo
 
-        const bar = sum
+            const bar = "julia"
 
-        module baz
+            module baz
 
-        using ..foo: bar
+            using ..foo
 
-        bar("julia") # -> NoMethodErrorReports
+            sum(foo.bar) # -> NoMethodErrorReports
 
-        end # module bar
+            end # module bar
 
-        end # module foo
-        """
+            end # module foo
+        end
 
-        res, interp = profile_toplevel!(s)
+        @test isempty(res.toplevel_error_reports)
+        test_sum_over_string(res)
+    end
+
+    # usage of global variables
+    let
+        res, interp = @profile_toplevel begin
+            module foo
+
+            const bar = sum
+
+            module baz
+
+            using ..foo: bar
+
+            bar("julia") # -> NoMethodErrorReports
+
+            end # module bar
+
+            end # module foo
+        end
 
         # TODO: fix usage of virtual global variables
         @test_broken isempty(res.toplevel_error_reports)
@@ -438,21 +408,19 @@ end
 
     # export
     let
-        s = """
-        module foo
+        res, interp = @profile_toplevel begin
+            module foo
 
-        bar(s) = sum(s)
+            bar(s) = sum(s)
 
-        export bar
+            export bar
 
+            end
+
+            using .foo
+
+            bar("julia") # -> NoMethodErrorReports
         end
-
-        using .foo
-
-        bar("julia") # -> NoMethodErrorReports
-        """
-
-        res, interp = profile_toplevel!(s)
 
         @test isempty(res.toplevel_error_reports)
         test_sum_over_string(res)
@@ -461,40 +429,34 @@ end
 
 @testset "sequential" begin
     let
-        s = """
-        foo(1:1000)
+        res, interp = @profile_toplevel begin
+            foo(1:1000)
 
-        foo(a) = length(a)
-        """
-
-        res, interp = profile_toplevel!(s)
+            foo(a) = length(a)
+        end
         @test length(res.inference_error_reports) === 1
         @test first(res.inference_error_reports) isa GlobalUndefVarErrorReport
     end
 
     let
-        s = """
-        foo(a) = length(a)
-        foo("julia") # should not error
+        res, interp = @profile_toplevel begin
+            foo(a) = length(a)
+            foo("julia") # should not error
 
-        foo(a) = sum(a)
-        foo(1:1000)  # should not error too
-        """
-
-        res, interp = profile_toplevel!(s)
+            foo(a) = sum(a)
+            foo(1:1000)  # should not error too
+        end
         @test isempty(res.inference_error_reports)
     end
 end
 
 @testset "virtual global variables" begin
     let
-        s = """
-        var = rand(Bool)
-        const constvar = rand(Bool)
-        """
-
         vmod = gen_virtualmod()
-        res, interp = profile_toplevel!(s, vmod)
+        res, interp = @profile_toplevel vmod begin
+            var = rand(Bool)
+            const constvar = rand(Bool)
+        end
         @test !isnothing(get_virtual_globalvar(interp, vmod, :var))
         @test !isnothing(get_virtual_globalvar(interp, vmod, :constvar))
     end
@@ -516,38 +478,38 @@ end
         # blocks
         # ------
 
-        let s = """
+        let
+            vmod = gen_virtualmod()
+            res, interp = @profile_toplevel vmod begin
                 begin
                     globalvar = rand(Bool)
                 end
-                """
-            vmod = gen_virtualmod()
-            res, interp = profile_toplevel!(s, vmod)
+            end
             @test !isnothing(get_virtual_globalvar(interp, vmod, :globalvar))
         end
 
-        let s = """
+        let
+            vmod = gen_virtualmod()
+            res, interp = @profile_toplevel vmod begin
                 begin
                     local localvar = rand(Bool)
                     globalvar = localvar
                 end
-                """
-            vmod = gen_virtualmod()
-            res, interp = profile_toplevel!(s, vmod)
+            end
             @test isnothing(get_virtual_globalvar(interp, vmod, :localvar))
             @test !isnothing(get_virtual_globalvar(interp, vmod, :globalvar))
         end
 
-        let s = """
-                begin
-                    local localvar
-                    localvar = rand(Bool) # this shouldn't be annotated as `global`
-                    globalvar = localvar
-                end
-                """
+        let
             vmod = gen_virtualmod()
             @test_broken try
-                res, interp = profile_toplevel!(s, vmod)
+                res, interp = @profile_toplevel vmod begin
+                    begin
+                        local localvar
+                        localvar = rand(Bool) # this shouldn't be annotated as `global`
+                        globalvar = localvar
+                    end
+                end
                 @test isnothing(get_virtual_globalvar(interp, vmod, :localvar))
                 @test !isnothing(get_virtual_globalvar(interp, vmod, :globalvar))
             catch
@@ -555,37 +517,37 @@ end
             end
         end
 
-        let s = """
+        let
+            vmod = gen_virtualmod()
+            res, interp = @profile_toplevel vmod begin
                 globalvar2 = begin
                     local localvar = rand(Bool)
                     globalvar1 = localvar
                 end
-                """
-            vmod = gen_virtualmod()
-            res, interp = profile_toplevel!(s, vmod)
+            end
             @test isnothing(get_virtual_globalvar(interp, vmod, :locbalvar))
             @test !isnothing(get_virtual_globalvar(interp, vmod, :globalvar1))
             @test !isnothing(get_virtual_globalvar(interp, vmod, :globalvar2))
         end
 
-        let s = """
+        let
+            vmod = gen_virtualmod()
+            res, interp = @profile_toplevel vmod begin
                 let
                     localvar = rand(Bool)
                 end
-                """
-            vmod = gen_virtualmod()
-            res, interp = profile_toplevel!(s, vmod)
+            end
             @test isnothing(get_virtual_globalvar(interp, vmod, :localvar))
         end
 
-        let s = """
+        let
+            vmod = gen_virtualmod()
+            res, interp = @profile_toplevel vmod begin
                 globalvar = let
                     localvar = rand(Bool)
                     localvar
                 end
-                """
-            vmod = gen_virtualmod()
-            res, interp = profile_toplevel!(s, vmod)
+            end
             @test isnothing(get_virtual_globalvar(interp, vmod, :localvar))
             @test !isnothing(get_virtual_globalvar(interp, vmod, :globalvar))
         end
@@ -593,46 +555,46 @@ end
         # loops
         # -----
 
-        let s = """
+        let
+            vmod = gen_virtualmod()
+            res, interp = @profile_toplevel vmod begin
                 for i = 1:100
                     localvar = i
                 end
-                """
-            vmod = gen_virtualmod()
-            res, interp = profile_toplevel!(s, vmod)
+            end
             @test isnothing(get_virtual_globalvar(interp, vmod, :localvar))
         end
 
-        let s = """
+        let
+            vmod = gen_virtualmod()
+            res, interp = @profile_toplevel vmod begin
                 for i in 1:10
                     localvar = rand(i)
                     global globalvar = localvar
                 end
-                """
-            vmod = gen_virtualmod()
-            res, interp = profile_toplevel!(s, vmod)
+            end
             @test isnothing(get_virtual_globalvar(interp, vmod, :localvar))
             @test !isnothing(get_virtual_globalvar(interp, vmod, :globalvar))
         end
 
-        let s = """
+        let
+            vmod = gen_virtualmod()
+            res, interp = @profile_toplevel vmod begin
                 while true
                     localvar = rand(Bool)
                 end
-                """
-            vmod = gen_virtualmod()
-            res, interp = profile_toplevel!(s, vmod)
+            end
             @test isnothing(get_virtual_globalvar(interp, vmod, :localvar))
         end
 
-        let s = """
+        let
+            vmod = gen_virtualmod()
+            res, interp = @profile_toplevel vmod begin
                 while true
                     localvar = rand()
                     global globalvar = localvar
                 end
-                """
-            vmod = gen_virtualmod()
-            res, interp = profile_toplevel!(s, vmod)
+            end
             @test isnothing(get_virtual_globalvar(interp, vmod, :localvar))
             @test !isnothing(get_virtual_globalvar(interp, vmod, :globalvar))
         end

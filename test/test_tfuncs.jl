@@ -1,23 +1,21 @@
 @testset "getfield with virtual global variable" begin
     # nested module access may not be resolved as `GlobalRef` and can be propagated into `getfield`
     let
-        s = """
-        module foo
+        res, interp = @profile_toplevel begin
+            module foo
 
-        const bar = sum
+            const bar = sum
 
-        module baz
+            module baz
 
-        using ..foo
+            using ..foo
 
-        foo.bar("julia") # -> NoMethodErrorReports
+            foo.bar("julia") # -> NoMethodErrorReports
 
-        end # module bar
+            end # module bar
 
-        end # module foo
-        """
-
-        res, interp = profile_toplevel!(s)
+            end # module foo
+        end
 
         @test isempty(res.toplevel_error_reports)
         test_sum_over_string(res)

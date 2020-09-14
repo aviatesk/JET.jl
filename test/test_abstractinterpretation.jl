@@ -241,13 +241,11 @@ end
 
 @testset "inference with virtual global variable" begin
     let
-        s = """
-        s = "julia"
-        sum(s)
-        """
-
         vmod = gen_virtualmod()
-        res, interp = profile_toplevel!(s, vmod)
+        res, interp = @profile_toplevel vmod begin
+            s = "julia"
+            sum(s)
+        end
 
         @test widenconst(get_virtual_globalvar(interp, vmod, :s)) == String
         test_sum_over_string(res)
@@ -270,17 +268,16 @@ end
 
         let
             vmod = gen_virtualmod()
-            s = """
-            if rand(Bool)
-                globalvar = "String"
-            else
-                globalvar = :Symbol
-            end
+            res, interp = @profile_toplevel vmod begin
+                if rand(Bool)
+                    globalvar = "String"
+                else
+                    globalvar = :Symbol
+                end
 
-            foo(s::AbstractString) = length(s)
-            foo(globalvar) # union-split no method matching error should be reported
-            """
-            res, interp = profile_toplevel!(s, vmod)
+                foo(s::AbstractString) = length(s)
+                foo(globalvar) # union-split no method matching error should be reported
+            end
 
             @test get_virtual_globalvar(interp, vmod, :globalvar) === Union{String,Symbol}
             @test length(res.inference_error_reports) === 1
@@ -292,20 +289,19 @@ end
         # sequential
         let
             vmod = gen_virtualmod()
-            s = """
-            if rand(Bool)
-                globalvar = "String"
-            else
-                globalvar = :Symbol
+            res, interp = @profile_toplevel vmod begin
+                if rand(Bool)
+                    globalvar = "String"
+                else
+                    globalvar = :Symbol
+                end
+
+                foo(s::AbstractString) = length(s)
+                foo(globalvar) # union-split no method matching error should be reported
+
+                globalvar = 10
+                foo(globalvar) # no method matching error should be reported
             end
-
-            foo(s::AbstractString) = length(s)
-            foo(globalvar) # union-split no method matching error should be reported
-
-            globalvar = 10
-            foo(globalvar) # no method matching error should be reported
-            """
-            res, interp = profile_toplevel!(s, vmod)
 
             @test get_virtual_globalvar(interp, vmod, :globalvar) ⊑ Int
             @test length(res.inference_error_reports) === 2
@@ -321,7 +317,8 @@ end
     end
 
     @testset "invalidate code cache" begin
-        let s = @to_s begin
+        let
+            res, interp = @profile_toplevel begin
                 foo(::Integer) = "good call, pal"
                 bar() = a
 
@@ -334,11 +331,11 @@ end
                 a = 1
                 foo(bar()) # no method error should NOT be reported
             end
-            vmod = gen_virtualmod()
-            res, interp = profile_toplevel!(s, vmod)
             @test length(res.inference_error_reports) === 1
             er = first(res.inference_error_reports)
             @test er isa NoMethodErrorReport &&
+                first(er.st).file === Symbol(@__FILE__) &&
+                first(er.st).line === (@__LINE__) - 9 &&
                 er.atype <: Tuple{Any,Char}
         end
     end

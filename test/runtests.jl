@@ -48,7 +48,12 @@ end
 test_sum_over_string(res::TypeProfiler.VirtualProcessResult) =
     test_sum_over_string(res.inference_error_reports)
 
-function profile_toplevel!(s,
+# profile from file name
+profile_file′(filename, args...; kwargs...) =
+    profile_toplevel(read(filename, String), args...; filename, kwargs...)
+
+# profile from string
+function profile_toplevel(s,
                            virtualmod = gen_virtualmod();
                            filename = "top-level",
                            actualmodsym = :Main,
@@ -57,13 +62,24 @@ function profile_toplevel!(s,
     return virtual_process!(s, filename, actualmodsym, virtualmod, interp)
 end
 
-profile_file!(filename, args...; kwargs...) =
-    profile_toplevel!(read(filename, String), args...; filename, kwargs...)
+# profile from expression
+macro profile_toplevel(virtualmod, ex)
+    return _profile_toplevel(virtualmod, ex, string(__source__.file))
+end
 
-macro to_s(ex)
+macro profile_toplevel(ex)
+    return _profile_toplevel(gen_virtualmod(), ex, string(__source__.file))
+end
+
+function _profile_toplevel(virtualmod, ex, filename)
     # TODO: remove this flattening on https://github.com/aviatesk/TypeProfiler.jl/issues/21
-    isexpr(ex, :block) && return join(string.(ex.args), '\n')
-    return string(ex)
+    @assert isexpr(ex, :block)
+    toplevelex = QuoteNode(Expr(:toplevel, ex.args...))
+    return quote let
+        interp = $(TPInterpreter)()
+        ret = $(TypeProfiler.gen_virtual_process_result)()
+        $(virtual_process!)($(toplevelex), $(filename), :Main, $(esc(virtualmod)), interp, ret)
+    end end
 end
 
 # %% test body
