@@ -51,8 +51,8 @@ is_unreachable(rn::ReturnNode)   = !isdefined(rn, :val)
 # - maybe "cound not identify method table for call" won't happen since we eagerly propagate bottom for e.g. undef var case, etc.
 function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argtypes::Vector{Any}, @nospecialize(atype), sv::InferenceState,
                                   max_methods::Int = InferenceParams(interp).MAX_METHODS)
-    ret = @invoke_native abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f), argtypes::Vector{Any}, @nospecialize(atype), sv::InferenceState,
-                                                  max_methods::Int = InferenceParams(interp).MAX_METHODS)
+    ret = (@invoke_native abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f), argtypes::Vector{Any}, @nospecialize(atype), sv::InferenceState,
+                                                   max_methods::Int = InferenceParams(interp).MAX_METHODS))::CallMeta
 
     info = ret.info
 
@@ -111,12 +111,12 @@ end
 function abstract_eval_special_value(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
     ret = @invoke_native abstract_eval_special_value(interp::AbstractInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
 
-    # report (global) undef var error
-    if isa(e, GlobalRef)
+    # resolve global reference to virtual global variable, or report it if undefined
+    if !isa(ret, Const) && isa(e, GlobalRef)
         mod, sym = e.mod, e.name
         vgv = get_virtual_globalvar(interp, mod, sym, sv)
         if isnothing(vgv)
-            if !isdefined(mod, sym)
+            if !isdefined(mod, sym) # we actually don't need this check, but let's add this just for robustness
                 add_remark!(interp, sv, GlobalUndefVarErrorReport(interp, sv, mod, sym))
                 # typeassert(ret, Any)
                 ret = Bottom # ret here should annotated as `Any` by `NativeInterpreter`, but here I would like to be more conservative and change it to `Bottom`
