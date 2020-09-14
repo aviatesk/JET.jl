@@ -20,6 +20,9 @@ end
 import Base:
     Fix1, Fix2
 
+import Base.Meta:
+    isexpr
+
 import Core.Compiler:
     ⊑
 
@@ -34,7 +37,7 @@ const ERROR_REPORTS_FROM_SUM_OVER_STRING = let
     interp.reports
 end
 
-function test_sum_over_string(ers::AbstractVector)
+function test_sum_over_string(ers)
     @test !isempty(ers)
     for target in ERROR_REPORTS_FROM_SUM_OVER_STRING
         @test any(ers) do er
@@ -42,7 +45,8 @@ function test_sum_over_string(ers::AbstractVector)
         end
     end
 end
-test_sum_over_string(res::TypeProfiler.VirtualProcessResult) = test_sum_over_string(res.inference_error_reports)
+test_sum_over_string(res::TypeProfiler.VirtualProcessResult) =
+    test_sum_over_string(res.inference_error_reports)
 
 function profile_toplevel!(s,
                            virtualmod = gen_virtualmod();
@@ -53,11 +57,13 @@ function profile_toplevel!(s,
     return virtual_process!(s, filename, actualmodsym, virtualmod, interp)
 end
 
-function profile_file!(filename,
-                       virtualmod = gen_virtualmod();
-                       actualmodsym = :Main,
-                       interp = TPInterpreter())
-    return virtual_process!(read(filename, String), filename, actualmodsym, virtualmod, interp)
+profile_file!(filename, args...; kwargs...) =
+    profile_toplevel!(read(filename, String), args...; filename, kwargs...)
+
+macro to_s(ex)
+    # TODO: remove this flattening on https://github.com/aviatesk/TypeProfiler.jl/issues/21
+    isexpr(ex, :block) && return join(string.(ex.args), '\n')
+    return string(ex)
 end
 
 # %% test body

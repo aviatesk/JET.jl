@@ -23,8 +23,8 @@ struct TPInterpreter <: AbstractInterpreter
 
     # virtual toplevel execution
     # --------------------------
-    # module -> (sym -> (id => type))
-    virtual_globalvar_table::Dict{Module,Dict{Symbol,Pair{Symbol,Any}}}
+    # module -> (sym -> (id, type, λ sym, method instance))
+    virtual_globalvar_table::Dict{Module,Dict{Symbol,Tuple{Symbol,Any,Symbol,MethodInstance}}}
 
     # profiling
     # ---------

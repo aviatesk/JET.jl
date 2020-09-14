@@ -252,6 +252,96 @@ end
         @test widenconst(get_virtual_globalvar(interp, vmod, :s)) == String
         test_sum_over_string(res)
     end
+
+    @testset "union assignment" begin
+        let
+            vmod = gen_virtualmod()
+            interp, frame = Core.eval(vmod, :($(profile_call)() do
+                global globalvar
+                if rand(Bool)
+                    globalvar = "String"
+                else
+                    globalvar = :Symbol
+                end
+            end))
+
+            @test get_virtual_globalvar(interp, vmod, :globalvar) === Union{String,Symbol}
+        end
+
+        let
+            vmod = gen_virtualmod()
+            s = """
+            if rand(Bool)
+                globalvar = "String"
+            else
+                globalvar = :Symbol
+            end
+
+            foo(s::AbstractString) = length(s)
+            foo(globalvar) # union-split no method matching error should be reported
+            """
+            res, interp = profile_toplevel!(s, vmod)
+
+            @test get_virtual_globalvar(interp, vmod, :globalvar) === Union{String,Symbol}
+            @test length(res.inference_error_reports) === 1
+            er = first(res.inference_error_reports)
+            @test er isa NoMethodErrorReport &&
+                er.unionsplit # should be true
+        end
+
+        # sequential
+        let
+            vmod = gen_virtualmod()
+            s = """
+            if rand(Bool)
+                globalvar = "String"
+            else
+                globalvar = :Symbol
+            end
+
+            foo(s::AbstractString) = length(s)
+            foo(globalvar) # union-split no method matching error should be reported
+
+            globalvar = 10
+            foo(globalvar) # no method matching error should be reported
+            """
+            res, interp = profile_toplevel!(s, vmod)
+
+            @test get_virtual_globalvar(interp, vmod, :globalvar) ⊑ Int
+            @test length(res.inference_error_reports) === 2
+            let er = first(res.inference_error_reports)
+                @test er isa NoMethodErrorReport &&
+                er.unionsplit
+            end
+            let er = last(res.inference_error_reports)
+                @test er isa NoMethodErrorReport &&
+                !er.unionsplit
+            end
+        end
+    end
+
+    @testset "invalidate code cache" begin
+        let s = @to_s begin
+                foo(::Integer) = "good call, pal"
+                bar() = a
+
+                a = 1
+                foo(bar()) # no method error should NOT be reported
+
+                a = '1'
+                foo(bar()) # no method error should be reported
+
+                a = 1
+                foo(bar()) # no method error should NOT be reported
+            end
+            vmod = gen_virtualmod()
+            res, interp = profile_toplevel!(s, vmod)
+            @test length(res.inference_error_reports) === 1
+            er = first(res.inference_error_reports)
+            @test er isa NoMethodErrorReport &&
+                er.atype <: Tuple{Any,Char}
+        end
+    end
 end
 
 @testset "report `throw` calls" begin
