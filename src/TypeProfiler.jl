@@ -33,7 +33,8 @@ import Core.Compiler:
     MethodInstance, Bottom, NOT_FOUND, MethodMatchInfo, UnionSplitInfo, MethodLookupResult,
     Const, VarTable, SSAValue, SlotNumber, Slot, slot_id, GlobalRef, GotoIfNot, ReturnNode,
     widenconst, isconstType, typeintersect, ⊑, Builtin, CallMeta, is_throw_call, tmerge,
-    argtypes_to_type, abstract_eval_ssavalue, _methods_by_ftype, specialize_method, typeinf
+    argtypes_to_type, abstract_eval_ssavalue, _methods_by_ftype, specialize_method,
+    add_backedge!
 
 import Base:
     parse_input_line, to_tuple_type, Fix1, Fix2

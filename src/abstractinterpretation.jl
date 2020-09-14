@@ -16,7 +16,7 @@ ret = @invoke_native abstract_call_gf_by_type(interp::AbstractInterpreter, @nosp
 """
 macro invoke_native(ex)
     f = first(ex.args)
-    # TODO: maybe we need to handle kwargs too here
+    # NOTE: handle kwargs too here if necessary
     arg2typs = map(ex.args[2:end]) do x
         if isexpr(x, :macrocall) && first(x.args) === Symbol("@nospecialize")
             x = last(x.args)
@@ -114,7 +114,7 @@ function abstract_eval_special_value(interp::TPInterpreter, @nospecialize(e), vt
     # report (global) undef var error
     if isa(e, GlobalRef)
         mod, sym = e.mod, e.name
-        vgv = get_virtual_globalvar(interp, mod, sym)
+        vgv = get_virtual_globalvar(interp, mod, sym, sv)
         if isnothing(vgv)
             if !isdefined(mod, sym)
                 add_remark!(interp, sv, GlobalUndefVarErrorReport(interp, sv, mod, sym))
@@ -149,10 +149,10 @@ function abstract_eval_statement(interp::TPInterpreter, @nospecialize(e), vtypes
     ret = @invoke_native abstract_eval_statement(interp::AbstractInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
 
     # assign virtual global variable
-    # NOTE: this can introduce wrong side effects, and should be limited to toplevel frames ?
     stmt = get_cur_stmt(sv)
     if is_global_assign(stmt)
-        set_virtual_globalvar!(interp, first((stmt::Expr).args)::GlobalRef, ret)
+        gr = first((stmt::Expr).args)::GlobalRef
+        set_virtual_globalvar!(interp, gr.mod, gr.name, ret)
     end
 
     return ret
@@ -161,28 +161,58 @@ end
 is_global_assign(@nospecialize(_)) = false
 is_global_assign(ex::Expr)         = isexpr(ex, :(=)) && first(ex.args) isa GlobalRef
 
-function get_virtual_globalvar(interp, mod, sym)
+function get_virtual_globalvar(interp, mod, sym, sv = nothing)
     vgvt4mod = get(interp.virtual_globalvar_table, mod, nothing)
-    isnothing(vgvt4mod) && return nothing
-    id2vgv = get(vgvt4mod, sym, nothing)
-    isnothing(id2vgv) && return nothing
-    return last(id2vgv)
+    isnothing(vgvt4mod) && return
+
+    x = get(vgvt4mod, sym, nothing)
+    isnothing(x) && return
+
+    _, t, _, li = x
+    if !isnothing(sv)
+        # `sv` might be nothing when called in test, don't add backedge for that case
+        add_backedge!(li, sv)
+    end
+
+    return t
 end
 
-function set_virtual_globalvar!(interp, gr, @nospecialize(t))
-    vgvt4mod = get!(interp.virtual_globalvar_table, gr.mod, Dict())
+function set_virtual_globalvar!(interp, mod, sym, @nospecialize(t))
+    vgvt4mod = get!(interp.virtual_globalvar_table, mod, Dict())
 
-    sym = gr.name
     id = get_id(interp)
-    prev_id, prev_t = get!(vgvt4mod, sym, id => Bottom)
+    prev_id, prev_t, λsym, li = haskey(vgvt4mod, sym) ?
+                                vgvt4mod[sym] :
+                                (id, Bottom, gen_dummy_backedge!(mod)...)
 
     if t === NOT_FOUND
         t = Bottom
     end
 
-    vgvt4mod[sym] = id => id === prev_id ?
-                          tmerge(prev_t, t) :
-                          t
+    if id === prev_id
+        # if the previous virtual global variable assignment happened in the same inference process
+        # TP needs to perform type merge, otherwise TP can "just update" it
+        # TODO: add some backedge for this as well ? it should make the inference correct, but maybe slower to converge
+        t = tmerge(prev_t, t)
+    else
+        # invalidate the dummy backedge that was bound to this virtual global variable,
+        # so that depending `MethodInstance` will run fresh type inference on the next hit
+        li = force_invalidate!(mod, λsym)
+    end
+
+    vgvt4mod[sym] = id, t, λsym, li
+end
+
+function gen_dummy_backedge!(m)
+    @gensym λsym
+    return λsym, force_invalidate!(m, λsym) # just generate dummy `MethodInstance` to be invalidated
+end
+
+# TODO: find a more fine-grained way to do this ? re-evaluating an entire function seems to be over-kill for this
+function force_invalidate!(m, λsym)
+    λ = Core.eval(m, :($(λsym)() = nothing))
+    m = first(methods(λ))
+    return specialize_method(m, Tuple{typeof(λ)}, Core.svec())
 end
 
 function typeinf_local(interp::TPInterpreter, frame::InferenceState)
