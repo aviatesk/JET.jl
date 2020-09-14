@@ -3,6 +3,8 @@
 # - profiling on unloaded package
 #   * support `module`
 #   * special case `__init__` calls
+#
+# FIXME: this is too hacky, find an alternative way for simulating toplevel execution
 
 const VirtualProcessResult = @NamedTuple begin
     included_files::Set{String}
@@ -91,16 +93,16 @@ end
 function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp, ret)
     @assert isexpr(toplevelex, :toplevel)
 
-    # define constant self-referring variable of `virtualmod` so that we can replace
-    # self-reference of the original `actualmodsym` with it
+    # define a constant that self-refers to `virtualmod` so that we can replace
+    # self-references of the original `actualmodsym` with it
     # NOTE: this needs to be "ordinal" identifier for `import`/`using`, etc
     Core.eval(virtualmod, :(const $(TYPEPROFILERJL_SELF_REFERENCE_SYM) = $(virtualmod)))
 
-    # postwalk and do transformations that should be done for all atoms
-    # replace self-reference of `actualmodsym` with that of `virtualmod`;
-    # this needs to be done for all atoms in advance of the following transformations
+    # postwalk and do transformations that should be done for all atoms:
+    # 1. replace self-reference of `actualmodsym` with that of `virtualmod`;
+    #    this needs to be done for all atoms in advance of the following transformations
     toplevelex = postwalk_and_transform!(toplevelex, Symbol[:toplevel]) do x, scope
-        # TODO: this doesn't work when `actualmodsym` is supposed to be a local variable, find a workaround
+        # TODO: this cause wrong program semantics when `actualmodsym` is actually used as a local variable, find a workaround
         x === actualmodsym && return TYPEPROFILERJL_SELF_REFERENCE_SYM
 
         return x
@@ -157,8 +159,8 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
 
         # these shouldn't happen when in function scope, since then they can be wrongly
         # hoisted and evaluated when they're wrapped in closures, while they actually cause
-        # syntax errors; if they're in other "toplevel definition"s, they will just cause
-        # error when the defition gets evaluated
+        # syntax errors; if they're in other "toplevel definition"s, the expression should
+        # have been reported already on the evaluation of its parent "toplevel definition"
         if istopleveldef(x)
             return if :function ∉ scope
                 eval_with_err_handling(virtualmod, x)
