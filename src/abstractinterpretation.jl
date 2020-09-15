@@ -1,33 +1,38 @@
 """
-    @invoke_native ex
+    @invoke f(arg::T, ...; kwargs...)
 
-HACK: calls down to `NativeInterpreter`'s abstract interpretation method while passing
-  `TPInterpreter` so that subsequent methods that are oveloaded against `TPInterpreter` can
-  be called from the native method.
-
-`ex` is supposed to be the function definition signature of the target native method, which
-  can be copy-and-pasted from the native compiler code.
+provides a convenient way to call [`invoke`](@ref);
+this could be used to call down to `NativeInterpreter`'s abstract interpretation method of
+  `f` while passing `TPInterpreter` so that subsequent calls of generic functions overloaded
+  against `TPInterpreter` can be called from the native method body of `f`.
 
 e.g. calls down to `NativeInterpreter`'s `abstract_call_gf_by_type` method:
 ```julia
-ret = @invoke_native abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f), argtypes::Vector{Any}, @nospecialize(atype), sv::InferenceState,
-                                              max_methods::Int = InferenceParams(interp).MAX_METHODS)
+@invoke abstract_call_gf_by_type(interp::AbstractInterpreter, f, argtypes::Vector{Any}, atype, sv::InferenceState,
+                                 max_methods::Int)
 ```
 """
-macro invoke_native(ex)
+macro invoke(ex)
     f = first(ex.args)
-    # NOTE: handle kwargs too here if necessary
-    arg2typs = map(ex.args[2:end]) do x
-        if isexpr(x, :macrocall) && first(x.args) === Symbol("@nospecialize")
-            x = last(x.args)
+    argtypes = []
+    args = []
+    kwargs = []
+    for x in ex.args[2:end]
+        if isexpr(x, :parameters)
+            append!(kwargs, x.args)
         elseif isexpr(x, :kw)
-            x = first(x.args)
+            push!(kwargs, x)
+        else
+            arg, argtype = isexpr(x, :(::)) ? (x.args...,) : (x, Any)
+            push!(args, arg)
+            push!(argtypes, argtype)
         end
-        return isexpr(x, :(::)) ? (first(x.args), last(x.args)) : (x, Any)
     end
-    args = first.(arg2typs)
-    typs = last.(arg2typs)
-    return esc(:(invoke($(f), Tuple{$(typs...)}, $(args...))))
+    return if isempty(kwargs)
+        :(invoke($(f), Tuple{$(argtypes...)}, $(args...))) # might not be necessary
+    else
+        :(invoke($(f), Tuple{$(argtypes...)}, $(args...); $(kwargs...)))
+    end |> esc
 end
 
 function is_empty_match(info::MethodMatchInfo)
@@ -51,14 +56,14 @@ is_unreachable(rn::ReturnNode)   = !isdefined(rn, :val)
 # - maybe "cound not identify method table for call" won't happen since we eagerly propagate bottom for e.g. undef var case, etc.
 function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argtypes::Vector{Any}, @nospecialize(atype), sv::InferenceState,
                                   max_methods::Int = InferenceParams(interp).MAX_METHODS)
-    ret = (@invoke_native abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f), argtypes::Vector{Any}, @nospecialize(atype), sv::InferenceState,
-                                                   max_methods::Int = InferenceParams(interp).MAX_METHODS))::CallMeta
+    ret = (@invoke abstract_call_gf_by_type(interp::AbstractInterpreter, f, argtypes::Vector{Any}, atype, sv::InferenceState,
+                                            max_methods::Int))::CallMeta
 
     info = ret.info
 
-    # throw away previously-reported union-split no method errors that are revealed as
-    # false positive by constant propagation; constant propagation always happens _after_
-    # abstract interpretation with only using types (i.e. `atype`), and so the false positive
+    # throw away previously-reported union-split no method errors that are revealed as false
+    # positive by constant propagation; constant propagation always happens _after_ abstract
+    # interpretation with only using lattice types (i.e. `atype`), and so the false positive
     # candidates are supposed to be reported in `interp.reports` at this point
     # watch on: https://github.com/JuliaLang/julia/blob/a108d6cb8fdc7924fe2b8d831251142386cb6525/base/compiler/abstractinterpretation.jl#L153
     if CC.any(sv.result.overridden_by_const) && isa(info, MethodMatchInfo)
@@ -109,7 +114,7 @@ function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argty
 end
 
 function abstract_eval_special_value(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    ret = @invoke_native abstract_eval_special_value(interp::AbstractInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
+    ret = @invoke abstract_eval_special_value(interp::AbstractInterpreter, e, vtypes::VarTable, sv::InferenceState)
 
     # resolve global reference to virtual global variable, or report it if undefined
     if !isa(ret, Const) && isa(e, GlobalRef)
@@ -130,7 +135,7 @@ function abstract_eval_special_value(interp::TPInterpreter, @nospecialize(e), vt
 end
 
 function abstract_eval_value(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    ret = @invoke_native abstract_eval_value(interp::AbstractInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
+    ret = @invoke abstract_eval_value(interp::AbstractInterpreter, e, vtypes::VarTable, sv::InferenceState)
 
     # report non-boolean condition error
     stmt = get_cur_stmt(sv)
@@ -146,7 +151,7 @@ function abstract_eval_value(interp::TPInterpreter, @nospecialize(e), vtypes::Va
 end
 
 function abstract_eval_statement(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    ret = @invoke_native abstract_eval_statement(interp::AbstractInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
+    ret = @invoke abstract_eval_statement(interp::AbstractInterpreter, e, vtypes::VarTable, sv::InferenceState)
 
     # assign virtual global variable
     stmt = get_cur_stmt(sv)
@@ -218,7 +223,7 @@ end
 function typeinf_local(interp::TPInterpreter, frame::InferenceState)
     set_current_frame!(interp, frame)
 
-    ret = @invoke_native typeinf_local(interp::AbstractInterpreter, frame::InferenceState)
+    ret = @invoke typeinf_local(interp::AbstractInterpreter, frame::InferenceState)
 
     return ret
 end
@@ -242,7 +247,7 @@ get_current_frame(interp::TPInterpreter) = interp.current_frame[]
 function typeinf(interp::TPInterpreter, frame::InferenceState)
     set_current_frame!(interp, frame)
 
-    ret = @invoke_native typeinf(interp::AbstractInterpreter, frame::InferenceState)
+    ret = @invoke typeinf(interp::AbstractInterpreter, frame::InferenceState)
 
     # report (local) undef var error
     # this only works when optimization is enabled, just because `:throw_undef_if_not` and
@@ -286,7 +291,7 @@ end
 function typeinf_edge(interp::TPInterpreter, method::Method, @nospecialize(atypes), sparams::SimpleVector, caller::InferenceState)
     set_current_frame!(interp, caller)
 
-    ret = @invoke_native typeinf_edge(interp::AbstractInterpreter, method::Method, @nospecialize(atypes), sparams::SimpleVector, caller::InferenceState)
+    ret = @invoke typeinf_edge(interp::AbstractInterpreter, method::Method, atypes, sparams::SimpleVector, caller::InferenceState)
 
     return ret
 end

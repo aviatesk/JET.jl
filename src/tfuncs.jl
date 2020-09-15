@@ -1,8 +1,8 @@
 # just relies on the native tfuncs, maybe there're lots of edge cases
 function builtin_tfunction(interp::TPInterpreter, @nospecialize(f), argtypes::Array{Any,1},
                            sv::Union{InferenceState,Nothing})
-    ret = @invoke_native builtin_tfunction(interp::AbstractInterpreter, @nospecialize(f), argtypes::Array{Any,1},
-                                           sv::Union{InferenceState,Nothing})
+    ret = @invoke builtin_tfunction(interp::AbstractInterpreter, f, argtypes::Array{Any,1},
+                                    sv::Union{InferenceState,Nothing})
 
     # propagate virtual global variable
     if f === getfield && ret == Any && length(argtypes) == 2 && all(a->isa(a, Const), argtypes)
