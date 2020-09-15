@@ -1,7 +1,29 @@
-@testset "report on union-split method matching" begin
-    # if there is no method matching case in union-split, it should be reported
+@testset "report no method matching" begin
+    # if there is no method matching case, it should be reported
     let
         # NOTE: we can't just wrap them into `let`, closures can't be inferred correctly
+        m = gen_virtualmod()
+        interp, frame = Core.eval(m, quote
+            foo(a::Integer) = :Integer
+            $(profile_call)(AbstractString) do a
+                foo(a)
+            end
+        end)
+        @test length(interp.reports) === 1
+        report = first(interp.reports)
+        @test report isa NoMethodErrorReport &&
+            report.atype === Tuple{typeof(m.foo), AbstractString}
+    end
+
+    # we want to get report on `zero(Any)` for this case, but `Any`-typed statement can't
+    # propagate to the error points ...
+    let
+        interp, report = profile_call(()->sum([]))
+        @test_broken !isempty(interp.reports)
+    end
+
+    # if there is no method matching case in union-split, it should be reported
+    let
         m = gen_virtualmod()
         interp, frame = Core.eval(m, quote
             foo(a::Integer) = :Integer
@@ -15,96 +37,128 @@
         @test report isa NoMethodErrorReport && report.atype === Tuple{typeof(m.foo), Union{Nothing,Int}}
     end
 
-    # constant propagation should limit false positive union-split no method reports
-    let
-        m = gen_virtualmod()
-        interp, frame = Core.eval(m, quote
-            mutable struct P
-                i::Int
-                s::String
-            end
-            foo(p, i) = p.i = i
+    @testset "constant propagation" begin
+        # constant propagation should limit false positive union-split no method reports
+        let
+            m = gen_virtualmod()
+            interp, frame = Core.eval(m, quote
+                mutable struct P
+                    i::Int
+                    s::String
+                end
+                foo(p, i) = p.i = i
 
-            $(profile_call)(foo, P, Int)
-        end)
+                $(profile_call)(foo, P, Int)
+            end)
 
-        # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)" should be threw away
-        @test isempty(interp.reports)
+            # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)" should be threw away
+            @test isempty(interp.reports)
 
-        # works for cache
-        interp, frame = Core.eval(m, :($(profile_call)(foo, P, Int)))
-        @test isempty(interp.reports)
-    end
-
-    # the false positive reports should be threw away from cache as well
-    let
-        m = gen_virtualmod()
-        interp, frame = Core.eval(m, quote
-            mutable struct P
-                i::Int
-                s::String
-            end
-            foo(p, i) = p.i = i
-            bar(args...) = foo(args...)
-
-            $(profile_call)(bar, P, Int)
-        end)
-
-        # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)" should be threw away
-        @test isempty(interp.reports)
-
-        # works for cache (`abstract_call_gf_by_type` won't run on `foo` this time)
-        interp, frame = Core.eval(m, :($(profile_call)(bar, P, Int)))
-        @test isempty(interp.reports)
-    end
-
-    # constant propagation should not exclude those are not related
-    let
-        m = gen_virtualmod()
-        interp, frame = Core.eval(m, quote
-            mutable struct P
-                i::Int
-                s::String
-            end
-            function foo(p, i, s)
-                p.i = i
-                p.s = s
-            end
-
-            $(profile_call)(foo, P, Int, #= invalid =# Int)
-        end)
-
-        # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)" should be threw away, while
-        # "no matching method found for call signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{String}, v::Int64)" should be kept
-        @test length(interp.reports) === 1
-        report = first(interp.reports)
-        @test report isa NoMethodErrorReportConst && report.atype === Tuple{typeof(convert), Type{String}, Int}
-    end
-
-    # constant propagation should narrow down union-split no method error to single no method matching error
-    let
-        m = gen_virtualmod()
-        interp, frame = Core.eval(m, quote
-            mutable struct P
-                i::Int
-                s::String
-            end
-            function foo(p, i, s)
-                p.i = i
-                p.s = s
-            end
-
-            $(profile_call)(foo, P, String, Int)
-        end)
-
-        # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::String)" should be narrowed down to "no matching method found for call signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{Int}, v::String)"
-        @test !isempty(interp.reports)
-        @test any(interp.reports) do report
-            return report isa NoMethodErrorReportConst &&
-                report.atype === Tuple{typeof(convert), Type{Int}, String}
+            # works for cache
+            interp, frame = Core.eval(m, :($(profile_call)(foo, P, Int)))
+            @test isempty(interp.reports)
         end
-        # "no matching method found for call signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{String}, v::Int)"
-        # won't be reported since `typeinf` early escapes on `Bottom`-annotated statement
+
+        # the false positive reports should be threw away from cache as well
+        let
+            m = gen_virtualmod()
+            interp, frame = Core.eval(m, quote
+                mutable struct P
+                    i::Int
+                    s::String
+                end
+                foo(p, i) = p.i = i
+                bar(args...) = foo(args...)
+
+                $(profile_call)(bar, P, Int)
+            end)
+
+            # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)" should be threw away
+            @test isempty(interp.reports)
+
+            # works for cache (`abstract_call_gf_by_type` won't run on `foo` this time)
+            interp, frame = Core.eval(m, :($(profile_call)(bar, P, Int)))
+            @test isempty(interp.reports)
+        end
+
+        # constant propagation should not exclude those are not related
+        let
+            m = gen_virtualmod()
+            interp, frame = Core.eval(m, quote
+                mutable struct P
+                    i::Int
+                    s::String
+                end
+                function foo(p, i, s)
+                    p.i = i
+                    p.s = s
+                end
+
+                $(profile_call)(foo, P, Int, #= invalid =# Int)
+            end)
+
+            # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)" should be threw away, while
+            # "no matching method found for call signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{String}, v::Int64)" should be kept
+            @test length(interp.reports) === 1
+            report = first(interp.reports)
+            @test report isa NoMethodErrorReportConst && report.atype === Tuple{typeof(convert), Type{String}, Int}
+        end
+
+        # constant propagation should narrow down union-split no method error to single no method matching error
+        let
+            m = gen_virtualmod()
+            interp, frame = Core.eval(m, quote
+                mutable struct P
+                    i::Int
+                    s::String
+                end
+                function foo(p, i, s)
+                    p.i = i
+                    p.s = s
+                end
+
+                $(profile_call)(foo, P, String, Int)
+            end)
+
+            # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::String)" should be narrowed down to "no matching method found for call signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{Int}, v::String)"
+            @test !isempty(interp.reports)
+            @test any(interp.reports) do report
+                return report isa NoMethodErrorReportConst &&
+                    report.atype === Tuple{typeof(convert), Type{Int}, String}
+            end
+            # "no matching method found for call signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{String}, v::Int)"
+            # won't be reported since `typeinf` early escapes on `Bottom`-annotated statement
+        end
+
+        # constant propagation and cache
+        let
+            m = gen_virtualmod()
+
+            interp, frame = Core.eval(m, quote
+                foo(a) = a > 0 ? a : "minus"
+                bar(a) = foo(a) + 1
+                $(profile_call)(()->bar(10)) # yes, we don't want report for this case
+            end)
+            @test isempty(interp.reports)
+
+            # for this case, we want to have union-split error, but the previous constant
+            # propagation excludes the report bound to `foo(::Union{Int,String})` from cache
+            # and so we can't get error report ...
+            interp, frame = Core.eval(m, quote
+                $(profile_call)(()->bar(rand(Int)))
+            end)
+            @test_broken length(interp.reports) === 1
+
+            # if we run constant propagation again, we can get reports as expected
+            interp, frame = Core.eval(m, quote
+                $(profile_call)(()->bar(0))
+            end)
+            @test length(interp.reports) === 1
+            er = first(interp.reports)
+            @test er isa NoMethodErrorReportConst &&
+                !er.unionsplit &&
+                er.atype ⊑ Tuple{Any,String,Int}
+        end
     end
 end
 

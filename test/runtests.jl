@@ -107,11 +107,3 @@ end
 # @profile_call fib(100000) # ::Int
 # @profile_call fib(100000.) # ::Float64
 # @profile_call fib(100000 + 100000im) # report !
-#
-# # no matching method
-# # ------------------
-#
-# # single match
-# @profile_call sum("julia")
-# @profile_call sum(Char[])
-# @profile_call sum([]) # the actual error (i.e. no method for `zero(Any)`) gets buriled in the "Too many methods matched" heuristic

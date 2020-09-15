@@ -70,10 +70,13 @@ function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argty
     # NOTE:
     # - we do NOT cache `NoMethodErrorReport`s with constant propagation (i.e. `NoMethodErrorReportConst`)
     #   just because they're actually not bound to this `sv.linfo`
-    # - but we exclude them from `TPCACHE`; this might be wrong in some cases since actual
-    #   errors that would happen without the current constants can be threw away as well:
-    #   hopefully another future constant propagation "re-reveals" the threw away errors,
-    #   but of course this doesn't necessarily hold true always
+    # - but we exclude them from `TPCACHE`; we want this logic since otherwise inference on
+    #   cached `MethodInstance` of `setproperty!` against structs with multiple type fields
+    #   will report union-split `NoMethodErrorReport` (that can be excluded by constant propagation)
+    #   TODO: this can be wrong in some cases since actual errors that would happen without
+    #   the current constants can be threw away as well; hopefully another future 
+    #   constant propagation "re-reveals" the threw away errors, but of course this doesn't
+    #   necessarily hold true always
     #
     # xref (maybe coming future change of constant propagation logic):
     # https://github.com/JuliaLang/julia/blob/a108d6cb8fdc7924fe2b8d831251142386cb6525/base/compiler/abstractinterpretation.jl#L153
