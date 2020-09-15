@@ -58,8 +58,7 @@
         @test isempty(interp.reports)
     end
 
-    # false-positive punishing using constant propagation should only be applied those're
-    # really revealed to be false positive
+    # constant propagation should not exclude those are not related
     let
         m = gen_virtualmod()
         interp, frame = Core.eval(m, quote
@@ -79,7 +78,7 @@
         # "no matching method found for call signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{String}, v::Int64)" should be kept
         @test length(interp.reports) === 1
         report = first(interp.reports)
-        @test report isa NoMethodErrorReport && report.atype === Tuple{typeof(convert), Type{String}, Int}
+        @test report isa NoMethodErrorReportConst && report.atype === Tuple{typeof(convert), Type{String}, Int}
     end
 
     # constant propagation should narrow down union-split no method error to single no method matching error
@@ -101,7 +100,7 @@
         # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::String)" should be narrowed down to "no matching method found for call signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{Int}, v::String)"
         @test !isempty(interp.reports)
         @test any(interp.reports) do report
-            return report isa NoMethodErrorReport &&
+            return report isa NoMethodErrorReportConst &&
                 report.atype === Tuple{typeof(convert), Type{Int}, String}
         end
         # "no matching method found for call signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{String}, v::Int)"

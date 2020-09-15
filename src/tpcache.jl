@@ -8,7 +8,8 @@ struct InferenceReportCache{T<:InferenceErrorReport}
     args::NTuple{N, Any} where N # additional field that keeps information specific to `T`
 end
 
-const TPCACHE = Dict{UInt,Pair{Symbol,Vector{InferenceReportCache}}}()
+# FIXME: `MethodInstance` might be too heavy ?
+const TPCACHE = Dict{MethodInstance,Pair{Symbol,Vector{InferenceReportCache}}}()
 
 get_id(interp::TPInterpreter) = interp.id
 
@@ -50,7 +51,8 @@ function CC.get(tpc::TPCache, mi::MethodInstance, default)
 
     # cache hit, we need to append already-profiled error reports if exist
     if ret !== default
-        key = hash(mi)
+        # key = hash(mi)
+        key = mi
         if haskey(TPCACHE, key)
             id, cached_reports = TPCACHE[key]
 

@@ -102,10 +102,14 @@ macro reportdef(ex, kwargs...)
     spec_args = args[4:end] # keep those additional, specific fields
 
     local track_from_frame::Bool = false
+    local dont_cache::Bool = false
     for ex in kwargs
         @assert isexpr(ex, :(=))
-        if first(ex.args) === :track_from_frame
-            track_from_frame = last(ex.args)
+        kw, val = ex.args
+        if kw === :track_from_frame
+            track_from_frame = val
+        elseif kw === :dont_cache
+            dont_cache = val
         end
     end
 
@@ -134,7 +138,11 @@ macro reportdef(ex, kwargs...)
         msg = get_msg(#= T, interp, sv, ... =# $(args′...))
         sig = get_sig(#= T, interp, sv, ... =# $(args′...))
 
-        cache_report! = gen_report_cacher(msg, sig, #= T, interp, sv, ... =# $(args′...))
+        cache_report! = if $(dont_cache)
+            dummy_cacher
+        else
+            gen_report_cacher(msg, sig, #= T, interp, sv, ... =# $(args′...))
+        end
         st = $(track_from_frame ? from_frame : from_statement)
 
         return new(reverse(st), msg, sig, $(spec_args′...))
@@ -160,6 +168,8 @@ macro reportdef(ex, kwargs...)
 end
 
 @reportdef NoMethodErrorReport(interp, sv, unionsplit::Bool, @nospecialize(atype::Type))
+
+@reportdef NoMethodErrorReportConst(interp, sv, unionsplit::Bool, @nospecialize(atype::Type)) dont_cache = true
 
 @reportdef InvalidBuiltinCallErrorReport(interp, sv)
 
@@ -187,7 +197,7 @@ Ideally all of them should be covered by the other `InferenceErrorReport`s.
 
 function gen_report_cacher(msg, sig, T, interp, #= sv =# _, args...)
     return function (sv, st)
-        key = hash(sv.linfo)
+        key = sv.linfo
         if haskey(TPCACHE, key)
             _, cached_reports = TPCACHE[key]
         else
@@ -329,7 +339,7 @@ function _get_sig_type(::InferenceState, qn::QuoteNode)
 end
 _get_sig_type(::InferenceState, @nospecialize(x)) = Any[repr(x; context = :compact => true)], nothing
 
-get_msg(::Type{NoMethodErrorReport}, interp, sv, unionsplit, @nospecialize(atype)) = unionsplit ?
+get_msg(::Type{<:Union{NoMethodErrorReport,NoMethodErrorReportConst}}, interp, sv, unionsplit, @nospecialize(atype)) = unionsplit ?
     "for one of the union split cases, no matching method found for signature: " :
     "no matching method found for call signature: "
 get_msg(::Type{InvalidBuiltinCallErrorReport}, interp, sv) =
