@@ -35,6 +35,8 @@ macro invoke(ex)
     end |> esc
 end
 
+is_constant_propagated_result(frame) = CC.any(frame.result.overridden_by_const)
+
 function is_empty_match(info::MethodMatchInfo)
     res = info.results
     isa(res, MethodLookupResult) || return false # when does this happen ?
@@ -58,56 +60,67 @@ function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argty
                                   max_methods::Int = InferenceParams(interp).MAX_METHODS)
     ret = (@invoke abstract_call_gf_by_type(interp::AbstractInterpreter, f, argtypes::Vector{Any}, atype, sv::InferenceState,
                                             max_methods::Int))::CallMeta
+    is_const = is_constant_propagated_result(sv)
 
-    info = ret.info
-
-    # throw away previously-reported union-split no method errors that are revealed as false
-    # positive by constant propagation; constant propagation always happens _after_ abstract
-    # interpretation with only using lattice types (i.e. `atype`), and so the false positive
-    # candidates are supposed to be reported in `interp.reports` at this point
-    # watch on: https://github.com/JuliaLang/julia/blob/a108d6cb8fdc7924fe2b8d831251142386cb6525/base/compiler/abstractinterpretation.jl#L153
-    if CC.any(sv.result.overridden_by_const) && isa(info, MethodMatchInfo)
+    # throw away previously-reported `NoMethodErrorReport` if we re-infer this frame with
+    # constant propagation; this always happens _after_ abstract interpretation with only
+    # using lattice types (i.e. `atype`), and the reports with constants are always more
+    # accurate than those without them, so let's just throw away them on this pass
+    #
+    # NOTE:
+    # - we do NOT cache `NoMethodErrorReport`s with constant propagation (i.e. `NoMethodErrorReportConst`)
+    #   just because they're actually not bound to this `sv.linfo`
+    # - but we exclude them from `TPCACHE`; we want this logic since otherwise inference on
+    #   cached `MethodInstance` of `setproperty!` against structs with multiple type fields
+    #   will report union-split `NoMethodErrorReport` (that can be excluded by constant propagation)
+    #   TODO: this can be wrong in some cases since actual errors that would happen without
+    #   the current constants can be threw away as well; hopefully another future 
+    #   constant propagation "re-reveals" the threw away errors, but of course this doesn't
+    #   necessarily hold true always
+    #
+    # xref (maybe coming future change of constant propagation logic):
+    # https://github.com/JuliaLang/julia/blob/a108d6cb8fdc7924fe2b8d831251142386cb6525/base/compiler/abstractinterpretation.jl#L153
+    if is_const
         inds = findall(interp.reports) do report
             return isa(report, NoMethodErrorReport) &&
-                report.unionsplit &&
-                atype ⊑ report.atype
+                ⊑(atype, report.atype) # use `atype` as key
         end
-        if !isempty(inds)
-            # false positive reports revealed
-            deleteat!(interp.reports, inds)
+        isempty(inds) || deleteat!(interp.reports, inds)
 
-            # exclude them from cache as well
-            prewalk_inf_frame(sv) do frame
-                key = hash(frame.linfo)
-                if haskey(TPCACHE, key)
-                    id, cached_reports = TPCACHE[key]
-                    # @assert id === get_id(interp)
-                    cached_inds = findall(cached_reports) do cached_report
-                        return isa(cached_report, InferenceReportCache{NoMethodErrorReport}) &&
-                            first(#= unionsplit =# cached_report.args)::Bool &&
-                            atype ⊑ last(#= atype =# cached_report.args)::Type
-                    end
-                    deleteat!(cached_reports, cached_inds)
+        # exclude them from cache as well
+        prewalk_inf_frame(sv) do frame
+            key = frame.linfo
+            if haskey(TPCACHE, key)
+                id, cached_reports = TPCACHE[key]
+                # @assert id === get_id(interp)
+                cached_inds = findall(cached_reports) do cached_report
+                    return isa(cached_report, InferenceReportCache{NoMethodErrorReport}) &&
+                        ⊑(atype, last(#= atype =# cached_report.args)::Type) # use `atype` as key
                 end
+                deleteat!(cached_reports, cached_inds)
             end
         end
     end
 
     # report no method error
+    info = ret.info
     if isa(info, UnionSplitInfo)
         # if `info` is `UnionSplitInfo`, but there won't be a case where `info.matches` is empty
         for info in info.matches
             if is_empty_match(info)
                 # no method match for this union split
                 # ret.rt = Bottom # maybe we want to be more strict on error cases ?
-                add_remark!(interp, sv, NoMethodErrorReport(interp, sv, true, atype))
+                er = (is_const ? NoMethodErrorReportConst : NoMethodErrorReport)(interp, sv, true, atype)
+                add_remark!(interp, sv, er)
             end
         end
     elseif isa(info, MethodMatchInfo) && is_empty_match(info)
         # really no method found, and so the return type should have never changed from its
         # initialization (i.e. `Bottom`)
         # typeassert(ret.rt, TypeofBottom)
-        add_remark!(interp, sv, NoMethodErrorReport(interp, sv, false, atype))
+        # add_remark!(interp, sv, NoMethodErrorReport(interp, sv, false, atype))
+        er = (is_const ? NoMethodErrorReportConst : NoMethodErrorReport)(interp, sv, false, atype)
+        add_remark!(interp, sv, er)
     end
 
     return ret
