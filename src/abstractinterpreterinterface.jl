@@ -14,24 +14,27 @@ struct TPInterpreter <: AbstractInterpreter
     # for escaping reporting duplicated cached reports, sequential assignment of virtual global variable
     id::Symbol
 
+    # profiling
+    # ---------
+    # reports found so far
+    reports::Vector{InferenceErrorReport}
+    # keeps `throw` calls that are not caught within a single frame
+    exception_reports::Vector{Pair{Int,ExceptionReport}}
+
     # caching
     # -------
-    # for constructing virtual stack frame from cached reports
+    # we need to access currently inferred `frame` via `TPInterpreter` to construct virtual stack frame from cached reports
     current_frame::Ref{InferenceState}
-    # keeping reports from frame that always `throw`
-    exception_reports::Vector{Pair{Int,ExceptionReport}}
 
     # virtual toplevel execution
     # --------------------------
     # module -> (sym -> (id, type, λ sym, method instance))
     virtual_globalvar_table::Dict{Module,Dict{Symbol,Tuple{Symbol,Any,Symbol,MethodInstance}}}
 
-    # profiling
-    # ---------
-    # disabling caching of native remarks can speed up profiling time
+    # configurations
+    # --------------
+    # disables caching of native remarks can speed up profiling time
     filter_native_remarks::Bool
-    # reports found so far
-    reports::Vector{InferenceErrorReport}
 
     function TPInterpreter(world::UInt = get_world_counter();
                            inf_params::InferenceParams = gen_inf_params(),
@@ -51,11 +54,11 @@ struct TPInterpreter <: AbstractInterpreter
                    compress,
                    discard_trees,
                    id,
-                   Ref{InferenceState}(),
                    [],
+                   [],
+                   Ref{InferenceState}(),
                    virtual_globalvar_table,
                    filter_native_remarks,
-                   [],
                    )
     end
 end

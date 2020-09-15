@@ -34,7 +34,13 @@ end
 function return_type_tfunc(interp::TPInterpreter, argtypes::Vector{Any}, sv::InferenceState)
     if length(argtypes) !== 3
         # invalid argument number, let's report and return error result (i.e. `Bottom`)
-        add_remark!(interp, sv, NoMethodErrorReport(interp, sv, false, argtypes_to_type(argtypes) #= this is not necessary to be computed correctly, though =#))
+        add_remark!(interp, sv, NoMethodErrorReport(interp,
+                                                    sv,
+                                                    false,
+                                                    # this is not necessary to be computed correctly, though
+                                                    argtypes_to_type(argtypes),
+                                                    sv.linfo
+                                                    ))
         return Bottom
     else
         # don't recursively pass on `TPInterpreter` via `@invoke_native`
