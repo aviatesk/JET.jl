@@ -167,9 +167,9 @@ macro reportdef(ex, kwargs...)
     end
 end
 
-@reportdef NoMethodErrorReport(interp, sv, unionsplit::Bool, @nospecialize(atype::Type))
+@reportdef NoMethodErrorReport(interp, sv, unionsplit::Bool, @nospecialize(atype::Type), linfo::MethodInstance)
 
-@reportdef NoMethodErrorReportConst(interp, sv, unionsplit::Bool, @nospecialize(atype::Type)) dont_cache = true
+@reportdef NoMethodErrorReportConst(interp, sv, unionsplit::Bool, @nospecialize(atype::Type), linfo::MethodInstance) dont_cache = true
 
 @reportdef InvalidBuiltinCallErrorReport(interp, sv)
 
@@ -339,7 +339,7 @@ function _get_sig_type(::InferenceState, qn::QuoteNode)
 end
 _get_sig_type(::InferenceState, @nospecialize(x)) = Any[repr(x; context = :compact => true)], nothing
 
-get_msg(::Type{<:Union{NoMethodErrorReport,NoMethodErrorReportConst}}, interp, sv, unionsplit, @nospecialize(atype)) = unionsplit ?
+get_msg(::Type{<:Union{NoMethodErrorReport,NoMethodErrorReportConst}}, interp, sv, unionsplit, @nospecialize(atype), linfo) = unionsplit ?
     "for one of the union split cases, no matching method found for signature: " :
     "no matching method found for call signature: "
 get_msg(::Type{InvalidBuiltinCallErrorReport}, interp, sv) =

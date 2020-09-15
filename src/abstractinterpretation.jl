@@ -60,6 +60,9 @@ function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argty
                                   max_methods::Int = InferenceParams(interp).MAX_METHODS)
     ret = (@invoke abstract_call_gf_by_type(interp::AbstractInterpreter, f, argtypes::Vector{Any}, atype, sv::InferenceState,
                                             max_methods::Int))::CallMeta
+
+    info = ret.info
+    linfo = sv.linfo
     is_const = is_constant_propagated_result(sv)
 
     # throw away previously-reported `NoMethodErrorReport` if we re-infer this frame with
@@ -74,7 +77,7 @@ function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argty
     #   cached `MethodInstance` of `setproperty!` against structs with multiple type fields
     #   will report union-split `NoMethodErrorReport` (that can be excluded by constant propagation)
     #   TODO: this can be wrong in some cases since actual errors that would happen without
-    #   the current constants can be threw away as well; hopefully another future 
+    #   the current constants can be threw away as well; hopefully another future
     #   constant propagation "re-reveals" the threw away errors, but of course this doesn't
     #   necessarily hold true always
     #
@@ -83,7 +86,8 @@ function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argty
     if is_const
         inds = findall(interp.reports) do report
             return isa(report, NoMethodErrorReport) &&
-                ⊑(atype, report.atype) # use `atype` as key
+                linfo == report.linfo # use `sv.linfo` as key
+                # ⊑(atype, report.atype) # use `atype` as key
         end
         isempty(inds) || deleteat!(interp.reports, inds)
 
@@ -95,7 +99,8 @@ function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argty
                 # @assert id === get_id(interp)
                 cached_inds = findall(cached_reports) do cached_report
                     return isa(cached_report, InferenceReportCache{NoMethodErrorReport}) &&
-                        ⊑(atype, last(#= atype =# cached_report.args)::Type) # use `atype` as key
+                        linfo == last(#= linfo =# cached_report.args)::MethodInstance # use `sv.linfo` as key
+                        # ⊑(atype, last(#= atype =# cached_report.args)::Type) # use `atype` as key
                 end
                 deleteat!(cached_reports, cached_inds)
             end
@@ -103,14 +108,13 @@ function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argty
     end
 
     # report no method error
-    info = ret.info
     if isa(info, UnionSplitInfo)
         # if `info` is `UnionSplitInfo`, but there won't be a case where `info.matches` is empty
         for info in info.matches
             if is_empty_match(info)
                 # no method match for this union split
                 # ret.rt = Bottom # maybe we want to be more strict on error cases ?
-                er = (is_const ? NoMethodErrorReportConst : NoMethodErrorReport)(interp, sv, true, atype)
+                er = (is_const ? NoMethodErrorReportConst : NoMethodErrorReport)(interp, sv, true, atype, linfo)
                 add_remark!(interp, sv, er)
             end
         end
@@ -119,7 +123,7 @@ function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argty
         # initialization (i.e. `Bottom`)
         # typeassert(ret.rt, TypeofBottom)
         # add_remark!(interp, sv, NoMethodErrorReport(interp, sv, false, atype))
-        er = (is_const ? NoMethodErrorReportConst : NoMethodErrorReport)(interp, sv, false, atype)
+        er = (is_const ? NoMethodErrorReportConst : NoMethodErrorReport)(interp, sv, false, atype, linfo)
         add_remark!(interp, sv, er)
     end
 
