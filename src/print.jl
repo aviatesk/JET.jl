@@ -19,7 +19,7 @@ const ERROR_SIG_COLOR = :bold
 const TYPE_ANNOTATION_COLOR = :light_cyan
 
 pluralize(n::Integer, one::AbstractString, more::AbstractString = string(one, 's')) =
-    return string(n, ' ', isone(n) ? one : more)
+    string(n, ' ', isone(n) ? one : more)
 
 printlnstyled(args...; kwarg...) = printstyled(args..., '\n'; kwarg...)
 
@@ -28,7 +28,6 @@ function print_rails(io, depth)
         color = RAIL_COLORS[i%N_RAILS+1]
         printstyled(io, '│'; color)
     end
-    return
 end
 
 function with_bufferring(f, args...)
@@ -75,7 +74,7 @@ function print_reports(io::IO,
         end
 
         for report in reports
-            s = string("┌ @ ", (fullpath ? tofullpath : identity)(string(report.file)), ":", report.line, ' ')
+            s = string("┌ @ ", (fullpath ? tofullpath : identity)(string(report.file)), ':', report.line, ' ')
             printlnstyled(io, s; color)
 
             errlines = with_bufferring(arg) do io
@@ -175,8 +174,6 @@ function print_report(io, report::InferenceErrorReport, wrote_linfos, depth = 1;
     # print current frame and go into deeper
     should_print && print_frame(io, frame, depth, false; kwargs...)
     print_report(io, report, wrote_linfos, depth + 1; kwargs...)
-
-    return
 end
 
 function print_error_frame(io, report, depth; kwargs...)
@@ -193,8 +190,6 @@ function print_error_frame(io, report, depth; kwargs...)
 
     print_rails(io, depth-1)
     printlnstyled(io, '└', '─'^len; color)
-
-    return
 end
 
 function print_frame(io, (file, line, sig), depth, is_err;
@@ -204,7 +199,7 @@ function print_frame(io, (file, line, sig), depth, is_err;
     print_rails(io, depth-1)
 
     color = is_err ? ERROR_COLOR : RAIL_COLORS[(depth)%N_RAILS+1]
-    s = string("┌ @ ", (fullpath ? tofullpath : identity)(string(file)), ":", line)
+    s = string("┌ @ ", (fullpath ? tofullpath : identity)(string(file)), ':', line)
     printstyled(io, s, ' '; color)
     print_signature(io, sig; dont_annotate_types)
 
@@ -216,17 +211,13 @@ function print_signature(io, sig; kwargs...)
         _print_signature(io, a; kwargs...)
     end
     println(io)
-
-    return
 end
 _print_signature(io, a::Union{AbstractChar,AbstractString};
                  dont_annotate_types = false,
                  kwargs...) =
-    return printstyled(io, a; kwargs...)
+    printstyled(io, a; kwargs...)
 function _print_signature(io, @nospecialize(typ); dont_annotate_types = false, kwargs...)
     dont_annotate_types && return
 
     printstyled(io, "::", string(typ); color = TYPE_ANNOTATION_COLOR, kwargs...)
-
-    return
 end

@@ -249,7 +249,7 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
             x.args[3] = Expr(:block) # empty module's code body
             newvirtualmod = eval_with_err_handling(virtualmod, x)
 
-            isnothing(newvirtualmod) && return nothing # error happened, e.g. duplicated naming
+            isnothing(newvirtualmod) && continue # error happened, e.g. duplicated naming
 
             virtual_process!(newtoplevelex, filename, actualmodsym, newvirtualmod, interp, ret)
 
