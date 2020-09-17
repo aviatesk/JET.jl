@@ -4,7 +4,7 @@
 #   * support `module`
 #   * special case `__init__` calls
 #
-# FIXME: this is too hacky, find an alternative way for simulating toplevel execution
+# FIXME: this is too hacky, find an alternative way for simulating toplevel execution, make me more robust at least
 
 const VirtualProcessResult = @NamedTuple begin
     included_files::Set{String}
@@ -374,7 +374,12 @@ function isfuncdef(ex)
 end
 
 is_already_scoped(scope) = last(scope) in (:local, :global)
-is_assignment(x) = isexpr(x, :(=)) && Base.isidentifier(first(x.args))
+function is_assignment(x)
+    isexpr(x, :(=)) || return false
+    lhs = first(x.args)
+    isa(lhs, Symbol) || return false
+    Base.isidentifier(lhs)
+end
 
 isinclude(ex) = isexpr(ex, :call) && first(ex.args) === :include
 
