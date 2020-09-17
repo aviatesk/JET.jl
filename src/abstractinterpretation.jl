@@ -35,7 +35,7 @@ macro invoke(ex)
     end |> esc
 end
 
-is_constant_propagated_result(frame) = CC.any(frame.result.overridden_by_const)
+is_constant_propagated(frame) = CC.any(frame.result.overridden_by_const)
 
 function is_empty_match(info::MethodMatchInfo)
     res = info.results
@@ -63,7 +63,7 @@ function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argty
 
     info = ret.info
     linfo = sv.linfo
-    is_const = is_constant_propagated_result(sv)
+    iscp = is_constant_propagated(sv)
 
     # throw away previously-reported `NoMethodErrorReport` if we re-infer this frame with
     # constant propagation; this always happens _after_ abstract interpretation with only
@@ -83,7 +83,7 @@ function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argty
     #
     # xref (maybe coming future change of constant propagation logic):
     # https://github.com/JuliaLang/julia/blob/a108d6cb8fdc7924fe2b8d831251142386cb6525/base/compiler/abstractinterpretation.jl#L153
-    if is_const
+    if iscp
         inds = findall(interp.reports) do report
             return isa(report, NoMethodErrorReport) &&
                 linfo == report.linfo # use `sv.linfo` as key
@@ -114,7 +114,7 @@ function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argty
             if is_empty_match(info)
                 # no method match for this union split
                 # ret.rt = Bottom # maybe we want to be more strict on error cases ?
-                er = (is_const ? NoMethodErrorReportConst : NoMethodErrorReport)(interp, sv, true, atype, linfo)
+                er = (iscp ? NoMethodErrorReportConst : NoMethodErrorReport)(interp, sv, true, atype, linfo)
                 add_remark!(interp, sv, er)
             end
         end
@@ -123,7 +123,7 @@ function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argty
         # initialization (i.e. `Bottom`)
         # typeassert(ret.rt, TypeofBottom)
         # add_remark!(interp, sv, NoMethodErrorReport(interp, sv, false, atype))
-        er = (is_const ? NoMethodErrorReportConst : NoMethodErrorReport)(interp, sv, false, atype, linfo)
+        er = (iscp ? NoMethodErrorReportConst : NoMethodErrorReport)(interp, sv, false, atype, linfo)
         add_remark!(interp, sv, er)
     end
 

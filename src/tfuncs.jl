@@ -4,6 +4,33 @@ function builtin_tfunction(interp::TPInterpreter, @nospecialize(f), argtypes::Ar
     ret = @invoke builtin_tfunction(interp::AbstractInterpreter, f, argtypes::Array{Any,1},
                                     sv::Union{InferenceState,Nothing})
 
+    iscp = isa(sv, InferenceState) && is_constant_propagated(sv)
+
+    # throw away previously-reported `InvalidBuiltinCallErrorReport` if we re-infer this
+    # frame with constant propagation; see comments in `abstract_call_gf_by_type(::TPInterpreter, ...)`
+    # for rationales
+    if iscp
+        inds = findall(interp.reports) do report
+            return isa(report, InvalidBuiltinCallErrorReport) &&
+                linfo == report.linfo # use `sv.linfo` as key
+        end
+        isempty(inds) || deleteat!(interp.reports, inds)
+
+        # exclude them from cache as well
+        prewalk_inf_frame(sv) do frame
+            key = frame.linfo
+            if haskey(TPCACHE, key)
+                id, cached_reports = TPCACHE[key]
+                # @assert id === get_id(interp)
+                cached_inds = findall(cached_reports) do cached_report
+                    return isa(cached_report, InferenceReportCache{InvalidBuiltinCallErrorReport}) &&
+                        linfo == last(#= linfo =# cached_report.args)::MethodInstance # use `sv.linfo` as key
+                end
+                deleteat!(cached_reports, cached_inds)
+            end
+        end
+    end
+
     # propagate virtual global variable
     if f === getfield && ret == Any && length(argtypes) == 2 && all(a->isa(a, Const), argtypes)
         mod, sym = map(a->a.val, argtypes)
@@ -20,7 +47,8 @@ function builtin_tfunction(interp::TPInterpreter, @nospecialize(f), argtypes::Ar
         # NOTE: handled in `finish(me::InferenceState, interp::TPInterpreter)`
         return ret
     elseif ret === Bottom
-        add_remark!(interp, sv, InvalidBuiltinCallErrorReport(interp, sv))
+        er = (iscp ? InvalidBuiltinCallErrorReportConst : InvalidBuiltinCallErrorReport)(interp, sv, argtypes, sv.linfo)
+        add_remark!(interp, sv, er)
     end
 
     return ret
