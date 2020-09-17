@@ -171,7 +171,9 @@ end
 
 @reportdef NoMethodErrorReportConst(interp, sv, unionsplit::Bool, @nospecialize(atype::Type), linfo::MethodInstance) dont_cache = true
 
-@reportdef InvalidBuiltinCallErrorReport(interp, sv)
+@reportdef InvalidBuiltinCallErrorReport(interp, sv, argtypes::Vector{Any}, linfo::MethodInstance)
+
+@reportdef InvalidBuiltinCallErrorReportConst(interp, sv, argtypes::Vector{Any}, linfo::MethodInstance) dont_cache = true
 
 @reportdef GlobalUndefVarErrorReport(interp, sv, mod::Module, name::Symbol)
 
@@ -339,10 +341,10 @@ function _get_sig_type(::InferenceState, qn::QuoteNode)
 end
 _get_sig_type(::InferenceState, @nospecialize(x)) = Any[repr(x; context = :compact => true)], nothing
 
-get_msg(::Type{<:Union{NoMethodErrorReport,NoMethodErrorReportConst}}, interp, sv, unionsplit, @nospecialize(atype), linfo) = unionsplit ?
+get_msg(::Type{<:Union{NoMethodErrorReport,NoMethodErrorReportConst}}, interp, sv, unionsplit, @nospecialize(args...)) = unionsplit ?
     "for one of the union split cases, no matching method found for signature: " :
     "no matching method found for call signature: "
-get_msg(::Type{InvalidBuiltinCallErrorReport}, interp, sv) =
+get_msg(::Type{<:Union{InvalidBuiltinCallErrorReport,InvalidBuiltinCallErrorReportConst}}, interp, sv, @nospecialize(args...)) =
     "invalid builtin function call: "
 get_msg(::Type{GlobalUndefVarErrorReport}, interp, sv, mod, name) =
     "variable $(mod).$(name) is not defined: "
