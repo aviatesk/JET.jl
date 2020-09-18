@@ -59,7 +59,7 @@ You can have TypeProfiler.jl detect possible errors:
 ```julia
 julia> using TypeProfiler
 
-julia> profile_and_watch_file("demo.jl")
+julia> profile_and_watch_file("demo.jl"; annotate_types = true)
 
 profiling from demo.jl (finished in 2.745 sec)
 ════ 4 possible errors found ═════

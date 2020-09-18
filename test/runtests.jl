@@ -9,7 +9,8 @@ import Core.Compiler:
 import TypeProfiler:
     TPInterpreter, profile_call, get_result,
     virtual_process!, report_errors, get_virtual_globalvar,
-    ToplevelErrorReport, InferenceErrorReport
+    ToplevelErrorReport, InferenceErrorReport,
+    print_reports
 
 for sym in Symbol.(last.(Base.Fix2(split, '.').(string.(vcat(subtypes(TypeProfiler, ToplevelErrorReport),
                                                              subtypes(TypeProfiler, InferenceErrorReport),
@@ -96,6 +97,11 @@ end
 
     @testset "tfuncs" begin
         include("test_tfuncs.jl")
+    end
+
+    # tests with Windows-paths is just an hell
+    @static Sys.iswindows() || @testset "print" begin
+        include("test_print.jl")
     end
 
     @testset "is it truly necessary ?" begin
