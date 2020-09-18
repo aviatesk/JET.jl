@@ -75,7 +75,7 @@ function profile_file(io::IO,
     text = read(filename, String)
     return profile_text(io, text, filename, mod; kwargs...)
 end
-profile_file(args...; kwargs...) = profile_file(stdout, args...; kwargs...)
+profile_file(args...; kwargs...) = profile_file(stdout::IO, args...; kwargs...)
 
 function profile_text(io::IO,
                       text::AbstractString,
@@ -92,7 +92,7 @@ function profile_text(io::IO,
                                                          )
     return included_files, print_reports(io, reports, postprocess; kwargs...)
 end
-profile_text(args...; kwargs...) = profile_text(stdout, args...; kwargs...)
+profile_text(args...; kwargs...) = profile_text(stdout::IO, args...; kwargs...)
 
 report_errors(::Nothing, args...; kwargs...) = report_errors(args...; kwargs...)
 function report_errors(logger::IO, args...; kwargs...)
@@ -182,7 +182,7 @@ macro profile_call(ex, kwargs...)
     return quote let
         argtypes = $(typeof′).(($(map(esc, args)...),))
         interp, frame = $(profile_call)($(esc(f)), argtypes)
-        $(print_reports)(stdout, interp.reports; $(map(esc, kwargs)...))
+        $(print_reports)(stdout::IO, interp.reports; $(map(esc, kwargs)...))
         $(get_result)(frame) # maybe want to widen const ?
     end end
 end
