@@ -128,12 +128,12 @@ macro reportdef(ex, kwargs...)
         isroot($(sv)) ? st : track_abstract_call_stack!(cache_report!, $(sv).parent, st) # postwalk
     end)
 
-    function strip_type_annotations(x)
-        isexpr(x, :escape) && return Expr(:escape, strip_type_annotations(first(x.args))) # keep escape
+    function strip_type_decls(x)
+        isexpr(x, :escape) && return Expr(:escape, strip_type_decls(first(x.args))) # keep escape
         return isexpr(x, :(::)) ? first(x.args) : x
     end
-    args′ = strip_type_annotations.(args)
-    spec_args′ = strip_type_annotations.(spec_args)
+    args′ = strip_type_decls.(args)
+    spec_args′ = strip_type_decls.(spec_args)
     constructor_body = quote
         msg = get_msg(#= T, interp, sv, ... =# $(args′...))
         sig = get_sig(#= T, interp, sv, ... =# $(args′...))
@@ -291,16 +291,36 @@ function _get_sig_type(sv::InferenceState, expr::Expr)
     return if head === :call
         f = first(expr.args)
         args = expr.args[2:end]
-        nargs = length(args)
 
-        sig = _get_sig(sv, f)
-        push!(sig, '(')
-        for (i, arg) in enumerate(args)
-            arg_sig = _get_sig(sv, arg)
-            append!(sig, arg_sig)
-            i ≠ nargs && push!(sig, ", ")
+        # special case splat call signature
+        if isa(f, GlobalRef) && f.name === :_apply_iterate && begin
+                itf = first(args)
+                isa(itf, GlobalRef) && itf.name === :iterate
+            end
+            f = args[2]
+            args = args[3:end]
+
+            sig = _get_sig(sv, f)
+            push!(sig, '(')
+
+            nargs = length(args)
+            for (i, arg) in enumerate(args)
+                arg_sig = _get_sig(sv, arg)
+                append!(sig, arg_sig)
+                i ≠ nargs ? push!(sig, ", ") : push!(sig, "...)")
+            end
+        else
+            sig = _get_sig(sv, f)
+            push!(sig, '(')
+
+            nargs = length(args)
+            for (i, arg) in enumerate(args)
+                arg_sig = _get_sig(sv, arg)
+                append!(sig, arg_sig)
+                i ≠ nargs && push!(sig, ", ")
+            end
+            push!(sig, ')')
         end
-        push!(sig, ')')
 
         sig, nothing
     elseif head === :(=)
