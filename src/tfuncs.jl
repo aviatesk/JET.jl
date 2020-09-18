@@ -1,10 +1,27 @@
+# TODO: maybe we need to add `argtypes_to_type(argtypes)` as key for throw aways by constant propagation
+
 # just relies on the native tfuncs, maybe there're lots of edge cases
 function builtin_tfunction(interp::TPInterpreter, @nospecialize(f), argtypes::Array{Any,1},
                            sv::Union{InferenceState,Nothing})
     ret = @invoke builtin_tfunction(interp::AbstractInterpreter, f, argtypes::Array{Any,1},
                                     sv::Union{InferenceState,Nothing})
 
-    iscp = isa(sv, InferenceState) && is_constant_propagated(sv)
+    # propagate virtual global variable
+    if f === getfield && ret == Any && length(argtypes) == 2 && all(a->isa(a, Const), argtypes)
+        mod, sym = map(a->(a::Const).val, argtypes)
+
+        if mod isa Module && sym isa Symbol
+            vgv = get_virtual_globalvar(interp, mod, sym)
+            if !isnothing(vgv)
+                ret = vgv
+            end
+        end
+    end
+
+    isnothing(sv) && return ret
+    sv = sv::InferenceState
+    linfo = sv.linfo
+    iscp = is_constant_propagated(sv)
 
     # throw away previously-reported `InvalidBuiltinCallErrorReport` if we re-infer this
     # frame with constant propagation; see comments in `abstract_call_gf_by_type(::TPInterpreter, ...)`
@@ -31,23 +48,11 @@ function builtin_tfunction(interp::TPInterpreter, @nospecialize(f), argtypes::Ar
         end
     end
 
-    # propagate virtual global variable
-    if f === getfield && ret == Any && length(argtypes) == 2 && all(a->isa(a, Const), argtypes)
-        mod, sym = map(a->a.val, argtypes)
-
-        if mod isa Module && sym isa Symbol
-            vgv = get_virtual_globalvar(interp, mod, sym)
-            if !isnothing(vgv)
-                ret = get_virtual_globalvar(interp, mod, sym)
-            end
-        end
-    end
-
     if f === throw
         # NOTE: handled in `finish(me::InferenceState, interp::TPInterpreter)`
         return ret
     elseif ret === Bottom
-        er = (iscp ? InvalidBuiltinCallErrorReportConst : InvalidBuiltinCallErrorReport)(interp, sv, argtypes, sv.linfo)
+        er = (iscp ? InvalidBuiltinCallErrorReportConst : InvalidBuiltinCallErrorReport)(interp, sv, argtypes, linfo)
         add_remark!(interp, sv, er)
     end
 
