@@ -35,20 +35,6 @@ macro invoke(ex)
     end |> esc
 end
 
-is_constant_propagated(frame) = CC.any(frame.result.overridden_by_const)
-
-function is_empty_match(info::MethodMatchInfo)
-    res = info.results
-    isa(res, MethodLookupResult) || return false # when does this happen ?
-    return isempty(res.matches)
-end
-
-is_throw_call′(@nospecialize(_)) = false
-is_throw_call′(e::Expr)          = is_throw_call(e)
-
-is_unreachable(@nospecialize(_)) = false
-is_unreachable(rn::ReturnNode)   = !isdefined(rn, :val)
-
 # overloads abstractinterpretation.jl
 # -----------------------------------
 # ref: https://github.com/JuliaLang/julia/blob/26c79b2e74d35434737bc33bc09d2e0f6e27372b/base/compiler/abstractinterpretation.jl
@@ -128,6 +114,14 @@ function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argty
     end
 
     return ret
+end
+
+is_constant_propagated(frame) = CC.any(frame.result.overridden_by_const)
+
+function is_empty_match(info)
+    res = info.results
+    isa(res, MethodLookupResult) || return false # when does this happen ?
+    return isempty(res.matches)
 end
 
 function abstract_eval_special_value(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
@@ -304,6 +298,12 @@ function typeinf(interp::TPInterpreter, frame::InferenceState)
 
     return ret
 end
+
+is_unreachable(@nospecialize(_)) = false
+is_unreachable(rn::ReturnNode)   = !isdefined(rn, :val)
+
+is_throw_call′(@nospecialize(_)) = false
+is_throw_call′(e::Expr)          = is_throw_call(e)
 
 function typeinf_edge(interp::TPInterpreter, method::Method, @nospecialize(atypes), sparams::SimpleVector, caller::InferenceState)
     set_current_frame!(interp, caller)
