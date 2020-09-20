@@ -177,7 +177,7 @@ end
 is_global_assign(@nospecialize(_)) = false
 is_global_assign(ex::Expr)         = isexpr(ex, :(=)) && first(ex.args) isa GlobalRef
 
-function get_virtual_globalvar(interp, mod, sym, sv = nothing)
+function get_virtual_globalvar(interp, mod, sym, caller = nothing)
     vgvt4mod = get(interp.virtual_globalvar_table, mod, nothing)
     isnothing(vgvt4mod) && return
 
@@ -185,9 +185,9 @@ function get_virtual_globalvar(interp, mod, sym, sv = nothing)
     isnothing(x) && return
 
     _, t, _, li = x
-    if !isnothing(sv)
-        # `sv` might be nothing when called in test, don't add backedge for that case
-        add_backedge!(li, sv)
+    if !isnothing(caller)
+        # `caller` might be nothing when called in test, don't add backedge for that case
+        add_backedge!(li, caller)
     end
 
     return t
@@ -199,7 +199,7 @@ function set_virtual_globalvar!(interp, mod, sym, @nospecialize(t))
     id = get_id(interp)
     prev_id, prev_t, λsym, li = haskey(vgvt4mod, sym) ?
                                 vgvt4mod[sym] :
-                                (id, Bottom, gen_dummy_backedge!(mod)...)
+                                (id, Bottom, gen_dummy_backedge(mod)...)
 
     if t === NOT_FOUND
         t = Bottom
@@ -219,7 +219,7 @@ function set_virtual_globalvar!(interp, mod, sym, @nospecialize(t))
     vgvt4mod[sym] = id, t, λsym, li
 end
 
-function gen_dummy_backedge!(m)
+function gen_dummy_backedge(m)
     @gensym λsym
     return λsym, force_invalidate!(m, λsym) # just generate dummy `MethodInstance` to be invalidated
 end
