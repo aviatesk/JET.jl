@@ -49,49 +49,6 @@ function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argty
 
     info = ret.info
     linfo = sv.linfo
-    iscp = is_constant_propagated(sv)
-
-    # throw away previously-reported `NoMethodErrorReport` if we re-infer this frame with
-    # constant propagation; this always happens _after_ abstract interpretation with only
-    # using lattice types (i.e. `atype`), and the reports with constants are always more
-    # accurate than those without them, so let's just throw away them on this pass
-    #
-    # NOTE:
-    # - we do NOT cache `NoMethodErrorReport`s with constant propagation (i.e. `NoMethodErrorReportConst`)
-    #   just because they're actually not bound to this `sv.linfo`
-    # - but we exclude them from `TPCACHE`; we want this logic since otherwise inference on
-    #   cached `MethodInstance` of `setproperty!` against structs with multiple type fields
-    #   will report union-split `NoMethodErrorReport` (that can be excluded by constant propagation)
-    #   TODO: this can be wrong in some cases since actual errors that would happen without
-    #   the current constants can be threw away as well; hopefully another future
-    #   constant propagation "re-reveals" the threw away errors, but of course this doesn't
-    #   necessarily hold true always
-    #
-    # xref (maybe coming future change of constant propagation logic):
-    # https://github.com/JuliaLang/julia/blob/a108d6cb8fdc7924fe2b8d831251142386cb6525/base/compiler/abstractinterpretation.jl#L153
-    if iscp
-        inds = findall(interp.reports) do report
-            return isa(report, NoMethodErrorReport) &&
-                linfo == report.linfo # use `sv.linfo` as key
-                # ⊑(atype, report.atype) # use `atype` as key
-        end
-        isempty(inds) || deleteat!(interp.reports, inds)
-
-        # exclude them from cache as well
-        prewalk_inf_frame(sv) do frame
-            key = frame.linfo
-            if haskey(TPCACHE, key)
-                id, cached_reports = TPCACHE[key]
-                # @assert id === get_id(interp)
-                cached_inds = findall(cached_reports) do cached_report
-                    return isa(cached_report, InferenceReportCache{NoMethodErrorReport}) &&
-                        linfo == last(#= linfo =# cached_report.args)::MethodInstance # use `sv.linfo` as key
-                        # ⊑(atype, last(#= atype =# cached_report.args)::Type) # use `atype` as key
-                end
-                deleteat!(cached_reports, cached_inds)
-            end
-        end
-    end
 
     # report no method error
     if isa(info, UnionSplitInfo)
@@ -99,18 +56,13 @@ function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argty
         for info in info.matches
             if is_empty_match(info)
                 # no method match for this union split
-                # ret.rt = Bottom # maybe we want to be more strict on error cases ?
-                er = (iscp ? NoMethodErrorReportConst : NoMethodErrorReport)(interp, sv, true, atype, linfo)
-                add_remark!(interp, sv, er)
+                add_remark!(interp, sv, NoMethodErrorReport(interp, sv, true, atype, linfo))
             end
         end
     elseif isa(info, MethodMatchInfo) && is_empty_match(info)
-        # really no method found, and so the return type should have never changed from its
-        # initialization (i.e. `Bottom`)
-        # typeassert(ret.rt, TypeofBottom)
-        # add_remark!(interp, sv, NoMethodErrorReport(interp, sv, false, atype))
-        er = (iscp ? NoMethodErrorReportConst : NoMethodErrorReport)(interp, sv, false, atype, linfo)
-        add_remark!(interp, sv, er)
+        # really no method found
+        # @assert ret.rt === Bottom # the return type should have never changed from its initialization
+        add_remark!(interp, sv, NoMethodErrorReport(interp, sv, false, atype, linfo))
     end
 
     return ret
@@ -257,6 +209,37 @@ get_current_frame(interp::TPInterpreter) = interp.current_frame[]
 # (and maybe optimization) already ran on
 function typeinf(interp::TPInterpreter, frame::InferenceState)
     set_current_frame!(interp, frame)
+
+    # throw away previously-reported errors that have a lineage of this frame if we re-infer
+    # this frame with constant propagation, because results with constants are always more
+    # accurate than those without them; this can happen only _after_ abstract interpretation
+    # without constants (i.e. just using `atype`)
+    #
+    # NOTE:
+    # - we do NOT cache reports with constant propagation because this frame may not introduce
+    #   errors with the other constants
+    # - but we exclude them from `TPCACHE`; we want this logic since constant propagation
+    #   may not happen on cached `MethodInstance` and the cache can produce "zombie" false
+    #   positive reports otherwise (see test/test_abstractinterpretation.jl for concrete examples)
+    #   TODO: well, this can obviously be wrong in some cases since actual errors that would
+    #   happen without the current constants can be threw away as well; hopefully another
+    #   future constant propagation "re-reveals" the threw away errors, but of course this
+    #   doesn't happen always
+    #
+    # xref (maybe coming future change of constant propagation logic):
+    # https://github.com/JuliaLang/julia/blob/a108d6cb8fdc7924fe2b8d831251142386cb6525/base/compiler/abstractinterpretation.jl#L153
+    if is_constant_propagated(frame)
+        linfo = frame.linfo
+
+        deleteat!(interp.reports, findall(Fix1(is_lineage, linfo), interp.reports))
+
+        # exclude them from cache as well
+        for lineage in keys(TPCACHE)
+            if is_lineage(linfo, lineage)
+                delete!(TPCACHE, lineage)
+            end
+        end
+    end
 
     ret = @invoke typeinf(interp::AbstractInterpreter, frame::InferenceState)
 

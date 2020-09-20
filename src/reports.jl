@@ -90,6 +90,11 @@ function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
     end
 end
 
+const Lineage = IdSet{MethodInstance}
+
+is_lineage(linfo::MethodInstance, report::InferenceErrorReport) = is_lineage(linfo, report.lineage)
+is_lineage(linfo::MethodInstance, lineage::Lineage)             = linfo in lineage
+
 macro reportdef(ex, kwargs...)
     T = first(ex.args)
     args = map(ex.args) do x
@@ -102,14 +107,11 @@ macro reportdef(ex, kwargs...)
     spec_args = args[4:end] # keep those additional, specific fields
 
     local track_from_frame::Bool = false
-    local dont_cache::Bool = false
     for ex in kwargs
         @assert isexpr(ex, :(=))
         kw, val = ex.args
         if kw === :track_from_frame
             track_from_frame = val
-        elseif kw === :dont_cache
-            dont_cache = val
         end
     end
 
@@ -119,28 +121,30 @@ macro reportdef(ex, kwargs...)
     end
     args′ = strip_type_decls.(args)
     spec_args′ = strip_type_decls.(spec_args)
-    sv = args[3]
     constructor_body = quote
         msg = get_msg(#= T, interp, sv, ... =# $(args′...))
         sig = get_sig(#= T, interp, sv, ... =# $(args′...))
+        lineage = Lineage()
 
-        cache_report! = if $(dont_cache)
+        sv = $(args[3])
+
+        cache_report! = if is_constant_propagated(sv)
             dummy_cacher
         else
-            gen_report_cacher(msg, sig, #= T, interp, sv, ... =# $(args′...))
+            gen_report_cacher(msg, sig, lineage, #= T, interp, sv, ... =# $(args′...))
         end
         st = if $(track_from_frame)
             # when report is constructed _after_ the inference on `sv::InferenceState` has been done
-            st = VirtualFrame[get_virtual_frame($(sv).linfo)]
-            cache_report!($(sv), st)
+            st = VirtualFrame[get_virtual_frame(sv.linfo)]
+            cache_report!(sv, st)
 
-            isroot($(sv)) ? st : track_abstract_call_stack!(cache_report!, $(sv).parent, st)
+            isroot(sv) ? st : track_abstract_call_stack!(cache_report!, sv.parent, st)
         else
             # when report is constructed _during_ the inference
-            track_abstract_call_stack!(cache_report!, $(sv))
+            track_abstract_call_stack!(cache_report!, sv)
         end
 
-        return new(reverse(st), msg, sig, $(spec_args′...))
+        return new(reverse(st), msg, sig, lineage, $(spec_args′...))
     end
     constructor_ex = Expr(:function, ex, constructor_body)
 
@@ -149,6 +153,7 @@ macro reportdef(ex, kwargs...)
             st::VirtualStackTrace
             msg::String
             sig::Vector{Any}
+            lineage::Lineage
             $(spec_args...)
 
             # inner constructor (from abstract interpretation)
@@ -164,11 +169,7 @@ end
 
 @reportdef NoMethodErrorReport(interp, sv, unionsplit::Bool, @nospecialize(atype::Type), linfo::MethodInstance)
 
-@reportdef NoMethodErrorReportConst(interp, sv, unionsplit::Bool, @nospecialize(atype::Type), linfo::MethodInstance) dont_cache = true
-
 @reportdef InvalidBuiltinCallErrorReport(interp, sv, argtypes::Vector{Any}, linfo::MethodInstance)
-
-@reportdef InvalidBuiltinCallErrorReportConst(interp, sv, argtypes::Vector{Any}, linfo::MethodInstance) dont_cache = true
 
 @reportdef GlobalUndefVarErrorReport(interp, sv, mod::Module, name::Symbol)
 
@@ -192,18 +193,22 @@ Ideally all of them should be covered by the other `InferenceErrorReport`s.
 """
 @reportdef NativeRemark(interp, sv, s::String)
 
-function gen_report_cacher(msg, sig, T, interp, #= sv =# _, args...)
+# TODO: now we don't need to separate `gen_report_cacher` from `track_abstract_call_stack!`
+
+function gen_report_cacher(msg, sig, lineage, T, interp, #= sv =# _, args...)
     return function (sv, st)
-        key = sv.linfo
-        if haskey(TPCACHE, key)
-            _, cached_reports = TPCACHE[key]
+        linfo = sv.linfo
+
+        push!(lineage, linfo)
+
+        if haskey(TPCACHE, lineage)
+            _, cached_reports = TPCACHE[lineage]
         else
             id = get_id(interp)
             cached_reports = InferenceReportCache[]
-            TPCACHE[key] = id => cached_reports
+            TPCACHE[lineage] = id => cached_reports
         end
-
-        push!(cached_reports, InferenceReportCache{T}(view(st, :), msg, sig, args))
+        push!(cached_reports, InferenceReportCache{T}(st, msg, sig, args))
     end
 end
 
@@ -216,8 +221,6 @@ function track_abstract_call_stack!(@nospecialize(cacher), sv::InferenceState, s
 
     return st
 end
-track_abstract_call_stack!(sv::InferenceState, st = VirtualFrame[]) =
-    track_abstract_call_stack!(dummy_cacher, sv, st)
 
 function get_virtual_frame(loc::Union{InferenceState,MethodInstance})::VirtualFrame
     sig = get_sig(loc)
@@ -355,10 +358,10 @@ function _get_sig_type(::InferenceState, qn::QuoteNode)
 end
 _get_sig_type(::InferenceState, @nospecialize(x)) = Any[repr(x; context = :compact => true)], nothing
 
-get_msg(::Type{<:Union{NoMethodErrorReport,NoMethodErrorReportConst}}, interp, sv, unionsplit, @nospecialize(args...)) = unionsplit ?
+get_msg(::Type{NoMethodErrorReport}, interp, sv, unionsplit, @nospecialize(args...)) = unionsplit ?
     "for one of the union split cases, no matching method found for signature: " :
     "no matching method found for call signature: "
-get_msg(::Type{<:Union{InvalidBuiltinCallErrorReport,InvalidBuiltinCallErrorReportConst}}, interp, sv, @nospecialize(args...)) =
+get_msg(::Type{InvalidBuiltinCallErrorReport}, interp, sv, @nospecialize(args...)) =
     "invalid builtin function call: "
 get_msg(::Type{GlobalUndefVarErrorReport}, interp, sv, mod, name) =
     "variable $(mod).$(name) is not defined: "
