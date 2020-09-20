@@ -113,27 +113,13 @@ macro reportdef(ex, kwargs...)
         end
     end
 
-    sv = args[3]
-    # `from_statement` should be used when report is constructed _during_ the inference
-    from_statement = :(track_abstract_call_stack!(cache_report!, $(sv)))
-    # `from_frame` should be used when report is constructed _after_ the inference on
-    # `sv::InferenceState` has been done
-    from_frame = :(let
-        local sig = get_sig($(sv).linfo)
-        file, line = get_file_line($(sv).linfo) # just use this frame's location
-        frame = (; file, line, sig)
-        st = VirtualFrame[frame]
-        cache_report!($(sv), st)
-
-        isroot($(sv)) ? st : track_abstract_call_stack!(cache_report!, $(sv).parent, st) # postwalk
-    end)
-
     function strip_type_decls(x)
         isexpr(x, :escape) && return Expr(:escape, strip_type_decls(first(x.args))) # keep escape
         return isexpr(x, :(::)) ? first(x.args) : x
     end
     args′ = strip_type_decls.(args)
     spec_args′ = strip_type_decls.(spec_args)
+    sv = args[3]
     constructor_body = quote
         msg = get_msg(#= T, interp, sv, ... =# $(args′...))
         sig = get_sig(#= T, interp, sv, ... =# $(args′...))
@@ -143,7 +129,16 @@ macro reportdef(ex, kwargs...)
         else
             gen_report_cacher(msg, sig, #= T, interp, sv, ... =# $(args′...))
         end
-        st = $(track_from_frame ? from_frame : from_statement)
+        st = if $(track_from_frame)
+            # when report is constructed _after_ the inference on `sv::InferenceState` has been done
+            st = VirtualFrame[get_virtual_frame($(sv).linfo)]
+            cache_report!($(sv), st)
+
+            isroot($(sv)) ? st : track_abstract_call_stack!(cache_report!, $(sv).parent, st)
+        else
+            # when report is constructed _during_ the inference
+            track_abstract_call_stack!(cache_report!, $(sv))
+        end
 
         return new(reverse(st), msg, sig, $(spec_args′...))
     end
@@ -214,22 +209,21 @@ end
 
 # traces the current abstract call stack
 function track_abstract_call_stack!(@nospecialize(cacher), sv::InferenceState, st = VirtualFrame[])
-    walker = let cacher = cacher, st = st
-        function (frame)
-            sig = get_sig(frame)
-            file, line = get_file_line(frame)
-            virtualframe = (; file, line, sig)
-            push!(st, virtualframe)
-
-            cacher(frame, st)
-        end
+    prewalk_inf_frame(sv) do frame
+        push!(st, get_virtual_frame(frame))
+        cacher(frame, st)
     end
-    prewalk_inf_frame(walker, sv)
 
     return st
 end
 track_abstract_call_stack!(sv::InferenceState, st = VirtualFrame[]) =
     track_abstract_call_stack!(dummy_cacher, sv, st)
+
+function get_virtual_frame(loc::Union{InferenceState,MethodInstance})::VirtualFrame
+    sig = get_sig(loc)
+    file, line = get_file_line(loc)
+    return (; file, line, sig)
+end
 
 function prewalk_inf_frame(@nospecialize(f), frame::InferenceState)
     ret = f(frame)

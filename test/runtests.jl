@@ -87,20 +87,20 @@ end
 # ------------
 
 @testset "TypeProfiler.jl" begin
-    @testset "virtual process" begin
+    @testset "virtualprocess.jl" begin
         include("test_virtualprocess.jl")
     end
 
-    @testset "abstract interpretation" begin
+    @testset "abstractinterpretation.jl" begin
         include("test_abstractinterpretation.jl")
     end
 
-    @testset "tfuncs" begin
+    @testset "tfuncs.jl" begin
         include("test_tfuncs.jl")
     end
 
     # tests with Windows-paths is just an hell
-    @static Sys.iswindows() || @testset "print" begin
+    @static Sys.iswindows() || @testset "print.jl" begin
         include("test_print.jl")
     end
 
