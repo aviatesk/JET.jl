@@ -16,17 +16,17 @@ is_lineage(linfo::MethodInstance, cached_report::InferenceReportCache) =
 
 get_id(interp::TPInterpreter) = interp.id
 
-function restore_cached_report!(mi, cache::InferenceReportCache{T}, interp) where {T<:InferenceErrorReport}
-    report = _restore_cached_report!(mi, T, cache, interp)
+function restore_cached_report!(cache::InferenceReportCache{T}, interp) where {T<:InferenceErrorReport}
+    report = _restore_cached_report!(T, cache, interp)
     push!(interp.reports, report)
 end
 
-function restore_cached_report!(mi, cache::InferenceReportCache{ExceptionReport}, interp)
-    report = _restore_cached_report!(mi, ExceptionReport, cache, interp)
+function restore_cached_report!(cache::InferenceReportCache{ExceptionReport}, interp)
+    report = _restore_cached_report!(ExceptionReport, cache, interp)
     push!(interp.exception_reports, length(interp.reports) => report)
 end
 
-function _restore_cached_report!(mi, T, cache, interp)
+function _restore_cached_report!(T, cache, interp)
     sv = get_current_frame(interp)
 
     # reconstruct virtual stack trace and lineage for this cached report
@@ -73,7 +73,7 @@ function CC.get(tpc::TPCache, mi::MethodInstance, default)
             # don't append duplicated reports from the same inference process
             if id !== get_id(tpc.interp)
                 for cache in cached_reports
-                    restore_cached_report!(mi, cache, tpc.interp)
+                    restore_cached_report!(cache, tpc.interp)
                 end
             end
         end
