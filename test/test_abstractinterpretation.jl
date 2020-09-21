@@ -101,7 +101,7 @@
             # "no matching method found for call signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{String}, v::Int64)" should be kept
             @test length(interp.reports) === 1
             report = first(interp.reports)
-            @test report isa NoMethodErrorReportConst && report.atype === Tuple{typeof(convert), Type{String}, Int}
+            @test report isa NoMethodErrorReport && report.atype === Tuple{typeof(convert), Type{String}, Int}
         end
 
         # constant propagation should narrow down union-split no method error to single no method matching error
@@ -123,7 +123,7 @@
             # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::String)" should be narrowed down to "no matching method found for call signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{Int}, v::String)"
             @test !isempty(interp.reports)
             @test any(interp.reports) do report
-                return report isa NoMethodErrorReportConst &&
+                return report isa NoMethodErrorReport &&
                     report.atype === Tuple{typeof(convert), Type{Int}, String}
             end
             # "no matching method found for call signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{String}, v::Int)"
@@ -155,7 +155,7 @@
             end)
             @test length(interp.reports) === 1
             er = first(interp.reports)
-            @test er isa NoMethodErrorReportConst &&
+            @test er isa NoMethodErrorReport &&
                 !er.unionsplit &&
                 er.atype ⊑ Tuple{Any,String,Int}
         end
