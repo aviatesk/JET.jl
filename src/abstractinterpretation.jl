@@ -210,10 +210,10 @@ get_current_frame(interp::TPInterpreter) = interp.current_frame[]
 function typeinf(interp::TPInterpreter, frame::InferenceState)
     set_current_frame!(interp, frame)
 
-    # throw away previously-reported errors that have a lineage of this frame if we re-infer
-    # this frame with constant propagation, because results with constants are always more
-    # accurate than those without them; this can happen only _after_ abstract interpretation
-    # without constants (i.e. just using `atype`)
+    # throw away previously-collected error reports that have a lineage of this frame if we
+    # re-infer this frame with constant propagation, because results with constants are
+    # always more accurate than those without them; this can happen only _after_
+    # abstract interpretation without constants (i.e. just using `atype`)
     #
     # NOTE:
     # - we do NOT cache reports with constant propagation because this frame may not introduce
@@ -230,14 +230,16 @@ function typeinf(interp::TPInterpreter, frame::InferenceState)
     # https://github.com/JuliaLang/julia/blob/a108d6cb8fdc7924fe2b8d831251142386cb6525/base/compiler/abstractinterpretation.jl#L153
     if is_constant_propagated(frame)
         linfo = frame.linfo
+        is_lineage′ = Fix1(is_lineage, linfo)
 
-        deleteat!(interp.reports, findall(Fix1(is_lineage, linfo), interp.reports))
+        # throw away previously-collected error reports
+        filter!(!is_lineage′, interp.reports)
 
         # exclude them from cache as well
-        for lineage in keys(TPCACHE)
-            if is_lineage(linfo, lineage)
-                delete!(TPCACHE, lineage)
-            end
+        for mi in keys(TPCACHE)
+            id, cached_reports = TPCACHE[mi]
+            filter!(!is_lineage′, cached_reports)
+            isempty(cached_reports) && delete!(TPCACHE, mi)
         end
     end
 
@@ -251,7 +253,7 @@ function typeinf(interp::TPInterpreter, frame::InferenceState)
         if isa(stmt, Expr) && stmt.head === :throw_undef_if_not
             sym, _ = stmt.args
             next_idx = idx + 1
-            if checkbounds(Bool, stmts, next_idx) && @inbounds is_unreachable(stmts[next_idx])
+            if checkbounds(Bool, stmts, next_idx) && is_unreachable(@inbounds stmts[next_idx])
                 # the optimization so far has found this statement is never reachable;
                 # TP reports it since it will invoke undef var error at runtime, or will just
                 # be dead code otherwise

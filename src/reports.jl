@@ -58,24 +58,10 @@ const VirtualFrame = @NamedTuple begin
     file::Symbol
     line::Int
     sig::Vector{Any}
+    linfo::MethodInstance
 end
 const VirtualStackTrace = Vector{VirtualFrame}
 const ViewedVirtualStackTrace = typeof(view(VirtualStackTrace(), :))
-
-"""
-    const VirtualFrame = @NamedTuple begin
-        file::Symbol
-        line::Int
-        sig::Vector{Any}
-    end
-    const VirtualStackTrace = Vector{VirtualFrame}
-    const ViewedVirtualStackTrace = typeof(view(VirtualStackTrace(), :))
-
-- `VirtualStackTrace` represents virtual back trace of profiled errors (supposed to be
-  ordered from call site to error point
-- `ViewedVirtualStackTrace` is view of `VirtualStackTrace` and will be kept in [`TPCACHE`](@ref)
-"""
-VirtualFrame, VirtualStackTrace, ViewedVirtualStackTrace
 
 # `InferenceErrorReport` interface
 function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
@@ -122,26 +108,31 @@ macro reportdef(ex, kwargs...)
     args′ = strip_type_decls.(args)
     spec_args′ = strip_type_decls.(spec_args)
     constructor_body = quote
-        msg = get_msg(#= T, interp, sv, ... =# $(args′...))
-        sig = get_sig(#= T, interp, sv, ... =# $(args′...))
-        lineage = Lineage()
-
         sv = $(args[3])
 
-        cache_report! = if is_constant_propagated(sv)
-            dummy_cacher
-        else
-            gen_report_cacher(msg, sig, lineage, #= T, interp, sv, ... =# $(args′...))
-        end
-        st = if $(track_from_frame)
-            # when report is constructed _after_ the inference on `sv::InferenceState` has been done
-            st = VirtualFrame[get_virtual_frame(sv.linfo)]
-            cache_report!(sv, st)
+        msg = get_msg(#= T, interp, sv, ... =# $(args′...))
+        sig = get_sig(#= T, interp, sv, ... =# $(args′...))
+        st = VirtualFrame[]
+        lineage = Lineage()
+        cache_report! = is_constant_propagated(sv) ?
+                        dummy_cacher :
+                        gen_report_cacher(st, msg, sig, lineage, #= T, interp, sv, ... =# $(args′...))
 
-            isroot(sv) ? st : track_abstract_call_stack!(cache_report!, sv.parent, st)
-        else
-            # when report is constructed _during_ the inference
-            track_abstract_call_stack!(cache_report!, sv)
+        if $(track_from_frame)
+            # when report is constructed _after_ the inference on `sv::InferenceState` has been done,
+            # collect location information from `sv.linfo` and start traversal from `sv.parent`
+            linfo = sv.linfo
+            push!(st, get_virtual_frame(linfo))
+            push!(lineage, linfo)
+            cache_report!(linfo)
+            sv = sv.parent
+        end
+
+        prewalk_inf_frame(sv) do frame::InferenceState
+            linfo = frame.linfo
+            push!(st, get_virtual_frame(frame))
+            push!(lineage, linfo)
+            cache_report!(linfo)
         end
 
         return new(reverse(st), msg, sig, lineage, $(spec_args′...))
@@ -156,12 +147,17 @@ macro reportdef(ex, kwargs...)
             lineage::Lineage
             $(spec_args...)
 
-            # inner constructor (from abstract interpretation)
+            # constructor from abstract interpretation
             $(constructor_ex)
 
-            # inner constructor (from cache)
-            function $(T)(st::VirtualStackTrace, msg::AbstractString, sig::AbstractVector, @nospecialize(spec_args::NTuple{N, Any} where N))
-                return new(reverse(st), msg, sig, $(esc(:(spec_args...)))) # `esc` is needed because `@nospecialize` escapes its argument anyway
+            # constructor from cache
+            function $(T)(st::VirtualStackTrace,
+                          msg::AbstractString,
+                          sig::AbstractVector,
+                          lineage::Lineage,
+                          @nospecialize(spec_args::NTuple{N, Any} where N),
+                          )
+                return new(reverse(st), msg, sig, lineage, $(esc(:(spec_args...)))) # `esc` is needed because `@nospecialize` escapes its argument anyway
             end
         end
     end
@@ -193,48 +189,36 @@ Ideally all of them should be covered by the other `InferenceErrorReport`s.
 """
 @reportdef NativeRemark(interp, sv, s::String)
 
-# TODO: now we don't need to separate `gen_report_cacher` from `track_abstract_call_stack!`
-
-function gen_report_cacher(msg, sig, lineage, T, interp, #= sv =# _, args...)
-    return function (sv, st)
-        linfo = sv.linfo
-
-        push!(lineage, linfo)
-
-        if haskey(TPCACHE, lineage)
-            _, cached_reports = TPCACHE[lineage]
+function gen_report_cacher(st, msg, sig, lineage, T, interp, #= sv =# @nospecialize(_), args...)
+    return function (linfo::MethodInstance)
+        if haskey(TPCACHE, linfo)
+            _, cached_reports = TPCACHE[linfo]
         else
             id = get_id(interp)
             cached_reports = InferenceReportCache[]
-            TPCACHE[lineage] = id => cached_reports
+            TPCACHE[linfo] = id => cached_reports
         end
-        push!(cached_reports, InferenceReportCache{T}(st, msg, sig, args))
+        push!(cached_reports, InferenceReportCache{T}(view(st, :), msg, sig, lineage, args))
     end
-end
-
-# traces the current abstract call stack
-function track_abstract_call_stack!(@nospecialize(cacher), sv::InferenceState, st = VirtualFrame[])
-    prewalk_inf_frame(sv) do frame
-        push!(st, get_virtual_frame(frame))
-        cacher(frame, st)
-    end
-
-    return st
 end
 
 function get_virtual_frame(loc::Union{InferenceState,MethodInstance})::VirtualFrame
     sig = get_sig(loc)
     file, line = get_file_line(loc)
-    return (; file, line, sig)
+    linfo = isa(loc, InferenceState) ? loc.linfo : loc
+    return (; file, line, sig, linfo)
 end
 
+prewalk_inf_frame(@nospecialize(f), ::Nothing) = return
 function prewalk_inf_frame(@nospecialize(f), frame::InferenceState)
     ret = f(frame)
-    isroot(frame) || prewalk_inf_frame(f, frame.parent)
+    prewalk_inf_frame(f, frame.parent)
     return ret
 end
+
+postwalk_inf_frame(@nospecialize(f), ::Nothing) = return
 function postwalk_inf_frame(@nospecialize(f), frame::InferenceState)
-    isroot(frame) || prewalk_inf_frame(f, frame.parent)
+    postwalk_inf_frame(f, frame.parent)
     return f(frame)
 end
 

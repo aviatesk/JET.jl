@@ -1,33 +1,49 @@
-# global cache
+# report cache
 # ------------
 
 struct InferenceReportCache{T<:InferenceErrorReport}
     st::ViewedVirtualStackTrace
     msg::String
     sig::Vector{Any}
+    lineage::Lineage
     args::NTuple{N, Any} where N # additional field that keeps information specific to `T`
 end
 
-# FIXME: `MethodInstance` might be too heavy ?
-const TPCACHE = Dict{MethodInstance,Pair{Symbol,Vector{InferenceReportCache}}}()
+const TPCACHE = IdDict{MethodInstance,Pair{Symbol,Vector{InferenceReportCache}}}()
+
+is_lineage(linfo::MethodInstance, cached_report::InferenceReportCache) =
+    is_lineage(linfo, cached_report.lineage)
 
 get_id(interp::TPInterpreter) = interp.id
 
-function restore_cached_report!(cache::InferenceReportCache{T}, interp) where {T<:InferenceErrorReport}
-    report = restore_cached_report(T, cache, interp)
+function restore_cached_report!(mi, cache::InferenceReportCache{T}, interp) where {T<:InferenceErrorReport}
+    report = _restore_cached_report!(mi, T, cache, interp)
     push!(interp.reports, report)
 end
 
-function restore_cached_report!(cache::InferenceReportCache{ExceptionReport}, interp)
-    report = restore_cached_report(ExceptionReport, cache, interp)
+function restore_cached_report!(mi, cache::InferenceReportCache{ExceptionReport}, interp)
+    report = _restore_cached_report!(mi, ExceptionReport, cache, interp)
     push!(interp.exception_reports, length(interp.reports) => report)
 end
 
-function restore_cached_report(T, cache, interp)
+function _restore_cached_report!(mi, T, cache, interp)
     sv = get_current_frame(interp)
-    cur_st = track_abstract_call_stack!(sv)
-    st = vcat(cache.st, cur_st)
-    return T(st, cache.msg, cache.sig, cache.args)
+
+    # reconstruct virtual stack trace and lineage for this cached report
+    msg = cache.msg
+    sig = cache.sig
+    st = collect(cache.st)
+    lineage = Lineage(sf.linfo for sf in st)
+    cache_report! = gen_report_cacher(st, msg, sig, lineage, T, interp, #= dead arg =# sv, cache.args...)
+
+    prewalk_inf_frame(sv) do frame::InferenceState
+        linfo = frame.linfo
+        push!(st, get_virtual_frame(frame))
+        push!(lineage, linfo)
+        haskey(TPCACHE, linfo) || cache_report!(linfo) # caller can be already cached
+    end
+
+    return T(st, cache.msg, cache.sig, lineage, cache.args)
 end
 
 # code cache interface
@@ -51,15 +67,13 @@ function CC.get(tpc::TPCache, mi::MethodInstance, default)
 
     # cache hit, we need to append already-profiled error reports if exist
     if ret !== default
-        # key = hash(mi)
-        key = mi
-        if haskey(TPCACHE, key)
-            id, cached_reports = TPCACHE[key]
+        if haskey(TPCACHE, mi)
+            id, cached_reports = TPCACHE[mi]
 
             # don't append duplicated reports from the same inference process
             if id !== get_id(tpc.interp)
                 for cache in cached_reports
-                    restore_cached_report!(cache, tpc.interp)
+                    restore_cached_report!(mi, cache, tpc.interp)
                 end
             end
         end
