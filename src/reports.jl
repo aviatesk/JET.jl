@@ -61,7 +61,6 @@ const VirtualFrame = @NamedTuple begin
     linfo::MethodInstance
 end
 const VirtualStackTrace = Vector{VirtualFrame}
-const ViewedVirtualStackTrace = typeof(view(VirtualStackTrace(), :))
 
 # `InferenceErrorReport` interface
 function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
@@ -80,6 +79,8 @@ const Lineage = IdSet{MethodInstance}
 
 is_lineage(linfo::MethodInstance, report::InferenceErrorReport) = is_lineage(linfo, report.lineage)
 is_lineage(linfo::MethodInstance, lineage::Lineage)             = linfo in lineage
+
+const ERRORNEOUS_LINFOS = IdSet{MethodInstance}()
 
 macro reportdef(ex, kwargs...)
     T = first(ex.args)
@@ -114,9 +115,13 @@ macro reportdef(ex, kwargs...)
         sig = get_sig(#= T, interp, sv, ... =# $(args′...))
         st = VirtualFrame[]
         lineage = Lineage()
-        cache_report! = is_constant_propagated(sv) ?
-                        dummy_cacher :
-                        gen_report_cacher(st, msg, sig, lineage, #= T, interp, sv, ... =# $(args′...))
+
+        # COMBAK: is this really needed ?
+        # this frame may not introduce errors with the other constants, but this frame is
+        # probably already pushed into `ERRORNEOUS_LINFOS`
+        tpcache_reporter = is_constant_propagated(sv) ?
+                           (linfo -> return) :
+                           (linfo -> push!(ERRORNEOUS_LINFOS, linfo))
 
         if $(track_from_frame)
             # when report is constructed _after_ the inference on `sv::InferenceState` has been done,
@@ -124,7 +129,7 @@ macro reportdef(ex, kwargs...)
             linfo = sv.linfo
             push!(st, get_virtual_frame(linfo))
             push!(lineage, linfo)
-            cache_report!(linfo)
+            tpcache_reporter(linfo)
             sv = sv.parent
         end
 
@@ -132,7 +137,7 @@ macro reportdef(ex, kwargs...)
             linfo = frame.linfo
             push!(st, get_virtual_frame(frame))
             push!(lineage, linfo)
-            cache_report!(linfo)
+            tpcache_reporter(linfo)
         end
 
         return new(reverse(st), msg, sig, lineage, $(spec_args′...))
@@ -147,18 +152,8 @@ macro reportdef(ex, kwargs...)
             lineage::Lineage
             $(spec_args...)
 
-            # constructor from abstract interpretation
+            # inner constructor
             $(constructor_ex)
-
-            # constructor from cache
-            function $(T)(st::VirtualStackTrace,
-                          msg::AbstractString,
-                          sig::AbstractVector,
-                          lineage::Lineage,
-                          @nospecialize(spec_args::NTuple{N, Any} where N),
-                          )
-                return new(reverse(st), msg, sig, lineage, $(esc(:(spec_args...)))) # `esc` is needed because `@nospecialize` escapes its argument anyway
-            end
         end
     end
 end
@@ -188,19 +183,6 @@ This special `InferenceErrorReport` is just for wrapping remarks from `NativeInt
 Ideally all of them should be covered by the other `InferenceErrorReport`s.
 """
 @reportdef NativeRemark(interp, sv, s::String)
-
-function gen_report_cacher(st, msg, sig, lineage, T, interp, #= sv =# @nospecialize(_), args...)
-    return function (linfo::MethodInstance)
-        if haskey(TPCACHE, linfo)
-            _, cached_reports = TPCACHE[linfo]
-        else
-            id = get_id(interp)
-            cached_reports = InferenceReportCache[]
-            TPCACHE[linfo] = id => cached_reports
-        end
-        push!(cached_reports, InferenceReportCache{T}(view(st, :), msg, sig, lineage, args))
-    end
-end
 
 function get_virtual_frame(loc::Union{InferenceState,MethodInstance})::VirtualFrame
     sig = get_sig(loc)

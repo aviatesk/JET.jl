@@ -83,6 +83,8 @@ function gen_opt_params()
     )
 end
 
+get_id(interp::TPInterpreter) = interp.id
+
 InferenceParams(interp::TPInterpreter) = InferenceParams(interp.native)
 OptimizationParams(interp::TPInterpreter) = OptimizationParams(interp.native)
 get_world_counter(interp::TPInterpreter) = get_world_counter(interp.native)
