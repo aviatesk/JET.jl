@@ -478,7 +478,7 @@ end
         # constant prop should throw away non-boolean condition reports within `baz1`
         interp, frame = Core.eval(m, quote
             $(profile_call)() do
-                foo(10)
+                foo(1)
             end
         end)
         @test isempty(interp.reports)
@@ -492,11 +492,8 @@ end
         @test er isa NonBooleanCondErrorReport &&
             er.t === Int
 
-        interp, frame = Core.eval(m, quote
-            $(profile_call)() do
-                foo(false)
-            end
-        end)
+        # so `Bool` is good for `foo` after all
+        interp, frame = Core.eval(m, :($(profile_call)(foo, Bool)))
         @test isempty(interp.reports)
     end
 end

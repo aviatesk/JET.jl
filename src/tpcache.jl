@@ -22,10 +22,13 @@ function CC.get(tpc::TPCache, mi::MethodInstance, default)
     # cache hit, now we need to invalidate the cache lookup if this `mi` has been profiled
     # as erroneous; otherwise the error reports that can occur from this frame will just be
     # ignored
-    # FIXME: this can insanely slow down profiling performance, find a workaround
     force_inference = false
-    if mi in ERRORNEOUS_LINFOS
-        force_inference = true
+    if haskey(ERRORNEOUS_LINFOS, mi)
+        # don't force re-inference for frames from the same inference process;
+        # FIXME: this is critical for profiling performance, but seems to lead to lots of false positives ...
+        if ERRORNEOUS_LINFOS[mi] !== get_id(tpc.interp)
+            force_inference = true
+        end
     end
 
     return force_inference ? default : ret

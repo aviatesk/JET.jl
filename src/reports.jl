@@ -80,7 +80,7 @@ const Lineage = IdSet{MethodInstance}
 is_lineage(linfo::MethodInstance, report::InferenceErrorReport) = is_lineage(linfo, report.lineage)
 is_lineage(linfo::MethodInstance, lineage::Lineage)             = linfo in lineage
 
-const ERRORNEOUS_LINFOS = IdSet{MethodInstance}()
+const ERRORNEOUS_LINFOS = IdDict{MethodInstance,Symbol}()
 
 macro reportdef(ex, kwargs...)
     T = first(ex.args)
@@ -123,7 +123,7 @@ macro reportdef(ex, kwargs...)
         # probably already pushed into `ERRORNEOUS_LINFOS`
         tpcache_reporter = is_constant_propagated(sv) ?
                            (linfo -> return) :
-                           (linfo -> push!(ERRORNEOUS_LINFOS, linfo))
+                           (linfo -> ERRORNEOUS_LINFOS[linfo] = get_id(interp))
 
         if $(track_from_frame)
             # when report is constructed _after_ the inference on `sv::InferenceState` has been done,
