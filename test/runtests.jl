@@ -32,7 +32,8 @@ const CC = Core.Compiler
 const FIXTURE_DIR = normpath(@__DIR__, "fixtures")
 gen_virtualmod() = Core.eval(@__MODULE__, :(module $(gensym(:TypeProfilerTestVirtualModule)) end))
 
-macro vmod(ex)
+# define virtual module and setup fixtures
+macro def(ex)
     @assert isexpr(ex, :block)
     return quote let
         vmod = $(gen_virtualmod)()
