@@ -25,7 +25,7 @@ function builtin_tfunction(interp::TPInterpreter, @nospecialize(f), argtypes::Ar
         # NOTE: handled in `finish(me::InferenceState, interp::TPInterpreter)`
         return ret
     elseif ret === Bottom
-        add_remark!(interp, sv, InvalidBuiltinCallErrorReport(interp, sv, argtypes, sv.linfo))
+        add_remark!(interp, sv, InvalidBuiltinCallErrorReport(interp, sv, argtypes))
     end
 
     return ret
@@ -44,7 +44,6 @@ function return_type_tfunc(interp::TPInterpreter, argtypes::Vector{Any}, sv::Inf
                                                     false,
                                                     # this is not necessary to be computed correctly, though
                                                     argtypes_to_type(argtypes),
-                                                    sv.linfo
                                                     ))
         return Bottom
     else

@@ -48,7 +48,6 @@ function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argty
                                             max_methods::Int))::CallMeta
 
     info = ret.info
-    linfo = sv.linfo
 
     # report no method error
     if isa(info, UnionSplitInfo)
@@ -56,13 +55,13 @@ function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argty
         for info in info.matches
             if is_empty_match(info)
                 # no method match for this union split
-                add_remark!(interp, sv, NoMethodErrorReport(interp, sv, true, atype, linfo))
+                add_remark!(interp, sv, NoMethodErrorReport(interp, sv, true, atype))
             end
         end
     elseif isa(info, MethodMatchInfo) && is_empty_match(info)
         # really no method found
         # @assert ret.rt === Bottom # the return type should have never changed from its initialization
-        add_remark!(interp, sv, NoMethodErrorReport(interp, sv, false, atype, linfo))
+        add_remark!(interp, sv, NoMethodErrorReport(interp, sv, false, atype))
     end
 
     return ret
@@ -183,24 +182,6 @@ function force_invalidate!(m, λsym)
     return specialize_method(m, Tuple{typeof(λ)}, Core.svec())
 end
 
-function typeinf_local(interp::TPInterpreter, frame::InferenceState)
-    set_current_frame!(interp, frame)
-
-    ret = @invoke typeinf_local(interp::AbstractInterpreter, frame::InferenceState)
-
-    return ret
-end
-
-"""
-    set_current_frame!(interp::TPInterpreter, frame::InferenceState)
-    get_current_frame(interp::TPInterpreter)
-
-The setter and getter of a frame that `interp` is currently profiling.
-Current frame is needed when we assemble virtual stack frame from cached error reports.
-"""
-set_current_frame!(interp::TPInterpreter, frame::InferenceState) = interp.current_frame[] = frame
-get_current_frame(interp::TPInterpreter) = interp.current_frame[]
-
 # overloads typeinfer.jl
 # ----------------------
 # ref: https://github.com/JuliaLang/julia/blob/26c79b2e74d35434737bc33bc09d2e0f6e27372b/base/compiler/typeinfer.jl
@@ -208,8 +189,6 @@ get_current_frame(interp::TPInterpreter) = interp.current_frame[]
 # in this overload we can work on `CodeInfo` (and also `InferenceState`) where type inference
 # (and maybe optimization) already ran on
 function typeinf(interp::TPInterpreter, frame::InferenceState)
-    set_current_frame!(interp, frame)
-
     # throw away previously-collected error reports that have a lineage of this frame if we
     # re-infer this frame with constant propagation, assuming results with constants are
     # always more accurate than those without them (COMBAK: is this really true ?); this can
@@ -271,14 +250,6 @@ is_unreachable(rn::ReturnNode)   = !isdefined(rn, :val)
 
 is_throw_call′(@nospecialize(_)) = false
 is_throw_call′(e::Expr)          = is_throw_call(e)
-
-function typeinf_edge(interp::TPInterpreter, method::Method, @nospecialize(atypes), sparams::SimpleVector, caller::InferenceState)
-    set_current_frame!(interp, caller)
-
-    ret = @invoke typeinf_edge(interp::AbstractInterpreter, method::Method, atypes, sparams::SimpleVector, caller::InferenceState)
-
-    return ret
-end
 
 # entry
 # -----

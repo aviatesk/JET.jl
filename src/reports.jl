@@ -160,9 +160,9 @@ macro reportdef(ex, kwargs...)
     end
 end
 
-@reportdef NoMethodErrorReport(interp, sv, unionsplit::Bool, @nospecialize(atype::Type), linfo::MethodInstance)
+@reportdef NoMethodErrorReport(interp, sv, unionsplit::Bool, @nospecialize(atype::Type))
 
-@reportdef InvalidBuiltinCallErrorReport(interp, sv, argtypes::Vector{Any}, linfo::MethodInstance)
+@reportdef InvalidBuiltinCallErrorReport(interp, sv, argtypes::Vector{Any})
 
 @reportdef GlobalUndefVarErrorReport(interp, sv, mod::Module, name::Symbol)
 
