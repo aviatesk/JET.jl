@@ -32,6 +32,15 @@ const CC = Core.Compiler
 const FIXTURE_DIR = normpath(@__DIR__, "fixtures")
 gen_virtualmod() = Core.eval(@__MODULE__, :(module $(gensym(:TypeProfilerTestVirtualModule)) end))
 
+macro vmod(ex)
+    @assert isexpr(ex, :block)
+    return quote let
+        vmod = $(gen_virtualmod)()
+        Core.eval(vmod, $(QuoteNode(ex)))
+        vmod # return virtual module
+    end end
+end
+
 const ERROR_REPORTS_FROM_SUM_OVER_STRING = let
     interp, frame = profile_call(sum, String)
     @test !isempty(interp.reports)
@@ -48,6 +57,7 @@ function test_sum_over_string(ers)
 end
 test_sum_over_string(res::TypeProfiler.VirtualProcessResult) =
     test_sum_over_string(res.inference_error_reports)
+test_sum_over_string(interp::TPInterpreter) = test_sum_over_string(interp.reports)
 
 # profile from file name
 profile_file′(filename, args...; kwargs...) =
@@ -97,6 +107,10 @@ end
 
     @testset "tfuncs.jl" begin
         include("test_tfuncs.jl")
+    end
+
+    @testset "tpcache.jl" begin
+        include("test_tpcache.jl")
     end
 
     # tests with Windows-paths is just an hell

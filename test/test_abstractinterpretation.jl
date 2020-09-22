@@ -161,6 +161,54 @@
                 !er.unionsplit &&
                 er.atype ⊑ Tuple{Any,String,Int}
         end
+
+        # should threw away previously-collected reports from frame that is lineage of
+        # current constant prop'ed frame
+        let
+            m = @vmod begin
+                foo(a) = bar(a)
+                function bar(a)
+                    return if a < 1
+                        baz1(a, "0")
+                    else
+                        baz2(a, a)
+                    end
+                end
+                baz1(a, b) = a ? b : b
+                baz2(a, b) = a + b
+            end
+
+            # no constant propagation, report it
+            interp, frame = Core.eval(m, :($(profile_call)(foo, Int)))
+            @test length(interp.reports) === 1
+            er = first(interp.reports)
+            @test er isa NonBooleanCondErrorReport &&
+                er.t === Int
+
+            # constant propagation should throw away non-boolean condition reports within `baz1`
+            interp, frame = Core.eval(m, quote
+                $(profile_call)() do
+                    foo(10)
+                end
+            end)
+            @test isempty(interp.reports)
+
+            # constant prop'ed, still we want to have reports for this
+            interp, frame = Core.eval(m, quote
+                $(profile_call)() do
+                    foo(0)
+                end
+            end)
+            @test er isa NonBooleanCondErrorReport &&
+                er.t === Int
+
+            interp, frame = Core.eval(m, quote
+                $(profile_call)() do
+                    foo(false)
+                end
+            end)
+            @test isempty(interp.reports)
+        end
     end
 end
 
