@@ -211,9 +211,9 @@ function typeinf(interp::TPInterpreter, frame::InferenceState)
     set_current_frame!(interp, frame)
 
     # throw away previously-collected error reports that have a lineage of this frame if we
-    # re-infer this frame with constant propagation, because results with constants are
-    # always more accurate than those without them; this can happen only _after_
-    # abstract interpretation without constants (i.e. just using `atype`)
+    # re-infer this frame with constant propagation, assuming results with constants are
+    # always more accurate than those without them (COMBAK: is this really true ?); this can
+    # happen only _after_ abstract interpretation without constants (i.e. just using `atype`)
     #
     # xref (maybe coming future change of constant propagation logic):
     # https://github.com/JuliaLang/julia/blob/a108d6cb8fdc7924fe2b8d831251142386cb6525/base/compiler/abstractinterpretation.jl#L153

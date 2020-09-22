@@ -23,19 +23,13 @@ function CC.get(tpc::TPCache, mi::MethodInstance, default)
     # as erroneous; otherwise the error reports that can occur from this frame will just be
     # ignored
     force_inference = false
-    if mi in ERRORNEOUS_LINFOS
-        force_inference = true
+    if haskey(ERRORNEOUS_LINFOS, mi)
+        # don't force re-inference for frames from the same inference process (which is judged
+        # by `TPInterpreter`'s id) since we already collected the errors from this frame
+        if ERRORNEOUS_LINFOS[mi] !== get_id(tpc.interp)
+            force_inference = true
+        end
     end
-
-    # # something like this won't force inference for frames from the same inference process,
-    # # which may speed up inference performance
-    # if haskey(ERRORNEOUS_LINFOS, mi)
-    #     id = ERRORNEOUS_LINFOS[mi]
-    #
-    #     if id !== get_id(tpc.interp)
-    #         force_inference = true
-    #     end
-    # end
 
     return force_inference ? default : ret
 end
