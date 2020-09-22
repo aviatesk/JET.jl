@@ -141,13 +141,15 @@
             end)
             @test isempty(interp.reports)
 
-            # for this case, we want to have union-split error, but the previous constant
-            # propagation excludes the report bound to `foo(::Union{Int,String})` from cache
-            # and so we can't get error report ...
+            # for this case, we want to have union-split error
             interp, frame = Core.eval(m, quote
-                $(profile_call)(()->bar(rand(Int)))
+                $(profile_call)(bar, Int)
             end)
-            @test_broken length(interp.reports) === 1
+            @test length(interp.reports) === 1
+            er = first(interp.reports)
+            @test er isa NoMethodErrorReport &&
+                er.unionsplit &&
+                er.atype ⊑ Tuple{Any,Union{Int,String},Int}
 
             # if we run constant propagation again, we can get reports as expected
             interp, frame = Core.eval(m, quote

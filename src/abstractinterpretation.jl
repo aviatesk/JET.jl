@@ -211,20 +211,9 @@ function typeinf(interp::TPInterpreter, frame::InferenceState)
     set_current_frame!(interp, frame)
 
     # throw away previously-collected error reports that have a lineage of this frame if we
-    # re-infer this frame with constant propagation, because results with constants are
-    # always more accurate than those without them; this can happen only _after_
-    # abstract interpretation without constants (i.e. just using `atype`)
-    #
-    # NOTE:
-    # - we do NOT cache reports with constant propagation because this frame may not introduce
-    #   errors with the other constants
-    # - but we exclude them from `TPCACHE`; we want this logic since constant propagation
-    #   may not happen on cached `MethodInstance` and the cache can produce "zombie" false
-    #   positive reports otherwise (see test/test_abstractinterpretation.jl for concrete examples)
-    #   TODO: well, this can obviously be wrong in some cases since actual errors that would
-    #   happen without the current constants can be threw away as well; hopefully another
-    #   future constant propagation "re-reveals" the threw away errors, but of course this
-    #   doesn't happen always
+    # re-infer this frame with constant propagation, assuming results with constants are
+    # always more accurate than those without them (COMBAK: is this really true ?); this can
+    # happen only _after_ abstract interpretation without constants (i.e. just using `atype`)
     #
     # xref (maybe coming future change of constant propagation logic):
     # https://github.com/JuliaLang/julia/blob/a108d6cb8fdc7924fe2b8d831251142386cb6525/base/compiler/abstractinterpretation.jl#L153
@@ -234,13 +223,6 @@ function typeinf(interp::TPInterpreter, frame::InferenceState)
 
         # throw away previously-collected error reports
         filter!(!is_lineage′, interp.reports)
-
-        # exclude them from cache as well
-        for mi in keys(TPCACHE)
-            id, cached_reports = TPCACHE[mi]
-            filter!(!is_lineage′, cached_reports)
-            isempty(cached_reports) && delete!(TPCACHE, mi)
-        end
     end
 
     ret = @invoke typeinf(interp::AbstractInterpreter, frame::InferenceState)
