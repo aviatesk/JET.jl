@@ -26,26 +26,28 @@ struct TPInterpreter <: AbstractInterpreter
     # disables caching of native remarks (that may vastly speed up profiling time)
     filter_native_remarks::Bool
 
-    function TPInterpreter(world::UInt = get_world_counter();
-                           inf_params::InferenceParams = gen_inf_params(),
-                           opt_params::OptimizationParams = gen_opt_params(),
-                           optimize::Bool = true,
-                           compress::Bool = false,
-                           discard_trees::Bool = false,
-                           virtual_globalvar_table::AbstractDict = Dict(),
-                           filter_native_remarks::Bool = true,
+    function TPInterpreter(world                   = get_world_counter();
+                           inf_params              = gen_inf_params(),
+                           opt_params              = gen_opt_params(),
+                           optimize                = true,
+                           compress                = false,
+                           discard_trees           = false,
+                           id                      = gensym(:TPInterpreterID),
+                           reports                 = [],
+                           exception_reports       = [],
+                           virtual_globalvar_table = Dict(),
+                           filter_native_remarks   = true,
                            )
         @assert !opt_params.inlining "inlining should be disabled"
 
         native = NativeInterpreter(world; inf_params, opt_params)
-        id     = gensym(:TPInterpreterID)
         return new(native,
                    optimize,
                    compress,
                    discard_trees,
                    id,
-                   [],
-                   [],
+                   reports,
+                   exception_reports,
                    virtual_globalvar_table,
                    filter_native_remarks,
                    )
