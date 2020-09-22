@@ -143,9 +143,7 @@
 
             # for this case, we want to have union-split error
             interp, frame = Core.eval(m, quote
-                $(profile_call)(Int) do a
-                    bar(a)
-                end
+                $(profile_call)(bar, Int)
             end)
             @test length(interp.reports) === 1
             er = first(interp.reports)
