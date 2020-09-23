@@ -312,6 +312,11 @@ function _get_sig_type(sv::InferenceState, slot::SlotNumber)
     return Any[sig, typ], typ
 end
 _get_sig_type(::InferenceState, gr::GlobalRef) = Any[string(gr.mod, '.', gr.name)], nothing
+function _get_sig_type(sv::InferenceState, s::Symbol)
+    # for toplevel frame, we need to resolve symbols to global references by ourselves
+    istoplevel(sv) && return _get_sig_type(sv, GlobalRef(sv.mod, s))
+    return Any[repr(s; context = :compact => true)], nothing
+end
 function _get_sig_type(sv::InferenceState, gotoifnot::GotoIfNot)
     sig  = Any[string("goto %", gotoifnot.dest, " if not "), _get_sig(sv, gotoifnot.cond)...]
     return sig, nothing

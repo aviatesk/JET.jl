@@ -5,7 +5,11 @@ version = "0.0.0"
 
 [deps]
 FileWatching = "7b1f6079-737a-58dc-b8bc-7a2ca5c1b5ee"
+JuliaInterpreter = "aa1ae85d-cabe-5617-a682-6adf51b2e16a"
 Requires = "ae029012-a4dd-5104-9daa-d747884805df"
+
+[compat]
+JuliaInterpreter = "0.8"
 
 [extras]
 InteractiveUtils = "b77e0a4c-d291-57a0-90e8-8db25a27a240"

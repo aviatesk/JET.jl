@@ -17,8 +17,6 @@ gen_virtual_process_result() = (; included_files = Set{String}(),
                                   inference_error_reports = InferenceErrorReport[],
                                   )::VirtualProcessResult
 
-const TYPEPROFILERJL_SELF_REFERENCE_SYM = :TYPEPROFILERJL_SELF_REFERENCE_SYM
-
 """
     virtual_process!(s::AbstractString,
                      filename::AbstractString,
@@ -69,7 +67,6 @@ the _transform_ includes:
 """
 function virtual_process!(s::AbstractString,
                           filename::AbstractString,
-                          actualmodsym::Symbol,
                           virtualmod::Module,
                           interp::TPInterpreter,
                           ret::VirtualProcessResult = gen_virtual_process_result(),
@@ -87,39 +84,33 @@ function virtual_process!(s::AbstractString,
         return ret, interp
     end
 
-    return virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp, ret)
+    return virtual_process!(toplevelex, filename, virtualmod, interp, ret)
 end
 
-function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp, ret)
+function virtual_process!(toplevelex, filename, virtualmod, interp, ret)
     @assert isexpr(toplevelex, :toplevel)
-
-    # define a constant that self-refers to `virtualmod` so that we can replace
-    # self-references of the original `actualmodsym` with it
-    # NOTE: this needs to be "ordinal" identifier for `import`/`using`, etc
-    Core.eval(virtualmod, :(const $(TYPEPROFILERJL_SELF_REFERENCE_SYM) = $(virtualmod)))
-
-    # postwalk and do transformations that should be done for all atoms:
-    # 1. replace self-reference of `actualmodsym` with that of `virtualmod`;
-    #    this needs to be done for all atoms in advance of the following transformations
-    toplevelex = postwalk_and_transform!(toplevelex, Symbol[:toplevel]) do x, scope
-        # TODO: this cause wrong program semantics when `actualmodsym` is actually used as a local variable, find a workaround
-        x === actualmodsym && return TYPEPROFILERJL_SELF_REFERENCE_SYM
-
-        return x
-    end
 
     line::Int = 1
     filename::String = filename
     interp::TPInterpreter = interp
 
-    function macroexpand_err_handler(err, st)
-        # `4` corresponds to `with_err_handling`, `f`, `macroexpand` and its kwfunc
-        st = crop_stacktrace(st, 4)
+    function lower_err_handler(err, st)
+        # `3` corresponds to `with_err_handling`, `f` and `lower`
+        st = crop_stacktrace(st, 3)
         push!(ret.toplevel_error_reports, ActualErrorWrapped(err, st, filename, line))
         return nothing
     end
-    macroexpand_with_err_handling(mod, x) = with_err_handling(macroexpand_err_handler) do
-        return macroexpand(mod, x)
+    lower_with_err_handling(mod, x) = with_err_handling(lower_err_handler) do
+        lwr = lower(mod, x)
+
+        # here we should capture syntax errors found during lowering
+        if lwr.head === :error
+            msg = first(lwr.args)
+            push!(ret.toplevel_error_reports, SyntaxErrorReport("syntax: $(msg)", filename, line))
+            return nothing
+        end
+
+        return lwr
     end
     function eval_err_handler(err, st)
         # `3` corresponds to `with_err_handling`, `f` and `eval`
@@ -131,7 +122,7 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
         return Core.eval(mod, x)
     end
     usemodule_with_err_handling(interp, mod, x) = with_err_handling(eval_err_handler) do
-        # TODO: handle imports of virtual global variables
+        # TODO: handle imports/exports of virtual global variables
         # if the importing of this global variable failed (because they don't not actually
         # get evaluated and thus not exist in `virtualmod`), but we can continue profiling
         # rather than throwing a toplevel error as far as we know its type (,which is kept
@@ -142,139 +133,35 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
         return Core.eval(mod, x)
     end
 
-    # prewalk, and some transformations assume that it doesn't happen in local scopes
-    function transform!(x, scope)
-        # always escape inside expression
-        :quote in scope && return x
-
-        # expand macro
-        # ------------
-
-        if isexpr(x, :macrocall)
-            x = macroexpand_with_err_handling(virtualmod, x)
-        end
-
-        # hoist and evaluate toplevel expressions
-        # ---------------------------------------
-
-        # these shouldn't happen when in function scope, since then they can be wrongly
-        # hoisted and evaluated when they're wrapped in closures, while they actually cause
-        # syntax errors; if they're in other "toplevel definition"s, the expression should
-        # have been reported already on the evaluation of its parent "toplevel definition"
-        if istopleveldef(x)
-            return if :function ∉ scope
-                eval_with_err_handling(virtualmod, x)
-            else
-                report = SyntaxErrorReport("syntax: \"$(x.head)\" expression not at top level", filename, line)
-                push!(ret.toplevel_error_reports, report)
-                nothing
+    expr_splitter = ExprSplitter(virtualmod, toplevelex)
+    for (mod, x) in expr_splitter
+        if !isexpr(x, :block)
+            if isexpr(x, :global, 1)
+                # global assignment can be lowered, but global declaration can't
+                Core.eval(mod, x)
+                continue
             end
+            throw("handle this $(x)")
         end
 
-        # evaluate toplevel function definitions
-        # --------------------------------------
+        blk = x::Expr
+        lnn = first(blk.args)::LineNumberNode
+        ex = last(blk.args)::Expr
 
-        !islocalscope(scope) && isfuncdef(x) && return eval_with_err_handling(virtualmod, x)
+        line = lnn.line
 
-        # tweak assignments
-        # -----------------
+        lwr = lower_with_err_handling(mod, blk) # macro within `ex` will be expanded here
+        isnothing(lwr) && continue # error handled
 
-        # remove `const` annotation, annotate `global` instead
-        if isexpr(x, :const)
-            return if !islocalscope(scope)
-                Expr(:global, first(x.args))
-            else
-                report = SyntaxErrorReport("unsupported `const` declaration on local variable", filename, line)
-                push!(ret.toplevel_error_reports, report)
-                nothing
-            end
-        end
-
-        # annotate `global`s for regular assignments in global scope
-        !(islocalscope(scope) || is_already_scoped(scope)) && is_assignment(x) && return Expr(:global, x)
-
-        # handle static `include` calls
-        # -----------------------------
-
-        if isinclude(x)
-            # TODO: maybe find a way to handle two args `include` calls
-            include_file = eval_with_err_handling(virtualmod, last(x.args))
-
-            isnothing(include_file) && return nothing # error happened when evaling `include` args
-
-            include_file = normpath(dirname(filename), include_file)
-
-            # handle recursive `include` calls
-            if include_file in ret.included_files
-                report = RecursiveIncludeErrorReport(include_file, ret.included_files, filename, line)
-                push!(ret.toplevel_error_reports, report)
-                return nothing
-            end
-
-            read_ex      = :(read($(include_file), String))
-            include_text = eval_with_err_handling(virtualmod, read_ex)
-
-            isnothing(include_text) && return nothing # typically no file error
-
-            virtual_process!(include_text, include_file, actualmodsym, virtualmod, interp, ret)
-
-            # TODO: actually, here we need to try to get the last profiling result of the `virtual_process!` call above
-            return nothing
-        end
-
-        return x
-    end
-
-    lnn = LineNumberNode(0, filename)
-
-    # transform, and then profile sequentially
-    for x in toplevelex.args
-        # update line info
-        if islnn(x)
-            lnn = x
+        # TODO: handle toplevel definitions in local scopes
+        if istopleveldef(ex)
+            eval_with_err_handling(mod, lwr)
             continue
         end
-
-        # handle `:module` definition and module usage;
-        # should happen here because modules need to be loaded sequentially while
-        # "toplevel definitions" inside of the loaded modules shouldn't be evaluated in a
-        # context of `virtualmod`
-
-        # handle `:module` definition; they should always happen in toplevel
-        if isexpr(x, :module)
-            newblk = x.args[3]
-            @assert isexpr(newblk, :block)
-            newtoplevelex = Expr(:toplevel, newblk.args...)
-
-            x.args[3] = Expr(:block) # empty module's code body
-            newvirtualmod = eval_with_err_handling(virtualmod, x)
-
-            isnothing(newvirtualmod) && continue # error happened, e.g. duplicated naming
-
-            virtual_process!(newtoplevelex, filename, actualmodsym, newvirtualmod, interp, ret)
-
+        if ismoduleusage(ex)
+            usemodule_with_err_handling(interp, mod, lwr)
             continue
         end
-
-        # handle module usage
-        # TODO: support package loading
-        if ismoduleusage(x)
-            for ex in to_single_usages(x)
-                usemodule_with_err_handling(interp, virtualmod, ex)
-            end
-
-            continue
-        elseif isexport(x)
-            eval_with_err_handling(virtualmod, x)
-
-            continue
-        end
-
-        x = prewalk_and_transform!(transform!, x, Symbol[:toplevel])
-
-        shouldprofile(x) || continue
-
-        λ = gen_virtual_lambda(virtualmod, lnn, x)
 
         interp = TPInterpreter(; # world age gets updated to take in `λ`
                                inf_params              = InferenceParams(interp),
@@ -286,9 +173,11 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
                                filter_native_remarks   = interp.filter_native_remarks,
                                )
 
-        profile_call_gf!(interp, Tuple{typeof(λ)})
+        src = first(lwr.args)::CodeInfo
+        interp, frame = profile_toplevel!(interp, mod, src)
 
-        append!(ret.inference_error_reports, interp.reports) # correct error reports
+        # correct error reports found by inference on this toplevel `src`
+        append!(ret.inference_error_reports, interp.reports)
     end
 
     return ret, interp
@@ -337,28 +226,21 @@ function collect_syntax_errors(s, filename)
     return reports
 end
 
-function walk_and_transform!(pre, @nospecialize(f), x, scope)
-    x = pre ? f(x, scope) : x
-    x isa Expr || return f(x, scope)
-    push!(scope, x.head)
-    for (i, ex) in enumerate(x.args)
-        x.args[i] = walk_and_transform!(pre, f, ex, scope)
-    end
-    pop!(scope)
-    x = pre ? x : f(x, scope)
-    return x
-end
-prewalk_and_transform!(args...) = walk_and_transform!(true, args...)
-postwalk_and_transform!(args...) = walk_and_transform!(false, args...)
+# function walk_and_transform!(pre, @nospecialize(f), x, scope)
+#     x = pre ? f(x, scope) : x
+#     x isa Expr || return f(x, scope)
+#     push!(scope, x.head)
+#     for (i, ex) in enumerate(x.args)
+#         x.args[i] = walk_and_transform!(pre, f, ex, scope)
+#     end
+#     pop!(scope)
+#     x = pre ? x : f(x, scope)
+#     return x
+# end
+# prewalk_and_transform!(args...) = walk_and_transform!(true, args...)
+# postwalk_and_transform!(args...) = walk_and_transform!(false, args...)
 
-istopleveldef(x) = isexpr(x, (:macro, :abstract, :struct, :primitive))
-
-ismoduleusage(x) = isexpr(x, (:import, :using))
-isexport(x) = isexpr(x, :export)
-
-islocalscope(scopes)        = any(islocalscope, scopes)
-islocalscope(scope::Expr)   = islocalscope(scope.head)
-islocalscope(scope::Symbol) = scope in (:quote, :let, :try, :for, :while, :macro, :abstract, :struct, :primitive, :function)
+istopleveldef(x) = isfuncdef(x) || isexpr(x, (:macro, :abstract, :struct, :primitive))
 
 function isfuncdef(ex)
     isexpr(ex, :function) && return true
@@ -373,18 +255,9 @@ function isfuncdef(ex)
     return false
 end
 
-is_already_scoped(scope) = last(scope) in (:local, :global)
-function is_assignment(x)
-    isexpr(x, :(=)) || return false
-    lhs = first(x.args)
-    isa(lhs, Symbol) || return false
-    Base.isidentifier(lhs)
-end
+ismoduleusage(x) = isexpr(x, (:import, :using, :export))
 
 isinclude(ex) = isexpr(ex, :call) && first(ex.args) === :include
-
-islnn(@nospecialize(_)) = false
-islnn(::LineNumberNode) = true
 
 shouldprofile(@nospecialize(_)) = false
 shouldprofile(::Expr)           = true
@@ -392,12 +265,6 @@ shouldprofile(::Symbol)         = true
 
 gen_virtual_module(actualmod) =
     Core.eval(actualmod, :(module $(gensym(:TypeProfilerVirtualModule)) end))::Module
-
-function gen_virtual_lambda(mod, lnn, x)
-    funcbody = Expr(:block, lnn, x)
-    funcex   = Expr(:function, #=nullary lambda=# Expr(:tuple), funcbody)
-    return Core.eval(mod, funcex)::Function
-end
 
 function to_single_usages(x)
     if length(x.args) != 1

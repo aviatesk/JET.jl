@@ -13,6 +13,18 @@
         @test !isempty(res.toplevel_error_reports)
         @test first(res.toplevel_error_reports) isa SyntaxErrorReport
     end
+
+    let
+        res, interp = @profile_toplevel begin
+            let
+                const s = "julia" # `const` annotation is prohibited on local scope
+                sum(s)
+            end
+        end
+
+        @test !isempty(res.toplevel_error_reports)
+        @test first(res.toplevel_error_reports) isa SyntaxErrorReport
+    end
 end
 
 @testset "\"toplevel definitions\"" begin
@@ -180,7 +192,7 @@ end
     end
 end
 
-@testset "remove `const`" begin
+@testset "handle `const`" begin
     let
         res, interp = @profile_toplevel begin
             const s = "julia"
@@ -189,18 +201,6 @@ end
 
         @test isempty(res.toplevel_error_reports)
         test_sum_over_string(res)
-    end
-
-    let
-        res, interp = @profile_toplevel begin
-            let
-                const s = "julia"
-                sum(s)
-            end
-        end
-
-        @test !isempty(res.toplevel_error_reports)
-        @test first(res.toplevel_error_reports) isa SyntaxErrorReport
     end
 end
 

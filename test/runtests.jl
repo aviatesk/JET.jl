@@ -68,10 +68,15 @@ profile_file′(filename, args...; kwargs...) =
 function profile_toplevel(s,
                            virtualmod = gen_virtualmod();
                            filename = "top-level",
-                           actualmodsym = :Main,
+                           # actualmodsym = :Main,
                            interp = TPInterpreter(),
                            )
-    return virtual_process!(s, filename, actualmodsym, virtualmod, interp)
+    return virtual_process!(s,
+                            filename,
+                            # actualmodsym,
+                            virtualmod,
+                            interp
+                            )
 end
 
 # profile from expression
@@ -90,7 +95,7 @@ function _profile_toplevel(virtualmod, ex, filename)
     return quote let
         interp = $(TPInterpreter)()
         ret = $(TypeProfiler.gen_virtual_process_result)()
-        $(virtual_process!)($(toplevelex), $(filename), :Main, $(esc(virtualmod)), interp, ret)
+        $(virtual_process!)($(toplevelex), $(filename), $(esc(virtualmod)), interp, ret)
     end end
 end
 

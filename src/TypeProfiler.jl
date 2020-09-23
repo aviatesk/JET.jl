@@ -40,10 +40,12 @@ import Base:
     parse_input_line, to_tuple_type, Fix1, Fix2, IdSet
 
 import Base.Meta:
-    isexpr, _parse_string
+    isexpr, _parse_string, lower
 
 import Base.Iterators:
     flatten
+
+using JuliaInterpreter
 
 using FileWatching, Requires
 
@@ -113,8 +115,7 @@ function report_errors(actualmod, text, filename; filter_native_remarks = true)
     virtualmod = gen_virtual_module(actualmod)
 
     interp = TPInterpreter(; filter_native_remarks) # dummy
-    actualmodsym = Symbol(actualmod)
-    ret, interp = virtual_process!(text, filename, actualmodsym, virtualmod, interp)
+    ret, interp = virtual_process!(text, filename, virtualmod, interp)
 
     return ret.included_files,
            # non-empty `ret.toplevel_error_reports` means critical errors happened during
@@ -131,6 +132,19 @@ function gen_postprocess(virtualmod, actualmod)
     return actualmod == Main ?
         Fix2(replace, "Main." => "") ∘ Fix2(replace, virtual => actual) :
         Fix2(replace, virtual => actual)
+end
+
+function profile_toplevel!(interp::TPInterpreter, mod::Module, src::CodeInfo)
+    # construct toplevel `MethodInstance`
+    mi = ccall(:jl_new_method_instance_uninit, Ref{Core.MethodInstance}, ())
+    mi.uninferred = src
+    mi.specTypes = Tuple{}
+    mi.def = mod
+
+    result = InferenceResult(mi);
+    frame = InferenceState(result, src, #= cached =# true, interp);
+
+    return profile_frame(interp, frame)
 end
 
 # TODO:

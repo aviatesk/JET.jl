@@ -76,6 +76,11 @@ function is_empty_match(info)
 end
 
 function abstract_eval_special_value(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
+    # for toplevel frame, we need to resolve symbols to global references by ourselves
+    if isa(e, Symbol) && istoplevel(sv)
+        e = GlobalRef(sv.mod, e)
+    end
+
     ret = @invoke abstract_eval_special_value(interp::AbstractInterpreter, e, vtypes::VarTable, sv::InferenceState)
 
     # resolve global reference to virtual global variable, or report it if undefined
@@ -117,16 +122,26 @@ function abstract_eval_statement(interp::TPInterpreter, @nospecialize(e), vtypes
 
     # assign virtual global variable
     stmt = get_cur_stmt(sv)
-    if is_global_assign(stmt)
-        gr = first((stmt::Expr).args)::GlobalRef
+    gr = get_assigned_globalref(sv, stmt)
+    if isa(gr, GlobalRef)
         set_virtual_globalvar!(interp, gr.mod, gr.name, ret)
     end
 
     return ret
 end
 
-is_global_assign(@nospecialize(_)) = false
-is_global_assign(ex::Expr)         = isexpr(ex, :(=)) && first(ex.args) isa GlobalRef
+istoplevel(frame) = isa(frame.linfo.def, Module)
+
+function get_assigned_globalref(frame, stmt)
+    isexpr(stmt, :(=)) || return nothing
+    lhs = first(stmt.args)
+    if istoplevel(frame) && isa(lhs, Symbol)
+        return GlobalRef(frame.mod, lhs)
+    elseif isa(lhs, GlobalRef)
+        return lhs
+    end
+    return nothing
+end
 
 function get_virtual_globalvar(interp, mod, sym, caller = nothing)
     vgvt4mod = get(interp.virtual_globalvar_table, mod, nothing)
