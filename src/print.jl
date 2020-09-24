@@ -145,17 +145,14 @@ end
 # this is a dirty fix for duplicated reports; see comments above of the overwriting of
 # `typeinf_local` in src/abstractinterpretation.jl
 function uniquify_reports!(reports::Vector{<:InferenceErrorReport})
-    return unique!(reports) do report
-        # uniquify keys
-        return (
-            # caller
-            first(report.st),
-            # error
-            last(report.st),
-            report.msg,
-            report.sig
-        )
-    end
+    return unique!(reports) do report; return #= uniquify keys =# (
+        # caller
+        first(report.st),
+        # error
+        last(report.st),
+        report.msg,
+        report.sig,
+    ); end
 end
 
 # traverse abstract call stack, print frames

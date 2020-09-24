@@ -130,14 +130,14 @@ is_global_assign(ex::Expr)         = isexpr(ex, :(=)) && first(ex.args) isa Glob
 
 function get_virtual_globalvar(interp, mod, sym, caller = nothing)
     vgvt4mod = get(interp.virtual_globalvar_table, mod, nothing)
-    isnothing(vgvt4mod) && return
+    isnothing(vgvt4mod) && return nothing
 
     x = get(vgvt4mod, sym, nothing)
-    isnothing(x) && return
+    isnothing(x) && return nothing
 
     _, t, _, li = x
     if !isnothing(caller)
-        # `caller` might be nothing when called in test, don't add backedge for that case
+        # `caller` might be `nothing` when called in test, don't add backedge for that case
         add_backedge!(li, caller)
     end
 

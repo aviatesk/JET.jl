@@ -123,7 +123,7 @@ macro reportdef(ex, kwargs...)
         # probably already pushed into `ERRORNEOUS_LINFOS`
         tpcache_reporter = is_constant_propagated(sv) ?
                            (linfo -> return) :
-                           (linfo -> ERRORNEOUS_LINFOS[linfo] = get_id(interp))
+                           (linfo -> ERRORNEOUS_LINFOS[linfo] = id)
 
         if $(track_from_frame)
             # when report is constructed _after_ the inference on `sv::InferenceState` has been done,
