@@ -213,6 +213,17 @@ end
     end
 end
 
+@testset "expression flattening" begin
+    let
+        @test (begin
+            # internal error shouldn't occur
+            res, interp = @profile_toplevel begin
+                r = rand(); s = sin(a); c = cos(b); tan(c)
+            end
+        end; true)
+    end
+end
+
 @testset "handle `include`" begin
     let
         f1 = normpath(FIXTURE_DIR, "include1.jl")

@@ -228,10 +228,19 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
     lnn = LineNumberNode(0, filename)
 
     # transform, and then profile sequentially
-    for x in toplevelex.args
+    exs = reverse(toplevelex.args)
+    while !isempty(exs)
+        x = pop!(exs)
+
         # update line info
         if islnn(x)
-            lnn = x
+            lnn = x::LineNumberNode
+            continue
+        end
+
+        # flatten container expression
+        if isexpr(x, :toplevel)
+            append!(exs, reverse(x.args))
             continue
         end
 
