@@ -7,10 +7,8 @@ import Core.Compiler:
     widenconst
 
 import TypeProfiler:
-    TPInterpreter, profile_call, get_result,
-    virtual_process!, report_errors, get_virtual_globalvar,
-    ToplevelErrorReport, InferenceErrorReport,
-    print_reports
+    TPInterpreter, profile_call, get_result, virtual_process!, hastopleveldef, report_errors,
+    get_virtual_globalvar, ToplevelErrorReport, InferenceErrorReport, print_reports
 
 for sym in Symbol.(last.(Base.Fix2(split, '.').(string.(vcat(subtypes(TypeProfiler, ToplevelErrorReport),
                                                              subtypes(TypeProfiler, InferenceErrorReport),
