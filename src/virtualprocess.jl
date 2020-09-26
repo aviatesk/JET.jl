@@ -1,9 +1,3 @@
-# TODO:
-# - handle toplevel `if/else` correctly
-# - profiling on unloaded package
-#   * support `module`
-#   * special case `__init__` calls
-#
 # FIXME: this is too hacky, find an alternative way for simulating toplevel execution, make me more robust at least
 
 const VirtualProcessResult = @NamedTuple begin
