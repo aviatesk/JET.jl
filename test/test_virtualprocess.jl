@@ -15,6 +15,44 @@
     end
 end
 
+@testset "virtual module self-reference" begin
+    let
+        res, interp = @profile_toplevel begin
+            Main.sum("julia") # `Main.sum` should be resolved as constant
+        end
+        test_sum_over_string(res)
+    end
+end
+
+@testset "hastopleveldef" begin
+    @test hastopleveldef(:(struct Foo end))
+    @test hastopleveldef(:(mutable struct Foo end))
+    @test hastopleveldef(:(abstract type Foo end))
+    @test hastopleveldef(:(primitive type Foo 8 end))
+    @test hastopleveldef(:(macro foo(ex)
+        ex
+    end))
+    @test hastopleveldef(:(foo(x) = x))
+    @test hastopleveldef(:(foo(x::Foo) where Foo = x))
+    @test hastopleveldef(:(function foo(x)
+        x
+    end))
+    @test hastopleveldef(:(function foo(x::Foo) where Foo
+        x
+    end))
+    # complex definition
+    @test hastopleveldef(:(for i in 1:10
+        sym = Symbol(:foo, i)
+        Core.eval(:($(sym)() = $(i)))
+    end))
+    # just a call
+    @test !hastopleveldef(:(foo(x::Foo)))
+    # closure
+    @test !hastopleveldef(:(let
+        foo(x) = x
+    end))
+end
+
 @testset "\"toplevel definitions\"" begin
     let
         vmod = gen_virtualmod()
@@ -92,43 +130,6 @@ end
     end
 end
 
-@testset "hoisting \"toplevel definitions\"" begin
-    let
-        vmod = gen_virtualmod()
-        res, interp = @profile_toplevel vmod begin
-            let
-                struct Foo end
-                foo(::Foo) = :Foo
-                foo(Foo.instance)
-            end
-        end
-
-        @test isdefined(vmod, :Foo)
-        @test isempty(res.toplevel_error_reports)
-        @test isempty(res.inference_error_reports)
-    end
-
-    # "toplevel definitions" can't resolve access to local objects
-    let
-        vmod = gen_virtualmod()
-        res, interp = @profile_toplevel vmod begin
-            let
-                i = 1
-                struct Foo
-                    val::Int
-                    Foo(val = i) = new(val)
-                end
-                foo = Foo()
-            end
-        end
-
-        @test !isdefined(vmod, :i)
-        @test isnothing(get_virtual_globalvar(interp, vmod, :i))
-        @test isempty(res.toplevel_error_reports)
-        @test_broken isempty(res.inference_error_reports)
-    end
-end
-
 @testset "macro expansions" begin
     let
         vmod = gen_virtualmod()
@@ -201,6 +202,17 @@ end
 
         @test !isempty(res.toplevel_error_reports)
         @test first(res.toplevel_error_reports) isa SyntaxErrorReport
+    end
+end
+
+@testset "expression flattening" begin
+    let
+        @test (begin
+            # internal error shouldn't occur
+            res, interp = @profile_toplevel begin
+                r = rand(); s = sin(a); c = cos(b); tan(c)
+            end
+        end; true)
     end
 end
 

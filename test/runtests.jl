@@ -7,10 +7,8 @@ import Core.Compiler:
     widenconst
 
 import TypeProfiler:
-    TPInterpreter, profile_call, get_result,
-    virtual_process!, report_errors, get_virtual_globalvar,
-    ToplevelErrorReport, InferenceErrorReport,
-    print_reports
+    TPInterpreter, profile_call, get_result, virtual_process!, hastopleveldef, report_errors,
+    get_virtual_globalvar, ToplevelErrorReport, InferenceErrorReport, print_reports
 
 for sym in Symbol.(last.(Base.Fix2(split, '.').(string.(vcat(subtypes(TypeProfiler, ToplevelErrorReport),
                                                              subtypes(TypeProfiler, InferenceErrorReport),
@@ -76,21 +74,21 @@ end
 
 # profile from expression
 macro profile_toplevel(virtualmod, ex)
-    return _profile_toplevel(virtualmod, ex, string(__source__.file))
+    return _profile_toplevel(virtualmod, ex, __source__)
 end
 
 macro profile_toplevel(ex)
-    return _profile_toplevel(gen_virtualmod(), ex, string(__source__.file))
+    return _profile_toplevel(gen_virtualmod(), ex, __source__)
 end
 
-function _profile_toplevel(virtualmod, ex, filename)
-    # TODO: remove this flattening on https://github.com/aviatesk/TypeProfiler.jl/issues/21
-    @assert isexpr(ex, :block)
-    toplevelex = QuoteNode(Expr(:toplevel, ex.args...))
+function _profile_toplevel(virtualmod, ex, lnn)
+    toplevelex = isexpr(ex, :block) ?
+                 QuoteNode(Expr(:toplevel, lnn, ex.args...)) : # flatten here
+                QuoteNode(Expr(:toplevel, lnn, ex)) # flatten here
     return quote let
         interp = $(TPInterpreter)()
         ret = $(TypeProfiler.gen_virtual_process_result)()
-        $(virtual_process!)($(toplevelex), $(filename), :Main, $(esc(virtualmod)), interp, ret)
+        $(virtual_process!)($(toplevelex), $(string(lnn.file)), :Main, $(esc(virtualmod)), interp, ret)
     end end
 end
 

@@ -17,7 +17,7 @@ gen_virtual_process_result() = (; included_files = Set{String}(),
                                   inference_error_reports = InferenceErrorReport[],
                                   )::VirtualProcessResult
 
-const TYPEPROFILERJL_SELF_REFERENCE_SYM = :TYPEPROFILERJL_SELF_REFERENCE_SYM
+const VM_SELF_REFERRING_SYM = :VM_SELF_REFERRING_SYM
 
 """
     virtual_process!(s::AbstractString,
@@ -29,7 +29,7 @@ const TYPEPROFILERJL_SELF_REFERENCE_SYM = :TYPEPROFILERJL_SELF_REFERENCE_SYM
 
 simulates execution of `s` and profiles error reports, and returns `VirtualProcessResult`,
 which keeps the following information:
-- `included_files::Set{String}`: files that has been profiled
+- `included_files::Set{String}`: files that have been profiled
 - `toplevel_error_reports::Vector{ToplevelErrorReport}`: toplevel errors found during the
    text parsing and AST transformation; these reports are "critical" and should have
    precedence over `inference_error_reports`
@@ -95,15 +95,15 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
 
     # define a constant that self-refers to `virtualmod` so that we can replace
     # self-references of the original `actualmodsym` with it
-    # NOTE: this needs to be "ordinal" identifier for `import`/`using`, etc
-    Core.eval(virtualmod, :(const $(TYPEPROFILERJL_SELF_REFERENCE_SYM) = $(virtualmod)))
+    # NOTE: this identifier can be `gensym`ed, `import/using` will fail otherwise
+    Core.eval(virtualmod, :(const $(VM_SELF_REFERRING_SYM) = $(virtualmod)))
 
-    # postwalk and do transformations that should be done for all atoms:
+    # first pass, do transformations that should be applied for all atoms:
     # 1. replace self-reference of `actualmodsym` with that of `virtualmod`;
-    #    this needs to be done for all atoms in advance of the following transformations
     toplevelex = postwalk_and_transform!(toplevelex, Symbol[:toplevel]) do x, scope
-        # TODO: this cause wrong program semantics when `actualmodsym` is actually used as a local variable, find a workaround
-        x === actualmodsym && return TYPEPROFILERJL_SELF_REFERENCE_SYM
+        # TODO: this cause wrong program semantics when `actualmodsym` is actually used as a
+        # local variable, find a workaround
+        x === actualmodsym && return VM_SELF_REFERRING_SYM
 
         return x
     end
@@ -142,7 +142,7 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
         return Core.eval(mod, x)
     end
 
-    # prewalk, and some transformations assume that it doesn't happen in local scopes
+    # second pass, can do transformations that need error handling
     function transform!(x, scope)
         # always escape inside expression
         :quote in scope && return x
@@ -154,30 +154,11 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
             x = macroexpand_with_err_handling(virtualmod, x)
         end
 
-        # hoist and evaluate toplevel expressions
-        # ---------------------------------------
-
-        # these shouldn't happen when in function scope, since then they can be wrongly
-        # hoisted and evaluated when they're wrapped in closures, while they actually cause
-        # syntax errors; if they're in other "toplevel definition"s, the expression should
-        # have been reported already on the evaluation of its parent "toplevel definition"
-        if istopleveldef(x)
-            return if :function ∉ scope
-                eval_with_err_handling(virtualmod, x)
-            else
-                report = SyntaxErrorReport("syntax: \"$(x.head)\" expression not at top level", filename, line)
-                push!(ret.toplevel_error_reports, report)
-                nothing
-            end
-        end
-
-        # evaluate toplevel function definitions
-        # --------------------------------------
-
-        !islocalscope(scope) && isfuncdef(x) && return eval_with_err_handling(virtualmod, x)
-
         # tweak assignments
         # -----------------
+        # TODO: power up virtual global variables assignment
+        # 1. check scope for variables
+        # 2. use our own expression for virtual global variable assignment
 
         # remove `const` annotation, annotate `global` instead
         if isexpr(x, :const)
@@ -228,10 +209,19 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
     lnn = LineNumberNode(0, filename)
 
     # transform, and then profile sequentially
-    for x in toplevelex.args
+    exs = reverse(toplevelex.args)
+    while !isempty(exs)
+        x = pop!(exs)
+
         # update line info
         if islnn(x)
-            lnn = x
+            lnn = x::LineNumberNode
+            continue
+        end
+
+        # flatten container expression
+        if isexpr(x, :toplevel)
+            append!(exs, reverse(x.args))
             continue
         end
 
@@ -271,6 +261,13 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
         end
 
         x = prewalk_and_transform!(transform!, x, Symbol[:toplevel])
+
+        if hastopleveldef(x)
+            # this expression contains "toplevel definition(s)", we don't want to abstract it
+            # away, let's just evaluate it (hoping "heavy" computation doesn't happen in this block ...)
+            eval_with_err_handling(virtualmod, x)
+            continue
+        end
 
         shouldprofile(x) || continue
 
@@ -339,12 +336,14 @@ end
 
 function walk_and_transform!(pre, @nospecialize(f), x, scope)
     x = pre ? f(x, scope) : x
-    x isa Expr || return f(x, scope)
+    x isa Expr || return pre ? x : f(x, scope)
+
     push!(scope, x.head)
-    for (i, ex) in enumerate(x.args)
-        x.args[i] = walk_and_transform!(pre, f, ex, scope)
+    for (i, arg) in enumerate(x.args)
+        x.args[i] = walk_and_transform!(pre, f, arg, scope)
     end
     pop!(scope)
+
     x = pre ? x : f(x, scope)
     return x
 end
@@ -385,6 +384,25 @@ isinclude(ex) = isexpr(ex, :call) && first(ex.args) === :include
 
 islnn(@nospecialize(_)) = false
 islnn(::LineNumberNode) = true
+
+hastopleveldef(@nospecialize(x)) = false
+function hastopleveldef(ex::Expr)
+    local found::Bool = false
+    prewalk_and_transform!(ex, Symbol[]) do x, scope
+        # TODO: escape quoted expression unless within `eval` call
+
+        if isexpr(x, (:macro, :abstract, :struct, :primitive))
+            found = true
+        elseif isfuncdef(x)
+            # let will introduce closure, it shouldn't be defined in toplevel
+            if :let ∉ scope
+                found = true
+            end
+        end
+        return identity(x)
+    end
+    return found
+end
 
 shouldprofile(@nospecialize(_)) = false
 shouldprofile(::Expr)           = true
