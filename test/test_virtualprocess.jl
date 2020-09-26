@@ -15,6 +15,15 @@
     end
 end
 
+@testset "virtual module self-reference" begin
+    let
+        res, interp = @profile_toplevel begin
+            Main.sum("julia") # `Main.sum` should be resolved as constant
+        end
+        test_sum_over_string(res)
+    end
+end
+
 @testset "\"toplevel definitions\"" begin
     let
         vmod = gen_virtualmod()

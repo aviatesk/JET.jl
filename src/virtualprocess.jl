@@ -17,7 +17,7 @@ gen_virtual_process_result() = (; included_files = Set{String}(),
                                   inference_error_reports = InferenceErrorReport[],
                                   )::VirtualProcessResult
 
-const TYPEPROFILERJL_SELF_REFERENCE_SYM = :TYPEPROFILERJL_SELF_REFERENCE_SYM
+const VM_SELF_REFERRING_SYM = :VM_SELF_REFERRING_SYM
 
 """
     virtual_process!(s::AbstractString,
@@ -29,7 +29,7 @@ const TYPEPROFILERJL_SELF_REFERENCE_SYM = :TYPEPROFILERJL_SELF_REFERENCE_SYM
 
 simulates execution of `s` and profiles error reports, and returns `VirtualProcessResult`,
 which keeps the following information:
-- `included_files::Set{String}`: files that has been profiled
+- `included_files::Set{String}`: files that have been profiled
 - `toplevel_error_reports::Vector{ToplevelErrorReport}`: toplevel errors found during the
    text parsing and AST transformation; these reports are "critical" and should have
    precedence over `inference_error_reports`
@@ -95,15 +95,15 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
 
     # define a constant that self-refers to `virtualmod` so that we can replace
     # self-references of the original `actualmodsym` with it
-    # NOTE: this needs to be "ordinal" identifier for `import`/`using`, etc
-    Core.eval(virtualmod, :(const $(TYPEPROFILERJL_SELF_REFERENCE_SYM) = $(virtualmod)))
+    # NOTE: this identifier can be `gensym`ed, `import/using` will fail otherwise
+    Core.eval(virtualmod, :(const $(VM_SELF_REFERRING_SYM) = $(virtualmod)))
 
-    # postwalk and do transformations that should be done for all atoms:
+    # first transformation pass, do transformations that should be applied for all atoms:
     # 1. replace self-reference of `actualmodsym` with that of `virtualmod`;
-    #    this needs to be done for all atoms in advance of the following transformations
     toplevelex = postwalk_and_transform!(toplevelex, Symbol[:toplevel]) do x, scope
-        # TODO: this cause wrong program semantics when `actualmodsym` is actually used as a local variable, find a workaround
-        x === actualmodsym && return TYPEPROFILERJL_SELF_REFERENCE_SYM
+        # TODO: this cause wrong program semantics when `actualmodsym` is actually used as a
+        # local variable, find a workaround
+        x === actualmodsym && return VM_SELF_REFERRING_SYM
 
         return x
     end
