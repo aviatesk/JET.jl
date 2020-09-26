@@ -11,8 +11,6 @@ gen_virtual_process_result() = (; included_files = Set{String}(),
                                   inference_error_reports = InferenceErrorReport[],
                                   )::VirtualProcessResult
 
-const VM_SELF_REFERRING_SYM = :VM_SELF_REFERRING_SYM
-
 """
     virtual_process!(s::AbstractString,
                      filename::AbstractString,
@@ -83,14 +81,14 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
     # define a constant that self-refers to `virtualmod` so that we can replace
     # self-references of the original `actualmodsym` with it
     # NOTE: this identifier can be `gensym`ed, `import/using` will fail otherwise
-    Core.eval(virtualmod, :(const $(VM_SELF_REFERRING_SYM) = $(virtualmod)))
+    Core.eval(virtualmod, :(const $(:VM_SELF_REFERRING_SYM) = $(virtualmod)))
 
     # first pass, do transformations that should be applied for all atoms:
     # 1. replace self-reference of `actualmodsym` with that of `virtualmod`;
-    toplevelex = postwalk_and_transform!(toplevelex, Symbol[:toplevel]) do x, scope
+    toplevelex = postwalk_and_transform!(toplevelex) do x, scope
         # TODO: this cause wrong program semantics when `actualmodsym` is actually used as a
         # local variable, find a workaround
-        x === actualmodsym && return VM_SELF_REFERRING_SYM
+        x === actualmodsym && return :VM_SELF_REFERRING_SYM
 
         return x
     end
@@ -129,80 +127,15 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
         return Core.eval(mod, x)
     end
 
-    # second pass, can do transformations that need error handling
-    function transform!(x, scope)
-        # always escape inside expression
-        :quote in scope && return x
-
-        # expand macro
-        # ------------
-
-        if isexpr(x, :macrocall)
-            x = macroexpand_with_err_handling(virtualmod, x)
-        end
-
-        # tweak assignments
-        # -----------------
-        # TODO: power up virtual global variables assignment
-        # 1. check scope for variables
-        # 2. use our own expression for virtual global variable assignment
-
-        # remove `const` annotation, annotate `global` instead
-        if isexpr(x, :const)
-            return if !islocalscope(scope)
-                Expr(:global, first(x.args))
-            else
-                report = SyntaxErrorReport("unsupported `const` declaration on local variable", filename, line)
-                push!(ret.toplevel_error_reports, report)
-                nothing
-            end
-        end
-
-        # annotate `global`s for regular assignments in global scope
-        !(islocalscope(scope) || is_already_scoped(scope)) && is_assignment(x) && return Expr(:global, x)
-
-        # handle static `include` calls
-        # -----------------------------
-
-        if isinclude(x)
-            # TODO: maybe find a way to handle two args `include` calls
-            include_file = eval_with_err_handling(virtualmod, last(x.args))
-
-            isnothing(include_file) && return nothing # error happened when evaling `include` args
-
-            include_file = normpath(dirname(filename), include_file)
-
-            # handle recursive `include` calls
-            if include_file in ret.included_files
-                report = RecursiveIncludeErrorReport(include_file, ret.included_files, filename, line)
-                push!(ret.toplevel_error_reports, report)
-                return nothing
-            end
-
-            read_ex      = :(read($(include_file), String))
-            include_text = eval_with_err_handling(virtualmod, read_ex)
-
-            isnothing(include_text) && return nothing # typically no file error
-
-            virtual_process!(include_text, include_file, actualmodsym, virtualmod, interp, ret)
-
-            # TODO: actually, here we need to try to get the last profiling result of the `virtual_process!` call above
-            return nothing
-        end
-
-        return x
-    end
-
-    lnn = LineNumberNode(0, filename)
-
     # transform, and then profile sequentially
     exs = reverse(toplevelex.args)
+    lnn = LineNumberNode(0, filename)
     while !isempty(exs)
         x = pop!(exs)
 
         # update line info
         if islnn(x)
-            lnn = x::LineNumberNode
+            lnn = x
             continue
         end
 
@@ -247,13 +180,96 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
             continue
         end
 
-        x = prewalk_and_transform!(transform!, x, Symbol[:toplevel])
+        # second pass, do transformations that need error handling
+        x = prewalk_and_transform!(x) do x, scope
+            # always escape inside expression
+            :quote in scope && return x
+
+            # expand macro
+            # ------------
+
+            if isexpr(x, :macrocall)
+                x = macroexpand_with_err_handling(virtualmod, x)
+            end
+
+            # handle static `include` calls
+            # -----------------------------
+            # TODO: do something same as toplevel definitions
+
+            if isinclude(x)
+                # TODO: maybe find a way to handle two args `include` calls
+                include_file = eval_with_err_handling(virtualmod, last(x.args))
+
+                isnothing(include_file) && return nothing # error happened when evaling `include` args
+
+                include_file = normpath(dirname(filename), include_file)
+
+                # handle recursive `include` calls
+                if include_file in ret.included_files
+                    report = RecursiveIncludeErrorReport(include_file, ret.included_files, filename, line)
+                    push!(ret.toplevel_error_reports, report)
+                    return nothing
+                end
+
+                read_ex      = :(read($(include_file), String))
+                include_text = eval_with_err_handling(virtualmod, read_ex)
+
+                isnothing(include_text) && return nothing # typically no file error
+
+                virtual_process!(include_text, include_file, actualmodsym, virtualmod, interp, ret)
+
+                # TODO: actually, here we need to try to get the last profiling result of the `virtual_process!` call above
+                return nothing
+            end
+
+            return x
+        end
 
         if hastopleveldef(x)
             # this expression contains "toplevel definition(s)", we don't want to abstract it
             # away, let's just evaluate it (hoping "heavy" computation doesn't happen in this block ...)
             eval_with_err_handling(virtualmod, x)
+
             continue
+        end
+
+        # at this point `x` is supposed not to contain any "toplevel definition" but only
+        # toplevel code like call sites and variable assignment;
+        # in this pass we transform the toplevel code so that it can be wrapped into a virtual (nullary) lambda
+        local locally_scoped_vars = Set{Symbol}()
+        x = prewalk_and_transform!(x) do x, scope
+            # always escape inside expression
+            :quote in scope && return x
+
+            # replace `const` with `global`
+            # TODO: add `const` properties for this virtual global variable
+            if isexpr(x, :const)
+                return if !islocalscope(scope)
+                    Expr(:global, first(x.args))
+                else
+                    report = SyntaxErrorReport("unsupported `const` declaration on local variable", filename, line)
+                    push!(ret.toplevel_error_reports, report)
+                    nothing
+                end
+            end
+
+            if isexpr(x, :local)
+                scoped = first(x.args)
+                push!(locally_scoped_vars, isa(scoped, Expr) ? first(scoped.args) : scoped)
+                return x
+            end
+
+            # annotate `global`s for regular assignments in global scope
+            if !islocalscope(scope)
+                if !is_already_scoped(scope)
+                    if is_assignment(x)
+                        var = first(x.args)
+                        var in locally_scoped_vars || return Expr(:global, x)
+                    end
+                end
+            end
+
+            return x
         end
 
         shouldprofile(x) || continue
@@ -321,18 +337,16 @@ function collect_syntax_errors(s, filename)
     return reports
 end
 
-function walk_and_transform!(pre, @nospecialize(f), x, scope)
+function walk_and_transform!(pre, @nospecialize(f), x, scope = Symbol[])
     x = pre ? f(x, scope) : x
-    x isa Expr || return pre ? x : f(x, scope)
-
-    push!(scope, x.head)
-    for (i, arg) in enumerate(x.args)
-        x.args[i] = walk_and_transform!(pre, f, arg, scope)
+    if isa(x, Expr)
+        push!(scope, x.head)
+        for (i, arg) in enumerate(x.args)
+            x.args[i] = walk_and_transform!(pre, f, arg, scope)
+        end
+        pop!(scope)
     end
-    pop!(scope)
-
-    x = pre ? x : f(x, scope)
-    return x
+    return pre ? x : f(x, scope)
 end
 prewalk_and_transform!(args...) = walk_and_transform!(true, args...)
 postwalk_and_transform!(args...) = walk_and_transform!(false, args...)
@@ -359,7 +373,7 @@ function isfuncdef(ex)
     return false
 end
 
-is_already_scoped(scope) = last(scope) in (:local, :global)
+is_already_scoped(scope) = !isempty(scope) && last(scope) in (:local, :global)
 function is_assignment(x)
     isexpr(x, :(=)) || return false
     lhs = first(x.args)
@@ -375,7 +389,7 @@ islnn(::LineNumberNode) = true
 hastopleveldef(@nospecialize(x)) = false
 function hastopleveldef(ex::Expr)
     local found::Bool = false
-    prewalk_and_transform!(ex, Symbol[]) do x, scope
+    prewalk_and_transform!(ex) do x, scope
         # TODO: escape quoted expression unless within `eval` call
 
         if isexpr(x, (:macro, :abstract, :struct, :primitive))
@@ -386,7 +400,8 @@ function hastopleveldef(ex::Expr)
                 found = true
             end
         end
-        return identity(x)
+
+        return x
     end
     return found
 end

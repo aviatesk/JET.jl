@@ -514,19 +514,15 @@ end
 
         let
             vmod = gen_virtualmod()
-            @test_broken try
-                res, interp = @profile_toplevel vmod begin
-                    begin
-                        local localvar
-                        localvar = rand(Bool) # this shouldn't be annotated as `global`
-                        globalvar = localvar
-                    end
+            res, interp = @profile_toplevel vmod begin
+                begin
+                    local localvar
+                    localvar = rand(Bool) # this shouldn't be annotated as `global`
+                    globalvar = localvar
                 end
-                @test isnothing(get_virtual_globalvar(interp, vmod, :localvar))
-                @test !isnothing(get_virtual_globalvar(interp, vmod, :globalvar))
-            catch
-                false
             end
+            @test isnothing(get_virtual_globalvar(interp, vmod, :localvar))
+            @test !isnothing(get_virtual_globalvar(interp, vmod, :globalvar))
         end
 
         let
