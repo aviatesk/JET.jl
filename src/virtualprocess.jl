@@ -30,22 +30,14 @@ which keeps the following information:
 - `inference_error_reports::Vector{InferenceErrorReport}`: possible error reports found by
   `TPInterpreter`
 
-this function first parses `s` and then iterate following steps on each code block
-1. if it is "toplevel defititions", e.g. definitions of `macro`, `struct`, `function`, etc.,
-   just _evaluates_ it in a context of `virtualmod`
-2. if not, _transforms_ it so that it can be profiled with a context of `virtualmod`
-
-the _transform_ includes:
-- extract "toplevel defintions" from local blocks and hoist them into toplevel, so that
-  remaining code block can be wrapped into a virtual function, which `TPInterpreter` will
-  later profile on; "toplevel defintions" includes:
-  * toplevel `function` definition
-  * `macro` definition
-  * `struct`, `abstract type` and `primitive type` definition
-  * `import`/`using` statements
-- try to expand macros in a context of `virtualmod`
-- handle `include` calls by recursively calling this function on the included file
+this function first parses `s` and then iterate following steps on each code block:
+- first of all, tries to expand macros in a context of `virtualmod`
 - replace self-reference of `actualmodsym` with that of `virtualmod` to help type inference
+  in the later step
+- if it contains "toplevel defintions", e.g. definitions of `macro`, `struct`, `function`,
+  etc. _within toplevel scope_, just directly evaluates it in a context of `virtualmod`
+- handle `module` expression by recursively calling this function with newly generated `virtualmod`
+- handle (static) `include` calls by recursively calling this function on the `include`d file
 - tweak toplevel assignments
   * remove `const` annotations so that remaining code block can be wrapped into a virtual
     function (they are not allowed in a function body)
@@ -53,13 +45,14 @@ the _transform_ includes:
     global variable assignment during abstract interpretation
     (see [`typeinf_local(interp::TPInterpreter, frame::InferenceState)`](@ref))
 
+once all the transformation has been done, each code block will be wrapped into a virtual
+  (nullary) lambda function, and then type inference will be run on it
+
 !!! warning
-    this approach involves following limitations:
-    - if code is directly evaluated but it also includes an evaluation of global objects,
-      it will just result in error since global objects don't have actual values
-    - if hoisted "toplevel definitions" have access to objects in a local scope, the
-      hoisting will just be wrong
-    - dynamic `include`, `using`, `import`, `module`, etc. can't be resolved correctly
+    obviously this approach is only a poor model of Julia's actual execution, and has (maybe)
+      lots of limitations, like:
+    - if a direct evaluation needs access to gloval objects that have not been actually
+      _evaluated_ (just because they have been _profiled_ instead), it just results in error
 """
 function virtual_process!(s::AbstractString,
                           filename::AbstractString,
