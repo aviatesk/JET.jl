@@ -494,6 +494,8 @@ function typeinf(interp::TPInterpreter, frame::InferenceState)
     return ret
 end
 
+is_constant_propagated(frame) = CC.any(frame.result.overridden_by_const)
+
 is_unreachable(@nospecialize(_)) = false
 is_unreachable(rn::ReturnNode)   = !isdefined(rn, :val)
 

@@ -501,3 +501,35 @@ end
         @test isempty(interp.reports)
     end
 end
+
+@testset "don't early escape if type grows up to `Any`" begin
+    vmod = gen_virtualmod()
+    res, interp = @profile_toplevel vmod begin
+        abstract type Foo end
+        struct Foo1 <: Foo
+            bar
+        end
+        struct Foo2 <: Foo
+            baz # typo
+        end
+        struct Foo3 <: Foo
+            qux # typo
+        end
+        bar(foo::Foo) = foo.bar
+
+        f = rand(Bool) ? Foo1(1) : rand(Bool) ? Foo2(1) : Foo3(1)
+        bar(f)
+    end
+
+    # `bar(::Foo1)` is valid but its return type is `Any`, and so we can't collect possible
+    # error points for `bar(::Foo2)` and `bar(::Foo3)` if we bail out on `Any`-grew return type
+    @test length(res.inference_error_reports) === 2
+    @test any(res.inference_error_reports) do er
+        return er isa InvalidBuiltinCallErrorReport &&
+            all(er.argtypes .⊑ [vmod.Foo2, Symbol])
+    end
+    @test any(res.inference_error_reports) do er
+        return er isa InvalidBuiltinCallErrorReport &&
+            all(er.argtypes .⊑ [vmod.Foo3, Symbol])
+    end
+end
