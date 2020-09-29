@@ -34,7 +34,8 @@ this function first parses `s` and then iterate following steps on each code blo
   in the later step
 - if it contains "toplevel defintions", e.g. definitions of `macro`, `struct`, `function`,
   etc. _within toplevel scope_, just directly evaluates it in a context of `virtualmod`
-- handle `module` expression by recursively calling this function with newly generated `virtualmod`
+- handle `module` expression by recursively calling this function with an newly generated
+  virtual module
 - handle (static) `include` calls by recursively calling this function on the `include`d file
 - tweak toplevel assignments
   * remove `const` annotations so that remaining code block can be wrapped into a virtual
@@ -49,7 +50,7 @@ once all the transformation has been done, each code block will be wrapped into 
 !!! warning
     obviously this approach is only a poor model of Julia's actual execution, and has (maybe)
       lots of limitations, like:
-    - if a direct evaluation needs access to gloval objects that have not been actually
+    - if a direct evaluation needs access to global objects that have not been actually
       _evaluated_ (just because they have been _profiled_ instead), it just results in error
 """
 function virtual_process!(s::AbstractString,
@@ -116,13 +117,10 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
         return Core.eval(mod, x)
     end
     usemodule_with_err_handling(interp, mod, x) = with_err_handling(eval_err_handler) do
-        # TODO: handle imports of virtual global variables
-        # if the importing of this global variable failed (because they don't not actually
-        # get evaluated and thus not exist in `virtualmod`), but we can continue profiling
-        # rather than throwing a toplevel error as far as we know its type (,which is kept
-        # in `interp.virtual_globalvar_table`).
-        # To handle this, we need to restore `Module` object from arbitrary module usage
-        # expressions, which can be a bit complicated
+        # NOTE: usages of virtual global variables also work here, since they supposed to
+        # be actually evaluated in `mod` (as `VirtualGlobalVariable` object)
+
+        # TODO: add some error report pass here
 
         return Core.eval(mod, x)
     end
@@ -167,15 +165,11 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
         end
 
         # handle module usage
-        # TODO: support package loading
+        # TODO: support package profiling
         if ismoduleusage(x)
             for ex in to_single_usages(x)
                 usemodule_with_err_handling(interp, virtualmod, ex)
             end
-
-            continue
-        elseif isexport(x)
-            eval_with_err_handling(virtualmod, x)
 
             continue
         end
@@ -282,7 +276,6 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
                                optimize                = may_optimize(interp),
                                compress                = may_compress(interp),
                                discard_trees           = may_discard_trees(interp),
-                               virtual_globalvar_table = interp.virtual_globalvar_table, # pass on virtual global variable table
                                filter_native_remarks   = interp.filter_native_remarks,
                                )
 
@@ -353,8 +346,7 @@ postwalk_and_transform!(args...) = walk_and_transform!(false, args...)
 
 istopleveldef(x) = isexpr(x, (:macro, :abstract, :struct, :primitive))
 
-ismoduleusage(x) = isexpr(x, (:import, :using))
-isexport(x) = isexpr(x, :export)
+ismoduleusage(x) = isexpr(x, (:import, :using, :export))
 
 islocalscope(scopes)        = any(islocalscope, scopes)
 islocalscope(scope::Expr)   = islocalscope(scope.head)
@@ -396,7 +388,9 @@ function hastopleveldef(ex::Expr)
             found = true
         elseif isfuncdef(x)
             # let will introduce closure, it shouldn't be defined in toplevel
-            if :let ∉ scope
+            # i = findlast(s->s===:quote, scope)
+            # scope = scope[(isnothing(i) ? 1 : i):end]
+            if !any(in((:let, :call)), scope)
                 found = true
             end
         end
@@ -421,11 +415,14 @@ end
 
 function to_single_usages(x)
     if length(x.args) != 1
-        # using A, B
+        # using A, B, export a, b
         return Expr.(x.head, x.args)
     else
-        arg = x.args[1]
-        if arg.head === :.
+        arg = first(x.args)
+        if isa(arg, Symbol)
+            # export a
+            return [x]
+        elseif arg.head === :.
             # using A
             return [x]
         elseif arg.head === :(:)

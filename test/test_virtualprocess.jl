@@ -29,28 +29,22 @@ end
     @test hastopleveldef(:(mutable struct Foo end))
     @test hastopleveldef(:(abstract type Foo end))
     @test hastopleveldef(:(primitive type Foo 8 end))
-    @test hastopleveldef(:(macro foo(ex)
-        ex
-    end))
+    @test hastopleveldef(:(macro foo(ex); ex; end))
     @test hastopleveldef(:(foo(x) = x))
     @test hastopleveldef(:(foo(x::Foo) where Foo = x))
-    @test hastopleveldef(:(function foo(x)
-        x
-    end))
-    @test hastopleveldef(:(function foo(x::Foo) where Foo
-        x
-    end))
-    # complex definition
-    @test hastopleveldef(:(for i in 1:10
-        sym = Symbol(:foo, i)
-        Core.eval(:($(sym)() = $(i)))
-    end))
+    @test hastopleveldef(:(function foo(x); return x; end))
+    @test hastopleveldef(:(function foo(x::Foo) where Foo; return x; end))
     # just a call
     @test !hastopleveldef(:(foo(x::Foo)))
-    # closure
-    @test !hastopleveldef(:(let
-        foo(x) = x
-    end))
+    # closures
+    @test !hastopleveldef(:(let; foo(x) = x; end))
+    @test !hastopleveldef(:(foo(bar, function (baz); return isnothing(baz); end)))
+    @test !hastopleveldef(:(foo(bar, ()->isnothing(bar))))
+    # # toplevel definitions with `Core.eval`
+    # @test hastopleveldef(:(for i in 1:10
+    #     sym = Symbol(:foo, i)
+    #     Core.eval(@__MODULE__, :($(sym)() = $(i)))
+    # end))
 end
 
 @testset "\"toplevel definitions\"" begin
@@ -122,8 +116,7 @@ end
         end
 
         # global variables aren't evaluated but kept in `interp` instead
-        @test !isdefined(vmod, :foo)
-        @test !isnothing(get_virtual_globalvar(interp, vmod, :foo))
+        @test get_virtual_globalvar(vmod, :foo) isa VirtualGlobalVariable
         @test isdefined(vmod, :Foo)
         @test isempty(res.toplevel_error_reports)
         @test isempty(res.inference_error_reports)
@@ -164,11 +157,11 @@ end
     let
         vmod = gen_virtualmod()
         res, interp = @profile_toplevel vmod begin
-            const arg = 1
+            const arg = rand(Bool)
 
             macro foo(ex)
                 @assert Meta.isexpr(ex, :call)
-                push!(ex.args, arg)
+                arg && push!(ex.args, 1)
                 return ex
             end
 
@@ -373,49 +366,66 @@ end
         test_sum_over_string(res)
     end
 
-    # usage of global variables
-    let
-        res, interp = @profile_toplevel begin
-            module foo
+    @testset "module usage of virtual global variable" begin
+        let
+            res, interp = @profile_toplevel begin
+                module foo
 
-            const bar = "julia"
+                const bar = sum
 
-            module baz
+                module baz
 
-            using ..foo
+                using ..foo: bar
 
-            sum(foo.bar) # -> NoMethodErrorReports
+                bar("julia")
 
-            end # module bar
+                end # module bar
 
-            end # module foo
+                end # module foo
+            end
+
+            @test isempty(res.toplevel_error_reports)
+            test_sum_over_string(res)
         end
 
-        @test isempty(res.toplevel_error_reports)
-        test_sum_over_string(res)
-    end
+        let
+            res, interp = @profile_toplevel begin
+                module foo
 
-    # usage of global variables
-    let
-        res, interp = @profile_toplevel begin
-            module foo
+                const bar = "julia"
 
-            const bar = sum
+                module baz
 
-            module baz
+                using ..foo: bar
 
-            using ..foo: bar
+                sum(bar)
 
-            bar("julia") # -> NoMethodErrorReports
+                end # module bar
 
-            end # module bar
+                end # module foo
+            end
 
-            end # module foo
+            @test isempty(res.toplevel_error_reports)
+            test_sum_over_string(res)
         end
 
-        # TODO: fix usage of virtual global variables
-        @test_broken isempty(res.toplevel_error_reports)
-        # test_sum_over_string(res)
+        let
+            res, interp = @profile_toplevel begin
+                module foo
+
+                const bar = "julia"
+
+                export bar
+
+                end # module foo
+
+                using .foo
+                sum(bar)
+            end
+
+            @test isempty(res.toplevel_error_reports)
+            test_sum_over_string(res)
+        end
     end
 
     # export
@@ -469,8 +479,12 @@ end
             var = rand(Bool)
             const constvar = rand(Bool)
         end
-        @test !isnothing(get_virtual_globalvar(interp, vmod, :var))
-        @test !isnothing(get_virtual_globalvar(interp, vmod, :constvar))
+
+        var = get_virtual_globalvar(vmod, :var)
+        @test var isa VirtualGlobalVariable && var.t ⊑ Bool
+
+        constvar = get_virtual_globalvar(vmod, :constvar)
+        @test constvar isa VirtualGlobalVariable && constvar.t ⊑ Bool
     end
 
     @testset "scope" begin
@@ -480,11 +494,14 @@ end
         let
             vmod = gen_virtualmod()
             interp, frame = Core.eval(vmod, :($(profile_call)() do
-                localvar = rand(Bool)
-                global globalvar = localvar
+                local localvar = rand(Bool)
+                global globalvar = rand(Bool)
             end))
-            @test isnothing(get_virtual_globalvar(interp, vmod, :localvar))
-            @test !isnothing(get_virtual_globalvar(interp, vmod, :globalvar))
+
+            @test isnothing(get_virtual_globalvar(vmod, :localvar))
+
+            globalvar = get_virtual_globalvar(vmod, :globalvar)
+            @test globalvar isa VirtualGlobalVariable && globalvar.t ⊑ Bool
         end
 
         # blocks
@@ -497,7 +514,9 @@ end
                     globalvar = rand(Bool)
                 end
             end
-            @test !isnothing(get_virtual_globalvar(interp, vmod, :globalvar))
+
+            globalvar = get_virtual_globalvar(vmod, :globalvar)
+            @test globalvar isa VirtualGlobalVariable && globalvar.t ⊑ Bool
         end
 
         let
@@ -508,8 +527,10 @@ end
                     globalvar = localvar
                 end
             end
-            @test isnothing(get_virtual_globalvar(interp, vmod, :localvar))
-            @test !isnothing(get_virtual_globalvar(interp, vmod, :globalvar))
+
+            @test isnothing(get_virtual_globalvar(vmod, :localvar))
+            globalvar = get_virtual_globalvar(vmod, :globalvar)
+            @test globalvar isa VirtualGlobalVariable && globalvar.t ⊑ Bool
         end
 
         let
@@ -521,8 +542,10 @@ end
                     globalvar = localvar
                 end
             end
-            @test isnothing(get_virtual_globalvar(interp, vmod, :localvar))
-            @test !isnothing(get_virtual_globalvar(interp, vmod, :globalvar))
+
+            @test isnothing(get_virtual_globalvar(vmod, :localvar))
+            globalvar = get_virtual_globalvar(vmod, :globalvar)
+            @test globalvar isa VirtualGlobalVariable && globalvar.t ⊑ Bool
         end
 
         let
@@ -533,9 +556,12 @@ end
                     globalvar1 = localvar
                 end
             end
-            @test isnothing(get_virtual_globalvar(interp, vmod, :locbalvar))
-            @test !isnothing(get_virtual_globalvar(interp, vmod, :globalvar1))
-            @test !isnothing(get_virtual_globalvar(interp, vmod, :globalvar2))
+
+            @test isnothing(get_virtual_globalvar(vmod, :locbalvar))
+            globalvar1 = get_virtual_globalvar(vmod, :globalvar1)
+            @test globalvar1 isa VirtualGlobalVariable && globalvar1.t ⊑ Bool
+            globalvar2 = get_virtual_globalvar(vmod, :globalvar2)
+            @test globalvar2 isa VirtualGlobalVariable && globalvar2.t ⊑ Bool
         end
 
         let
@@ -545,7 +571,8 @@ end
                     localvar = rand(Bool)
                 end
             end
-            @test isnothing(get_virtual_globalvar(interp, vmod, :localvar))
+
+            @test isnothing(get_virtual_globalvar(vmod, :localvar))
         end
 
         let
@@ -556,8 +583,10 @@ end
                     localvar
                 end
             end
-            @test isnothing(get_virtual_globalvar(interp, vmod, :localvar))
-            @test !isnothing(get_virtual_globalvar(interp, vmod, :globalvar))
+
+            @test isnothing(get_virtual_globalvar(vmod, :localvar))
+            globalvar = get_virtual_globalvar(vmod, :globalvar)
+            @test globalvar isa VirtualGlobalVariable && globalvar.t ⊑ Bool
         end
 
         # loops
@@ -570,19 +599,22 @@ end
                     localvar = i
                 end
             end
-            @test isnothing(get_virtual_globalvar(interp, vmod, :localvar))
+
+            @test isnothing(get_virtual_globalvar(vmod, :localvar))
         end
 
         let
             vmod = gen_virtualmod()
             res, interp = @profile_toplevel vmod begin
                 for i in 1:10
-                    localvar = rand(i)
+                    localvar = rand(Bool)
                     global globalvar = localvar
                 end
             end
-            @test isnothing(get_virtual_globalvar(interp, vmod, :localvar))
-            @test !isnothing(get_virtual_globalvar(interp, vmod, :globalvar))
+
+            @test isnothing(get_virtual_globalvar(vmod, :localvar))
+            globalvar = get_virtual_globalvar(vmod, :globalvar)
+            @test globalvar isa VirtualGlobalVariable && globalvar.t ⊑ Bool
         end
 
         let
@@ -592,19 +624,22 @@ end
                     localvar = rand(Bool)
                 end
             end
-            @test isnothing(get_virtual_globalvar(interp, vmod, :localvar))
+
+            @test isnothing(get_virtual_globalvar(vmod, :localvar))
         end
 
         let
             vmod = gen_virtualmod()
             res, interp = @profile_toplevel vmod begin
                 while true
-                    localvar = rand()
+                    localvar = rand(Bool)
                     global globalvar = localvar
                 end
             end
-            @test isnothing(get_virtual_globalvar(interp, vmod, :localvar))
-            @test !isnothing(get_virtual_globalvar(interp, vmod, :globalvar))
+
+            @test isnothing(get_virtual_globalvar(vmod, :localvar))
+            globalvar = get_virtual_globalvar(vmod, :globalvar)
+            @test globalvar isa VirtualGlobalVariable && globalvar.t ⊑ Bool
         end
     end
 end

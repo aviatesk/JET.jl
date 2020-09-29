@@ -20,9 +20,6 @@ struct TPInterpreter <: AbstractInterpreter
     # keeps `throw` calls that are not caught within a single frame
     exception_reports::Vector{Pair{Int,ExceptionReport}}
 
-    # keeps virtual global variable; module -> (sym -> (id, type, λ sym, method instance))
-    virtual_globalvar_table::Dict{Module,Dict{Symbol,Tuple{Symbol,Any,Symbol,MethodInstance}}}
-
     # disables caching of native remarks (that may vastly speed up profiling time)
     filter_native_remarks::Bool
 
@@ -35,7 +32,6 @@ struct TPInterpreter <: AbstractInterpreter
                            id                      = gensym(:TPInterpreterID),
                            reports                 = [],
                            exception_reports       = [],
-                           virtual_globalvar_table = Dict(),
                            filter_native_remarks   = true,
                            )
         @assert !opt_params.inlining "inlining should be disabled"
@@ -48,7 +44,6 @@ struct TPInterpreter <: AbstractInterpreter
                    id,
                    reports,
                    exception_reports,
-                   virtual_globalvar_table,
                    filter_native_remarks,
                    )
     end

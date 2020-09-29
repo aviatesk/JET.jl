@@ -7,8 +7,8 @@ import Core.Compiler:
     widenconst
 
 import TypeProfiler:
-    TPInterpreter, profile_call, get_result, virtual_process!, hastopleveldef, report_errors,
-    get_virtual_globalvar, ToplevelErrorReport, InferenceErrorReport, print_reports
+    TPInterpreter, VirtualGlobalVariable, profile_call, get_result, virtual_process!,
+    hastopleveldef, report_errors, ToplevelErrorReport, InferenceErrorReport, print_reports
 
 for sym in Symbol.(last.(Base.Fix2(split, '.').(string.(vcat(subtypes(TypeProfiler, ToplevelErrorReport),
                                                              subtypes(TypeProfiler, InferenceErrorReport),
@@ -90,6 +90,11 @@ function _profile_toplevel(virtualmod, ex, lnn)
         ret = $(TypeProfiler.gen_virtual_process_result)()
         $(virtual_process!)($(toplevelex), $(string(lnn.file)), :Main, $(esc(virtualmod)), interp, ret)
     end end
+end
+
+function get_virtual_globalvar(vmod, sym, unwrap = true)
+    isdefined(vmod, sym) || return nothing
+    return getfield(vmod, sym)
 end
 
 # %% test body

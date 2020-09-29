@@ -176,7 +176,8 @@ end
             sum(s)
         end
 
-        @test widenconst(get_virtual_globalvar(interp, vmod, :s)) == String
+        s = get_virtual_globalvar(vmod, :s)
+        @test s isa VirtualGlobalVariable && s.t ⊑ String
         test_sum_over_string(res)
     end
 
@@ -192,7 +193,8 @@ end
                 end
             end))
 
-            @test get_virtual_globalvar(interp, vmod, :globalvar) === Union{String,Symbol}
+            globalvar = get_virtual_globalvar(vmod, :globalvar)
+            @test globalvar isa VirtualGlobalVariable && globalvar.t === Union{String,Symbol}
         end
 
         let
@@ -208,7 +210,8 @@ end
                 foo(globalvar) # union-split no method matching error should be reported
             end
 
-            @test get_virtual_globalvar(interp, vmod, :globalvar) === Union{String,Symbol}
+            globalvar = get_virtual_globalvar(vmod, :globalvar)
+            @test globalvar isa VirtualGlobalVariable && globalvar.t === Union{String,Symbol}
             @test length(res.inference_error_reports) === 1
             er = first(res.inference_error_reports)
             @test er isa NoMethodErrorReport &&
@@ -232,7 +235,8 @@ end
                 foo(globalvar) # no method matching error should be reported
             end
 
-            @test get_virtual_globalvar(interp, vmod, :globalvar) ⊑ Int
+            globalvar = get_virtual_globalvar(vmod, :globalvar)
+            @test globalvar isa VirtualGlobalVariable && globalvar.t ⊑ Int
             @test length(res.inference_error_reports) === 2
             let er = first(res.inference_error_reports)
                 @test er isa NoMethodErrorReport &&

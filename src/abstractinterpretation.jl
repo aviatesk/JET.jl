@@ -35,6 +35,29 @@ macro invoke(ex)
     end |> esc
 end
 
+mutable struct VirtualGlobalVariable
+    # actual profiled type
+    t::Any
+    # keeps `id` of `TPInterpreter` that defined this
+    id::Symbol
+    # `Symbol` of a dummy generic function that generates dummy backedge (i.e. `li`)
+    edge_sym::Symbol
+    # dummy backedge, which will be invalidated on update of `t`
+    li::MethodInstance
+    # whether this virtual global variable is defined as constant or not
+    # TODO: use this field
+    isconst::Bool
+
+    function VirtualGlobalVariable(@nospecialize(t),
+                                   id::Symbol,
+                                   edge_sym::Symbol,
+                                   li::MethodInstance,
+                                   isconst::Bool = true,
+                                   )
+        return new(t, id, edge_sym, li, isconst)
+    end
+end
+
 # overloads abstractinterpretation.jl
 # -----------------------------------
 # ref: https://github.com/JuliaLang/julia/blob/26c79b2e74d35434737bc33bc09d2e0f6e27372b/base/compiler/abstractinterpretation.jl
@@ -78,18 +101,24 @@ end
 function abstract_eval_special_value(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
     ret = @invoke abstract_eval_special_value(interp::AbstractInterpreter, e, vtypes::VarTable, sv::InferenceState)
 
-    # resolve global reference to virtual global variable, or report it if undefined
-    if !isa(ret, Const) && isa(e, GlobalRef)
+    if isa(ret, Const)
+        # unwrap virtual global variable to actual type
+        val = ret.val
+        if isa(val, VirtualGlobalVariable)
+            # add dummy backedge, which will be invalidated on update of this vitual global variable
+            add_backedge!(val.li, sv)
+
+            ret = val.t
+        end
+    elseif isa(e, GlobalRef)
+        # report access to undefined global variable
         mod, sym = e.mod, e.name
-        vgv = get_virtual_globalvar(interp, mod, sym, sv)
-        if isnothing(vgv)
-            if !isdefined(mod, sym) # we actually don't need this check, but let's add this just for robustness
-                add_remark!(interp, sv, GlobalUndefVarErrorReport(interp, sv, mod, sym))
-                # typeassert(ret, Any)
-                ret = Bottom # ret here should annotated as `Any` by `NativeInterpreter`, but here I would like to be more conservative and change it to `Bottom`
-            end
-        else
-            ret = vgv
+        if !isdefined(mod, sym)
+            add_remark!(interp, sv, GlobalUndefVarErrorReport(interp, sv, mod, sym))
+            # `ret` here should be annotated as `Any` by `NativeInterpreter`, but we want to
+            # be more conservative and change it to `Bottom` and suppress any further abstract
+            # interpretation with this
+            ret = Bottom
         end
     end
 
@@ -128,58 +157,71 @@ end
 is_global_assign(@nospecialize(_)) = false
 is_global_assign(ex::Expr)         = isexpr(ex, :(=)) && first(ex.args) isa GlobalRef
 
-function get_virtual_globalvar(interp, mod, sym, caller = nothing)
-    vgvt4mod = get(interp.virtual_globalvar_table, mod, nothing)
-    isnothing(vgvt4mod) && return nothing
+function set_virtual_globalvar!(interp, mod, name, @nospecialize(t))
+    local update::Bool = false
+    id = get_id(interp)
 
-    x = get(vgvt4mod, sym, nothing)
-    isnothing(x) && return nothing
-
-    _, t, _, li = x
-    if !isnothing(caller)
-        # `caller` might be `nothing` when called in test, don't add backedge for that case
-        add_backedge!(li, caller)
+    prev_t, prev_id, (edge_sym, li) = if isdefined(mod, name)
+        val = getfield(mod, name)
+        if isa(val, VirtualGlobalVariable)
+            # update previously-defined virtual global variable
+            update = true
+            val.t, val.id, (val.edge_sym, val.li)
+        else
+            if isconst(mod, name)
+                @warn "update to constant variable is detected, report it"
+                return
+            else
+                # re-define this (unconst) global variable as new virtual global variable
+                typeof(val), id, gen_dummy_backedge(mod)
+            end
+        end
+    else
+        # define new virtual global variable
+        Bottom, id, gen_dummy_backedge(mod)
     end
 
-    return t
-end
-
-function set_virtual_globalvar!(interp, mod, sym, @nospecialize(t))
-    vgvt4mod = get!(interp.virtual_globalvar_table, mod, Dict())
-
-    id = get_id(interp)
-    prev_id, prev_t, λsym, li = haskey(vgvt4mod, sym) ?
-                                vgvt4mod[sym] :
-                                (id, Bottom, gen_dummy_backedge(mod)...)
-
+    # at this point undefined slots may be still annotated as `NOT_FOUND`, which can't be
+    # used as a type for this virtual global variable in the future abstract interpretation
     if t === NOT_FOUND
         t = Bottom
     end
 
     if id === prev_id
-        # if the previous virtual global variable assignment happened in the same inference process
-        # TP needs to perform type merge, otherwise TP can "just update" it
-        # TODO: add some backedge for this as well ? it should make the inference correct, but maybe slower to converge
+        # if the previous virtual global variable assignment happened in the same inference process,
+        # TP needs to perform type merge, otherwise "just update"s it
         t = tmerge(prev_t, t)
     else
-        # invalidate the dummy backedge that was bound to this virtual global variable,
+        # invalidate the dummy backedge that is bound to this virtual global variable,
         # so that depending `MethodInstance` will run fresh type inference on the next hit
-        li = force_invalidate!(mod, λsym)
+        li = force_invalidate!(mod, edge_sym)
     end
 
-    vgvt4mod[sym] = id, t, λsym, li
+    return if update
+        Core.eval(mod, quote
+            local name = $(name)
+            name.t = $(t)
+            name.id = $(QuoteNode(id))
+            name.edge_sym = $(QuoteNode(edge_sym))
+            name.li = $(li)
+            name
+        end)
+    else
+        vgv = VirtualGlobalVariable(t, id, edge_sym, li)
+        Core.eval(mod, :(const $(name) = $(vgv)))
+    end::VirtualGlobalVariable
 end
 
-function gen_dummy_backedge(m)
-    @gensym λsym
-    return λsym, force_invalidate!(m, λsym) # just generate dummy `MethodInstance` to be invalidated
+function gen_dummy_backedge(mod)
+    @gensym edge_sym
+    return edge_sym, force_invalidate!(mod, edge_sym) # just generate dummy `MethodInstance` to be invalidated
 end
 
 # TODO: find a more fine-grained way to do this ? re-evaluating an entire function seems to be over-kill for this
-function force_invalidate!(m, λsym)
-    λ = Core.eval(m, :($(λsym)() = nothing))
+function force_invalidate!(mod, edge_sym)
+    λ = Core.eval(mod, :($(edge_sym)() = return))
     m = first(methods(λ))
-    return specialize_method(m, Tuple{typeof(λ)}, Core.svec())
+    return specialize_method(m, Tuple{typeof(λ)}, Core.svec())::MethodInstance
 end
 
 # overloads typeinfer.jl
