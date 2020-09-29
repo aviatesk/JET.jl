@@ -7,15 +7,10 @@ function builtin_tfunction(interp::TPInterpreter, @nospecialize(f), argtypes::Ar
                                     sv::Union{InferenceState,Nothing})
 
     # propagate virtual global variable
-    if f === getfield && ret == Any && length(argtypes) == 2 && all(a->isa(a, Const), argtypes)
-        mod, sym = map(a->(a::Const).val, argtypes)
+    if isa(ret, VirtualGlobalVariable)
+        add_backedge!(val.li, sv)
 
-        if mod isa Module && sym isa Symbol
-            vgv = get_virtual_globalvar(interp, mod, sym)
-            if !isnothing(vgv)
-                ret = vgv
-            end
-        end
+        ret = val.t
     end
 
     isnothing(sv) && return ret
@@ -31,11 +26,10 @@ function builtin_tfunction(interp::TPInterpreter, @nospecialize(f), argtypes::Ar
     return ret
 end
 
-# `return_type_tfunc` internally uses `abstract_call` to model `return_type` function; while
-# TP will reports it as an error if the `abstract_call` is invalid (e.g. no method matched),
-# `return_type` just returns `Union{}` (and thus `return_type_tfunc` returns `Const(Union{})`
-# in that case, so we need to special case this so that we just pass `NativeInterpreter` to
-# `abstract_call` and just do simple error check for argument numbers
+# `return_type_tfunc` internally uses `abstract_call` to model `return_type` function and
+# here we shouldn't pass `TPInterpreter` to it; otherwise we may get false error reports from
+# the  `abstract_call`, which isn't the abstraction of actual execution, thus here we just
+# check if the call of `return_type` is valid or not
 function return_type_tfunc(interp::TPInterpreter, argtypes::Vector{Any}, sv::InferenceState)
     if length(argtypes) !== 3
         # invalid argument number, let's report and return error result (i.e. `Bottom`)
