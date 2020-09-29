@@ -17,7 +17,7 @@ function builtin_tfunction(interp::TPInterpreter, @nospecialize(f), argtypes::Ar
     sv = sv::InferenceState
 
     if f === throw
-        # NOTE: handled in `finish(me::InferenceState, interp::TPInterpreter)`
+        # NOTE: uncaught `throw` calls will be reported by `typeinf(interp::TPInterpreter, frame::InferenceState)`
         return ret
     elseif ret === Bottom
         add_remark!(interp, sv, InvalidBuiltinCallErrorReport(interp, sv, argtypes))
