@@ -1,25 +1,22 @@
-# TODO: maybe we need to add `argtypes_to_type(argtypes)` as key for throw aways by constant propagation
-
-# just relies on the native tfuncs, maybe there're lots of edge cases
 function builtin_tfunction(interp::TPInterpreter, @nospecialize(f), argtypes::Array{Any,1},
-                           sv::Union{InferenceState,Nothing})
+                           sv::InferenceState) # `TPInterpreter` isn't overloaded on `return_type`
     ret = @invoke builtin_tfunction(interp::AbstractInterpreter, f, argtypes::Array{Any,1},
                                     sv::Union{InferenceState,Nothing})
 
-    # propagate virtual global variable
-    if isa(ret, VirtualGlobalVariable)
-        add_backedge!(val.li, sv)
-
-        ret = val.t
-    end
-
-    isnothing(sv) && return ret
-    sv = sv::InferenceState
-
     if f === throw
-        # NOTE: uncaught `throw` calls will be reported by `typeinf(interp::TPInterpreter, frame::InferenceState)`
+        # uncaught `throw` calls will be reported by `typeinf(interp::TPInterpreter, frame::InferenceState)`
         return ret
+    elseif isa(ret, VirtualGlobalVariable)
+        # propagate virtual global variable
+
+        # this might be `Bottom`, but hopefully the error on this variable is already reported,
+        # so we don't report `InvalidBuiltinCallErrorReport` for this
+        ret = val.t
+
+        add_backedge!(val.li, sv)
     elseif ret === Bottom
+        # XXX: for now, TP just relies on the native tfuncs to report invalid builtin calls,
+        # maybe there're lots of false negative/positives
         add_remark!(interp, sv, InvalidBuiltinCallErrorReport(interp, sv, argtypes))
     end
 
