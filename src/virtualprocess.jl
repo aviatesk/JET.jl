@@ -1,4 +1,4 @@
-# FIXME: this is too hacky, find an alternative way for simulating toplevel execution, make me more robust at least
+# FIXME: I'm too hacky, find an alternative way for simulating toplevel execution, make me more robust at least
 
 const VirtualProcessResult = @NamedTuple begin
     included_files::Set{String}
@@ -248,18 +248,30 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
             end
 
             if isexpr(x, :local)
-                scoped = first(x.args)
-                push!(locally_scoped_vars, isa(scoped, Expr) ? first(scoped.args) : scoped)
+                x′ = first(x.args)
+                # `parse_input_line` will parse "local a, b = sincos(1)" into `:(local (a, b) = sincos(1))`
+                if is_assignment(x′)
+                    # local a, b = sincos(1)
+                    vars = get_lhs(x′)
+                    push!(locally_scoped_vars, vars...)
+                else
+                    # local a, b ...
+                    push!(locally_scoped_vars, x.args...)
+                end
                 return x
             end
 
             # annotate `global`s for regular assignments in global scope
-            if !islocalscope(scope)
-                if !is_already_scoped(scope)
-                    if is_assignment(x)
-                        var = first(x.args)
-                        var in locally_scoped_vars || return Expr(:global, x)
-                    end
+            if !(islocalscope(scope) || is_already_scoped(scope))
+                # `parse_input_line` will parse "a, b = sincos(1)" into `:((a, b) = sincos(1))`
+                if is_assignment(x)
+                    # FIXME: this can't handle following case
+                    # begin
+                    #     local l
+                    #     l, g = sincos(1) # won't be `global` annotated
+                    # end
+                    vars = get_lhs(x)
+                    any(in(locally_scoped_vars), vars) || return Expr(:global, x)
                 end
             end
 
@@ -366,11 +378,22 @@ function isfuncdef(ex)
 end
 
 is_already_scoped(scope) = !isempty(scope) && last(scope) in (:local, :global)
+
+# XXX: this will miss hygine variables (`isidentifier` check)
+# but hygine variables are (usually) supposed to be used only within a macro expanded block
+# and so it might be okay not to annotate them as virtual global variables
 function is_assignment(x)
     isexpr(x, :(=)) || return false
     lhs = first(x.args)
-    isa(lhs, Symbol) || return false
-    Base.isidentifier(lhs)
+    isa(lhs, Symbol) && return isidentifier(lhs)
+    isexpr(lhs, :tuple) && return all(var -> isa(var, Symbol) && isidentifier(var), lhs.args)
+    return false
+end
+
+function get_lhs(eq)::Vector{Symbol}
+    # @assert is_assignment(eq)
+    lhs = first(eq.args)
+    return (isa(lhs, Symbol) ? [lhs] : lhs.args)
 end
 
 isinclude(ex) = isexpr(ex, :call) && first(ex.args) === :include
