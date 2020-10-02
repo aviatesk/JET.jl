@@ -123,36 +123,6 @@ abstract_isa(vgv, @nospecialize(typ)) = isa(vgv, VirtualGlobalVariable) && vgv.t
     @static Sys.iswindows() || @testset "print.jl" begin
         include("test_print.jl")
     end
-
-    @testset "is it truly necessary ?" begin
-        let
-            # constant propagation can help to exclude false positive alerts;
-            # well, this is really bad code so I rather feel we may want to have a report
-            # for this case
-            res, interp = @profile_toplevel begin
-                function foo(n)
-                    if n < 10
-                        return n
-                    else
-                        return "over 10"
-                    end
-                end
-
-                function bar(n)
-                    if n < 10
-                        return foo(n) + 1
-                    else
-                        return foo(n) * "+1"
-                    end
-                end
-
-                bar(1)
-                bar(10)
-            end
-
-            @test isempty(res.inference_error_reports)
-        end
-    end
 end
 
 # # favorite

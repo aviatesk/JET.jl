@@ -434,21 +434,33 @@ end
 # ref: https://github.com/JuliaLang/julia/blob/26c79b2e74d35434737bc33bc09d2e0f6e27372b/base/compiler/typeinfer.jl
 
 # in this overload we can work on `CodeInfo` (and also `InferenceState`) where type inference
-# (and maybe optimization) already ran on
+# (and maybe also optimization) already ran on
 function typeinf(interp::TPInterpreter, frame::InferenceState)
-    # throw away previously-collected error reports that have a lineage of this frame if we
-    # re-infer this frame with constant propagation, assuming results with constants are
-    # always more accurate than those without them (COMBAK: is this really true ?); this can
-    # happen only _after_ abstract interpretation without constants (i.e. just using `atype`)
+    # some methods like `getproperty` can't propagate concrete types without actual values,
+    # and for those cases constant propagation usually plays a somewhat critical role that
+    # "overwrite"s the previously-inferred lousy inference result;
+    # TypeProfiler.jl also needs to follow the native interpreter's result "overwrite" logic
+    # to reduce false positive reports from lousy typed profiling, and so here we will throw
+    # away previously-collected error reports from frames that are lineage of this frame if
+    # this frame is being re-inferred with constant-prop'ed inputs
     #
-    # xref (maybe coming future change of constant propagation logic):
-    # https://github.com/JuliaLang/julia/blob/a108d6cb8fdc7924fe2b8d831251142386cb6525/base/compiler/abstractinterpretation.jl#L153
+    # NOTE:
+    # - constant propagation only happens after inference with abstract values (i.e. just
+    #   using types)
+    # - maybe upcoming change for the native constant propagation logic:
+    #   https://github.com/JuliaLang/julia/blob/a108d6cb8fdc7924fe2b8d831251142386cb6525/base/compiler/abstractinterpretation.jl#L153
+    # - why not always throw away lineage reports when constant propagation happens ?
+    #   * constant prop' doesn't seem to happen always, especially inferring on cached frames,
+    #     and then error reports can be different for uncached/cached frames, which would be
+    #     super confusing
+    #   * discussion: we may want to have reports for code that is cut off by constant prop'
     if is_constant_propagated(frame)
         linfo = frame.linfo
-        is_lineage′ = Fix1(is_lineage, linfo)
-
-        # throw away previously-collected error reports
-        filter!(!is_lineage′, interp.reports)
+        def = linfo.def
+        if isa(def, Method)
+            # throw away previously-collected error reports
+            def.name in CONSTANT_PROP_METHODS && filter!(!Fix1(is_lineage, linfo), interp.reports)
+        end
     end
 
     ret = @invoke typeinf(interp::AbstractInterpreter, frame::InferenceState)
@@ -495,6 +507,8 @@ function typeinf(interp::TPInterpreter, frame::InferenceState)
 end
 
 is_constant_propagated(frame) = CC.any(frame.result.overridden_by_const)
+
+const CONSTANT_PROP_METHODS = Set((:getproperty, :setproperty!))
 
 is_unreachable(@nospecialize(_)) = false
 is_unreachable(rn::ReturnNode)   = !isdefined(rn, :val)

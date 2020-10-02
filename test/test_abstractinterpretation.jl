@@ -428,77 +428,108 @@ end
         # won't be reported since `typeinf` early escapes on `Bottom`-annotated statement
     end
 
-    # constant prop and cache
-    let
-        m = @def begin
-            foo(a) = a > 0 ? a : "minus"
-            bar(a) = foo(a) + 1
+    false && @testset "more throw away false positive reports" begin
+        let
+            m = @def begin
+                foo(a) = a > 0 ? a : "minus"
+                bar(a) = foo(a) + 1
+            end
+
+            # constant propagation can reveal the error pass can't happen
+            interp, frame = Core.eval(m, :($(profile_call)(()->bar(10))))
+            @test isempty(interp.reports)
+
+            # for this case, no constant prop' doesn't happen, we can't throw away error pass
+            interp, frame = Core.eval(m, :($(profile_call)(bar, Int)))
+            @test length(interp.reports) === 1
+            er = first(interp.reports)
+            @test er isa NoMethodErrorReport &&
+                er.unionsplit &&
+                er.atype ⊑ Tuple{Any,Union{Int,String},Int}
+
+            # if we run constant prop' that leads to the error pass, we should get the reports
+            # FIXME: constant prop' can produce more precise, but essentially duplicated error reports
+            interp, frame = Core.eval(m, :($(profile_call)(()->bar(0))))
+            @test length(interp.reports) === 1
+            er = first(interp.reports)
+            @test er isa NoMethodErrorReport &&
+                !er.unionsplit &&
+                er.atype ⊑ Tuple{Any,String,Int}
         end
 
-        # yes, we don't want report for this case
-        interp, frame = Core.eval(m, :($(profile_call)(()->bar(10))))
-        @test isempty(interp.reports)
-
-        # for this case, we want to have union-split error
-        interp, frame = Core.eval(m, :($(profile_call)(bar, Int)))
-        @test length(interp.reports) === 1
-        er = first(interp.reports)
-        @test er isa NoMethodErrorReport &&
-            er.unionsplit &&
-            er.atype ⊑ Tuple{Any,Union{Int,String},Int}
-
-        # if we run constant prop again, we can get reports as expected
-        interp, frame = Core.eval(m, :($(profile_call)(()->bar(0))))
-        @test length(interp.reports) === 1
-        er = first(interp.reports)
-        @test er isa NoMethodErrorReport &&
-            !er.unionsplit &&
-            er.atype ⊑ Tuple{Any,String,Int}
-    end
-
-    # should threw away previously-collected reports from frame that is lineage of
-    # current constant prop'ed frame
-    let
-        m = @def begin
-            foo(a) = bar(a)
-            function bar(a)
-                return if a < 1
-                    baz1(a, "0")
-                else
-                    baz2(a, a)
+        # should threw away previously-collected reports from frame that is lineage of
+        # current constant prop'ed frame
+        let
+            m = @def begin
+                foo(a) = bar(a)
+                function bar(a)
+                    return if a < 1
+                        baz1(a, "0")
+                    else
+                        baz2(a, a)
+                    end
                 end
+                baz1(a, b) = a ? b : b
+                baz2(a, b) = a + b
             end
-            baz1(a, b) = a ? b : b
-            baz2(a, b) = a + b
+
+            # no constant prop, just report everything
+            interp, frame = Core.eval(m, :($(profile_call)(foo, Int)))
+            @test length(interp.reports) === 1
+            er = first(interp.reports)
+            @test er isa NonBooleanCondErrorReport &&
+                er.t === Int
+
+            # constant prop should throw away non-boolean condition reports within `baz1`
+            interp, frame = Core.eval(m, quote
+                $(profile_call)() do
+                    foo(1)
+                end
+            end)
+            @test isempty(interp.reports)
+
+            # constant prop'ed, still we want to have reports for this
+            interp, frame = Core.eval(m, quote
+                $(profile_call)() do
+                    foo(0)
+                end
+            end)
+            @test length(interp.reports) === 1
+            er = first(interp.reports)
+            @test er isa NonBooleanCondErrorReport &&
+                er.t === Int
+
+            # so `Bool` is good for `foo` after all
+            interp, frame = Core.eval(m, :($(profile_call)(foo, Bool)))
+            @test isempty(interp.reports)
         end
 
-        # no constant prop, just report everything
-        interp, frame = Core.eval(m, :($(profile_call)(foo, Int)))
-        @test length(interp.reports) === 1
-        er = first(interp.reports)
-        @test er isa NonBooleanCondErrorReport &&
-            er.t === Int
+        # constant prop' can exclude false positive alerts; well, this is really bad code
+        # so I rather feel we may want to have a report for this case
+        let
+            res, interp = @profile_toplevel begin
+                function foo(n)
+                    if n < 10
+                        return n
+                    else
+                        return "over 10"
+                    end
+                end
 
-        # constant prop should throw away non-boolean condition reports within `baz1`
-        interp, frame = Core.eval(m, quote
-            $(profile_call)() do
-                foo(1)
+                function bar(n)
+                    if n < 10
+                        return foo(n) + 1
+                    else
+                        return foo(n) * "+1"
+                    end
+                end
+
+                bar(1)
+                bar(10)
             end
-        end)
-        @test isempty(interp.reports)
 
-        # constant prop'ed, still we want to have reports for this
-        interp, frame = Core.eval(m, quote
-            $(profile_call)() do
-                foo(0)
-            end
-        end)
-        @test er isa NonBooleanCondErrorReport &&
-            er.t === Int
-
-        # so `Bool` is good for `foo` after all
-        interp, frame = Core.eval(m, :($(profile_call)(foo, Bool)))
-        @test isempty(interp.reports)
+            @test isempty(res.inference_error_reports)
+        end
     end
 end
 
