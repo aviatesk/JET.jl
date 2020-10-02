@@ -642,4 +642,75 @@ end
             @test globalvar isa VirtualGlobalVariable && globalvar.t ⊑ Bool
         end
     end
+
+    @testset "multiple declaration/assignment" begin
+        let
+            vmod = gen_virtualmod()
+            res, interp = @profile_toplevel vmod begin
+                s, c = sincos(1)
+            end
+
+            s = get_virtual_globalvar(vmod, :s)
+            @test s isa VirtualGlobalVariable && s.t ⊑ Float64
+            c = get_virtual_globalvar(vmod, :c)
+            @test c isa VirtualGlobalVariable && c.t ⊑ Float64
+        end
+
+        let
+            vmod = gen_virtualmod()
+            res, interp = @profile_toplevel vmod begin
+                begin
+                    local s, c
+                    s, c = sincos(1)
+                end
+            end
+
+            @test isnothing(get_virtual_globalvar(vmod, :s))
+            @test isnothing(get_virtual_globalvar(vmod, :c))
+        end
+
+        let
+            vmod = gen_virtualmod()
+            res, interp = @profile_toplevel vmod begin
+                let
+                    global s, c
+                    s, c = sincos(1)
+                end
+            end
+
+            s = get_virtual_globalvar(vmod, :s)
+            @test s isa VirtualGlobalVariable && s.t ⊑ Float64
+            c = get_virtual_globalvar(vmod, :c)
+            @test c isa VirtualGlobalVariable && c.t ⊑ Float64
+        end
+
+        let
+            vmod = gen_virtualmod()
+            res, interp = @profile_toplevel vmod begin
+                so, co = let
+                    si, ci = sincos(1)
+                    si, ci
+                end
+            end
+
+            @test isnothing(get_virtual_globalvar(vmod, :si))
+            @test isnothing(get_virtual_globalvar(vmod, :ci))
+            so = get_virtual_globalvar(vmod, :so)
+            @test so isa VirtualGlobalVariable && so.t ⊑ Float64
+            co = get_virtual_globalvar(vmod, :co)
+            @test co isa VirtualGlobalVariable && co.t ⊑ Float64
+        end
+
+        let
+            vmod = gen_virtualmod()
+            res, interp = @profile_toplevel vmod begin
+                begin
+                    local l
+                    l, g = sincos(1)
+                end
+            end
+            @test isnothing(get_virtual_globalvar(vmod, :l))
+            @test_broken !isnothing(get_virtual_globalvar(vmod, :g))
+        end
+    end
 end
