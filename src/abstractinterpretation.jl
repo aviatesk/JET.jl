@@ -168,21 +168,17 @@ function set_virtual_globalvar!(interp, mod, name, @nospecialize(t))
             update = true
             val.t, val.id, (val.edge_sym, val.li)
         else
-            if isconst(mod, name)
-                @warn "update to constant variable is detected, report it"
-                return
-            else
-                # re-define this (unconst) global variable as new virtual global variable
-                typeof(val), id, gen_dummy_backedge(mod)
-            end
+            @warn "TypeProfiler.jl can't trace updates of global variable that already have values"
+            return
         end
     else
         # define new virtual global variable
         Bottom, id, gen_dummy_backedge(mod)
     end
 
-    # at this point undefined slots may be still annotated as `NOT_FOUND`, which can't be
-    # used as a type for this virtual global variable in the future abstract interpretation
+    # at this point undefined slots may still be annotated as `NOT_FOUND` (e.g. when there is
+    # undefined slot, etc.), which can't be used as abstract value for later profiling,
+    # so replace it with Bottom
     if t === NOT_FOUND
         t = Bottom
     end
@@ -219,7 +215,7 @@ end
 
 # TODO: find a more fine-grained way to do this ? re-evaluating an entire function seems to be over-kill for this
 function force_invalidate!(mod, edge_sym)
-    λ = Core.eval(mod, :($(edge_sym)() = return))
+    λ = Core.eval(mod, :($(edge_sym)() = return))::Function
     m = first(methods(λ))
     return specialize_method(m, Tuple{typeof(λ)}, Core.svec())::MethodInstance
 end
