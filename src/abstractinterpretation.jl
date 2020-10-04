@@ -113,7 +113,17 @@ function abstract_eval_special_value(interp::TPInterpreter, @nospecialize(e), vt
     elseif isa(e, GlobalRef)
         # report access to undefined global variable
         mod, sym = e.mod, e.name
-        if !isdefined(mod, sym)
+        if isdefined(mod, sym)
+            # FIXME: this might produce wrong result if the current frame is cached and the
+            # global variable later be updated (both actually or abstractly, anyway);
+            # 1. if we have established a way to convert a already-existing global variable
+            #    to virtual global variable we can do that here and add backedge
+            # 2. `NativeInterpreter` just returns `Any` for this case, so it might be okay
+            #    if TP just follows that and give up profiling on non-constant global variables ...
+            val = getfield(mod, sym)
+            @debug "propagating non-constant global variable as constant" mod sym val
+            ret = Const(val)
+        else
             add_remark!(interp, sv, GlobalUndefVarErrorReport(interp, sv, mod, sym))
             # `ret` here should be annotated as `Any` by `NativeInterpreter`, but we want to
             # be more conservative and change it to `Bottom` and suppress any further abstract

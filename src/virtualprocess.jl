@@ -76,7 +76,13 @@ function virtual_process!(s::AbstractString,
     return virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp, ret)
 end
 
-function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp, ret)
+function virtual_process!(toplevelex::Expr,
+                          filename::AbstractString,
+                          actualmodsym::Symbol,
+                          virtualmod::Module,
+                          interp::TPInterpreter,
+                          ret::VirtualProcessResult = gen_virtual_process_result(),
+                          )::Tuple{VirtualProcessResult,TPInterpreter}
     @assert isexpr(toplevelex, :toplevel)
 
     # define a constant that self-refers to `virtualmod` so that we can replace
@@ -277,6 +283,8 @@ function virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp
 
             return x
         end
+
+        @debug x
 
         shouldprofile(x) || continue
 
