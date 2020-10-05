@@ -37,7 +37,7 @@ import Core.Compiler:
     add_backedge!
 
 import Base:
-    parse_input_line, to_tuple_type, isidentifier, Fix1, Fix2, IdSet
+    parse_input_line, to_tuple_type, Fix1, Fix2, IdSet
 
 import Base.Meta:
     isexpr, _parse_string

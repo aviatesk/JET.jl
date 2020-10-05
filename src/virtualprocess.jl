@@ -100,14 +100,14 @@ function virtual_process!(toplevelex::Expr,
         return x
     end
 
-    line::Int = 1
     filename::String = filename
+    lnn::LineNumberNode = LineNumberNode(0, filename)
     interp::TPInterpreter = interp
 
     function macroexpand_err_handler(err, st)
         # `4` corresponds to `with_err_handling`, `f`, `macroexpand` and its kwfunc
         st = crop_stacktrace(st, 4)
-        push!(ret.toplevel_error_reports, ActualErrorWrapped(err, st, filename, line))
+        push!(ret.toplevel_error_reports, ActualErrorWrapped(err, st, filename, lnn.line))
         return nothing
     end
     macroexpand_with_err_handling(mod, x) = with_err_handling(macroexpand_err_handler) do
@@ -116,7 +116,7 @@ function virtual_process!(toplevelex::Expr,
     function eval_err_handler(err, st)
         # `3` corresponds to `with_err_handling`, `f` and `eval`
         st = crop_stacktrace(st, 3)
-        push!(ret.toplevel_error_reports, ActualErrorWrapped(err, st, filename, line))
+        push!(ret.toplevel_error_reports, ActualErrorWrapped(err, st, filename, lnn.line))
         return nothing
     end
     eval_with_err_handling(mod, x) = with_err_handling(eval_err_handler) do
@@ -133,7 +133,6 @@ function virtual_process!(toplevelex::Expr,
 
     # transform, and then profile sequentially
     exs = reverse(toplevelex.args)
-    lnn = LineNumberNode(0, filename)
     while !isempty(exs)
         x = pop!(exs)
 
@@ -206,7 +205,7 @@ function virtual_process!(toplevelex::Expr,
 
                 # handle recursive `include` calls
                 if include_file in ret.included_files
-                    report = RecursiveIncludeErrorReport(include_file, ret.included_files, filename, line)
+                    report = RecursiveIncludeErrorReport(include_file, ret.included_files, filename, lnn.line)
                     push!(ret.toplevel_error_reports, report)
                     return nothing
                 end
@@ -247,7 +246,7 @@ function virtual_process!(toplevelex::Expr,
                 return if !islocalscope(scope)
                     Expr(:global, first(x.args))
                 else
-                    report = SyntaxErrorReport("unsupported `const` declaration on local variable", filename, line)
+                    report = SyntaxErrorReport("unsupported `const` declaration on local variable", filename, lnn.line)
                     push!(ret.toplevel_error_reports, report)
                     nothing
                 end
@@ -387,14 +386,11 @@ end
 
 is_already_scoped(scope) = !isempty(scope) && last(scope) in (:local, :global)
 
-# XXX: this will miss hygine variables (`isidentifier` check)
-# but hygine variables are (usually) supposed to be used only within a macro expanded block
-# and so it might be okay not to annotate them as virtual global variables
 function is_assignment(x)
     isexpr(x, :(=)) || return false
     lhs = first(x.args)
-    isa(lhs, Symbol) && return isidentifier(lhs)
-    isexpr(lhs, :tuple) && return all(var -> isa(var, Symbol) && isidentifier(var), lhs.args)
+    isa(lhs, Symbol) && return true
+    isexpr(lhs, :tuple) && return all(var->isa(var,Symbol), lhs.args)
     return false
 end
 
