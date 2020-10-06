@@ -35,6 +35,10 @@ macro invoke(ex)
     end |> esc
 end
 
+is_constant_propagated(frame) = CC.any(frame.result.overridden_by_const)
+
+istoplevel(sv) = isa(sv.linfo.def, Module)
+
 mutable struct VirtualGlobalVariable
     # actual profiled type
     t::Any
@@ -90,8 +94,6 @@ function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argty
     return ret
 end
 
-is_constant_propagated(frame) = CC.any(frame.result.overridden_by_const)
-
 function is_empty_match(info)
     res = info.results
     isa(res, MethodLookupResult) || return false # when does this happen ?
@@ -99,6 +101,12 @@ function is_empty_match(info)
 end
 
 function abstract_eval_special_value(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
+    if istoplevel(sv)
+        if isa(e, Symbol)
+            e = GlobalRef(sv.mod, e)
+        end
+    end
+
     ret = @invoke abstract_eval_special_value(interp::AbstractInterpreter, e, vtypes::VarTable, sv::InferenceState)
 
     if isa(ret, Const)
@@ -154,18 +162,26 @@ end
 function abstract_eval_statement(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
     ret = @invoke abstract_eval_statement(interp::AbstractInterpreter, e, vtypes::VarTable, sv::InferenceState)
 
+    # partial actual interpretation
+    istoplevel(sv) && interpret!(interp, sv, e)
+
     # assign virtual global variable
-    stmt = get_cur_stmt(sv)
-    if is_global_assign(stmt)
-        gr = first((stmt::Expr).args)::GlobalRef
-        set_virtual_globalvar!(interp, gr.mod, gr.name, ret)
-    end
+    lhs = get_global_assignment_lhs(sv)
+    isa(lhs, GlobalRef) && set_virtual_globalvar!(interp, lhs.mod, lhs.name, ret)
 
     return ret
 end
 
-is_global_assign(@nospecialize(_)) = false
-is_global_assign(ex::Expr)         = isexpr(ex, :(=)) && first(ex.args) isa GlobalRef
+function get_global_assignment_lhs(sv::InferenceState)
+    stmt = get_cur_stmt(sv)
+
+    lhs = get_lhs1(stmt)
+    isnothing(lhs) && return nothing
+    isa(lhs, GlobalRef) && return lhs
+    istoplevel(sv) && isa(lhs, Symbol) && return GlobalRef(sv.mod, lhs)
+
+    return nothing
+end
 
 function set_virtual_globalvar!(interp, mod, name, @nospecialize(t))
     local update::Bool = false
@@ -229,6 +245,198 @@ function force_invalidate!(mod, edge_sym)
     m = first(methods(λ))
     return specialize_method(m, Tuple{typeof(λ)}, Core.svec())::MethodInstance
 end
+
+# FIXME: remove this monkey-patch
+# the only point of this overload is to slip `evaluate_methoddef` into the interpretation of
+# `Expr(:method, ...)` statement
+push_inithook!() do; Core.eval(Core.Compiler, quote
+
+# make as much progress on `frame` as possible (without handling cycles)
+function typeinf_local(interp::$(TPInterpreter), frame::InferenceState)
+    @assert !frame.inferred
+    frame.dont_work_on_me = true # mark that this function is currently on the stack
+    W = frame.ip
+    s = frame.stmt_types
+    n = frame.nstmts
+    while frame.pc´´ <= n
+        # make progress on the active ip set
+        local pc::Int = frame.pc´´ # current program-counter
+        while true # inner loop optimizes the common case where it can run straight from pc to pc + 1
+            #print(pc,": ",s[pc],"\n")
+            local pc´::Int = pc + 1 # next program-counter (after executing instruction)
+            if pc == frame.pc´´
+                # need to update pc´´ to point at the new lowest instruction in W
+                min_pc = _bits_findnext(W.bits, pc + 1)
+                frame.pc´´ = min_pc == -1 ? n + 1 : min_pc
+            end
+            delete!(W, pc)
+            frame.currpc = pc
+            frame.cur_hand = frame.handler_at[pc]
+            frame.stmt_edges[pc] === nothing || empty!(frame.stmt_edges[pc])
+            stmt = frame.src.code[pc]
+            changes = s[pc]::VarTable
+            t = nothing
+
+            hd = isa(stmt, Expr) ? stmt.head : nothing
+
+            if isa(stmt, NewvarNode)
+                sn = slot_id(stmt.slot)
+                changes[sn] = VarState(Bottom, true)
+            elseif isa(stmt, GotoNode)
+                pc´ = (stmt::GotoNode).label
+            elseif isa(stmt, GotoIfNot)
+                condt = abstract_eval_value(interp, stmt.cond, s[pc], frame)
+                if condt === Bottom
+                    break
+                end
+                condval = maybe_extract_const_bool(condt)
+                l = stmt.dest::Int
+                # constant conditions
+                if condval === true
+                elseif condval === false
+                    pc´ = l
+                else
+                    # general case
+                    frame.handler_at[l] = frame.cur_hand
+                    changes_else = changes
+                    if isa(condt, Conditional)
+                        if condt.elsetype !== Any && condt.elsetype !== changes[slot_id(condt.var)]
+                            changes_else = StateUpdate(condt.var, VarState(condt.elsetype, false), changes_else)
+                        end
+                        if condt.vtype !== Any && condt.vtype !== changes[slot_id(condt.var)]
+                            changes = StateUpdate(condt.var, VarState(condt.vtype, false), changes)
+                        end
+                    end
+                    newstate_else = stupdate!(s[l], changes_else)
+                    if newstate_else !== false
+                        # add else branch to active IP list
+                        if l < frame.pc´´
+                            frame.pc´´ = l
+                        end
+                        push!(W, l)
+                        s[l] = newstate_else
+                    end
+                end
+            elseif isa(stmt, ReturnNode)
+                pc´ = n + 1
+                rt = widenconditional(abstract_eval_value(interp, stmt.val, s[pc], frame))
+                if !isa(rt, Const) && !isa(rt, Type) && !isa(rt, PartialStruct)
+                    # only propagate information we know we can store
+                    # and is valid inter-procedurally
+                    rt = widenconst(rt)
+                end
+                if tchanged(rt, frame.bestguess)
+                    # new (wider) return type for frame
+                    frame.bestguess = tmerge(frame.bestguess, rt)
+                    for (caller, caller_pc) in frame.cycle_backedges
+                        # notify backedges of updated type information
+                        typeassert(caller.stmt_types[caller_pc], VarTable) # we must have visited this statement before
+                        if !(caller.src.ssavaluetypes[caller_pc] === Any)
+                            # no reason to revisit if that call-site doesn't affect the final result
+                            if caller_pc < caller.pc´´
+                                caller.pc´´ = caller_pc
+                            end
+                            push!(caller.ip, caller_pc)
+                        end
+                    end
+                end
+            elseif hd === :enter
+                l = stmt.args[1]::Int
+                frame.cur_hand = Pair{Any,Any}(l, frame.cur_hand)
+                # propagate type info to exception handler
+                old = s[l]
+                new = s[pc]::Array{Any,1}
+                newstate_catch = stupdate!(old, new)
+                if newstate_catch !== false
+                    if l < frame.pc´´
+                        frame.pc´´ = l
+                    end
+                    push!(W, l)
+                    s[l] = newstate_catch
+                end
+                typeassert(s[l], VarTable)
+                frame.handler_at[l] = frame.cur_hand
+            elseif hd === :leave
+                for i = 1:((stmt.args[1])::Int)
+                    frame.cur_hand = (frame.cur_hand::Pair{Any,Any}).second
+                end
+            else
+                if hd === :(=)
+                    t = abstract_eval_statement(interp, stmt.args[2], changes, frame)
+                    t === Bottom && break
+                    frame.src.ssavaluetypes[pc] = t
+                    lhs = stmt.args[1]
+                    if isa(lhs, Slot)
+                        changes = StateUpdate(lhs, VarState(t, false), changes)
+                    end
+                elseif hd === :method
+                    fname = stmt.args[1]
+                    if isa(fname, Slot)
+                        changes = StateUpdate(fname, VarState(Any, false), changes)
+                    end
+                    #=== TypeProfiler.jl monkey-patch start ===#
+                    if $(istoplevel)(frame)
+                        interp.ssavalues[$(get_cur_pc)(frame)] = $(evaluate_methoddef)(interp, frame, stmt)
+                    end
+                    #=== TypeProfiler.jl monkey-patch end ===#
+                elseif hd === :inbounds || hd === :meta || hd === :loopinfo || hd === :code_coverage_effect
+                    # these do not generate code
+                else
+                    t = abstract_eval_statement(interp, stmt, changes, frame)
+                    t === Bottom && break
+                    if !isempty(frame.ssavalue_uses[pc])
+                        record_ssa_assign(pc, t, frame)
+                    else
+                        frame.src.ssavaluetypes[pc] = t
+                    end
+                end
+                if frame.cur_hand !== nothing && isa(changes, StateUpdate)
+                    # propagate new type info to exception handler
+                    # the handling for Expr(:enter) propagates all changes from before the try/catch
+                    # so this only needs to propagate any changes
+                    l = frame.cur_hand.first::Int
+                    if stupdate1!(s[l]::VarTable, changes::StateUpdate) !== false
+                        if l < frame.pc´´
+                            frame.pc´´ = l
+                        end
+                        push!(W, l)
+                    end
+                end
+            end
+
+            if t === nothing
+                # mark other reached expressions as `Any` to indicate they don't throw
+                frame.src.ssavaluetypes[pc] = Any
+            end
+
+            pc´ > n && break # can't proceed with the fast-path fall-through
+            frame.handler_at[pc´] = frame.cur_hand
+            newstate = stupdate!(s[pc´], changes)
+            if isa(stmt, GotoNode) && frame.pc´´ < pc´
+                # if we are processing a goto node anyways,
+                # (such as a terminator for a loop, if-else, or try block),
+                # consider whether we should jump to an older backedge first,
+                # to try to traverse the statements in approximate dominator order
+                if newstate !== false
+                    s[pc´] = newstate
+                end
+                push!(W, pc´)
+                pc = frame.pc´´
+            elseif newstate !== false
+                s[pc´] = newstate
+                pc = pc´
+            elseif pc´ in W
+                pc = pc´
+            else
+                break
+            end
+        end
+    end
+    frame.dont_work_on_me = false
+    nothing
+end
+
+end); end # push_inithook!() do; Core.eval(Core.Compiler, quote
 
 # overloads typeinfer.jl
 # ----------------------
@@ -302,7 +510,7 @@ is_throw_call′(e::Expr)          = is_throw_call(e)
 # entry
 # -----
 
-function profile_frame(interp::TPInterpreter, frame::InferenceState)
+function profile_frame!(interp::TPInterpreter, frame::InferenceState)
     typeinf(interp, frame)
 
     # if return type is `Bottom`-annotated for this frame, this may mean some `throw`(s)

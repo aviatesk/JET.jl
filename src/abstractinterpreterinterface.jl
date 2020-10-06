@@ -1,7 +1,7 @@
 # `AbstractInterpreter` API
 # -------------------------
 
-struct TPInterpreter <: AbstractInterpreter
+mutable struct TPInterpreter <: AbstractInterpreter
     #= native =#
 
     native::NativeInterpreter
@@ -22,6 +22,10 @@ struct TPInterpreter <: AbstractInterpreter
 
     # disables caching of native remarks (that may vastly speed up profiling time)
     filter_native_remarks::Bool
+
+    # toplevel interpretation
+    locals::Vector{Any}
+    ssavalues::Vector{Any}
 
     function TPInterpreter(world                   = get_world_counter();
                            inf_params              = gen_inf_params(),
@@ -45,6 +49,8 @@ struct TPInterpreter <: AbstractInterpreter
                    reports,
                    exception_reports,
                    filter_native_remarks,
+                   [],
+                   [],
                    )
     end
 end

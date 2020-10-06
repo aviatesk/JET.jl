@@ -29,7 +29,7 @@ import Core:
 
 import Core.Compiler:
     AbstractInterpreter, NativeInterpreter, InferenceState, InferenceResult, CodeInfo,
-    InternalCodeCache, CodeInstance, WorldRange,
+    InternalCodeCache, CodeInstance, WorldRange, CachedMethodTable, method_table,
     MethodInstance, Bottom, NOT_FOUND, MethodMatchInfo, UnionSplitInfo, MethodLookupResult,
     Const, VarTable, SSAValue, SlotNumber, Slot, slot_id, GlobalRef, GotoIfNot, ReturnNode,
     widenconst, isconstType, typeintersect, ⊑, Builtin, CallMeta, is_throw_call, tmerge,
@@ -40,7 +40,7 @@ import Base:
     parse_input_line, to_tuple_type, Fix1, Fix2, IdSet
 
 import Base.Meta:
-    isexpr, _parse_string
+    isexpr, _parse_string, lower
 
 import Base.Iterators:
     flatten
@@ -59,6 +59,7 @@ __init__() = foreach(f->f(), INIT_HOOKS)
 include("reports.jl")
 include("abstractinterpreterinterface.jl")
 include("abstractinterpretation.jl")
+include("actualinterpretation.jl")
 include("tfuncs.jl")
 include("tpcache.jl")
 include("print.jl")
@@ -133,6 +134,23 @@ function gen_postprocess(virtualmod, actualmod)
         Fix2(replace, virtual => actual)
 end
 
+function profile_toplevel!(interp::TPInterpreter, mod::Module, src::CodeInfo)
+    # construct toplevel `MethodInstance`
+    mi = ccall(:jl_new_method_instance_uninit, Ref{Core.MethodInstance}, ());
+    mi.uninferred = src
+    mi.specTypes = Tuple{}
+    mi.def = mod
+
+    # initialize for toplevel execution
+    resize!(interp.locals, length(src.slotnames))
+    resize!(interp.ssavalues, src.ssavaluetypes::Int)
+
+    result = InferenceResult(mi);
+    frame = InferenceState(result, src, #= cached =# true, interp);
+
+    return profile_frame!(interp, frame)
+end
+
 # TODO:
 # - handle multiple applicable methods ?
 # - `profile_call_builtin!` ?
@@ -154,7 +172,7 @@ function profile_call_gf!(interp::TPInterpreter,
 
     frame = InferenceState(result, #= cached =# true, interp)
 
-    return profile_frame(interp, frame)
+    return profile_frame!(interp, frame)
 end
 
 # testing, interactive session
