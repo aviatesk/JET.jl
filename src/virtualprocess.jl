@@ -304,9 +304,6 @@ isinclude(ex) = isexpr(ex, :call) && first(ex.args) === :include
 islnn(@nospecialize(_)) = false
 islnn(::LineNumberNode) = true
 
-gen_virtual_module(actualmod) =
-    Core.eval(actualmod, :(module $(gensym(:TypeProfilerVirtualModule)) end))::Module
-
 function to_single_usages(x)
     if length(x.args) != 1
         # using A, B, export a, b

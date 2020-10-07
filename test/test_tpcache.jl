@@ -1,6 +1,6 @@
 @testset "force inference" begin
     let
-        m = gen_virtualmod()
+        m = gen_virtual_module()
 
         interp, frame = Core.eval(m, quote
             $(profile_call)() do
@@ -26,7 +26,7 @@
         test_sum_over_string(interp)
     end
 
-    m = gen_virtualmod()
+    m = gen_virtual_module()
     interp, frame = Core.eval(m, quote
         sum′(s) = sum(s)
         sum′′(s) = sum′(s)

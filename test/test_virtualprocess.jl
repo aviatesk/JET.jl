@@ -8,7 +8,7 @@
         end
         """
 
-        res, interp = profile_toplevel(s)
+        res, interp = profile_text′(s)
 
         @test !isempty(res.toplevel_error_reports)
         @test first(res.toplevel_error_reports) isa SyntaxErrorReport
@@ -26,7 +26,7 @@ end
 
 @testset "\"toplevel definitions\"" begin
     let
-        vmod = gen_virtualmod()
+        vmod = gen_virtual_module()
         @profile_toplevel vmod begin
             # function
             foo() = nothing
@@ -80,7 +80,7 @@ end
 
     # "toplevel definitions" with access to global objects
     let
-        vmod = gen_virtualmod()
+        vmod = gen_virtual_module()
         res, interp = @profile_toplevel vmod begin
             foo = rand(Bool)
 
@@ -102,7 +102,7 @@ end
 
 @testset "macro expansions" begin
     let
-        vmod = gen_virtualmod()
+        vmod = gen_virtual_module()
         res, interp = @profile_toplevel vmod begin
             @inline foo(a) = identity(a)
             foo(10)
@@ -114,7 +114,7 @@ end
     end
 
     let
-        vmod = gen_virtualmod()
+        vmod = gen_virtual_module()
         res, interp = @profile_toplevel vmod begin
             macro foo(ex)
                 @assert Meta.isexpr(ex, :call)
@@ -132,7 +132,7 @@ end
 
     # macro expansions with access to global variables will fail
     let
-        vmod = gen_virtualmod()
+        vmod = gen_virtual_module()
         res, interp = @profile_toplevel vmod begin
             const arg = rand(Bool)
 
@@ -191,7 +191,7 @@ end
         f1 = normpath(FIXTURE_DIR, "include1.jl")
         f2 = normpath(FIXTURE_DIR, "include1.jl")
 
-        vmod = gen_virtualmod()
+        vmod = gen_virtual_module()
         res, interp = profile_file′(f1, vmod)
 
         @test f1 in res.included_files
@@ -253,7 +253,7 @@ end
                                        end
                                        """
                                        )
-    res, interp = profile_toplevel(s)
+    res, interp = profile_text′(s)
     @test isempty(res.toplevel_error_reports)
 end
 
@@ -451,7 +451,7 @@ end
 
 @testset "virtual global variables" begin
     let
-        vmod = gen_virtualmod()
+        vmod = gen_virtual_module()
         res, interp = @profile_toplevel vmod begin
             var = rand(Bool)
             const constvar = rand(Bool)
@@ -469,7 +469,7 @@ end
         # --------
 
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             interp, frame = Core.eval(vmod, :($(profile_call)() do
                 local localvar = rand(Bool)
                 global globalvar = rand(Bool)
@@ -485,7 +485,7 @@ end
         # ------
 
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             res, interp = @profile_toplevel vmod begin
                 begin
                     globalvar = rand(Bool)
@@ -497,7 +497,7 @@ end
         end
 
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             res, interp = @profile_toplevel vmod begin
                 begin
                     local localvar = rand(Bool)
@@ -511,7 +511,7 @@ end
         end
 
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             res, interp = @profile_toplevel vmod begin
                 begin
                     local localvar
@@ -526,7 +526,7 @@ end
         end
 
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             res, interp = @profile_toplevel vmod begin
                 globalvar2 = begin
                     local localvar = rand(Bool)
@@ -542,7 +542,7 @@ end
         end
 
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             res, interp = @profile_toplevel vmod begin
                 let
                     localvar = rand(Bool)
@@ -553,7 +553,7 @@ end
         end
 
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             res, interp = @profile_toplevel vmod begin
                 globalvar = let
                     localvar = rand(Bool)
@@ -570,7 +570,7 @@ end
         # -----
 
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             res, interp = @profile_toplevel vmod begin
                 for i = 1:100
                     localvar = i
@@ -581,7 +581,7 @@ end
         end
 
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             res, interp = @profile_toplevel vmod begin
                 for i in 1:10
                     localvar = rand(Bool)
@@ -595,7 +595,7 @@ end
         end
 
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             res, interp = @profile_toplevel vmod begin
                 while true
                     localvar = rand(Bool)
@@ -606,7 +606,7 @@ end
         end
 
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             res, interp = @profile_toplevel vmod begin
                 while true
                     localvar = rand(Bool)
@@ -622,7 +622,7 @@ end
 
     @testset "multiple declaration/assignment" begin
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             res, interp = @profile_toplevel vmod begin
                 s, c = sincos(1)
             end
@@ -634,7 +634,7 @@ end
         end
 
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             res, interp = @profile_toplevel vmod begin
                 begin
                     local s, c
@@ -647,7 +647,7 @@ end
         end
 
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             res, interp = @profile_toplevel vmod begin
                 let
                     global s, c
@@ -662,7 +662,7 @@ end
         end
 
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             res, interp = @profile_toplevel vmod begin
                 so, co = let
                     si, ci = sincos(1)
@@ -679,7 +679,7 @@ end
         end
 
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             res, interp = @profile_toplevel vmod begin
                 begin
                     local l

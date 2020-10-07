@@ -129,6 +129,9 @@ function report_errors(actualmod, text, filename; filter_native_remarks = true)
            gen_postprocess(virtualmod, actualmod)
 end
 
+gen_virtual_module(actualmod = Main) =
+    return Core.eval(actualmod, :(module $(gensym(:TypeProfilerVirtualModule)) end))::Module
+
 # fix virtual module printing based on string manipulation; the "actual" modules may not be
 # loaded into this process
 function gen_postprocess(virtualmod, actualmod)
@@ -155,9 +158,6 @@ end
 # TODO:
 # - handle multiple applicable methods ?
 # - `profile_call_builtin!` ?
-
-profile_call_gf(@nospecialize(tt::Type{<:Tuple}), world::UInt = get_world_counter(); kwargs...) =
-    return profile_call_gf!(TPInterpreter(world; kwargs...), tt)
 function profile_call_gf!(interp::TPInterpreter,
                           @nospecialize(tt::Type{<:Tuple}),
                           world::UInt = get_world_counter(interp)
@@ -179,20 +179,7 @@ end
 # testing, interactive session
 # ----------------------------
 
-@nospecialize
-
-function profile_call(f, argtypes::Type...; kwargs...)
-    tt = to_tuple_type([typeof′(f), argtypes...])
-    return profile_call_gf(tt; kwargs...)
-end
-
-profile_call(f, argtypes; kwargs...) = profile_call(f, argtypes...; kwargs...)
-
-typeof′(x) = typeof(x)
-typeof′(x::Type{T}) where {T} = Type{T}
-
-@specialize
-
+# profile from call expression
 macro profile_call(ex, kwargs...)
     @assert isexpr(ex, :call) "function call expression should be given"
     f = first(ex.args)
@@ -205,6 +192,23 @@ macro profile_call(ex, kwargs...)
         $(get_result)(frame) # maybe want to widen const ?
     end end
 end
+
+@nospecialize
+
+profile_call_gf(tt::Type{<:Tuple}, world::UInt = get_world_counter(); kwargs...) =
+    return profile_call_gf!(TPInterpreter(world; kwargs...), tt)
+
+function profile_call(f, argtypes::Type...; kwargs...)
+    tt = to_tuple_type([typeof′(f), argtypes...])
+    return profile_call_gf(tt; kwargs...)
+end
+
+profile_call(f, argtypes; kwargs...) = profile_call(f, argtypes...; kwargs...)
+
+typeof′(x) = typeof(x)
+typeof′(x::Type{T}) where {T} = Type{T}
+
+@specialize
 
 # exports
 # -------
