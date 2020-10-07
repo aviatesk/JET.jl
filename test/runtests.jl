@@ -8,7 +8,7 @@ import Core.Compiler:
 
 import TypeProfiler:
     TPInterpreter, VirtualGlobalVariable, profile_call, get_result, virtual_process!,
-    hastopleveldef, report_errors, ToplevelErrorReport, InferenceErrorReport, print_reports
+    report_errors, ToplevelErrorReport, InferenceErrorReport, print_reports
 
 for sym in Symbol.(last.(Base.Fix2(split, '.').(string.(vcat(subtypes(TypeProfiler, ToplevelErrorReport),
                                                              subtypes(TypeProfiler, InferenceErrorReport),

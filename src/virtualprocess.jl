@@ -196,17 +196,18 @@ function virtual_process!(toplevelex::Expr,
             continue
         end
 
-        lwr = lower_with_err_handling(virtualmod, x)
+        blk = Expr(:block, lnn, x) # attach line number info
+        lwr = lower_with_err_handling(virtualmod, blk)
 
         isnothing(lwr) && continue # error happened during lowering
         isexpr(lwr, :thunk) || continue # literal
 
         src = first((lwr::Expr).args)::CodeInfo
 
-        non_abstract_lines = partial_interpret!(virtualmod, src)
+        is_concrete = partial_interpret!(virtualmod, src)
 
         # TODO: construct partial `CodeInfo` from remaining abstract statements ?
-        all(non_abstract_lines) && continue # nothing to profile
+        all(is_concrete) && continue # nothing to profile
 
         interp = TPInterpreter(; # world age gets updated to take in newly defined methods
                                inf_params              = InferenceParams(interp),
@@ -231,12 +232,12 @@ function partial_interpret!(mod, src)
     edges = CodeEdges(src)
     frame = Frame(mod, src)
 
-    non_abstract_lines = istypedef.(lines) .| ismethod.(lines)
-    lines_required!(non_abstract_lines, src, edges)
+    is_concrete = istypedef.(lines) .| ismethod.(lines)
+    lines_required!(is_concrete, src, edges)
 
-    selective_eval_fromstart!(frame, non_abstract_lines, #= istoplevel =# true)
+    selective_eval_fromstart!(frame, is_concrete, #= istoplevel =# true)
 
-    return non_abstract_lines
+    return is_concrete
 end
 
 # don't inline this so we can find it in the stacktrace
@@ -295,8 +296,6 @@ function walk_and_transform!(pre, @nospecialize(f), x, scope = Symbol[])
 end
 prewalk_and_transform!(args...) = walk_and_transform!(true, args...)
 postwalk_and_transform!(args...) = walk_and_transform!(false, args...)
-
-istopleveldef(x) = isexpr(x, (:macro, :abstract, :struct, :primitive))
 
 ismoduleusage(x) = isexpr(x, (:import, :using, :export))
 

@@ -24,29 +24,6 @@ end
     end
 end
 
-@testset "hastopleveldef" begin
-    @test hastopleveldef(:(struct Foo end))
-    @test hastopleveldef(:(mutable struct Foo end))
-    @test hastopleveldef(:(abstract type Foo end))
-    @test hastopleveldef(:(primitive type Foo 8 end))
-    @test hastopleveldef(:(macro foo(ex); ex; end))
-    @test hastopleveldef(:(foo(x) = x))
-    @test hastopleveldef(:(foo(x::Foo) where Foo = x))
-    @test hastopleveldef(:(function foo(x); return x; end))
-    @test hastopleveldef(:(function foo(x::Foo) where Foo; return x; end))
-    # just a call
-    @test !hastopleveldef(:(foo(x::Foo)))
-    # closures
-    @test !hastopleveldef(:(let; foo(x) = x; end))
-    @test !hastopleveldef(:(foo(bar, function (baz); return isnothing(baz); end)))
-    @test !hastopleveldef(:(foo(bar, ()->isnothing(bar))))
-    # # toplevel definitions with `Core.eval`
-    # @test hastopleveldef(:(for i in 1:10
-    #     sym = Symbol(:foo, i)
-    #     Core.eval(@__MODULE__, :($(sym)() = $(i)))
-    # end))
-end
-
 @testset "\"toplevel definitions\"" begin
     let
         vmod = gen_virtualmod()
@@ -710,7 +687,8 @@ end
                 end
             end
             @test isnothing(get_virtual_globalvar(vmod, :l))
-            @test_broken !isnothing(get_virtual_globalvar(vmod, :g))
+            g = get_virtual_globalvar(vmod, :g)
+            @test g isa VirtualGlobalVariable && g.t ⊑ Float64
         end
     end
 end
