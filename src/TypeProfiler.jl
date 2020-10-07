@@ -50,6 +50,9 @@ using LoweredCodeUtils, JuliaInterpreter
 import LoweredCodeUtils:
     istypedef, ismethod
 
+import JuliaInterpreter:
+    evaluate_call_recurse!, bypass_builtins, maybe_evaluate_builtin, collect_args
+
 using FileWatching, Requires
 
 const CC = Core.Compiler

@@ -204,18 +204,26 @@ function virtual_process!(toplevelex::Expr,
 
         src = first((lwr::Expr).args)::CodeInfo
 
-        is_concrete = partial_interpret!(virtualmod, src)
+        interp′ = ActualInterpreter(filename,
+                                    lnn,
+                                    eval_with_err_handling,
+                                    actualmodsym,
+                                    virtualmod,
+                                    interp,
+                                    ret
+                                    )
+        not_abstracted = partial_interpret!(interp′, virtualmod, src)
 
         # TODO: construct partial `CodeInfo` from remaining abstract statements ?
-        all(is_concrete) && continue # nothing to profile
+        all(not_abstracted) && continue # bail out if nothing to profile (just a performance optimization)
 
-        interp = TPInterpreter(; # world age gets updated to take in newly defined methods
-                               inf_params              = InferenceParams(interp),
-                               opt_params              = OptimizationParams(interp),
-                               optimize                = may_optimize(interp),
-                               compress                = may_compress(interp),
-                               discard_trees           = may_discard_trees(interp),
-                               filter_native_remarks   = interp.filter_native_remarks,
+        interp = TPInterpreter(; # world age gets updated to take in newly added methods defined by `ActualInterpreter`
+                               inf_params            = InferenceParams(interp),
+                               opt_params            = OptimizationParams(interp),
+                               optimize              = may_optimize(interp),
+                               compress              = may_compress(interp),
+                               discard_trees         = may_discard_trees(interp),
+                               filter_native_remarks = interp.filter_native_remarks,
                                )
 
         profile_toplevel!(interp, virtualmod, src)
@@ -226,18 +234,92 @@ function virtual_process!(toplevelex::Expr,
     return ret, interp
 end
 
-# TODO: handle `include`s
-function partial_interpret!(mod, src)
-    lines = src.code
-    edges = CodeEdges(src)
-    frame = Frame(mod, src)
+# trait to inject code into JuliaInterpreter's actual interpretation process
+struct ActualInterpreter
+    filename::String
+    lnn::LineNumberNode
+    eval_with_err_handling::Function
+    actualmodsym::Symbol
+    virtualmod::Module
+    interp::TPInterpreter
+    ret::VirtualProcessResult
+end
 
-    is_concrete = istypedef.(lines) .| ismethod.(lines)
-    lines_required!(is_concrete, src, edges)
+# TODO: needs to overload `JuliaInterpreter.handle_err` against `ActualInterpreter`
+function partial_interpret!(interp, mod, src)
+    selected = select_statements(src)
 
-    selective_eval_fromstart!(frame, is_concrete, #= istoplevel =# true)
+    selective_eval_fromstart!(interp, Frame(mod, src), selected, #= istoplevel =# true)
 
-    return is_concrete
+    return selected
+end
+
+# select statements that should be not abstracted away, but rather actually interpreted
+function select_statements(src)
+    stmts = src.code
+    not_abstracted = map(stmts) do stmt
+        istypedef(stmt) && return true
+        ismethod(stmt) && return true
+        isinclude(stmt) && return true
+        return false
+    end
+
+    lines_required!(not_abstracted, src, CodeEdges(src))
+    return not_abstracted
+end
+
+isinclude(ex) = isexpr(ex, :call) && first(ex.args) === :include
+
+# adapted from https://github.com/JuliaDebug/JuliaInterpreter.jl/blob/2f5f80034bc287a60fe77c4e3b5a49a087e38f8b/src/interpret.jl#L188-L199
+# works as `JuliaInterpreter.evaluate_call_compiled!`, but special cases for TypeProfiler.jl added
+function evaluate_call_recurse!(interp::ActualInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)
+    # @assert !enter_generated
+    pc = frame.pc
+    ret = bypass_builtins(frame, call_expr, pc)
+    isa(ret, Some{Any}) && return ret.value
+    ret = maybe_evaluate_builtin(frame, call_expr, false)
+    isa(ret, Some{Any}) && return ret.value
+    fargs = collect_args(frame, call_expr)
+    f = fargs[1]
+    popfirst!(fargs)  # now it's really just `args`
+
+    if isinclude(f)
+        return handle_include(fargs, interp)
+    else
+        ret = f(fargs...)
+        @debug "actual interpret: " f fargs ret
+        return ret
+    end
+end
+
+isinclude(@nospecialize(f::Function)) = nameof(f) === :include
+
+function handle_include(fargs, interp)
+    filename = interp.filename
+    ret = interp.ret
+    lnn = interp.lnn
+    eval_with_err_handling = interp.eval_with_err_handling
+    virtualmod = interp.virtualmod
+
+    # TODO: maybe find a way to handle two args `include` calls
+    include_file = normpath(dirname(filename), first(fargs))
+
+    # handle recursive `include`s
+    if include_file in ret.included_files
+        report = RecursiveIncludeErrorReport(include_file, ret.included_files, filename, lnn.line)
+        push!(ret.toplevel_error_reports, report)
+        return nothing
+    end
+
+    read_ex      = :(read($(include_file), String))
+    include_text = eval_with_err_handling(virtualmod, read_ex)
+
+    isnothing(include_text) && return nothing # typically no file error
+
+    virtual_process!(include_text, include_file, interp.actualmodsym, interp.virtualmod, interp.interp, interp.ret)
+
+    # TODO: actually, here we need to try to get the last profiling result of the `virtual_process!` call above
+    return nothing
 end
 
 # don't inline this so we can find it in the stacktrace
@@ -298,8 +380,6 @@ prewalk_and_transform!(args...) = walk_and_transform!(true, args...)
 postwalk_and_transform!(args...) = walk_and_transform!(false, args...)
 
 ismoduleusage(x) = isexpr(x, (:import, :using, :export))
-
-isinclude(ex) = isexpr(ex, :call) && first(ex.args) === :include
 
 islnn(@nospecialize(_)) = false
 islnn(::LineNumberNode) = true
