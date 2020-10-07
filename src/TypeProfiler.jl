@@ -45,11 +45,10 @@ import Base.Meta:
 import Base.Iterators:
     flatten
 
-import LoweredCodeUtils:
-    CodeEdges, istypedef, ismethod, lines_required!, selective_eval_fromstart!
+using LoweredCodeUtils, JuliaInterpreter
 
-import JuliaInterpreter:
-    Frame
+import LoweredCodeUtils:
+    istypedef, ismethod
 
 using FileWatching, Requires
 
@@ -142,6 +141,10 @@ function gen_postprocess(virtualmod, actualmod)
         Fix2(replace, virtual => actual)
 end
 
+# this dummy module will be used by `istoplevel` to check if the current inference frame is
+# created by `profile_toplevel!` or not (i.e. `@generated` function)
+module toplevel end
+
 function profile_toplevel!(interp::TPInterpreter, mod::Module, src::CodeInfo)
     # construct toplevel `MethodInstance`
     mi = ccall(:jl_new_method_instance_uninit, Ref{Core.MethodInstance}, ());
@@ -151,6 +154,8 @@ function profile_toplevel!(interp::TPInterpreter, mod::Module, src::CodeInfo)
 
     result = InferenceResult(mi);
     frame = InferenceState(result, src, #= cached =# true, interp);
+
+    mi.def = toplevel # set to the dummy module
 
     return profile_frame!(interp, frame)
 end

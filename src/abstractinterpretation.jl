@@ -37,7 +37,7 @@ end
 
 is_constant_propagated(frame) = CC.any(frame.result.overridden_by_const)
 
-istoplevel(sv) = isa(sv.linfo.def, Module)
+istoplevel(sv) = sv.linfo.def == toplevel
 
 mutable struct VirtualGlobalVariable
     # actual profiled type
@@ -66,33 +66,212 @@ end
 # -----------------------------------
 # ref: https://github.com/JuliaLang/julia/blob/26c79b2e74d35434737bc33bc09d2e0f6e27372b/base/compiler/abstractinterpretation.jl
 
+# the aim of this horrible monkey patch is:
+# 1. report `NoMethodErrorReport` on empty method signature matching
+# 2. keep inference on non-concrete call sites in toplevel frame created by `virtual_process!`
+# 3. in order to collect as much error points as possible, don't bail out if the current return
+#    type grows up to `Any`; of course it slows down inference performance, but hopefully it
+#    stays to be "practical" speed (because the number of matching methods are limited beforehand)
+# the bail out logics are hard-coded within the original `abstract_call_gf_by_type` method,
+# and so we need to overload it with `TPInterpreter`, adding the above patch points
+# NOTE: the overloaded version is evaluated in `Core.Compiler` so that we don't need miscellaneous imports
+push_inithook!() do; Core.eval(Core.Compiler, quote
+
 # TODO:
 # - report "too many method matched"
 # - maybe "cound not identify method table for call" won't happen since we eagerly propagate bottom for e.g. undef var case, etc.
-function abstract_call_gf_by_type(interp::TPInterpreter, @nospecialize(f), argtypes::Vector{Any}, @nospecialize(atype), sv::InferenceState,
+
+function abstract_call_gf_by_type(interp::$(TPInterpreter), @nospecialize(f), argtypes::Vector{Any}, @nospecialize(atype), sv::InferenceState,
                                   max_methods::Int = InferenceParams(interp).MAX_METHODS)
-    ret = (@invoke abstract_call_gf_by_type(interp::AbstractInterpreter, f, argtypes::Vector{Any}, atype, sv::InferenceState,
-                                            max_methods::Int))::CallMeta
-
-    info = ret.info
-
-    # report no method error
-    if isa(info, UnionSplitInfo)
-        # if `info` is `UnionSplitInfo`, but there won't be a case where `info.matches` is empty
-        for info in info.matches
-            if is_empty_match(info)
-                # no method match for this union split
-                add_remark!(interp, sv, NoMethodErrorReport(interp, sv, true, atype))
+    if sv.params.unoptimize_throw_blocks && sv.currpc in sv.throw_blocks
+        return CallMeta(Any, false)
+    end
+    valid_worlds = WorldRange()
+    atype_params = unwrap_unionall(atype).parameters
+    splitunions = 1 < unionsplitcost(atype_params) <= InferenceParams(interp).MAX_UNION_SPLITTING
+    mts = Core.MethodTable[]
+    fullmatch = Bool[]
+    if splitunions
+        splitsigs = switchtupleunion(atype)
+        applicable = Any[]
+        infos = MethodMatchInfo[]
+        for sig_n in splitsigs
+            mt = ccall(:jl_method_table_for, Any, (Any,), sig_n)
+            if mt === nothing
+                add_remark!(interp, sv, "Could not identify method table for call")
+                return CallMeta(Any, false)
+            end
+            mt = mt::Core.MethodTable
+            matches = findall(sig_n, method_table(interp); limit=max_methods)
+            if matches === missing
+                add_remark!(interp, sv, "For one of the union split cases, too many methods matched")
+                return CallMeta(Any, false)
+            end
+            #=== TypeProfiler.jl monkey-patch start ===#
+            info = MethodMatchInfo(matches)
+            if $(is_empty_match)(info)
+                # report `NoMethodErrorReport` for union-split signatures
+                $(add_remark!)(interp, sv, $(NoMethodErrorReport)(interp, sv, true, atype))
+            end
+            push!(infos, info)
+            #=== TypeProfiler.jl monkey-patch end ===#
+            append!(applicable, matches)
+            valid_worlds = intersect(valid_worlds, matches.valid_worlds)
+            thisfullmatch = _any(match->(match::MethodMatch).fully_covers, matches)
+            found = false
+            for (i, mt′) in enumerate(mts)
+                if mt′ === mt
+                    fullmatch[i] &= thisfullmatch
+                    found = true
+                    break
+                end
+            end
+            if !found
+                push!(mts, mt)
+                push!(fullmatch, thisfullmatch)
             end
         end
-    elseif isa(info, MethodMatchInfo) && is_empty_match(info)
-        # really no method found
-        # @assert ret.rt === Bottom # the return type should have never changed from its initialization
-        add_remark!(interp, sv, NoMethodErrorReport(interp, sv, false, atype))
+        info = UnionSplitInfo(infos)
+    else
+        mt = ccall(:jl_method_table_for, Any, (Any,), atype)
+        if mt === nothing
+            add_remark!(interp, sv, "Could not identify method table for call")
+            return CallMeta(Any, false)
+        end
+        mt = mt::Core.MethodTable
+        matches = findall(atype, method_table(interp, sv); limit=max_methods)
+        if matches === missing
+            # this means too many methods matched
+            # (assume this will always be true, so we don't compute / update valid age in this case)
+            add_remark!(interp, sv, "Too many methods matched")
+            return CallMeta(Any, false)
+        end
+        push!(mts, mt)
+        push!(fullmatch, _any(match->(match::MethodMatch).fully_covers, matches))
+        info = MethodMatchInfo(matches)
+        #=== TypeProfiler.jl monkey-patch start ===#
+        if $(is_empty_match)(info)
+            # report `NoMethodErrorReport` for this call signature
+            $(add_remark!)(interp, sv, $(NoMethodErrorReport)(interp, sv, false, atype))
+        end
+        #=== TypeProfiler.jl monkey-patch end ===#
+        applicable = matches.matches
+        valid_worlds = matches.valid_worlds
+    end
+    update_valid_age!(sv, valid_worlds)
+    applicable = applicable::Array{Any,1}
+    napplicable = length(applicable)
+    rettype = Bottom
+    edgecycle = false
+    edges = Any[]
+    nonbot = 0  # the index of the only non-Bottom inference result if > 0
+    seen = 0    # number of signatures actually inferred
+    istoplevel = sv.linfo.def isa Module
+    multiple_matches = napplicable > 1
+
+    if f !== nothing && napplicable == 1 && is_method_pure(applicable[1]::MethodMatch)
+        val = pure_eval_call(f, argtypes)
+        if val !== false
+            # TODO: add some sort of edge(s)
+            return CallMeta(val, MethodResultPure())
+        end
     end
 
-    return ret
+    for i in 1:napplicable
+        match = applicable[i]::MethodMatch
+        method = match.method
+        sig = match.spec_types
+        if istoplevel && !isdispatchtuple(sig) && begin
+                #=== TypeProfiler.jl monkey-patch start ===#
+                # keep going for "our" toplevel frame
+                !$(istoplevel)(sv)
+                #=== TypeProfiler.jl monkey-patch end ===#
+            end
+            # only infer concrete call sites in top-level expressions
+            add_remark!(interp, sv, "Refusing to infer non-concrete call site in top-level expression")
+            rettype = Any
+            break
+        end
+        sigtuple = unwrap_unionall(sig)::DataType
+        splitunions = false
+        this_rt = Bottom
+        # TODO: splitunions = 1 < unionsplitcost(sigtuple.parameters) * napplicable <= InferenceParams(interp).MAX_UNION_SPLITTING
+        # currently this triggers a bug in inference recursion detection
+        if splitunions
+            splitsigs = switchtupleunion(sig)
+            for sig_n in splitsigs
+                rt, edgecycle1, edge = abstract_call_method(interp, method, sig_n, svec(), multiple_matches, sv)
+                if edge !== nothing
+                    push!(edges, edge)
+                end
+                edgecycle |= edgecycle1::Bool
+                this_rt = tmerge(this_rt, rt)
+                #=== TypeProfiler.jl monkey-patch start ===#
+                # keep going and collect as much error reports as possible
+                # this_rt === Any && break
+                #=== TypeProfiler.jl monkey-patch end ===#
+            end
+        else
+            this_rt, edgecycle1, edge = abstract_call_method(interp, method, sig, match.sparams, multiple_matches, sv)
+            edgecycle |= edgecycle1::Bool
+            if edge !== nothing
+                push!(edges, edge)
+            end
+        end
+        if this_rt !== Bottom
+            if nonbot === 0
+                nonbot = i
+            else
+                nonbot = -1
+            end
+        end
+        seen += 1
+        rettype = tmerge(rettype, this_rt)
+        #=== TypeProfiler.jl monkey-patch start ===#
+        # keep going and collect as much error reports as possible
+        # rettype === Any && break
+        #=== TypeProfiler.jl monkey-patch end ===#
+    end
+    # # try constant propagation if only 1 method is inferred to non-Bottom
+    # # this is in preparation for inlining, or improving the return result
+    is_unused = call_result_unused(sv)
+    if nonbot > 0 && seen == napplicable && (!edgecycle || !is_unused) && isa(rettype, Type) && InferenceParams(interp).ipo_constant_propagation
+        # if there's a possibility we could constant-propagate a better result
+        # (hopefully without doing too much work), try to do that now
+        # TODO: it feels like this could be better integrated into abstract_call_method / typeinf_edge
+        const_rettype = abstract_call_method_with_const_args(interp, rettype, f, argtypes, applicable[nonbot]::MethodMatch, sv, edgecycle)
+        if const_rettype ⊑ rettype
+            # use the better result, if it's a refinement of rettype
+            rettype = const_rettype
+        end
+    end
+    if is_unused && !(rettype === Bottom)
+        add_remark!(interp, sv, "Call result type was widened because the return value is unused")
+        # We're mainly only here because the optimizer might want this code,
+        # but we ourselves locally don't typically care about it locally
+        # (beyond checking if it always throws).
+        # So avoid adding an edge, since we don't want to bother attempting
+        # to improve our result even if it does change (to always throw),
+        # and avoid keeping track of a more complex result type.
+        rettype = Any
+    end
+    if !(rettype === Any) # adding a new method couldn't refine (widen) this type
+        for edge in edges
+            add_backedge!(edge::MethodInstance, sv)
+        end
+        for (thisfullmatch, mt) in zip(fullmatch, mts)
+            if !thisfullmatch
+                # also need an edge to the method table in case something gets
+                # added that did not intersect with any existing method
+                add_mt_backedge!(mt, atype, sv)
+            end
+        end
+    end
+    #print("=> ", rettype, "\n")
+    return CallMeta(rettype, info)
 end
+
+end); end # push_inithook!() do; Core.eval(Core.Compiler, quote
 
 function is_empty_match(info)
     res = info.results
