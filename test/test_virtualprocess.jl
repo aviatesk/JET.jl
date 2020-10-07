@@ -15,10 +15,21 @@
     end
 end
 
-@testset "virtual module self-reference" begin
+@testset "fix self-reference of virtual module" begin
     let
         res, interp = @profile_toplevel begin
-            Main.sum("julia") # `Main.sum` should be resolved as constant
+            const foo = sum
+            Main.foo("julia") # `Main.sum` should be resolved as constant
+        end
+        test_sum_over_string(res)
+    end
+
+    let
+        res, interp = @profile_toplevel begin
+            let
+                Main = "julia" # local `Main` should not be resolved to virtual module
+                sum(Main)
+            end
         end
         test_sum_over_string(res)
     end
