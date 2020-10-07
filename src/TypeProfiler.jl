@@ -29,7 +29,7 @@ import Core:
 
 import Core.Compiler:
     AbstractInterpreter, NativeInterpreter, InferenceState, InferenceResult, CodeInfo,
-    InternalCodeCache, CodeInstance, WorldRange, CachedMethodTable, method_table,
+    InternalCodeCache, CodeInstance, WorldRange,
     MethodInstance, Bottom, NOT_FOUND, MethodMatchInfo, UnionSplitInfo, MethodLookupResult,
     Const, VarTable, SSAValue, SlotNumber, Slot, slot_id, GlobalRef, GotoIfNot, ReturnNode,
     widenconst, isconstType, typeintersect, ⊑, Builtin, CallMeta, is_throw_call, tmerge,
@@ -45,6 +45,12 @@ import Base.Meta:
 import Base.Iterators:
     flatten
 
+import LoweredCodeUtils:
+    CodeEdges, istypedef, ismethod, lines_required!, selective_eval_fromstart!
+
+import JuliaInterpreter:
+    Frame
+
 using FileWatching, Requires
 
 const CC = Core.Compiler
@@ -59,7 +65,6 @@ __init__() = foreach(f->f(), INIT_HOOKS)
 include("reports.jl")
 include("abstractinterpreterinterface.jl")
 include("abstractinterpretation.jl")
-include("actualinterpretation.jl")
 include("tfuncs.jl")
 include("tpcache.jl")
 include("print.jl")
@@ -140,10 +145,6 @@ function profile_toplevel!(interp::TPInterpreter, mod::Module, src::CodeInfo)
     mi.uninferred = src
     mi.specTypes = Tuple{}
     mi.def = mod
-
-    # initialize for toplevel execution
-    resize!(interp.locals, length(src.slotnames))
-    resize!(interp.ssavalues, src.ssavaluetypes::Int)
 
     result = InferenceResult(mi);
     frame = InferenceState(result, src, #= cached =# true, interp);
