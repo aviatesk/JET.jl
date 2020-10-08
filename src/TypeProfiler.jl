@@ -48,10 +48,11 @@ import Base.Iterators:
 using LoweredCodeUtils, JuliaInterpreter
 
 import LoweredCodeUtils:
-    istypedef, ismethod
+    istypedef, ismethod, callee_matches
 
 import JuliaInterpreter:
-    evaluate_call_recurse!, bypass_builtins, maybe_evaluate_builtin, collect_args, is_return
+    evaluate_call_recurse!, bypass_builtins, maybe_evaluate_builtin, collect_args,
+    is_return, is_quotenode_egal
 
 using FileWatching, Requires
 

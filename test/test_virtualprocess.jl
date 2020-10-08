@@ -161,6 +161,30 @@ end
             end
         end
     end
+
+    @testset "toplevel definitions by `eval` calls" begin
+        let
+            vmod = gen_virtual_module()
+            res, interp = @profile_toplevel vmod begin
+                # these definitions shouldn't be abstracted away
+                for fname in (:foo, :bar, :baz)
+                    @eval begin
+                        @inline ($(Symbol("is", fname)))(a) = a === $(QuoteNode(fname))
+                    end
+                end
+
+                # these should be abstracted away (i.e. shouldn't throw)
+                isfoo(:foo) && throw("foo")
+                isbar(:bar) && isbaz(:baz) && throw("barbaz")
+            end
+
+            @test isdefined(vmod, :isfoo)
+            @test isdefined(vmod, :isbar)
+            @test isdefined(vmod, :isbaz)
+            @test length(res.inference_error_reports) == 2
+            @test all(er->isa(er, ExceptionReport), res.inference_error_reports)
+        end
+    end
 end
 
 @testset "macro expansions" begin
