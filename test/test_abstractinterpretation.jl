@@ -535,7 +535,7 @@ end
 
 # upstream: https://github.com/JuliaLang/julia/pull/37830
 @testset "keyword argument methods" begin
-    interp, frame = Core.eval(gen_virtualmod(), quote
+    interp, frame = Core.eval(gen_virtual_module(), quote
         f(a; b = nothing, c = nothing) = return
         $(profile_call)((Any,)) do b
             f(1; b)
@@ -545,7 +545,7 @@ end
 end
 
 @testset "don't early escape if type grows up to `Any`" begin
-    vmod = gen_virtualmod()
+    vmod = gen_virtual_module()
     res, interp = @profile_toplevel vmod begin
         abstract type Foo end
         struct Foo1 <: Foo

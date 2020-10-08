@@ -506,8 +506,6 @@ function typeinf(interp::TPInterpreter, frame::InferenceState)
     return ret
 end
 
-is_constant_propagated(frame) = CC.any(frame.result.overridden_by_const)
-
 const CONSTANT_PROP_METHODS = Set((:getproperty, :setproperty!))
 
 is_unreachable(@nospecialize(_)) = false
