@@ -755,3 +755,11 @@ end
         end
     end
 end
+
+@testset "toplevel throw" begin
+    res, interp = @profile_toplevel begin
+        throw("throw me")
+    end
+    @test length(res.inference_error_reports) == 1
+    @test first(res.inference_error_reports) isa ExceptionReport
+end

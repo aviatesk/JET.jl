@@ -210,7 +210,18 @@ dummy_cacher(args...) = return
 
 get_file_line(frame::InferenceState) = get_file_line(get_cur_linfo(frame))
 get_file_line(linfo::LineInfoNode)   = linfo.file, linfo.line
-get_file_line(linfo::MethodInstance) = linfo.def.file, linfo.def.line
+# this location is not exact, but this is whay we know at best
+function get_file_line(linfo::MethodInstance)
+    def = linfo.def
+
+    isa(def, Method) && return linfo.def.file, linfo.def.line
+
+    # toplevel
+    src = linfo.uninferred::CodeInfo
+    file = first(unique(map(lin->lin.file, src.linetable)))
+    line = minimum(lin->lin.line, src.linetable)
+    return file, line
+end
 
 # adapted from https://github.com/JuliaLang/julia/blob/519b04e4ada9b07c85427e303d3ce4c823a0310f/base/show.jl#L974-L987
 function get_sig(l::MethodInstance)
@@ -227,7 +238,7 @@ function get_sig(l::MethodInstance)
         end
     else
         # print(io, "Toplevel MethodInstance thunk")
-        "toplevel MethodInstance thunk"
+        "toplevel"
     end
     return Any[ret]
 end
