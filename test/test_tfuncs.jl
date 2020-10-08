@@ -8,7 +8,7 @@
         widenconst.(report.argtypes) == [Int, Type{Int}, Any]
 
     @testset "constant propagation" begin
-        m = gen_virtualmod()
+        m = gen_virtual_module()
         Core.eval(m, quote
             struct T
                 v

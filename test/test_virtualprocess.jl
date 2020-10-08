@@ -8,48 +8,36 @@
         end
         """
 
-        res, interp = profile_toplevel(s)
+        res, interp = profile_text′(s)
 
         @test !isempty(res.toplevel_error_reports)
         @test first(res.toplevel_error_reports) isa SyntaxErrorReport
     end
 end
 
-@testset "virtual module self-reference" begin
+@testset "fix self-reference of virtual module" begin
     let
         res, interp = @profile_toplevel begin
-            Main.sum("julia") # `Main.sum` should be resolved as constant
+            const foo = sum
+            Main.foo("julia") # `Main.sum` should be resolved as constant
+        end
+        test_sum_over_string(res)
+    end
+
+    let
+        res, interp = @profile_toplevel begin
+            let
+                Main = "julia" # local `Main` should not be resolved to virtual module
+                sum(Main)
+            end
         end
         test_sum_over_string(res)
     end
 end
 
-@testset "hastopleveldef" begin
-    @test hastopleveldef(:(struct Foo end))
-    @test hastopleveldef(:(mutable struct Foo end))
-    @test hastopleveldef(:(abstract type Foo end))
-    @test hastopleveldef(:(primitive type Foo 8 end))
-    @test hastopleveldef(:(macro foo(ex); ex; end))
-    @test hastopleveldef(:(foo(x) = x))
-    @test hastopleveldef(:(foo(x::Foo) where Foo = x))
-    @test hastopleveldef(:(function foo(x); return x; end))
-    @test hastopleveldef(:(function foo(x::Foo) where Foo; return x; end))
-    # just a call
-    @test !hastopleveldef(:(foo(x::Foo)))
-    # closures
-    @test !hastopleveldef(:(let; foo(x) = x; end))
-    @test !hastopleveldef(:(foo(bar, function (baz); return isnothing(baz); end)))
-    @test !hastopleveldef(:(foo(bar, ()->isnothing(bar))))
-    # # toplevel definitions with `Core.eval`
-    # @test hastopleveldef(:(for i in 1:10
-    #     sym = Symbol(:foo, i)
-    #     Core.eval(@__MODULE__, :($(sym)() = $(i)))
-    # end))
-end
-
 @testset "\"toplevel definitions\"" begin
     let
-        vmod = gen_virtualmod()
+        vmod = gen_virtual_module()
         @profile_toplevel vmod begin
             # function
             foo() = nothing
@@ -101,31 +89,83 @@ end
         @test !isempty(methodswith(getfield(vmod, :Foo), getproperty))
     end
 
-    # "toplevel definitions" with access to global objects
+    # basic profiling with user-defined types
     let
-        vmod = gen_virtualmod()
+        vmod = gen_virtual_module()
         res, interp = @profile_toplevel vmod begin
-            foo = rand(Bool)
+            gb = rand(Bool)
 
             struct Foo
                 b::Bool
-                Foo(b = foo) = new(b)
+                Foo(b = gb) = new(b)
             end
 
-            Foo()
+            foo = Foo(gb)
         end
 
         # global variables aren't evaluated but kept in `interp` instead
-        @test get_virtual_globalvar(vmod, :foo) isa VirtualGlobalVariable
+        gb = get_virtual_globalvar(vmod, :gb)
+        @test gb isa VirtualGlobalVariable && gb.t ⊑ Bool
         @test isdefined(vmod, :Foo)
+        foo = get_virtual_globalvar(vmod, :foo)
+        @test foo isa VirtualGlobalVariable && foo.t ⊑ vmod.Foo
         @test isempty(res.toplevel_error_reports)
         @test isempty(res.inference_error_reports)
+    end
+
+    # "toplevel definitions" with access to global objects
+    let
+        vmod = gen_virtual_module()
+        @test_broken @profile_toplevel vmod begin
+            const b = Bool
+
+            struct Foo
+                b::b
+            end
+        end
+    end
+
+    # a toplevel definition within a block
+    let
+        vmod = gen_virtual_module()
+        res, interp = @profile_toplevel vmod begin
+            begin
+                struct Foo
+                    bar
+                end
+
+                foo = Foo(:bar)
+                println(foo)
+            end
+        end
+        @test isdefined(vmod, :Foo)
+        foo = get_virtual_globalvar(vmod, :foo)
+        @test foo isa VirtualGlobalVariable
+        @test foo.t ⊑ vmod.Foo
+    end
+
+    # toplevel definitions within a block
+    # somewhat related upstream issue: https://github.com/JuliaDebug/LoweredCodeUtils.jl/issues/47
+    # well, the actual error here is world age error ...
+    let
+        vmod = gen_virtual_module()
+        @test_broken res, interp = @profile_toplevel vmod begin
+            begin
+                abstract type Foo end
+                struct Foo1 <: Foo
+                    foo
+                end
+
+                foo = Foo1(:foo)
+                println(foo)
+            end
+        end
     end
 end
 
 @testset "macro expansions" begin
     let
-        vmod = gen_virtualmod()
+        vmod = gen_virtual_module()
         res, interp = @profile_toplevel vmod begin
             @inline foo(a) = identity(a)
             foo(10)
@@ -137,7 +177,7 @@ end
     end
 
     let
-        vmod = gen_virtualmod()
+        vmod = gen_virtual_module()
         res, interp = @profile_toplevel vmod begin
             macro foo(ex)
                 @assert Meta.isexpr(ex, :call)
@@ -155,7 +195,7 @@ end
 
     # macro expansions with access to global variables will fail
     let
-        vmod = gen_virtualmod()
+        vmod = gen_virtual_module()
         res, interp = @profile_toplevel vmod begin
             const arg = rand(Bool)
 
@@ -214,7 +254,7 @@ end
         f1 = normpath(FIXTURE_DIR, "include1.jl")
         f2 = normpath(FIXTURE_DIR, "include1.jl")
 
-        vmod = gen_virtualmod()
+        vmod = gen_virtual_module()
         res, interp = profile_file′(f1, vmod)
 
         @test f1 in res.included_files
@@ -276,7 +316,7 @@ end
                                        end
                                        """
                                        )
-    res, interp = profile_toplevel(s)
+    res, interp = profile_text′(s)
     @test isempty(res.toplevel_error_reports)
 end
 
@@ -474,7 +514,7 @@ end
 
 @testset "virtual global variables" begin
     let
-        vmod = gen_virtualmod()
+        vmod = gen_virtual_module()
         res, interp = @profile_toplevel vmod begin
             var = rand(Bool)
             const constvar = rand(Bool)
@@ -492,7 +532,7 @@ end
         # --------
 
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             interp, frame = Core.eval(vmod, :($(profile_call)() do
                 local localvar = rand(Bool)
                 global globalvar = rand(Bool)
@@ -508,7 +548,7 @@ end
         # ------
 
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             res, interp = @profile_toplevel vmod begin
                 begin
                     globalvar = rand(Bool)
@@ -520,7 +560,7 @@ end
         end
 
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             res, interp = @profile_toplevel vmod begin
                 begin
                     local localvar = rand(Bool)
@@ -534,7 +574,7 @@ end
         end
 
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             res, interp = @profile_toplevel vmod begin
                 begin
                     local localvar
@@ -549,7 +589,7 @@ end
         end
 
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             res, interp = @profile_toplevel vmod begin
                 globalvar2 = begin
                     local localvar = rand(Bool)
@@ -565,7 +605,7 @@ end
         end
 
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             res, interp = @profile_toplevel vmod begin
                 let
                     localvar = rand(Bool)
@@ -576,7 +616,7 @@ end
         end
 
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             res, interp = @profile_toplevel vmod begin
                 globalvar = let
                     localvar = rand(Bool)
@@ -593,7 +633,7 @@ end
         # -----
 
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             res, interp = @profile_toplevel vmod begin
                 for i = 1:100
                     localvar = i
@@ -604,7 +644,7 @@ end
         end
 
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             res, interp = @profile_toplevel vmod begin
                 for i in 1:10
                     localvar = rand(Bool)
@@ -618,7 +658,7 @@ end
         end
 
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             res, interp = @profile_toplevel vmod begin
                 while true
                     localvar = rand(Bool)
@@ -629,7 +669,7 @@ end
         end
 
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             res, interp = @profile_toplevel vmod begin
                 while true
                     localvar = rand(Bool)
@@ -645,7 +685,7 @@ end
 
     @testset "multiple declaration/assignment" begin
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             res, interp = @profile_toplevel vmod begin
                 s, c = sincos(1)
             end
@@ -657,7 +697,7 @@ end
         end
 
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             res, interp = @profile_toplevel vmod begin
                 begin
                     local s, c
@@ -670,7 +710,7 @@ end
         end
 
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             res, interp = @profile_toplevel vmod begin
                 let
                     global s, c
@@ -685,7 +725,7 @@ end
         end
 
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             res, interp = @profile_toplevel vmod begin
                 so, co = let
                     si, ci = sincos(1)
@@ -702,7 +742,7 @@ end
         end
 
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             res, interp = @profile_toplevel vmod begin
                 begin
                     local l
@@ -710,7 +750,8 @@ end
                 end
             end
             @test isnothing(get_virtual_globalvar(vmod, :l))
-            @test_broken !isnothing(get_virtual_globalvar(vmod, :g))
+            g = get_virtual_globalvar(vmod, :g)
+            @test g isa VirtualGlobalVariable && g.t ⊑ Float64
         end
     end
 end

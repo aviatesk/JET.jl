@@ -1,5 +1,3 @@
-# FIXME: I'm too hacky, find an alternative way for simulating toplevel execution, make me more robust at least
-
 const VirtualProcessResult = @NamedTuple begin
     included_files::Set{String}
     toplevel_error_reports::Vector{ToplevelErrorReport}
@@ -23,35 +21,26 @@ simulates execution of `s` and profiles error reports, and returns `VirtualProce
 which keeps the following information:
 - `included_files::Set{String}`: files that have been profiled
 - `toplevel_error_reports::Vector{ToplevelErrorReport}`: toplevel errors found during the
-   text parsing and AST transformation; these reports are "critical" and should have
-   precedence over `inference_error_reports`
+   text parsing or partial (actual) interpretation; these reports are "critical" and should
+   have precedence over `inference_error_reports`
 - `inference_error_reports::Vector{InferenceErrorReport}`: possible error reports found by
   `TPInterpreter`
 
-this function first parses `s` and then iterate following steps on each code block:
-- first of all, tries to expand macros in a context of `virtualmod`
-- replace self-reference of `actualmodsym` with that of `virtualmod` to help type inference
-  in the later step
-- if it contains "toplevel defintions", e.g. definitions of `macro`, `struct`, `function`,
-  etc. _within toplevel scope_, just directly evaluates it in a context of `virtualmod`
-- handle `module` expression by recursively calling this function with an newly generated
-  virtual module
-- handle (static) `include` calls by recursively calling this function on the `include`d file
-- tweak toplevel assignments
-  * remove `const` annotations so that remaining code block can be wrapped into a virtual
-    function (they are not allowed in a function body)
-  * annotate regular assignments with `global`, on which `TPInterpreter` will do virtual
-    global variable assignment during abstract interpretation
-    (see [`typeinf_local(interp::TPInterpreter, frame::InferenceState)`](@ref))
-
-once all the transformation has been done, each code block will be wrapped into a virtual
-  (nullary) lambda function, and then type inference will be run on it
+this function first parses `s` into `toplevelex::Expr` and then iterate the following steps
+  on each code block (`blk`) (after replacing self-reference of `actualmodsym` with that of `virtualmod`):
+1. if `blk` is a `:module` expression, recusively call `virtual_process!` with an newly defined
+     virtual module
+2. if the current code block is a namespace expression (i.e. `:using`, `:import`, and `:export`)
+     just evaluate it and `continue`
+3. `lower`s `blk` into `lwr` (including macro expansion)
+4. partially interpret `lwr`'s statements so that we don't abstract away e.g. `:method` definitions
+5. finally, profile the remaining abstract statements by abstract interpretation
 
 !!! warning
-    obviously this approach is only a poor model of Julia's actual execution, and has (maybe)
-      lots of limitations, like:
-    - if a direct evaluation needs access to global objects that have not been actually
-      _evaluated_ (just because they have been _profiled_ instead), it just results in error
+    the current approach splits entire code into code blocks and we're not tracking
+      inter-code-block level dependencies, and so a partial interpretation of toplevle
+      definitions will fail if it needs an access to global variables that are defined
+      in the other code block
 """
 function virtual_process!(s::AbstractString,
                           filename::AbstractString,
@@ -104,6 +93,24 @@ function virtual_process!(toplevelex::Expr,
     lnn::LineNumberNode = LineNumberNode(0, filename)
     interp::TPInterpreter = interp
 
+    function lower_err_handler(err, st)
+        # `3` corresponds to `with_err_handling`, `f` and `lower`
+        st = crop_stacktrace(st, 3)
+        push!(ret.toplevel_error_reports, ActualErrorWrapped(err, st, filename, lnn.line))
+        return nothing
+    end
+    lower_with_err_handling(mod, x) = with_err_handling(lower_err_handler) do
+        lwr = lower(mod, x)
+
+        # here we should capture syntax errors found during lowering
+        if isexpr(lwr, :error)
+            msg = first(lwr.args)
+            push!(ret.toplevel_error_reports, SyntaxErrorReport("syntax: $(msg)", filename, lnn.line))
+            return nothing
+        end
+
+        return lwr
+    end
     function macroexpand_err_handler(err, st)
         # `4` corresponds to `with_err_handling`, `f`, `macroexpand` and its kwfunc
         st = crop_stacktrace(st, 4)
@@ -153,7 +160,6 @@ function virtual_process!(toplevelex::Expr,
         # "toplevel definitions" inside of the loaded modules shouldn't be evaluated in a
         # context of `virtualmod`
 
-        # handle `:module` definition; they should always happen in toplevel
         if isexpr(x, :module)
             newblk = x.args[3]
             @assert isexpr(newblk, :block)
@@ -179,131 +185,157 @@ function virtual_process!(toplevelex::Expr,
             continue
         end
 
-        # second pass, do transformations that need error handling
-        x = prewalk_and_transform!(x) do x, scope
-            # always escape inside expression
-            :quote in scope && return x
+        blk = Expr(:block, lnn, x) # attach line number info
+        lwr = lower_with_err_handling(virtualmod, blk)
 
-            # expand macro
-            # ------------
+        isnothing(lwr) && continue # error happened during lowering
+        isexpr(lwr, :thunk) || continue # literal
 
-            if isexpr(x, :macrocall)
-                x = macroexpand_with_err_handling(virtualmod, x)
-            end
+        src = first((lwr::Expr).args)::CodeInfo
 
-            # handle static `include` calls
-            # -----------------------------
-            # TODO: do something same as toplevel definitions
+        interp′ = ActualInterpreter(filename,
+                                    lnn,
+                                    eval_with_err_handling,
+                                    actualmodsym,
+                                    virtualmod,
+                                    interp,
+                                    ret
+                                    )
+        not_abstracted = partial_interpret!(interp′, virtualmod, src)
 
-            if isinclude(x)
-                # TODO: maybe find a way to handle two args `include` calls
-                include_file = eval_with_err_handling(virtualmod, last(x.args))
-
-                isnothing(include_file) && return nothing # error happened when evaling `include` args
-
-                include_file = normpath(dirname(filename), include_file)
-
-                # handle recursive `include` calls
-                if include_file in ret.included_files
-                    report = RecursiveIncludeErrorReport(include_file, ret.included_files, filename, lnn.line)
-                    push!(ret.toplevel_error_reports, report)
-                    return nothing
-                end
-
-                read_ex      = :(read($(include_file), String))
-                include_text = eval_with_err_handling(virtualmod, read_ex)
-
-                isnothing(include_text) && return nothing # typically no file error
-
-                virtual_process!(include_text, include_file, actualmodsym, virtualmod, interp, ret)
-
-                # TODO: actually, here we need to try to get the last profiling result of the `virtual_process!` call above
-                return nothing
-            end
-
-            return x
-        end
-
-        if hastopleveldef(x)
-            # this expression contains "toplevel definition(s)", we don't want to abstract it
-            # away, let's just evaluate it (hoping "heavy" computation doesn't happen in this block ...)
-            eval_with_err_handling(virtualmod, x)
-
+        # bail out if nothing to profile (just a performance optimization)
+        if all(is_return(last(src.code)) ? not_abstracted[begin:end-1] : not_abstracted)
             continue
         end
 
-        # at this point `x` is supposed not to contain any "toplevel definition" but only
-        # toplevel code like call sites and variable assignment;
-        # in this pass we transform the toplevel code so that it can be wrapped into a virtual (nullary) lambda
-        local locally_scoped_vars = Set{Symbol}()
-        x = prewalk_and_transform!(x) do x, scope
-            # always escape inside expression
-            :quote in scope && return x
-
-            # replace `const` with `global`
-            # TODO: add `const` properties for this virtual global variable
-            if isexpr(x, :const)
-                return if !islocalscope(scope)
-                    Expr(:global, first(x.args))
-                else
-                    report = SyntaxErrorReport("unsupported `const` declaration on local variable", filename, lnn.line)
-                    push!(ret.toplevel_error_reports, report)
-                    nothing
-                end
-            end
-
-            if isexpr(x, :local)
-                x′ = first(x.args)
-                # `parse_input_line` will parse "local a, b = sincos(1)" into `:(local (a, b) = sincos(1))`
-                if is_assignment(x′)
-                    # local a, b = sincos(1)
-                    vars = get_lhs(x′)
-                    push!(locally_scoped_vars, vars...)
-                else
-                    # local a, b ...
-                    push!(locally_scoped_vars, x.args...)
-                end
-                return x
-            end
-
-            # annotate `global`s for regular assignments in global scope
-            if !(islocalscope(scope) || is_already_scoped(scope))
-                # `parse_input_line` will parse "a, b = sincos(1)" into `:((a, b) = sincos(1))`
-                if is_assignment(x)
-                    # FIXME: this can't handle following case
-                    # begin
-                    #     local l
-                    #     l, g = sincos(1) # won't be `global` annotated
-                    # end
-                    vars = get_lhs(x)
-                    any(in(locally_scoped_vars), vars) || return Expr(:global, x)
-                end
-            end
-
-            return x
-        end
-
-        @debug x
-
-        shouldprofile(x) || continue
-
-        λ = gen_virtual_lambda(virtualmod, lnn, x)
-
-        interp = TPInterpreter(; # world age gets updated to take in `λ`
-                               inf_params              = InferenceParams(interp),
-                               opt_params              = OptimizationParams(interp),
-                               optimize                = may_optimize(interp),
-                               compress                = may_compress(interp),
-                               discard_trees           = may_discard_trees(interp),
-                               filter_native_remarks   = interp.filter_native_remarks,
+        interp = TPInterpreter(; # world age gets updated to take in newly added methods defined by `ActualInterpreter`
+                               inf_params            = InferenceParams(interp),
+                               opt_params            = OptimizationParams(interp),
+                               optimize              = may_optimize(interp),
+                               compress              = may_compress(interp),
+                               discard_trees         = may_discard_trees(interp),
+                               filter_native_remarks = interp.filter_native_remarks,
+                               not_abstracted        = not_abstracted, # or construct partial `CodeInfo` from remaining abstract statements
                                )
 
-        profile_call_gf!(interp, Tuple{typeof(λ)})
+        profile_toplevel!(interp, virtualmod, src)
 
         append!(ret.inference_error_reports, interp.reports) # correct error reports
     end
 
     return ret, interp
+end
+
+# trait to inject code into JuliaInterpreter's actual interpretation process
+struct ActualInterpreter
+    filename::String
+    lnn::LineNumberNode
+    eval_with_err_handling::Function
+    actualmodsym::Symbol
+    virtualmod::Module
+    interp::TPInterpreter
+    ret::VirtualProcessResult
+end
+
+# TODO: needs to overload `JuliaInterpreter.handle_err` against `ActualInterpreter`
+function partial_interpret!(interp, mod, src)
+    selected = select_statements(src)
+
+    # LoweredCodeUtils.print_with_code(stdout, src, selected)
+
+    selective_eval_fromstart!(interp, Frame(mod, src), selected, #= istoplevel =# true)
+
+    return selected
+end
+
+# select statements that should be not abstracted away, but rather actually interpreted
+function select_statements(src)
+    stmts = src.code
+
+    not_abstracted = map(stmts) do stmt
+        # special case `include` calls
+        isinclude(stmt) && return true
+
+        # interpret method definitions
+        ismethod(stmt) && return true
+
+        # interpret type definitions
+        istypedef(stmt) && return true
+        # add more statements necessary for the first time interpretation of a type definition
+        # TODO: maybe upstream these into LoweredCodeUtils.jl ?
+        if isexpr(stmt, :(=))
+            stmt = stmt.args[2] # rhs
+        end
+        if isexpr(stmt, :call)
+            f = stmt.args[1]
+            if isa(f, GlobalRef)
+                f.mod === Core && f.name in (:_setsuper!, :_equiv_typedef, :_typebody!) && return true
+            end
+            if isa(f, QuoteNode)
+                f.value in (Core._setsuper!, Core._equiv_typedef, Core._typebody!) && return true
+            end
+        end
+
+        return false
+    end
+
+    lines_required!(not_abstracted, src, CodeEdges(src))
+
+    return not_abstracted
+end
+
+isinclude(ex) = isexpr(ex, :call) && first(ex.args) === :include
+
+# adapted from https://github.com/JuliaDebug/JuliaInterpreter.jl/blob/2f5f80034bc287a60fe77c4e3b5a49a087e38f8b/src/interpret.jl#L188-L199
+# works as `JuliaInterpreter.evaluate_call_compiled!`, but special cases for TypeProfiler.jl added
+function evaluate_call_recurse!(interp::ActualInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)
+    # @assert !enter_generated
+    pc = frame.pc
+    ret = bypass_builtins(frame, call_expr, pc)
+    isa(ret, Some{Any}) && return ret.value
+    ret = maybe_evaluate_builtin(frame, call_expr, false)
+    isa(ret, Some{Any}) && return ret.value
+    fargs = collect_args(frame, call_expr)
+    f = fargs[1]
+    popfirst!(fargs)  # now it's really just `args`
+
+    if isinclude(f)
+        return handle_include(fargs, interp)
+    else
+        ret = f(fargs...)
+        @debug "actual interpret: " f fargs ret
+        return ret
+    end
+end
+
+isinclude(@nospecialize(f::Function)) = nameof(f) === :include
+
+function handle_include(fargs, interp)
+    filename = interp.filename
+    ret = interp.ret
+    lnn = interp.lnn
+    eval_with_err_handling = interp.eval_with_err_handling
+    virtualmod = interp.virtualmod
+
+    # TODO: maybe find a way to handle two args `include` calls
+    include_file = normpath(dirname(filename), first(fargs))
+
+    # handle recursive `include`s
+    if include_file in ret.included_files
+        report = RecursiveIncludeErrorReport(include_file, ret.included_files, filename, lnn.line)
+        push!(ret.toplevel_error_reports, report)
+        return nothing
+    end
+
+    read_ex      = :(read($(include_file), String))
+    include_text = eval_with_err_handling(virtualmod, read_ex)
+
+    isnothing(include_text) && return nothing # typically no file error
+
+    virtual_process!(include_text, include_file, interp.actualmodsym, interp.virtualmod, interp.interp, interp.ret)
+
+    # TODO: actually, here we need to try to get the last profiling result of the `virtual_process!` call above
+    return nothing
 end
 
 # don't inline this so we can find it in the stacktrace
@@ -363,82 +395,10 @@ end
 prewalk_and_transform!(args...) = walk_and_transform!(true, args...)
 postwalk_and_transform!(args...) = walk_and_transform!(false, args...)
 
-istopleveldef(x) = isexpr(x, (:macro, :abstract, :struct, :primitive))
-
 ismoduleusage(x) = isexpr(x, (:import, :using, :export))
-
-islocalscope(scopes)        = any(islocalscope, scopes)
-islocalscope(scope::Expr)   = islocalscope(scope.head)
-islocalscope(scope::Symbol) = scope in (:quote, :let, :try, :for, :while, :macro, :abstract, :struct, :primitive, :function)
-
-function isfuncdef(ex)
-    isexpr(ex, :function) && return true
-
-    # short form
-    if isexpr(ex, :(=))
-        farg = first(ex.args)
-        isexpr(farg, :call) && return true
-        isexpr(farg, :where) && isexpr(first(farg.args), :call) && return true
-    end
-
-    return false
-end
-
-is_already_scoped(scope) = !isempty(scope) && last(scope) in (:local, :global)
-
-function is_assignment(x)
-    isexpr(x, :(=)) || return false
-    lhs = first(x.args)
-    isa(lhs, Symbol) && return true
-    isexpr(lhs, :tuple) && return all(var->isa(var,Symbol), lhs.args)
-    return false
-end
-
-function get_lhs(eq)::Vector{Symbol}
-    # @assert is_assignment(eq)
-    lhs = first(eq.args)
-    return (isa(lhs, Symbol) ? [lhs] : lhs.args)
-end
-
-isinclude(ex) = isexpr(ex, :call) && first(ex.args) === :include
 
 islnn(@nospecialize(_)) = false
 islnn(::LineNumberNode) = true
-
-hastopleveldef(@nospecialize(x)) = false
-function hastopleveldef(ex::Expr)
-    local found::Bool = false
-    prewalk_and_transform!(ex) do x, scope
-        # TODO: escape quoted expression unless within `eval` call
-
-        if isexpr(x, (:macro, :abstract, :struct, :primitive))
-            found = true
-        elseif isfuncdef(x)
-            # let will introduce closure, it shouldn't be defined in toplevel
-            # i = findlast(s->s===:quote, scope)
-            # scope = scope[(isnothing(i) ? 1 : i):end]
-            if !any(in((:let, :call)), scope)
-                found = true
-            end
-        end
-
-        return x
-    end
-    return found
-end
-
-shouldprofile(@nospecialize(_)) = false
-shouldprofile(::Expr)           = true
-shouldprofile(::Symbol)         = true
-
-gen_virtual_module(actualmod) =
-    Core.eval(actualmod, :(module $(gensym(:TypeProfilerVirtualModule)) end))::Module
-
-function gen_virtual_lambda(mod, lnn, x)
-    funcbody = Expr(:block, lnn, x)
-    funcex   = Expr(:function, #=nullary lambda=# Expr(:tuple), funcbody)
-    return Core.eval(mod, funcex)::Function
-end
 
 function to_single_usages(x)
     if length(x.args) != 1

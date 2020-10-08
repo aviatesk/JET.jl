@@ -8,7 +8,8 @@ import Core.Compiler:
 
 import TypeProfiler:
     TPInterpreter, VirtualGlobalVariable, profile_call, get_result, virtual_process!,
-    hastopleveldef, report_errors, ToplevelErrorReport, InferenceErrorReport, print_reports
+    gen_virtual_module, report_errors, ToplevelErrorReport, InferenceErrorReport,
+    print_reports
 
 for sym in Symbol.(last.(Base.Fix2(split, '.').(string.(vcat(subtypes(TypeProfiler, ToplevelErrorReport),
                                                              subtypes(TypeProfiler, InferenceErrorReport),
@@ -26,19 +27,7 @@ import Core.Compiler:
     ⊑
 
 const CC = Core.Compiler
-
 const FIXTURE_DIR = normpath(@__DIR__, "fixtures")
-gen_virtualmod() = Core.eval(@__MODULE__, :(module $(gensym(:TypeProfilerTestVirtualModule)) end))
-
-# define virtual module and setup fixtures
-macro def(ex)
-    @assert isexpr(ex, :block)
-    return quote let
-        vmod = $(gen_virtualmod)()
-        Core.eval(vmod, $(QuoteNode(ex)))
-        vmod # return virtual module
-    end end
-end
 
 const ERROR_REPORTS_FROM_SUM_OVER_STRING = let
     interp, frame = profile_call(sum, String)
@@ -58,37 +47,51 @@ test_sum_over_string(res::TypeProfiler.VirtualProcessResult) =
     test_sum_over_string(res.inference_error_reports)
 test_sum_over_string(interp::TPInterpreter) = test_sum_over_string(interp.reports)
 
+# define virtual module and setup fixtures
+macro def(ex)
+    @assert isexpr(ex, :block)
+    return quote let
+        vmod = $(gen_virtual_module)()
+        Core.eval(vmod, $(QuoteNode(ex)))
+        vmod # return virtual module
+    end end
+end
+
 # profile from file name
 profile_file′(filename, args...; kwargs...) =
-    profile_toplevel(read(filename, String), args...; filename, kwargs...)
+    return profile_text′(read(filename, String), args...; filename, kwargs...)
 
 # profile from string
-function profile_toplevel(s,
-                           virtualmod = gen_virtualmod();
-                           filename = "top-level",
-                           actualmodsym = :Main,
-                           interp = TPInterpreter(),
-                           )
+function profile_text′(s,
+                       virtualmod = gen_virtual_module(@__MODULE__);
+                       filename = "top-level",
+                       actualmodsym = Symbol(parentmodule(virtualmod)),
+                       interp = TPInterpreter(),
+                       )
     return virtual_process!(s, filename, actualmodsym, virtualmod, interp)
 end
 
-# profile from expression
+# profile from toplevel expression
 macro profile_toplevel(virtualmod, ex)
-    return _profile_toplevel(virtualmod, ex, __source__)
+    return profile_toplevel(virtualmod, ex, __source__)
 end
 
 macro profile_toplevel(ex)
-    return _profile_toplevel(gen_virtualmod(), ex, __source__)
+    virtualmod = gen_virtual_module(__module__)
+    return profile_toplevel(virtualmod, ex, __source__)
 end
 
-function _profile_toplevel(virtualmod, ex, lnn)
-    toplevelex = isexpr(ex, :block) ?
-                 QuoteNode(Expr(:toplevel, lnn, ex.args...)) : # flatten here
-                QuoteNode(Expr(:toplevel, lnn, ex)) # flatten here
+function profile_toplevel(virtualmod, ex, lnn)
+    toplevelex = (isexpr(ex, :block) ?
+                  Expr(:toplevel, lnn, ex.args...) : # flatten here
+                  Expr(:toplevel, lnn, ex)
+                  ) |> QuoteNode
     return quote let
         interp = $(TPInterpreter)()
         ret = $(TypeProfiler.gen_virtual_process_result)()
-        $(virtual_process!)($(toplevelex), $(string(lnn.file)), :Main, $(esc(virtualmod)), interp, ret)
+        virtualmod = $(esc(virtualmod))
+        actualmodsym = Symbol(parentmodule(virtualmod))
+        $(virtual_process!)($(toplevelex), $(string(lnn.file)), actualmodsym, virtualmod, interp, ret)
     end end
 end
 

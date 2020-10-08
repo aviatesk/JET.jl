@@ -2,7 +2,7 @@
     # if there is no method matching case, it should be reported
     let
         # NOTE: we can't just wrap them into `let`, closures can't be inferred correctly
-        m = gen_virtualmod()
+        m = gen_virtual_module()
         interp, frame = Core.eval(m, quote
             foo(a::Integer) = :Integer
             $(profile_call)(AbstractString) do a
@@ -24,7 +24,7 @@
 
     # if there is no method matching case in union-split, it should be reported
     let
-        m = gen_virtualmod()
+        m = gen_virtual_module()
         interp, frame = Core.eval(m, quote
             foo(a::Integer) = :Integer
             foo(a::AbstractString) = "AbstractString"
@@ -170,7 +170,7 @@ end
 
 @testset "inference with virtual global variable" begin
     let
-        vmod = gen_virtualmod()
+        vmod = gen_virtual_module()
         res, interp = @profile_toplevel vmod begin
             s = "julia"
             sum(s)
@@ -183,7 +183,7 @@ end
 
     @testset "union assignment" begin
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             interp, frame = Core.eval(vmod, :($(profile_call)() do
                 global globalvar
                 if rand(Bool)
@@ -198,7 +198,7 @@ end
         end
 
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             res, interp = @profile_toplevel vmod begin
                 if rand(Bool)
                     globalvar = "String"
@@ -220,7 +220,7 @@ end
 
         # sequential
         let
-            vmod = gen_virtualmod()
+            vmod = gen_virtual_module()
             res, interp = @profile_toplevel vmod begin
                 if rand(Bool)
                     globalvar = "String"
@@ -307,7 +307,7 @@ end
 
     # don't report if there the other crical error exist
     let
-        m = gen_virtualmod()
+        m = gen_virtual_module()
         interp, frame = Core.eval(m, quote
             foo(a) = sum(a) # should be reported
             bar(a) = throw(a) # shouldn't be reported first
@@ -380,7 +380,7 @@ end
 
     # constant prop should not exclude those are not related
     let
-        m = gen_virtualmod()
+        m = gen_virtual_module()
         interp, frame = Core.eval(m, quote
             mutable struct P
                 i::Int
@@ -404,7 +404,7 @@ end
 
     # constant prop should narrow down union-split no method error to single no method matching error
     let
-        m = gen_virtualmod()
+        m = gen_virtual_module()
         interp, frame = Core.eval(m, quote
             mutable struct P
                 i::Int
