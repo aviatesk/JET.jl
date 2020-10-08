@@ -176,8 +176,8 @@ end
             sum(s)
         end
 
-        s = get_virtual_globalvar(vmod, :s)
-        @test s isa VirtualGlobalVariable && s.t ⊑ String
+        @test is_abstract(vmod, :s)
+        @test abstract_isa(vmod.s, String)
         test_sum_over_string(res)
     end
 
@@ -193,8 +193,8 @@ end
                 end
             end))
 
-            globalvar = get_virtual_globalvar(vmod, :globalvar)
-            @test globalvar isa VirtualGlobalVariable && globalvar.t === Union{String,Symbol}
+            @test is_abstract(vmod, :globalvar)
+            @test vmod.globalvar.t === Union{String,Symbol}
         end
 
         let
@@ -210,8 +210,8 @@ end
                 foo(globalvar) # union-split no method matching error should be reported
             end
 
-            globalvar = get_virtual_globalvar(vmod, :globalvar)
-            @test globalvar isa VirtualGlobalVariable && globalvar.t === Union{String,Symbol}
+            @test is_abstract(vmod, :globalvar)
+            @test vmod.globalvar.t === Union{String,Symbol}
             @test length(res.inference_error_reports) === 1
             er = first(res.inference_error_reports)
             @test er isa NoMethodErrorReport &&
@@ -235,8 +235,8 @@ end
                 foo(globalvar) # no method matching error should be reported
             end
 
-            globalvar = get_virtual_globalvar(vmod, :globalvar)
-            @test globalvar isa VirtualGlobalVariable && globalvar.t ⊑ Int
+            @test is_abstract(vmod, :globalvar)
+            @test abstract_isa(vmod.globalvar, Int)
             @test length(res.inference_error_reports) === 2
             let er = first(res.inference_error_reports)
                 @test er isa NoMethodErrorReport &&

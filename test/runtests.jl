@@ -95,10 +95,9 @@ function profile_toplevel(virtualmod, ex, lnn)
     end end
 end
 
-function get_virtual_globalvar(vmod, sym, unwrap = true)
-    isdefined(vmod, sym) || return nothing
-    return getfield(vmod, sym)
-end
+is_concrete(mod, sym) = isdefined(mod, sym) && !isa(getfield(mod, sym), VirtualGlobalVariable)
+is_abstract(mod, sym) = isdefined(mod, sym) && isa(getfield(mod, sym), VirtualGlobalVariable)
+abstract_isa(vgv, @nospecialize(typ)) = isa(vgv, VirtualGlobalVariable) && vgv.t ⊑ typ
 
 # %% test body
 # ------------

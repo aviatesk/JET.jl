@@ -78,14 +78,14 @@ end
             end
         end
 
-        @test isdefined(vmod, :foo)
-        @test !isdefined(vmod, :foo′)
-        @test isdefined(vmod, Symbol("@foo"))
-        @test isdefined(vmod, :Foo)
-        @test isdefined(vmod, :Foo1)
-        @test isdefined(vmod, :Foo2)
-        @test isdefined(vmod, :Foo3)
-        @test isdefined(vmod, :Fix1)
+        @test is_concrete(vmod, :foo)
+        @test !is_concrete(vmod, :foo′)
+        @test is_concrete(vmod, Symbol("@foo"))
+        @test is_concrete(vmod, :Foo)
+        @test is_concrete(vmod, :Foo1)
+        @test is_concrete(vmod, :Foo2)
+        @test is_concrete(vmod, :Foo3)
+        @test is_concrete(vmod, :Fix1)
         @test !isempty(methodswith(getfield(vmod, :Foo), getproperty))
     end
 
@@ -104,11 +104,11 @@ end
         end
 
         # global variables aren't evaluated but kept in `interp` instead
-        gb = get_virtual_globalvar(vmod, :gb)
-        @test gb isa VirtualGlobalVariable && gb.t ⊑ Bool
-        @test isdefined(vmod, :Foo)
-        foo = get_virtual_globalvar(vmod, :foo)
-        @test foo isa VirtualGlobalVariable && foo.t ⊑ vmod.Foo
+        @test is_abstract(vmod, :gb)
+        @test abstract_isa(vmod.gb, Bool)
+        @test is_concrete(vmod, :Foo)
+        @test is_abstract(vmod, :foo)
+        @test abstract_isa(vmod.foo, vmod.Foo)
         @test isempty(res.toplevel_error_reports)
         @test isempty(res.inference_error_reports)
     end
@@ -138,10 +138,8 @@ end
                 println(foo)
             end
         end
-        @test isdefined(vmod, :Foo)
-        foo = get_virtual_globalvar(vmod, :foo)
-        @test foo isa VirtualGlobalVariable
-        @test foo.t ⊑ vmod.Foo
+        @test is_concrete(vmod, :Foo)
+        @test abstract_isa(vmod.foo, vmod.Foo)
     end
 
     # toplevel definitions within a block
@@ -179,9 +177,9 @@ end
                 isbar(:bar) && isbaz(:baz) && throw("barbaz") # should be reported
             end
 
-            @test isdefined(vmod, :isfoo)
-            @test isdefined(vmod, :isbar)
-            @test isdefined(vmod, :isbaz)
+            @test is_concrete(vmod, :isfoo)
+            @test is_concrete(vmod, :isbar)
+            @test is_concrete(vmod, :isbaz)
             @test length(res.inference_error_reports) == 2
             @test all(er->isa(er, ExceptionReport), res.inference_error_reports)
         end
@@ -196,7 +194,7 @@ end
             foo(10)
         end
 
-        @test isdefined(vmod, :foo)
+        @test is_concrete(vmod, :foo)
         @test isempty(res.toplevel_error_reports)
         @test isempty(res.inference_error_reports)
     end
@@ -213,7 +211,7 @@ end
             @foo sin() # otherwise NoMethodError
         end
 
-        @test isdefined(vmod, Symbol("@foo"))
+        @test is_concrete(vmod, Symbol("@foo"))
         @test isempty(res.toplevel_error_reports)
         @test isempty(res.inference_error_reports)
     end
@@ -233,7 +231,7 @@ end
             @foo sin()
         end
 
-        @test isdefined(vmod, Symbol("@foo"))
+        @test is_concrete(vmod, Symbol("@foo"))
         @test_broken isempty(res.toplevel_error_reports)
         @test isempty(res.inference_error_reports)
     end
@@ -284,7 +282,7 @@ end
 
         @test f1 in res.included_files
         @test f2 in res.included_files
-        @test isdefined(vmod, :foo)
+        @test is_concrete(vmod, :foo)
         @test isempty(res.toplevel_error_reports)
         @test isempty(res.inference_error_reports)
     end
@@ -545,11 +543,10 @@ end
             const constvar = rand(Bool)
         end
 
-        var = get_virtual_globalvar(vmod, :var)
-        @test var isa VirtualGlobalVariable && var.t ⊑ Bool
-
-        constvar = get_virtual_globalvar(vmod, :constvar)
-        @test constvar isa VirtualGlobalVariable && constvar.t ⊑ Bool
+        @test is_abstract(vmod, :var)
+        @test abstract_isa(vmod.var, Bool)
+        @test is_abstract(vmod, :constvar)
+        @test abstract_isa(vmod.constvar, Bool)
     end
 
     @testset "scope" begin
@@ -563,10 +560,9 @@ end
                 global globalvar = rand(Bool)
             end))
 
-            @test isnothing(get_virtual_globalvar(vmod, :localvar))
-
-            globalvar = get_virtual_globalvar(vmod, :globalvar)
-            @test globalvar isa VirtualGlobalVariable && globalvar.t ⊑ Bool
+            @test !isdefined(vmod, :localvar)
+            @test is_abstract(vmod, :globalvar)
+            @test abstract_isa(vmod.globalvar, Bool)
         end
 
         # blocks
@@ -580,8 +576,8 @@ end
                 end
             end
 
-            globalvar = get_virtual_globalvar(vmod, :globalvar)
-            @test globalvar isa VirtualGlobalVariable && globalvar.t ⊑ Bool
+            @test is_abstract(vmod, :globalvar)
+            @test abstract_isa(vmod.globalvar, Bool)
         end
 
         let
@@ -593,9 +589,9 @@ end
                 end
             end
 
-            @test isnothing(get_virtual_globalvar(vmod, :localvar))
-            globalvar = get_virtual_globalvar(vmod, :globalvar)
-            @test globalvar isa VirtualGlobalVariable && globalvar.t ⊑ Bool
+            @test !isdefined(vmod, :localvar)
+            @test is_abstract(vmod, :globalvar)
+            @test abstract_isa(vmod.globalvar, Bool)
         end
 
         let
@@ -608,9 +604,9 @@ end
                 end
             end
 
-            @test isnothing(get_virtual_globalvar(vmod, :localvar))
-            globalvar = get_virtual_globalvar(vmod, :globalvar)
-            @test globalvar isa VirtualGlobalVariable && globalvar.t ⊑ Bool
+            @test !isdefined(vmod, :localvar)
+            @test is_abstract(vmod, :globalvar)
+            @test abstract_isa(vmod.globalvar, Bool)
         end
 
         let
@@ -622,11 +618,11 @@ end
                 end
             end
 
-            @test isnothing(get_virtual_globalvar(vmod, :locbalvar))
-            globalvar1 = get_virtual_globalvar(vmod, :globalvar1)
-            @test globalvar1 isa VirtualGlobalVariable && globalvar1.t ⊑ Bool
-            globalvar2 = get_virtual_globalvar(vmod, :globalvar2)
-            @test globalvar2 isa VirtualGlobalVariable && globalvar2.t ⊑ Bool
+            @test !isdefined(vmod, :locbalvar)
+            @test is_abstract(vmod, :globalvar1)
+            @test abstract_isa(vmod.globalvar1, Bool)
+            @test is_abstract(vmod, :globalvar2)
+            @test abstract_isa(vmod.globalvar2, Bool)
         end
 
         let
@@ -637,7 +633,7 @@ end
                 end
             end
 
-            @test isnothing(get_virtual_globalvar(vmod, :localvar))
+            @test !isdefined(vmod, :localvar)
         end
 
         let
@@ -649,9 +645,9 @@ end
                 end
             end
 
-            @test isnothing(get_virtual_globalvar(vmod, :localvar))
-            globalvar = get_virtual_globalvar(vmod, :globalvar)
-            @test globalvar isa VirtualGlobalVariable && globalvar.t ⊑ Bool
+            @test !isdefined(vmod, :localvar)
+            @test is_abstract(vmod, :globalvar)
+            @test abstract_isa(vmod.globalvar, Bool)
         end
 
         # loops
@@ -665,7 +661,7 @@ end
                 end
             end
 
-            @test isnothing(get_virtual_globalvar(vmod, :localvar))
+            @test !isdefined(vmod, :localvar)
         end
 
         let
@@ -677,9 +673,9 @@ end
                 end
             end
 
-            @test isnothing(get_virtual_globalvar(vmod, :localvar))
-            globalvar = get_virtual_globalvar(vmod, :globalvar)
-            @test globalvar isa VirtualGlobalVariable && globalvar.t ⊑ Bool
+            @test !isdefined(vmod, :localvar)
+            @test is_abstract(vmod, :globalvar)
+            @test abstract_isa(vmod.globalvar, Bool)
         end
 
         let
@@ -690,7 +686,7 @@ end
                 end
             end
 
-            @test isnothing(get_virtual_globalvar(vmod, :localvar))
+            @test !isdefined(vmod, :localvar)
         end
 
         let
@@ -702,9 +698,9 @@ end
                 end
             end
 
-            @test isnothing(get_virtual_globalvar(vmod, :localvar))
-            globalvar = get_virtual_globalvar(vmod, :globalvar)
-            @test globalvar isa VirtualGlobalVariable && globalvar.t ⊑ Bool
+            @test !isdefined(vmod, :localvar)
+            @test is_abstract(vmod, :globalvar)
+            @test abstract_isa(vmod.globalvar, Bool)
         end
     end
 
@@ -715,10 +711,10 @@ end
                 s, c = sincos(1)
             end
 
-            s = get_virtual_globalvar(vmod, :s)
-            @test s isa VirtualGlobalVariable && s.t ⊑ Float64
-            c = get_virtual_globalvar(vmod, :c)
-            @test c isa VirtualGlobalVariable && c.t ⊑ Float64
+            @test is_abstract(vmod, :s)
+            @test abstract_isa(vmod.s, Float64)
+            @test is_abstract(vmod, :c)
+            @test abstract_isa(vmod.c, Float64)
         end
 
         let
@@ -730,8 +726,8 @@ end
                 end
             end
 
-            @test isnothing(get_virtual_globalvar(vmod, :s))
-            @test isnothing(get_virtual_globalvar(vmod, :c))
+            @test !isdefined(vmod, :s)
+            @test !isdefined(vmod, :c)
         end
 
         let
@@ -743,10 +739,10 @@ end
                 end
             end
 
-            s = get_virtual_globalvar(vmod, :s)
-            @test s isa VirtualGlobalVariable && s.t ⊑ Float64
-            c = get_virtual_globalvar(vmod, :c)
-            @test c isa VirtualGlobalVariable && c.t ⊑ Float64
+            @test is_abstract(vmod, :s)
+            @test abstract_isa(vmod.s, Float64)
+            @test is_abstract(vmod, :c)
+            @test abstract_isa(vmod.c, Float64)
         end
 
         let
@@ -758,12 +754,12 @@ end
                 end
             end
 
-            @test isnothing(get_virtual_globalvar(vmod, :si))
-            @test isnothing(get_virtual_globalvar(vmod, :ci))
-            so = get_virtual_globalvar(vmod, :so)
-            @test so isa VirtualGlobalVariable && so.t ⊑ Float64
-            co = get_virtual_globalvar(vmod, :co)
-            @test co isa VirtualGlobalVariable && co.t ⊑ Float64
+            @test !isdefined(vmod, :si)
+            @test !isdefined(vmod, :ci)
+            @test is_abstract(vmod, :so)
+            @test abstract_isa(vmod.so, Float64)
+            @test is_abstract(vmod, :co)
+            @test abstract_isa(vmod.co, Float64)
         end
 
         let
@@ -774,9 +770,9 @@ end
                     l, g = sincos(1)
                 end
             end
-            @test isnothing(get_virtual_globalvar(vmod, :l))
-            g = get_virtual_globalvar(vmod, :g)
-            @test g isa VirtualGlobalVariable && g.t ⊑ Float64
+            @test !isdefined(vmod, :l)
+            @test is_abstract(vmod, :g)
+            @test abstract_isa(vmod.g, Float64)
         end
     end
 end
