@@ -251,35 +251,56 @@ end
 # select statements that should be not abstracted away, but rather actually interpreted
 function select_statements(src)
     stmts = src.code
+    edges = CodeEdges(src)
 
-    not_abstracted = map(stmts) do stmt
-        # special case `include` calls
-        isinclude(stmt) && return true
+    not_abstracted = fill(false, length(stmts))
 
-        # interpret method definitions
-        ismethod(stmt) && return true
+    for (i, stmt) in enumerate(stmts)
+        if begin
+                isinclude(stmt) || # special case `include` calls
+                ismethod(stmt) ||  # don't abstract away method definitions
+                istypedef(stmt)    # don't abstract away type definitions
+            end
+            not_abstracted[i] = true
+            continue
+        end
 
-        # interpret type definitions
-        istypedef(stmt) && return true
-        # add more statements necessary for the first time interpretation of a type definition
-        # TODO: maybe upstream these into LoweredCodeUtils.jl ?
         if isexpr(stmt, :(=))
-            stmt = stmt.args[2] # rhs
+            stmt = (stmt::Expr).args[2] # rhs
         end
         if isexpr(stmt, :call)
-            f = stmt.args[1]
+            f = (stmt::Expr).args[1]
+
+            # add more statements necessary for the first time interpretation of a type definition
+            # TODO: maybe upstream these into LoweredCodeUtils.jl ?
             if isa(f, GlobalRef)
-                f.mod === Core && f.name in (:_setsuper!, :_equiv_typedef, :_typebody!) && return true
+                if f.mod === Core && f.name in (:_setsuper!, :_equiv_typedef, :_typebody!)
+                    not_abstracted[i] = true
+                    continue
+                end
             end
             if isa(f, QuoteNode)
-                f.value in (Core._setsuper!, Core._equiv_typedef, Core._typebody!) && return true
+                if f.value in (Core._setsuper!, Core._equiv_typedef, Core._typebody!)
+                    not_abstracted[i] = true
+                    continue
+                end
+            end
+
+            # analysis of `eval` calls are difficult, let's give up it and just evaluate
+            # toplevel `eval` calls; they may contain toplevel definitions
+            # adapted from
+            # - https://github.com/timholy/Revise.jl/blob/266ed68d7dd3bea67c39f96513cda30bbcd7d441/src/lowered.jl#L53
+            # - https://github.com/timholy/Revise.jl/blob/266ed68d7dd3bea67c39f96513cda30bbcd7d441/src/lowered.jl#L87-L88
+            if f === :eval || (callee_matches(f, Base, :getproperty) && is_quotenode_egal(stmt.args[end], :eval))
+                # statement `i` may be the equivalent of `f = Core.eval`, so require each
+                # stmt that calls `eval` via `f(expr)`
+                not_abstracted[edges.succs[i]] .= true
+                not_abstracted[i] = true
             end
         end
-
-        return false
     end
 
-    lines_required!(not_abstracted, src, CodeEdges(src))
+    lines_required!(not_abstracted, src, edges)
 
     return not_abstracted
 end
