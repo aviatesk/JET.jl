@@ -21,35 +21,26 @@ simulates execution of `s` and profiles error reports, and returns `VirtualProce
 which keeps the following information:
 - `included_files::Set{String}`: files that have been profiled
 - `toplevel_error_reports::Vector{ToplevelErrorReport}`: toplevel errors found during the
-   text parsing and AST transformation; these reports are "critical" and should have
-   precedence over `inference_error_reports`
+   text parsing or partial (actual) interpretation; these reports are "critical" and should
+   have precedence over `inference_error_reports`
 - `inference_error_reports::Vector{InferenceErrorReport}`: possible error reports found by
   `TPInterpreter`
 
-this function first parses `s` and then iterate following steps on each code block:
-- first of all, tries to expand macros in a context of `virtualmod`
-- replace self-reference of `actualmodsym` with that of `virtualmod` to help type inference
-  in the later step
-- if it contains "toplevel defintions", e.g. definitions of `macro`, `struct`, `function`,
-  etc. _within toplevel scope_, just directly evaluates it in a context of `virtualmod`
-- handle `module` expression by recursively calling this function with an newly generated
-  virtual module
-- handle (static) `include` calls by recursively calling this function on the `include`d file
-- tweak toplevel assignments
-  * remove `const` annotations so that remaining code block can be wrapped into a virtual
-    function (they are not allowed in a function body)
-  * annotate regular assignments with `global`, on which `TPInterpreter` will do virtual
-    global variable assignment during abstract interpretation
-    (see [`typeinf_local(interp::TPInterpreter, frame::InferenceState)`](@ref))
-
-once all the transformation has been done, each code block will be wrapped into a virtual
-  (nullary) lambda function, and then type inference will be run on it
+this function first parses `s` into `toplevelex::Expr` and then iterate the following steps
+  on each code block (`blk`) (after replacing self-reference of `actualmodsym` with that of `virtualmod`):
+1. if `blk` is a `:module` expression, recusively call `virtual_process!` with an newly defined
+     virtual module
+2. if the current code block is a namespace expression (i.e. `:using`, `:import`, and `:export`)
+     just evaluate it and `continue`
+3. `lower`s `blk` into `lwr` (including macro expansion)
+4. partially interpret `lwr`'s statements so that we don't abstract away e.g. `:method` definitions
+5. finally, profile the remaining abstract statements by abstract interpretation
 
 !!! warning
-    obviously this approach is only a poor model of Julia's actual execution, and has (maybe)
-      lots of limitations, like:
-    - if a direct evaluation needs access to global objects that have not been actually
-      _evaluated_ (just because they have been _profiled_ instead), it just results in error
+    the current approach splits entire code into code blocks and we're not tracking
+      inter-code-block level dependencies, and so a partial interpretation of toplevle
+      definitions will fail if it needs an access to global variables that are defined
+      in the other code block
 """
 function virtual_process!(s::AbstractString,
                           filename::AbstractString,
