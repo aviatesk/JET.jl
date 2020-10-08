@@ -174,8 +174,9 @@ end
                 end
 
                 # these should be abstracted away (i.e. shouldn't throw)
-                isfoo(:foo) && throw("foo")
-                isbar(:bar) && isbaz(:baz) && throw("barbaz")
+                isfoo(:foo) && throw("foo")                   # should be reported
+                isbar(:foo) && isbaz(:baz) && throw("foobaz") # shouldn't be reported
+                isbar(:bar) && isbaz(:baz) && throw("barbaz") # should be reported
             end
 
             @test isdefined(vmod, :isfoo)
