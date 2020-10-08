@@ -1,5 +1,3 @@
-# FIXME: I'm too hacky, find an alternative way for simulating toplevel execution, make me more robust at least
-
 const VirtualProcessResult = @NamedTuple begin
     included_files::Set{String}
     toplevel_error_reports::Vector{ToplevelErrorReport}
@@ -214,9 +212,10 @@ function virtual_process!(toplevelex::Expr,
                                     )
         not_abstracted = partial_interpret!(interp′, virtualmod, src)
 
-        # TODO: construct partial `CodeInfo` from remaining abstract statements ?
         # bail out if nothing to profile (just a performance optimization)
-        all(is_return(last(src.code)) ? not_abstracted[begin:end-1] : not_abstracted) && continue
+        if all(is_return(last(src.code)) ? not_abstracted[begin:end-1] : not_abstracted)
+            continue
+        end
 
         interp = TPInterpreter(; # world age gets updated to take in newly added methods defined by `ActualInterpreter`
                                inf_params            = InferenceParams(interp),
@@ -225,7 +224,7 @@ function virtual_process!(toplevelex::Expr,
                                compress              = may_compress(interp),
                                discard_trees         = may_discard_trees(interp),
                                filter_native_remarks = interp.filter_native_remarks,
-                               not_abstracted        = not_abstracted,
+                               not_abstracted        = not_abstracted, # or construct partial `CodeInfo` from remaining abstract statements
                                )
 
         profile_toplevel!(interp, virtualmod, src)
@@ -250,6 +249,8 @@ end
 # TODO: needs to overload `JuliaInterpreter.handle_err` against `ActualInterpreter`
 function partial_interpret!(interp, mod, src)
     selected = select_statements(src)
+
+    # LoweredCodeUtils.print_with_code(stdout, src, selected)
 
     selective_eval_fromstart!(interp, Frame(mod, src), selected, #= istoplevel =# true)
 

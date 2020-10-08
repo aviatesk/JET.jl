@@ -89,7 +89,7 @@ end
         @test !isempty(methodswith(getfield(vmod, :Foo), getproperty))
     end
 
-    # "toplevel definitions" with access to global objects
+    # basic profiling with user-defined types
     let
         vmod = gen_virtual_module()
         res, interp = @profile_toplevel vmod begin
@@ -111,6 +111,55 @@ end
         @test foo isa VirtualGlobalVariable && foo.t ⊑ vmod.Foo
         @test isempty(res.toplevel_error_reports)
         @test isempty(res.inference_error_reports)
+    end
+
+    # "toplevel definitions" with access to global objects
+    let
+        vmod = gen_virtual_module()
+        @test_broken @profile_toplevel vmod begin
+            const b = Bool
+
+            struct Foo
+                b::b
+            end
+        end
+    end
+
+    # a toplevel definition within a block
+    let
+        vmod = gen_virtual_module()
+        res, interp = @profile_toplevel vmod begin
+            begin
+                struct Foo
+                    bar
+                end
+
+                foo = Foo(:bar)
+                println(foo)
+            end
+        end
+        @test isdefined(vmod, :Foo)
+        foo = get_virtual_globalvar(vmod, :foo)
+        @test foo isa VirtualGlobalVariable
+        @test foo.t ⊑ vmod.Foo
+    end
+
+    # toplevel definitions within a block
+    # somewhat related upstream issue: https://github.com/JuliaDebug/LoweredCodeUtils.jl/issues/47
+    # well, the actual error here is world age error ...
+    let
+        vmod = gen_virtual_module()
+        @test_broken res, interp = @profile_toplevel vmod begin
+            begin
+                abstract type Foo end
+                struct Foo1 <: Foo
+                    foo
+                end
+
+                foo = Foo1(:foo)
+                println(foo)
+            end
+        end
     end
 end
 
