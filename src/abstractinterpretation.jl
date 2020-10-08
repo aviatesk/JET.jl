@@ -339,6 +339,12 @@ function abstract_eval_value(interp::TPInterpreter, @nospecialize(e), vtypes::Va
 end
 
 function abstract_eval_statement(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
+    if istoplevel(sv)
+        if interp.not_abstracted[get_cur_pc(sv)]
+            return Any # bail out if it has been interpreted
+        end
+    end
+
     ret = @invoke abstract_eval_statement(interp::AbstractInterpreter, e, vtypes::VarTable, sv::InferenceState)
 
     # assign virtual global variable
@@ -371,7 +377,7 @@ function set_virtual_globalvar!(interp, mod, name, @nospecialize(t))
             update = true
             val.t, val.id, (val.edge_sym, val.li)
         else
-            @warn "TypeProfiler.jl can't trace updates of global variable that already have values"
+            @warn "TypeProfiler.jl can't trace updates of global variable that already have values" mod name val
             return
         end
     else

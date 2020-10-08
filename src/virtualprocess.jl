@@ -215,7 +215,8 @@ function virtual_process!(toplevelex::Expr,
         not_abstracted = partial_interpret!(interp′, virtualmod, src)
 
         # TODO: construct partial `CodeInfo` from remaining abstract statements ?
-        all(not_abstracted) && continue # bail out if nothing to profile (just a performance optimization)
+        # bail out if nothing to profile (just a performance optimization)
+        all(is_return(last(src.code)) ? not_abstracted[begin:end-1] : not_abstracted) && continue
 
         interp = TPInterpreter(; # world age gets updated to take in newly added methods defined by `ActualInterpreter`
                                inf_params            = InferenceParams(interp),
@@ -224,6 +225,7 @@ function virtual_process!(toplevelex::Expr,
                                compress              = may_compress(interp),
                                discard_trees         = may_discard_trees(interp),
                                filter_native_remarks = interp.filter_native_remarks,
+                               not_abstracted        = not_abstracted,
                                )
 
         profile_toplevel!(interp, virtualmod, src)
@@ -257,14 +259,36 @@ end
 # select statements that should be not abstracted away, but rather actually interpreted
 function select_statements(src)
     stmts = src.code
+
     not_abstracted = map(stmts) do stmt
-        istypedef(stmt) && return true
-        ismethod(stmt) && return true
+        # special case `include` calls
         isinclude(stmt) && return true
+
+        # interpret method definitions
+        ismethod(stmt) && return true
+
+        # interpret type definitions
+        istypedef(stmt) && return true
+        # add more statements necessary for the first time interpretation of a type definition
+        # TODO: maybe upstream these into LoweredCodeUtils.jl ?
+        if isexpr(stmt, :(=))
+            stmt = stmt.args[2] # rhs
+        end
+        if isexpr(stmt, :call)
+            f = stmt.args[1]
+            if isa(f, GlobalRef)
+                f.mod === Core && f.name in (:_setsuper!, :_equiv_typedef, :_typebody!) && return true
+            end
+            if isa(f, QuoteNode)
+                f.value in (Core._setsuper!, Core._equiv_typedef, Core._typebody!) && return true
+            end
+        end
+
         return false
     end
 
     lines_required!(not_abstracted, src, CodeEdges(src))
+
     return not_abstracted
 end
 

@@ -51,7 +51,7 @@ import LoweredCodeUtils:
     istypedef, ismethod
 
 import JuliaInterpreter:
-    evaluate_call_recurse!, bypass_builtins, maybe_evaluate_builtin, collect_args
+    evaluate_call_recurse!, bypass_builtins, maybe_evaluate_builtin, collect_args, is_return
 
 using FileWatching, Requires
 

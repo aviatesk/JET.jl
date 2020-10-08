@@ -93,19 +93,22 @@ end
     let
         vmod = gen_virtual_module()
         res, interp = @profile_toplevel vmod begin
-            foo = rand(Bool)
+            gb = rand(Bool)
 
             struct Foo
                 b::Bool
-                Foo(b = foo) = new(b)
+                Foo(b = gb) = new(b)
             end
 
-            Foo()
+            foo = Foo(gb)
         end
 
         # global variables aren't evaluated but kept in `interp` instead
-        @test get_virtual_globalvar(vmod, :foo) isa VirtualGlobalVariable
+        gb = get_virtual_globalvar(vmod, :gb)
+        @test gb isa VirtualGlobalVariable && gb.t ⊑ Bool
         @test isdefined(vmod, :Foo)
+        foo = get_virtual_globalvar(vmod, :foo)
+        @test foo isa VirtualGlobalVariable && foo.t ⊑ vmod.Foo
         @test isempty(res.toplevel_error_reports)
         @test isempty(res.inference_error_reports)
     end
