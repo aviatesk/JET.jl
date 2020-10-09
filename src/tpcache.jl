@@ -15,6 +15,21 @@ WorldView(tpc::TPCache, args...) = WorldView(tpc, WorldRange(args...))
 CC.haskey(tpc::TPCache, mi::MethodInstance) = CC.haskey(tpc.native, mi)
 
 function CC.get(tpc::TPCache, mi::MethodInstance, default)
+    # # for self profiling
+    # if isa(mi.def, Method)
+    #     # ignore cache for TypeProfiler's code itself
+    #     mod = mi.def.module
+    #     if mod == (@__MODULE__) || mod == JuliaInterpreter
+    #         return default
+    #     end
+    #
+    #     file = mi.def.file
+    #     # ignoring entire cache for `Core.Compiler` will slows down profiling performance too bad
+    #     if file === Symbol("compiler/typeinfer.jl") || file === Symbol("compiler/abstractinterpretation.jl")
+    #         return default
+    #     end
+    # end
+
     ret = CC.get(tpc.native, mi, default)
 
     ret === default && return default
