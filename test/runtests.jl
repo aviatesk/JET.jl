@@ -73,7 +73,11 @@ function profile_text′(s,
                        actualmodsym = Symbol(parentmodule(virtualmod)),
                        interp = TPInterpreter(),
                        )
-    return virtual_process!(s, filename, actualmodsym, virtualmod, interp)
+    return virtual_process!(s,
+                            filename,
+                            virtualmod,
+                            actualmodsym,
+                            interp)
 end
 
 # profile from toplevel expression
@@ -96,7 +100,7 @@ function profile_toplevel(virtualmod, ex, lnn)
         ret = $(TypeProfiler.gen_virtual_process_result)()
         virtualmod = $(esc(virtualmod))
         actualmodsym = Symbol(parentmodule(virtualmod))
-        $(virtual_process!)($(toplevelex), $(string(lnn.file)), actualmodsym, virtualmod, interp, ret)
+        $(virtual_process!)($(toplevelex), $(string(lnn.file)), virtualmod, actualmodsym, interp, ret)
     end end
 end
 

@@ -51,7 +51,7 @@ import LoweredCodeUtils:
     istypedef, ismethod, callee_matches
 
 import JuliaInterpreter:
-    step_expr!, evaluate_call_recurse!, bypass_builtins, maybe_evaluate_builtin, 
+    step_expr!, evaluate_call_recurse!, bypass_builtins, maybe_evaluate_builtin,
     collect_args, is_return, is_quotenode_egal
 
 using FileWatching, Requires
@@ -122,8 +122,12 @@ function report_errors(actualmod, text, filename; filter_native_remarks = true)
     virtualmod = gen_virtual_module(actualmod)
 
     interp = TPInterpreter(; filter_native_remarks) # dummy
-    actualmodsym = Symbol(actualmod)
-    ret, interp = virtual_process!(text, filename, actualmodsym, virtualmod, interp)
+    ret, interp = virtual_process!(text,
+                                   filename,
+                                   virtualmod,
+                                   Symbol(actualmod),
+                                   interp
+                                   )
 
     return ret.included_files,
            # non-empty `ret.toplevel_error_reports` means critical errors happened during

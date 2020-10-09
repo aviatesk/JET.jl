@@ -12,14 +12,14 @@ gen_virtual_process_result() = (; included_files = Set{String}(),
 """
     virtual_process!(s::AbstractString,
                      filename::AbstractString,
-                     actualmodsym::Symbol,
                      virtualmod::Module,
+                     actualmodsym::Symbol,
                      interp::TPInterpreter,
                      )::Tuple{VirtualProcessResult,TPInterpreter}
     virtual_process!(toplevelex::Expr,
                      filename::AbstractString,
-                     actualmodsym::Symbol,
                      virtualmod::Module,
+                     actualmodsym::Symbol,
                      interp::TPInterpreter,
                      )::Tuple{VirtualProcessResult,TPInterpreter}
 
@@ -33,11 +33,12 @@ simulates Julia's toplevel execution and profiles error reports, and returns
     by `TPInterpreter`
 
 this function first parses `s::AbstractString` into `toplevelex::Expr` and then iterate the
-  following steps on each code block (`blk`) of `toplevelex` (after replacing self-reference
-  of `actualmodsym` with that of `virtualmod`):
+  following steps on each code block (`blk`) of `toplevelex`:
 1. if `blk` is a `:module` expression, recusively call `virtual_process!` with an newly defined
      virtual module
 2. `lower`s `blk` into `lwr` (including macro expansion)
+3. replaces self-references of the original root module (that is represented as `actualmodsym`)
+     with that of `virtualmod`: see `fix_self_references`
 3. `ConcreteInterpreter` partially interprets some of `lwr`'s statements that should not be
      abstracted away (e.g. a `:method` definition); see also [`partial_interpret!`](@ref)
 4. finally, `TPInterpreter` profiles the remaining statements by abstract interpretation
@@ -52,8 +53,8 @@ function virtual_process! end
 
 function virtual_process!(s::AbstractString,
                           filename::AbstractString,
-                          actualmodsym::Symbol,
                           virtualmod::Module,
+                          actualmodsym::Symbol,
                           interp::TPInterpreter,
                           ret::VirtualProcessResult = gen_virtual_process_result(),
                           )::Tuple{VirtualProcessResult,TPInterpreter}
@@ -70,32 +71,17 @@ function virtual_process!(s::AbstractString,
         return ret, interp
     end
 
-    return virtual_process!(toplevelex, filename, actualmodsym, virtualmod, interp, ret)
+    return virtual_process!(toplevelex, filename, virtualmod, actualmodsym, interp, ret)
 end
 
 function virtual_process!(toplevelex::Expr,
                           filename::AbstractString,
-                          actualmodsym::Symbol,
                           virtualmod::Module,
+                          actualmodsym::Symbol,
                           interp::TPInterpreter,
                           ret::VirtualProcessResult = gen_virtual_process_result(),
                           )::Tuple{VirtualProcessResult,TPInterpreter}
     @assert isexpr(toplevelex, :toplevel)
-
-    # define a constant that self-refers to `virtualmod` so that we can replace
-    # self-references of the original `actualmodsym` with it
-    # NOTE: this identifier can be `gensym`ed, `import/using` will fail otherwise
-    Core.eval(virtualmod, :(const $(:VM_SELF_REFERRING_SYM) = $(virtualmod)))
-
-    # first pass, do transformations that should be applied for all atoms:
-    # 1. replace self-reference of `actualmodsym` with that of `virtualmod`;
-    toplevelex = postwalk_and_transform!(toplevelex) do x, scope
-        # TODO: this cause wrong program semantics when `actualmodsym` is actually used as a
-        # local variable, find a workaround
-        x === actualmodsym && return :VM_SELF_REFERRING_SYM
-
-        return x
-    end
 
     filename::String = filename
     lnn::LineNumberNode = LineNumberNode(0, filename)
@@ -173,7 +159,7 @@ function virtual_process!(toplevelex::Expr,
 
             isnothing(newvirtualmod) && continue # error happened, e.g. duplicated naming
 
-            virtual_process!(newtoplevelex, filename, actualmodsym, newvirtualmod, interp, ret)
+            virtual_process!(newtoplevelex, filename, newvirtualmod, actualmodsym, interp, ret)
 
             continue
         end
@@ -184,13 +170,15 @@ function virtual_process!(toplevelex::Expr,
         isnothing(lwr) && continue # error happened during lowering
         isexpr(lwr, :thunk) || continue # literal
 
+        fix_self_references!(lwr, actualmodsym, virtualmod)
+
         src = first((lwr::Expr).args)::CodeInfo
 
         interp′ = ConcreteInterpreter(filename,
                                       lnn,
                                       eval_with_err_handling,
-                                      actualmodsym,
                                       virtualmod,
+                                      actualmodsym,
                                       interp,
                                       ret
                                       )
@@ -218,6 +206,39 @@ function virtual_process!(toplevelex::Expr,
 
     return ret, interp
 end
+
+function fix_self_references!(lwr, actualmodsym, virtualmod)
+    prewalk_and_transform!(lwr) do x, scope
+        if isa(x, Symbol)
+            if x === actualmodsym
+                return virtualmod
+            end
+        end
+
+        return x
+    end
+end
+
+prewalk_and_transform!(args...) = walk_and_transform!(true, args...)
+postwalk_and_transform!(args...) = walk_and_transform!(false, args...)
+function walk_and_transform!(pre, f, @nospecialize(x), scope = Symbol[])
+    x = pre ? f(x, scope) : x
+    _walk_and_transform!(pre, f, x, scope)
+    return pre ? x : f(x, scope)
+end
+function _walk_and_transform!(pre, f, ex::Expr, scope)
+    push!(scope, ex.head)
+    for (i, x) in enumerate(ex.args)
+        ex.args[i] = walk_and_transform!(pre, f, x, scope)
+    end
+    pop!(scope)
+end
+function _walk_and_transform!(pre, f, src::CodeInfo, scope)
+    for (i, x) in enumerate(src.code)
+        src.code[i] = walk_and_transform!(pre, f, x, scope)
+    end
+end
+_walk_and_transform!(pre, f, @nospecialize(_), scope) = return
 
 """
     partial_interpret!(interp, mod, src)
@@ -315,8 +336,8 @@ struct ConcreteInterpreter
     filename::String
     lnn::LineNumberNode
     eval_with_err_handling::Function
-    actualmodsym::Symbol
     virtualmod::Module
+    actualmodsym::Symbol
     interp::TPInterpreter
     ret::VirtualProcessResult
 end
@@ -407,7 +428,7 @@ function handle_include(interp, fargs)
 
     isnothing(include_text) && return nothing # typically no file error
 
-    virtual_process!(include_text, include_file, interp.actualmodsym, interp.virtualmod, interp.interp, interp.ret)
+    virtual_process!(include_text, include_file, interp.virtualmod, interp.actualmodsym, interp.interp, interp.ret)
 
     # TODO: actually, here we need to try to get the last profiling result of the `virtual_process!` call above
     return nothing
@@ -451,20 +472,6 @@ function collect_syntax_errors(s, filename)
     end
     return reports
 end
-
-function walk_and_transform!(pre, @nospecialize(f), x, scope = Symbol[])
-    x = pre ? f(x, scope) : x
-    if isa(x, Expr)
-        push!(scope, x.head)
-        for (i, arg) in enumerate(x.args)
-            x.args[i] = walk_and_transform!(pre, f, arg, scope)
-        end
-        pop!(scope)
-    end
-    return pre ? x : f(x, scope)
-end
-prewalk_and_transform!(args...) = walk_and_transform!(true, args...)
-postwalk_and_transform!(args...) = walk_and_transform!(false, args...)
 
 islnn(@nospecialize(_)) = false
 islnn(::LineNumberNode) = true
