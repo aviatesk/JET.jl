@@ -3,6 +3,11 @@
 
 using Test, TypeProfiler, InteractiveUtils
 
+# show version info in CI
+if get(ENV, "CI", nothing) == "true"
+    versioninfo()
+end
+
 import Core.Compiler:
     widenconst
 
