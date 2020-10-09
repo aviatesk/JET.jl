@@ -428,76 +428,150 @@ end
         # won't be reported since `typeinf` early escapes on `Bottom`-annotated statement
     end
 
-    # constant prop and cache
-    let
-        m = @def begin
-            foo(a) = a > 0 ? a : "minus"
-            bar(a) = foo(a) + 1
+    false && @testset "more throw away false positive reports" begin
+        let
+            m = @def begin
+                foo(a) = a > 0 ? a : "minus"
+                bar(a) = foo(a) + 1
+            end
+
+            # constant propagation can reveal the error pass can't happen
+            interp, frame = Core.eval(m, :($(profile_call)(()->bar(10))))
+            @test isempty(interp.reports)
+
+            # for this case, no constant prop' doesn't happen, we can't throw away error pass
+            interp, frame = Core.eval(m, :($(profile_call)(bar, Int)))
+            @test length(interp.reports) === 1
+            er = first(interp.reports)
+            @test er isa NoMethodErrorReport &&
+                er.unionsplit &&
+                er.atype ⊑ Tuple{Any,Union{Int,String},Int}
+
+            # if we run constant prop' that leads to the error pass, we should get the reports
+            # FIXME: constant prop' can produce more precise, but essentially duplicated error reports
+            interp, frame = Core.eval(m, :($(profile_call)(()->bar(0))))
+            @test length(interp.reports) === 1
+            er = first(interp.reports)
+            @test er isa NoMethodErrorReport &&
+                !er.unionsplit &&
+                er.atype ⊑ Tuple{Any,String,Int}
         end
 
-        # yes, we don't want report for this case
-        interp, frame = Core.eval(m, :($(profile_call)(()->bar(10))))
-        @test isempty(interp.reports)
+        # should threw away previously-collected reports from frame that is lineage of
+        # current constant prop'ed frame
+        let
+            m = @def begin
+                foo(a) = bar(a)
+                function bar(a)
+                    return if a < 1
+                        baz1(a, "0")
+                    else
+                        baz2(a, a)
+                    end
+                end
+                baz1(a, b) = a ? b : b
+                baz2(a, b) = a + b
+            end
 
-        # for this case, we want to have union-split error
-        interp, frame = Core.eval(m, :($(profile_call)(bar, Int)))
-        @test length(interp.reports) === 1
-        er = first(interp.reports)
-        @test er isa NoMethodErrorReport &&
-            er.unionsplit &&
-            er.atype ⊑ Tuple{Any,Union{Int,String},Int}
+            # no constant prop, just report everything
+            interp, frame = Core.eval(m, :($(profile_call)(foo, Int)))
+            @test length(interp.reports) === 1
+            er = first(interp.reports)
+            @test er isa NonBooleanCondErrorReport &&
+                er.t === Int
 
-        # if we run constant prop again, we can get reports as expected
-        interp, frame = Core.eval(m, :($(profile_call)(()->bar(0))))
-        @test length(interp.reports) === 1
-        er = first(interp.reports)
-        @test er isa NoMethodErrorReport &&
-            !er.unionsplit &&
-            er.atype ⊑ Tuple{Any,String,Int}
+            # constant prop should throw away non-boolean condition reports within `baz1`
+            interp, frame = Core.eval(m, quote
+                $(profile_call)() do
+                    foo(1)
+                end
+            end)
+            @test isempty(interp.reports)
+
+            # constant prop'ed, still we want to have reports for this
+            interp, frame = Core.eval(m, quote
+                $(profile_call)() do
+                    foo(0)
+                end
+            end)
+            @test length(interp.reports) === 1
+            er = first(interp.reports)
+            @test er isa NonBooleanCondErrorReport &&
+                er.t === Int
+
+            # so `Bool` is good for `foo` after all
+            interp, frame = Core.eval(m, :($(profile_call)(foo, Bool)))
+            @test isempty(interp.reports)
+        end
+
+        # constant prop' can exclude false positive alerts; well, this is really bad code
+        # so I rather feel we may want to have a report for this case
+        let
+            res, interp = @profile_toplevel begin
+                function foo(n)
+                    if n < 10
+                        return n
+                    else
+                        return "over 10"
+                    end
+                end
+
+                function bar(n)
+                    if n < 10
+                        return foo(n) + 1
+                    else
+                        return foo(n) * "+1"
+                    end
+                end
+
+                bar(1)
+                bar(10)
+            end
+
+            @test isempty(res.inference_error_reports)
+        end
+    end
+end
+
+# upstream: https://github.com/JuliaLang/julia/pull/37830
+@testset "keyword argument methods" begin
+    interp, frame = Core.eval(gen_virtual_module(), quote
+        f(a; b = nothing, c = nothing) = return
+        $(profile_call)((Any,)) do b
+            f(1; b)
+        end
+    end)
+    @test isempty(interp.reports)
+end
+
+@testset "don't early escape if type grows up to `Any`" begin
+    vmod = gen_virtual_module()
+    res, interp = @profile_toplevel vmod begin
+        abstract type Foo end
+        struct Foo1 <: Foo
+            bar
+        end
+        struct Foo2 <: Foo
+            baz # typo
+        end
+        struct Foo3 <: Foo
+            qux # typo
+        end
+        bar(foo::Foo) = foo.bar
+
+        f = rand(Bool) ? Foo1(1) : rand(Bool) ? Foo2(1) : Foo3(1)
+        bar(f)
     end
 
-    # should threw away previously-collected reports from frame that is lineage of
-    # current constant prop'ed frame
-    let
-        m = @def begin
-            foo(a) = bar(a)
-            function bar(a)
-                return if a < 1
-                    baz1(a, "0")
-                else
-                    baz2(a, a)
-                end
-            end
-            baz1(a, b) = a ? b : b
-            baz2(a, b) = a + b
-        end
-
-        # no constant prop, just report everything
-        interp, frame = Core.eval(m, :($(profile_call)(foo, Int)))
-        @test length(interp.reports) === 1
-        er = first(interp.reports)
-        @test er isa NonBooleanCondErrorReport &&
-            er.t === Int
-
-        # constant prop should throw away non-boolean condition reports within `baz1`
-        interp, frame = Core.eval(m, quote
-            $(profile_call)() do
-                foo(1)
-            end
-        end)
-        @test isempty(interp.reports)
-
-        # constant prop'ed, still we want to have reports for this
-        interp, frame = Core.eval(m, quote
-            $(profile_call)() do
-                foo(0)
-            end
-        end)
-        @test er isa NonBooleanCondErrorReport &&
-            er.t === Int
-
-        # so `Bool` is good for `foo` after all
-        interp, frame = Core.eval(m, :($(profile_call)(foo, Bool)))
-        @test isempty(interp.reports)
+    # `bar(::Foo1)` is valid but its return type is `Any`, and so we can't collect possible
+    # error points for `bar(::Foo2)` and `bar(::Foo3)` if we bail out on `Any`-grew return type
+    @test length(res.inference_error_reports) === 2
+    @test any(res.inference_error_reports) do er
+        return er isa InvalidBuiltinCallErrorReport &&
+            all(er.argtypes .⊑ [vmod.Foo2, Symbol])
+    end
+    @test any(res.inference_error_reports) do er
+        return er isa InvalidBuiltinCallErrorReport &&
+            all(er.argtypes .⊑ [vmod.Foo3, Symbol])
     end
 end
