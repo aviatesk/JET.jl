@@ -12,29 +12,37 @@ gen_virtual_process_result() = (; included_files = Set{String}(),
 """
     virtual_process!(s::AbstractString,
                      filename::AbstractString,
-                     interp::TPInterpreter,
                      actualmodsym::Symbol,
                      virtualmod::Module,
+                     interp::TPInterpreter,
+                     )::Tuple{VirtualProcessResult,TPInterpreter}
+    virtual_process!(toplevelex::Expr,
+                     filename::AbstractString,
+                     actualmodsym::Symbol,
+                     virtualmod::Module,
+                     interp::TPInterpreter,
                      )::Tuple{VirtualProcessResult,TPInterpreter}
 
-simulates execution of `s` and profiles error reports, and returns `VirtualProcessResult`,
-which keeps the following information:
-- `included_files::Set{String}`: files that have been profiled
-- `toplevel_error_reports::Vector{ToplevelErrorReport}`: toplevel errors found during the
-   text parsing or partial (actual) interpretation; these reports are "critical" and should
-   have precedence over `inference_error_reports`
-- `inference_error_reports::Vector{InferenceErrorReport}`: possible error reports found by
-  `TPInterpreter`
+simulates Julia's toplevel execution and profiles error reports, and returns
+`ret::VirtualProcessResult`, which keeps the following information:
+- `ret.included_files::Set{String}`: files that have been profiled
+- `ret.toplevel_error_reports::Vector{ToplevelErrorReport}`: toplevel errors found during the
+    text parsing or partial (actual) interpretation; these reports are "critical" and should
+    have precedence over `inference_error_reports`
+- `re.inference_error_reports::Vector{InferenceErrorReport}`: possible error reports found
+    by `TPInterpreter`
 
-this function first parses `s` into `toplevelex::Expr` and then iterate the following steps
-  on each code block (`blk`) (after replacing self-reference of `actualmodsym` with that of `virtualmod`):
+this function first parses `s::AbstractString` into `toplevelex::Expr` and then iterate the
+  following steps on each code block (`blk`) of `toplevelex` (after replacing self-reference
+  of `actualmodsym` with that of `virtualmod`):
 1. if `blk` is a `:module` expression, recusively call `virtual_process!` with an newly defined
      virtual module
 2. if the current code block is a namespace expression (i.e. `:using`, `:import`, and `:export`)
      just evaluate it and `continue`
 3. `lower`s `blk` into `lwr` (including macro expansion)
-4. partially interpret `lwr`'s statements so that we don't abstract away e.g. `:method` definitions
-5. finally, profile the remaining abstract statements by abstract interpretation
+4. `ConcreteInterpreter` partially interprets some of `lwr`'s statements that should not be
+     abstracted away (e.g. a `:method` definition)
+5. finally, `TPInterpreter` profiles the remaining statements by abstract interpretation
 
 !!! warning
     the current approach splits entire code into code blocks and we're not tracking
@@ -42,6 +50,8 @@ this function first parses `s` into `toplevelex::Expr` and then iterate the foll
       definitions will fail if it needs an access to global variables that are defined
       in the other code block
 """
+function virtual_process! end
+
 function virtual_process!(s::AbstractString,
                           filename::AbstractString,
                           actualmodsym::Symbol,
@@ -193,29 +203,29 @@ function virtual_process!(toplevelex::Expr,
 
         src = first((lwr::Expr).args)::CodeInfo
 
-        interp′ = ActualInterpreter(filename,
-                                    lnn,
-                                    eval_with_err_handling,
-                                    actualmodsym,
-                                    virtualmod,
-                                    interp,
-                                    ret
-                                    )
-        not_abstracted = partial_interpret!(interp′, virtualmod, src)
+        interp′ = ConcreteInterpreter(filename,
+                                      lnn,
+                                      eval_with_err_handling,
+                                      actualmodsym,
+                                      virtualmod,
+                                      interp,
+                                      ret
+                                      )
+        concretized = partial_interpret!(interp′, virtualmod, src)
 
         # bail out if nothing to profile (just a performance optimization)
-        if all(is_return(last(src.code)) ? not_abstracted[begin:end-1] : not_abstracted)
+        if all(is_return(last(src.code)) ? concretized[begin:end-1] : concretized)
             continue
         end
 
-        interp = TPInterpreter(; # world age gets updated to take in newly added methods defined by `ActualInterpreter`
+        interp = TPInterpreter(; # world age gets updated to take in newly added methods defined by `ConcreteInterpreter`
                                inf_params            = InferenceParams(interp),
                                opt_params            = OptimizationParams(interp),
                                optimize              = may_optimize(interp),
                                compress              = may_compress(interp),
                                discard_trees         = may_discard_trees(interp),
                                filter_native_remarks = interp.filter_native_remarks,
-                               not_abstracted        = not_abstracted, # or construct partial `CodeInfo` from remaining abstract statements
+                               concretized           = concretized, # or construct partial `CodeInfo` from remaining abstract statements
                                )
 
         profile_toplevel!(interp, virtualmod, src)
@@ -226,26 +236,23 @@ function virtual_process!(toplevelex::Expr,
     return ret, interp
 end
 
-# trait to inject code into JuliaInterpreter's actual interpretation process
-struct ActualInterpreter
-    filename::String
-    lnn::LineNumberNode
-    eval_with_err_handling::Function
-    actualmodsym::Symbol
-    virtualmod::Module
-    interp::TPInterpreter
-    ret::VirtualProcessResult
-end
+"""
+    partial_interpret!(interp, mod, src)
 
-# TODO: needs to overload `JuliaInterpreter.handle_err` against `ActualInterpreter`
+partially interprets statements in `src` using JuliaInterpreter.jl:
+- concretize "toplevel" definitions, i.e. `:method`, `:struct_type`, `:abstract_type` and
+    `primitive_type` expressions and their dependencies
+- special case `include` calls so that [`virtual_process!`](@ref) recursively runs on the
+    included file
+"""
 function partial_interpret!(interp, mod, src)
-    selected = select_statements(src)
+    concretized = select_statements(src)
 
-    # LoweredCodeUtils.print_with_code(stdout, src, selected)
+    # LoweredCodeUtils.print_with_code(stdout, src, concretized)
 
-    selective_eval_fromstart!(interp, Frame(mod, src), selected, #= istoplevel =# true)
+    selective_eval_fromstart!(interp, Frame(mod, src), concretized, #= istoplevel =# true)
 
-    return selected
+    return concretized
 end
 
 # select statements that should be not abstracted away, but rather actually interpreted
@@ -253,7 +260,7 @@ function select_statements(src)
     stmts = src.code
     edges = CodeEdges(src)
 
-    not_abstracted = fill(false, length(stmts))
+    concretized = fill(false, length(stmts))
 
     for (i, stmt) in enumerate(stmts)
         if begin
@@ -261,7 +268,7 @@ function select_statements(src)
                 ismethod(stmt) ||  # don't abstract away method definitions
                 istypedef(stmt)    # don't abstract away type definitions
             end
-            not_abstracted[i] = true
+            concretized[i] = true
             continue
         end
 
@@ -275,13 +282,13 @@ function select_statements(src)
             # TODO: maybe upstream these into LoweredCodeUtils.jl ?
             if isa(f, GlobalRef)
                 if f.mod === Core && f.name in (:_setsuper!, :_equiv_typedef, :_typebody!)
-                    not_abstracted[i] = true
+                    concretized[i] = true
                     continue
                 end
             end
             if isa(f, QuoteNode)
                 if f.value in (Core._setsuper!, Core._equiv_typedef, Core._typebody!)
-                    not_abstracted[i] = true
+                    concretized[i] = true
                     continue
                 end
             end
@@ -294,22 +301,39 @@ function select_statements(src)
             if f === :eval || (callee_matches(f, Base, :getproperty) && is_quotenode_egal(stmt.args[end], :eval))
                 # statement `i` may be the equivalent of `f = Core.eval`, so require each
                 # stmt that calls `eval` via `f(expr)`
-                not_abstracted[edges.succs[i]] .= true
-                not_abstracted[i] = true
+                concretized[edges.succs[i]] .= true
+                concretized[i] = true
             end
         end
     end
 
-    lines_required!(not_abstracted, src, edges)
+    lines_required!(concretized, src, edges)
 
-    return not_abstracted
+    return concretized
 end
 
 isinclude(ex) = isexpr(ex, :call) && first(ex.args) === :include
 
+# TODO: needs to overload `JuliaInterpreter.handle_err` against `ConcreteInterpreter`
+"""
+    ConcreteInterpreter
+
+trait to inject code into JuliaInterpreter's interpretation process; we overload:
+- `JuliaInterpreter.evaluate_call_recurse!` to special case `include` calls
+"""
+struct ConcreteInterpreter
+    filename::String
+    lnn::LineNumberNode
+    eval_with_err_handling::Function
+    actualmodsym::Symbol
+    virtualmod::Module
+    interp::TPInterpreter
+    ret::VirtualProcessResult
+end
+
 # adapted from https://github.com/JuliaDebug/JuliaInterpreter.jl/blob/2f5f80034bc287a60fe77c4e3b5a49a087e38f8b/src/interpret.jl#L188-L199
 # works as `JuliaInterpreter.evaluate_call_compiled!`, but special cases for TypeProfiler.jl added
-function evaluate_call_recurse!(interp::ActualInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)
+function evaluate_call_recurse!(interp::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)
     # @assert !enter_generated
     pc = frame.pc
     ret = bypass_builtins(frame, call_expr, pc)
@@ -320,18 +344,18 @@ function evaluate_call_recurse!(interp::ActualInterpreter, frame::Frame, call_ex
     f = fargs[1]
     popfirst!(fargs)  # now it's really just `args`
 
+    # @info "concretizing: " f fargs ret
     if isinclude(f)
-        return handle_include(fargs, interp)
+        return handle_include(interp, fargs)
     else
         ret = f(fargs...)
-        @debug "actual interpret: " f fargs ret
         return ret
     end
 end
 
 isinclude(@nospecialize(f::Function)) = nameof(f) === :include
 
-function handle_include(fargs, interp)
+function handle_include(interp, fargs)
     filename = interp.filename
     ret = interp.ret
     lnn = interp.lnn
@@ -389,13 +413,9 @@ function collect_syntax_errors(s, filename)
             !isnothing(ex)
         end
         line += count(==('\n'), s[index:nextindex-1])
-        report = if isexpr(ex, :error)
-            SyntaxErrorReport(string("syntax: ", first(ex.args)), filename, line)
-        elseif isexpr(ex, :incomplete)
-            SyntaxErrorReport(first(ex.args), filename, line)
-        else
-            nothing
-        end
+        report = isexpr(ex, :error) ? SyntaxErrorReport(string("syntax: ", first(ex.args)), filename, line) :
+                 isexpr(ex, :incomplete) ? SyntaxErrorReport(first(ex.args), filename, line) :
+                 nothing
         isnothing(report) || push!(reports, report)
         index = nextindex
     end

@@ -24,19 +24,19 @@ struct TPInterpreter <: AbstractInterpreter
     filter_native_remarks::Bool
 
     # toplevel profiling (skip inference on actually interpreted statements)
-    not_abstracted::BitVector
+    concretized::BitVector
 
-    function TPInterpreter(world                   = get_world_counter();
-                           inf_params              = gen_inf_params(),
-                           opt_params              = gen_opt_params(),
-                           optimize                = true,
-                           compress                = false,
-                           discard_trees           = false,
-                           id                      = gensym(:TPInterpreterID),
-                           reports                 = [],
-                           exception_reports       = [],
-                           filter_native_remarks   = true,
-                           not_abstracted          = [],
+    function TPInterpreter(world                 = get_world_counter();
+                           inf_params            = gen_inf_params(),
+                           opt_params            = gen_opt_params(),
+                           optimize              = true,
+                           compress              = false,
+                           discard_trees         = false,
+                           id                    = gensym(:TPInterpreterID),
+                           reports               = [],
+                           exception_reports     = [],
+                           filter_native_remarks = true,
+                           concretized           = [],
                            )
         @assert !opt_params.inlining "inlining should be disabled"
 
@@ -49,7 +49,7 @@ struct TPInterpreter <: AbstractInterpreter
                    reports,
                    exception_reports,
                    filter_native_remarks,
-                   not_abstracted,
+                   concretized,
                    )
     end
 end

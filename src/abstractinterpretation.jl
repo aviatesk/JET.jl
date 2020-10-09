@@ -340,7 +340,7 @@ end
 
 function abstract_eval_statement(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
     if istoplevel(sv)
-        if interp.not_abstracted[get_cur_pc(sv)]
+        if interp.concretized[get_cur_pc(sv)]
             return Any # bail out if it has been interpreted
         end
     end
