@@ -37,12 +37,10 @@ this function first parses `s::AbstractString` into `toplevelex::Expr` and then 
   of `actualmodsym` with that of `virtualmod`):
 1. if `blk` is a `:module` expression, recusively call `virtual_process!` with an newly defined
      virtual module
-2. if the current code block is a namespace expression (i.e. `:using`, `:import`, and `:export`)
-     just evaluate it and `continue`
-3. `lower`s `blk` into `lwr` (including macro expansion)
-4. `ConcreteInterpreter` partially interprets some of `lwr`'s statements that should not be
-     abstracted away (e.g. a `:method` definition)
-5. finally, `TPInterpreter` profiles the remaining statements by abstract interpretation
+2. `lower`s `blk` into `lwr` (including macro expansion)
+3. `ConcreteInterpreter` partially interprets some of `lwr`'s statements that should not be
+     abstracted away (e.g. a `:method` definition); see also [`partial_interpret!`](@ref)
+4. finally, `TPInterpreter` profiles the remaining statements by abstract interpretation
 
 !!! warning
     the current approach splits entire code into code blocks and we're not tracking
@@ -121,15 +119,15 @@ function virtual_process!(toplevelex::Expr,
 
         return lwr
     end
-    function macroexpand_err_handler(err, st)
-        # `4` corresponds to `with_err_handling`, `f`, `macroexpand` and its kwfunc
-        st = crop_stacktrace(st, 4)
-        push!(ret.toplevel_error_reports, ActualErrorWrapped(err, st, filename, lnn.line))
-        return nothing
-    end
-    macroexpand_with_err_handling(mod, x) = with_err_handling(macroexpand_err_handler) do
-        return macroexpand(mod, x)
-    end
+    # function macroexpand_err_handler(err, st)
+    #     # `4` corresponds to `with_err_handling`, `f`, `macroexpand` and its kwfunc
+    #     st = crop_stacktrace(st, 4)
+    #     push!(ret.toplevel_error_reports, ActualErrorWrapped(err, st, filename, lnn.line))
+    #     return nothing
+    # end
+    # macroexpand_with_err_handling(mod, x) = with_err_handling(macroexpand_err_handler) do
+    #     return macroexpand(mod, x)
+    # end
     function eval_err_handler(err, st)
         # `3` corresponds to `with_err_handling`, `f` and `eval`
         st = crop_stacktrace(st, 3)
@@ -150,6 +148,9 @@ function virtual_process!(toplevelex::Expr,
             lnn = x
             continue
         end
+
+        # XXX: expand macros at this point ?
+        # macro can essentially generate `:toplevel` and `:module` expressions
 
         # flatten container expression
         if isexpr(x, :toplevel)
@@ -224,6 +225,8 @@ end
 partially interprets statements in `src` using JuliaInterpreter.jl:
 - concretize "toplevel" definitions, i.e. `:method`, `:struct_type`, `:abstract_type` and
     `primitive_type` expressions and their dependencies
+- directly evaluates module usage expressions and report error of invalid module usages;
+    or profile the package loading
 - special case `include` calls so that [`virtual_process!`](@ref) recursively runs on the
     included file
 """
