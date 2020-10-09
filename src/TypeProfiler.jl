@@ -4,6 +4,7 @@ module TypeProfiler
 # imports
 # -------
 
+# `TPInterpreter`
 import Core.Compiler:
     # `AbstractInterpreter` API defined in abstractinterpreterinterface.jl
     InferenceParams, OptimizationParams, get_world_counter, get_inference_cache, code_cache,
@@ -19,6 +20,10 @@ import Core.Compiler:
     abstract_eval_statement,
     # typeinfer.jl
     typeinf
+
+# `ConcreteInterpreter`
+import JuliaInterpreter:
+    step_expr!, evaluate_call_recurse!, handle_err
 
 # usings
 # ------
@@ -37,7 +42,7 @@ import Core.Compiler:
     add_backedge!
 
 import Base:
-    parse_input_line, to_tuple_type, Fix1, Fix2, IdSet
+    parse_input_line, to_tuple_type, Fix1, Fix2, IdSet, invokelatest
 
 import Base.Meta:
     isexpr, _parse_string, lower
@@ -51,8 +56,7 @@ import LoweredCodeUtils:
     istypedef, ismethod, callee_matches
 
 import JuliaInterpreter:
-    step_expr!, evaluate_call_recurse!, bypass_builtins, maybe_evaluate_builtin,
-    collect_args, is_return, is_quotenode_egal
+    bypass_builtins, maybe_evaluate_builtin, collect_args, is_return, is_quotenode_egal
 
 using FileWatching, Requires
 

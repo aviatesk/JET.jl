@@ -820,3 +820,34 @@ end
     @test length(res.inference_error_reports) == 1
     @test first(res.inference_error_reports) isa ExceptionReport
 end
+
+@testset "error handling within ConcreteInterpreter" begin
+    let
+        res, interp = @profile_toplevel begin
+            struct A <: B end # UndefVarError(:B) should be handled into `res.toplevel_error_reports`
+        end
+
+        @test !isempty(res.toplevel_error_reports)
+        er = first(res.toplevel_error_reports)
+        @test er isa ActualErrorWrapped
+        @test er.err == UndefVarError(:B)
+        @test er.file == (@__FILE__) && er.line == (@__LINE__) - 7
+    end
+
+    # stacktrace cropping
+    let
+        res, interp = @profile_toplevel begin
+            foo() = throw("don't call me, pal")
+            struct A <: foo() end
+        end
+
+        @test !isempty(res.toplevel_error_reports)
+        er = first(res.toplevel_error_reports)
+        @test er isa ActualErrorWrapped
+        @test er.err == "don't call me, pal"
+        @test er.file == (@__FILE__) && er.line == (@__LINE__) - 7
+        @test length(er.st) == 1
+        sf = first(er.st)
+        @test sf.file === Symbol(@__FILE__) && sf.line == (@__LINE__) - 11
+    end
+end

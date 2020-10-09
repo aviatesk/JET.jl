@@ -182,7 +182,7 @@ function virtual_process!(toplevelex::Expr,
                                       interp,
                                       ret
                                       )
-        concretized = partial_interpret!(interp′, virtualmod, src)
+        concretized = invokelatest(partial_interpret!, interp′, virtualmod, src)
 
         # bail out if nothing to profile (just a performance optimization)
         if all(is_return(last(src.code)) ? concretized[begin:end-1] : concretized)
@@ -323,7 +323,6 @@ function select_statements(src)
     return concretized
 end
 
-# TODO: needs to overload `JuliaInterpreter.handle_err` against `ConcreteInterpreter`
 """
     ConcreteInterpreter
 
@@ -331,6 +330,8 @@ trait to inject code into JuliaInterpreter's interpretation process; TypeProfile
 - `JuliaInterpreter.step_expr!` to add error report pass for module usage expressions and
     support package profiling
 - `JuliaInterpreter.evaluate_call_recurse!` to special case `include` calls
+- `JuliaInterpreter.handle_err` to wrap an error happened during interpretation into
+    `ActualErrorWrapped`
 """
 struct ConcreteInterpreter
     filename::String
@@ -434,6 +435,30 @@ function handle_include(interp, fargs)
     return nothing
 end
 
+function handle_err(interp::ConcreteInterpreter, frame, err)
+    # this error handler is only supposed to be called from toplevel frame
+    data = frame.framedata
+    @assert isempty(data.exception_frames) && !data.caller_will_catch_err
+
+    # catch stack trace
+    bt = catch_backtrace()
+    st = stacktrace(bt)
+    st = crop_stacktrace(st, 1) do frame
+        # cut until the internal frame (i.e the one within this module or JuliaInterpreter)
+        def = frame.linfo.def
+        mod = isa(def, Method) ? def.module : def::Module
+        return mod == JuliaInterpreter || mod == @__MODULE__
+    end
+
+    push!(interp.ret.toplevel_error_reports, ActualErrorWrapped(err,
+                                                                st,
+                                                                interp.filename,
+                                                                interp.lnn.line
+                                                                ))
+
+    return nothing
+end
+
 # don't inline this so we can find it in the stacktrace
 @noinline function with_err_handling(f, err_handler)
     return try
@@ -445,14 +470,16 @@ end
     end
 end
 
-function crop_stacktrace(st, offset)
-    i = find_frame_index(st, @__FILE__, with_err_handling)
+function crop_stacktrace(pred, st, offset)
+    i = findfirst(pred, st)
     return st[1:(isnothing(i) ? end : i - offset)]
 end
 
-function find_frame_index(st, file, func)
-    return findfirst(st) do frame
-        return frame.file === Symbol(file) && frame.func === Symbol(func)
+function crop_stacktrace(st, offset)
+    file = Symbol(@__FILE__)
+    func = Symbol(with_err_handling)
+    return crop_stacktrace(st, offset) do frame
+        frame.file ===  file && frame.func === func
     end
 end
 
