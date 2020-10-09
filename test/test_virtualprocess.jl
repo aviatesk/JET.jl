@@ -363,6 +363,19 @@ end
         @test occursin("isexpr2", first(res.inference_error_reports).msg)
     end
 
+    # error handling for module usages
+    let
+        res, interp = @profile_toplevel begin
+            using Base: foo
+        end
+
+        @test !isempty(res.toplevel_error_reports)
+        er = first(res.toplevel_error_reports)
+        @test er isa ActualErrorWrapped
+        @test er.err == UndefVarError(:foo)
+        @test er.file == (@__FILE__) && er.line == (@__LINE__) - 7
+    end
+
     # sequential usage
     let
         res, interp = @profile_toplevel begin
@@ -419,6 +432,29 @@ end
             using ..foo: bar
 
             bar("julia") # -> NoMethodErrorReports
+
+            end # module bar
+
+            end # module foo
+        end
+
+        @test isempty(res.toplevel_error_reports)
+        test_sum_over_string(res)
+    end
+
+    # module usage within a block
+    let
+        res, interp = @profile_toplevel begin
+            module foo
+
+            bar(s) = sum(s)
+
+            module baz
+
+            begin
+                using ..foo: bar
+                bar("julia") # -> NoMethodErrorReports
+            end
 
             end # module bar
 

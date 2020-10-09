@@ -37,12 +37,10 @@ this function first parses `s::AbstractString` into `toplevelex::Expr` and then 
   of `actualmodsym` with that of `virtualmod`):
 1. if `blk` is a `:module` expression, recusively call `virtual_process!` with an newly defined
      virtual module
-2. if the current code block is a namespace expression (i.e. `:using`, `:import`, and `:export`)
-     just evaluate it and `continue`
-3. `lower`s `blk` into `lwr` (including macro expansion)
-4. `ConcreteInterpreter` partially interprets some of `lwr`'s statements that should not be
-     abstracted away (e.g. a `:method` definition)
-5. finally, `TPInterpreter` profiles the remaining statements by abstract interpretation
+2. `lower`s `blk` into `lwr` (including macro expansion)
+3. `ConcreteInterpreter` partially interprets some of `lwr`'s statements that should not be
+     abstracted away (e.g. a `:method` definition); see also [`partial_interpret!`](@ref)
+4. finally, `TPInterpreter` profiles the remaining statements by abstract interpretation
 
 !!! warning
     the current approach splits entire code into code blocks and we're not tracking
@@ -121,15 +119,15 @@ function virtual_process!(toplevelex::Expr,
 
         return lwr
     end
-    function macroexpand_err_handler(err, st)
-        # `4` corresponds to `with_err_handling`, `f`, `macroexpand` and its kwfunc
-        st = crop_stacktrace(st, 4)
-        push!(ret.toplevel_error_reports, ActualErrorWrapped(err, st, filename, lnn.line))
-        return nothing
-    end
-    macroexpand_with_err_handling(mod, x) = with_err_handling(macroexpand_err_handler) do
-        return macroexpand(mod, x)
-    end
+    # function macroexpand_err_handler(err, st)
+    #     # `4` corresponds to `with_err_handling`, `f`, `macroexpand` and its kwfunc
+    #     st = crop_stacktrace(st, 4)
+    #     push!(ret.toplevel_error_reports, ActualErrorWrapped(err, st, filename, lnn.line))
+    #     return nothing
+    # end
+    # macroexpand_with_err_handling(mod, x) = with_err_handling(macroexpand_err_handler) do
+    #     return macroexpand(mod, x)
+    # end
     function eval_err_handler(err, st)
         # `3` corresponds to `with_err_handling`, `f` and `eval`
         st = crop_stacktrace(st, 3)
@@ -137,14 +135,6 @@ function virtual_process!(toplevelex::Expr,
         return nothing
     end
     eval_with_err_handling(mod, x) = with_err_handling(eval_err_handler) do
-        return Core.eval(mod, x)
-    end
-    usemodule_with_err_handling(interp, mod, x) = with_err_handling(eval_err_handler) do
-        # NOTE: usages of virtual global variables also work here, since they supposed to
-        # be actually evaluated in `mod` (as `VirtualGlobalVariable` object)
-
-        # TODO: add some error report pass here
-
         return Core.eval(mod, x)
     end
 
@@ -158,6 +148,9 @@ function virtual_process!(toplevelex::Expr,
             lnn = x
             continue
         end
+
+        # XXX: expand macros at this point ?
+        # macro can essentially generate `:toplevel` and `:module` expressions
 
         # flatten container expression
         if isexpr(x, :toplevel)
@@ -181,16 +174,6 @@ function virtual_process!(toplevelex::Expr,
             isnothing(newvirtualmod) && continue # error happened, e.g. duplicated naming
 
             virtual_process!(newtoplevelex, filename, actualmodsym, newvirtualmod, interp, ret)
-
-            continue
-        end
-
-        # handle module usage
-        # TODO: support package profiling
-        if ismoduleusage(x)
-            for ex in to_single_usages(x)
-                usemodule_with_err_handling(interp, virtualmod, ex)
-            end
 
             continue
         end
@@ -242,6 +225,8 @@ end
 partially interprets statements in `src` using JuliaInterpreter.jl:
 - concretize "toplevel" definitions, i.e. `:method`, `:struct_type`, `:abstract_type` and
     `primitive_type` expressions and their dependencies
+- directly evaluates module usage expressions and report error of invalid module usages;
+    or profile the package loading
 - special case `include` calls so that [`virtual_process!`](@ref) recursively runs on the
     included file
 """
@@ -264,9 +249,9 @@ function select_statements(src)
 
     for (i, stmt) in enumerate(stmts)
         if begin
-                isinclude(stmt) || # special case `include` calls
-                ismethod(stmt) ||  # don't abstract away method definitions
-                istypedef(stmt)    # don't abstract away type definitions
+                ismethod(stmt)      || # don't abstract away method definitions
+                istypedef(stmt)     || # don't abstract away type definitions
+                ismoduleusage(stmt)    # just evaluates namespace expressions
             end
             concretized[i] = true
             continue
@@ -277,6 +262,11 @@ function select_statements(src)
         end
         if isexpr(stmt, :call)
             f = (stmt::Expr).args[1]
+
+            # special case `include` calls
+            if f === :include
+                concretized[i] = true
+            end
 
             # add more statements necessary for the first time interpretation of a type definition
             # TODO: maybe upstream these into LoweredCodeUtils.jl ?
@@ -312,13 +302,13 @@ function select_statements(src)
     return concretized
 end
 
-isinclude(ex) = isexpr(ex, :call) && first(ex.args) === :include
-
 # TODO: needs to overload `JuliaInterpreter.handle_err` against `ConcreteInterpreter`
 """
     ConcreteInterpreter
 
-trait to inject code into JuliaInterpreter's interpretation process; we overload:
+trait to inject code into JuliaInterpreter's interpretation process; TypeProfiler overloads:
+- `JuliaInterpreter.step_expr!` to add error report pass for module usage expressions and
+    support package profiling
 - `JuliaInterpreter.evaluate_call_recurse!` to special case `include` calls
 """
 struct ConcreteInterpreter
@@ -329,6 +319,45 @@ struct ConcreteInterpreter
     virtualmod::Module
     interp::TPInterpreter
     ret::VirtualProcessResult
+end
+
+function step_expr!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node), istoplevel::Bool)
+    # TODO:
+    # - support package profiling
+    # - add report pass (report usage of undefined name, etc.)
+    if ismoduleusage(node)
+        for ex in to_single_usages(node)
+            # NOTE: usages of virtual global variables also work here, since they are supposed
+            # to be actually evaluated into `interp.virtualmod` (as `VirtualGlobalVariable`
+            # object) at this point
+
+            return interp.eval_with_err_handling(interp.virtualmod, ex)
+        end
+    end
+
+    return @invoke step_expr!(interp, frame, node, istoplevel::Bool)
+end
+
+ismoduleusage(x) = isexpr(x, (:import, :using, :export))
+
+function to_single_usages(x)
+    if length(x.args) != 1
+        # using A, B, export a, b
+        return Expr.(x.head, x.args)
+    else
+        arg = first(x.args)
+        if isa(arg, Symbol)
+            # export a
+            return [x]
+        elseif arg.head === :.
+            # using A
+            return [x]
+        elseif arg.head === :(:)
+            # using A: sym1, sym2, ...
+            args = Expr.(arg.head, Ref(first(arg.args)), arg.args[2:end])
+            return Expr.(x.head, args)
+        end
+    end
 end
 
 # adapted from https://github.com/JuliaDebug/JuliaInterpreter.jl/blob/2f5f80034bc287a60fe77c4e3b5a49a087e38f8b/src/interpret.jl#L188-L199
@@ -353,6 +382,7 @@ function evaluate_call_recurse!(interp::ConcreteInterpreter, frame::Frame, call_
     end
 end
 
+isinclude(@nospecialize(_))           = false
 isinclude(@nospecialize(f::Function)) = nameof(f) === :include
 
 function handle_include(interp, fargs)
@@ -436,27 +466,5 @@ end
 prewalk_and_transform!(args...) = walk_and_transform!(true, args...)
 postwalk_and_transform!(args...) = walk_and_transform!(false, args...)
 
-ismoduleusage(x) = isexpr(x, (:import, :using, :export))
-
 islnn(@nospecialize(_)) = false
 islnn(::LineNumberNode) = true
-
-function to_single_usages(x)
-    if length(x.args) != 1
-        # using A, B, export a, b
-        return Expr.(x.head, x.args)
-    else
-        arg = first(x.args)
-        if isa(arg, Symbol)
-            # export a
-            return [x]
-        elseif arg.head === :.
-            # using A
-            return [x]
-        elseif arg.head === :(:)
-            # using A: sym1, sym2, ...
-            args = Expr.(arg.head, Ref(first(arg.args)), arg.args[2:end])
-            return Expr.(x.head, args)
-        end
-    end
-end

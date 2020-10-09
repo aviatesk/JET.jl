@@ -51,8 +51,8 @@ import LoweredCodeUtils:
     istypedef, ismethod, callee_matches
 
 import JuliaInterpreter:
-    evaluate_call_recurse!, bypass_builtins, maybe_evaluate_builtin, collect_args,
-    is_return, is_quotenode_egal
+    step_expr!, evaluate_call_recurse!, bypass_builtins, maybe_evaluate_builtin, 
+    collect_args, is_return, is_quotenode_egal
 
 using FileWatching, Requires
 
