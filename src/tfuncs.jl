@@ -9,11 +9,10 @@ function builtin_tfunction(interp::TPInterpreter, @nospecialize(f), argtypes::Ar
     elseif isa(ret, VirtualGlobalVariable)
         # propagate virtual global variable
 
+        add_backedge!(ret.li, sv)
         # this might be `Bottom`, but hopefully the error on this variable is already reported,
-        # so we don't report `InvalidBuiltinCallErrorReport` for this
-        ret = val.t
-
-        add_backedge!(val.li, sv)
+        # so we don't check `InvalidBuiltinCallErrorReport` for this pass
+        return ret.t
     elseif ret === Bottom
         # XXX: for now, TP just relies on the native tfuncs to report invalid builtin calls,
         # maybe there're lots of false negative/positives
