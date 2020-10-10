@@ -1,3 +1,32 @@
+"""
+    @invokelatest f(args...; kwargs...)
+
+provides a convenient way to call [`Base.invokelatest`](@ref);
+`@invokelatest f(args...; kwargs...)` will be simply expanded into `Base.invokelatst(f, args...; kwargs...)`
+```
+"""
+macro invokelatest(ex)
+    @assert isexpr(ex, :call) "call expression should be given"
+
+    f = first(ex.args)
+    args = []
+    kwargs = []
+    for x in ex.args[2:end]
+        if isexpr(x, :parameters)
+            append!(kwargs, x.args)
+        elseif isexpr(x, :kw)
+            push!(kwargs, x)
+        else
+            push!(args, x)
+        end
+    end
+    return if isempty(kwargs) # eliminates dispatch to kwarg methods, might unnecessary to be special cased
+        :(Base.invokelatest($(f), $(args...)))
+    else
+        :(Base.invokelatest($(f), $(args...); $(kwargs...)))
+    end |> esc
+end
+
 const VirtualProcessResult = @NamedTuple begin
     included_files::Set{String}
     toplevel_error_reports::Vector{ToplevelErrorReport}
@@ -182,7 +211,7 @@ function virtual_process!(toplevelex::Expr,
                                       interp,
                                       ret
                                       )
-        concretized = invokelatest(partial_interpret!, interp′, virtualmod, src)
+        concretized = @invokelatest partial_interpret!(interp′, virtualmod, src)
 
         # bail out if nothing to profile (just a performance optimization)
         if all(is_return(last(src.code)) ? concretized[begin:end-1] : concretized)
@@ -252,13 +281,13 @@ partially interprets statements in `src` using JuliaInterpreter.jl:
     included file
 """
 function partial_interpret!(interp, mod, src)
-    concretized = select_statements(src)
+    concretize = select_statements(src)
 
-    # LoweredCodeUtils.print_with_code(stdout, src, concretized)
+    # LoweredCodeUtils.print_with_code(stdout, src, concretize)
 
-    selective_eval_fromstart!(interp, Frame(mod, src), concretized, #= istoplevel =# true)
+    selective_eval_fromstart!(interp, Frame(mod, src), concretize, #= istoplevel =# true)
 
-    return concretized
+    return concretize
 end
 
 # select statements that should be not abstracted away, but rather actually interpreted
@@ -266,7 +295,7 @@ function select_statements(src)
     stmts = src.code
     edges = CodeEdges(src)
 
-    concretized = fill(false, length(stmts))
+    concretize = fill(false, length(stmts))
 
     for (i, stmt) in enumerate(stmts)
         if begin
@@ -274,7 +303,7 @@ function select_statements(src)
                 istypedef(stmt)     || # don't abstract away type definitions
                 ismoduleusage(stmt)    # just evaluates namespace expressions
             end
-            concretized[i] = true
+            concretize[i] = true
             continue
         end
 
@@ -286,20 +315,20 @@ function select_statements(src)
 
             # special case `include` calls
             if f === :include
-                concretized[i] = true
+                concretize[i] = true
             end
 
             # add more statements necessary for the first time interpretation of a type definition
             # TODO: maybe upstream these into LoweredCodeUtils.jl ?
             if isa(f, GlobalRef)
                 if f.mod === Core && f.name in (:_setsuper!, :_equiv_typedef, :_typebody!)
-                    concretized[i] = true
+                    concretize[i] = true
                     continue
                 end
             end
             if isa(f, QuoteNode)
                 if f.value in (Core._setsuper!, Core._equiv_typedef, Core._typebody!)
-                    concretized[i] = true
+                    concretize[i] = true
                     continue
                 end
             end
@@ -312,15 +341,15 @@ function select_statements(src)
             if f === :eval || (callee_matches(f, Base, :getproperty) && is_quotenode_egal(stmt.args[end], :eval))
                 # statement `i` may be the equivalent of `f = Core.eval`, so require each
                 # stmt that calls `eval` via `f(expr)`
-                concretized[edges.succs[i]] .= true
-                concretized[i] = true
+                concretize[edges.succs[i]] .= true
+                concretize[i] = true
             end
         end
     end
 
-    lines_required!(concretized, src, edges)
+    lines_required!(concretize, src, edges)
 
-    return concretized
+    return concretize
 end
 
 """
@@ -343,7 +372,7 @@ struct ConcreteInterpreter
     ret::VirtualProcessResult
 end
 
-function step_expr!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node), istoplevel::Bool)
+function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node), istoplevel::Bool)
     # TODO:
     # - support package profiling
     # - add report pass (report usage of undefined name, etc.)
@@ -384,7 +413,7 @@ end
 
 # adapted from https://github.com/JuliaDebug/JuliaInterpreter.jl/blob/2f5f80034bc287a60fe77c4e3b5a49a087e38f8b/src/interpret.jl#L188-L199
 # works as `JuliaInterpreter.evaluate_call_compiled!`, but special cases for TypeProfiler.jl added
-function evaluate_call_recurse!(interp::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)
+function JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)
     # @assert !enter_generated
     pc = frame.pc
     ret = bypass_builtins(frame, call_expr, pc)
@@ -435,7 +464,7 @@ function handle_include(interp, fargs)
     return nothing
 end
 
-function handle_err(interp::ConcreteInterpreter, frame, err)
+function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame, err)
     # this error handler is only supposed to be called from toplevel frame
     data = frame.framedata
     @assert isempty(data.exception_frames) && !data.caller_will_catch_err

@@ -75,7 +75,7 @@ end
 # the bail out logics are hard-coded within the original `abstract_call_gf_by_type` method,
 # and so we need to overload it with `TPInterpreter`, adding the above patch points
 # NOTE: the overloaded version is evaluated in `Core.Compiler` so that we don't need miscellaneous imports
-push_inithook!() do; Core.eval(Core.Compiler, quote
+push_inithook!() do; Core.eval(CC, quote
 
 # TODO:
 # - report "too many method matched"
@@ -279,7 +279,7 @@ function is_empty_match(info)
     return isempty(res.matches)
 end
 
-function abstract_eval_special_value(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
+function CC.abstract_eval_special_value(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
     if istoplevel(sv)
         if isa(e, Symbol)
             e = GlobalRef(sv.mod, e)
@@ -322,7 +322,7 @@ function abstract_eval_special_value(interp::TPInterpreter, @nospecialize(e), vt
     return ret
 end
 
-function abstract_eval_value(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
+function CC.abstract_eval_value(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
     ret = @invoke abstract_eval_value(interp::AbstractInterpreter, e, vtypes::VarTable, sv::InferenceState)
 
     # report non-boolean condition error
@@ -338,7 +338,7 @@ function abstract_eval_value(interp::TPInterpreter, @nospecialize(e), vtypes::Va
     return ret
 end
 
-function abstract_eval_statement(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
+function CC.abstract_eval_statement(interp::TPInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
     if istoplevel(sv)
         if interp.concretized[get_cur_pc(sv)]
             return Any # bail out if it has been interpreted
@@ -435,7 +435,7 @@ end
 
 # in this overload we can work on `CodeInfo` (and also `InferenceState`) where type inference
 # (and maybe also optimization) already ran on
-function typeinf(interp::TPInterpreter, frame::InferenceState)
+function CC.typeinf(interp::TPInterpreter, frame::InferenceState)
     # some methods like `getproperty` can't propagate concrete types without actual values,
     # and for those cases constant propagation usually plays a somewhat critical role that
     # "overwrite"s the previously-inferred lousy inference result;

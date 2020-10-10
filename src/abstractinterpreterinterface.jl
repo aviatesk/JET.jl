@@ -57,28 +57,28 @@ end
 # API
 # ---
 
-InferenceParams(interp::TPInterpreter) = InferenceParams(interp.native)
-OptimizationParams(interp::TPInterpreter) = OptimizationParams(interp.native)
-get_world_counter(interp::TPInterpreter) = get_world_counter(interp.native)
-get_inference_cache(interp::TPInterpreter) = get_inference_cache(interp.native)
+CC.InferenceParams(interp::TPInterpreter) = InferenceParams(interp.native)
+CC.OptimizationParams(interp::TPInterpreter) = OptimizationParams(interp.native)
+CC.get_world_counter(interp::TPInterpreter) = get_world_counter(interp.native)
+CC.get_inference_cache(interp::TPInterpreter) = get_inference_cache(interp.native)
 
 # TP only works for runtime inference
-lock_mi_inference(::TPInterpreter, ::MethodInstance) = nothing
-unlock_mi_inference(::TPInterpreter, ::MethodInstance) = nothing
+CC.lock_mi_inference(::TPInterpreter, ::MethodInstance) = nothing
+CC.unlock_mi_inference(::TPInterpreter, ::MethodInstance) = nothing
 
-function add_remark!(interp::TPInterpreter, ::InferenceState, report::InferenceErrorReport)
+function CC.add_remark!(interp::TPInterpreter, ::InferenceState, report::InferenceErrorReport)
     push!(interp.reports, report)
     return
 end
-function add_remark!(interp::TPInterpreter, sv::InferenceState, s::String)
+function CC.add_remark!(interp::TPInterpreter, sv::InferenceState, s::String)
     interp.filter_native_remarks && return
     add_remark!(interp, sv, NativeRemark(interp, sv, s))
     return
 end
 
-may_optimize(interp::TPInterpreter) = interp.optimize
-may_compress(interp::TPInterpreter) = interp.compress
-may_discard_trees(interp::TPInterpreter) = interp.discard_trees
+CC.may_optimize(interp::TPInterpreter) = interp.optimize
+CC.may_compress(interp::TPInterpreter) = interp.compress
+CC.may_discard_trees(interp::TPInterpreter) = interp.discard_trees
 
 # specific
 # --------

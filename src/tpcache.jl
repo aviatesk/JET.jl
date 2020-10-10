@@ -1,7 +1,7 @@
 # code cache interface
 # --------------------
 
-code_cache(interp::TPInterpreter) = TPCache(interp, code_cache(interp.native))
+CC.code_cache(interp::TPInterpreter) = TPCache(interp, code_cache(interp.native))
 
 struct TPCache{NativeCache}
     interp::TPInterpreter
@@ -9,8 +9,8 @@ struct TPCache{NativeCache}
     TPCache(interp::TPInterpreter, native::NativeCache) where {NativeCache} =
         new{NativeCache}(interp, native)
 end
-WorldView(tpc::TPCache, wr::WorldRange) = TPCache(tpc.interp, WorldView(tpc.native, wr))
-WorldView(tpc::TPCache, args...) = WorldView(tpc, WorldRange(args...))
+CC.WorldView(tpc::TPCache, wr::WorldRange) = TPCache(tpc.interp, WorldView(tpc.native, wr))
+CC.WorldView(tpc::TPCache, args...) = WorldView(tpc, WorldRange(args...))
 
 CC.haskey(tpc::TPCache, mi::MethodInstance) = CC.haskey(tpc.native, mi)
 
