@@ -6,6 +6,7 @@ module TypeProfiler
 
 # `TPInterpreter`
 import Core.Compiler:
+    # abstractinterpreterinterface.jl
     InferenceParams,
     OptimizationParams,
     get_world_counter,
@@ -16,10 +17,13 @@ import Core.Compiler:
     may_optimize,
     may_compress,
     may_discard_trees,
+    # tpcache.jl
     code_cache,
     WorldView,
+    # tfuncs.jl
     builtin_tfunction,
     return_type_tfunc,
+    # abstractinterpretation.jl
     abstract_call_gf_by_type,
     abstract_eval_special_value,
     abstract_eval_value,
@@ -28,6 +32,7 @@ import Core.Compiler:
 
 # `ConcreteInterpreter`
 import JuliaInterpreter:
+    # virtualprocess.jl
     step_expr!,
     evaluate_call_recurse!,
     handle_err

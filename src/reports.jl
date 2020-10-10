@@ -355,11 +355,9 @@ get_msg(::Type{NonBooleanCondErrorReport}, interp, sv, @nospecialize(t)) =
     "non-boolean ($(t)) used in boolean context: "
 function get_msg(::Type{ExceptionReport}, interp, sv, throw_blocks)
     n = length(throw_blocks)
-    return if isone(n)
-        "will throw: "
-    else
-        "will throw either of: "
-    end
+    return isone(n) ?
+           "will throw: " :
+           "will throw either of: "
 end
 get_msg(::Type{NativeRemark}, interp, sv, s) = s
 

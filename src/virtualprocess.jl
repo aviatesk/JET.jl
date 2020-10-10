@@ -273,8 +273,8 @@ _walk_and_transform!(pre, f, @nospecialize(_), scope) = return
     partial_interpret!(interp, mod, src)
 
 partially interprets statements in `src` using JuliaInterpreter.jl:
-- concretize "toplevel" definitions, i.e. `:method`, `:struct_type`, `:abstract_type` and
-    `primitive_type` expressions and their dependencies
+- concretize "toplevel definitions", i.e. `:method`, `:struct_type`, `:abstract_type` and
+    `:primitive_type` expressions and their dependencies
 - directly evaluates module usage expressions and report error of invalid module usages;
     or profile the package loading
 - special case `include` calls so that [`virtual_process!`](@ref) recursively runs on the

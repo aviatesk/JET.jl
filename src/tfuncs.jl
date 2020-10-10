@@ -1,5 +1,5 @@
-function builtin_tfunction(interp::TPInterpreter, @nospecialize(f), argtypes::Array{Any,1},
-                           sv::InferenceState) # `TPInterpreter` isn't overloaded on `return_type`
+function CC.builtin_tfunction(interp::TPInterpreter, @nospecialize(f), argtypes::Array{Any,1},
+                              sv::InferenceState) # `TPInterpreter` isn't overloaded on `return_type`
     ret = @invoke builtin_tfunction(interp::AbstractInterpreter, f, argtypes::Array{Any,1},
                                     sv::Union{InferenceState,Nothing})
 
@@ -26,7 +26,7 @@ end
 # here we shouldn't pass `TPInterpreter` to it; otherwise we may get false error reports from
 # the  `abstract_call`, which isn't the abstraction of actual execution, thus here we just
 # check if the call of `return_type` is valid or not
-function return_type_tfunc(interp::TPInterpreter, argtypes::Vector{Any}, sv::InferenceState)
+function CC.return_type_tfunc(interp::TPInterpreter, argtypes::Vector{Any}, sv::InferenceState)
     if length(argtypes) !== 3
         # invalid argument number, let's report and return error result (i.e. `Bottom`)
         add_remark!(interp, sv, NoMethodErrorReport(interp,

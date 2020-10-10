@@ -147,7 +147,7 @@ end
     # well, the actual error here is world age error ...
     let
         vmod = gen_virtual_module()
-        @test_broken res, interp = @profile_toplevel vmod begin
+        res, interp = @profile_toplevel vmod begin
             begin
                 abstract type Foo end
                 struct Foo1 <: Foo
@@ -158,6 +158,7 @@ end
                 println(foo)
             end
         end
+        @test_broken isempty(res.toplevel_error_reports)
     end
 
     @testset "toplevel definitions by `eval` calls" begin
