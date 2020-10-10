@@ -1,10 +1,10 @@
-function CC.builtin_tfunction(interp::TPInterpreter, @nospecialize(f), argtypes::Array{Any,1},
-                              sv::InferenceState) # `TPInterpreter` isn't overloaded on `return_type`
+function CC.builtin_tfunction(interp::JETInterpreter, @nospecialize(f), argtypes::Array{Any,1},
+                              sv::InferenceState) # `JETInterpreter` isn't overloaded on `return_type`
     ret = @invoke builtin_tfunction(interp::AbstractInterpreter, f, argtypes::Array{Any,1},
                                     sv::Union{InferenceState,Nothing})
 
     if f === throw
-        # uncaught `throw` calls will be reported by `typeinf(interp::TPInterpreter, frame::InferenceState)`
+        # uncaught `throw` calls will be reported by `typeinf(interp::JETInterpreter, frame::InferenceState)`
         return ret
     elseif isa(ret, VirtualGlobalVariable)
         # propagate virtual global variable
@@ -14,7 +14,7 @@ function CC.builtin_tfunction(interp::TPInterpreter, @nospecialize(f), argtypes:
         # so we don't check `InvalidBuiltinCallErrorReport` for this pass
         return ret.t
     elseif ret === Bottom
-        # XXX: for now, TP just relies on the native tfuncs to report invalid builtin calls,
+        # XXX: for now, JET just relies on the native tfuncs to report invalid builtin calls,
         # maybe there're lots of false negative/positives
         add_remark!(interp, sv, InvalidBuiltinCallErrorReport(interp, sv, argtypes))
     end
@@ -23,10 +23,10 @@ function CC.builtin_tfunction(interp::TPInterpreter, @nospecialize(f), argtypes:
 end
 
 # `return_type_tfunc` internally uses `abstract_call` to model `return_type` function and
-# here we shouldn't pass `TPInterpreter` to it; otherwise we may get false error reports from
+# here we shouldn't pass `JETInterpreter` to it; otherwise we may get false error reports from
 # the  `abstract_call`, which isn't the abstraction of actual execution, thus here we just
 # check if the call of `return_type` is valid or not
-function CC.return_type_tfunc(interp::TPInterpreter, argtypes::Vector{Any}, sv::InferenceState)
+function CC.return_type_tfunc(interp::JETInterpreter, argtypes::Vector{Any}, sv::InferenceState)
     if length(argtypes) !== 3
         # invalid argument number, let's report and return error result (i.e. `Bottom`)
         add_remark!(interp, sv, NoMethodErrorReport(interp,
@@ -37,7 +37,7 @@ function CC.return_type_tfunc(interp::TPInterpreter, argtypes::Vector{Any}, sv::
                                                     ))
         return Bottom
     else
-        # don't recursively pass on `TPInterpreter` via `@invoke_native`
+        # don't recursively pass on `JETInterpreter` via `@invoke_native`
         return return_type_tfunc(interp.native, argtypes, sv)
     end
 end

@@ -1,23 +1,23 @@
 # code cache interface
 # --------------------
 
-CC.code_cache(interp::TPInterpreter) = TPCache(interp, code_cache(interp.native))
+CC.code_cache(interp::JETInterpreter) = JETCache(interp, code_cache(interp.native))
 
-struct TPCache{NativeCache}
-    interp::TPInterpreter
+struct JETCache{NativeCache}
+    interp::JETInterpreter
     native::NativeCache
-    TPCache(interp::TPInterpreter, native::NativeCache) where {NativeCache} =
+    JETCache(interp::JETInterpreter, native::NativeCache) where {NativeCache} =
         new{NativeCache}(interp, native)
 end
-CC.WorldView(tpc::TPCache, wr::WorldRange) = TPCache(tpc.interp, WorldView(tpc.native, wr))
-CC.WorldView(tpc::TPCache, args...) = WorldView(tpc, WorldRange(args...))
+CC.WorldView(tpc::JETCache, wr::WorldRange) = JETCache(tpc.interp, WorldView(tpc.native, wr))
+CC.WorldView(tpc::JETCache, args...) = WorldView(tpc, WorldRange(args...))
 
-CC.haskey(tpc::TPCache, mi::MethodInstance) = CC.haskey(tpc.native, mi)
+CC.haskey(tpc::JETCache, mi::MethodInstance) = CC.haskey(tpc.native, mi)
 
-function CC.get(tpc::TPCache, mi::MethodInstance, default)
+function CC.get(tpc::JETCache, mi::MethodInstance, default)
     # # for self profiling
     # if isa(mi.def, Method)
-    #     # ignore cache for TypeProfiler's code itself
+    #     # ignore cache for JET's code itself
     #     mod = mi.def.module
     #     if mod == (@__MODULE__) || mod == JuliaInterpreter
     #         return default
@@ -49,6 +49,6 @@ function CC.get(tpc::TPCache, mi::MethodInstance, default)
     return force_inference ? default : ret
 end
 
-CC.getindex(tpc::TPCache, mi::MethodInstance) = CC.getindex(tpc.native, mi)
+CC.getindex(tpc::JETCache, mi::MethodInstance) = CC.getindex(tpc.native, mi)
 
-CC.setindex!(tpc::TPCache, ci::CodeInstance, mi::MethodInstance) = CC.setindex!(tpc.native, ci, mi)
+CC.setindex!(tpc::JETCache, ci::CodeInstance, mi::MethodInstance) = CC.setindex!(tpc.native, ci, mi)

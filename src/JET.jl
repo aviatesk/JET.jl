@@ -1,10 +1,10 @@
 @doc read(normpath(dirname(@__DIR__), "README.md"), String)
-module TypeProfiler
+module JET
 
 # imports
 # -------
 
-# `TPInterpreter`
+# `JETInterpreter`
 import Core.Compiler:
     # abstractinterpreterinterface.jl
     InferenceParams,
@@ -175,7 +175,7 @@ end
 function report_errors(actualmod, text, filename; filter_native_remarks = true)
     virtualmod = gen_virtual_module(actualmod)
 
-    interp = TPInterpreter(; filter_native_remarks) # dummy
+    interp = JETInterpreter(; filter_native_remarks) # dummy
     ret, interp = virtual_process!(text,
                                    filename,
                                    virtualmod,
@@ -191,7 +191,7 @@ function report_errors(actualmod, text, filename; filter_native_remarks = true)
 end
 
 gen_virtual_module(actualmod = Main) =
-    return Core.eval(actualmod, :(module $(gensym(:TypeProfilerVirtualModule)) end))::Module
+    return Core.eval(actualmod, :(module $(gensym(:JETVirtualModule)) end))::Module
 
 # fix virtual module printing based on string manipulation; the "actual" modules may not be
 # loaded into this process
@@ -207,7 +207,7 @@ end
 # created by `profile_toplevel!` or not (i.e. `@generated` function)
 module toplevel end
 
-function profile_toplevel!(interp::TPInterpreter, mod::Module, src::CodeInfo)
+function profile_toplevel!(interp::JETInterpreter, mod::Module, src::CodeInfo)
     # construct toplevel `MethodInstance`
     mi = ccall(:jl_new_method_instance_uninit, Ref{Core.MethodInstance}, ());
     mi.uninferred = src
@@ -225,7 +225,7 @@ end
 # TODO:
 # - handle multiple applicable methods ?
 # - `profile_call_builtin!` ?
-function profile_call_gf!(interp::TPInterpreter,
+function profile_call_gf!(interp::JETInterpreter,
                           @nospecialize(tt::Type{<:Tuple}),
                           world::UInt = get_world_counter(interp)
                           )
@@ -263,7 +263,7 @@ end
 @nospecialize
 
 profile_call_gf(tt::Type{<:Tuple}, world::UInt = get_world_counter(); kwargs...) =
-    return profile_call_gf!(TPInterpreter(world; kwargs...), tt)
+    return profile_call_gf!(JETInterpreter(world; kwargs...), tt)
 
 function profile_call(f, argtypes::Type...; kwargs...)
     tt = to_tuple_type([typeof′(f), argtypes...])

@@ -1,4 +1,4 @@
-using Test, TypeProfiler, InteractiveUtils
+using Test, JET, InteractiveUtils
 
 # show version info in CI
 if get(ENV, "CI", nothing) == "true"
@@ -8,15 +8,15 @@ end
 import Core.Compiler:
     widenconst
 
-import TypeProfiler:
-    TPInterpreter, VirtualGlobalVariable, profile_call, get_result, virtual_process!,
+import JET:
+    JETInterpreter, VirtualGlobalVariable, profile_call, get_result, virtual_process!,
     gen_virtual_module, report_errors, ToplevelErrorReport, InferenceErrorReport,
     print_reports
 
-for sym in Symbol.(last.(Base.Fix2(split, '.').(string.(vcat(subtypes(TypeProfiler, ToplevelErrorReport),
-                                                             subtypes(TypeProfiler, InferenceErrorReport),
+for sym in Symbol.(last.(Base.Fix2(split, '.').(string.(vcat(subtypes(JET, ToplevelErrorReport),
+                                                             subtypes(JET, InferenceErrorReport),
                                                              )))))
-    Core.eval(@__MODULE__, :(import TypeProfiler: $(sym)))
+    Core.eval(@__MODULE__, :(import JET: $(sym)))
 end
 
 import Base:
@@ -45,9 +45,9 @@ function test_sum_over_string(ers)
         end
     end
 end
-test_sum_over_string(res::TypeProfiler.VirtualProcessResult) =
+test_sum_over_string(res::JET.VirtualProcessResult) =
     test_sum_over_string(res.inference_error_reports)
-test_sum_over_string(interp::TPInterpreter) = test_sum_over_string(interp.reports)
+test_sum_over_string(interp::JETInterpreter) = test_sum_over_string(interp.reports)
 
 # define virtual module and setup fixtures
 macro def(ex)
@@ -68,7 +68,7 @@ function profile_text′(s,
                        virtualmod = gen_virtual_module(@__MODULE__);
                        filename = "top-level",
                        actualmodsym = Symbol(parentmodule(virtualmod)),
-                       interp = TPInterpreter(),
+                       interp = JETInterpreter(),
                        )
     return virtual_process!(s,
                             filename,
@@ -93,8 +93,8 @@ function profile_toplevel(virtualmod, ex, lnn)
                   Expr(:toplevel, lnn, ex)
                   ) |> QuoteNode
     return quote let
-        interp = $(TPInterpreter)()
-        ret = $(TypeProfiler.gen_virtual_process_result)()
+        interp = $(JETInterpreter)()
+        ret = $(JET.gen_virtual_process_result)()
         virtualmod = $(esc(virtualmod))
         actualmodsym = Symbol(parentmodule(virtualmod))
         $(virtual_process!)($(toplevelex), $(string(lnn.file)), virtualmod, actualmodsym, interp, ret)

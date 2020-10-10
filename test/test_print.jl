@@ -1,5 +1,5 @@
 # NOTE:
-# tests in this file may not be so robust against the future changes in TypeProfiler.jl or
+# tests in this file may not be so robust against the future changes in JET.jl or
 # even those in julia itself
 
 @testset "print toplevel errors" begin
@@ -53,7 +53,7 @@ end
             end
 
             io = IOBuffer()
-            postprocess = TypeProfiler.gen_postprocess(vmod, Main)
+            postprocess = JET.gen_postprocess(vmod, Main)
             @test print_reports(io, res.inference_error_reports, postprocess)
             let s = String(take!(io))
                 @test occursin("1 possible error found", s)

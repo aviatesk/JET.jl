@@ -2,7 +2,7 @@
 # i.e. julia-dev -i test/setuptest.jl
 include("setuptest.jl")
 
-@testset "TypeProfiler.jl" begin
+@testset "JET.jl" begin
     @testset "virtualprocess.jl" begin
         include("test_virtualprocess.jl")
     end

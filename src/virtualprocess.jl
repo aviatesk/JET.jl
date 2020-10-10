@@ -43,14 +43,14 @@ gen_virtual_process_result() = (; included_files = Set{String}(),
                      filename::AbstractString,
                      virtualmod::Module,
                      actualmodsym::Symbol,
-                     interp::TPInterpreter,
-                     )::Tuple{VirtualProcessResult,TPInterpreter}
+                     interp::JETInterpreter,
+                     )::Tuple{VirtualProcessResult,JETInterpreter}
     virtual_process!(toplevelex::Expr,
                      filename::AbstractString,
                      virtualmod::Module,
                      actualmodsym::Symbol,
-                     interp::TPInterpreter,
-                     )::Tuple{VirtualProcessResult,TPInterpreter}
+                     interp::JETInterpreter,
+                     )::Tuple{VirtualProcessResult,JETInterpreter}
 
 simulates Julia's toplevel execution and profiles error reports, and returns
 `ret::VirtualProcessResult`, which keeps the following information:
@@ -59,7 +59,7 @@ simulates Julia's toplevel execution and profiles error reports, and returns
     text parsing or partial (actual) interpretation; these reports are "critical" and should
     have precedence over `inference_error_reports`
 - `re.inference_error_reports::Vector{InferenceErrorReport}`: possible error reports found
-    by `TPInterpreter`
+    by `JETInterpreter`
 
 this function first parses `s::AbstractString` into `toplevelex::Expr` and then iterate the
   following steps on each code block (`blk`) of `toplevelex`:
@@ -70,7 +70,7 @@ this function first parses `s::AbstractString` into `toplevelex::Expr` and then 
      with that of `virtualmod`: see `fix_self_references`
 3. `ConcreteInterpreter` partially interprets some of `lwr`'s statements that should not be
      abstracted away (e.g. a `:method` definition); see also [`partial_interpret!`](@ref)
-4. finally, `TPInterpreter` profiles the remaining statements by abstract interpretation
+4. finally, `JETInterpreter` profiles the remaining statements by abstract interpretation
 
 !!! warning
     the current approach splits entire code into code blocks and we're not tracking
@@ -84,9 +84,9 @@ function virtual_process!(s::AbstractString,
                           filename::AbstractString,
                           virtualmod::Module,
                           actualmodsym::Symbol,
-                          interp::TPInterpreter,
+                          interp::JETInterpreter,
                           ret::VirtualProcessResult = gen_virtual_process_result(),
-                          )::Tuple{VirtualProcessResult,TPInterpreter}
+                          )::Tuple{VirtualProcessResult,JETInterpreter}
     push!(ret.included_files, filename)
 
     toplevelex = parse_input_line(s; filename)
@@ -107,14 +107,14 @@ function virtual_process!(toplevelex::Expr,
                           filename::AbstractString,
                           virtualmod::Module,
                           actualmodsym::Symbol,
-                          interp::TPInterpreter,
+                          interp::JETInterpreter,
                           ret::VirtualProcessResult = gen_virtual_process_result(),
-                          )::Tuple{VirtualProcessResult,TPInterpreter}
+                          )::Tuple{VirtualProcessResult,JETInterpreter}
     @assert isexpr(toplevelex, :toplevel)
 
     filename::String = filename
     lnn::LineNumberNode = LineNumberNode(0, filename)
-    interp::TPInterpreter = interp
+    interp::JETInterpreter = interp
 
     function lower_err_handler(err, st)
         # `3` corresponds to `with_err_handling`, `f` and `lower`
@@ -209,7 +209,7 @@ function virtual_process!(toplevelex::Expr,
                                       virtualmod,
                                       actualmodsym,
                                       interp,
-                                      ret
+                                      ret,
                                       )
         concretized = @invokelatest partial_interpret!(interp′, virtualmod, src)
 
@@ -218,15 +218,15 @@ function virtual_process!(toplevelex::Expr,
             continue
         end
 
-        interp = TPInterpreter(; # world age gets updated to take in newly added methods defined by `ConcreteInterpreter`
-                               inf_params            = InferenceParams(interp),
-                               opt_params            = OptimizationParams(interp),
-                               optimize              = may_optimize(interp),
-                               compress              = may_compress(interp),
-                               discard_trees         = may_discard_trees(interp),
-                               filter_native_remarks = interp.filter_native_remarks,
-                               concretized           = concretized, # or construct partial `CodeInfo` from remaining abstract statements
-                               )
+        interp = JETInterpreter(; # world age gets updated to take in newly added methods defined by `ConcreteInterpreter`
+                                inf_params            = InferenceParams(interp),
+                                opt_params            = OptimizationParams(interp),
+                                optimize              = may_optimize(interp),
+                                compress              = may_compress(interp),
+                                discard_trees         = may_discard_trees(interp),
+                                filter_native_remarks = interp.filter_native_remarks,
+                                concretized           = concretized, # or construct partial `CodeInfo` from remaining abstract statements
+                                )
 
         profile_toplevel!(interp, virtualmod, src)
 
@@ -355,7 +355,7 @@ end
 """
     ConcreteInterpreter
 
-trait to inject code into JuliaInterpreter's interpretation process; TypeProfiler overloads:
+trait to inject code into JuliaInterpreter's interpretation process; JET.jl overloads:
 - `JuliaInterpreter.step_expr!` to add error report pass for module usage expressions and
     support package profiling
 - `JuliaInterpreter.evaluate_call_recurse!` to special case `include` calls
@@ -368,7 +368,7 @@ struct ConcreteInterpreter
     eval_with_err_handling::Function
     virtualmod::Module
     actualmodsym::Symbol
-    interp::TPInterpreter
+    interp::JETInterpreter
     ret::VirtualProcessResult
 end
 
@@ -412,7 +412,7 @@ function to_single_usages(x)
 end
 
 # adapted from https://github.com/JuliaDebug/JuliaInterpreter.jl/blob/2f5f80034bc287a60fe77c4e3b5a49a087e38f8b/src/interpret.jl#L188-L199
-# works as `JuliaInterpreter.evaluate_call_compiled!`, but special cases for TypeProfiler.jl added
+# works as `JuliaInterpreter.evaluate_call_compiled!`, but special cases for JET.jl added
 function JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)
     # @assert !enter_generated
     pc = frame.pc

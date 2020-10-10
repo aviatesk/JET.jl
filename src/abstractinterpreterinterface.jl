@@ -1,7 +1,7 @@
 # `AbstractInterpreter` API
 # -------------------------
 
-struct TPInterpreter <: AbstractInterpreter
+struct JETInterpreter <: AbstractInterpreter
     #= native =#
 
     native::NativeInterpreter
@@ -9,7 +9,7 @@ struct TPInterpreter <: AbstractInterpreter
     compress::Bool
     discard_trees::Bool
 
-    #= TypeProfiler.jl specific =#
+    #= JET.jl specific =#
 
     # for escaping force inference on "erroneous" cached frames, sequential assignment of virtual global variable
     id::Symbol
@@ -26,18 +26,18 @@ struct TPInterpreter <: AbstractInterpreter
     # toplevel profiling (skip inference on actually interpreted statements)
     concretized::BitVector
 
-    function TPInterpreter(world                 = get_world_counter();
-                           inf_params            = gen_inf_params(),
-                           opt_params            = gen_opt_params(),
-                           optimize              = true,
-                           compress              = false,
-                           discard_trees         = false,
-                           id                    = gensym(:TPInterpreterID),
-                           reports               = [],
-                           exception_reports     = [],
-                           filter_native_remarks = true,
-                           concretized           = [],
-                           )
+    function JETInterpreter(world                 = get_world_counter();
+                            inf_params            = gen_inf_params(),
+                            opt_params            = gen_opt_params(),
+                            optimize              = true,
+                            compress              = false,
+                            discard_trees         = false,
+                            id                    = gensym(:JETInterpreterID),
+                            reports               = [],
+                            exception_reports     = [],
+                            filter_native_remarks = true,
+                            concretized           = [],
+                            )
         @assert !opt_params.inlining "inlining should be disabled"
 
         native = NativeInterpreter(world; inf_params, opt_params)
@@ -57,28 +57,28 @@ end
 # API
 # ---
 
-CC.InferenceParams(interp::TPInterpreter) = InferenceParams(interp.native)
-CC.OptimizationParams(interp::TPInterpreter) = OptimizationParams(interp.native)
-CC.get_world_counter(interp::TPInterpreter) = get_world_counter(interp.native)
-CC.get_inference_cache(interp::TPInterpreter) = get_inference_cache(interp.native)
+CC.InferenceParams(interp::JETInterpreter) = InferenceParams(interp.native)
+CC.OptimizationParams(interp::JETInterpreter) = OptimizationParams(interp.native)
+CC.get_world_counter(interp::JETInterpreter) = get_world_counter(interp.native)
+CC.get_inference_cache(interp::JETInterpreter) = get_inference_cache(interp.native)
 
-# TP only works for runtime inference
-CC.lock_mi_inference(::TPInterpreter, ::MethodInstance) = nothing
-CC.unlock_mi_inference(::TPInterpreter, ::MethodInstance) = nothing
+# JET only works for runtime inference
+CC.lock_mi_inference(::JETInterpreter, ::MethodInstance) = nothing
+CC.unlock_mi_inference(::JETInterpreter, ::MethodInstance) = nothing
 
-function CC.add_remark!(interp::TPInterpreter, ::InferenceState, report::InferenceErrorReport)
+function CC.add_remark!(interp::JETInterpreter, ::InferenceState, report::InferenceErrorReport)
     push!(interp.reports, report)
     return
 end
-function CC.add_remark!(interp::TPInterpreter, sv::InferenceState, s::String)
+function CC.add_remark!(interp::JETInterpreter, sv::InferenceState, s::String)
     interp.filter_native_remarks && return
     add_remark!(interp, sv, NativeRemark(interp, sv, s))
     return
 end
 
-CC.may_optimize(interp::TPInterpreter) = interp.optimize
-CC.may_compress(interp::TPInterpreter) = interp.compress
-CC.may_discard_trees(interp::TPInterpreter) = interp.discard_trees
+CC.may_optimize(interp::JETInterpreter) = interp.optimize
+CC.may_compress(interp::JETInterpreter) = interp.compress
+CC.may_discard_trees(interp::JETInterpreter) = interp.discard_trees
 
 # specific
 # --------
@@ -101,10 +101,10 @@ end
 
 function gen_opt_params()
     return OptimizationParams(;
-        # inlining should be disable for `TPInterpreter`, otherwise virtual stack frame
+        # inlining should be disable for `JETInterpreter`, otherwise virtual stack frame
         # traversing will fail for frames after optimizer runs on
         inlining = false,
     )
 end
 
-get_id(interp::TPInterpreter) = interp.id
+get_id(interp::JETInterpreter) = interp.id
