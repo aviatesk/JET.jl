@@ -1,3 +1,5 @@
+# TODO: set up our own tfuncs
+
 function CC.builtin_tfunction(interp::JETInterpreter, @nospecialize(f), argtypes::Array{Any,1},
                               sv::InferenceState) # `JETInterpreter` isn't overloaded on `return_type`
     ret = @invoke builtin_tfunction(interp::AbstractInterpreter, f, argtypes::Array{Any,1},
@@ -6,6 +8,29 @@ function CC.builtin_tfunction(interp::JETInterpreter, @nospecialize(f), argtypes
     if f === throw
         # uncaught `throw` calls will be reported by `typeinf(interp::JETInterpreter, frame::InferenceState)`
         return ret
+    elseif f === getfield
+        # getfield is so common, let's special case it
+        obj, fld = argtypes
+        if isa(fld, Const)
+            name = fld.val
+            if isa(name, Symbol)
+                if isa(obj, Const) && ⊑(obj, Module)
+                    mod = obj.val
+                    if !isdefined(mod, name)
+                        # `ret` here should be annotated as `Any` by `getfield_tfunc`, but
+                        # we want to be more conservative and change it to `Bottom` and
+                        # suppress any further abstract interpretation with this
+                        add_remark!(interp, sv, GlobalUndefVarErrorReport(interp, sv, mod, name))
+                        return Bottom
+                    end
+                elseif ret === Bottom
+                    # general case when an error is detected by the native `getfield_tfunc`
+                    typ = widenconst(obj)
+                    add_remark!(interp, sv, NoFieldErrorReport(interp, sv, typ, name))
+                    return ret
+                end
+            end
+        end
     elseif isa(ret, VirtualGlobalVariable)
         # propagate virtual global variable
 
@@ -14,8 +39,9 @@ function CC.builtin_tfunction(interp::JETInterpreter, @nospecialize(f), argtypes
         # so we don't check `InvalidBuiltinCallErrorReport` for this pass
         return ret.t
     elseif ret === Bottom
-        # XXX: for now, JET just relies on the native tfuncs to report invalid builtin calls,
-        # maybe there're lots of false negative/positives
+        # XXX: for general case, JET just relies on the (maybe too persmissive) return type
+        # from native tfuncs to report invalid builtin calls and probably there're lots of
+        # false negatives
         add_remark!(interp, sv, InvalidBuiltinCallErrorReport(interp, sv, argtypes))
     end
 
