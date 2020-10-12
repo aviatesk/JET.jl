@@ -350,7 +350,7 @@ get_msg(::Type{InvalidBuiltinCallErrorReport}, interp, sv, @nospecialize(args...
 get_msg(::Type{GlobalUndefVarErrorReport}, interp, sv, mod, name) =
     "variable $(mod).$(name) is not defined: "
 get_msg(::Type{LocalUndefVarErrorReport}, interp, sv, name) =
-    "variable $(name) may raise UndefVarError"
+    "local variable $(name) is not defined"
 get_msg(::Type{NonBooleanCondErrorReport}, interp, sv, @nospecialize(t)) =
     "non-boolean ($(t)) used in boolean context: "
 function get_msg(::Type{ExceptionReport}, interp, sv, throw_blocks)
