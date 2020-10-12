@@ -463,11 +463,11 @@ function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
         end
     end
 
-    # @info "before typeinf" frame.linfo => ret
+    # @info "before typeinf" frame.linfo frame.result.argtypes is_constant_propagated(frame)
 
     ret = @invoke typeinf(interp::AbstractInterpreter, frame::InferenceState)
 
-    # @info "after typeinf" frame.linfo => ret
+    # @info "after typeinf" frame.linfo => get_result(frame)
 
     # report (local) undef var error
     # this only works when optimization is enabled, just because `:throw_undef_if_not` and
