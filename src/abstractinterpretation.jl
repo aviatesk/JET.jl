@@ -281,12 +281,6 @@ function is_empty_match(info)
 end
 
 function CC.abstract_eval_special_value(interp::JETInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    if istoplevel(sv)
-        if isa(e, Symbol)
-            e = GlobalRef(sv.mod, e)
-        end
-    end
-
     ret = @invoke abstract_eval_special_value(interp::AbstractInterpreter, e, vtypes::VarTable, sv::InferenceState)
 
     if isa(ret, Const)
@@ -362,7 +356,6 @@ function get_global_assignment_lhs(sv::InferenceState)
     lhs = first(stmt.args)
 
     isa(lhs, GlobalRef) && return lhs
-    istoplevel(sv) && isa(lhs, Symbol) && return GlobalRef(sv.mod, lhs)
 
     return nothing
 end
@@ -500,9 +493,7 @@ function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
     if get_result(frame) === Bottom
         # report `throw`s only if there is no circumvent pass, which is represented by
         # `Bottom`-annotated return type inference with non-empty `throw` blocks
-        throw_calls = istoplevel(frame) ?
-                      filter(is_throw_call_in_toplevel, frame.src.code) :
-                      filter(is_throw_call′, frame.src.code)
+        throw_calls = filter(is_throw_call′, frame.src.code)
         if !isempty(throw_calls)
             push!(interp.exception_reports, length(interp.reports) => ExceptionReport(interp, frame, throw_calls))
         end
@@ -518,9 +509,6 @@ is_unreachable(rn::ReturnNode)   = !isdefined(rn, :val)
 
 is_throw_call′(@nospecialize(_)) = false
 is_throw_call′(e::Expr)          = is_throw_call(e)
-
-is_throw_call_in_toplevel(@nospecialize(_)) = false
-is_throw_call_in_toplevel(stmt::Expr)       = isexpr(stmt, :call) && first(stmt.args) === :throw
 
 # entry
 # -----

@@ -35,6 +35,22 @@ end
     end
 end
 
+@testset "fix `Symbol`s into `GlobalRef`s" begin
+    # this case otherwise will throw an error in `Core.Compiler.typ_for_val` in optimization
+    let
+        res, interp = @profile_toplevel begin
+            v = '1'
+            v = if rand(Bool)
+                rand(Int)
+            else
+                v
+            end
+            sin(v)
+        end
+        @test true
+    end
+end
+
 @testset "\"toplevel definitions\"" begin
     let
         vmod = gen_virtual_module()

@@ -199,7 +199,16 @@ function virtual_process!(toplevelex::Expr,
         isnothing(lwr) && continue # error happened during lowering
         isexpr(lwr, :thunk) || continue # literal
 
-        fix_self_references!(lwr, actualmodsym, virtualmod)
+        # fix self references of `actualmodsym`
+        prewalk_and_transform!(lwr) do x, scope
+            if isa(x, Symbol)
+                if x === actualmodsym
+                    return virtualmod
+                end
+            end
+
+            return x
+        end
 
         src = first((lwr::Expr).args)::CodeInfo
 
@@ -212,6 +221,17 @@ function virtual_process!(toplevelex::Expr,
                                       ret,
                                       )
         concretized = @invokelatest partial_interpret!(interp′, virtualmod, src)
+
+        # fix `Symbol`s into `GlobalRef`s
+        # NOTE: needs to happen here since JuliaInterpreter.jl assumes there're `Symbol`s as
+        # `GlobalRef`s in toplevel frames
+        prewalk_and_transform!(src) do x, scope
+            if :quote ∉ scope && isa(x, Symbol)
+                return GlobalRef(virtualmod, x)
+            end
+
+            return x
+        end
 
         # bail out if nothing to profile (just a performance optimization)
         if all(is_return(last(src.code)) ? concretized[begin:end-1] : concretized)
@@ -234,18 +254,6 @@ function virtual_process!(toplevelex::Expr,
     end
 
     return ret, interp
-end
-
-function fix_self_references!(lwr, actualmodsym, virtualmod)
-    prewalk_and_transform!(lwr) do x, scope
-        if isa(x, Symbol)
-            if x === actualmodsym
-                return virtualmod
-            end
-        end
-
-        return x
-    end
 end
 
 prewalk_and_transform!(args...) = walk_and_transform!(true, args...)
