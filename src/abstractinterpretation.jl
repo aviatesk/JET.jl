@@ -37,7 +37,8 @@ end
 
 is_constant_propagated(frame) = CC.any(frame.result.overridden_by_const)
 
-istoplevel(sv) = sv.linfo.def == toplevel
+istoplevel(linfo::MethodInstance) = linfo.def == toplevel
+istoplevel(sv::InferenceState)    = istoplevel(sv.linfo)
 
 mutable struct VirtualGlobalVariable
     # actual profiled type
