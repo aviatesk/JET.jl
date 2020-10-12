@@ -1,0 +1,11 @@
+#!/usr/bin/env julia
+
+using JET
+
+let
+    file = first(ARGS)
+
+    isfile(file) || error("$(file) doesn't exist")
+
+    profile_file(file)
+end
