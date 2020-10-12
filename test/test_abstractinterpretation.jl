@@ -567,11 +567,13 @@ end
     # error points for `bar(::Foo2)` and `bar(::Foo3)` if we bail out on `Any`-grew return type
     @test length(res.inference_error_reports) === 2
     @test any(res.inference_error_reports) do er
-        return er isa InvalidBuiltinCallErrorReport &&
-            all(er.argtypes .⊑ [vmod.Foo2, Symbol])
+        return er isa NoFieldErrorReport &&
+            er.typ === vmod.Foo2 &&
+            er.name === :bar
     end
     @test any(res.inference_error_reports) do er
-        return er isa InvalidBuiltinCallErrorReport &&
-            all(er.argtypes .⊑ [vmod.Foo3, Symbol])
+        return er isa NoFieldErrorReport &&
+            er.typ === vmod.Foo3 &&
+            er.name === :bar
     end
 end

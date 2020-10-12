@@ -25,7 +25,10 @@
             $(profile_call)(t->access_field(t,:w), T)
         end)
         @test length(interp.reports) === 1
-        @test first(interp.reports) isa InvalidBuiltinCallErrorReport
+        er = first(interp.reports)
+        @test er isa NoFieldErrorReport
+        @test er.typ === m.T
+        @test er.name === :w
 
         interp, frame = Core.eval(m, quote
             $(profile_call)(t->access_field(t,:v), T)

@@ -164,6 +164,8 @@ end
 
 @reportdef InvalidBuiltinCallErrorReport(interp, sv, argtypes::Vector{Any})
 
+@reportdef NoFieldErrorReport(interp, sv, @nospecialize(typ::Type), name::Symbol)
+
 @reportdef GlobalUndefVarErrorReport(interp, sv, mod::Module, name::Symbol)
 
 @reportdef LocalUndefVarErrorReport(interp, sv, name::Symbol) track_from_frame = true
@@ -347,6 +349,8 @@ get_msg(::Type{NoMethodErrorReport}, interp, sv, unionsplit, @nospecialize(args.
     "no matching method found for call signature: "
 get_msg(::Type{InvalidBuiltinCallErrorReport}, interp, sv, @nospecialize(args...)) =
     "invalid builtin function call: "
+get_msg(::Type{NoFieldErrorReport}, interp, sv, @nospecialize(typ), name) =
+    "type $(typ) has no field $(name): "
 get_msg(::Type{GlobalUndefVarErrorReport}, interp, sv, mod, name) =
     "variable $(mod).$(name) is not defined: "
 get_msg(::Type{LocalUndefVarErrorReport}, interp, sv, name) =
