@@ -31,12 +31,15 @@ const VirtualProcessResult = @NamedTuple begin
     included_files::Set{String}
     toplevel_error_reports::Vector{ToplevelErrorReport}
     inference_error_reports::Vector{InferenceErrorReport}
+    method_signatures::Vector{Type}
 end
 
-gen_virtual_process_result() = (; included_files = Set{String}(),
-                                  toplevel_error_reports = ToplevelErrorReport[],
-                                  inference_error_reports = InferenceErrorReport[],
-                                  )::VirtualProcessResult
+gen_virtual_process_result(collect_method_signatures::Bool = true) =
+    return (; included_files          = Set{String}(),
+              toplevel_error_reports  = ToplevelErrorReport[],
+              inference_error_reports = InferenceErrorReport[],
+              method_signatures       = Type[],
+              )::VirtualProcessResult
 
 """
     virtual_process!(s::AbstractString,
@@ -405,7 +408,15 @@ function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, 
         return nothing
     end
 
-    return @invoke step_expr!(interp, frame, node, istoplevel::Bool)
+    ret = @invoke step_expr!(interp, frame, node, istoplevel::Bool)
+
+    if isexpr(node, :method, 3)
+        atype_params, sparams = @lookup(frame, node.args[2])::SimpleVector
+        atype = Tuple{(atype_params::SimpleVector)...}
+        push!(interp.ret.method_signatures, atype)
+    end
+
+    return ret
 end
 
 ismoduleusage(x) = isexpr(x, (:import, :using, :export))

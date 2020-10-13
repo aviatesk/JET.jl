@@ -111,7 +111,8 @@ import JuliaInterpreter:
     maybe_evaluate_builtin,
     collect_args,
     is_return,
-    is_quotenode_egal
+    is_quotenode_egal,
+    @lookup
 
 using FileWatching, Requires
 
@@ -192,10 +193,23 @@ function report_errors(actualmod, text, filename; kwargs...)
                                    interp
                                    )
 
+    if !isempty(ret.toplevel_error_reports)
+        # non-empty `ret.toplevel_error_reports` means critical errors happened during
+        # the AST transformation, so they always have precedence over `ret.inference_error_reports`
+        return ret.included_files,
+               ret.toplevel_error_reports,
+               gen_postprocess(virtualmod, actualmod)
+    end
+
+    for tt in ret.method_signatures
+        empty!(interp.reports); empty!(interp.exception_reports)
+
+        profile_gf_by_type!(interp, tt)
+        append!(ret.inference_error_reports, interp.reports) # collect error reports
+    end
+
     return ret.included_files,
-           # non-empty `ret.toplevel_error_reports` means critical errors happened during
-           # the AST transformation, so they always have precedence over `ret.inference_error_reports`
-           !isempty(ret.toplevel_error_reports) ? ret.toplevel_error_reports : ret.inference_error_reports,
+           ret.inference_error_reports,
            gen_postprocess(virtualmod, actualmod)
 end
 
@@ -270,13 +284,21 @@ function profile_method_signature!(interp::JETInterpreter,
                                    sparams::SimpleVector,
                                    world::UInt = get_world_counter(interp)
                                    )
-    mi = specialize_method(m, atype, sparams)
+    atype_params = CC.unwrap_unionall(atype).parameters
+    splitunions = 1 < CC.unionsplitcost(atype_params) <= InferenceParams(interp).MAX_UNION_SPLITTING
 
-    result = InferenceResult(mi)
+    local frame::InferenceState
+    for sig in (splitunions ? CC.switchtupleunion(atype) : [atype])
+        mi = specialize_method(m, sig, sparams)
 
-    frame = InferenceState(result, #= cached =# true, interp)
+        result = InferenceResult(mi)
 
-    return profile_frame!(interp, frame)
+        frame = InferenceState(result, #= cached =# true, interp)
+
+        profile_frame!(interp, frame)
+    end
+
+    return interp, frame
 end
 
 # miscellaneous, interactive
