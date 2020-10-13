@@ -36,7 +36,7 @@
     end)
     test_sum_over_string(interp)
 
-    # invalidate code cache that is created by native compiler (not by JET)
+    # invalidate seemingly erroneous code cache created by native compiler (not by JET profiling)
     interp, frame = profile_call(Nothing) do a
         a.field
     end

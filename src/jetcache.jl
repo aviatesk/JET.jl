@@ -35,7 +35,7 @@ function CC.get(tpc::JETCache, mi::MethodInstance, default)
     isa(ret, CodeInstance) || return default
 
     # cache hit, now we need to invalidate the cache lookup if this `mi` has been profiled
-    # as erroneous by JET or seemingly erroneous (checked by its return type annotation);
+    # as erroneous by JET or is seemingly erroneous (checked by its return type annotation);
     # otherwise the error reports that can occur from this frame will just be ignored
     force_inference = false
 
