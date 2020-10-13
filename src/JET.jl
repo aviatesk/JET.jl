@@ -17,7 +17,7 @@ import Core.Compiler:
     may_optimize,
     may_compress,
     may_discard_trees,
-    # tpcache.jl
+    # jetcache.jl
     code_cache,
     WorldView,
     # tfuncs.jl
@@ -28,6 +28,7 @@ import Core.Compiler:
     abstract_eval_special_value,
     abstract_eval_value,
     abstract_eval_statement,
+    # typeinfer.jl
     typeinf
 
 # `ConcreteInterpreter`
@@ -256,8 +257,12 @@ function profile_method_signature!(interp::JETInterpreter,
     return profile_frame!(interp, frame)
 end
 
-# testing, interactive session
+# miscellaneous, interactive
 # ----------------------------
+
+const __self_profiling__ = Ref(false)
+switch_self_profiling(enable = true) = __self_profiling__[] = enable
+@inline is_self_profiling() = return __self_profiling__[]
 
 # profile from call expression
 macro profile_call(ex, kwargs...)
