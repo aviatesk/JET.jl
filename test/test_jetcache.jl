@@ -35,4 +35,10 @@
         end
     end)
     test_sum_over_string(interp)
+
+    # invalidate code cache that is created by native compiler (not by JET)
+    interp, frame = profile_call(Nothing) do a
+        a.field
+    end
+    @test length(interp.reports) === 1
 end

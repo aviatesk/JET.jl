@@ -32,18 +32,22 @@ function CC.get(tpc::JETCache, mi::MethodInstance, default)
 
     ret = CC.get(tpc.native, mi, default)
 
-    ret === default && return default
+    isa(ret, CodeInstance) || return default
 
     # cache hit, now we need to invalidate the cache lookup if this `mi` has been profiled
-    # as erroneous; otherwise the error reports that can occur from this frame will just be
-    # ignored
+    # as erroneous by JET or seemingly erroneous (checked by its return type annotation);
+    # otherwise the error reports that can occur from this frame will just be ignored
     force_inference = false
+
     if haskey(ERRORNEOUS_LINFOS, mi)
         # don't force re-inference for frames from the same inference process;
         # FIXME: this is critical for profiling performance, but seems to lead to lots of false positives ...
         if ERRORNEOUS_LINFOS[mi] !== get_id(tpc.interp)
             force_inference = true
         end
+    elseif isdefined(ret, :rettype) && ret.rettype === Bottom
+        # return type is annotated as `Bottom` (by native compiler), let's force inference
+        force_inference = true
     end
 
     return force_inference ? default : ret
