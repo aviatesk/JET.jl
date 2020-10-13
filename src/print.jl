@@ -112,7 +112,7 @@ function print_reports(io::IO,
                        fullpath::Bool = false,
                        annotate_types::Bool = false,
                        __kwargs...)
-    uniquify_reports!(reports)
+    reports = uniquify_reports(reports)
 
     if isempty(reports)
         if print_inference_sucess
@@ -141,11 +141,11 @@ function print_reports(io::IO,
     return true
 end
 
-# FIXME:
-# this is a dirty fix for duplicated reports; see comments above of the overwriting of
-# `typeinf_local` in src/abstractinterpretation.jl
-function uniquify_reports!(reports::Vector{<:InferenceErrorReport})
-    return unique!(reports) do report; return #= uniquify keys =# (
+# FIXME: this is a dirty fix for duplicated reports
+# reports can be duplicated mainly because of code cache invalidation, especaiily there're
+# lots of duplications reported when self-profiling
+function uniquify_reports(reports::Vector{<:InferenceErrorReport})
+    return unique(reports) do report; return #= uniquify keys =# (
         # caller
         first(report.st),
         # error
