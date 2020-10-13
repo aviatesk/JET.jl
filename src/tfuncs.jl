@@ -31,7 +31,9 @@ function CC.builtin_tfunction(interp::JETInterpreter, @nospecialize(f), argtypes
                 end
             end
         end
-    elseif isa(ret, VirtualGlobalVariable)
+    end
+
+    if isa(ret, VirtualGlobalVariable)
         # propagate virtual global variable
 
         add_backedge!(ret.li, sv)

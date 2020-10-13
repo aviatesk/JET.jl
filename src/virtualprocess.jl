@@ -58,7 +58,7 @@ simulates Julia's toplevel execution and profiles error reports, and returns
 - `ret.toplevel_error_reports::Vector{ToplevelErrorReport}`: toplevel errors found during the
     text parsing or partial (actual) interpretation; these reports are "critical" and should
     have precedence over `inference_error_reports`
-- `re.inference_error_reports::Vector{InferenceErrorReport}`: possible error reports found
+- `ret.inference_error_reports::Vector{InferenceErrorReport}`: possible error reports found
     by `JETInterpreter`
 
 this function first parses `s::AbstractString` into `toplevelex::Expr` and then iterate the
@@ -226,7 +226,9 @@ function virtual_process!(toplevelex::Expr,
         # NOTE: needs to happen here since JuliaInterpreter.jl assumes there're `Symbol`s as
         # `GlobalRef`s in toplevel frames
         prewalk_and_transform!(src) do x, scope
-            if :quote ∉ scope && isa(x, Symbol)
+            # `_walk_and_transform!` doesn't recur into `QuoteNode`, so this apparently simple
+            # approach just works
+            if isa(x, Symbol)
                 return GlobalRef(virtualmod, x)
             end
 
@@ -250,7 +252,7 @@ function virtual_process!(toplevelex::Expr,
 
         profile_toplevel!(interp, virtualmod, src)
 
-        append!(ret.inference_error_reports, interp.reports) # correct error reports
+        append!(ret.inference_error_reports, interp.reports) # collect error reports
     end
 
     return ret, interp

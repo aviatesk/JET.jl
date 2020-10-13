@@ -15,8 +15,8 @@ include("setuptest.jl")
         include("test_tfuncs.jl")
     end
 
-    @testset "tpcache.jl" begin
-        include("test_tpcache.jl")
+    @testset "jetcache.jl" begin
+        include("test_jetcache.jl")
     end
 
     # tests with Windows-paths is just an hell
