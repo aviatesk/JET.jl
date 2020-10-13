@@ -175,6 +175,7 @@ end
             end
         end
         @test_broken isempty(res.toplevel_error_reports)
+        @test_broken is_abstract(vmod, :foo)
     end
 
     @testset "toplevel definitions by `eval` calls" begin
