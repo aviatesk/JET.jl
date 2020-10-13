@@ -261,8 +261,34 @@ end
 # ----------------------------
 
 const __self_profiling__ = Ref(false)
+
 switch_self_profiling(enable = true) = __self_profiling__[] = enable
-@inline is_self_profiling() = return __self_profiling__[]
+
+# when self-profiling, we need to invalidate caches for "our" code
+@inline function force_invalidate_self_code_cache(mi::MethodInstance)
+    if __self_profiling__[]
+        def = mi.def
+        if isa(def, Method)
+            mod = def.module
+
+            # ignore cache for code defined in JET
+            mod == (@__MODULE__) && return true
+
+            # caches for overloaded code also need to be invalidated
+            mod == JuliaInterpreter && return true
+
+            # ignoring entire cache for `Core.Compiler` slows down performance too bad, so
+            # let's do more fine-grained, per-file basis check
+            # XXX: needs more files to be added ?
+            file = def.file
+            file === Symbol("compiler/cicache.jl") && return true
+            file === Symbol("compiler/abstractinterpretation.jl") && return true
+            file === Symbol("compiler/typeinfer.jl") && return true
+        end
+    end
+
+    return false
+end
 
 # profile from call expression
 macro profile_call(ex, kwargs...)

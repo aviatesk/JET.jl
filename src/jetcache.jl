@@ -15,27 +15,7 @@ CC.WorldView(tpc::JETCache, args...) = WorldView(tpc, WorldRange(args...))
 CC.haskey(tpc::JETCache, mi::MethodInstance) = CC.haskey(tpc.native, mi)
 
 function CC.get(tpc::JETCache, mi::MethodInstance, default)
-    # TODO: move this condition check into src/JET.jl
-    if is_self_profiling()
-        # when self-profiling, we need to invalidate caches for "our" code
-        if isa(mi.def, Method)
-            mod = mi.def.module
-
-            # ignore cache for code defined in JET
-            mod == (@__MODULE__) && return default
-
-            # caches for overloaded code also need to be invalidated
-            mod == JuliaInterpreter && return default
-
-            # ignoring entire cache for `Core.Compiler` slows down performance too bad, so
-            # let's do more fine-grained, per-file basis check
-            # XXX: needs more files to be added ?
-            file = mi.def.file
-            file === Symbol("compiler/cicache.jl") && return default
-            file === Symbol("compiler/abstractinterpretation.jl") && return default
-            file === Symbol("compiler/typeinfer.jl") && return default
-        end
-    end
+    force_invalidate_self_code_cache(mi) && return default
 
     ret = CC.get(tpc.native, mi, default)
 
