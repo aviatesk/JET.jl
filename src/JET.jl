@@ -42,7 +42,10 @@ import JuliaInterpreter:
 # TODO: really use `using` instead
 
 import Core:
-    LineInfoNode
+    MethodMatch,
+    LineInfoNode,
+    SimpleVector,
+    svec
 
 import Core.Compiler:
     AbstractInterpreter,
@@ -222,19 +225,29 @@ function profile_toplevel!(interp::JETInterpreter, mod::Module, src::CodeInfo)
     return profile_frame!(interp, frame)
 end
 
-# TODO:
-# - handle multiple applicable methods ?
-# - `profile_call_builtin!` ?
-function profile_call_gf!(interp::JETInterpreter,
-                          @nospecialize(tt::Type{<:Tuple}),
-                          world::UInt = get_world_counter(interp)
-                          )
-    ms = _methods_by_ftype(tt, -1, world)
-    @assert !(ms === false || length(ms) != 1) "unable to find single applicable method for $(tt)"
+# TODO `profile_call_builtin!` ?
+function profile_gf_by_type!(interp::JETInterpreter,
+                             @nospecialize(tt::Type{<:Tuple}),
+                             world::UInt = get_world_counter(interp),
+                             )
+    mms = _methods_by_ftype(tt, InferenceParams(interp).MAX_METHODS, world)
+    @assert mms !== false "unable to find matching method for $(tt)"
 
-    atypes, sparams, m = first(ms)
+    filter!(mm->mm.spec_types===tt, mms)
+    @assert length(mms) == 1 "unable to find single target method for $(tt)"
 
-    mi = specialize_method(m, atypes, sparams)
+    mm = first(mms)::MethodMatch
+
+    return profile_method_signature!(interp, mm.method, mm.spec_types, mm.sparams)
+end
+
+function profile_method_signature!(interp::JETInterpreter,
+                                   m::Method,
+                                   @nospecialize(atype),
+                                   sparams::SimpleVector,
+                                   world::UInt = get_world_counter(interp)
+                                   )
+    mi = specialize_method(m, atype, sparams)
 
     result = InferenceResult(mi)
 
@@ -262,12 +275,10 @@ end
 
 @nospecialize
 
-profile_call_gf(tt::Type{<:Tuple}, world::UInt = get_world_counter(); kwargs...) =
-    return profile_call_gf!(JETInterpreter(world; kwargs...), tt)
-
 function profile_call(f, argtypes::Type...; kwargs...)
     tt = to_tuple_type([typeof′(f), argtypes...])
-    return profile_call_gf(tt; kwargs...)
+    interp = JETInterpreter(; kwargs...)
+    return profile_gf_by_type!(interp, tt)
 end
 
 profile_call(f, argtypes; kwargs...) = profile_call(f, argtypes...; kwargs...)

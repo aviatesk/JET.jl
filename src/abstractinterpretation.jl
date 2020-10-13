@@ -420,7 +420,7 @@ end
 function force_invalidate!(mod, edge_sym)
     λ = Core.eval(mod, :($(edge_sym)() = return))::Function
     m = first(methods(λ))
-    return specialize_method(m, Tuple{typeof(λ)}, Core.svec())::MethodInstance
+    return specialize_method(m, Tuple{typeof(λ)}, svec())::MethodInstance
 end
 
 # overloads typeinfer.jl
