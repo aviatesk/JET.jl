@@ -102,10 +102,6 @@ macro reportdef(ex, kwargs...)
         end
     end
 
-    function strip_type_decls(x)
-        isexpr(x, :escape) && return Expr(:escape, strip_type_decls(first(x.args))) # keep escape
-        return isexpr(x, :(::)) ? first(x.args) : x
-    end
     args′ = strip_type_decls.(args)
     spec_args′ = strip_type_decls.(spec_args)
     constructor_body = quote
@@ -158,6 +154,11 @@ macro reportdef(ex, kwargs...)
             $(constructor_ex)
         end
     end
+end
+
+function strip_type_decls(x)
+    isexpr(x, :escape) && return Expr(:escape, strip_type_decls(first(x.args))) # keep escape
+    return isexpr(x, :(::)) ? first(x.args) : x
 end
 
 @reportdef NoMethodErrorReport(interp, sv, unionsplit::Bool, @nospecialize(atype::Type))
