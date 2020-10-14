@@ -104,7 +104,7 @@ macro reportdef(ex, kwargs...)
 
     args′ = strip_type_decls.(args)
     spec_args′ = strip_type_decls.(spec_args)
-    constructor_body = quote
+    constructor_body = Expr(:block, __source__, quote
         interp = $(args[2])
         sv = $(args[3])
 
@@ -139,10 +139,10 @@ macro reportdef(ex, kwargs...)
         end
 
         return new(reverse(st), msg, sig, lineage, $(spec_args′...))
-    end
+    end)
     constructor_ex = Expr(:function, ex, constructor_body)
 
-    return quote
+    return Expr(:block, __source__, quote
         struct $(T) <: InferenceErrorReport
             st::VirtualStackTrace
             msg::String
@@ -153,7 +153,7 @@ macro reportdef(ex, kwargs...)
             # inner constructor
             $(constructor_ex)
         end
-    end
+    end)
 end
 
 function strip_type_decls(x)
