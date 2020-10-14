@@ -179,7 +179,7 @@ function print_error_frame(io, report, depth; kwargs...)
 
     len = print_frame(io, frame, depth, true; kwargs...)
     print_rails(io, depth-1)
-    printstyled(io, "│ ", report.msg; color)
+    printstyled(io, "│ ", report.msg, ": "; color)
     print_signature(io, report.sig;
                     annotate_types = true, # always annotate types for errored signatures
                     bold = true,

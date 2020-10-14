@@ -346,24 +346,21 @@ end
 _get_sig_type(::InferenceState, @nospecialize(x)) = Any[repr(x; context = :compact => true)], nothing
 
 get_msg(::Type{NoMethodErrorReport}, interp, sv, unionsplit, @nospecialize(args...)) = unionsplit ?
-    "for one of the union split cases, no matching method found for signature: " :
-    "no matching method found for call signature: "
+    "for one of the union split cases, no matching method found for signature" :
+    "no matching method found for call signature"
 get_msg(::Type{InvalidBuiltinCallErrorReport}, interp, sv, @nospecialize(args...)) =
-    "invalid builtin function call: "
+    "invalid builtin function call"
 get_msg(::Type{NoFieldErrorReport}, interp, sv, @nospecialize(typ), name) =
-    "type $(typ) has no field $(name): "
+    "type $(typ) has no field $(name)"
 get_msg(::Type{GlobalUndefVarErrorReport}, interp, sv, mod, name) =
-    "variable $(mod).$(name) is not defined: "
+    "variable $(mod).$(name) is not defined"
 get_msg(::Type{LocalUndefVarErrorReport}, interp, sv, name) =
     "local variable $(name) is not defined"
 get_msg(::Type{NonBooleanCondErrorReport}, interp, sv, @nospecialize(t)) =
-    "non-boolean ($(t)) used in boolean context: "
-function get_msg(::Type{ExceptionReport}, interp, sv, throw_blocks)
-    n = length(throw_blocks)
-    return isone(n) ?
-           "will throw: " :
-           "will throw either of: "
-end
+    "non-boolean ($(t)) used in boolean context"
+get_msg(::Type{ExceptionReport}, interp, sv, throw_blocks) = isone(length(throw_blocks)) ?
+    "will throw" :
+    "will throw either of"
 get_msg(::Type{NativeRemark}, interp, sv, s) = s
 
 # utils
