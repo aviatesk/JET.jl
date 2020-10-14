@@ -293,24 +293,29 @@ function CC.abstract_eval_special_value(interp::JETInterpreter, @nospecialize(e)
             ret = val.t
         end
     elseif isa(e, GlobalRef)
-        # report access to undefined global variable
-        mod, sym = e.mod, e.name
-        if isdefined(mod, sym)
-            # FIXME: this might produce wrong result if the current frame is cached and the
-            # global variable later be updated (both actually or abstractly, anyway);
-            # 1. if we have established a way to convert a already-existing global variable
-            #    to virtual global variable we can do that here and add backedge
-            # 2. `NativeInterpreter` just returns `Any` for this case, so it might be okay
-            #    if JET just follows that and give up profiling on non-constant global variables ...
-            val = getfield(mod, sym)
-            @debug "propagating non-constant global variable as constant" mod sym val
-            ret = Const(val)
+        mod, name = e.mod, e.name
+        if isdefined(mod, name)
+            # we don't track types of global variables except when we're in toplevel frame,
+            # and here we just annotate this as `Any`; NOTE: this is becasue:
+            # - we can't track side-effects of assignments of global variables that happen in
+            #   (possibly deeply nested) callees, and it might be possible if we just ignore
+            #   assignments happens in callees that aren't reached by type inference by
+            #   the widening heuristics
+            # - consistency with Julia's native type inference
+            # - it's hard to track side effects for cached frames
+
+            # TODO: add report pass here (for performance linting)
         else
-            add_remark!(interp, sv, GlobalUndefVarErrorReport(interp, sv, mod, sym))
-            # `ret` here should be annotated as `Any` by `NativeInterpreter`, but we want to
-            # be more conservative and change it to `Bottom` and suppress any further abstract
-            # interpretation with this
-            ret = Bottom
+            # report access to undefined global variable
+            add_remark!(interp, sv, GlobalUndefVarErrorReport(interp, sv, mod, name))
+
+            # `ret` at this point should be annotated as `Any` by `NativeInterpreter`, and
+            # we just pass it as is to collect as much error points as possible within this
+            # frame
+            # IDEA: we can change it to `Bottom` to suppress any further abstract interpretation
+            # with this variable, and the later analysis after the update on this (currently)
+            # undefined variable just works because we will invalidate the cache for this frame
+            # anyway
         end
     end
 
