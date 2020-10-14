@@ -199,16 +199,7 @@ function virtual_process!(toplevelex::Expr,
         isnothing(lwr) && continue # error happened during lowering
         isexpr(lwr, :thunk) || continue # literal
 
-        # fix self references of `actualmodsym`
-        prewalk_and_transform!(lwr) do x, scope
-            if isa(x, Symbol)
-                if x === actualmodsym
-                    return virtualmod
-                end
-            end
-
-            return x
-        end
+        fix_self_references!(lwr, actualmodsym, virtualmod)
 
         src = first((lwr::Expr).args)::CodeInfo
 
@@ -222,19 +213,10 @@ function virtual_process!(toplevelex::Expr,
                                       )
         concretized = @invokelatest partial_interpret!(interp′, virtualmod, src)
 
-        # fix `Symbol`s into `GlobalRef`s
         # NOTE: needs to happen here since JuliaInterpreter.jl assumes there're `Symbol`s as
         # `GlobalRef`s in toplevel frames
-        prewalk_and_transform!(src) do x, scope
-            # `_walk_and_transform!` doesn't recur into `QuoteNode`, so this apparently simple
-            # approach just works
-            if isa(x, Symbol)
-                return GlobalRef(virtualmod, x)
-            end
-
-            return x
-        end
-
+        fix_global_symbols!(src, virtualmod)
+        
         # bail out if nothing to profile (just a performance optimization)
         if all(is_return(last(src.code)) ? concretized[begin:end-1] : concretized)
             continue
@@ -256,6 +238,32 @@ function virtual_process!(toplevelex::Expr,
     end
 
     return ret, interp
+end
+
+# replace self references of `actualmodsym` with `virtualmod` (as is)
+function fix_self_references!(ex, actualmodsym, virtualmod)
+    prewalk_and_transform!(ex) do x, scope
+        if isa(x, Symbol)
+            if x === actualmodsym
+                return virtualmod
+            end
+        end
+
+        return x
+    end
+end
+
+# replace global `Symbol`s with `GlobalRef`s
+function fix_global_symbols!(ex, mod)
+    prewalk_and_transform!(ex) do x, scope
+        # `_walk_and_transform!` doesn't recur into `QuoteNode`, so this apparently simple
+        # approach just works
+        if isa(x, Symbol)
+            return GlobalRef(mod, x)
+        end
+
+        return x
+    end
 end
 
 prewalk_and_transform!(args...) = walk_and_transform!(true, args...)
