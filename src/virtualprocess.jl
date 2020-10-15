@@ -199,9 +199,9 @@ function virtual_process!(toplevelex::Expr,
         isnothing(lwr) && continue # error happened during lowering
         isexpr(lwr, :thunk) || continue # literal
 
-        fix_self_references!(lwr, actualmodsym, virtualmod)
-
         src = first((lwr::Expr).args)::CodeInfo
+
+        fix_self_references!(src, actualmodsym, virtualmod)
 
         interp′ = ConcreteInterpreter(filename,
                                       lnn,
@@ -319,7 +319,7 @@ function select_statements(src)
         if begin
                 ismethod(stmt)      || # don't abstract away method definitions
                 istypedef(stmt)     || # don't abstract away type definitions
-                ismoduleusage(stmt)    # just evaluates namespace expressions
+                ismoduleusage(stmt)    # module usages are handled by `ConcreteInterpreter`
             end
             concretize[i] = true
             continue
@@ -334,21 +334,6 @@ function select_statements(src)
             # special case `include` calls
             if f === :include
                 concretize[i] = true
-            end
-
-            # add more statements necessary for the first time interpretation of a type definition
-            # TODO: maybe upstream these into LoweredCodeUtils.jl ?
-            if isa(f, GlobalRef)
-                if f.mod === Core && f.name in (:_setsuper!, :_equiv_typedef, :_typebody!)
-                    concretize[i] = true
-                    continue
-                end
-            end
-            if isa(f, QuoteNode)
-                if f.value in (Core._setsuper!, Core._equiv_typedef, Core._typebody!)
-                    concretize[i] = true
-                    continue
-                end
             end
 
             # analysis of `eval` calls are difficult, let's give up it and just evaluate
