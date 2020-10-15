@@ -216,7 +216,7 @@ function virtual_process!(toplevelex::Expr,
         # NOTE: needs to happen here since JuliaInterpreter.jl assumes there're `Symbol`s as
         # `GlobalRef`s in toplevel frames
         fix_global_symbols!(src, virtualmod)
-        
+
         # bail out if nothing to profile (just a performance optimization)
         if all(is_return(last(src.code)) ? concretized[begin:end-1] : concretized)
             continue
@@ -395,8 +395,9 @@ function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, 
             # to be actually evaluated into `interp.virtualmod` (as `VirtualGlobalVariable`
             # object) at this point
 
-            return interp.eval_with_err_handling(interp.virtualmod, ex)
+            interp.eval_with_err_handling(interp.virtualmod, ex)
         end
+        return nothing
     end
 
     return @invoke step_expr!(interp, frame, node, istoplevel::Bool)
@@ -487,8 +488,10 @@ function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame, err)
     st = stacktrace(bt)
     st = crop_stacktrace(st, 1) do frame
         # cut until the internal frame (i.e the one within this module or JuliaInterpreter)
-        def = frame.linfo.def
-        mod = isa(def, Method) ? def.module : def::Module
+        linfo = frame.linfo
+        isa(linfo, MethodInstance) || return false
+        def = linfo.def
+        mod = isa(def, Method) ? def.module : def
         return mod == JuliaInterpreter || mod == @__MODULE__
     end
 
