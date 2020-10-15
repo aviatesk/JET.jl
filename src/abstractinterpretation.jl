@@ -396,19 +396,20 @@ function set_virtual_globalvar!(interp, mod, name, @nospecialize(t))
         li = force_invalidate!(mod, edge_sym)
     end
 
-    return if update
-        Core.eval(mod, quote
+    ex = if update
+        quote
             local name = $(name)
             name.t = $(t)
             name.id = $(QuoteNode(id))
             name.edge_sym = $(QuoteNode(edge_sym))
             name.li = $(li)
             name
-        end)
+        end
     else
         vgv = VirtualGlobalVariable(t, id, edge_sym, li)
-        Core.eval(mod, :(const $(name) = $(vgv)))
-    end::VirtualGlobalVariable
+        :(const $(name) = $(vgv))
+    end
+    return Core.eval(mod, ex)::VirtualGlobalVariable
 end
 
 function gen_dummy_backedge(mod)

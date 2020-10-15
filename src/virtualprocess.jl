@@ -199,9 +199,9 @@ function virtual_process!(toplevelex::Expr,
         isnothing(lwr) && continue # error happened during lowering
         isexpr(lwr, :thunk) || continue # literal
 
-        fix_self_references!(lwr, actualmodsym, virtualmod)
-
         src = first((lwr::Expr).args)::CodeInfo
+
+        fix_self_references!(src, actualmodsym, virtualmod)
 
         interp′ = ConcreteInterpreter(filename,
                                       lnn,
