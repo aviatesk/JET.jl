@@ -184,14 +184,14 @@ end
     @testset "union assignment" begin
         let
             vmod = gen_virtual_module()
-            interp, frame = Core.eval(vmod, :($(profile_call)() do
+            res, interp = @profile_toplevel vmod  begin
                 global globalvar
                 if rand(Bool)
                     globalvar = "String"
                 else
                     globalvar = :Symbol
                 end
-            end))
+            end
 
             @test is_abstract(vmod, :globalvar)
             @test vmod.globalvar.t === Union{String,Symbol}

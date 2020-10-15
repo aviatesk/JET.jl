@@ -621,10 +621,12 @@ end
 
         let
             vmod = gen_virtual_module()
-            interp, frame = Core.eval(vmod, :($(profile_call)() do
-                local localvar = rand(Bool)
-                global globalvar = rand(Bool)
-            end))
+            res, interp = @profile_toplevel vmod begin
+                begin
+                    local localvar = rand(Bool)
+                    global globalvar = rand(Bool)
+                end
+            end
 
             @test !isdefined(vmod, :localvar)
             @test is_abstract(vmod, :globalvar)

@@ -341,28 +341,27 @@ end
 function CC.abstract_eval_statement(interp::JETInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
     if istoplevel(sv)
         if interp.concretized[get_cur_pc(sv)]
-            return Any # bail out if it has been interpreted
+            return Any # bail out if it has been interpreted by `ConcreteInterpreter`
         end
     end
 
     ret = @invoke abstract_eval_statement(interp::AbstractInterpreter, e, vtypes::VarTable, sv::InferenceState)
 
     # assign virtual global variable
-    lhs = get_global_assignment_lhs(sv)
-    isa(lhs, GlobalRef) && set_virtual_globalvar!(interp, lhs.mod, lhs.name, ret)
+    # for toplevel frames, we do virtual global variable assignments, whose types are
+    # propagated even if they're non-constant
+    if istoplevel(sv)
+        stmt = get_cur_stmt(sv)
+        if isexpr(stmt, :(=))
+            lhs = first(stmt.args)
+
+            if isa(lhs, GlobalRef)
+                set_virtual_globalvar!(interp, lhs.mod, lhs.name, ret)
+            end
+        end
+    end
 
     return ret
-end
-
-function get_global_assignment_lhs(sv::InferenceState)
-    stmt = get_cur_stmt(sv)
-
-    isexpr(stmt, :(=)) || return nothing
-    lhs = first(stmt.args)
-
-    isa(lhs, GlobalRef) && return lhs
-
-    return nothing
 end
 
 function set_virtual_globalvar!(interp, mod, name, @nospecialize(t))
@@ -469,10 +468,11 @@ function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
 
     # @info "after typeinf" frame.linfo => get_result(frame)
 
+    stmts = frame.src.code
+
     # report (local) undef var error
     # this only works when optimization is enabled, just because `:throw_undef_if_not` and
     # `:(unreachable)` are introduced by `optimize`
-    stmts = frame.src.code
     for (idx, stmt) in enumerate(stmts)
         if isa(stmt, Expr) && stmt.head === :throw_undef_if_not
             sym, _ = stmt.args
@@ -499,7 +499,7 @@ function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
     if get_result(frame) === Bottom
         # report `throw`s only if there is no circumvent pass, which is represented by
         # `Bottom`-annotated return type inference with non-empty `throw` blocks
-        throw_calls = filter(is_throw_call′, frame.src.code)
+        throw_calls = filter(is_throw_call′, stmts)
         if !isempty(throw_calls)
             push!(interp.exception_reports, length(interp.reports) => ExceptionReport(interp, frame, throw_calls))
         end
