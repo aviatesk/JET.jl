@@ -242,28 +242,38 @@ end
 
 # replace self references of `actualmodsym` with `virtualmod` (as is)
 function fix_self_references!(ex, actualmodsym, virtualmod)
-    prewalk_and_transform!(ex) do x, scope
+    function _fix_self_reference(x, scope)
         if isa(x, Symbol)
             if x === actualmodsym
                 return virtualmod
             end
+        elseif isa(x, GotoIfNot)
+            newcond = _fix_self_reference(x.cond, scope)
+            return GotoIfNot(newcond, x.dest)
         end
 
         return x
     end
+
+    prewalk_and_transform!(_fix_self_reference, ex)
 end
 
 # replace global `Symbol`s with `GlobalRef`s
 function fix_global_symbols!(ex, mod)
-    prewalk_and_transform!(ex) do x, scope
+    function _fix_global_symbols(x, scope)
         # `_walk_and_transform!` doesn't recur into `QuoteNode`, so this apparently simple
         # approach just works
         if isa(x, Symbol)
             return GlobalRef(mod, x)
+        elseif isa(x, GotoIfNot)
+            newcond = _fix_global_symbols(x.cond, scope)
+            return GotoIfNot(newcond, x.dest)
         end
 
         return x
     end
+
+    prewalk_and_transform!(_fix_global_symbols, ex)
 end
 
 prewalk_and_transform!(args...) = walk_and_transform!(true, args...)

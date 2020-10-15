@@ -35,7 +35,7 @@ end
     end
 end
 
-@testset "fix `Symbol`s into `GlobalRef`s" begin
+@testset "fix toplevel global `Symbol`" begin
     # this case otherwise will throw an error in `Core.Compiler.typ_for_val` in optimization
     let
         res, interp = @profile_toplevel begin
@@ -48,6 +48,18 @@ end
             sin(v)
         end
         @test true
+    end
+
+    # `c` wrapped in `GotoIfNot` node should be transformed into `GlobalRef(vmod, :c)`,
+    # otherwise `NonBooleanCondErrorReport` (and `ExceptionReport`) will be reported
+    let
+        res, interp = @profile_toplevel begin
+            c = false
+            if c
+                throw("should be ignored")
+            end
+        end
+        @test isempty(res.inference_error_reports)
     end
 end
 
