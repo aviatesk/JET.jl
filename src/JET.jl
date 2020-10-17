@@ -81,7 +81,8 @@ import Core.Compiler:
     argtypes_to_type,
     _methods_by_ftype,
     specialize_method,
-    add_backedge!
+    add_backedge!,
+    compute_basic_blocks
 
 import Base:
     parse_input_line,
@@ -318,6 +319,10 @@ typeof′(x) = typeof(x)
 typeof′(x::Type{T}) where {T} = Type{T}
 
 @specialize
+
+# for inspection
+macro lwr(ex); QuoteNode(lower(__module__, ex)); end
+macro src(ex); first(lower(__module__, ex).args); end
 
 # exports
 # -------

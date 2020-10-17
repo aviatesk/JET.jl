@@ -376,7 +376,7 @@ function set_virtual_globalvar!(interp, mod, name, @nospecialize(t), sv)
     stmts = sv.src.code
     iscd = is_constant_declared(mod, name, stmts)
 
-    prev_t, prev_id, (edge_sym, li) = if isdefined(mod, name)
+    t′, id′, (edge_sym, li) = if isdefined(mod, name)
         val = getfield(mod, name)
         if isa(val, VirtualGlobalVariable)
             t′ = val.t
@@ -419,11 +419,19 @@ function set_virtual_globalvar!(interp, mod, name, @nospecialize(t), sv)
         t = Bottom
     end
 
-    if id === prev_id
-        # if the previous virtual global variable assignment happened in the same inference process,
-        # JET needs to perform type merge, otherwise "just update"s it
-        t = tmerge(prev_t, t)
-    else
+    if begin
+            # if the previous virtual global variable assignment happened in the same inference process,
+            # JET needs to perform type merge
+            id === id′ ||
+            # if this assignment happens in an non-deterministic way, we still need to perform type merge
+            # TODO: this may happen multiple times for the same statement (by maximum fix point computation),
+            # so pre-computing basic blocks before entering a toplevel inference frame might be better
+            is_nondeterministic(get_cur_pc(sv), compute_basic_blocks(stmts))
+        end
+        t = tmerge(t′, t)
+    end
+
+    if id !== id′
         # invalidate the dummy backedge that is bound to this virtual global variable,
         # so that depending `MethodInstance` will run fresh type inference on the next hit
         li = force_invalidate!(mod, edge_sym)
@@ -456,6 +464,19 @@ function is_constant_declared(mod, name, stmts)
         end
         return false
     end
+end
+
+# XXX: does this approach really cover all the control flow ?
+function is_nondeterministic(pc, bbs)
+    for (idx, block) in enumerate(bbs.blocks)
+        if pc in block.stmts
+            return any(bbs.blocks) do block
+                idx in block.succs && return length(block.succs) > 1
+                return false
+            end
+        end
+    end
+    return true
 end
 
 function gen_dummy_backedge(mod)

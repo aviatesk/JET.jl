@@ -927,3 +927,24 @@ end
         @test er.name === :T
     end
 end
+
+@testset "control flows in toplevel frames" begin
+    let
+        vmod = gen_virtual_module()
+        res, interp = @profile_toplevel vmod begin
+            v = rand(Int)
+
+            if rand(Bool)
+                v = rand(Char)
+            end
+
+            sin(v) # union-split no method error should be reported
+        end
+
+        @test is_abstract(vmod, :v)
+        @test length(res.inference_error_reports) === 1
+        er = first(res.inference_error_reports)
+        @test er isa NoMethodErrorReport
+        @test er.unionsplit
+    end
+end
