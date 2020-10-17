@@ -49,17 +49,16 @@ mutable struct VirtualGlobalVariable
     edge_sym::Symbol
     # dummy backedge, which will be invalidated on update of `t`
     li::MethodInstance
-    # whether this virtual global variable is defined as constant or not
-    # TODO: use this field
-    isconst::Bool
+    # whether this virtual global variable is declarared as constant or not
+    iscd::Bool
 
     function VirtualGlobalVariable(@nospecialize(t),
                                    id::Symbol,
                                    edge_sym::Symbol,
                                    li::MethodInstance,
-                                   isconst::Bool = true,
+                                   iscd::Bool,
                                    )
-        return new(t, id, edge_sym, li, isconst)
+        return new(t, id, edge_sym, li, iscd)
     end
 end
 
@@ -362,7 +361,7 @@ function CC.abstract_eval_statement(interp::JETInterpreter, @nospecialize(e), vt
             lhs = first(stmt.args)
 
             if isa(lhs, GlobalRef)
-                set_virtual_globalvar!(interp, lhs.mod, lhs.name, ret)
+                set_virtual_globalvar!(interp, lhs.mod, lhs.name, ret, sv)
             end
         end
     end
@@ -370,9 +369,12 @@ function CC.abstract_eval_statement(interp::JETInterpreter, @nospecialize(e), vt
     return ret
 end
 
-function set_virtual_globalvar!(interp, mod, name, @nospecialize(t))
+function set_virtual_globalvar!(interp, mod, name, @nospecialize(t), sv)
     local update::Bool = false
     id = get_id(interp)
+
+    stmts = sv.src.code
+    iscd = is_constant_declared(mod, name, stmts)
 
     prev_t, prev_id, (edge_sym, li) = if isdefined(mod, name)
         val = getfield(mod, name)
@@ -387,6 +389,12 @@ function set_virtual_globalvar!(interp, mod, name, @nospecialize(t))
     else
         # define new virtual global variable
         Bottom, id, gen_dummy_backedge(mod)
+    end
+
+    # if this is constant declared and it's value is known to be constant, let's concretize
+    # it for good reasons; this will help us analyse on code with global type aliases, etc.
+    if !(t ⊑ VirtualGlobalVariable) && isa(t, Const) && iscd
+        return Core.eval(mod, :(const $(name) = $(t.val)))
     end
 
     # at this point undefined slots may still be annotated as `NOT_FOUND` (e.g. when there is
@@ -416,10 +424,23 @@ function set_virtual_globalvar!(interp, mod, name, @nospecialize(t))
             name
         end
     else
-        vgv = VirtualGlobalVariable(t, id, edge_sym, li)
+        vgv = VirtualGlobalVariable(t, id, edge_sym, li, iscd)
         :(const $(name) = $(vgv))
     end
     return Core.eval(mod, ex)::VirtualGlobalVariable
+end
+
+function is_constant_declared(mod, name, stmts)
+    # `fix_global_symbols!` replaces all the symbols in a toplevel frame with `GlobalRef`
+    gr = GlobalRef(mod, name)
+
+    return any(stmts) do x
+        if isexpr(x, :const)
+            arg = first((x::Expr).args)
+            isa(arg, GlobalRef) && return arg == gr
+        end
+        return false
+    end
 end
 
 function gen_dummy_backedge(mod)
