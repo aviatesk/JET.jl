@@ -16,12 +16,12 @@ function CC.builtin_tfunction(interp::JETInterpreter, @nospecialize(f), argtypes
             if isa(name, Symbol)
                 if isa(obj, Const) && ⊑(obj, Module)
                     mod = obj.val
-                    if !isdefined(mod, name)
-                        # `ret` here should be annotated as `Any` by `getfield_tfunc`, but
-                        # we want to be more conservative and change it to `Bottom` and
-                        # suppress any further abstract interpretation with this
+                    if isdefined(mod, name)
+                        # TODO: add report pass here (for performance linting)
+                    else
+                        # report access to undefined global variable
                         add_remark!(interp, sv, GlobalUndefVarErrorReport(interp, sv, mod, name))
-                        return Bottom
+                        # return Bottom
                     end
                 elseif ret === Bottom
                     # general case when an error is detected by the native `getfield_tfunc`

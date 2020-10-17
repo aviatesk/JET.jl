@@ -141,16 +141,23 @@ end
         @test isempty(res.inference_error_reports)
     end
 
-    # "toplevel definitions" with access to global objects
+    # definitions using type aliases
     let
         vmod = gen_virtual_module()
-        @test_broken @profile_toplevel vmod begin
-            const b = Bool
+        @profile_toplevel vmod begin
+            const BT = Bool
 
             struct Foo
-                b::b
+                b::BT
             end
+
+            const c = Foo(rand(Bool))
+            uc = Foo(rand(Bool))
         end
+        @test is_concrete(vmod, :BT)
+        @test is_concrete(vmod, :Foo)
+        @test is_abstract(vmod, :c)
+        @test is_abstract(vmod, :uc)
     end
 
     # a toplevel definition within a block
@@ -621,10 +628,12 @@ end
 
         let
             vmod = gen_virtual_module()
-            interp, frame = Core.eval(vmod, :($(profile_call)() do
-                local localvar = rand(Bool)
-                global globalvar = rand(Bool)
-            end))
+            res, interp = @profile_toplevel vmod begin
+                begin
+                    local localvar = rand(Bool)
+                    global globalvar = rand(Bool)
+                end
+            end
 
             @test !isdefined(vmod, :localvar)
             @test is_abstract(vmod, :globalvar)
@@ -879,5 +888,63 @@ end
         @test length(er.st) == 1
         sf = first(er.st)
         @test sf.file === Symbol(@__FILE__) && sf.line == (@__LINE__) - 11
+    end
+end
+
+@testset "invalid constant redefinition" begin
+    # for virtual global assignment
+    let
+        vmod = gen_virtual_module()
+        res, interp = @profile_toplevel vmod begin
+            fib(n) = n≤2 ? n : fib(n-1)+fib(n-1)
+
+            const foo = fib(1000000000000) # ::Int
+
+            foo = fib(1000000000000.) # ::Float64
+        end
+
+        @test is_abstract(vmod, :foo)
+        @test length(res.inference_error_reports) == 1
+        er = first(res.inference_error_reports)
+        @test er isa InvalidConstantRedefinition
+        @test er.name === :foo
+    end
+
+    # for concretized constants
+    let
+        vmod = gen_virtual_module()
+        res, interp = @profile_toplevel vmod begin
+            fib(n) = n≤2 ? n : fib(n-1)+fib(n-1)
+            const T = typeof(fib(1000000000000)) # never terminates, yes
+
+            T = Nothing
+        end
+
+        @test is_concrete(vmod, :T) # wao, this is concretized
+        @test length(res.inference_error_reports) == 1
+        er = first(res.inference_error_reports)
+        @test er isa InvalidConstantRedefinition
+        @test er.name === :T
+    end
+end
+
+@testset "control flows in toplevel frames" begin
+    let
+        vmod = gen_virtual_module()
+        res, interp = @profile_toplevel vmod begin
+            v = rand(Int)
+
+            if rand(Bool)
+                v = rand(Char)
+            end
+
+            sin(v) # union-split no method error should be reported
+        end
+
+        @test is_abstract(vmod, :v)
+        @test length(res.inference_error_reports) === 1
+        er = first(res.inference_error_reports)
+        @test er isa NoMethodErrorReport
+        @test er.unionsplit
     end
 end

@@ -344,6 +344,7 @@ function select_statements(src)
             # special case `include` calls
             if f === :include
                 concretize[i] = true
+                continue
             end
 
             # analysis of `eval` calls are difficult, let's give up it and just evaluate

@@ -49,17 +49,16 @@ mutable struct VirtualGlobalVariable
     edge_sym::Symbol
     # dummy backedge, which will be invalidated on update of `t`
     li::MethodInstance
-    # whether this virtual global variable is defined as constant or not
-    # TODO: use this field
-    isconst::Bool
+    # whether this virtual global variable is declarared as constant or not
+    iscd::Bool
 
     function VirtualGlobalVariable(@nospecialize(t),
                                    id::Symbol,
                                    edge_sym::Symbol,
                                    li::MethodInstance,
-                                   isconst::Bool = true,
+                                   iscd::Bool,
                                    )
-        return new(t, id, edge_sym, li, isconst)
+        return new(t, id, edge_sym, li, iscd)
     end
 end
 
@@ -293,24 +292,35 @@ function CC.abstract_eval_special_value(interp::JETInterpreter, @nospecialize(e)
             ret = val.t
         end
     elseif isa(e, GlobalRef)
-        # report access to undefined global variable
-        mod, sym = e.mod, e.name
-        if isdefined(mod, sym)
-            # FIXME: this might produce wrong result if the current frame is cached and the
-            # global variable later be updated (both actually or abstractly, anyway);
-            # 1. if we have established a way to convert a already-existing global variable
-            #    to virtual global variable we can do that here and add backedge
-            # 2. `NativeInterpreter` just returns `Any` for this case, so it might be okay
-            #    if JET just follows that and give up profiling on non-constant global variables ...
-            val = getfield(mod, sym)
-            @debug "propagating non-constant global variable as constant" mod sym val
-            ret = Const(val)
+        mod, name = e.mod, e.name
+        if isdefined(mod, name)
+            # we don't track types of global variables except when we're in toplevel frame,
+            # and here we just annotate this as `Any`; NOTE: this is becasue:
+            # - we can't track side-effects of assignments of global variables that happen in
+            #   (possibly deeply nested) callees, and it might be possible if we just ignore
+            #   assignments happens in callees that aren't reached by type inference by
+            #   the widening heuristics
+            # - consistency with Julia's native type inference
+            # - it's hard to track side effects for cached frames
+
+            # TODO: add report pass here (for performance linting)
+
+            # special case and propagate `Main` module as constant adn this is somewhat
+            # critical for performance when self-profiling
+            if name === :Main
+                ret = Const(Main)
+            end
         else
-            add_remark!(interp, sv, GlobalUndefVarErrorReport(interp, sv, mod, sym))
-            # `ret` here should be annotated as `Any` by `NativeInterpreter`, but we want to
-            # be more conservative and change it to `Bottom` and suppress any further abstract
-            # interpretation with this
-            ret = Bottom
+            # report access to undefined global variable
+            add_remark!(interp, sv, GlobalUndefVarErrorReport(interp, sv, mod, name))
+
+            # `ret` at this point should be annotated as `Any` by `NativeInterpreter`, and
+            # we just pass it as is to collect as much error points as possible within this
+            # frame
+            # IDEA: we can change it to `Bottom` to suppress any further abstract interpretation
+            # with this variable, and the later analysis after the update on this (currently)
+            # undefined variable just works because we will invalidate the cache for this frame
+            # anyway
         end
     end
 
@@ -336,47 +346,70 @@ end
 function CC.abstract_eval_statement(interp::JETInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
     if istoplevel(sv)
         if interp.concretized[get_cur_pc(sv)]
-            return Any # bail out if it has been interpreted
+            return Any # bail out if it has been interpreted by `ConcreteInterpreter`
         end
     end
 
     ret = @invoke abstract_eval_statement(interp::AbstractInterpreter, e, vtypes::VarTable, sv::InferenceState)
 
     # assign virtual global variable
-    lhs = get_global_assignment_lhs(sv)
-    isa(lhs, GlobalRef) && set_virtual_globalvar!(interp, lhs.mod, lhs.name, ret)
+    # for toplevel frames, we do virtual global variable assignments, whose types are
+    # propagated even if they're non-constant
+    if istoplevel(sv)
+        stmt = get_cur_stmt(sv)
+        if isexpr(stmt, :(=))
+            lhs = first(stmt.args)
+
+            if isa(lhs, GlobalRef)
+                set_virtual_globalvar!(interp, lhs.mod, lhs.name, ret, sv)
+            end
+        end
+    end
 
     return ret
 end
 
-function get_global_assignment_lhs(sv::InferenceState)
-    stmt = get_cur_stmt(sv)
-
-    isexpr(stmt, :(=)) || return nothing
-    lhs = first(stmt.args)
-
-    isa(lhs, GlobalRef) && return lhs
-
-    return nothing
-end
-
-function set_virtual_globalvar!(interp, mod, name, @nospecialize(t))
+function set_virtual_globalvar!(interp, mod, name, @nospecialize(t), sv)
     local update::Bool = false
     id = get_id(interp)
 
-    prev_t, prev_id, (edge_sym, li) = if isdefined(mod, name)
+    stmts = sv.src.code
+    iscd = is_constant_declared(mod, name, stmts)
+
+    t′, id′, (edge_sym, li) = if isdefined(mod, name)
         val = getfield(mod, name)
         if isa(val, VirtualGlobalVariable)
+            t′ = val.t
+            if val.iscd && widenconst(t′) !== widenconst(t)
+                add_remark!(interp, sv, InvalidConstantRedefinition(interp, sv, mod, name, widenconst(t′), widenconst(t)))
+                return
+            end
+
             # update previously-defined virtual global variable
             update = true
-            val.t, val.id, (val.edge_sym, val.li)
+            t′, val.id, (val.edge_sym, val.li)
         else
+            if isconst(mod, name)
+                t′ = typeof(val)
+                if t′ !== widenconst(t)
+                    add_remark!(interp, sv, InvalidConstantRedefinition(interp, sv, mod, name, t′, widenconst(t)))
+                    return
+                end
+            end
+
+            # this pass hopefully won't happen within the current design
             @warn "JET.jl can't trace updates of global variable that already have values" mod name val
             return
         end
     else
         # define new virtual global variable
         Bottom, id, gen_dummy_backedge(mod)
+    end
+
+    # if this is constant declared and it's value is known to be constant, let's concretize
+    # it for good reasons; this will help us analyse on code with global type aliases, etc.
+    if !(t ⊑ VirtualGlobalVariable) && isa(t, Const) && iscd
+        return Core.eval(mod, :(const $(name) = $(t.val)))
     end
 
     # at this point undefined slots may still be annotated as `NOT_FOUND` (e.g. when there is
@@ -386,11 +419,19 @@ function set_virtual_globalvar!(interp, mod, name, @nospecialize(t))
         t = Bottom
     end
 
-    if id === prev_id
-        # if the previous virtual global variable assignment happened in the same inference process,
-        # JET needs to perform type merge, otherwise "just update"s it
-        t = tmerge(prev_t, t)
-    else
+    if begin
+            # if the previous virtual global variable assignment happened in the same inference process,
+            # JET needs to perform type merge
+            id === id′ ||
+            # if this assignment happens in an non-deterministic way, we still need to perform type merge
+            # TODO: this may happen multiple times for the same statement (by maximum fix point computation),
+            # so pre-computing basic blocks before entering a toplevel inference frame might be better
+            is_nondeterministic(get_cur_pc(sv), compute_basic_blocks(stmts))
+        end
+        t = tmerge(t′, t)
+    end
+
+    if id !== id′
         # invalidate the dummy backedge that is bound to this virtual global variable,
         # so that depending `MethodInstance` will run fresh type inference on the next hit
         li = force_invalidate!(mod, edge_sym)
@@ -406,10 +447,36 @@ function set_virtual_globalvar!(interp, mod, name, @nospecialize(t))
             name
         end
     else
-        vgv = VirtualGlobalVariable(t, id, edge_sym, li)
+        vgv = VirtualGlobalVariable(t, id, edge_sym, li, iscd)
         :(const $(name) = $(vgv))
     end
     return Core.eval(mod, ex)::VirtualGlobalVariable
+end
+
+function is_constant_declared(mod, name, stmts)
+    # `fix_global_symbols!` replaces all the symbols in a toplevel frame with `GlobalRef`
+    gr = GlobalRef(mod, name)
+
+    return any(stmts) do x
+        if isexpr(x, :const)
+            arg = first((x::Expr).args)
+            isa(arg, GlobalRef) && return arg == gr
+        end
+        return false
+    end
+end
+
+# XXX: does this approach really cover all the control flow ?
+function is_nondeterministic(pc, bbs)
+    for (idx, block) in enumerate(bbs.blocks)
+        if pc in block.stmts
+            return any(bbs.blocks) do block
+                idx in block.succs && return length(block.succs) > 1
+                return false
+            end
+        end
+    end
+    return true
 end
 
 function gen_dummy_backedge(mod)
@@ -464,10 +531,11 @@ function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
 
     # @info "after typeinf" frame.linfo => get_result(frame)
 
+    stmts = frame.src.code
+
     # report (local) undef var error
     # this only works when optimization is enabled, just because `:throw_undef_if_not` and
     # `:(unreachable)` are introduced by `optimize`
-    stmts = frame.src.code
     for (idx, stmt) in enumerate(stmts)
         if isa(stmt, Expr) && stmt.head === :throw_undef_if_not
             sym, _ = stmt.args
@@ -494,7 +562,7 @@ function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
     if get_result(frame) === Bottom
         # report `throw`s only if there is no circumvent pass, which is represented by
         # `Bottom`-annotated return type inference with non-empty `throw` blocks
-        throw_calls = filter(is_throw_call′, frame.src.code)
+        throw_calls = filter(is_throw_call′, stmts)
         if !isempty(throw_calls)
             push!(interp.exception_reports, length(interp.reports) => ExceptionReport(interp, frame, throw_calls))
         end
