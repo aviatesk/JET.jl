@@ -305,6 +305,12 @@ function CC.abstract_eval_special_value(interp::JETInterpreter, @nospecialize(e)
             # - it's hard to track side effects for cached frames
 
             # TODO: add report pass here (for performance linting)
+
+            # special case and propagate `Main` module as constant adn this is somewhat
+            # critical for performance when self-profiling
+            if name === :Main
+                ret = Const(Main)
+            end
         else
             # report access to undefined global variable
             add_remark!(interp, sv, GlobalUndefVarErrorReport(interp, sv, mod, name))
