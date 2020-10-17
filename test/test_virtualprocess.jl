@@ -890,3 +890,40 @@ end
         @test sf.file === Symbol(@__FILE__) && sf.line == (@__LINE__) - 11
     end
 end
+
+@testset "invalid constant redefinition" begin
+    # for virtual global assignment
+    let
+        vmod = gen_virtual_module()
+        res, interp = @profile_toplevel vmod begin
+            fib(n) = n≤2 ? n : fib(n-1)+fib(n-1)
+
+            const foo = fib(1000000000000) # ::Int
+
+            foo = fib(1000000000000.) # ::Float64
+        end
+
+        @test is_abstract(vmod, :foo)
+        @test length(res.inference_error_reports) == 1
+        er = first(res.inference_error_reports)
+        @test er isa InvalidConstantRedefinition
+        @test er.name === :foo
+    end
+
+    # for concretized constants
+    let
+        vmod = gen_virtual_module()
+        res, interp = @profile_toplevel vmod begin
+            fib(n) = n≤2 ? n : fib(n-1)+fib(n-1)
+            const T = typeof(fib(1000000000000)) # never terminates, yes
+
+            T = Nothing
+        end
+
+        @test is_concrete(vmod, :T) # wao, this is concretized
+        @test length(res.inference_error_reports) == 1
+        er = first(res.inference_error_reports)
+        @test er isa InvalidConstantRedefinition
+        @test er.name === :T
+    end
+end

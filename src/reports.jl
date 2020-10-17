@@ -173,6 +173,8 @@ end
 
 @reportdef NonBooleanCondErrorReport(interp, sv, @nospecialize(t::Type))
 
+@reportdef InvalidConstantRedefinition(interp, sv, mod::Module, name::Symbol, @nospecialize(t′), @nospecialize(t))
+
 """
     ExceptionReport <: InferenceErrorReport
 
@@ -358,6 +360,8 @@ get_msg(::Type{LocalUndefVarErrorReport}, interp, sv, name) =
     "local variable $(name) is not defined"
 get_msg(::Type{NonBooleanCondErrorReport}, interp, sv, @nospecialize(t)) =
     "non-boolean ($(t)) used in boolean context"
+get_msg(::Type{InvalidConstantRedefinition}, interp, sv, mod, name, @nospecialize(t′), @nospecialize(t)) =
+    "invalid redefinition of constant $(mod).$(name) (from $(t′) to $(t))"
 get_msg(::Type{ExceptionReport}, interp, sv, throw_blocks) = isone(length(throw_blocks)) ?
     "will throw" :
     "will throw either of"

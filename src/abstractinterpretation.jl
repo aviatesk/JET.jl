@@ -379,10 +379,25 @@ function set_virtual_globalvar!(interp, mod, name, @nospecialize(t), sv)
     prev_t, prev_id, (edge_sym, li) = if isdefined(mod, name)
         val = getfield(mod, name)
         if isa(val, VirtualGlobalVariable)
+            t′ = val.t
+            if val.iscd && widenconst(t′) !== widenconst(t)
+                add_remark!(interp, sv, InvalidConstantRedefinition(interp, sv, mod, name, widenconst(t′), widenconst(t)))
+                return
+            end
+
             # update previously-defined virtual global variable
             update = true
-            val.t, val.id, (val.edge_sym, val.li)
+            t′, val.id, (val.edge_sym, val.li)
         else
+            if isconst(mod, name)
+                t′ = typeof(val)
+                if t′ !== widenconst(t)
+                    add_remark!(interp, sv, InvalidConstantRedefinition(interp, sv, mod, name, t′, widenconst(t)))
+                    return
+                end
+            end
+
+            # this pass hopefully won't happen within the current design
             @warn "JET.jl can't trace updates of global variable that already have values" mod name val
             return
         end
