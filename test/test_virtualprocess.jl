@@ -141,16 +141,23 @@ end
         @test isempty(res.inference_error_reports)
     end
 
-    # "toplevel definitions" with access to global objects
+    # definitions using type aliases
     let
         vmod = gen_virtual_module()
-        @test_broken @profile_toplevel vmod begin
-            const b = Bool
+        @profile_toplevel vmod begin
+            const BT = Bool
 
             struct Foo
-                b::b
+                b::BT
             end
+
+            const c = Foo(rand(Bool))
+            uc = Foo(rand(Bool))
         end
+        @test is_concrete(vmod, :BT)
+        @test is_concrete(vmod, :Foo)
+        @test is_abstract(vmod, :c)
+        @test is_abstract(vmod, :uc)
     end
 
     # a toplevel definition within a block
