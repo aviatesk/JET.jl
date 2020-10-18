@@ -338,8 +338,8 @@ typeof′(x::Type{T}) where {T} = Type{T}
 @specialize
 
 # for inspection
-macro lwr(ex); QuoteNode(lower(__module__, ex)); end
-macro src(ex); first(lower(__module__, ex).args); end
+macro lwr(ex) QuoteNode(lower(__module__, ex)) end
+macro src(ex) QuoteNode(first(lower(__module__, ex).args)) end
 
 # exports
 # -------
