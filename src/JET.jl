@@ -243,6 +243,23 @@ function profile_gf_by_type!(interp::JETInterpreter,
     return profile_method_signature!(interp, mm.method, mm.spec_types, mm.sparams)
 end
 
+function profile_method!(interp::JETInterpreter,
+                         m::Method,
+                         world::UInt = get_world_counter(interp),
+                         )
+    return profile_method_signature!(interp, m, m.sig, sparams_from_method_signature(m), world)
+end
+
+function sparams_from_method_signature(m)
+    s = TypeVar[]
+    sig = m.sig
+    while isa(sig, UnionAll)
+        push!(s, sig.var)
+        sig = sig.body
+    end
+    return svec(s...)
+end
+
 function profile_method_signature!(interp::JETInterpreter,
                                    m::Method,
                                    @nospecialize(atype),
