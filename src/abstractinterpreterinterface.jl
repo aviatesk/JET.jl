@@ -1,6 +1,19 @@
 # `AbstractInterpreter` API
 # -------------------------
 
+struct AnalysisParams
+    # disables caching of native remarks (that may speed up profiling time)
+    filter_native_remarks::Bool
+
+    function AnalysisParams(; filter_native_remarks::Bool = true,
+                              # dummy kwargs so that kwargs for other functions can be passed on
+                              __kwargs...,
+                              )
+        return new(filter_native_remarks,
+                   )
+    end
+end
+
 struct JETInterpreter <: AbstractInterpreter
     #= native =#
 
@@ -20,11 +33,11 @@ struct JETInterpreter <: AbstractInterpreter
     # keeps `throw` calls that are not caught within a single frame
     exception_reports::Vector{Pair{Int,ExceptionReport}}
 
-    # disables caching of native remarks (that may vastly speed up profiling time)
-    filter_native_remarks::Bool
-
     # toplevel profiling (skip inference on actually interpreted statements)
     concretized::BitVector
+
+    # configurations for analysis performed by `JETInterpreter`
+    analysis_params::AnalysisParams
 
     function JETInterpreter(world                 = get_world_counter();
                             inf_params            = gen_inf_params(),
@@ -35,10 +48,10 @@ struct JETInterpreter <: AbstractInterpreter
                             id                    = gensym(:JETInterpreterID),
                             reports               = [],
                             exception_reports     = [],
-                            filter_native_remarks = true,
                             concretized           = [],
+                            analysis_params       = AnalysisParams()
                             )
-        @assert !opt_params.inlining "inlining should be disabled"
+        @assert !opt_params.inlining "inlining should be disabled for JETInterpreter analysis"
 
         native = NativeInterpreter(world; inf_params, opt_params)
         return new(native,
@@ -48,8 +61,8 @@ struct JETInterpreter <: AbstractInterpreter
                    id,
                    reports,
                    exception_reports,
-                   filter_native_remarks,
                    concretized,
+                   analysis_params,
                    )
     end
 end
@@ -71,7 +84,7 @@ function CC.add_remark!(interp::JETInterpreter, ::InferenceState, report::Infere
     return
 end
 function CC.add_remark!(interp::JETInterpreter, sv::InferenceState, s::String)
-    interp.filter_native_remarks && return
+    AnalysisParams(interp).filter_native_remarks && return
     add_remark!(interp, sv, NativeRemark(interp, sv, s))
     return
 end
@@ -83,28 +96,32 @@ CC.may_discard_trees(interp::JETInterpreter) = interp.discard_trees
 # specific
 # --------
 
-function gen_inf_params()
-    return @static if VERSION ≥ v"1.6.0-DEV.837"
-        InferenceParams(;
-            # more constant prop, more correct reports ?
-            aggressive_constant_propagation = true,
-            # turn this off to get profiles on `throw` blocks, this might be good to default
-            # to `true` since `throw` calls themselves will be reported anyway
-            unoptimize_throw_blocks = true,
-        )
-    else
-        InferenceParams(;
-            aggressive_constant_propagation = true,
-        )
-    end
+AnalysisParams(interp::JETInterpreter) = interp.analysis_params
+
+function gen_inf_params(; # more constant prop, more correct reports ?
+                          aggressive_constant_propagation::Bool = true,
+                          # turn this off to get profiles on `throw` blocks, this might be good to default
+                          # to `true` since `throw` calls themselves will be reported anyway
+                          unoptimize_throw_blocks::Bool = true,
+                          # dummy kwargs so that kwargs for other functions can be passed on
+                          __kwargs...,
+                          )
+    return @static VERSION ≥ v"1.6.0-DEV.837" ?
+           InferenceParams(; aggressive_constant_propagation,
+                             unoptimize_throw_blocks,
+                             ) :
+           InferenceParams(; aggressive_constant_propagation,
+                             )
 end
 
-function gen_opt_params()
-    return OptimizationParams(;
-        # inlining should be disable for `JETInterpreter`, otherwise virtual stack frame
-        # traversing will fail for frames after optimizer runs on
-        inlining = false,
-    )
+function gen_opt_params(; # inlining should be disabled for `JETInterpreter`, otherwise virtual stack frame
+                          # traversing will fail for frames after optimizer runs on
+                          inlining = false,
+                          # dummy kwargs so that kwargs for other functions can be passed on
+                          __kwargs...,
+                          )
+    return OptimizationParams(; inlining,
+                                )
 end
 
 get_id(interp::JETInterpreter) = interp.id
