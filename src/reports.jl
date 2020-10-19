@@ -54,6 +54,16 @@ end
 # TODO: maybe we want to use https://github.com/aviatesk/Mixin.jl
 abstract type InferenceErrorReport end
 
+function Base.show(io::IO, report::T) where {T<:InferenceErrorReport}
+    print(io, T.name.name, '(')
+    for a in report.sig
+        _print_signature(io, a; annotate_types = true, bold = true)
+    end
+    print(io, ')')
+end
+Base.show(io::IO, ::MIME"application/prs.juno.inline", report::T) where {T<:InferenceErrorReport} =
+    return report
+
 const VirtualFrame = @NamedTuple begin
     file::Symbol
     line::Int
@@ -70,6 +80,8 @@ function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
         getfield(er, sym)::String
     elseif sym === :sig
         getfield(er, sym)::Vector{Any}
+    elseif sym === :lineage
+        getfield(er, sym)::Lineage
     else
         getfield(er, sym) # fallback
     end
