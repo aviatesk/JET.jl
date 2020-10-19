@@ -150,13 +150,13 @@ function profile_text(io::IO,
                       filename::AbstractString = "top-level",
                       mod::Module = Main;
                       profiling_logger::Union{Nothing,IO} = nothing,
-                      filter_native_remarks::Bool = true,
-                      kwargs...)
+                      kwargs...,
+                      )
     included_files, reports, postprocess = report_errors(profiling_logger,
                                                          mod,
                                                          text,
                                                          filename;
-                                                         filter_native_remarks
+                                                         kwargs...,
                                                          )
     return included_files, print_reports(io, reports, postprocess; kwargs...)
 end
@@ -177,10 +177,14 @@ function report_errors(logger::IO, args...; kwargs...)
     return ret
 end
 
-function report_errors(actualmod, text, filename; filter_native_remarks = true)
+function report_errors(actualmod, text, filename; kwargs...)
     virtualmod = gen_virtual_module(actualmod)
 
-    interp = JETInterpreter(; filter_native_remarks) # dummy
+    interp = JETInterpreter(; # dummy
+                              inf_params      = gen_inf_params(; kwargs...),
+                              opt_params      = gen_opt_params(; kwargs...),
+                              analysis_params = AnalysisParams(; kwargs...),
+                              )
     ret, interp = virtual_process!(text,
                                    filename,
                                    virtualmod,
@@ -316,7 +320,7 @@ macro profile_call(ex, kwargs...)
 
     return quote let
         argtypes = $(typeof′).(($(map(esc, args)...),))
-        interp, frame = $(profile_call)($(esc(f)), argtypes)
+        interp, frame = $(profile_call)($(esc(f)), argtypes; $(map(esc, kwargs)...))
         $(print_reports)(stdout::IO, interp.reports; $(map(esc, kwargs)...))
         $(get_result)(frame) # maybe want to widen const ?
     end end
@@ -326,7 +330,10 @@ end
 
 function profile_call(f, argtypes::Type...; kwargs...)
     tt = to_tuple_type([typeof′(f), argtypes...])
-    interp = JETInterpreter(; kwargs...)
+    interp = JETInterpreter(; inf_params      = gen_inf_params(; kwargs...),
+                              opt_params      = gen_opt_params(; kwargs...),
+                              analysis_params = AnalysisParams(; kwargs...),
+                              )
     return profile_gf_by_type!(interp, tt)
 end
 
