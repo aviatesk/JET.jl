@@ -424,8 +424,9 @@ function set_virtual_globalvar!(interp, mod, name, @nospecialize(t), sv)
             # JET needs to perform type merge
             id === id′ ||
             # if this assignment happens in an non-deterministic way, we still need to perform type merge
-            # TODO: this may happen multiple times for the same statement (by maximum fix point computation),
-            # so pre-computing basic blocks before entering a toplevel inference frame might be better
+            # NOTE: this may happen multiple times for the same statement (within an iteration for
+            # maximum fixed point computation), so pre-computing basic blocks before entering a toplevel
+            # inference frame might be better
             is_nondeterministic(get_cur_pc(sv), compute_basic_blocks(stmts))
         end
         t = tmerge(t′, t)
@@ -468,15 +469,19 @@ end
 
 # XXX: does this approach really cover all the control flow ?
 function is_nondeterministic(pc, bbs)
-    for (idx, block) in enumerate(bbs.blocks)
-        if pc in block.stmts
-            return any(bbs.blocks) do block
-                idx in block.succs && return length(block.succs) > 1
-                return false
+    isnd = false
+
+    for (idx, bb) in enumerate(bbs.blocks)
+        if pc in bb.stmts
+            for bb′ in bbs.blocks
+                if idx in bb′.succs
+                    isnd |= length(bb′.succs) > 1
+                end
             end
         end
     end
-    return true
+
+    return isnd
 end
 
 function gen_dummy_backedge(mod)
