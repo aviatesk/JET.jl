@@ -344,6 +344,8 @@ typeof′(x::Type{T}) where {T} = Type{T}
 
 @specialize
 
+print_reports(args...; kwargs...) = print_reports(stdout::IO, args...; kwargs...)
+
 # for inspection
 macro lwr(ex) QuoteNode(lower(__module__, ex)) end
 macro src(ex) QuoteNode(first(lower(__module__, ex).args)) end
