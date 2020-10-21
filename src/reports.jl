@@ -89,9 +89,6 @@ end
 
 const Lineage = IdSet{MethodInstance}
 
-is_lineage(linfo::MethodInstance, report::InferenceErrorReport) = is_lineage(linfo, report.lineage)
-is_lineage(linfo::MethodInstance, lineage::Lineage)             = linfo in lineage
-
 macro reportdef(ex, kwargs...)
     T = first(ex.args)
     args = map(ex.args) do x

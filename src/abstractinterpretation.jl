@@ -524,10 +524,7 @@ function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
     if is_constant_propagated(frame)
         linfo = frame.linfo
         def = linfo.def
-        if isa(def, Method)
-            # throw away previously-collected error reports
-            def.name in CONSTANT_PROP_METHODS && filter!(!Fix1(is_lineage, linfo), interp.reports)
-        end
+        filter!(!Fix1(is_lineage, frame), interp.reports)
     end
 
     # @info "before typeinf" frame.linfo frame.result.argtypes is_constant_propagated(frame)
@@ -577,6 +574,12 @@ function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
 end
 
 const CONSTANT_PROP_METHODS = Set((:getproperty, :setproperty!))
+
+function is_lineage(frame::InferenceState, report::InferenceErrorReport)
+    frame.linfo ∉ report.lineage && return false
+    isroot(frame) && return true
+    return is_lineage(frame.parent::InferenceState, report)
+end
 
 is_unreachable(@nospecialize(_)) = false
 is_unreachable(rn::ReturnNode)   = !isdefined(rn, :val)
