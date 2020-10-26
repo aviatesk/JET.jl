@@ -214,7 +214,7 @@ end
 
 # this dummy module will be used by `istoplevel` to check if the current inference frame is
 # created by `profile_toplevel!` or not (i.e. `@generated` function)
-module toplevel end
+module __toplevel__ end
 
 function profile_toplevel!(interp::JETInterpreter, mod::Module, src::CodeInfo)
     # construct toplevel `MethodInstance`
@@ -226,7 +226,7 @@ function profile_toplevel!(interp::JETInterpreter, mod::Module, src::CodeInfo)
     result = InferenceResult(mi);
     frame = InferenceState(result, src, #= cached =# true, interp);
 
-    mi.def = toplevel # set to the dummy module
+    mi.def = __toplevel__ # set to the dummy module
 
     return profile_frame!(interp, frame)
 end
