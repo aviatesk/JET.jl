@@ -533,7 +533,6 @@ end
     end
 end
 
-# upstream: https://github.com/JuliaLang/julia/pull/37830
 @testset "keyword argument methods" begin
     interp, frame = Core.eval(gen_virtual_module(), quote
         f(a; b = nothing, c = nothing) = return
