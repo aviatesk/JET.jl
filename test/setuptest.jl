@@ -104,3 +104,25 @@ end
 is_concrete(mod, sym) = isdefined(mod, sym) && !isa(getfield(mod, sym), VirtualGlobalVariable)
 is_abstract(mod, sym) = isdefined(mod, sym) && isa(getfield(mod, sym), VirtualGlobalVariable)
 abstract_isa(vgv, @nospecialize(typ)) = isa(vgv, VirtualGlobalVariable) && vgv.t ⊑ typ
+
+# TODO: remove once https://github.com/JuliaLang/julia/pull/38210 gets merged
+using Random
+@eval Random begin
+    function make_seed()
+        try
+            return rand(RandomDevice(), UInt32, 4)
+        catch
+            println(stderr,
+                    "Entropy pool not available to seed RNG; using ad-hoc entropy sources.")
+            seed = reinterpret(UInt64, time())
+            seed = hash(seed, getpid() % UInt)
+            try
+                seed = hash(seed, parse(UInt64,
+                                        read(pipeline(`ifconfig`, `sha1sum`), String)[1:40],
+                                        base = 16) % UInt)
+            catch
+            end
+            return make_seed(seed)
+        end
+    end
+end

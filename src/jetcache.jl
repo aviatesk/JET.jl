@@ -14,16 +14,26 @@ CC.WorldView(tpc::JETCache, args...) = WorldView(tpc, WorldRange(args...))
 
 CC.haskey(tpc::JETCache, mi::MethodInstance) = CC.haskey(tpc.native, mi)
 
+const ANALYZED_LINFOS   = IdSet{MethodInstance}()         # keeps `MethodInstances` analyzed by JET
+const ERRORNEOUS_LINFOS = IdDict{MethodInstance,Symbol}() # keeps `MethodInstances` analyzed as "errorneous" by JET
+
 function CC.get(tpc::JETCache, mi::MethodInstance, default)
-    force_invalidate_self_code_cache(mi) && return default
+    # if we haven't analyzed this linfo, just invalidate native code cache and force analysis by JET
+    if mi ∉ ANALYZED_LINFOS
+        push!(ANALYZED_LINFOS, mi)
+        return default
+    end
 
     ret = CC.get(tpc.native, mi, default)
 
-    isa(ret, CodeInstance) || return default
+    # cache isn't really found
+    if ret === default
+        return ret
+    end
 
     # cache hit, now we need to invalidate the cache lookup if this `mi` has been profiled
-    # as erroneous by JET or is seemingly erroneous (checked by its return type annotation);
-    # otherwise the error reports that can occur from this frame will just be ignored
+    # as erroneous by JET analysis; otherwise the error reports that can occur from this
+    # frame will just be ignored
     force_inference = false
 
     if haskey(ERRORNEOUS_LINFOS, mi)
@@ -32,9 +42,6 @@ function CC.get(tpc::JETCache, mi::MethodInstance, default)
         if ERRORNEOUS_LINFOS[mi] !== get_id(tpc.interp)
             force_inference = true
         end
-    elseif isdefined(ret, :rettype) && ret.rettype === Bottom
-        # return type is annotated as `Bottom` (by native compiler), let's force inference
-        force_inference = true
     end
 
     return force_inference ? default : ret

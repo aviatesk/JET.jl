@@ -69,13 +69,26 @@ end
 # the aim of this horrible monkey patch is:
 # 1. report `NoMethodErrorReport` on empty method signature matching
 # 2. keep inference on non-concrete call sites in toplevel frame created by `virtual_process!`
-# 3. in order to collect as much error points as possible, don't bail out if the current return
-#    type grows up to `Any`; of course it slows down inference performance, but hopefully it
-#    stays to be "practical" speed (because the number of matching methods are limited beforehand)
-# the bail out logics are hard-coded within the original `abstract_call_gf_by_type` method,
-# and so we need to overload it with `JETInterpreter`, adding the above patch points
-# NOTE: the overloaded version is evaluated in `Core.Compiler` so that we don't need miscellaneous imports
-push_inithook!() do; Core.eval(CC, quote
+# 3. don't bail out even after the current return type grows up to `Any` in order to collect
+#    as much error points as possible; of course it slows down inference performance, but
+#    hopefully it stays to be "practical" speed (because the number of matching methods are limited beforehand)
+# 4. force constant prop' even if the inference result can't be improved anymore when `rettype`
+#    is already `Const`; this is because constant prop' can still produce more "correct"
+#    analysis by throwing away the error reports in the callee frames
+#
+# NOTE:
+# 1. essentially, we need to overwrite the native `abstract_call_gf_by_type` only because of:
+#    - the bail out logics are hard-coded
+#    - the check to decide whether to do constant prop' is hard-coded
+#    and the other patches can actually be implemented just by overloading like the other parts of this file
+# 2. the overloaded version is evaluated in `Core.Compiler` so that we don't need miscellaneous imports
+# 3. the aim of the syntaxic hacks is to keep the diff from the native `abstract_call_gf_by_type`
+#    consist only of additions so that the future changes for the native `abstract_call_gf_by_type`
+#    can be easily applied; see the /patches/ folder
+
+push_inithook!() do
+
+Core.eval(CC, quote
 
 # TODO:
 # - report "too many method matched"
@@ -107,14 +120,17 @@ function abstract_call_gf_by_type(interp::$(JETInterpreter), @nospecialize(f), a
                 add_remark!(interp, sv, "For one of the union split cases, too many methods matched")
                 return CallMeta(Any, false)
             end
-            #=== JET.jl monkey-patch start ===#
+            #=== JET.jl monkey-patch 1-1 start ===#
+            #= keep original code
+            push!(infos, MethodMatchInfo(matches))
+            =#
             info = MethodMatchInfo(matches)
             if $(is_empty_match)(info)
                 # report `NoMethodErrorReport` for union-split signatures
                 $(add_remark!)(interp, sv, $(NoMethodErrorReport)(interp, sv, true, atype))
             end
             push!(infos, info)
-            #=== JET.jl monkey-patch end ===#
+            #=== JET.jl monkey-patch 1-1 end ===#
             append!(applicable, matches)
             valid_worlds = intersect(valid_worlds, matches.valid_worlds)
             thisfullmatch = _any(match->(match::MethodMatch).fully_covers, matches)
@@ -149,12 +165,12 @@ function abstract_call_gf_by_type(interp::$(JETInterpreter), @nospecialize(f), a
         push!(mts, mt)
         push!(fullmatch, _any(match->(match::MethodMatch).fully_covers, matches))
         info = MethodMatchInfo(matches)
-        #=== JET.jl monkey-patch start ===#
+        #=== JET.jl monkey-patch 1-2 start ===#
         if $(is_empty_match)(info)
             # report `NoMethodErrorReport` for this call signature
             $(add_remark!)(interp, sv, $(NoMethodErrorReport)(interp, sv, false, atype))
         end
-        #=== JET.jl monkey-patch end ===#
+        #=== JET.jl monkey-patch 1-2 end ===#
         applicable = matches.matches
         valid_worlds = matches.valid_worlds
     end
@@ -177,16 +193,20 @@ function abstract_call_gf_by_type(interp::$(JETInterpreter), @nospecialize(f), a
         end
     end
 
+    #=== JET.jl monkey-patch 4-1 start ===#
+    nreports = length(interp.reports)
+    #=== JET.jl monkey-patch 4-1 end ===#
+
     for i in 1:napplicable
         match = applicable[i]::MethodMatch
         method = match.method
         sig = match.spec_types
-        if istoplevel && !isdispatchtuple(sig) && begin
-                #=== JET.jl monkey-patch start ===#
-                # keep going for "our" toplevel frame
-                !$(istoplevel)(sv)
-                #=== JET.jl monkey-patch end ===#
-            end
+        #=== JET.jl monkey-patch 2 start ===#
+        #= keep original code
+        if istoplevel && !isdispatchtuple(sig)
+        =#
+        if istoplevel && !isdispatchtuple(sig) && !$(istoplevel)(sv) # keep going for "our" toplevel frame
+        #=== JET.jl monkey-patch 2 end ===#
             # only infer concrete call sites in top-level expressions
             add_remark!(interp, sv, "Refusing to infer non-concrete call site in top-level expression")
             rettype = Any
@@ -206,10 +226,12 @@ function abstract_call_gf_by_type(interp::$(JETInterpreter), @nospecialize(f), a
                 end
                 edgecycle |= edgecycle1::Bool
                 this_rt = tmerge(this_rt, rt)
-                #=== JET.jl monkey-patch start ===#
-                # keep going and collect as much error reports as possible
-                # this_rt === Any && break
-                #=== JET.jl monkey-patch end ===#
+                #=== JET.jl monkey-patch 3-1 start ===#
+                #= keep original code
+                this_rt === Any && break
+                =#
+                # this_rt === Any && break # keep going and collect as much error reports as possible
+                #=== JET.jl monkey-patch 3-1 end ===#
             end
         else
             this_rt, edgecycle1, edge = abstract_call_method(interp, method, sig, match.sparams, multiple_matches, sv)
@@ -227,15 +249,28 @@ function abstract_call_gf_by_type(interp::$(JETInterpreter), @nospecialize(f), a
         end
         seen += 1
         rettype = tmerge(rettype, this_rt)
-        #=== JET.jl monkey-patch start ===#
-        # keep going and collect as much error reports as possible
-        # rettype === Any && break
-        #=== JET.jl monkey-patch end ===#
+        #=== JET.jl monkey-patch 3-2 start ===#
+        #= keep original code
+        rettype === Any && break
+        =#
+        # rettype === Any && break # keep going and collect as much error reports as possible
+        #=== JET.jl monkey-patch 3-2 end ===#
     end
-    # # try constant propagation if only 1 method is inferred to non-Bottom
-    # # this is in preparation for inlining, or improving the return result
+
+    #=== JET.jl monkey-patch 4-2 start ===#
+    # check if constant propagation can improve analysis by throwing away possibly false positive reports
+    has_been_reported = (length(interp.reports) - nreports) > 0
+    #=== JET.jl monkey-patch 4-2 end ===#
+
+    # try constant propagation if only 1 method is inferred to non-Bottom
+    # this is in preparation for inlining, or improving the return result
     is_unused = call_result_unused(sv)
+    #=== JET.jl monkey-patch 4-3 start ===#
+    #= keep original code
     if nonbot > 0 && seen == napplicable && (!edgecycle || !is_unused) && isa(rettype, Type) && InferenceParams(interp).ipo_constant_propagation
+    =#
+    if nonbot > 0 && seen == napplicable && (!edgecycle || !is_unused) && (isa(rettype, Type) || has_been_reported) && InferenceParams(interp).ipo_constant_propagation
+    #=== JET.jl monkey-patch 4-3 end ===#
         # if there's a possibility we could constant-propagate a better result
         # (hopefully without doing too much work), try to do that now
         # TODO: it feels like this could be better integrated into abstract_call_method / typeinf_edge
@@ -271,7 +306,9 @@ function abstract_call_gf_by_type(interp::$(JETInterpreter), @nospecialize(f), a
     return CallMeta(rettype, info)
 end
 
-end); end # push_inithook!() do; Core.eval(Core.Compiler, quote
+end) # Core.eval(Core.Compiler, quote
+
+end # push_inithook!() do
 
 function is_empty_match(info)
     res = info.results
@@ -373,8 +410,7 @@ function set_virtual_globalvar!(interp, mod, name, @nospecialize(t), sv)
     local update::Bool = false
     id = get_id(interp)
 
-    stmts = sv.src.code
-    iscd = is_constant_declared(mod, name, stmts)
+    iscd = is_constant_declared(mod, name, sv.src.code)
 
     t′, id′, (edge_sym, li) = if isdefined(mod, name)
         val = getfield(mod, name)
@@ -427,7 +463,7 @@ function set_virtual_globalvar!(interp, mod, name, @nospecialize(t), sv)
             # NOTE: this may happen multiple times for the same statement (within an iteration for
             # maximum fixed point computation), so pre-computing basic blocks before entering a toplevel
             # inference frame might be better
-            is_nondeterministic(get_cur_pc(sv), compute_basic_blocks(stmts))
+            is_nondeterministic(sv)
         end
         t = tmerge(t′, t)
     end
@@ -467,6 +503,8 @@ function is_constant_declared(mod, name, stmts)
     end
 end
 
+is_nondeterministic(sv) = is_nondeterministic(get_cur_pc(sv), compute_basic_blocks(sv.src.code))
+
 # XXX: does this approach really cover all the control flow ?
 function is_nondeterministic(pc, bbs)
     isnd = false
@@ -503,31 +541,27 @@ end
 # in this overload we can work on `CodeInfo` (and also `InferenceState`) where type inference
 # (and maybe also optimization) already ran on
 function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
-    # some methods like `getproperty` can't propagate concrete types without actual values,
-    # and for those cases constant propagation usually plays a somewhat critical role that
-    # "overwrite"s the previously-inferred lousy inference result;
-    # JET.jl also needs to follow the native interpreter's result "overwrite" logic
-    # to reduce false positive reports from lousy typed profiling, and so here we will throw
-    # away previously-collected error reports from frames that are lineage of this frame if
-    # this frame is being re-inferred with constant-prop'ed inputs
+    # some methods like `getproperty` can't propagate accurate types without actual values,
+    # and constant prop' plays a somewhat critical role in those cases by overwriteing the
+    # previously-inferred lousy result; JET.jl also needs that to reduce false positive reports,
+    # and so here we will throw-away previously-collected error reports that are "lineage" of
+    # this frame, when it is being re-inferred with constant-prop'ed inputs
     #
     # NOTE:
-    # - constant propagation only happens after inference with abstract values (i.e. just
-    #   using types)
-    # - maybe upcoming change for the native constant propagation logic:
+    # - constant prop' only happens after inference with non-constant abstract values (i.e.
+    #   just using types)
+    # - xref to track the change in the native constant propagation logic:
     #   https://github.com/JuliaLang/julia/blob/a108d6cb8fdc7924fe2b8d831251142386cb6525/base/compiler/abstractinterpretation.jl#L153
-    # - why not always throw away lineage reports when constant propagation happens ?
-    #   * constant prop' doesn't seem to happen always, especially inferring on cached frames,
-    #     and then error reports can be different for uncached/cached frames, which would be
-    #     super confusing
-    #   * discussion: we may want to have reports for code that is cut off by constant prop'
+    #
+    # XXX: constant prop' may not happen always, especially when inferring on cached frames,
+    #      and then error reports can be different for uncached/cached frames, which would be
+    #      super confusing
+    #
+    # TODO: we may still want to keep reports on some kinds of "serious" errors, like
+    #       `GlobalUndefVarErrorReport` even if it's been threw-away by constant prop'
     if is_constant_propagated(frame)
         linfo = frame.linfo
-        def = linfo.def
-        if isa(def, Method)
-            # throw away previously-collected error reports
-            def.name in CONSTANT_PROP_METHODS && filter!(!Fix1(is_lineage, linfo), interp.reports)
-        end
+        filter!(r -> linfo ∉ r.lineage, interp.reports)
     end
 
     # @info "before typeinf" frame.linfo frame.result.argtypes is_constant_propagated(frame)
@@ -576,7 +610,11 @@ function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
     return ret
 end
 
-const CONSTANT_PROP_METHODS = Set((:getproperty, :setproperty!))
+function is_lineage(frame::InferenceState, report::InferenceErrorReport)
+    frame.linfo ∉ report.lineage && return false
+    isroot(frame) && return true
+    return is_lineage(frame.parent::InferenceState, report)
+end
 
 is_unreachable(@nospecialize(_)) = false
 is_unreachable(rn::ReturnNode)   = !isdefined(rn, :val)
