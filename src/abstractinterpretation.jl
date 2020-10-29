@@ -75,15 +75,16 @@ end
 # 4. force constant prop' even if the inference result can't be improved anymore when `rettype`
 #    is already `Const`; this is because constant prop' can still produce more "correct"
 #    analysis by throwing away the error reports in the callee frames
+#
 # NOTE:
-# 1. essentially, we need to overwrite the native `abstract_call_gf_by_type` because of:
-#    - the bail out logics are hard-coded in it
-#    - the check to decide whether to do constant prop' is hard-coded in it
-#    and the other patches can actually be implemented just by overloading as other parts of this file
+# 1. essentially, we need to overwrite the native `abstract_call_gf_by_type` only because of:
+#    - the bail out logics are hard-coded
+#    - the check to decide whether to do constant prop' is hard-coded
+#    and the other patches can actually be implemented just by overloading like the other parts of this file
 # 2. the overloaded version is evaluated in `Core.Compiler` so that we don't need miscellaneous imports
 # 3. the aim of the syntaxic hacks is to keep the diff from the native `abstract_call_gf_by_type`
 #    consist only of additions so that the future changes for the native `abstract_call_gf_by_type`
-#    can be easily applied by `git diff --no-index abstract_call_gf_by_type.jl abstract_call_gf_by_type_jet_patched.jl`
+#    can be easily applied; see the /patches/ folder
 
 push_inithook!() do
 
@@ -409,8 +410,7 @@ function set_virtual_globalvar!(interp, mod, name, @nospecialize(t), sv)
     local update::Bool = false
     id = get_id(interp)
 
-    stmts = sv.src.code
-    iscd = is_constant_declared(mod, name, stmts)
+    iscd = is_constant_declared(mod, name, sv.src.code)
 
     t′, id′, (edge_sym, li) = if isdefined(mod, name)
         val = getfield(mod, name)
@@ -463,7 +463,7 @@ function set_virtual_globalvar!(interp, mod, name, @nospecialize(t), sv)
             # NOTE: this may happen multiple times for the same statement (within an iteration for
             # maximum fixed point computation), so pre-computing basic blocks before entering a toplevel
             # inference frame might be better
-            is_nondeterministic(get_cur_pc(sv), compute_basic_blocks(stmts))
+            is_nondeterministic(sv)
         end
         t = tmerge(t′, t)
     end
@@ -502,6 +502,8 @@ function is_constant_declared(mod, name, stmts)
         return false
     end
 end
+
+is_nondeterministic(sv) = is_nondeterministic(get_cur_pc(sv), compute_basic_blocks(sv.src.code))
 
 # XXX: does this approach really cover all the control flow ?
 function is_nondeterministic(pc, bbs)

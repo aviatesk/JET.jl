@@ -105,6 +105,7 @@ is_concrete(mod, sym) = isdefined(mod, sym) && !isa(getfield(mod, sym), VirtualG
 is_abstract(mod, sym) = isdefined(mod, sym) && isa(getfield(mod, sym), VirtualGlobalVariable)
 abstract_isa(vgv, @nospecialize(typ)) = isa(vgv, VirtualGlobalVariable) && vgv.t ⊑ typ
 
+# TODO: remove once https://github.com/JuliaLang/julia/pull/38210 gets merged
 using Random
 @eval Random begin
     function make_seed()
