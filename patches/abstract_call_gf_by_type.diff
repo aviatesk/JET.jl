@@ -1,0 +1,104 @@
+diff --git a/patches/abstract_call_gf_by_type.jl b/patches/abstract_call_gf_by_type_jet_patched.jl
+index 8dc7ef3..83f67f9 100644
+--- a/patches/abstract_call_gf_by_type.jl
++++ b/patches/abstract_call_gf_by_type_jet_patched.jl
+@@ -1,4 +1,4 @@
+-function abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f), argtypes::Vector{Any}, @nospecialize(atype), sv::InferenceState,
++function abstract_call_gf_by_type(interp::$(JETInterpreter), @nospecialize(f), argtypes::Vector{Any}, @nospecialize(atype), sv::InferenceState,
+                                   max_methods::Int = InferenceParams(interp).MAX_METHODS)
+     if sv.params.unoptimize_throw_blocks && sv.currpc in sv.throw_blocks
+         return CallMeta(Any, false)
+@@ -24,7 +24,17 @@ function abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f),
+                 add_remark!(interp, sv, "For one of the union split cases, too many methods matched")
+                 return CallMeta(Any, false)
+             end
++            #=== JET.jl monkey-patch 1-1 start ===#
++            #= keep original code
+             push!(infos, MethodMatchInfo(matches))
++            =#
++            info = MethodMatchInfo(matches)
++            if $(is_empty_match)(info)
++                # report `NoMethodErrorReport` for union-split signatures
++                $(add_remark!)(interp, sv, $(NoMethodErrorReport)(interp, sv, true, atype))
++            end
++            push!(infos, info)
++            #=== JET.jl monkey-patch 1-1 end ===#
+             append!(applicable, matches)
+             valid_worlds = intersect(valid_worlds, matches.valid_worlds)
+             thisfullmatch = _any(match->(match::MethodMatch).fully_covers, matches)
+@@ -59,6 +69,12 @@ function abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f),
+         push!(mts, mt)
+         push!(fullmatch, _any(match->(match::MethodMatch).fully_covers, matches))
+         info = MethodMatchInfo(matches)
++        #=== JET.jl monkey-patch 1-2 start ===#
++        if $(is_empty_match)(info)
++            # report `NoMethodErrorReport` for this call signature
++            $(add_remark!)(interp, sv, $(NoMethodErrorReport)(interp, sv, false, atype))
++        end
++        #=== JET.jl monkey-patch 1-2 end ===#
+         applicable = matches.matches
+         valid_worlds = matches.valid_worlds
+     end
+@@ -81,11 +97,20 @@ function abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f),
+         end
+     end
+ 
++    #=== JET.jl monkey-patch 4-1 start ===#
++    nreports = length(interp.reports)
++    #=== JET.jl monkey-patch 4-1 end ===#
++
+     for i in 1:napplicable
+         match = applicable[i]::MethodMatch
+         method = match.method
+         sig = match.spec_types
++        #=== JET.jl monkey-patch 2 start ===#
++        #= keep original code
+         if istoplevel && !isdispatchtuple(sig)
++        =#
++        if istoplevel && !isdispatchtuple(sig) && !$(istoplevel)(sv) # keep going for "our" toplevel frame
++        #=== JET.jl monkey-patch 2 end ===#
+             # only infer concrete call sites in top-level expressions
+             add_remark!(interp, sv, "Refusing to infer non-concrete call site in top-level expression")
+             rettype = Any
+@@ -105,7 +130,12 @@ function abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f),
+                 end
+                 edgecycle |= edgecycle1::Bool
+                 this_rt = tmerge(this_rt, rt)
++                #=== JET.jl monkey-patch 3-1 start ===#
++                #= keep original code
+                 this_rt === Any && break
++                =#
++                # this_rt === Any && break # keep going and collect as much error reports as possible
++                #=== JET.jl monkey-patch 3-1 end ===#
+             end
+         else
+             this_rt, edgecycle1, edge = abstract_call_method(interp, method, sig, match.sparams, multiple_matches, sv)
+@@ -123,12 +153,28 @@ function abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f),
+         end
+         seen += 1
+         rettype = tmerge(rettype, this_rt)
++        #=== JET.jl monkey-patch 3-2 start ===#
++        #= keep original code
+         rettype === Any && break
++        =#
++        # rettype === Any && break # keep going and collect as much error reports as possible
++        #=== JET.jl monkey-patch 3-2 end ===#
+     end
++
++    #=== JET.jl monkey-patch 4-2 start ===#
++    # check if constant propagation can improve analysis by throwing away possibly false positive reports
++    has_been_reported = (length(interp.reports) - nreports) > 0
++    #=== JET.jl monkey-patch 4-2 end ===#
++
+     # try constant propagation if only 1 method is inferred to non-Bottom
+     # this is in preparation for inlining, or improving the return result
+     is_unused = call_result_unused(sv)
++    #=== JET.jl monkey-patch 4-3 start ===#
++    #= keep original code
+     if nonbot > 0 && seen == napplicable && (!edgecycle || !is_unused) && isa(rettype, Type) && InferenceParams(interp).ipo_constant_propagation
++    =#
++    if nonbot > 0 && seen == napplicable && (!edgecycle || !is_unused) && (isa(rettype, Type) || has_been_reported) && InferenceParams(interp).ipo_constant_propagation
++    #=== JET.jl monkey-patch 4-3 end ===#
+         # if there's a possibility we could constant-propagate a better result
+         # (hopefully without doing too much work), try to do that now
+         # TODO: it feels like this could be better integrated into abstract_call_method / typeinf_edge
