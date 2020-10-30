@@ -575,8 +575,18 @@ function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
     # TODO: we may still want to keep reports on some kinds of "serious" errors, like
     #       `GlobalUndefVarErrorReport` even if it's been threw-away by constant prop'
     if is_constant_propagated(frame)
+        # filter!(r -> linfo ∉ r.lineage, interp.reports)
         linfo = frame.linfo
-        filter!(r -> linfo ∉ r.lineage, interp.reports)
+        idxs = Int[]
+        for (idx, report) in enumerate(interp.reports)
+            if linfo in report.lineage
+                push!(idxs, idx)
+                for mi in report.lineage
+                    ERRORNEOUS_LINFOS[mi] = gensym(:constant_propagated) # force inference after constant prop'
+                end
+            end
+        end
+        deleteat!(interp.reports, idxs)
     end
 
     # # print debug info before typeinf
