@@ -88,6 +88,7 @@ end
 
 push_inithook!() do
 
+# %% #=== for easier interactive update ===#
 Core.eval(CC, quote
 
 # TODO:
@@ -307,6 +308,7 @@ function abstract_call_gf_by_type(interp::$(JETInterpreter), @nospecialize(f), a
 end
 
 end) # Core.eval(Core.Compiler, quote
+# %% #=== for easier interactive update ===#
 
 end # push_inithook!() do
 
