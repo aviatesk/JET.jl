@@ -2,6 +2,11 @@
 # i.e. julia-dev -i test/setuptest.jl
 include("setuptest.jl")
 
+# for benchmarking or debugging JET analysis on CI
+if get(ENV, "CI", nothing) == "true"
+    include("debug.jl")
+end
+
 @testset "JET.jl" begin
     @testset "virtualprocess.jl" begin
         include("test_virtualprocess.jl")
