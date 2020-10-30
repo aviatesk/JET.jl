@@ -49,7 +49,7 @@ end
 # --------
 
 function print_reports(io::IO,
-                       reports::Vector{<:ToplevelErrorReport},
+                       reports::AbstractVector{<:ToplevelErrorReport},
                        @nospecialize(postprocess = identity);
                        print_toplevel_sucess::Bool = false,
                        color::Bool = get(io, :color, false),
@@ -107,7 +107,7 @@ print_report(io, report::ActualErrorWrapped) = showerror(io, report.err, report.
 # ---------
 
 function print_reports(io::IO,
-                       reports::Vector{<:InferenceErrorReport},
+                       reports::AbstractVector{<:InferenceErrorReport},
                        @nospecialize(postprocess = identity);
                        print_inference_sucess::Bool = true,
                        color::Bool = get(io, :color, false),
@@ -148,7 +148,7 @@ end
 # FIXME: this is a dirty fix for duplicated reports
 # reports can be duplicated mainly because of code cache invalidation, especaiily there're
 # lots of duplications reported when self-profiling
-function uniquify_reports(reports::Vector{<:InferenceErrorReport})
+function uniquify_reports(reports)
     return unique(reports) do report; return #= uniquify keys =# (
         # caller
         first(report.st),
