@@ -522,7 +522,7 @@ end
 
 function crop_stacktrace(pred, st, offset)
     i = findfirst(pred, st)
-    return st[1:(isnothing(i) ? end : i - offset)]
+    return st[1:(i === nothing ? end : i - offset)]
 end
 
 function crop_stacktrace(st, offset)
