@@ -1,6 +1,8 @@
-using JET
+using JET, InteractiveUtils
 using JET: typeof′, profile_call, print_reports
 using Base.Meta: isexpr
+
+versioninfo(stdout)
 
 macro benchmark(ex, kwargs...)
     @assert isexpr(ex, :call) "function call expression should be given"

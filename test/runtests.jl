@@ -1,6 +1,6 @@
-# test utilities are extracted into a separate file for easier testing from REPL
-# i.e. julia-dev -i test/setuptest.jl
-include("setuptest.jl")
+# test utilities are extracted into a separate file for easier interactive testing from REPL
+# i.e. julia-dev -i test/interactive_utils.jl
+include("interactive_utils.jl")
 
 # for benchmarking or debugging JET analysis on CI
 if get(ENV, "CI", nothing) == "true"
