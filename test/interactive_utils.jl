@@ -26,24 +26,6 @@ import Core.Compiler:
 const CC = Core.Compiler
 const FIXTURE_DIR = normpath(@__DIR__, "fixtures")
 
-const ERROR_REPORTS_FROM_SUM_OVER_STRING = let
-    interp, frame = profile_call(sum, String)
-    @test !isempty(interp.reports)
-    interp.reports
-end
-
-function test_sum_over_string(ers)
-    @test !isempty(ers)
-    for target in ERROR_REPORTS_FROM_SUM_OVER_STRING
-        @test any(ers) do er
-            return er.msg == target.msg && er.sig == target.sig
-        end
-    end
-end
-test_sum_over_string(res::JET.VirtualProcessResult) =
-    test_sum_over_string(res.inference_error_reports)
-test_sum_over_string(interp::JETInterpreter) = test_sum_over_string(interp.reports)
-
 # define virtual module and setup fixtures
 macro def(ex)
     @assert isexpr(ex, :block)
