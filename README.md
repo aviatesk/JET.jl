@@ -152,18 +152,13 @@ No errors !
 
 ### TODOs
 
+- more accurate error reports, especially for builtin-calls by setting up our own `tfunc`s
+- report performance pitfalls
+- documentation
 - support package loading
   * enables profiling on code that uses packages, _without_ actual loading, which gets rid of the need to rely on Revise for signature changes in a package and circumvent its limitation around redefinition of types, etc.
   * but then it's highly possible that we face performance problem on profiling on code using "big" packages, and so we will need some kind of incremental profiling (for fast watch mode)
-- documentation
-- more accurate error reports, especially for builtin-calls by setting up our own `tfunc`s
-  * maybe more reports
-  * reduce false positives detected by profiling on real-world code
-- report some cases of `throw` _appropriately_
-  * e.g. we want to get reports for `rand(::Char) -> throw(ArgumentError("Sampler for this object is not defined"))`, while not for `sin(::Float64) -> throw(DomainError(x, "sin(x) is only defined for finite x."))`
-  * the above case is already half-solved by a simple inter-frame analysis with there's possibility of false negatives
-- report performance pitfalls
 - balance between Julia's inference approach and error profiling ?
   - Julia's type inference allows abstract type (like `Any`) to slip into the inference process by various heuristics, in order to ensure its termination and obtain the performance
-  - but this is somewhat unideal in the context of bug reports, since the stance would be _"better safe than sorry"_, meaning we ideally want to find all the possible errors while revealing some uncertainty Julia's inference accepts
+  - but this is somewhat unideal in the context of bug reports, since the basic stance here might be _"better safe than sorry"_, meaning we ideally want to find all the possible errors even if some of them don't occur in actual execution
 - editor integration for watch mode (i.e. `profile_and_watch_file`)
