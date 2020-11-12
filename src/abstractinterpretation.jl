@@ -540,8 +540,8 @@ end
 # ----------------------
 # ref: https://github.com/JuliaLang/julia/blob/26c79b2e74d35434737bc33bc09d2e0f6e27372b/base/compiler/typeinfer.jl
 
-# in this overload we can work on `CodeInfo` (and also `InferenceState`) where type inference
-# (and maybe also optimization) already ran on
+# in this overload we can work on `frame.src::CodeInfo` (and also `frame::InferenceState`)
+# where type inference (and also optimization if applied) already ran on
 function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
     # some methods like `getproperty` can't propagate accurate types without actual values,
     # and constant prop' plays a somewhat critical role in those cases by overwriteing the
@@ -550,8 +550,7 @@ function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
     # this frame, when it is being re-inferred with constant-prop'ed inputs
     #
     # NOTE:
-    # - constant prop' only happens after inference with non-constant abstract values (i.e.
-    #   just using types)
+    # - constant prop' only happens after inference with non-constant abstract values (i.e. types)
     # - xref to track the change in the native constant propagation logic:
     #   https://github.com/JuliaLang/julia/blob/a108d6cb8fdc7924fe2b8d831251142386cb6525/base/compiler/abstractinterpretation.jl#L153
     #
@@ -577,19 +576,21 @@ function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
     # report (local) undef var error
     # this only works when optimization is enabled, just because `:throw_undef_if_not` and
     # `:(unreachable)` are introduced by `optimize`
-    for (idx, stmt) in enumerate(stmts)
-        if isa(stmt, Expr) && stmt.head === :throw_undef_if_not
-            sym, _ = stmt.args
-            next_idx = idx + 1
-            if checkbounds(Bool, stmts, next_idx) && is_unreachable(@inbounds stmts[next_idx])
-                # the optimization so far has found this statement is never reachable;
-                # JET reports it since it will invoke undef var error at runtime, or will just
-                # be dead code otherwise
+    if may_optimize(interp)
+        for (idx, stmt) in enumerate(stmts)
+            if isa(stmt, Expr) && stmt.head === :throw_undef_if_not
+                sym, _ = stmt.args
+                next_idx = idx + 1
+                if checkbounds(Bool, stmts, next_idx) && is_unreachable(@inbounds stmts[next_idx])
+                    # the optimization so far has found this statement is never "reachable";
+                    # JET reports it since it will invoke undef var error at runtime, or will just
+                    # be dead code otherwise
 
-                add_remark!(interp, frame, LocalUndefVarErrorReport(interp, frame, sym))
-            # else
-                # by excluding this pass, JET accepts some false negatives (i.e. don't report
-                # those that may actually happen on execution)
+                    add_remark!(interp, frame, LocalUndefVarErrorReport(interp, frame, sym))
+                # else
+                    # by excluding this pass, JET accepts some false negatives (i.e. don't report
+                    # those that may actually happen on actual execution)
+                end
             end
         end
     end
