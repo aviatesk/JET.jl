@@ -39,6 +39,9 @@ struct JETInterpreter <: AbstractInterpreter
     # configurations for analysis performed by `JETInterpreter`
     analysis_params::AnalysisParams
 
+    # debugging
+    depth::Ref{Int}
+
     function JETInterpreter(world                 = get_world_counter();
                             inf_params            = gen_inf_params(),
                             opt_params            = gen_opt_params(),
@@ -49,7 +52,7 @@ struct JETInterpreter <: AbstractInterpreter
                             reports               = [],
                             exception_reports     = [],
                             concretized           = [],
-                            analysis_params       = AnalysisParams()
+                            analysis_params       = AnalysisParams(),
                             )
         @assert !opt_params.inlining "inlining should be disabled for JETInterpreter analysis"
 
@@ -63,6 +66,7 @@ struct JETInterpreter <: AbstractInterpreter
                    exception_reports,
                    concretized,
                    analysis_params,
+                   Ref(0),
                    )
     end
 end
