@@ -48,3 +48,13 @@ test_sum_over_string(interp::JETInterpreter) = test_sum_over_string(interp.repor
         include("test_print.jl")
     end
 end
+
+# # test self profiling
+# using JET
+# interp, frame = let
+#     m = first(methods(JET.profile_file))
+#     interp = JET.JETInterpreter()
+#     JET.profile_method!(interp, m)
+#
+#     # JET.print_reports(stdout::IO, interp.reports)
+# end

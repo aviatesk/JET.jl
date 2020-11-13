@@ -1,9 +1,9 @@
 """
     @invokelatest f(args...; kwargs...)
 
-provides a convenient way to call [`Base.invokelatest`](@ref);
-`@invokelatest f(args...; kwargs...)` will be simply expanded into `Base.invokelatst(f, args...; kwargs...)`
-```
+Provides a convenient way to call [`Base.invokelatest`](@ref).
+`@invokelatest f(args...; kwargs...)` will simply be expanded into
+`Base.invokelatest(f, args...; kwargs...)`.
 """
 macro invokelatest(ex)
     @assert isexpr(ex, :call) "call expression should be given"
