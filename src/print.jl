@@ -55,8 +55,7 @@ function print_reports(io::IO,
                        color::Bool = get(io, :color, false),
                        fullpath::Bool = false,
                        # dummy kwargs so that kwargs for other functions can be passed on
-                       __kwargs...,
-                       )
+                       __kwargs...)
     if isempty(reports)
         if print_toplevel_sucess
             printlnstyled(io, "No toplevel errors !"; color = NOERROR_COLOR)
@@ -114,8 +113,7 @@ function print_reports(io::IO,
                        fullpath::Bool = false,
                        annotate_types::Bool = false,
                        # dummy kwargs so that kwargs for other functions can be passed on
-                       __kwargs...,
-                       )
+                       __kwargs...)
     reports = uniquify_reports(reports)
 
     if isempty(reports)

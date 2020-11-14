@@ -7,8 +7,7 @@ struct AnalysisParams
 
     function AnalysisParams(; filter_native_remarks::Bool = true,
                               # dummy kwargs so that kwargs for other functions can be passed on
-                              __kwargs...,
-                              )
+                              __kwargs...)
         return new(filter_native_remarks,
                    )
     end
@@ -42,18 +41,19 @@ struct JETInterpreter <: AbstractInterpreter
     # debugging
     depth::Ref{Int}
 
-    function JETInterpreter(world                 = get_world_counter();
-                            inf_params            = gen_inf_params(),
-                            opt_params            = gen_opt_params(),
-                            optimize              = true,
-                            compress              = false,
-                            discard_trees         = false,
-                            id                    = gensym(:JETInterpreterID),
-                            reports               = [],
-                            exception_reports     = [],
-                            concretized           = [],
-                            analysis_params       = AnalysisParams(),
-                            )
+    function JETInterpreter(world             = get_world_counter();
+                            inf_params        = gen_inf_params(),
+                            opt_params        = gen_opt_params(),
+                            optimize          = true,
+                            compress          = false,
+                            discard_trees     = false,
+                            id                = gensym(:JETInterpreterID),
+                            reports           = [],
+                            exception_reports = [],
+                            concretized       = [],
+                            analysis_params   = AnalysisParams(),
+                            # dummy kwargs so that kwargs for other functions can be passed on
+                            __kwargs...)
         @assert !opt_params.inlining "inlining should be disabled for JETInterpreter analysis"
 
         native = NativeInterpreter(world; inf_params, opt_params)
@@ -108,8 +108,7 @@ function gen_inf_params(; # more constant prop, more correct reports ?
                           # to `true` since `throw` calls themselves will be reported anyway
                           unoptimize_throw_blocks::Bool = true,
                           # dummy kwargs so that kwargs for other functions can be passed on
-                          __kwargs...,
-                          )
+                          __kwargs...)
     return @static VERSION ≥ v"1.6.0-DEV.837" ?
            InferenceParams(; aggressive_constant_propagation,
                              unoptimize_throw_blocks,
@@ -122,8 +121,7 @@ function gen_opt_params(; # inlining should be disabled for `JETInterpreter`, ot
                           # traversing will fail for frames after optimizer runs on
                           inlining = false,
                           # dummy kwargs so that kwargs for other functions can be passed on
-                          __kwargs...,
-                          )
+                          __kwargs...)
     return OptimizationParams(; inlining,
                                 )
 end

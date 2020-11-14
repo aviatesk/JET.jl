@@ -150,8 +150,7 @@ function profile_text(io::IO,
                       filename::AbstractString = "top-level",
                       mod::Module = Main;
                       profiling_logger::Union{Nothing,IO} = nothing,
-                      kwargs...,
-                      )
+                      kwargs...)
     included_files, reports, postprocess = report_errors(profiling_logger,
                                                          mod,
                                                          text,
@@ -184,12 +183,12 @@ function report_errors(actualmod, text, filename; kwargs...)
                               inf_params      = gen_inf_params(; kwargs...),
                               opt_params      = gen_opt_params(; kwargs...),
                               analysis_params = AnalysisParams(; kwargs...),
-                              )
+                              kwargs...)
     ret, interp = virtual_process!(text,
                                    filename,
                                    virtualmod,
                                    Symbol(actualmod),
-                                   interp
+                                   interp,
                                    )
 
     return ret.included_files,
@@ -268,7 +267,7 @@ function profile_method_signature!(interp::JETInterpreter,
                                    m::Method,
                                    @nospecialize(atype),
                                    sparams::SimpleVector,
-                                   world::UInt = get_world_counter(interp)
+                                   world::UInt = get_world_counter(interp),
                                    )
     mi = specialize_method(m, atype, sparams)
 
@@ -303,7 +302,7 @@ function profile_call(f, argtypes::Type...; kwargs...)
     interp = JETInterpreter(; inf_params      = gen_inf_params(; kwargs...),
                               opt_params      = gen_opt_params(; kwargs...),
                               analysis_params = AnalysisParams(; kwargs...),
-                              )
+                              kwargs...)
     return profile_gf_by_type!(interp, tt)
 end
 
