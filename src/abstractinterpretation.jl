@@ -1,11 +1,16 @@
+# TODO: upstream these macros into Base
+
 """
     @invoke f(arg::T, ...; kwargs...)
 
-provides a convenient way to call [`invoke`](@ref);
-this could be used to call down to `NativeInterpreter`'s abstract interpretation method of
-  `f` while passing `JETInterpreter` so that subsequent calls of abstract interpretation
-  functions overloaded against `JETInterpreter` can be called from the native method of `f`.
+Provides a convenient way to call [`invoke`](@ref);
+`@invoke f(arg1::T1, arg2::T2; kwargs...)` will be expanded into `invoke(f, Tuple{T1,T2}, arg1, arg2; kwargs...)`.
+When an argument's type annotation is omitted, it's specified as `Any` argument, e.g.
+`@invoke f(arg1::T, arg2)` will be expanded into `invoke(f, Tuple{T,Any}, arg1, arg2)`.
 
+This could be used to call down to `NativeInterpreter`'s abstract interpretation method of
+  `f` while passing `JETInterpreter` so that subsequent calls of abstract interpretation
+  functions overloaded against `JETInterpreter` can be called from the native method of `f`;
 e.g. calls down to `NativeInterpreter`'s `abstract_call_gf_by_type` method:
 ```julia
 @invoke abstract_call_gf_by_type(interp::AbstractInterpreter, f, argtypes::Vector{Any}, atype, sv::InferenceState,
@@ -13,8 +18,22 @@ e.g. calls down to `NativeInterpreter`'s `abstract_call_gf_by_type` method:
 ```
 """
 macro invoke(ex)
+    f, args, kwargs = destructure_callex(ex)
+    arg2typs = map(args) do x
+        isexpr(x, :(::)) ? (x.args...,) : (x, GlobalRef(Core, :Any))
+    end
+    args, argtypes = first.(arg2typs), last.(arg2typs)
+    return if isempty(kwargs)
+        :($(GlobalRef(Core, :invoke))($(f), Tuple{$(argtypes...)}, $(args...))) # might not be necessary
+    else
+        :($(GlobalRef(Core, :invoke))($(f), Tuple{$(argtypes...)}, $(args...); $(kwargs...)))
+    end |> esc
+end
+
+function destructure_callex(ex)
+    @assert isexpr(ex, :call) "call expression f(args...; kwargs...) should be given"
+
     f = first(ex.args)
-    argtypes = []
     args = []
     kwargs = []
     for x in ex.args[2:end]
@@ -23,16 +42,11 @@ macro invoke(ex)
         elseif isexpr(x, :kw)
             push!(kwargs, x)
         else
-            arg, argtype = isexpr(x, :(::)) ? (x.args...,) : (x, Any)
-            push!(args, arg)
-            push!(argtypes, argtype)
+            push!(args, x)
         end
     end
-    return if isempty(kwargs)
-        :(invoke($(f), Tuple{$(argtypes...)}, $(args...))) # might not be necessary
-    else
-        :(invoke($(f), Tuple{$(argtypes...)}, $(args...); $(kwargs...)))
-    end |> esc
+
+    return f, args, kwargs
 end
 
 is_constant_propagated(frame) = CC.any(frame.result.overridden_by_const)

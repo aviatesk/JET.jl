@@ -6,24 +6,11 @@ Provides a convenient way to call [`Base.invokelatest`](@ref).
 `Base.invokelatest(f, args...; kwargs...)`.
 """
 macro invokelatest(ex)
-    @assert isexpr(ex, :call) "call expression should be given"
-
-    f = first(ex.args)
-    args = []
-    kwargs = []
-    for x in ex.args[2:end]
-        if isexpr(x, :parameters)
-            append!(kwargs, x.args)
-        elseif isexpr(x, :kw)
-            push!(kwargs, x)
-        else
-            push!(args, x)
-        end
-    end
+    f, args, kwargs = destructure_callex(ex)
     return if isempty(kwargs) # eliminates dispatch to kwarg methods, might unnecessary to be special cased
-        :(Base.invokelatest($(f), $(args...)))
+        :($(GlobalRef(Base, :invokelatest))($(f), $(args...)))
     else
-        :(Base.invokelatest($(f), $(args...); $(kwargs...)))
+        :($(GlobalRef(Base, :invokelatest))($(f), $(args...); $(kwargs...)))
     end |> esc
 end
 
