@@ -152,7 +152,8 @@ No errors !
 
 ### TODOs
 
-- more accurate error reports, especially for builtin-calls by setting up our own `tfunc`s
+- nicely integrate our analysis with Julia's code cache logic so that we don't recur into the already-profiled errorneous method instance
+- more accurate error reports in general
 - report performance pitfalls
 - documentation
 - support package loading
