@@ -579,21 +579,25 @@ function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
         filter!(r -> linfo ∉ r.lineage, interp.reports)
     end
 
-    # # debug info before typeinf
+    # # print debug info before typeinf
     # depth = interp.depth[]
     # io = stdout::IO
     # color = RAIL_COLORS[(depth+1)%N_RAILS+1]
     # print_rails(io, depth)
     # printstyled(io, "┌ @ "; color)
-    # print(io, frame.linfo, " ")
-    # printstyled(io, frame.result.argtypes, " "; color = TYPE_ANNOTATION_COLOR)
-    # printlnstyled(io, '(', is_constant_propagated(frame), ')'; color = :bold)
-    # interp.depth[] += 1
+    # print(io, frame.linfo)
+    # if is_constant_propagated(frame)
+    #     printstyled(io, " (constant prop': ", frame.result.argtypes, ')'; color = :cyan)
+    # end
+    # println(io)
+
+    interp.depth[] += 1 # for debug
 
     ret = @invoke typeinf(interp::AbstractInterpreter, frame::InferenceState)
 
-    # # debug info after typeinf
-    # interp.depth[] -= 1
+    interp.depth[] -= 1 # for debug
+
+    # # print debug info after typeinf
     # print_rails(io, depth)
     # printstyled(io, "└─> "; color)
     # printlnstyled(io, get_result(frame); color = TYPE_ANNOTATION_COLOR)
