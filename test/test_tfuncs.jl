@@ -1,5 +1,5 @@
 @testset "report invalid builtin call" begin
-    interp, frame = profile_call(Int, Type{Int}, Any) do a, b, c
+    interp, frame = profile_call((Int, Type{Int}, Any)) do a, b, c
         isa(a, b, c)
     end
     @test length(interp.reports) === 1
@@ -17,12 +17,12 @@
         end)
 
         interp, frame = Core.eval(m, quote
-            $(profile_call)(t->access_field(t,:v), T)
+            $(profile_call)(t->access_field(t,:v), (T,))
         end)
         @test isempty(interp.reports)
 
         interp, frame = Core.eval(m, quote
-            $(profile_call)(t->access_field(t,:w), T)
+            $(profile_call)(t->access_field(t,:w), (T,))
         end)
         @test length(interp.reports) === 1
         er = first(interp.reports)
@@ -31,7 +31,7 @@
         @test er.name === :w
 
         interp, frame = Core.eval(m, quote
-            $(profile_call)(t->access_field(t,:v), T)
+            $(profile_call)(t->access_field(t,:v), (T,))
         end)
         @test isempty(interp.reports)
     end

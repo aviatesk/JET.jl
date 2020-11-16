@@ -5,7 +5,7 @@
         m = gen_virtual_module()
         interp, frame = Core.eval(m, quote
             foo(a::Integer) = :Integer
-            $(profile_call)(AbstractString) do a
+            $(profile_call)((AbstractString,)) do a
                 foo(a)
             end
         end)
@@ -29,7 +29,7 @@
             foo(a::Integer) = :Integer
             foo(a::AbstractString) = "AbstractString"
 
-            $(profile_call)(a->foo(a), Union{Nothing,Int})
+            $(profile_call)(a->foo(a), (Union{Nothing,Int},))
         end)
 
         @test length(interp.reports) === 1
@@ -40,7 +40,7 @@ end
 
 @testset "report undefined slots" begin
     let
-        interp, frame = profile_call(Bool) do b
+        interp, frame = profile_call((Bool,)) do b
             if b
                 bar = rand(Int)
                 return bar
@@ -65,13 +65,13 @@ end
             baz(a) = foo(a)
         end
 
-        interp, frame = Core.eval(m, :($(profile_call)(baz, Bool)))
+        interp, frame = Core.eval(m, :($(profile_call)(baz, (Bool,))))
         @test length(interp.reports) === 1
         @test first(interp.reports) isa LocalUndefVarErrorReport
         @test first(interp.reports).name === :bar
 
         # works when cached
-        interp, frame = Core.eval(m, :($(profile_call)(baz, Bool)))
+        interp, frame = Core.eval(m, :($(profile_call)(baz, (Bool,))))
         @test length(interp.reports) === 1
         @test first(interp.reports) isa LocalUndefVarErrorReport
         @test first(interp.reports).name === :bar
@@ -79,7 +79,7 @@ end
 
     # try to exclude false negatives as possible (by collecting reports in after-optimization pass)
     let
-        interp, frame = profile_call(Bool) do b
+        interp, frame = profile_call((Bool,)) do b
             if b
                 bar = rand()
             end
@@ -94,7 +94,7 @@ end
     end
 
     let
-        interp, frame = profile_call(Bool) do b
+        interp, frame = profile_call((Bool,)) do b
             if b
                 bar = rand()
             end
@@ -128,13 +128,13 @@ end
             qux(a) = foo(a)
         end
 
-        interp, frame = Core.eval(m, :($(profile_call)(qux, Int)))
+        interp, frame = Core.eval(m, :($(profile_call)(qux, (Int,))))
         @test length(interp.reports) === 1
         @test first(interp.reports) isa GlobalUndefVarErrorReport
         @test first(interp.reports).name === :baz
 
         # works when cached
-        interp, frame = Core.eval(m, :($(profile_call)(qux, Int)))
+        interp, frame = Core.eval(m, :($(profile_call)(qux, (Int,))))
         @test length(interp.reports) === 1
         @test first(interp.reports) isa GlobalUndefVarErrorReport
         @test first(interp.reports).name === :baz
@@ -143,7 +143,7 @@ end
 
 @testset "report non-boolean condition error" begin
     let
-        interp, frame = profile_call(Int) do a
+        interp, frame = profile_call((Int,)) do a
             a ? a : nothing
         end
         @test length(interp.reports) === 1
@@ -153,7 +153,7 @@ end
     end
 
     let
-        interp, frame = profile_call(Any) do a
+        interp, frame = profile_call((Any,)) do a
             a ? a : nothing
         end
         @test isempty(interp.reports)
@@ -293,7 +293,7 @@ end
     # don't report possibly false negative `throw`s
     let
         foo(a) = a ≤ 0 ? throw("a is $(a)") : a
-        interp, frame = profile_call(foo, Int)
+        interp, frame = profile_call(foo, (Int,))
         @test isempty(interp.reports)
     end
 
@@ -311,7 +311,7 @@ end
         interp, frame = Core.eval(m, quote
             foo(a) = sum(a) # should be reported
             bar(a) = throw(a) # shouldn't be reported first
-            $(profile_call)(Bool, String) do b, s
+            $(profile_call)((Bool, String)) do b, s
                 b && foo(s)
                 bar(s)
             end
@@ -323,12 +323,12 @@ end
     # end to end
     let
         # this should report `throw(ArgumentError("Sampler for this object is not defined")`
-        interp, frame = profile_call(rand, Char)
+        interp, frame = profile_call(rand, (Char,))
         @test !isempty(interp.reports)
         @test first(interp.reports) isa ExceptionReport
 
         # this should not report `throw(DomainError(x, "sin(x) is only defined for finite x."))`
-        interp, frame = profile_call(sin, Int)
+        interp, frame = profile_call(sin, (Int,))
         @test isempty(interp.reports)
 
         # again, constant prop sometimes can exclude false negatives
@@ -350,11 +350,11 @@ end
         end
 
         # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)" should be threw away
-        interp, frame = Core.eval(m, :($(profile_call)(foo, P, Int)))
+        interp, frame = Core.eval(m, :($(profile_call)(foo, (P, Int))))
         @test isempty(interp.reports)
 
         # works for cache
-        interp, frame = Core.eval(m, :($(profile_call)(foo, P, Int)))
+        interp, frame = Core.eval(m, :($(profile_call)(foo, (P, Int))))
         @test isempty(interp.reports)
     end
 
@@ -370,11 +370,11 @@ end
         end
 
         # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)" should be threw away
-        interp, frame = Core.eval(m, :($(profile_call)(bar, P, Int)))
+        interp, frame = Core.eval(m, :($(profile_call)(bar, (P, Int))))
         @test isempty(interp.reports)
 
         # works for cache
-        interp, frame = Core.eval(m, :($(profile_call)(bar, P, Int)))
+        interp, frame = Core.eval(m, :($(profile_call)(bar, (P, Int))))
         @test isempty(interp.reports)
     end
 
@@ -391,7 +391,7 @@ end
                 p.s = s
             end
 
-            $(profile_call)(foo, P, Int, #= invalid =# Int)
+            $(profile_call)(foo, (P, Int, #= invalid =# Int))
         end)
 
         # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)" should be threw away, while
@@ -415,7 +415,7 @@ end
                 p.s = s
             end
 
-            $(profile_call)(foo, P, String, Int)
+            $(profile_call)(foo, (P, String, Int))
         end)
 
         # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::String)" should be narrowed down to "no matching method found for call signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{Int}, v::String)"
@@ -440,7 +440,7 @@ end
             @test isempty(interp.reports)
 
             # for this case, no constant prop' doesn't happen, we can't throw away error pass
-            interp, frame = Core.eval(m, :($(profile_call)(bar, Int)))
+            interp, frame = Core.eval(m, :($(profile_call)(bar, (Int,))))
             @test length(interp.reports) === 1
             er = first(interp.reports)
             @test er isa NoMethodErrorReport &&
@@ -474,7 +474,7 @@ end
             end
 
             # no constant prop, just report everything
-            interp, frame = Core.eval(m, :($(profile_call)(foo, Int)))
+            interp, frame = Core.eval(m, :($(profile_call)(foo, (Int,))))
             @test length(interp.reports) === 1
             er = first(interp.reports)
             @test er isa NonBooleanCondErrorReport &&
@@ -500,7 +500,7 @@ end
                 er.t === Int
 
             # so `Bool` is good for `foo` after all
-            interp, frame = Core.eval(m, :($(profile_call)(foo, Bool)))
+            interp, frame = Core.eval(m, :($(profile_call)(foo, (Bool,))))
             @test isempty(interp.reports)
         end
 

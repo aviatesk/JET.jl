@@ -9,7 +9,7 @@ end
 
 # used across tests
 const ERROR_REPORTS_FROM_SUM_OVER_STRING = let
-    interp, frame = profile_call(sum, String)
+    interp, frame = profile_call(sum, (String,))
     @test !isempty(interp.reports)
     interp.reports
 end
