@@ -5,8 +5,7 @@ import Core.Compiler:
 
 import JET:
     JETInterpreter, VirtualGlobalVariable, profile_call, get_result, virtual_process!,
-    gen_virtual_module, report_errors, ToplevelErrorReport, InferenceErrorReport,
-    print_reports
+    gen_virtual_module, ToplevelErrorReport, InferenceErrorReport, print_reports
 
 for sym in Symbol.(last.(Base.Fix2(split, '.').(string.(vcat(subtypes(JET, ToplevelErrorReport),
                                                              subtypes(JET, InferenceErrorReport),

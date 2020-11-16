@@ -155,22 +155,22 @@ function profile_text(io::IO,
                       mod::Module = Main;
                       profiling_logger::Union{Nothing,IO} = nothing,
                       kwargs...)
-    included_files, reports, postprocess = report_errors(profiling_logger,
-                                                         mod,
-                                                         text,
-                                                         filename;
-                                                         kwargs...,
-                                                         )
+    included_files, reports, postprocess = collect_reports(profiling_logger,
+                                                           mod,
+                                                           text,
+                                                           filename;
+                                                           kwargs...,
+                                                           )
     return included_files, print_reports(io, reports, postprocess; kwargs...)
 end
 profile_text(args...; kwargs...) = profile_text(stdout::IO, args...; kwargs...)
 
-report_errors(::Nothing, args...; kwargs...) = report_errors(args...; kwargs...)
-function report_errors(logger::IO, args...; kwargs...)
+collect_reports(::Nothing, args...; kwargs...) = collect_reports(args...; kwargs...)
+function collect_reports(logger::IO, args...; kwargs...)
     print(logger, "profiling from ", #= filename =# last(args), " ...")
     s = time()
 
-    ret = report_errors(args...; kwargs...)
+    ret = collect_reports(args...; kwargs...)
 
     sec = round(time() - s; digits = 3)
 
@@ -180,7 +180,7 @@ function report_errors(logger::IO, args...; kwargs...)
     return ret
 end
 
-function report_errors(actualmod, text, filename; kwargs...)
+function collect_reports(actualmod, text, filename; kwargs...)
     virtualmod = gen_virtual_module(actualmod)
 
     interp = JETInterpreter(; # dummy
@@ -285,7 +285,7 @@ end
 # miscellaneous, interactive
 # ----------------------------
 
-# profile from call expression
+# profiles from call expression
 macro profile_call(ex0...)
     return InteractiveUtils.gen_call_with_extracted_types_and_kwargs(__module__, :profile_call, ex0)
 end
@@ -306,6 +306,17 @@ function profile_call(@nospecialize(f), @nospecialize(types = Tuple{}); kwargs..
     return profile_gf_by_type!(interp, tt)
 end
 
+# collects and prints reports from call expression
+macro report_call(ex0...)
+    return InteractiveUtils.gen_call_with_extracted_types_and_kwargs(__module__, :report_call, ex0)
+end
+
+function report_call(@nospecialize(f), @nospecialize(types = Tuple{}); kwargs...)
+    interp, frame = profile_call(f, types; kwargs...)
+    print_reports(interp.reports; kwargs...)
+    return get_result(frame)
+end
+
 print_reports(args...; kwargs...) = print_reports(stdout::IO, args...; kwargs...)
 
 # for inspection
@@ -320,6 +331,8 @@ export
     profile_and_watch_file,
     profile_text,
     @profile_call,
-    profile_call
+    profile_call,
+    @report_call,
+    report_call
 
 end
