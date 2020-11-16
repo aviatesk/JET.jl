@@ -87,6 +87,8 @@ import Core.Compiler:
 import Base:
     parse_input_line,
     to_tuple_type,
+    unwrap_unionall,
+    rewrap_unionall,
     Fix1,
     Fix2,
     IdSet
@@ -116,6 +118,8 @@ import JuliaInterpreter:
 using FileWatching, Requires
 
 const CC = Core.Compiler
+
+using InteractiveUtils
 
 # includes
 # --------
@@ -151,22 +155,22 @@ function profile_text(io::IO,
                       mod::Module = Main;
                       profiling_logger::Union{Nothing,IO} = nothing,
                       kwargs...)
-    included_files, reports, postprocess = report_errors(profiling_logger,
-                                                         mod,
-                                                         text,
-                                                         filename;
-                                                         kwargs...,
-                                                         )
+    included_files, reports, postprocess = collect_reports(profiling_logger,
+                                                           mod,
+                                                           text,
+                                                           filename;
+                                                           kwargs...,
+                                                           )
     return included_files, print_reports(io, reports, postprocess; kwargs...)
 end
 profile_text(args...; kwargs...) = profile_text(stdout::IO, args...; kwargs...)
 
-report_errors(::Nothing, args...; kwargs...) = report_errors(args...; kwargs...)
-function report_errors(logger::IO, args...; kwargs...)
+collect_reports(::Nothing, args...; kwargs...) = collect_reports(args...; kwargs...)
+function collect_reports(logger::IO, args...; kwargs...)
     print(logger, "profiling from ", #= filename =# last(args), " ...")
     s = time()
 
-    ret = report_errors(args...; kwargs...)
+    ret = collect_reports(args...; kwargs...)
 
     sec = round(time() - s; digits = 3)
 
@@ -176,7 +180,7 @@ function report_errors(logger::IO, args...; kwargs...)
     return ret
 end
 
-function report_errors(actualmod, text, filename; kwargs...)
+function collect_reports(actualmod, text, filename; kwargs...)
     virtualmod = gen_virtual_module(actualmod)
 
     interp = JETInterpreter(; # dummy
@@ -278,27 +282,23 @@ function profile_method_signature!(interp::JETInterpreter,
     return profile_frame!(interp, frame)
 end
 
-# miscellaneous, interactive
-# ----------------------------
+# test, interactive
+# -----------------
 
-# profile from call expression
-macro profile_call(ex, kwargs...)
-    @assert isexpr(ex, :call) "function call expression should be given"
-    f = first(ex.args)
-    args = ex.args[2:end]
-
-    return quote let
-        argtypes = $(typeof′).(($(map(esc, args)...),))
-        interp, frame = $(profile_call)($(esc(f)), argtypes; $(map(esc, kwargs)...))
-        $(print_reports)(stdout::IO, interp.reports; $(map(esc, kwargs)...))
-        $(get_result)(frame) # maybe want to widen const ?
-    end end
+# profiles from call expression
+macro profile_call(ex0...)
+    return InteractiveUtils.gen_call_with_extracted_types_and_kwargs(__module__, :profile_call, ex0)
 end
 
-@nospecialize
+function profile_call(@nospecialize(f), @nospecialize(types = Tuple{}); kwargs...)
+    ft = Core.Typeof(f)
+    if isa(types, Type)
+        u = unwrap_unionall(types)
+        tt = rewrap_unionall(Tuple{ft, u.parameters...}, types)
+    else
+        tt = Tuple{ft, types...}
+    end
 
-function profile_call(f, argtypes::Type...; kwargs...)
-    tt = to_tuple_type([typeof′(f), argtypes...])
     interp = JETInterpreter(; inf_params      = gen_inf_params(; kwargs...),
                               opt_params      = gen_opt_params(; kwargs...),
                               analysis_params = AnalysisParams(; kwargs...),
@@ -306,14 +306,31 @@ function profile_call(f, argtypes::Type...; kwargs...)
     return profile_gf_by_type!(interp, tt)
 end
 
-profile_call(f, argtypes; kwargs...) = profile_call(f, argtypes...; kwargs...)
+# collects and prints reports from call expression
+macro report_call(ex0...)
+    return InteractiveUtils.gen_call_with_extracted_types_and_kwargs(__module__, :report_call, ex0)
+end
 
-typeof′(x) = typeof(x)
-typeof′(x::Type{T}) where {T} = Type{T}
-
-@specialize
+function report_call(@nospecialize(f), @nospecialize(types = Tuple{}); kwargs...)
+    interp, frame = profile_call(f, types; kwargs...)
+    print_reports(interp.reports; kwargs...)
+    return get_result(frame)
+end
 
 print_reports(args...; kwargs...) = print_reports(stdout::IO, args...; kwargs...)
+
+# for benchmarking JET analysis performance from call expression
+macro benchmark_call(ex0...)
+    call_ex = last(ex0)
+    profile_ex = InteractiveUtils.gen_call_with_extracted_types_and_kwargs(__module__, :profile_call, ex0)
+    return quote let
+        println(stdout)
+        @info "analyzing $($(QuoteNode(call_ex))) ..."
+        @time interp, frame = $(profile_ex)
+        @info "$(length(interp.reports)) errors reported for $($(QuoteNode(call_ex)))"
+        interp, frame
+    end end
+end
 
 # for inspection
 macro lwr(ex) QuoteNode(lower(__module__, ex)) end
@@ -326,6 +343,9 @@ export
     profile_file,
     profile_and_watch_file,
     profile_text,
-    @profile_call
+    @profile_call,
+    profile_call,
+    @report_call,
+    report_call
 
 end

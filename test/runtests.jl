@@ -4,12 +4,12 @@ include("interactive_utils.jl")
 
 # for benchmarking or debugging JET analysis on CI
 if get(ENV, "CI", nothing) == "true"
-    include("debug.jl")
+    include("benchmark.jl")
 end
 
 # used across tests
 const ERROR_REPORTS_FROM_SUM_OVER_STRING = let
-    interp, frame = profile_call(sum, String)
+    interp, frame = profile_call(sum, (String,))
     @test !isempty(interp.reports)
     interp.reports
 end
