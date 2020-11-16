@@ -15,7 +15,7 @@ CC.WorldView(tpc::JETCache, args...) = WorldView(tpc, WorldRange(args...))
 CC.haskey(tpc::JETCache, mi::MethodInstance) = CC.haskey(tpc.native, mi)
 
 const ANALYZED_LINFOS   = IdSet{MethodInstance}()         # keeps `MethodInstances` analyzed by JET
-const ERRORNEOUS_LINFOS = IdDict{MethodInstance,Symbol}() # keeps `MethodInstances` analyzed as "errorneous" by JET
+const ERRONEOUS_LINFOS = IdDict{MethodInstance,Symbol}() # keeps `MethodInstances` analyzed as "erroneous" by JET
 
 function CC.get(tpc::JETCache, mi::MethodInstance, default)
     # if we haven't analyzed this linfo, just invalidate native code cache and force analysis by JET
@@ -36,10 +36,10 @@ function CC.get(tpc::JETCache, mi::MethodInstance, default)
     # frame will just be ignored
     force_inference = false
 
-    if haskey(ERRORNEOUS_LINFOS, mi)
+    if haskey(ERRONEOUS_LINFOS, mi)
         # don't force re-inference for frames from the same inference process;
         # FIXME: this is critical for profiling performance, but seems to lead to lots of false positives ...
-        if ERRORNEOUS_LINFOS[mi] !== get_id(tpc.interp)
+        if ERRONEOUS_LINFOS[mi] !== get_id(tpc.interp)
             force_inference = true
         end
     end

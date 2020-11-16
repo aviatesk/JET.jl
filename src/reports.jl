@@ -124,9 +124,9 @@ macro reportdef(ex, kwargs...)
         # COMBAK: is this branching really needed ?
         # this frame may not introduce errors with the other constants, but this frame is
         # probably already pushed into `ERRORNEOUS_LINFOS`
-        cache_errorneous_linfo! = is_constant_propagated(sv) ?
-                                  (linfo -> return) :
-                                  (linfo -> istoplevel(linfo) || (ERRORNEOUS_LINFOS[linfo] = id))
+        cache_erroneous_linfo! = is_constant_propagated(sv) ?
+                                 (linfo -> return) :
+                                 (linfo -> istoplevel(linfo) || (ERRONEOUS_LINFOS[linfo] = id))
 
         if $(track_from_frame)
             # when report is constructed _after_ the inference on `sv::InferenceState` has been done,
@@ -134,7 +134,7 @@ macro reportdef(ex, kwargs...)
             linfo = sv.linfo
             push!(st, get_virtual_frame(linfo))
             push!(lineage, linfo)
-            cache_errorneous_linfo!(linfo)
+            cache_erroneous_linfo!(linfo)
             sv = sv.parent
         end
 
@@ -142,7 +142,7 @@ macro reportdef(ex, kwargs...)
             linfo = frame.linfo
             push!(st, get_virtual_frame(frame))
             push!(lineage, linfo)
-            cache_errorneous_linfo!(linfo)
+            cache_erroneous_linfo!(linfo)
         end
 
         return new(reverse(st), msg, sig, lineage, $(spec_args′...))

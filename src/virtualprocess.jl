@@ -52,10 +52,10 @@ this function first parses `s::AbstractString` into `toplevelex::Expr` and then 
   following steps on each code block (`blk`) of `toplevelex`:
 1. if `blk` is a `:module` expression, recusively call `virtual_process!` with an newly defined
      virtual module
-2. `lower`s `blk` into `lwr` (including macro expansion)
+2. `lower`s `blk` into `:thunk` expression `lwr` (macros are also expanded in this step)
 3. replaces self-references of the original root module (that is represented as `actualmodsym`)
      with that of `virtualmod`: see `fix_self_references`
-3. `ConcreteInterpreter` partially interprets some of `lwr`'s statements that should not be
+3. `ConcreteInterpreter` partially interprets some statements in `lwr` that should not be
      abstracted away (e.g. a `:method` definition); see also [`partial_interpret!`](@ref)
 4. finally, `JETInterpreter` profiles the remaining statements by abstract interpretation
 
