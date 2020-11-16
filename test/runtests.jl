@@ -4,7 +4,7 @@ include("interactive_utils.jl")
 
 # for benchmarking or debugging JET analysis on CI
 if get(ENV, "CI", nothing) == "true"
-    include("debug.jl")
+    include("benchmark.jl")
 end
 
 # used across tests

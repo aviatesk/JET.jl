@@ -282,8 +282,8 @@ function profile_method_signature!(interp::JETInterpreter,
     return profile_frame!(interp, frame)
 end
 
-# miscellaneous, interactive
-# ----------------------------
+# test, interactive
+# -----------------
 
 # profiles from call expression
 macro profile_call(ex0...)
@@ -318,6 +318,19 @@ function report_call(@nospecialize(f), @nospecialize(types = Tuple{}); kwargs...
 end
 
 print_reports(args...; kwargs...) = print_reports(stdout::IO, args...; kwargs...)
+
+# for benchmarking JET analysis performance from call expression
+macro benchmark_call(ex0...)
+    call_ex = last(ex0)
+    profile_ex = InteractiveUtils.gen_call_with_extracted_types_and_kwargs(__module__, :profile_call, ex0)
+    return quote let
+        println(stdout)
+        @info "analyzing $($(QuoteNode(call_ex))) ..."
+        @time interp, frame = $(profile_ex)
+        @info "$(length(interp.reports)) errors reported for $($(QuoteNode(call_ex)))"
+        interp, frame
+    end end
+end
 
 # for inspection
 macro lwr(ex) QuoteNode(lower(__module__, ex)) end
