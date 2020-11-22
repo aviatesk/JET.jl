@@ -78,31 +78,33 @@ end
 
 # overloads abstractinterpretation.jl
 # -----------------------------------
-# ref: https://github.com/JuliaLang/julia/blob/26c79b2e74d35434737bc33bc09d2e0f6e27372b/base/compiler/abstractinterpretation.jl
 
-# the aim of this horrible monkey patch is:
-# 1. report `NoMethodErrorReport` on empty method signature matching
-# 2. keep inference on non-concrete call sites in toplevel frame created by `virtual_process!`
-# 3. don't bail out even after the current return type grows up to `Any` in order to collect
-#    as much error points as possible; of course it slows down inference performance, but
-#    hopefully it stays to be "practical" speed (because the number of matching methods are limited beforehand)
-# 4. force constant prop' even if the inference result can't be improved anymore when `rettype`
-#    is already `Const`; this is because constant prop' can still produce more "correct"
-#    analysis by throwing away the error reports in the callee frames
-#
-# NOTE:
-# 1. essentially, we need to overwrite the native `abstract_call_gf_by_type` only because of:
-#    - the bail out logics are hard-coded
-#    - the check to decide whether to do constant prop' is hard-coded
-#    and the other patches can actually be implemented just by overloading like the other parts of this file
-# 2. the overloaded version is evaluated in `Core.Compiler` so that we don't need miscellaneous imports
-# 3. the aim of the syntaxic hacks is to keep the diff from the native `abstract_call_gf_by_type`
-#    consist only of additions so that the future changes for the native `abstract_call_gf_by_type`
-#    can be easily applied; see the /patches/ folder
+"""
+    function overload_abstract_call_gf_by_type!()
+        ...
+    end
+    push_inithook!(overload_abstract_call_gf_by_type!)
 
-push_inithook!() do
+the aim of this overloads are:
+1. report `NoMethodErrorReport` on empty method signature matching
+2. keep inference on non-concrete call sites in toplevel frame created by [`virtual_process!`](@ref)
+3. don't bail out even after the current return type grows up to `Any` and collect as much
+   error points as possible; of course it slows down inference performance, but hopefully it
+   stays to be "practical" speed (because the number of matching methods is limited beforehand)
+4. force constant prop' even if the inference result can't be improved anymore when `rettype`
+   is already `Const`; this is because constant prop' can still produce more "correct"
+   analysis by throwing away the error reports in the callee frames
 
-# %% #=== for easier interactive update ===#
+!!! note
+    - directly evaluates into `Core.Compiler` module so that we don't need to maintain
+      miscellaneous imports
+    - uses syntaxic hacks (`#=== ... ===#`) to keep the diff from the native version of
+      `abstract_call_gf_by_type` consisting of only additions so that the future changes in
+      the native compiler can be easily applied to the overloaded version; see /patches/ folder
+"""
+function overload_abstract_call_gf_by_type!()
+
+# %% for easier interactive update of abstract_call_gf_by_type
 Core.eval(CC, quote
 
 # TODO:
@@ -135,7 +137,7 @@ function abstract_call_gf_by_type(interp::$(JETInterpreter), @nospecialize(f), a
                 add_remark!(interp, sv, "For one of the union split cases, too many methods matched")
                 return CallMeta(Any, false)
             end
-            #=== JET.jl monkey-patch 1-1 start ===#
+            #=== abstract_call_gf_by_type monkey-patch 1-1 start ===#
             #= keep original code
             push!(infos, MethodMatchInfo(matches))
             =#
@@ -145,7 +147,7 @@ function abstract_call_gf_by_type(interp::$(JETInterpreter), @nospecialize(f), a
                 $(add_remark!)(interp, sv, $(NoMethodErrorReport)(interp, sv, true, atype))
             end
             push!(infos, info)
-            #=== JET.jl monkey-patch 1-1 end ===#
+            #=== abstract_call_gf_by_type monkey-patch 1-1 end ===#
             append!(applicable, matches)
             valid_worlds = intersect(valid_worlds, matches.valid_worlds)
             thisfullmatch = _any(match->(match::MethodMatch).fully_covers, matches)
@@ -180,12 +182,12 @@ function abstract_call_gf_by_type(interp::$(JETInterpreter), @nospecialize(f), a
         push!(mts, mt)
         push!(fullmatch, _any(match->(match::MethodMatch).fully_covers, matches))
         info = MethodMatchInfo(matches)
-        #=== JET.jl monkey-patch 1-2 start ===#
+        #=== abstract_call_gf_by_type monkey-patch 1-2 start ===#
         if $(is_empty_match)(info)
             # report `NoMethodErrorReport` for this call signature
             $(add_remark!)(interp, sv, $(NoMethodErrorReport)(interp, sv, false, atype))
         end
-        #=== JET.jl monkey-patch 1-2 end ===#
+        #=== abstract_call_gf_by_type monkey-patch 1-2 end ===#
         applicable = matches.matches
         valid_worlds = matches.valid_worlds
     end
@@ -208,20 +210,20 @@ function abstract_call_gf_by_type(interp::$(JETInterpreter), @nospecialize(f), a
         end
     end
 
-    #=== JET.jl monkey-patch 4-1 start ===#
+    #=== abstract_call_gf_by_type monkey-patch 4-1 start ===#
     nreports = length(interp.reports)
-    #=== JET.jl monkey-patch 4-1 end ===#
+    #=== abstract_call_gf_by_type monkey-patch 4-1 end ===#
 
     for i in 1:napplicable
         match = applicable[i]::MethodMatch
         method = match.method
         sig = match.spec_types
-        #=== JET.jl monkey-patch 2 start ===#
+        #=== abstract_call_gf_by_type monkey-patch 2 start ===#
         #= keep original code
         if istoplevel && !isdispatchtuple(sig)
         =#
         if istoplevel && !isdispatchtuple(sig) && !$(istoplevel)(sv) # keep going for "our" toplevel frame
-        #=== JET.jl monkey-patch 2 end ===#
+        #=== abstract_call_gf_by_type monkey-patch 2 end ===#
             # only infer concrete call sites in top-level expressions
             add_remark!(interp, sv, "Refusing to infer non-concrete call site in top-level expression")
             rettype = Any
@@ -241,12 +243,12 @@ function abstract_call_gf_by_type(interp::$(JETInterpreter), @nospecialize(f), a
                 end
                 edgecycle |= edgecycle1::Bool
                 this_rt = tmerge(this_rt, rt)
-                #=== JET.jl monkey-patch 3-1 start ===#
+                #=== abstract_call_gf_by_type monkey-patch 3-1 start ===#
                 #= keep original code
                 this_rt === Any && break
                 =#
                 # this_rt === Any && break # keep going and collect as much error reports as possible
-                #=== JET.jl monkey-patch 3-1 end ===#
+                #=== abstract_call_gf_by_type monkey-patch 3-1 end ===#
             end
         else
             this_rt, edgecycle1, edge = abstract_call_method(interp, method, sig, match.sparams, multiple_matches, sv)
@@ -264,28 +266,28 @@ function abstract_call_gf_by_type(interp::$(JETInterpreter), @nospecialize(f), a
         end
         seen += 1
         rettype = tmerge(rettype, this_rt)
-        #=== JET.jl monkey-patch 3-2 start ===#
+        #=== abstract_call_gf_by_type monkey-patch 3-2 start ===#
         #= keep original code
         rettype === Any && break
         =#
         # rettype === Any && break # keep going and collect as much error reports as possible
-        #=== JET.jl monkey-patch 3-2 end ===#
+        #=== abstract_call_gf_by_type monkey-patch 3-2 end ===#
     end
 
-    #=== JET.jl monkey-patch 4-2 start ===#
+    #=== abstract_call_gf_by_type monkey-patch 4-2 start ===#
     # check if constant propagation can improve analysis by throwing away possibly false positive reports
     has_been_reported = (length(interp.reports) - nreports) > 0
-    #=== JET.jl monkey-patch 4-2 end ===#
+    #=== abstract_call_gf_by_type monkey-patch 4-2 end ===#
 
     # try constant propagation if only 1 method is inferred to non-Bottom
     # this is in preparation for inlining, or improving the return result
     is_unused = call_result_unused(sv)
-    #=== JET.jl monkey-patch 4-3 start ===#
+    #=== abstract_call_gf_by_type monkey-patch 4-3 start ===#
     #= keep original code
     if nonbot > 0 && seen == napplicable && (!edgecycle || !is_unused) && isa(rettype, Type) && InferenceParams(interp).ipo_constant_propagation
     =#
     if nonbot > 0 && seen == napplicable && (!edgecycle || !is_unused) && (isa(rettype, Type) || has_been_reported) && InferenceParams(interp).ipo_constant_propagation
-    #=== JET.jl monkey-patch 4-3 end ===#
+    #=== abstract_call_gf_by_type monkey-patch 4-3 end ===#
         # if there's a possibility we could constant-propagate a better result
         # (hopefully without doing too much work), try to do that now
         # TODO: it feels like this could be better integrated into abstract_call_method / typeinf_edge
@@ -321,10 +323,11 @@ function abstract_call_gf_by_type(interp::$(JETInterpreter), @nospecialize(f), a
     return CallMeta(rettype, info)
 end
 
-end) # Core.eval(Core.Compiler, quote
-# %% #=== for easier interactive update ===#
+end) # Core.eval(CC, quote
+# %% for easier interactive update of abstract_call_gf_by_type
 
-end # push_inithook!() do
+end # function overload_abstract_call_gf_by_type!()
+push_inithook!(overload_abstract_call_gf_by_type!)
 
 function is_empty_match(info)
     res = info.results
