@@ -13,6 +13,7 @@ import .CC:
     OptimizationParams,
     get_world_counter,
     get_inference_cache,
+    code_cache,
     lock_mi_inference,
     unlock_mi_inference,
     add_remark!,
@@ -20,8 +21,7 @@ import .CC:
     may_compress,
     may_discard_trees,
     # jetcache.jl
-    code_cache,
-    WorldView,
+    # WorldView,
     # tfuncs.jl
     builtin_tfunction,
     return_type_tfunc,
@@ -32,7 +32,8 @@ import .CC:
     abstract_eval_statement,
     # typeinfer.jl
     typeinf,
-    _typeinf
+    _typeinf,
+    typeinf_edge
 
 # `ConcreteInterpreter`
 import JuliaInterpreter:

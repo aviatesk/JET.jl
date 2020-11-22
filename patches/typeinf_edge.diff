@@ -1,0 +1,31 @@
+diff --git a/patches/typeinf_edge.jl b/patches/typeinf_edge.jl
+index e17dbdd..7be0e47 100644
+--- a/patches/typeinf_edge.jl
++++ b/patches/typeinf_edge.jl
+@@ -1,10 +1,25 @@
+ # https://github.com/JuliaLang/julia/blob/b166d0d15f616f4a025ac5905a115399cc932ddc/base/compiler/typeinfer.jl#L706-L756
+ 
+ # compute (and cache) an inferred AST and return the current best estimate of the result type
+-function typeinf_edge(interp::AbstractInterpreter, method::Method, @nospecialize(atypes), sparams::SimpleVector, caller::InferenceState)
++function typeinf_edge(interp::$(JETInterpreter), method::Method, @nospecialize(atypes), sparams::SimpleVector, caller::InferenceState)
+     mi = specialize_method(method, atypes, sparams)::MethodInstance
++    #=== typeinf_edge monkey-patch 1 start ===#
++    #= keep original code
+     code = get(code_cache(interp), mi, nothing)
++    =#
++    code = $(∉)(mi, $(ANALYZED_LINFOS)) ? nothing : get(code_cache(interp), mi, nothing)
++    #=== typeinf_edge monkey-patch 1 end ===#
+     if code isa CodeInstance # return existing rettype if the code is already inferred
++        #=== typeinf_edge monkey-patch 2 start ===#
++        # cache hit, now we need to append cached reports associated with this `MethodInstance`
++        global_cache = $(get)($(JET_GLOBAL_CACHE), mi, nothing)
++        if global_cache !== nothing
++            caches = $(last)(global_cache)::$(Vector{InferenceErrorReportCache})
++            $(foreach)(caches) do cache
++                $(restore_cached_report!)(cache, interp, caller)
++            end
++        end
++        #=== typeinf_edge monkey-patch 2 end ===#
+         update_valid_age!(caller, WorldRange(min_world(code), max_world(code)))
+         if isdefined(code, :rettype_const)
+             if isa(code.rettype_const, Vector{Any}) && !(Vector{Any} <: code.rettype)
