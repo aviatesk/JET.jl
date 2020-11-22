@@ -1,7 +1,10 @@
 ### JET.jl patches
 
-trying to make it easier to maintain the monkey-patches by keeping (only-addition) diffs between original code from native compiler and overloaded code.
+Some of JET.jl's overloads include entire body of original functions for the type inference for native JIT routine.
+This is necessary when JET.jl has to change some logics that are hard-coded within the original function (in other word, when we can't just use `@invoke` against `AbstractInterpreter` to make the inference process suit for JET analysis).
 
-- `abstract_call_gf_by_type`
-  * temporarily update [./patches/abstract_call_gf_by_type.jl](./abstract_call_gf_by_type.jl) by replacing the original `abstract_call_gf_by_type` with the overloaded version within [./src/abstractinterpretation.jl](../s../src/abstractinterpretation.jl)
-  * `git diff ./patches/abstract_call_gf_by_type.jl >! ./patches/abstract_call_gf_by_type.diff`
+The `.diff` files in this directory keep monkey patches that each overloading does.
+
+In order to improve the maintainability of the patches, we do:
+- use syntactic hacks (`#=== ... ===#`) in order to keep the diff from the original code consisting of only additions, so that the future changes in the native compiler can be easily applied to the overloaded version
+- directly evaluate the overloads into `Core.Compiler` module so that we don't need to maintain miscellaneous imports

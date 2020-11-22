@@ -35,13 +35,6 @@ the aim of this overloads are:
 4. force constant prop' even if the inference result can't be improved anymore when `rettype`
    is already `Const`; this is because constant prop' can still produce more "correct"
    analysis by throwing away the error reports in the callee frames
-
-!!! note
-    - directly evaluates into `Core.Compiler` module so that we don't need to maintain
-      miscellaneous imports
-    - uses syntaxic hacks (`#=== ... ===#`) to keep the diff from the native version of
-      `abstract_call_gf_by_type` consisting of only additions so that the future changes in
-      the native compiler can be easily applied to the overloaded version; see /patches/ folder
 """
 function overload_abstract_call_gf_by_type!()
 
