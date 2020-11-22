@@ -205,19 +205,6 @@ function get_virtual_frame(loc::Union{InferenceState,MethodInstance})::VirtualFr
     return (; file, line, sig, linfo)
 end
 
-prewalk_inf_frame(@nospecialize(f), ::Nothing) = return
-function prewalk_inf_frame(@nospecialize(f), frame::InferenceState)
-    ret = f(frame)
-    prewalk_inf_frame(f, frame.parent)
-    return ret
-end
-
-postwalk_inf_frame(@nospecialize(f), ::Nothing) = return
-function postwalk_inf_frame(@nospecialize(f), frame::InferenceState)
-    postwalk_inf_frame(f, frame.parent)
-    return f(frame)
-end
-
 dummy_cacher(args...) = return
 
 get_file_line(frame::InferenceState) = get_file_line(get_cur_linfo(frame))
@@ -373,16 +360,3 @@ get_msg(::Type{ExceptionReport}, interp, sv, throw_blocks) = isone(length(throw_
     "will throw" :
     "will throw either of"
 get_msg(::Type{NativeRemark}, interp, sv, s) = s
-
-# utils
-# -----
-
-# NOTE: these methods assume `frame` is not inlined
-
-get_cur_pc(frame::InferenceState) = return frame.currpc
-get_cur_stmt(frame::InferenceState) = frame.src.code[get_cur_pc(frame)]
-get_cur_loc(frame::InferenceState) = frame.src.codelocs[get_cur_pc(frame)]
-get_cur_linfo(frame::InferenceState) = frame.src.linetable[get_cur_loc(frame)]
-get_cur_varstates(frame::InferenceState) = frame.stmt_types[get_cur_pc(frame)]
-get_result(frame::InferenceState) = frame.result.result
-isroot(frame::InferenceState) = isnothing(frame.parent)

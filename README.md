@@ -18,9 +18,8 @@ Say you have this strange and buggy file and want to know where to fix:
 > demo.jl
 
 ```julia
-########
-# demo #
-########
+# demo
+# ====
 
 # fibonacci
 # ---------

@@ -1,19 +1,3 @@
-"""
-    @invokelatest f(args...; kwargs...)
-
-Provides a convenient way to call [`Base.invokelatest`](@ref).
-`@invokelatest f(args...; kwargs...)` will simply be expanded into
-`Base.invokelatest(f, args...; kwargs...)`.
-"""
-macro invokelatest(ex)
-    f, args, kwargs = destructure_callex(ex)
-    return if isempty(kwargs) # eliminates dispatch to kwarg methods, might unnecessary to be special cased
-        :($(GlobalRef(Base, :invokelatest))($(f), $(args...)))
-    else
-        :($(GlobalRef(Base, :invokelatest))($(f), $(args...); $(kwargs...)))
-    end |> esc
-end
-
 const VirtualProcessResult = @NamedTuple begin
     included_files::Set{String}
     toplevel_error_reports::Vector{ToplevelErrorReport}

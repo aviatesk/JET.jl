@@ -1,6 +1,3 @@
-# `AbstractInterpreter` API
-# -------------------------
-
 struct AnalysisParams
     # disables caching of native remarks (that may speed up profiling time)
     filter_native_remarks::Bool
@@ -71,8 +68,8 @@ struct JETInterpreter <: AbstractInterpreter
     end
 end
 
-# API
-# ---
+# AbstractInterpreter API
+# -----------------------
 
 CC.InferenceParams(interp::JETInterpreter) = InferenceParams(interp.native)
 CC.OptimizationParams(interp::JETInterpreter) = OptimizationParams(interp.native)
@@ -97,8 +94,8 @@ CC.may_optimize(interp::JETInterpreter) = interp.optimize
 CC.may_compress(interp::JETInterpreter) = interp.compress
 CC.may_discard_trees(interp::JETInterpreter) = interp.discard_trees
 
-# specific
-# --------
+# JETInterpreter specific
+# -----------------------
 
 AnalysisParams(interp::JETInterpreter) = interp.analysis_params
 

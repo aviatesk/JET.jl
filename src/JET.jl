@@ -2,7 +2,7 @@
 module JET
 
 # imports
-# -------
+# =======
 
 # `JETInterpreter`
 import Core.Compiler:
@@ -29,7 +29,8 @@ import Core.Compiler:
     abstract_eval_value,
     abstract_eval_statement,
     # typeinfer.jl
-    typeinf
+    typeinf,
+    _typeinf
 
 # `ConcreteInterpreter`
 import JuliaInterpreter:
@@ -39,7 +40,7 @@ import JuliaInterpreter:
     handle_err
 
 # usings
-# ------
+# ======
 # TODO: really use `using` instead
 
 import Core:
@@ -121,24 +122,132 @@ const CC = Core.Compiler
 
 using InteractiveUtils
 
-# includes
-# --------
+# common
+# ======
+
+# hooks
+# -----
 
 const INIT_HOOKS = Function[]
 push_inithook!(f) = push!(INIT_HOOKS, f)
 __init__() = foreach(f->f(), INIT_HOOKS)
 
+# macros
+# ------
+
+# TODO: upstream these macros into Base
+
+"""
+    @invoke f(arg::T, ...; kwargs...)
+
+Provides a convenient way to call [`invoke`](@ref);
+`@invoke f(arg1::T1, arg2::T2; kwargs...)` will be expanded into `invoke(f, Tuple{T1,T2}, arg1, arg2; kwargs...)`.
+When an argument's type annotation is omitted, it's specified as `Any` argument, e.g.
+`@invoke f(arg1::T, arg2)` will be expanded into `invoke(f, Tuple{T,Any}, arg1, arg2)`.
+
+This could be used to call down to `NativeInterpreter`'s abstract interpretation method of
+  `f` while passing `JETInterpreter` so that subsequent calls of abstract interpretation
+  functions overloaded against `JETInterpreter` can be called from the native method of `f`;
+e.g. calls down to `NativeInterpreter`'s `abstract_call_gf_by_type` method:
+```julia
+@invoke abstract_call_gf_by_type(interp::AbstractInterpreter, f, argtypes::Vector{Any}, atype, sv::InferenceState,
+                                 max_methods::Int)
+```
+"""
+macro invoke(ex)
+    f, args, kwargs = destructure_callex(ex)
+    arg2typs = map(args) do x
+        isexpr(x, :(::)) ? (x.args...,) : (x, GlobalRef(Core, :Any))
+    end
+    args, argtypes = first.(arg2typs), last.(arg2typs)
+    return if isempty(kwargs)
+        :($(GlobalRef(Core, :invoke))($(f), Tuple{$(argtypes...)}, $(args...))) # might not be necessary
+    else
+        :($(GlobalRef(Core, :invoke))($(f), Tuple{$(argtypes...)}, $(args...); $(kwargs...)))
+    end |> esc
+end
+
+function destructure_callex(ex)
+    @assert isexpr(ex, :call) "call expression f(args...; kwargs...) should be given"
+
+    f = first(ex.args)
+    args = []
+    kwargs = []
+    for x in ex.args[2:end]
+        if isexpr(x, :parameters)
+            append!(kwargs, x.args)
+        elseif isexpr(x, :kw)
+            push!(kwargs, x)
+        else
+            push!(args, x)
+        end
+    end
+
+    return f, args, kwargs
+end
+
+"""
+    @invokelatest f(args...; kwargs...)
+
+Provides a convenient way to call [`Base.invokelatest`](@ref).
+`@invokelatest f(args...; kwargs...)` will simply be expanded into
+`Base.invokelatest(f, args...; kwargs...)`.
+"""
+macro invokelatest(ex)
+    f, args, kwargs = destructure_callex(ex)
+    return if isempty(kwargs) # eliminates dispatch to kwarg methods, might unnecessary to be special cased
+        :($(GlobalRef(Base, :invokelatest))($(f), $(args...)))
+    else
+        :($(GlobalRef(Base, :invokelatest))($(f), $(args...); $(kwargs...)))
+    end |> esc
+end
+
+# inference frame
+# ---------------
+
+is_constant_propagated(frame::InferenceState) = CC.any(frame.result.overridden_by_const)
+
+istoplevel(linfo::MethodInstance) = linfo.def == __toplevel__
+istoplevel(sv::InferenceState)    = istoplevel(sv.linfo)
+
+isroot(frame::InferenceState) = isnothing(frame.parent)
+
+prewalk_inf_frame(@nospecialize(f), ::Nothing) = return
+function prewalk_inf_frame(@nospecialize(f), frame::InferenceState)
+    ret = f(frame)
+    prewalk_inf_frame(f, frame.parent)
+    return ret
+end
+
+postwalk_inf_frame(@nospecialize(f), ::Nothing) = return
+function postwalk_inf_frame(@nospecialize(f), frame::InferenceState)
+    postwalk_inf_frame(f, frame.parent)
+    return f(frame)
+end
+
+# NOTE: these methods assume `frame` is not inlined
+get_cur_pc(frame::InferenceState) = return frame.currpc
+get_cur_stmt(frame::InferenceState) = frame.src.code[get_cur_pc(frame)]
+get_cur_loc(frame::InferenceState) = frame.src.codelocs[get_cur_pc(frame)]
+get_cur_linfo(frame::InferenceState) = frame.src.linetable[get_cur_loc(frame)]
+get_cur_varstates(frame::InferenceState) = frame.stmt_types[get_cur_pc(frame)]
+get_result(frame::InferenceState) = frame.result.result
+
+# includes
+# ========
+
 include("reports.jl")
 include("abstractinterpreterinterface.jl")
-include("abstractinterpretation.jl")
-include("tfuncs.jl")
 include("jetcache.jl")
+include("tfuncs.jl")
+include("abstractinterpretation.jl")
+include("typeinfer.jl")
 include("print.jl")
 include("virtualprocess.jl")
 include("watch.jl")
 
 # entry
-# -----
+# =====
 
 function profile_file(io::IO,
                       filename::AbstractString,
@@ -282,8 +391,29 @@ function profile_method_signature!(interp::JETInterpreter,
     return profile_frame!(interp, frame)
 end
 
+function profile_frame!(interp::JETInterpreter, frame::InferenceState)
+    typeinf(interp, frame)
+
+    # if return type is `Bottom`-annotated for this frame, this may mean some `throw`(s)
+    # aren't caught by at any level and get propagated here, or there're other critical
+    # inference error found
+    if get_result(frame) === Bottom
+        # let's report report `ExceptionReport`s only if there is no other error reported
+        # TODO: change behaviour according to severity of collected report, e.g. don't take
+        # into account `NativeRemark`s, etc
+        isempty(interp.reports) && append!(interp.reports, last.(interp.exception_reports))
+
+        # # just append collected `ExceptionReport`s
+        # for (i, (idx, report)) in enumerate(interp.exception_reports)
+        #     insert!(interp.reports, idx + i, report)
+        # end
+    end
+
+    return interp, frame
+end
+
 # test, interactive
-# -----------------
+# =================
 
 # profiles from call expression
 macro profile_call(ex0...)
@@ -337,7 +467,7 @@ macro lwr(ex) QuoteNode(lower(__module__, ex)) end
 macro src(ex) QuoteNode(first(lower(__module__, ex).args)) end
 
 # exports
-# -------
+# =======
 
 export
     profile_file,
