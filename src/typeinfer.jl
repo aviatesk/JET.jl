@@ -1,28 +1,5 @@
-# in this overload we can work on `frame.src::CodeInfo` (and also `frame::InferenceState`)
-# where type inference (and also optimization if applied) already ran on
+# in this overload we will work on some meta/debug information management
 function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
-    # some methods like `getproperty` can't propagate accurate types without actual values,
-    # and constant prop' plays a somewhat critical role in those cases by overwriteing the
-    # previously-inferred lousy result; JET.jl also needs that to reduce false positive reports,
-    # and so here we will throw-away previously-collected error reports that are "lineage" of
-    # this frame, when it is being re-inferred with constant-prop'ed inputs
-    #
-    # NOTE:
-    # - constant prop' only happens after inference with non-constant abstract values (i.e. types)
-    # - xref to track the change in the native constant propagation logic:
-    #   https://github.com/JuliaLang/julia/blob/a108d6cb8fdc7924fe2b8d831251142386cb6525/base/compiler/abstractinterpretation.jl#L153
-    #
-    # XXX: constant prop' may not happen always, especially when inferring on cached frames,
-    #      and then error reports can be different for uncached/cached frames, which would be
-    #      super confusing
-    #
-    # TODO: we may still want to keep reports on some kinds of "serious" errors, like
-    #       `GlobalUndefVarErrorReport` even if it's been threw-away by constant prop'
-    if is_constant_propagated(frame)
-        linfo = frame.linfo
-        filter!(r -> linfo ∉ r.lineage, interp.reports)
-    end
-
     # # print debug info before typeinf
     # depth = interp.depth[]
     # io = stdout::IO
@@ -45,6 +22,36 @@ function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
     # print_rails(io, depth)
     # printstyled(io, "└─> "; color)
     # printlnstyled(io, get_result(frame); color = TYPE_ANNOTATION_COLOR)
+
+    return ret
+end
+
+# in this overload we can work on `frame.src::CodeInfo` (and also `frame::InferenceState`)
+# where type inference (and also optimization if applied) already ran on
+function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
+    # some methods like `getproperty` can't propagate accurate types without actual values,
+    # and constant prop' plays a somewhat critical role in those cases by overwriteing the
+    # previously-inferred lousy result; JET.jl also needs that to reduce false positive reports,
+    # and so here we will throw-away previously-collected error reports that are "lineage" of
+    # this frame, when it is being re-inferred with constant-prop'ed inputs
+    #
+    # NOTE:
+    # - constant prop' only happens after inference with non-constant abstract values (i.e. types)
+    # - xref to track the change in the native constant propagation logic:
+    #   https://github.com/JuliaLang/julia/blob/a108d6cb8fdc7924fe2b8d831251142386cb6525/base/compiler/abstractinterpretation.jl#L153
+    #
+    # XXX: constant prop' may not happen always, especially when inferring on cached frames,
+    #      and then error reports can be different for uncached/cached frames, which would be
+    #      super confusing
+    #
+    # TODO: we may still want to keep reports on some kinds of "serious" errors, like
+    #       `GlobalUndefVarErrorReport` even if it's been threw-away by constant prop'
+    if is_constant_propagated(frame)
+        linfo = frame.linfo
+        filter!(r -> linfo ∉ r.lineage, interp.reports)
+    end
+
+    ret = @invoke _typeinf(interp::AbstractInterpreter, frame::InferenceState)
 
     stmts = frame.src.code
 
