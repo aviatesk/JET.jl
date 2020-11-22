@@ -70,7 +70,8 @@ const VirtualFrame = @NamedTuple begin
     sig::Vector{Any}
     linfo::MethodInstance
 end
-const VirtualStackTrace = Vector{VirtualFrame}
+const VirtualStackTrace       = Vector{VirtualFrame}
+const ViewedVirtualStackTrace = typeof(view(VirtualStackTrace(), :))
 
 # `InferenceErrorReport` interface
 function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
@@ -112,8 +113,8 @@ macro reportdef(ex, kwargs...)
     args′ = strip_type_decls.(args)
     spec_args′ = strip_type_decls.(spec_args)
     constructor_body = Expr(:block, __source__, quote
-        interp = $(args[2])
-        sv = $(args[3])
+        interp = $(args′[2])
+        sv = $(args′[3])
 
         msg = get_msg(#= T, interp, sv, ... =# $(args′...))
         sig = get_sig(#= T, interp, sv, ... =# $(args′...))
@@ -121,12 +122,16 @@ macro reportdef(ex, kwargs...)
         lineage = Lineage()
 
         id = get_id(interp)
-        # COMBAK: is this branching really needed ?
-        # this frame may not introduce errors with the other constants, but this frame is
-        # probably already pushed into `ERRORNEOUS_LINFOS`
-        cache_erroneous_linfo! = is_constant_propagated(sv) ?
-                                 (linfo -> return) :
-                                 (linfo -> istoplevel(linfo) || (ERRONEOUS_LINFOS[linfo] = id))
+        # # COMBAK: is this branching really needed ?
+        # # this frame may not introduce errors with the other constants, but this frame is
+        # # probably already pushed into `ERRORNEOUS_LINFOS`
+        # cache_erroneous_linfo! = is_constant_propagated(sv) ?
+        #                          (linfo -> return) :
+        #                          (linfo -> istoplevel(linfo) || (ERRONEOUS_LINFOS[linfo] = id))
+
+        # cache_erroneous_linfo! = linfo -> istoplevel(linfo) || (ERRONEOUS_LINFOS[linfo] = id)
+
+        cache_report! = gen_report_cacher(st, msg, sig, lineage, $(args′...))
 
         if $(track_from_frame)
             # when report is constructed _after_ the inference on `sv::InferenceState` has been done,
@@ -134,7 +139,7 @@ macro reportdef(ex, kwargs...)
             linfo = sv.linfo
             push!(st, get_virtual_frame(linfo))
             push!(lineage, linfo)
-            cache_erroneous_linfo!(linfo)
+            cache_report!(linfo)
             sv = sv.parent
         end
 
@@ -142,7 +147,7 @@ macro reportdef(ex, kwargs...)
             linfo = frame.linfo
             push!(st, get_virtual_frame(frame))
             push!(lineage, linfo)
-            cache_erroneous_linfo!(linfo)
+            cache_report!(linfo)
         end
 
         return new(reverse(st), msg, sig, lineage, $(spec_args′...))
@@ -157,8 +162,18 @@ macro reportdef(ex, kwargs...)
             lineage::Lineage
             $(spec_args...)
 
-            # inner constructor
+            # default constructor
             $(constructor_ex)
+
+            # constructor from cache
+            function $(T)(st::VirtualStackTrace,
+                          msg::AbstractString,
+                          sig::AbstractVector,
+                          lineage::Lineage,
+                          @nospecialize(spec_args::NTuple{N,Any} where N),
+                          )
+                return new(reverse(st), msg, sig, lineage, $(esc(:(spec_args...)))) # `esc` is needed because `@nospecialize` escapes its argument anyway
+            end
         end
     end)
 end
@@ -166,6 +181,26 @@ end
 function strip_type_decls(x)
     isexpr(x, :escape) && return Expr(:escape, strip_type_decls(first(x.args))) # keep escape
     return isexpr(x, :(::)) ? first(x.args) : x
+end
+
+function gen_report_cacher(st, msg, sig, lineage, T, interp, sv, @nospecialize(spec_args...))
+    # TODO: handle constant prop', local cache
+    return function (linfo::MethodInstance)
+        pool, caches = if haskey(JET_GLOBAL_CACHE, linfo)
+            JET_GLOBAL_CACHE[linfo]
+        else
+            JET_GLOBAL_CACHE[linfo] = Set{VirtualFrame}(), InferenceErrorReportCache[]
+        end
+
+        # already cached (somehow), just do nothing
+        # otherwise e.g. `@report_call rand(Bool)` will fail into infinite loop and never terminate
+        err_st = first(st)
+        err_st in pool && return
+
+        new = InferenceErrorReportCache(T, view(st, :), msg, sig, lineage, spec_args)
+        push!(pool, err_st)
+        push!(caches, new)
+    end
 end
 
 @reportdef NoMethodErrorReport(interp, sv, unionsplit::Bool, @nospecialize(atype::Type))
