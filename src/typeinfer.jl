@@ -16,6 +16,8 @@ function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
 
     ret = @invoke typeinf(interp::AbstractInterpreter, frame::InferenceState)
 
+    push!(ANALYZED_LINFOS, frame.linfo) # analyzed !
+
     interp.depth[] -= 1 # for debug
 
     # # print debug info after typeinf
@@ -100,3 +102,143 @@ is_unreachable(rn::ReturnNode)   = !isdefined(rn, :val)
 
 is_throw_call′(@nospecialize(_)) = false
 is_throw_call′(e::Expr)          = is_throw_call(e)
+
+"""
+    function overload_typeinf_edge!()
+        ...
+    end
+    push_inithook!(overload_typeinf_edge!)
+
+the aims of this overload are:
+1. invalidate code cache for a `MethodInstance` that is not yet analyzed by JET; this happens
+   e.g. the `MethodInstance` is cached within the system image itself
+2. when cache is hit (i.e. any further inference won't occcur for the cached frame),
+   append cached reports associated with the cached `MethodInstance`
+"""
+function overload_typeinf_edge!()
+
+# %% for easier interactive update of typeinf_edge
+Core.eval(CC, quote
+
+# compute (and cache) an inferred AST and return the current best estimate of the result type
+function typeinf_edge(interp::$(JETInterpreter), method::Method, @nospecialize(atypes), sparams::SimpleVector, caller::InferenceState)
+    mi = specialize_method(method, atypes, sparams)::MethodInstance
+    #=== typeinf_edge monkey-patch 1 start ===#
+    #= keep original code
+    code = get(code_cache(interp), mi, nothing)
+    =#
+    code = $(∉)(mi, $(ANALYZED_LINFOS)) ? nothing : get(code_cache(interp), mi, nothing)
+    #=== typeinf_edge monkey-patch 1 end ===#
+    if code isa CodeInstance # return existing rettype if the code is already inferred
+        #=== typeinf_edge monkey-patch 2 start ===#
+        # cache hit, now we need to append cached reports associated with this `MethodInstance`
+        global_cache = $(get)($(JET_GLOBAL_CACHE), mi, nothing)
+        if global_cache !== nothing
+            caches = $(last)(global_cache)::$(Vector{InferenceErrorReportCache})
+            $(foreach)(caches) do cache
+                $(restore_cached_report!)(cache, interp, caller)
+            end
+        end
+        #=== typeinf_edge monkey-patch 2 end ===#
+        update_valid_age!(caller, WorldRange(min_world(code), max_world(code)))
+        if isdefined(code, :rettype_const)
+            if isa(code.rettype_const, Vector{Any}) && !(Vector{Any} <: code.rettype)
+                return PartialStruct(code.rettype, code.rettype_const), mi
+            else
+                return Const(code.rettype_const), mi
+            end
+        else
+            return code.rettype, mi
+        end
+    end
+    if ccall(:jl_get_module_infer, Cint, (Any,), method.module) == 0
+        return Any, nothing
+    end
+    if !caller.cached && caller.parent === nothing
+        # this caller exists to return to the user
+        # (if we asked resolve_call_cyle, it might instead detect that there is a cycle that it can't merge)
+        frame = false
+    else
+        frame = resolve_call_cycle!(interp, mi, caller)
+    end
+    if frame === false
+        # completely new
+        lock_mi_inference(interp, mi)
+        result = InferenceResult(mi)
+        frame = InferenceState(result, #=cached=#true, interp) # always use the cache for edge targets
+        if frame === nothing
+            # can't get the source for this, so we know nothing
+            unlock_mi_inference(interp, mi)
+            return Any, nothing
+        end
+        if caller.cached || caller.limited # don't involve uncached functions in cycle resolution
+            frame.parent = caller
+        end
+        typeinf(interp, frame)
+        update_valid_age!(frame, caller)
+        return widenconst_bestguess(frame.bestguess), frame.inferred ? mi : nothing
+    elseif frame === true
+        # unresolvable cycle
+        return Any, nothing
+    end
+    # return the current knowledge about this cycle
+    frame = frame::InferenceState
+    update_valid_age!(frame, caller)
+    return widenconst_bestguess(frame.bestguess), nothing
+end
+
+end) # Core.eval(CC, quote
+# %% for easier interactive update of typeinf_edge
+
+end # function overload_typeinf_edge!()
+push_inithook!(overload_typeinf_edge!)
+
+struct InferenceErrorReportCache
+    T::Type{<:InferenceErrorReport}
+    st::ViewedVirtualStackTrace
+    msg::String
+    sig::Vector{Any}
+    lineage::Lineage
+    spec_args::NTuple{N,Any} where N
+end
+
+const JET_GLOBAL_CACHE = IdDict{MethodInstance,
+                                Tuple{Set{VirtualFrame},Vector{InferenceErrorReportCache}}
+                                }()
+
+const ANALYZED_LINFOS  = IdSet{MethodInstance}() # keeps `MethodInstance`s analyzed by JET
+
+function restore_cached_report!(cache::InferenceErrorReportCache,
+                                interp::JETInterpreter,
+                                caller::InferenceState,
+                                )
+    report = restore_cached_report(cache, interp, caller)
+    if isa(report, ExceptionReport)
+        push!(interp.exception_reports, length(interp.reports) => report)
+    else
+        push!(interp.reports, report)
+    end
+end
+
+function restore_cached_report(cache::InferenceErrorReportCache,
+                               interp::JETInterpreter,
+                               caller::InferenceState,
+                               )
+    T = cache.T
+    msg = cache.msg
+    sig = cache.sig
+    st = collect(cache.st)
+    spec_args = cache.spec_args
+    lineage = Lineage(sf.linfo for sf in st)
+
+    # we need to cache this report for frames within the current virtual stack trace
+    cache_report! = gen_report_cacher(st, msg, sig, lineage, T, interp, caller, spec_args...)
+    prewalk_inf_frame(caller) do frame::InferenceState
+        linfo = frame.linfo
+        push!(st, get_virtual_frame(frame))
+        push!(lineage, linfo)
+        cache_report!(linfo)
+    end
+
+    return T(st, msg, sig, lineage, spec_args)
+end
