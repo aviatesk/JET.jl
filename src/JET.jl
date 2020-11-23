@@ -1,11 +1,13 @@
 @doc read(normpath(dirname(@__DIR__), "README.md"), String)
 module JET
 
+const CC = Core.Compiler
+
 # imports
 # =======
 
 # `JETInterpreter`
-import Core.Compiler:
+import .CC:
     # abstractinterpreterinterface.jl
     InferenceParams,
     OptimizationParams,
@@ -49,7 +51,7 @@ import Core:
     SimpleVector,
     svec
 
-import Core.Compiler:
+import .CC:
     AbstractInterpreter,
     NativeInterpreter,
     InferenceState,
@@ -117,8 +119,6 @@ import JuliaInterpreter:
     is_quotenode_egal
 
 using FileWatching, Requires
-
-const CC = Core.Compiler
 
 using InteractiveUtils
 

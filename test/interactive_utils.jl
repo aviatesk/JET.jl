@@ -1,7 +1,9 @@
 using Test, JET, InteractiveUtils
 
-import Core.Compiler:
-    widenconst
+const CC = JET.CC
+
+import .CC:
+    widenconst, ⊑
 
 import JET:
     JETInterpreter, VirtualGlobalVariable, profile_call, get_result, virtual_process!,
@@ -19,10 +21,6 @@ import Base:
 import Base.Meta:
     isexpr
 
-import Core.Compiler:
-    ⊑
-
-const CC = Core.Compiler
 const FIXTURE_DIR = normpath(@__DIR__, "fixtures")
 
 # define virtual module and setup fixtures

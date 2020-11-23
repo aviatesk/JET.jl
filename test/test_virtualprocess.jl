@@ -36,7 +36,7 @@ end
 end
 
 @testset "fix toplevel global `Symbol`" begin
-    # this case otherwise will throw an error in `Core.Compiler.typ_for_val` in optimization
+    # this case otherwise will throw an error in `CC.typ_for_val` in optimization
     let
         res, interp = @profile_toplevel begin
             v = '1'
