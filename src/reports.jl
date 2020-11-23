@@ -71,7 +71,6 @@ const VirtualFrame = @NamedTuple begin
     linfo::MethodInstance
 end
 const VirtualStackTrace       = Vector{VirtualFrame}
-const ViewedVirtualStackTrace = typeof(view(VirtualStackTrace(), :))
 
 # `InferenceErrorReport` interface
 function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
@@ -203,6 +202,56 @@ function gen_report_cacher(st, msg, sig, lineage, T, interp, sv, @nospecialize(s
     end
 end
 
+const ViewedVirtualStackTrace = typeof(view(VirtualStackTrace(), :))
+
+struct InferenceErrorReportCache
+    T::Type{<:InferenceErrorReport}
+    st::ViewedVirtualStackTrace
+    msg::String
+    sig::Vector{Any}
+    lineage::Lineage
+    spec_args::NTuple{N,Any} where N
+end
+
+const JET_GLOBAL_CACHE = IdDict{MethodInstance,
+                                Tuple{Set{VirtualFrame},Vector{InferenceErrorReportCache}}
+                                }()
+
+function restore_cached_report!(cache::InferenceErrorReportCache,
+                                interp#=::JETInterpreter=#,
+                                caller::InferenceState,
+                                )
+    report = restore_cached_report(cache, interp, caller)
+    if isa(report, ExceptionReport)
+        push!(interp.exception_reports, length(interp.reports) => report)
+    else
+        push!(interp.reports, report)
+    end
+end
+
+function restore_cached_report(cache::InferenceErrorReportCache,
+                               interp#=::JETInterpreter=#,
+                               caller::InferenceState,
+                               )
+    T = cache.T
+    msg = cache.msg
+    sig = cache.sig
+    st = collect(cache.st)
+    spec_args = cache.spec_args
+    lineage = Lineage(sf.linfo for sf in st)
+
+    # we need to cache this report for frames within the current virtual stack trace
+    cache_report! = gen_report_cacher(st, msg, sig, lineage, T, interp, caller, spec_args...)
+    prewalk_inf_frame(caller) do frame::InferenceState
+        linfo = frame.linfo
+        push!(st, get_virtual_frame(frame))
+        push!(lineage, linfo)
+        cache_report!(linfo)
+    end
+
+    return T(st, msg, sig, lineage, spec_args)
+end
+
 @reportdef NoMethodErrorReport(interp, sv, unionsplit::Bool, @nospecialize(atype::Type))
 
 @reportdef InvalidBuiltinCallErrorReport(interp, sv, argtypes::Vector{Any})
@@ -239,8 +288,6 @@ function get_virtual_frame(loc::Union{InferenceState,MethodInstance})::VirtualFr
     linfo = isa(loc, InferenceState) ? loc.linfo : loc
     return (; file, line, sig, linfo)
 end
-
-dummy_cacher(args...) = return
 
 get_file_line(frame::InferenceState) = get_file_line(get_cur_linfo(frame))
 get_file_line(linfo::LineInfoNode)   = linfo.file, linfo.line
