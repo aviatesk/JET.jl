@@ -50,7 +50,7 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
     #       `GlobalUndefVarErrorReport` even if it's been threw-away by constant prop'
     if is_constant_propagated(frame)
         linfo = frame.linfo
-        filter!(r -> linfo ∉ r.lineage, interp.reports)
+        filter!(r -> ∉(linfo, r.lineage), interp.reports)
     end
 
     ret = @invoke _typeinf(interp::AbstractInterpreter, frame::InferenceState)
