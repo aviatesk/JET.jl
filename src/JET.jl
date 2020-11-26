@@ -31,6 +31,7 @@ import .CC:
     return_type_tfunc,
     # abstractinterpretation.jl
     abstract_call_gf_by_type,
+    abstract_call_method_with_const_args,
     abstract_eval_special_value,
     abstract_eval_value,
     abstract_eval_statement,
