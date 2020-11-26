@@ -209,6 +209,17 @@ end
 
 is_constant_propagated(frame::InferenceState) = CC.any(frame.result.overridden_by_const)
 
+# # XXX: should sync with the `haveconst` check within `abstract_call_method_with_const_args` ?
+# is_constant_propagated(frame::InferenceState) = is_constant_propagated(frame.result)
+# function is_constant_propagated(result::InferenceResult)
+#     for a in result.argtypes
+#         if CC.has_nontrivial_const_info(a) && CC.const_prop_profitable(a)
+#             return true
+#         end
+#     end
+#     return false
+# end
+
 istoplevel(linfo::MethodInstance) = linfo.def == __toplevel__
 istoplevel(sv::InferenceState)    = istoplevel(sv.linfo)
 
