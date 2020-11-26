@@ -1,0 +1,41 @@
+diff --git a/patches/abstract_call_method_with_const_args.jl b/patches/abstract_call_method_with_const_args.jl
+index ee3a741..2912929 100644
+--- a/patches/abstract_call_method_with_const_args.jl
++++ b/patches/abstract_call_method_with_const_args.jl
+@@ -1,6 +1,6 @@
+ # https://github.com/JuliaLang/julia/blob/b166d0d15f616f4a025ac5905a115399cc932ddc/base/compiler/abstractinterpretation.jl#L226-L314
+ 
+-function abstract_call_method_with_const_args(interp::AbstractInterpreter, @nospecialize(rettype), @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch, sv::InferenceState, edgecycle::Bool)
++function abstract_call_method_with_const_args(interp::$(JETInterpreter), @nospecialize(rettype), @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch, sv::InferenceState, edgecycle::Bool)
+     method = match.method
+     nargs::Int = method.nargs
+     method.isva && (nargs -= 1)
+@@ -20,7 +20,9 @@ function abstract_call_method_with_const_args(interp::AbstractInterpreter, @nosp
+             break
+         end
+     end
+-    haveconst || improvable_via_constant_propagation(rettype) || return Any
++    # force constant propagation even if it doesn't improve return type;
++    # constant prop' may improve report accuracy
++    haveconst || #= improvable_via_constant_propagation(rettype) || =# return Any
+     if nargs > 1
+         if istopfunction(f, :getindex) || istopfunction(f, :setindex!)
+             arrty = argtypes[2]
+@@ -82,6 +84,17 @@ function abstract_call_method_with_const_args(interp::AbstractInterpreter, @nosp
+         frame.parent = sv
+         push!(inf_cache, inf_result)
+         typeinf(interp, frame) || return Any
++    else
++        # local cache for this constant analysis is hit
++        inf_result = inf_result::InferenceResult
++        if !isa(inf_result.result, InferenceState)
++            linfo = inf_result.linfo
++            # corresponds to report throw away logic in `_typeinf(interp::JETInterpreter, frame::InferenceState)`
++            $(filter!)(r -> $(∉)(linfo, r.lineage), interp.reports)
++
++            # TODO: restore local cache
++            # caches = interp.cache[linfo] # local cache for this constant analysis should exist
++        end
+     end
+     result = inf_result.result
+     # if constant inference hits a cycle, just bail out
