@@ -130,7 +130,7 @@ macro reportdef(ex, kwargs...)
 
         # cache_erroneous_linfo! = linfo -> istoplevel(linfo) || (ERRONEOUS_LINFOS[linfo] = id)
 
-        cache_report! = gen_report_cacher(st, msg, sig, lineage, $(args′...))
+        cache_report! = gen_report_cacher(st, msg, sig, $(args′...))
 
         if $(track_from_frame)
             # when report is constructed _after_ the inference on `sv::InferenceState` has been done,
@@ -182,7 +182,7 @@ function strip_type_decls(x)
     return isexpr(x, :(::)) ? first(x.args) : x
 end
 
-function gen_report_cacher(st, msg, sig, lineage, T, interp, sv, @nospecialize(spec_args...))
+function gen_report_cacher(st, msg, sig, T, interp, sv, @nospecialize(spec_args...))
     # TODO: handle constant prop', local cache
     return function (linfo::MethodInstance)
         pool, caches = if haskey(JET_GLOBAL_CACHE, linfo)
@@ -196,7 +196,7 @@ function gen_report_cacher(st, msg, sig, lineage, T, interp, sv, @nospecialize(s
         err_st = first(st)
         err_st in pool && return
 
-        new = InferenceErrorReportCache(T, view(st, :), msg, sig, lineage, spec_args)
+        new = InferenceErrorReportCache(T, view(st, :), msg, sig, spec_args)
         push!(pool, err_st)
         push!(caches, new)
     end
@@ -209,7 +209,6 @@ struct InferenceErrorReportCache
     st::ViewedVirtualStackTrace
     msg::String
     sig::Vector{Any}
-    lineage::Lineage
     spec_args::NTuple{N,Any} where N
 end
 
@@ -241,7 +240,7 @@ function restore_cached_report(cache::InferenceErrorReportCache,
     lineage = Lineage(sf.linfo for sf in st)
 
     # we need to cache this report for frames within the current virtual stack trace
-    cache_report! = gen_report_cacher(st, msg, sig, lineage, T, interp, caller, spec_args...)
+    cache_report! = gen_report_cacher(st, msg, sig, T, interp, caller, spec_args...)
     prewalk_inf_frame(caller) do frame::InferenceState
         linfo = frame.linfo
         push!(st, get_virtual_frame(frame))
