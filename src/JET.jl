@@ -351,7 +351,7 @@ function profile_gf_by_type!(interp::JETInterpreter,
     mms = _methods_by_ftype(tt, InferenceParams(interp).MAX_METHODS, world)
     @assert mms !== false "unable to find matching method for $(tt)"
 
-    filter!(mm->mm.spec_types===tt, mms)
+    filter!(mm::MethodMatch->mm.spec_types===tt, mms)
     @assert length(mms) == 1 "unable to find single target method for $(tt)"
 
     mm = first(mms)::MethodMatch
