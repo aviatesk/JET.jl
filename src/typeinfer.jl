@@ -32,6 +32,8 @@ end
 # in this overload we can work on `frame.src::CodeInfo` (and also `frame::InferenceState`)
 # where type inference (and also optimization if applied) already ran on
 function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
+    linfo = frame.linfo
+
     # some methods like `getproperty` can't propagate accurate types without actual values,
     # and constant prop' plays a somewhat critical role in those cases by overwriteing the
     # previously-inferred lousy result; JET.jl also needs that to reduce false positive reports,
@@ -42,15 +44,9 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
     # - constant prop' only happens after inference with non-constant abstract values (i.e. types)
     # - xref to track the change in the native constant propagation logic:
     #   https://github.com/JuliaLang/julia/blob/a108d6cb8fdc7924fe2b8d831251142386cb6525/base/compiler/abstractinterpretation.jl#L153
-    #
-    # XXX: constant prop' may not happen always, especially when inferring on cached frames,
-    #      and then error reports can be different for uncached/cached frames, which would be
-    #      super confusing
-    #
-    # TODO: we may still want to keep reports on some kinds of "serious" errors, like
-    #       `GlobalUndefVarErrorReport` even if it's been threw-away by constant prop'
-    linfo = frame.linfo
-
+    # IDEA:
+    # we may want to keep some "serious" error reports like `GlobalUndefVarErrorReport`
+    # even when constant prop' reveals it never happens given the current constant arguments
     if is_constant_propagated(frame)
         filter!(r->!is_lineage(r.lineage, frame.parent), interp.reports)
     end
@@ -98,9 +94,6 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
         end
     end
 
-    # TODO: cache constant analysis into `interp.cache`
-    # local cache for constant analysis is done by `_typeinf(interp::JETInterpreter, frame::InferenceState)`
-
     after = Set(interp.reports)
     reports_for_this_linfo = setdiff(after, before)
 
@@ -109,7 +102,7 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
             argtypes = frame.result.argtypes
             cache = interp.cache
             local_cache = if haskey(cache, argtypes)
-                @debug "why does this happen" linfo argtypes
+                @debug "this control flow shouldn't happen ..." linfo argtypes
                 cache[argtypes]
             else
                 cache[argtypes] = InferenceErrorReportCache[]
