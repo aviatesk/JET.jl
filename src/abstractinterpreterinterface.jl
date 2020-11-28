@@ -10,6 +10,8 @@ struct AnalysisParams
     end
 end
 
+const LocalCache = Dict{Vector{Any},Vector{InferenceErrorReportCache}}
+
 struct JETInterpreter <: AbstractInterpreter
     #= native =#
 
@@ -19,6 +21,9 @@ struct JETInterpreter <: AbstractInterpreter
     discard_trees::Bool
 
     #= JET.jl specific =#
+
+    # local report cache
+    cache::LocalCache
 
     # for escaping force inference on "erroneous" cached frames, sequential assignment of virtual global variable
     id::Symbol
@@ -58,6 +63,7 @@ struct JETInterpreter <: AbstractInterpreter
                    optimize,
                    compress,
                    discard_trees,
+                   LocalCache(),
                    id,
                    reports,
                    exception_reports,
