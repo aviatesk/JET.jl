@@ -87,6 +87,38 @@ struct InferenceErrorReportCache
     spec_args::NTuple{N,Any} where N
 end
 
+function restore_cached_report!(cache::InferenceErrorReportCache,
+                                interp#=::JETInterpreter=#,
+                                caller::InferenceState,
+                                )
+    report = restore_cached_report(cache, caller)
+    if isa(report, ExceptionReport)
+        push!(interp.exception_reports, length(interp.reports) => report)
+    else
+        push!(interp.reports, report)
+    end
+end
+
+function restore_cached_report(cache::InferenceErrorReportCache,
+                               caller::InferenceState,
+                               )
+    T = cache.T
+    msg = cache.msg
+    sig = cache.sig
+    st = collect(cache.st)
+    spec_args = cache.spec_args
+    lineage = Lineage(get_lineage_key(vf) for vf in st)
+
+    prewalk_inf_frame(caller) do frame::InferenceState
+        linfo = frame.linfo
+        vf = get_virtual_frame(frame)
+        pushfirst!(st, vf)
+        push!(lineage, get_lineage_key(vf))
+    end
+
+    return T(st, msg, sig, lineage, spec_args)
+end
+
 struct LineageKey
     file::Symbol
     line::Int
