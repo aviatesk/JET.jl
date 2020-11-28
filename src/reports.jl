@@ -135,25 +135,12 @@ macro reportdef(ex, kwargs...)
         st = VirtualFrame[]
         lineage = Lineage()
 
-        id = get_id(interp)
-        # # COMBAK: is this branching really needed ?
-        # # this frame may not introduce errors with the other constants, but this frame is
-        # # probably already pushed into `ERRORNEOUS_LINFOS`
-        # cache_erroneous_linfo! = is_constant_propagated(sv) ?
-        #                          (linfo -> return) :
-        #                          (linfo -> istoplevel(linfo) || (ERRONEOUS_LINFOS[linfo] = id))
-
-        # cache_erroneous_linfo! = linfo -> istoplevel(linfo) || (ERRONEOUS_LINFOS[linfo] = id)
-
-        # cache_report! = gen_report_cacher(st, msg, sig, $(args′...))
-
         if $(track_from_frame)
             # when report is constructed _after_ the inference on `sv::InferenceState` has been done,
             # collect location information from `sv.linfo` and start traversal from `sv.parent`
             linfo = sv.linfo
             push!(st, get_virtual_frame(linfo))
             push!(lineage, linfo)
-            # cache_report!(linfo)
             sv = sv.parent
         end
 
@@ -161,7 +148,6 @@ macro reportdef(ex, kwargs...)
             linfo = frame.linfo
             pushfirst!(st, get_virtual_frame(frame))
             push!(lineage, linfo)
-            # cache_report!(linfo)
         end
 
         return new(st, msg, sig, lineage, $(spec_args′...))
@@ -207,30 +193,7 @@ end
 strip_escape(x) = isexpr(x, :escape) ? first(x.args) : x
 extract_type_decls(x) = isexpr(x, :(::)) ? last(x.args) : Any
 
-function gen_report_cacher(st, msg, sig, T, interp, sv, @nospecialize(spec_args...))
-    # TODO: handle constant prop', local cache
-    return function (linfo::MethodInstance)
-        pool, caches = if haskey(JET_GLOBAL_CACHE, linfo)
-            JET_GLOBAL_CACHE[linfo]
-        else
-            JET_GLOBAL_CACHE[linfo] = Set{VirtualFrame}(), InferenceErrorReportCache[]
-        end
-
-        # already cached (somehow), just do nothing
-        # otherwise e.g. `@report_call rand(Bool)` will fail into infinite loop and never terminate
-        err_st = first(st)
-        err_st in pool && return
-
-        new = InferenceErrorReportCache(T, view(st, :), msg, sig, spec_args)
-        push!(pool, err_st)
-        push!(caches, new)
-    end
-end
-
-const JET_GLOBAL_CACHE = IdDict{MethodInstance,
-                                # Tuple{Set{VirtualFrame},Vector{InferenceErrorReportCache}}
-                                Vector{InferenceErrorReportCache}
-                                }()
+const JET_GLOBAL_CACHE = IdDict{MethodInstance,Vector{InferenceErrorReportCache}}()
 
 function restore_cached_report!(cache::InferenceErrorReportCache,
                                 interp#=::JETInterpreter=#,
@@ -255,13 +218,10 @@ function restore_cached_report(cache::InferenceErrorReportCache,
     spec_args = cache.spec_args
     lineage = Lineage(sf.linfo for sf in st)
 
-    # # we need to cache this report for frames within the current virtual stack trace
-    # cache_report! = gen_report_cacher(st, msg, sig, T, interp, caller, spec_args...)
     prewalk_inf_frame(caller) do frame::InferenceState
         linfo = frame.linfo
         pushfirst!(st, get_virtual_frame(frame))
         push!(lineage, linfo)
-        # cache_report!(linfo)
     end
 
     return T(st, msg, sig, lineage, spec_args)
