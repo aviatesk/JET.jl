@@ -129,6 +129,15 @@ const Lineage = Set{LineageKey}
 get_lineage_key(frame::InferenceState) = LineageKey(get_file_line(frame)..., frame.linfo)
 get_lineage_key(vf::VirtualFrame)      = LineageKey(vf.file, vf.line, vf.linfo)
 
+function is_lineage(lineage::Lineage, parent::InferenceState, linfo::MethodInstance)
+    # check if current `linfo` is in `lineage`
+    # NOTE: we can't use `get_lineage_key` for this `linfo`, just because we don't analyze
+    # on cached frames and thus no appropriate lineage key (i.e. program counter) exists
+    for lk in lineage
+        lk.linfo === linfo && return is_lineage(lineage, parent)
+    end
+    return false
+end
 function is_lineage(lineage::Lineage, frame::InferenceState)
     get_lineage_key(frame) in lineage || return false
     return is_lineage(lineage, frame.parent)

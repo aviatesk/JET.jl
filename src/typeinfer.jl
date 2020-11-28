@@ -48,7 +48,7 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
     # we may want to keep some "serious" error reports like `GlobalUndefVarErrorReport`
     # even when constant prop' reveals it never happens given the current constant arguments
     if is_constant_propagated(frame)
-        filter!(r->!is_lineage(r.lineage, frame.parent), interp.reports)
+        filter!(r->!is_lineage(r.lineage, frame.parent, linfo), interp.reports)
     end
 
     before = Set(interp.reports)
