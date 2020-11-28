@@ -49,10 +49,13 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
     #
     # TODO: we may still want to keep reports on some kinds of "serious" errors, like
     #       `GlobalUndefVarErrorReport` even if it's been threw-away by constant prop'
+    linfo = frame.linfo
+
     if is_constant_propagated(frame)
-        linfo = frame.linfo
         filter!(r -> ∉(linfo, r.lineage), interp.reports)
     end
+
+    before = Set(interp.reports)
 
     ret = @invoke _typeinf(interp::AbstractInterpreter, frame::InferenceState)
 
@@ -95,6 +98,24 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
         end
     end
 
+    # TODO: cache constant analysis into `interp.cache`
+    # local cache for constant analysis is done by `_typeinf(interp::JETInterpreter, frame::InferenceState)`
+
+    after = Set(interp.reports)
+    reports_for_this_linfo = setdiff(after, before)
+    if !isempty(reports_for_this_linfo)
+        global_cache = if haskey(JET_GLOBAL_CACHE, linfo)
+            @debug "deplicated analysis happened" linfo is_constant_propagated(frame)
+            JET_GLOBAL_CACHE[linfo]
+        else
+            JET_GLOBAL_CACHE[linfo] = InferenceErrorReportCache[]
+        end
+
+        for report in reports_for_this_linfo
+            cache_global_report!(report, linfo, global_cache)
+        end
+    end
+
     return ret
 end
 
@@ -103,6 +124,13 @@ is_unreachable(rn::ReturnNode)   = !isdefined(rn, :val)
 
 is_throw_call′(@nospecialize(_)) = false
 is_throw_call′(e::Expr)          = is_throw_call(e)
+
+function cache_global_report!(report::T, linfo, global_cache) where {T<:InferenceErrorReport}
+    st = reverse(report.st)
+    st = view(st, 1:findfirst(sf->sf.linfo==linfo, st)::Int)
+    new = InferenceErrorReportCache(T, st, report.msg, report.sig, spec_args(report))
+    push!(global_cache, new)
+end
 
 """
     function overload_typeinf_edge!()
@@ -135,9 +163,9 @@ function typeinf_edge(interp::$(JETInterpreter), method::Method, @nospecialize(a
         # cache hit, now we need to append cached reports associated with this `MethodInstance`
         global_cache = $(get)($(JET_GLOBAL_CACHE), mi, nothing)
         if global_cache !== nothing
-            caches = $(last)(global_cache)::$(Vector{InferenceErrorReportCache})
-            $(foreach)(caches) do cache
-                $(restore_cached_report!)(cache, interp, caller)
+            # caches = $(last)(global_cache)::
+            $(foreach)(global_cache::$(Vector{InferenceErrorReportCache})) do cached
+                $(restore_cached_report!)(cached, interp, caller)
             end
         end
         #=== typeinf_edge monkey-patch 2 end ===#
