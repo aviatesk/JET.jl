@@ -90,7 +90,7 @@ end
 const Lineage = IdSet{MethodInstance}
 
 macro reportdef(ex, kwargs...)
-    T = first(ex.args)
+    T = esc(first(ex.args))
     args = map(ex.args) do x
         # unwrap @nospecialize
         if isexpr(x, :macrocall) && first(x.args) === Symbol("@nospecialize")
@@ -111,7 +111,7 @@ macro reportdef(ex, kwargs...)
 
     args′ = strip_type_decls.(args)
     spec_args′ = strip_type_decls.(spec_args)
-    constructor_body = Expr(:block, __source__, quote
+    interp_constructor = Expr(:function, ex, Expr(:block, __source__, quote
         interp = $(args′[2])
         sv = $(args′[3])
 
@@ -150,8 +150,10 @@ macro reportdef(ex, kwargs...)
         end
 
         return new(reverse(st), msg, sig, lineage, $(spec_args′...))
-    end)
-    constructor_ex = Expr(:function, ex, constructor_body)
+    end))
+
+    spec_args_unescaped = strip_escape.(spec_args′)
+    spec_args_types = extract_type_decls.(spec_args)
 
     return Expr(:block, __source__, quote
         struct $(T) <: InferenceErrorReport
@@ -161,8 +163,8 @@ macro reportdef(ex, kwargs...)
             lineage::Lineage
             $(spec_args...)
 
-            # default constructor
-            $(constructor_ex)
+            # constructor from abstract interpretation process by `JETInterpreter`
+            $(interp_constructor)
 
             # constructor from cache
             function $(T)(st::VirtualStackTrace,
@@ -174,6 +176,10 @@ macro reportdef(ex, kwargs...)
                 return new(reverse(st), msg, sig, lineage, $(esc(:(spec_args...)))) # `esc` is needed because `@nospecialize` escapes its argument anyway
             end
         end
+
+        function $(esc(:spec_args))(report::$(T))
+            return (getproperty(report, spec_arg) for spec_arg in ($(QuoteNode.(spec_args_unescaped)...),))::Tuple{$(spec_args_types...)}
+        end
     end)
 end
 
@@ -181,6 +187,9 @@ function strip_type_decls(x)
     isexpr(x, :escape) && return Expr(:escape, strip_type_decls(first(x.args))) # keep escape
     return isexpr(x, :(::)) ? first(x.args) : x
 end
+
+strip_escape(x) = isexpr(x, :escape) ? first(x.args) : x
+extract_type_decls(x) = isexpr(x, :(::)) ? last(x.args) : Any
 
 function gen_report_cacher(st, msg, sig, T, interp, sv, @nospecialize(spec_args...))
     # TODO: handle constant prop', local cache
@@ -271,6 +280,7 @@ end
 Represents general `Exception`s traced during inference. They are reported only when there's
   "inevitable" [`throw`](@ref) calls found by inter-frame analysis.
 """
+:(ExceptionReport)
 @reportdef ExceptionReport(interp, sv, throw_calls::Vector{Any}) track_from_frame = true
 
 """
@@ -279,6 +289,7 @@ Represents general `Exception`s traced during inference. They are reported only 
 This special `InferenceErrorReport` is just for wrapping remarks from `NativeInterpreter`.
 Ideally all of them should be covered by the other `InferenceErrorReport`s.
 """
+:(NativeRemark)
 @reportdef NativeRemark(interp, sv, s::String)
 
 function get_virtual_frame(loc::Union{InferenceState,MethodInstance})::VirtualFrame
