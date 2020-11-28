@@ -193,40 +193,6 @@ end
 strip_escape(x) = isexpr(x, :escape) ? first(x.args) : x
 extract_type_decls(x) = isexpr(x, :(::)) ? last(x.args) : Any
 
-const JET_GLOBAL_CACHE = IdDict{MethodInstance,Vector{InferenceErrorReportCache}}()
-
-function restore_cached_report!(cache::InferenceErrorReportCache,
-                                interp#=::JETInterpreter=#,
-                                caller::InferenceState,
-                                )
-    report = restore_cached_report(cache, interp, caller)
-    if isa(report, ExceptionReport)
-        push!(interp.exception_reports, length(interp.reports) => report)
-    else
-        push!(interp.reports, report)
-    end
-end
-
-function restore_cached_report(cache::InferenceErrorReportCache,
-                               interp#=::JETInterpreter=#,
-                               caller::InferenceState,
-                               )
-    T = cache.T
-    msg = cache.msg
-    sig = cache.sig
-    st = collect(cache.st)
-    spec_args = cache.spec_args
-    lineage = Lineage(sf.linfo for sf in st)
-
-    prewalk_inf_frame(caller) do frame::InferenceState
-        linfo = frame.linfo
-        pushfirst!(st, get_virtual_frame(frame))
-        push!(lineage, linfo)
-    end
-
-    return T(st, msg, sig, lineage, spec_args)
-end
-
 @reportdef NoMethodErrorReport(interp, sv, unionsplit::Bool, @nospecialize(atype::Type))
 
 @reportdef InvalidBuiltinCallErrorReport(interp, sv, argtypes::Vector{Any})
