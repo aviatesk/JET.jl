@@ -70,7 +70,7 @@ const VirtualFrame = @NamedTuple begin
     sig::Vector{Any}
     linfo::MethodInstance
 end
-const VirtualStackTrace       = Vector{VirtualFrame}
+const VirtualStackTrace = Vector{VirtualFrame}
 
 # `InferenceErrorReport` interface
 function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
@@ -130,7 +130,7 @@ macro reportdef(ex, kwargs...)
 
         # cache_erroneous_linfo! = linfo -> istoplevel(linfo) || (ERRONEOUS_LINFOS[linfo] = id)
 
-        cache_report! = gen_report_cacher(st, msg, sig, $(args′...))
+        # cache_report! = gen_report_cacher(st, msg, sig, $(args′...))
 
         if $(track_from_frame)
             # when report is constructed _after_ the inference on `sv::InferenceState` has been done,
@@ -138,7 +138,7 @@ macro reportdef(ex, kwargs...)
             linfo = sv.linfo
             push!(st, get_virtual_frame(linfo))
             push!(lineage, linfo)
-            cache_report!(linfo)
+            # cache_report!(linfo)
             sv = sv.parent
         end
 
@@ -146,10 +146,10 @@ macro reportdef(ex, kwargs...)
             linfo = frame.linfo
             push!(st, get_virtual_frame(frame))
             push!(lineage, linfo)
-            cache_report!(linfo)
+            # cache_report!(linfo)
         end
 
-        return new(reverse(st), msg, sig, lineage, $(spec_args′...))
+        return new(reverse!(st), msg, sig, lineage, $(spec_args′...))
     end))
 
     spec_args_unescaped = strip_escape.(spec_args′)
@@ -173,12 +173,13 @@ macro reportdef(ex, kwargs...)
                           lineage::Lineage,
                           @nospecialize(spec_args::NTuple{N,Any} where N),
                           )
-                return new(reverse(st), msg, sig, lineage, $(esc(:(spec_args...)))) # `esc` is needed because `@nospecialize` escapes its argument anyway
+                return new(reverse!(st), msg, sig, lineage, $(esc(:(spec_args...)))) # `esc` is needed because `@nospecialize` escapes its argument anyway
             end
         end
 
         function $(esc(:spec_args))(report::$(T))
-            return (getproperty(report, spec_arg) for spec_arg in ($(QuoteNode.(spec_args_unescaped)...),))::Tuple{$(spec_args_types...)}
+            gn = (getproperty(report, spec_arg) for spec_arg in ($(QuoteNode.(spec_args_unescaped)...),))
+            return (gn...,)::Tuple{$(spec_args_types...)}
         end
     end)
 end
@@ -211,18 +212,19 @@ function gen_report_cacher(st, msg, sig, T, interp, sv, @nospecialize(spec_args.
     end
 end
 
-const ViewedVirtualStackTrace = typeof(view(VirtualStackTrace(), :))
+const ViewedVirtualStackTrace = typeof(view(VirtualStackTrace(), 1:0))
 
 struct InferenceErrorReportCache
     T::Type{<:InferenceErrorReport}
-    st::ViewedVirtualStackTrace
+    st::ViewedVirtualStackTrace # preserved in "error point -> cached point" order
     msg::String
     sig::Vector{Any}
     spec_args::NTuple{N,Any} where N
 end
 
 const JET_GLOBAL_CACHE = IdDict{MethodInstance,
-                                Tuple{Set{VirtualFrame},Vector{InferenceErrorReportCache}}
+                                # Tuple{Set{VirtualFrame},Vector{InferenceErrorReportCache}}
+                                Vector{InferenceErrorReportCache}
                                 }()
 
 function restore_cached_report!(cache::InferenceErrorReportCache,
@@ -248,13 +250,13 @@ function restore_cached_report(cache::InferenceErrorReportCache,
     spec_args = cache.spec_args
     lineage = Lineage(sf.linfo for sf in st)
 
-    # we need to cache this report for frames within the current virtual stack trace
-    cache_report! = gen_report_cacher(st, msg, sig, T, interp, caller, spec_args...)
+    # # we need to cache this report for frames within the current virtual stack trace
+    # cache_report! = gen_report_cacher(st, msg, sig, T, interp, caller, spec_args...)
     prewalk_inf_frame(caller) do frame::InferenceState
         linfo = frame.linfo
         push!(st, get_virtual_frame(frame))
         push!(lineage, linfo)
-        cache_report!(linfo)
+        # cache_report!(linfo)
     end
 
     return T(st, msg, sig, lineage, spec_args)
