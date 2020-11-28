@@ -54,6 +54,21 @@ end
 # TODO: maybe we want to use https://github.com/aviatesk/Mixin.jl
 abstract type InferenceErrorReport end
 
+# to help inference
+function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
+    return if sym === :st
+        getfield(er, sym)::VirtualStackTrace
+    elseif sym === :msg
+        getfield(er, sym)::String
+    elseif sym === :sig
+        getfield(er, sym)::Vector{Any}
+    elseif sym === :lineage
+        getfield(er, sym)::Lineage
+    else
+        getfield(er, sym) # fallback
+    end
+end
+
 function Base.show(io::IO, report::T) where {T<:InferenceErrorReport}
     print(io, T.name.name, '(')
     for a in report.sig
@@ -88,50 +103,6 @@ end
 # `InferenceErrorReport` is supposed to keep its virtual stack trace in order of
 # "from entry call site to error point"
 const VirtualStackTrace = Vector{VirtualFrame}
-
-# `ViewedVirtualStackTrace` is for `InferenceErrorReportCache` and only keeps a part of the
-# stack trace of the original `InferenceErrorReport`, in the order of "from cached frame to error point"
-const ViewedVirtualStackTrace = typeof(view(VirtualStackTrace(), 1:0))
-
-struct InferenceErrorReportCache
-    T::Type{<:InferenceErrorReport}
-    st::ViewedVirtualStackTrace
-    msg::String
-    sig::Vector{Any}
-    spec_args::NTuple{N,Any} where N
-end
-
-function restore_cached_report!(cache::InferenceErrorReportCache,
-                                interp#=::JETInterpreter=#,
-                                caller::InferenceState,
-                                )
-    report = restore_cached_report(cache, caller)
-    if isa(report, ExceptionReport)
-        push!(interp.exception_reports, length(interp.reports) => report)
-    else
-        push!(interp.reports, report)
-    end
-end
-
-function restore_cached_report(cache::InferenceErrorReportCache,
-                               caller::InferenceState,
-                               )
-    T = cache.T
-    msg = cache.msg
-    sig = cache.sig
-    st = collect(cache.st)
-    spec_args = cache.spec_args
-    lineage = Lineage(get_lineage_key(vf) for vf in st)
-
-    prewalk_inf_frame(caller) do frame::InferenceState
-        linfo = frame.linfo
-        vf = get_virtual_frame(frame)
-        pushfirst!(st, vf)
-        push!(lineage, get_lineage_key(vf))
-    end
-
-    return T(st, msg, sig, lineage, spec_args)
-end
 
 struct LineageKey
     file::Symbol
@@ -170,19 +141,55 @@ function is_lineage(lineage::Lineage, frame::InferenceState)
 end
 is_lineage(::Lineage, ::Nothing) = true
 
-# `InferenceErrorReport` interface
-function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
-    return if sym === :st
-        getfield(er, sym)::VirtualStackTrace
-    elseif sym === :msg
-        getfield(er, sym)::String
-    elseif sym === :sig
-        getfield(er, sym)::Vector{Any}
-    elseif sym === :lineage
-        getfield(er, sym)::Lineage
+# `ViewedVirtualStackTrace` is for `InferenceErrorReportCache` and only keeps a part of the
+# stack trace of the original `InferenceErrorReport`, in the order of "from cached frame to error point"
+const ViewedVirtualStackTrace = typeof(view(VirtualStackTrace(), 1:0))
+
+struct InferenceErrorReportCache
+    T::Type{<:InferenceErrorReport}
+    st::ViewedVirtualStackTrace
+    msg::String
+    sig::Vector{Any}
+    spec_args::NTuple{N,Any} where N
+end
+
+function cache_report!(report::T, linfo, cache) where {T<:InferenceErrorReport}
+    st = report.st
+    st = view(st, (findfirst(vf->vf.linfo==linfo, st)::Int):length(st))
+    new = InferenceErrorReportCache(T, st, report.msg, report.sig, spec_args(report))
+    push!(cache, new)
+end
+
+function restore_cached_report!(cache::InferenceErrorReportCache,
+                                interp#=::JETInterpreter=#,
+                                caller::InferenceState,
+                                )
+    report = restore_cached_report(cache, caller)
+    if isa(report, ExceptionReport)
+        push!(interp.exception_reports, length(interp.reports) => report)
     else
-        getfield(er, sym) # fallback
+        push!(interp.reports, report)
     end
+end
+
+function restore_cached_report(cache::InferenceErrorReportCache,
+                               caller::InferenceState,
+                               )
+    T = cache.T
+    msg = cache.msg
+    sig = cache.sig
+    st = collect(cache.st)
+    spec_args = cache.spec_args
+    lineage = Lineage(get_lineage_key(vf) for vf in st)
+
+    prewalk_inf_frame(caller) do frame::InferenceState
+        linfo = frame.linfo
+        vf = get_virtual_frame(frame)
+        pushfirst!(st, vf)
+        push!(lineage, get_lineage_key(vf))
+    end
+
+    return T(st, msg, sig, lineage, spec_args)
 end
 
 macro reportdef(ex, kwargs...)
