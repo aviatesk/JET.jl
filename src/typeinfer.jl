@@ -52,7 +52,7 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
     linfo = frame.linfo
 
     if is_constant_propagated(frame)
-        filter!(r -> ∉(linfo, r.lineage), interp.reports)
+        filter!(r->!is_lineage(r.lineage, frame.parent), interp.reports)
     end
 
     before = Set(interp.reports)
@@ -143,7 +143,7 @@ is_throw_call′(e::Expr)          = is_throw_call(e)
 
 function cache_report!(report::T, linfo, cache) where {T<:InferenceErrorReport}
     st = report.st
-    st = view(st, (findfirst(sf->sf.linfo==linfo, st)::Int):length(st))
+    st = view(st, (findfirst(vf->vf.linfo==linfo, st)::Int):length(st))
     new = InferenceErrorReportCache(T, st, report.msg, report.sig, spec_args(report))
     push!(cache, new)
 end
@@ -262,12 +262,13 @@ function restore_cached_report(cache::InferenceErrorReportCache,
     sig = cache.sig
     st = collect(cache.st)
     spec_args = cache.spec_args
-    lineage = Lineage(sf.linfo for sf in st)
+    lineage = Lineage(get_lineage_key(vf) for vf in st)
 
     prewalk_inf_frame(caller) do frame::InferenceState
         linfo = frame.linfo
-        pushfirst!(st, get_virtual_frame(frame))
-        push!(lineage, linfo)
+        vf = get_virtual_frame(frame)
+        pushfirst!(st, vf)
+        push!(lineage, get_lineage_key(vf))
     end
 
     return T(st, msg, sig, lineage, spec_args)

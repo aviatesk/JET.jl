@@ -64,7 +64,7 @@ end
 Base.show(io::IO, ::MIME"application/prs.juno.inline", report::T) where {T<:InferenceErrorReport} =
     return report
 
-const VirtualFrame = @NamedTuple begin
+struct VirtualFrame
     file::Symbol
     line::Int
     sig::Vector{Any}
@@ -87,7 +87,21 @@ struct InferenceErrorReportCache
     spec_args::NTuple{N,Any} where N
 end
 
-const Lineage = IdSet{MethodInstance}
+struct LineageKey
+    file::Symbol
+    line::Int
+    linfo::MethodInstance
+end
+const Lineage = Set{LineageKey}
+
+get_lineage_key(frame::InferenceState) = LineageKey(get_file_line(frame)..., frame.linfo)
+get_lineage_key(vf::VirtualFrame)      = LineageKey(vf.file, vf.line, vf.linfo)
+
+function is_lineage(lineage::Lineage, frame::InferenceState)
+    get_lineage_key(frame) in lineage || return false
+    return is_lineage(lineage, frame.parent)
+end
+is_lineage(::Lineage, ::Nothing) = true
 
 # `InferenceErrorReport` interface
 function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
@@ -139,15 +153,17 @@ macro reportdef(ex, kwargs...)
             # when report is constructed _after_ the inference on `sv::InferenceState` has been done,
             # collect location information from `sv.linfo` and start traversal from `sv.parent`
             linfo = sv.linfo
-            push!(st, get_virtual_frame(linfo))
-            push!(lineage, linfo)
+            vf = get_virtual_frame(linfo)
+            push!(st, vf)
+            push!(lineage, get_lineage_key(vf))
             sv = sv.parent
         end
 
         prewalk_inf_frame(sv) do frame::InferenceState
             linfo = frame.linfo
-            pushfirst!(st, get_virtual_frame(frame))
-            push!(lineage, linfo)
+            vf = get_virtual_frame(frame)
+            pushfirst!(st, vf)
+            push!(lineage, get_lineage_key(vf))
         end
 
         return new(st, msg, sig, lineage, $(spec_args′...))
@@ -229,21 +245,21 @@ function get_virtual_frame(loc::Union{InferenceState,MethodInstance})::VirtualFr
     sig = get_sig(loc)
     file, line = get_file_line(loc)
     linfo = isa(loc, InferenceState) ? loc.linfo : loc
-    return (; file, line, sig, linfo)
+    return VirtualFrame(file, line, sig, linfo)
 end
 
 get_file_line(frame::InferenceState) = get_file_line(get_cur_linfo(frame))
 get_file_line(linfo::LineInfoNode)   = linfo.file, linfo.line
 # this location is not exact, but this is whay we know at best
-function get_file_line(linfo::MethodInstance)
+function get_file_line(linfo::MethodInstance)::Tuple{Symbol,Int}
     def = linfo.def
 
-    isa(def, Method) && return linfo.def.file, linfo.def.line
+    isa(def, Method) && return def.file, def.line
 
     # toplevel
     src = linfo.uninferred::CodeInfo
-    file = first(unique(map(lin->lin.file, src.linetable)))
-    line = minimum(lin->lin.line, src.linetable)
+    file = first(unique(map(lin->lin.file, src.linetable)))::Symbol
+    line = minimum(lin->lin.line, src.linetable)::Int
     return file, line
 end
 
