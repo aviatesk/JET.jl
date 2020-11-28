@@ -134,13 +134,6 @@ is_unreachable(rn::ReturnNode)   = !isdefined(rn, :val)
 is_throw_call′(@nospecialize(_)) = false
 is_throw_call′(e::Expr)          = is_throw_call(e)
 
-function cache_report!(report::T, linfo, cache) where {T<:InferenceErrorReport}
-    st = report.st
-    st = view(st, (findfirst(vf->vf.linfo==linfo, st)::Int):length(st))
-    new = InferenceErrorReportCache(T, st, report.msg, report.sig, spec_args(report))
-    push!(cache, new)
-end
-
 """
     function overload_typeinf_edge!()
         ...
