@@ -103,16 +103,32 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
 
     after = Set(interp.reports)
     reports_for_this_linfo = setdiff(after, before)
-    if !isempty(reports_for_this_linfo)
-        global_cache = if haskey(JET_GLOBAL_CACHE, linfo)
-            @debug "deplicated analysis happened" linfo is_constant_propagated(frame)
-            JET_GLOBAL_CACHE[linfo]
-        else
-            JET_GLOBAL_CACHE[linfo] = InferenceErrorReportCache[]
-        end
 
-        for report in reports_for_this_linfo
-            cache_global_report!(report, linfo, global_cache)
+    if !isempty(reports_for_this_linfo)
+        if is_constant_propagated(frame)
+            argtypes = frame.result.argtypes
+            cache = interp.cache
+            local_cache = if haskey(cache, argtypes)
+                @debug "why does this happen" linfo argtypes
+                cache[argtypes]
+            else
+                cache[argtypes] = InferenceErrorReportCache[]
+            end
+
+            for report in reports_for_this_linfo
+                cache_report!(report, linfo, local_cache)
+            end
+        else
+            global_cache = if haskey(JET_GLOBAL_CACHE, linfo)
+                @debug "deplicated analysis happened" linfo
+                JET_GLOBAL_CACHE[linfo]
+            else
+                JET_GLOBAL_CACHE[linfo] = InferenceErrorReportCache[]
+            end
+
+            for report in reports_for_this_linfo
+                cache_report!(report, linfo, global_cache)
+            end
         end
     end
 
@@ -125,11 +141,11 @@ is_unreachable(rn::ReturnNode)   = !isdefined(rn, :val)
 is_throw_call′(@nospecialize(_)) = false
 is_throw_call′(e::Expr)          = is_throw_call(e)
 
-function cache_global_report!(report::T, linfo, global_cache) where {T<:InferenceErrorReport}
+function cache_report!(report::T, linfo, cache) where {T<:InferenceErrorReport}
     st = report.st
     st = view(st, (findfirst(sf->sf.linfo==linfo, st)::Int):length(st))
     new = InferenceErrorReportCache(T, st, report.msg, report.sig, spec_args(report))
-    push!(global_cache, new)
+    push!(cache, new)
 end
 
 """
@@ -162,9 +178,8 @@ function typeinf_edge(interp::$(JETInterpreter), method::Method, @nospecialize(a
         #=== typeinf_edge monkey-patch 2 start ===#
         # cache hit, now we need to append cached reports associated with this `MethodInstance`
         global_cache = $(get)($(JET_GLOBAL_CACHE), mi, nothing)
-        if global_cache !== nothing
-            # caches = $(last)(global_cache)::
-            $(foreach)(global_cache::$(Vector{InferenceErrorReportCache})) do cached
+        if isa(global_cache, $(Vector{InferenceErrorReportCache}))
+            $(foreach)(global_cache) do cached
                 $(restore_cached_report!)(cached, interp, caller)
             end
         end

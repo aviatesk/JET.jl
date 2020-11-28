@@ -379,8 +379,12 @@ function abstract_call_method_with_const_args(interp::$(JETInterpreter), @nospec
             # corresponds to report throw away logic in `_typeinf(interp::JETInterpreter, frame::InferenceState)`
             $(filter!)(r -> $(∉)(linfo, r.lineage), interp.reports)
 
-            # TODO: restore local cache
-            # caches = interp.cache[linfo] # local cache for this constant analysis should exist
+            local_cache = $(get)(interp.cache, argtypes, nothing)
+            if isa(local_cache, $(Vector{InferenceErrorReportCache}))
+                $(foreach)(local_cache) do cached
+                    $(restore_cached_report!)(cached, interp, sv)
+                end
+            end
         end
     end
     result = inf_result.result

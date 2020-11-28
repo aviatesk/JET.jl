@@ -87,6 +87,8 @@ struct InferenceErrorReportCache
     spec_args::NTuple{N,Any} where N
 end
 
+const Lineage = IdSet{MethodInstance}
+
 # `InferenceErrorReport` interface
 function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
     return if sym === :st
@@ -101,8 +103,6 @@ function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
         getfield(er, sym) # fallback
     end
 end
-
-const Lineage = IdSet{MethodInstance}
 
 macro reportdef(ex, kwargs...)
     T = esc(first(ex.args))
