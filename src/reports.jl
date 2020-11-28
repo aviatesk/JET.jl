@@ -70,7 +70,22 @@ const VirtualFrame = @NamedTuple begin
     sig::Vector{Any}
     linfo::MethodInstance
 end
+
+# `InferenceErrorReport` is supposed to keep its virtual stack trace in order of
+# "from entry call site to error point"
 const VirtualStackTrace = Vector{VirtualFrame}
+
+# `ViewedVirtualStackTrace` is for `InferenceErrorReportCache` and only keeps a part of the
+# stack trace of the original `InferenceErrorReport`, in the order of "from cached frame to error point"
+const ViewedVirtualStackTrace = typeof(view(VirtualStackTrace(), 1:0))
+
+struct InferenceErrorReportCache
+    T::Type{<:InferenceErrorReport}
+    st::ViewedVirtualStackTrace
+    msg::String
+    sig::Vector{Any}
+    spec_args::NTuple{N,Any} where N
+end
 
 # `InferenceErrorReport` interface
 function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
@@ -144,12 +159,12 @@ macro reportdef(ex, kwargs...)
 
         prewalk_inf_frame(sv) do frame::InferenceState
             linfo = frame.linfo
-            push!(st, get_virtual_frame(frame))
+            pushfirst!(st, get_virtual_frame(frame))
             push!(lineage, linfo)
             # cache_report!(linfo)
         end
 
-        return new(reverse!(st), msg, sig, lineage, $(spec_args′...))
+        return new(st, msg, sig, lineage, $(spec_args′...))
     end))
 
     spec_args_unescaped = strip_escape.(spec_args′)
@@ -173,7 +188,7 @@ macro reportdef(ex, kwargs...)
                           lineage::Lineage,
                           @nospecialize(spec_args::NTuple{N,Any} where N),
                           )
-                return new(reverse!(st), msg, sig, lineage, $(esc(:(spec_args...)))) # `esc` is needed because `@nospecialize` escapes its argument anyway
+                return new(st, msg, sig, lineage, $(esc(:(spec_args...)))) # `esc` is needed because `@nospecialize` escapes its argument anyway
             end
         end
 
@@ -212,16 +227,6 @@ function gen_report_cacher(st, msg, sig, T, interp, sv, @nospecialize(spec_args.
     end
 end
 
-const ViewedVirtualStackTrace = typeof(view(VirtualStackTrace(), 1:0))
-
-struct InferenceErrorReportCache
-    T::Type{<:InferenceErrorReport}
-    st::ViewedVirtualStackTrace # preserved in "error point -> cached point" order
-    msg::String
-    sig::Vector{Any}
-    spec_args::NTuple{N,Any} where N
-end
-
 const JET_GLOBAL_CACHE = IdDict{MethodInstance,
                                 # Tuple{Set{VirtualFrame},Vector{InferenceErrorReportCache}}
                                 Vector{InferenceErrorReportCache}
@@ -254,7 +259,7 @@ function restore_cached_report(cache::InferenceErrorReportCache,
     # cache_report! = gen_report_cacher(st, msg, sig, T, interp, caller, spec_args...)
     prewalk_inf_frame(caller) do frame::InferenceState
         linfo = frame.linfo
-        push!(st, get_virtual_frame(frame))
+        pushfirst!(st, get_virtual_frame(frame))
         push!(lineage, linfo)
         # cache_report!(linfo)
     end

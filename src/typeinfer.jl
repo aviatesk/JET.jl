@@ -126,8 +126,8 @@ is_throw_call′(@nospecialize(_)) = false
 is_throw_call′(e::Expr)          = is_throw_call(e)
 
 function cache_global_report!(report::T, linfo, global_cache) where {T<:InferenceErrorReport}
-    st = reverse(report.st)
-    st = view(st, 1:findfirst(sf->sf.linfo==linfo, st)::Int)
+    st = report.st
+    st = view(st, (findfirst(sf->sf.linfo==linfo, st)::Int):length(st))
     new = InferenceErrorReportCache(T, st, report.msg, report.sig, spec_args(report))
     push!(global_cache, new)
 end
