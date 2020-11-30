@@ -70,6 +70,20 @@ struct VirtualFrame
     sig::Vector{Any}
     linfo::MethodInstance
 end
+function Base.hash(vf::VirtualFrame, h::UInt)
+    h = @static UInt === UInt64 ? 0x140ec41731a857a7 : 0x6e6397bc
+    h = hash(vf.file, h)
+    h = hash(vf.line, h)
+    h = hash(vf.sig, h)
+    h = hash(vf.linfo, h)
+    return h
+end
+function Base.:(==)(vf1::VirtualFrame, vf2::VirtualFrame)
+    return vf1.file === vf2.file &&
+           vf1.line == vf2.line &&
+           vf1.sig == vf2.sig &&
+           vf1.linfo == vf2.linfo
+end
 
 # `InferenceErrorReport` is supposed to keep its virtual stack trace in order of
 # "from entry call site to error point"
@@ -125,6 +139,18 @@ struct LineageKey
     linfo::MethodInstance
 end
 const Lineage = Set{LineageKey}
+function Base.hash(lk::LineageKey, h::UInt)
+    h = @static UInt === UInt64 ? 0x895379e76333a606 : 0x3879844d
+    h = hash(lk.file, h)
+    h = hash(lk.line, h)
+    h = hash(lk.linfo, h)
+    return h
+end
+function Base.:(==)(lk1::LineageKey, lk2::LineageKey)
+    return lk1.file === lk2.file &&
+           lk1.line == lk2.line &&
+           lk1.linfo == lk2.linfo
+end
 
 get_lineage_key(frame::InferenceState) = LineageKey(get_file_line(frame)..., frame.linfo)
 get_lineage_key(vf::VirtualFrame)      = LineageKey(vf.file, vf.line, vf.linfo)
