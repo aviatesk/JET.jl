@@ -1,3 +1,6 @@
+# FIXME: patches to improve inferrability of Base methods
+include("patches.jl")
+
 # test utilities are extracted into a separate file for easier interactive testing from REPL
 # i.e. julia-dev -i test/interactive_utils.jl
 include("interactive_utils.jl")
