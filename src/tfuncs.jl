@@ -31,6 +31,18 @@ function CC.builtin_tfunction(interp::JETInterpreter, @nospecialize(f), argtypes
                 end
             end
         end
+    elseif f === fieldtype
+        # the valid widest possible return type of `fieldtype_tfunc` is `Union{Type,TypeVar}`
+        # because fields of unwrapped `DataType`s can legally be `TypeVar`s,
+        # but this will cause lots of false positive `NoMethodErrorReport` reports for
+        # inference with accessing to fields of abstract types since most methods don't
+        # expect `TypeVar` (e.g. `@report_call readuntil(stdin, 'c')`);
+        # JET.jl further widens this case to `Any` and give up further analysis rather than
+        # noisy and sound analysis
+        # xref: https://github.com/JuliaLang/julia/pull/38148
+        if ret === Union{Type, TypeVar}
+            return Any
+        end
     end
 
     if isa(ret, VirtualGlobalVariable)
