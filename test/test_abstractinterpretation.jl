@@ -177,7 +177,7 @@ end
         end
 
         @test is_abstract(vmod, :s)
-        @test abstract_isa(vmod.s, String)
+        @test isa_abstract(vmod.s, String)
         test_sum_over_string(res)
     end
 
@@ -236,7 +236,7 @@ end
             end
 
             @test is_abstract(vmod, :globalvar)
-            @test abstract_isa(vmod.globalvar, Int)
+            @test isa_abstract(vmod.globalvar, Int)
             @test length(res.inference_error_reports) === 2
             let er = first(res.inference_error_reports)
                 @test er isa NoMethodErrorReport &&

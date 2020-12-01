@@ -2,12 +2,15 @@
 # i.e. julia-dev -i test/interactive_utils.jl
 include("interactive_utils.jl")
 
-# for benchmarking or debugging JET analysis on CI
-if get(ENV, "CI", nothing) == "true"
-    include("benchmark.jl")
-end
+# for benchmarking or debugging JET analysis
+# TODO: setup proper benchmarks, separate them from the test suite
+include("benchmark.jl")
 
-# used across tests
+# stuff used across tests
+using Test
+
+const FIXTURE_DIR = normpath(@__DIR__, "fixtures")
+
 const ERROR_REPORTS_FROM_SUM_OVER_STRING = let
     interp, frame = profile_call(sum, (String,))
     @test !isempty(interp.reports)

@@ -1,4 +1,4 @@
-using Test, JET, InteractiveUtils
+using JET, InteractiveUtils
 
 const CC = JET.CC
 
@@ -20,8 +20,6 @@ import Base:
 
 import Base.Meta:
     isexpr
-
-const FIXTURE_DIR = normpath(@__DIR__, "fixtures")
 
 # define virtual module and setup fixtures
 macro def(ex)
@@ -77,4 +75,4 @@ end
 
 is_concrete(mod, sym) = isdefined(mod, sym) && !isa(getfield(mod, sym), VirtualGlobalVariable)
 is_abstract(mod, sym) = isdefined(mod, sym) && isa(getfield(mod, sym), VirtualGlobalVariable)
-abstract_isa(vgv, @nospecialize(typ)) = isa(vgv, VirtualGlobalVariable) && vgv.t ⊑ typ
+isa_abstract(vgv, @nospecialize(typ)) = isa(vgv, VirtualGlobalVariable) && vgv.t ⊑ typ

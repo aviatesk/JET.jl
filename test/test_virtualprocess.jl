@@ -133,10 +133,10 @@ end
 
         # global variables aren't evaluated but kept in `interp` instead
         @test is_abstract(vmod, :gb)
-        @test abstract_isa(vmod.gb, Bool)
+        @test isa_abstract(vmod.gb, Bool)
         @test is_concrete(vmod, :Foo)
         @test is_abstract(vmod, :foo)
-        @test abstract_isa(vmod.foo, vmod.Foo)
+        @test isa_abstract(vmod.foo, vmod.Foo)
         @test isempty(res.toplevel_error_reports)
         @test isempty(res.inference_error_reports)
     end
@@ -174,7 +174,7 @@ end
             end
         end
         @test is_concrete(vmod, :Foo)
-        @test abstract_isa(vmod.foo, vmod.Foo)
+        @test isa_abstract(vmod.foo, vmod.Foo)
     end
 
     # toplevel definitions within a block
@@ -617,9 +617,9 @@ end
         end
 
         @test is_abstract(vmod, :var)
-        @test abstract_isa(vmod.var, Bool)
+        @test isa_abstract(vmod.var, Bool)
         @test is_abstract(vmod, :constvar)
-        @test abstract_isa(vmod.constvar, Bool)
+        @test isa_abstract(vmod.constvar, Bool)
     end
 
     @testset "scope" begin
@@ -637,7 +637,7 @@ end
 
             @test !isdefined(vmod, :localvar)
             @test is_abstract(vmod, :globalvar)
-            @test abstract_isa(vmod.globalvar, Bool)
+            @test isa_abstract(vmod.globalvar, Bool)
         end
 
         # blocks
@@ -652,7 +652,7 @@ end
             end
 
             @test is_abstract(vmod, :globalvar)
-            @test abstract_isa(vmod.globalvar, Bool)
+            @test isa_abstract(vmod.globalvar, Bool)
         end
 
         let
@@ -666,7 +666,7 @@ end
 
             @test !isdefined(vmod, :localvar)
             @test is_abstract(vmod, :globalvar)
-            @test abstract_isa(vmod.globalvar, Bool)
+            @test isa_abstract(vmod.globalvar, Bool)
         end
 
         let
@@ -681,7 +681,7 @@ end
 
             @test !isdefined(vmod, :localvar)
             @test is_abstract(vmod, :globalvar)
-            @test abstract_isa(vmod.globalvar, Bool)
+            @test isa_abstract(vmod.globalvar, Bool)
         end
 
         let
@@ -695,9 +695,9 @@ end
 
             @test !isdefined(vmod, :locbalvar)
             @test is_abstract(vmod, :globalvar1)
-            @test abstract_isa(vmod.globalvar1, Bool)
+            @test isa_abstract(vmod.globalvar1, Bool)
             @test is_abstract(vmod, :globalvar2)
-            @test abstract_isa(vmod.globalvar2, Bool)
+            @test isa_abstract(vmod.globalvar2, Bool)
         end
 
         let
@@ -722,7 +722,7 @@ end
 
             @test !isdefined(vmod, :localvar)
             @test is_abstract(vmod, :globalvar)
-            @test abstract_isa(vmod.globalvar, Bool)
+            @test isa_abstract(vmod.globalvar, Bool)
         end
 
         # loops
@@ -750,7 +750,7 @@ end
 
             @test !isdefined(vmod, :localvar)
             @test is_abstract(vmod, :globalvar)
-            @test abstract_isa(vmod.globalvar, Bool)
+            @test isa_abstract(vmod.globalvar, Bool)
         end
 
         let
@@ -775,7 +775,7 @@ end
 
             @test !isdefined(vmod, :localvar)
             @test is_abstract(vmod, :globalvar)
-            @test abstract_isa(vmod.globalvar, Bool)
+            @test isa_abstract(vmod.globalvar, Bool)
         end
     end
 
@@ -787,9 +787,9 @@ end
             end
 
             @test is_abstract(vmod, :s)
-            @test abstract_isa(vmod.s, Float64)
+            @test isa_abstract(vmod.s, Float64)
             @test is_abstract(vmod, :c)
-            @test abstract_isa(vmod.c, Float64)
+            @test isa_abstract(vmod.c, Float64)
         end
 
         let
@@ -815,9 +815,9 @@ end
             end
 
             @test is_abstract(vmod, :s)
-            @test abstract_isa(vmod.s, Float64)
+            @test isa_abstract(vmod.s, Float64)
             @test is_abstract(vmod, :c)
-            @test abstract_isa(vmod.c, Float64)
+            @test isa_abstract(vmod.c, Float64)
         end
 
         let
@@ -832,9 +832,9 @@ end
             @test !isdefined(vmod, :si)
             @test !isdefined(vmod, :ci)
             @test is_abstract(vmod, :so)
-            @test abstract_isa(vmod.so, Float64)
+            @test isa_abstract(vmod.so, Float64)
             @test is_abstract(vmod, :co)
-            @test abstract_isa(vmod.co, Float64)
+            @test isa_abstract(vmod.co, Float64)
         end
 
         let
@@ -847,7 +847,7 @@ end
             end
             @test !isdefined(vmod, :l)
             @test is_abstract(vmod, :g)
-            @test abstract_isa(vmod.g, Float64)
+            @test isa_abstract(vmod.g, Float64)
         end
     end
 end
