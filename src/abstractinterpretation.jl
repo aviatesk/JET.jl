@@ -78,7 +78,7 @@ function abstract_call_gf_by_type(interp::$(JETInterpreter), @nospecialize(f), a
             info = MethodMatchInfo(matches)
             if $(is_empty_match)(info)
                 # report `NoMethodErrorReport` for union-split signatures
-                $(add_remark!)(interp, sv, $(NoMethodErrorReport)(interp, sv, true, atype))
+                $(report!)(interp, $(NoMethodErrorReport)(interp, sv, true, atype))
             end
             push!(infos, info)
             #=== abstract_call_gf_by_type monkey-patch 1-1 end ===#
@@ -119,7 +119,7 @@ function abstract_call_gf_by_type(interp::$(JETInterpreter), @nospecialize(f), a
         #=== abstract_call_gf_by_type monkey-patch 1-2 start ===#
         if $(is_empty_match)(info)
             # report `NoMethodErrorReport` for this call signature
-            $(add_remark!)(interp, sv, $(NoMethodErrorReport)(interp, sv, false, atype))
+            $(report!)(interp, $(NoMethodErrorReport)(interp, sv, false, atype))
         end
         #=== abstract_call_gf_by_type monkey-patch 1-2 end ===#
         applicable = matches.matches
@@ -432,7 +432,7 @@ function CC.abstract_eval_special_value(interp::JETInterpreter, @nospecialize(e)
             end
         else
             # report access to undefined global variable
-            add_remark!(interp, sv, GlobalUndefVarErrorReport(interp, sv, mod, name))
+            report!(interp, GlobalUndefVarErrorReport(interp, sv, mod, name))
 
             # `ret` at this point should be annotated as `Any` by `NativeInterpreter`, and
             # we just pass it as is to collect as much error points as possible within this
@@ -455,7 +455,7 @@ function CC.abstract_eval_value(interp::JETInterpreter, @nospecialize(e), vtypes
     if isa(stmt, GotoIfNot)
         t = widenconst(ret)
         if t !== Bottom && !⊑(Bool, t)
-            add_remark!(interp, sv, NonBooleanCondErrorReport(interp, sv, t))
+            report!(interp, NonBooleanCondErrorReport(interp, sv, t))
             ret = Bottom
         end
     end
@@ -500,7 +500,7 @@ function set_virtual_globalvar!(interp, mod, name, @nospecialize(t), sv)
         if isa(val, VirtualGlobalVariable)
             t′ = val.t
             if val.iscd && widenconst(t′) !== widenconst(t)
-                add_remark!(interp, sv, InvalidConstantRedefinition(interp, sv, mod, name, widenconst(t′), widenconst(t)))
+                report!(interp, InvalidConstantRedefinition(interp, sv, mod, name, widenconst(t′), widenconst(t)))
                 return
             end
 
@@ -511,7 +511,7 @@ function set_virtual_globalvar!(interp, mod, name, @nospecialize(t), sv)
             if isconst(mod, name)
                 t′ = typeof(val)
                 if t′ !== widenconst(t)
-                    add_remark!(interp, sv, InvalidConstantRedefinition(interp, sv, mod, name, t′, widenconst(t)))
+                    report!(interp, InvalidConstantRedefinition(interp, sv, mod, name, t′, widenconst(t)))
                     return
                 end
             end
