@@ -90,13 +90,9 @@ CC.code_cache(interp::JETInterpreter) = code_cache(interp.native)
 CC.lock_mi_inference(::JETInterpreter, ::MethodInstance) = nothing
 CC.unlock_mi_inference(::JETInterpreter, ::MethodInstance) = nothing
 
-function CC.add_remark!(interp::JETInterpreter, ::InferenceState, report::InferenceErrorReport)
-    push!(interp.reports, report)
-    return
-end
 function CC.add_remark!(interp::JETInterpreter, sv::InferenceState, s::String)
     AnalysisParams(interp).filter_native_remarks && return
-    add_remark!(interp, sv, NativeRemark(interp, sv, s))
+    report!(interp, NativeRemark(interp, sv, s))
     return
 end
 
@@ -134,3 +130,9 @@ function gen_opt_params(; # inlining should be disabled for `JETInterpreter`, ot
 end
 
 get_id(interp::JETInterpreter) = interp.id
+
+# TODO do report filtering or something configured by `AnalysisParams(interp)`
+function report!(interp::JETInterpreter, report::InferenceErrorReport)
+    push!(interp.reports, report)
+    return
+end

@@ -20,13 +20,13 @@ function CC.builtin_tfunction(interp::JETInterpreter, @nospecialize(f), argtypes
                         # TODO: add report pass here (for performance linting)
                     else
                         # report access to undefined global variable
-                        add_remark!(interp, sv, GlobalUndefVarErrorReport(interp, sv, mod, name))
+                        report!(interp, GlobalUndefVarErrorReport(interp, sv, mod, name))
                         # return Bottom
                     end
                 elseif ret === Bottom
                     # general case when an error is detected by the native `getfield_tfunc`
                     typ = widenconst(obj)
-                    add_remark!(interp, sv, NoFieldErrorReport(interp, sv, typ, name))
+                    report!(interp, NoFieldErrorReport(interp, sv, typ, name))
                     return ret
                 end
             end
@@ -56,7 +56,7 @@ function CC.builtin_tfunction(interp::JETInterpreter, @nospecialize(f), argtypes
         # XXX: for general case, JET just relies on the (maybe too persmissive) return type
         # from native tfuncs to report invalid builtin calls and probably there're lots of
         # false negatives
-        add_remark!(interp, sv, InvalidBuiltinCallErrorReport(interp, sv, argtypes))
+        report!(interp, InvalidBuiltinCallErrorReport(interp, sv, argtypes))
     end
 
     return ret
@@ -69,12 +69,12 @@ end
 function CC.return_type_tfunc(interp::JETInterpreter, argtypes::Vector{Any}, sv::InferenceState)
     if length(argtypes) !== 3
         # invalid argument number, let's report and return error result (i.e. `Bottom`)
-        add_remark!(interp, sv, NoMethodErrorReport(interp,
-                                                    sv,
-                                                    false,
-                                                    # this is not necessary to be computed correctly, though
-                                                    argtypes_to_type(argtypes),
-                                                    ))
+        report!(interp, NoMethodErrorReport(interp,
+                                            sv,
+                                            false,
+                                            # this is not necessary to be computed correctly, though
+                                            argtypes_to_type(argtypes),
+                                            ))
         return Bottom
     else
         # don't recursively pass on `JETInterpreter` via `@invoke_native`
