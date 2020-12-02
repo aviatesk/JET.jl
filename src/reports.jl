@@ -234,7 +234,6 @@ macro reportdef(ex, kwargs...)
         end
 
         prewalk_inf_frame(sv) do frame::InferenceState
-            linfo = frame.linfo
             vf = get_virtual_frame(frame)
             pushfirst!(st, vf)
             push!(lineage, get_lineage_key(vf))
