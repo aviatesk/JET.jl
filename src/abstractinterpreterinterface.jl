@@ -22,10 +22,10 @@ struct JETInterpreter <: AbstractInterpreter
 
     #= JET.jl specific =#
 
-    # local report cache
+    # local report cache for constant analysis
     cache::LocalCache
 
-    # for escaping force inference on "erroneous" cached frames, sequential assignment of virtual global variable
+    # for sequential assignment of virtual global variables
     id::Symbol
 
     # reports found so far
@@ -34,22 +34,22 @@ struct JETInterpreter <: AbstractInterpreter
     # toplevel profiling (skip inference on actually interpreted statements)
     concretized::BitVector
 
-    # configurations for analysis performed by `JETInterpreter`
+    # configurations for analysis performed by this interpreter
     analysis_params::AnalysisParams
 
     # debugging
     depth::Ref{Int}
 
-    function JETInterpreter(world             = get_world_counter();
-                            inf_params        = gen_inf_params(),
-                            opt_params        = gen_opt_params(),
-                            optimize          = true,
-                            compress          = false,
-                            discard_trees     = false,
-                            id                = gensym(:JETInterpreterID),
-                            reports           = [],
-                            concretized       = [],
-                            analysis_params   = AnalysisParams(),
+    function JETInterpreter(world           = get_world_counter();
+                            inf_params      = gen_inf_params(),
+                            opt_params      = gen_opt_params(),
+                            optimize        = true,
+                            compress        = false,
+                            discard_trees   = false,
+                            id              = gensym(:JETInterpreterID),
+                            reports         = [],
+                            concretized     = [],
+                            analysis_params = AnalysisParams(),
                             # dummy kwargs so that kwargs for other functions can be passed on
                             __kwargs...)
         @assert !opt_params.inlining "inlining should be disabled for JETInterpreter analysis"
