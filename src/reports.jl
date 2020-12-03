@@ -155,7 +155,13 @@ end
 
 function cache_report!(report::T, linfo, cache) where {T<:InferenceErrorReport}
     st = report.st
-    st = view(st, (findfirst(vf->vf.linfo==linfo, st)::Int):length(st))
+    i = findfirst(vf->vf.linfo==linfo, st)
+    # sometimes `linfo` can't be found within the `report.st` chain; e.g. frames for inner
+    # constructor methods doesn't seemt to be tracked in the `(frame::InferenceState).parent`
+    # chain so that there is no `linfo` for such a frame within `report.st`;
+    # XXX: reports within these frames might need to be cached too
+    i === nothing && return
+    st = view(st, i:length(st))
     new = InferenceErrorReportCache(T, st, report.msg, report.sig, spec_args(report))
     push!(cache, new)
 end
