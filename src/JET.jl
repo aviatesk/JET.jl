@@ -3,6 +3,10 @@ module JET
 
 const CC = Core.Compiler
 
+@static if !isdefined(CC, :AbstractInterpreter)
+    throw(ErrorException("JET.jl only works with Julia versions 1.6 and higher"))
+end
+
 # imports
 # =======
 
@@ -46,6 +50,7 @@ import JuliaInterpreter:
 # TODO: really use `using` instead
 
 import Core:
+    Builtin,
     MethodMatch,
     LineInfoNode,
     SimpleVector,
@@ -77,7 +82,6 @@ import .CC:
     ReturnNode,
     widenconst,
     ⊑,
-    Builtin,
     CallMeta,
     is_throw_call,
     tmerge,
