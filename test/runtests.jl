@@ -45,8 +45,8 @@ test_sum_over_string(interp::JETInterpreter) = test_sum_over_string(interp.repor
         include("test_tfuncs.jl")
     end
 
-    @testset "jetcache.jl" begin
-        include("test_jetcache.jl")
+    @testset "caching" begin
+        include("test_caching.jl")
     end
 
     # tests with Windows-paths is just an hell
