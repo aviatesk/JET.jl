@@ -89,7 +89,6 @@ import .CC:
 
 import Base:
     parse_input_line,
-    to_tuple_type,
     unwrap_unionall,
     rewrap_unionall,
     Fix1,
@@ -100,9 +99,6 @@ import Base.Meta:
     isexpr,
     _parse_string,
     lower
-
-import Base.Iterators:
-    flatten
 
 using LoweredCodeUtils, JuliaInterpreter
 
