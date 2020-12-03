@@ -483,6 +483,6 @@ get_msg(::Type{NonBooleanCondErrorReport}, interp, sv, @nospecialize(t)) =
 get_msg(::Type{InvalidConstantRedefinition}, interp, sv, mod, name, @nospecialize(t′), @nospecialize(t)) =
     "invalid redefinition of constant $(mod).$(name) (from $(t′) to $(t))"
 get_msg(::Type{ExceptionReport}, interp, sv, throw_blocks) = isone(length(throw_blocks)) ?
-    "will throw" :
-    "will throw either of"
+    "may throw" :
+    "may throw either of"
 get_msg(::Type{NativeRemark}, interp, sv, s) = s
