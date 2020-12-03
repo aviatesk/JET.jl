@@ -229,17 +229,17 @@ is_constant_propagated(frame::InferenceState) = CC.any(frame.result.overridden_b
 istoplevel(linfo::MethodInstance) = linfo.def == __toplevel__
 istoplevel(sv::InferenceState)    = istoplevel(sv.linfo)
 
-prewalk_inf_frame(@nospecialize(f), ::Nothing) = return
-function prewalk_inf_frame(@nospecialize(f), frame::InferenceState)
-    ret = f(frame)
-    prewalk_inf_frame(f, frame.parent)
+function prewalk_inf_frame(@nospecialize(f), stackframes::Vector{InferenceState}, index = length(stackframes))
+    iszero(index) && return
+    ret = f(@inbounds stackframes[index])
+    prewalk_inf_frame(f, stackframes, index-1)
     return ret
 end
 
-postwalk_inf_frame(@nospecialize(f), ::Nothing) = return
-function postwalk_inf_frame(@nospecialize(f), frame::InferenceState)
-    postwalk_inf_frame(f, frame.parent)
-    return f(frame)
+function postwalk_inf_frame(@nospecialize(f), stackframes::Vector{InferenceState}, index = length(stackframes))
+    iszero(index) && return
+    postwalk_inf_frame(f, stackframes, index-1)
+    return f(@inbounds stackframes[index])
 end
 
 # NOTE: these methods assume `frame` is not inlined

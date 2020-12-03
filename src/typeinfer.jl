@@ -16,7 +16,11 @@ function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
 
     interp.depth[] += 1 # for debug
 
+    push!(interp.stackframes, frame)
+
     ret = @invoke typeinf(interp::AbstractInterpreter, frame::InferenceState)
+
+    pop!(interp.stackframes)
 
     push!(ANALYZED_LINFOS, frame.linfo) # analyzed !
 
@@ -51,9 +55,9 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
     # we may want to keep some "serious" error reports like `GlobalUndefVarErrorReport`
     # even when constant prop' reveals it never happens given the current constant arguments
     if is_constant_propagated(frame)
-        # check from `frame.parent` is because there might be other analysis for this
+        # check from `end-1` is because there might be other analysis for this
         # `frame` with different constants in this abstract interpretation pass
-        filter!(r->!is_lineage(r.lineage, frame.parent, linfo), interp.reports)
+        filter!(r->!is_lineage(r.lineage, interp.stackframes[1:end-1], linfo), interp.reports)
     end
 
     before = Set(interp.reports)
@@ -188,7 +192,7 @@ function typeinf_edge(interp::$(JETInterpreter), method::Method, @nospecialize(a
         global_cache = $(get)($(JET_GLOBAL_CACHE), mi, nothing)
         if isa(global_cache, $(Vector{InferenceErrorReportCache}))
             $(foreach)(global_cache) do cached
-                $(restore_cached_report!)(cached, interp, caller)
+                $(restore_cached_report!)(cached, interp)
             end
         end
         #=== typeinf_edge patch-point 2 end ===#

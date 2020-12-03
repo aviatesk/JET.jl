@@ -126,20 +126,21 @@ end
 get_lineage_key(frame::InferenceState) = LineageKey(get_file_line(frame)..., frame.linfo)
 get_lineage_key(vf::VirtualFrame)      = LineageKey(vf.file, vf.line, vf.linfo)
 
-function is_lineage(lineage::Lineage, parent::InferenceState, linfo::MethodInstance)
+function is_lineage(lineage::Lineage, stackframes::Vector{InferenceState}, linfo::MethodInstance)
     # check if current `linfo` is in `lineage`
     # NOTE: we can't use `get_lineage_key` for this `linfo`, just because we don't analyze
     # on cached frames and thus no appropriate lineage key (i.e. program counter) exists
     for lk in lineage
-        lk.linfo === linfo && return is_lineage(lineage, parent)
+        lk.linfo === linfo && return is_lineage(lineage, stackframes)
     end
     return false
 end
-function is_lineage(lineage::Lineage, frame::InferenceState)
-    get_lineage_key(frame) in lineage || return false
-    return is_lineage(lineage, frame.parent)
+function is_lineage(lineage::Lineage, stackframes::Vector{InferenceState}, index = length(stackframes))
+    iszero(index) && return true
+    is_lineage(lineage, @inbounds stackframes[index]) || return false
+    return is_lineage(lineage, stackframes, index-1)
 end
-is_lineage(::Lineage, ::Nothing) = true
+is_lineage(lineage::Lineage, frame::InferenceState) = get_lineage_key(frame) in lineage
 
 # `ViewedVirtualStackTrace` is for `InferenceErrorReportCache` and only keeps a part of the
 # stack trace of the original `InferenceErrorReport`, in the order of "from cached frame to error point"
@@ -155,28 +156,22 @@ end
 
 function cache_report!(report::T, linfo, cache) where {T<:InferenceErrorReport}
     st = report.st
-    i = findfirst(vf->vf.linfo==linfo, st)
-    # sometimes `linfo` can't be found within the `report.st` chain; e.g. frames for inner
-    # constructor methods doesn't seem to be tracked in the `(frame::InferenceState).parent`
-    # chain so that there is no `MethodInstance` within `report.st` for such a frame;
-    # XXX: reports from these frames might need to be cached as well rather than just giving up
-    i === nothing && return
-    st = view(st, i:length(st))
+    # `linfo` should exist within the virtual stack trace
+    st = view(st, (findfirst(vf->vf.linfo==linfo, st)::Int):length(st))
     new = InferenceErrorReportCache(T, st, report.msg, report.sig, spec_args(report))
     push!(cache, new)
 end
 
 function restore_cached_report!(cache::InferenceErrorReportCache,
                                 interp#=::JETInterpreter=#,
-                                caller::InferenceState,
                                 )
-    report = restore_cached_report(cache, caller)
+    report = restore_cached_report(cache, interp.stackframes)
     push!(isa(report, UncaughtExceptionReport) ? interp.uncaught_exceptions : interp.reports, report)
     return
 end
 
 function restore_cached_report(cache::InferenceErrorReportCache,
-                               caller::InferenceState,
+                               stackframes::Vector{InferenceState},
                                )
     T = cache.T
     msg = cache.msg
@@ -185,7 +180,7 @@ function restore_cached_report(cache::InferenceErrorReportCache,
     spec_args = cache.spec_args
     lineage = Lineage(get_lineage_key(vf) for vf in st)
 
-    prewalk_inf_frame(caller) do frame::InferenceState
+    prewalk_inf_frame(stackframes) do frame::InferenceState
         linfo = frame.linfo
         vf = get_virtual_frame(frame)
         pushfirst!(st, vf)
@@ -229,17 +224,18 @@ macro reportdef(ex, kwargs...)
         st = VirtualFrame[]
         lineage = Lineage()
 
+        stackframes = interp.stackframes
+
         @static $(track_from_frame) && let
             # when report is constructed _after_ the inference on `sv::InferenceState` has been done,
             # collect location information from `sv.linfo` and start traversal from `sv.parent`
-            linfo = sv.linfo
-            vf = get_virtual_frame(linfo)
+            vf = get_virtual_frame(sv.linfo)
             push!(st, vf)
             push!(lineage, get_lineage_key(vf))
-            sv = sv.parent
+            stackframes = stackframes[1:end-1]
         end
 
-        prewalk_inf_frame(sv) do frame::InferenceState
+        prewalk_inf_frame(stackframes) do frame::InferenceState
             vf = get_virtual_frame(frame)
             pushfirst!(st, vf)
             push!(lineage, get_lineage_key(vf))
