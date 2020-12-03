@@ -139,8 +139,8 @@ is_throw_call′(e::Expr)          = is_throw_call(e)
     push_inithook!(overload_typeinf_edge!)
 
 the aims of this overload are:
-1. invalidate code cache for a `MethodInstance` that is not yet analyzed by JET; this happens
-   e.g. the `MethodInstance` is cached within the system image itself
+1. invalidate code cache for a `MethodInstance` that is not yet analyzed by JET;
+   it happens when the `MethodInstance` is cached within the system image itself
 2. when cache is hit (i.e. any further inference won't occcur for the cached frame),
    append cached reports associated with the cached `MethodInstance`
 """
@@ -152,14 +152,11 @@ Core.eval(CC, quote
 # compute (and cache) an inferred AST and return the current best estimate of the result type
 function typeinf_edge(interp::$(JETInterpreter), method::Method, @nospecialize(atypes), sparams::SimpleVector, caller::InferenceState)
     mi = specialize_method(method, atypes, sparams)::MethodInstance
-    #=== typeinf_edge monkey-patch 1 start ===#
-    #= keep original code
-    code = get(code_cache(interp), mi, nothing)
-    =#
+    #=== typeinf_edge patch-point 1 start ===#
     code = $(∉)(mi, $(ANALYZED_LINFOS)) ? nothing : get(code_cache(interp), mi, nothing)
-    #=== typeinf_edge monkey-patch 1 end ===#
+    #=== typeinf_edge patch-point 1 end ===#
     if code isa CodeInstance # return existing rettype if the code is already inferred
-        #=== typeinf_edge monkey-patch 2 start ===#
+        #=== typeinf_edge patch-point 2 start ===#
         # cache hit, now we need to append cached reports associated with this `MethodInstance`
         global_cache = $(get)($(JET_GLOBAL_CACHE), mi, nothing)
         if isa(global_cache, $(Vector{InferenceErrorReportCache}))
@@ -167,7 +164,7 @@ function typeinf_edge(interp::$(JETInterpreter), method::Method, @nospecialize(a
                 $(restore_cached_report!)(cached, interp, caller)
             end
         end
-        #=== typeinf_edge monkey-patch 2 end ===#
+        #=== typeinf_edge patch-point 2 end ===#
         update_valid_age!(caller, WorldRange(min_world(code), max_world(code)))
         if isdefined(code, :rettype_const)
             if isa(code.rettype_const, Vector{Any}) && !(Vector{Any} <: code.rettype)
