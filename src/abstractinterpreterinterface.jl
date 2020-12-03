@@ -31,9 +31,6 @@ struct JETInterpreter <: AbstractInterpreter
     # reports found so far
     reports::Vector{InferenceErrorReport}
 
-    # keeps `throw` calls that are not caught within a single frame
-    exception_reports::Vector{Pair{Int,ExceptionReport}}
-
     # toplevel profiling (skip inference on actually interpreted statements)
     concretized::BitVector
 
@@ -51,7 +48,6 @@ struct JETInterpreter <: AbstractInterpreter
                             discard_trees     = false,
                             id                = gensym(:JETInterpreterID),
                             reports           = [],
-                            exception_reports = [],
                             concretized       = [],
                             analysis_params   = AnalysisParams(),
                             # dummy kwargs so that kwargs for other functions can be passed on
@@ -66,7 +62,6 @@ struct JETInterpreter <: AbstractInterpreter
                    LocalCache(),
                    id,
                    reports,
-                   exception_reports,
                    concretized,
                    analysis_params,
                    Ref(0),
