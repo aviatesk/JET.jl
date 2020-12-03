@@ -1,5 +1,5 @@
 diff --git a/patches/abstract_call_method_with_const_args.jl b/patches/abstract_call_method_with_const_args.jl
-index ee3a741..2912929 100644
+index ee3a741..4ba59b8 100644
 --- a/patches/abstract_call_method_with_const_args.jl
 +++ b/patches/abstract_call_method_with_const_args.jl
 @@ -1,6 +1,6 @@
@@ -10,32 +10,39 @@ index ee3a741..2912929 100644
      method = match.method
      nargs::Int = method.nargs
      method.isva && (nargs -= 1)
-@@ -20,7 +20,9 @@ function abstract_call_method_with_const_args(interp::AbstractInterpreter, @nosp
+@@ -20,7 +20,11 @@ function abstract_call_method_with_const_args(interp::AbstractInterpreter, @nosp
              break
          end
      end
 -    haveconst || improvable_via_constant_propagation(rettype) || return Any
++    #=== abstract_call_method_with_const_args patch point 1 start ===#
 +    # force constant propagation even if it doesn't improve return type;
 +    # constant prop' may improve report accuracy
 +    haveconst || #= improvable_via_constant_propagation(rettype) || =# return Any
++    #=== abstract_call_method_with_const_args patch point 1 end ===#
      if nargs > 1
          if istopfunction(f, :getindex) || istopfunction(f, :setindex!)
              arrty = argtypes[2]
-@@ -82,6 +84,17 @@ function abstract_call_method_with_const_args(interp::AbstractInterpreter, @nosp
+@@ -82,6 +86,22 @@ function abstract_call_method_with_const_args(interp::AbstractInterpreter, @nosp
          frame.parent = sv
          push!(inf_cache, inf_result)
          typeinf(interp, frame) || return Any
++    #=== abstract_call_method_with_const_args patch point 2 start ===#
 +    else
 +        # local cache for this constant analysis is hit
 +        inf_result = inf_result::InferenceResult
 +        if !isa(inf_result.result, InferenceState)
-+            linfo = inf_result.linfo
 +            # corresponds to report throw away logic in `_typeinf(interp::JETInterpreter, frame::InferenceState)`
-+            $(filter!)(r -> $(∉)(linfo, r.lineage), interp.reports)
++            $(filter!)(r->$(!is_lineage)(r.lineage, sv, inf_result.linfo), interp.reports)
 +
-+            # TODO: restore local cache
-+            # caches = interp.cache[linfo] # local cache for this constant analysis should exist
++            local_cache = $(get)(interp.cache, argtypes, nothing)
++            if isa(local_cache, $(Vector{InferenceErrorReportCache}))
++                $(foreach)(local_cache) do cached
++                    $(restore_cached_report!)(cached, interp, sv)
++                end
++            end
 +        end
++    #=== abstract_call_method_with_const_args patch point 2 end ===#
      end
      result = inf_result.result
      # if constant inference hits a cycle, just bail out
