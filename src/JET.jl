@@ -56,6 +56,7 @@ import JuliaInterpreter:
 # TODO: really use `using` instead
 
 import Core:
+    Intrinsics,
     Builtin,
     MethodMatch,
     LineInfoNode,
