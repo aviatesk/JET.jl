@@ -338,7 +338,7 @@ end
     end
 end
 
-@testset "constant propagation" begin
+@testset "constant analysis" begin
     # constant prop should limit false positive union-split no method reports
     let
         m = @def begin
@@ -428,6 +428,35 @@ end
         # won't be reported since `typeinf` early escapes on `Bottom`-annotated statement
     end
 
+    # report-throw away with constant analysis shouldn't throw away reports from the same
+    # frame but with the other constants
+    let
+        m = gen_virtual_module()
+        interp, frame = Core.eval(m, quote
+            foo(a) = a<0 ? a+string(a) : a
+            bar() = foo(-1), foo(1) # constant analysis on `foo(1)` shouldn't throw away reports from `foo(-1)`
+            $(profile_call)(bar)
+        end)
+        @test !isempty(interp.reports)
+        @test any(r->isa(r,NoMethodErrorReport), interp.reports)
+    end
+
+    let
+        m = gen_virtual_module()
+        interp, frame = Core.eval(m, quote
+            foo(a) = a<0 ? a+string(a) : a
+            function bar(b)
+                a = b ? foo(-1) : foo(1)
+                b = foo(-1)
+                return a, b
+            end
+            $(profile_call)(bar, (Bool,))
+        end)
+        @test !isempty(interp.reports)
+        @test_broken count(isa(report, NoMethodErrorReport) for report in interp.reports) == 2 # FIXME
+    end
+
+    # COMBAK
     false && @testset "more throw away false positive reports" begin
         let
             m = @def begin
