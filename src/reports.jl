@@ -165,11 +165,8 @@ function restore_cached_report!(cache::InferenceErrorReportCache,
                                 caller::InferenceState,
                                 )
     report = restore_cached_report(cache, caller)
-    if isa(report, ExceptionReport)
-        push!(interp.exception_reports, length(interp.reports) => report)
-    else
-        push!(interp.reports, report)
-    end
+    push!(interp.reports, report)
+    return
 end
 
 function restore_cached_report(cache::InferenceErrorReportCache,

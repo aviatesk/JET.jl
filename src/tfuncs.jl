@@ -6,7 +6,7 @@ function CC.builtin_tfunction(interp::JETInterpreter, @nospecialize(f), argtypes
                                     sv::Union{InferenceState,Nothing})
 
     if f === throw
-        # uncaught `throw` calls will be reported by `typeinf(interp::JETInterpreter, frame::InferenceState)`
+        # uncaught `throw` calls will be reported by `_typeinf(interp::JETInterpreter, frame::InferenceState)`
         return ret
     elseif f === getfield
         # getfield is so common, let's special case it

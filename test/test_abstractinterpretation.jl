@@ -305,7 +305,7 @@ end
         @test first(interp.reports) isa ExceptionReport
     end
 
-    # don't report if there the other crical error exist
+    # report even if there're other "critical" error exist
     let
         m = gen_virtual_module()
         interp, frame = Core.eval(m, quote
@@ -316,7 +316,7 @@ end
                 bar(s)
             end
         end)
-        @test length(interp.reports) === 2
+        @test length(interp.reports) === 3
         test_sum_over_string(interp.reports)
     end
 
