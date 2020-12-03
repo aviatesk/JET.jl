@@ -24,8 +24,6 @@ import .CC:
     may_optimize,
     may_compress,
     may_discard_trees,
-    # jetcache.jl
-    # WorldView,
     # tfuncs.jl
     builtin_tfunction,
     return_type_tfunc,
@@ -251,7 +249,6 @@ get_result(frame::InferenceState) = frame.result.result
 
 include("reports.jl")
 include("abstractinterpreterinterface.jl")
-include("jetcache.jl")
 include("tfuncs.jl")
 include("abstractinterpretation.jl")
 include("typeinfer.jl")
