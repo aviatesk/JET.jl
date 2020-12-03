@@ -291,6 +291,30 @@ end
     end
 end
 
+@testset "DivideError" begin
+    let
+        apply(f, args...) = f(args...)
+
+        interp, frame = profile_call() do
+            apply(div, 1, 0)
+        end
+        @test !isempty(interp.reports)
+        @test any(Fix2(isa, DivideErrorReport), interp.reports)
+
+        interp, frame = profile_call() do
+            apply(rem, 1, 0)
+        end
+        @test !isempty(interp.reports)
+        @test any(Fix2(isa, DivideErrorReport), interp.reports)
+
+        # JET analysis isn't sound
+        interp, frame = profile_call((Int,Int)) do a, b
+            apply(div, a, b)
+        end
+        @test isempty(interp.reports)
+    end
+end
+
 @testset "report `throw` calls" begin
     # simplest case
     let
