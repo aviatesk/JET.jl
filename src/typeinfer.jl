@@ -79,19 +79,15 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
         end
     end
 
-    # report `throw` calls "appropriately" by simple inter-frame analysis
-    # the basic stance here is really conservative so we don't report them unless they
-    # will be inevitably called and won't be caught by `try/catch` in frame at any level
-    # NOTE:
-    # this is better to happen here because constant propagation can reduce the chance of
-    # false negative reports by excluding unreachable control flows
+    # report `throw` calls "appropriately"; if the return type here is `Bottom` annotated,
+    # this _may_ mean there're uncaught `throw` calls
+    # XXX: well, it's possible that the `throw` calls within them are all caught but the
+    # other critical errors make the return type `Bottom`
+    # NOTE: to reduce the false positive `ExceptionReport`s described above, we count `throw`
+    # calls here after optimization, since it may have eliminated "unreachable" `throw` calls
     if get_result(frame) === Bottom
-        # report `throw`s only if there is no circumvent pass, which is represented by
-        # `Bottom`-annotated return type inference with non-empty `throw` blocks
         throw_calls = filter(is_throw_call′, stmts)
-        if !isempty(throw_calls)
-            push!(interp.exception_reports, length(interp.reports) => ExceptionReport(interp, frame, throw_calls))
-        end
+        isempty(throw_calls) || report!(interp, ExceptionReport(interp, frame, throw_calls))
     end
 
     after = Set(interp.reports)

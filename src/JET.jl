@@ -407,20 +407,11 @@ end
 function profile_frame!(interp::JETInterpreter, frame::InferenceState)
     typeinf(interp, frame)
 
-    # if return type is `Bottom`-annotated for this frame, this may mean some `throw`(s)
-    # aren't caught by at any level and get propagated here, or there're other critical
-    # inference error found
-    if get_result(frame) === Bottom
-        # let's report report `ExceptionReport`s only if there is no other error reported
-        # TODO: change behaviour according to severity of collected report, e.g. don't take
-        # into account `NativeRemark`s, etc
-        isempty(interp.reports) && append!(interp.reports, last.(interp.exception_reports))
-
-        # # just append collected `ExceptionReport`s
-        # for (i, (idx, report)) in enumerate(interp.exception_reports)
-        #     insert!(interp.reports, idx + i, report)
-        # end
-    end
+    # report `throw` calls "appropriately";
+    # if the final return type here is NOT `Bottom`-annotated, it means the control flow
+    # so far catches all the `ExceptionReport`s even if exist, so let's filter them out
+    # TODO: maybe remove this logic to printing
+    get_result(frame) === Bottom || filter!(!Fix2(isa, ExceptionReport), interp.reports)
 
     return interp, frame
 end
