@@ -10,6 +10,8 @@ function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
     # if is_constant_propagated(frame)
     #     printstyled(io, " (constant prop': ", frame.result.argtypes, ')'; color = :cyan)
     # end
+    # file, line = get_file_line(frame.linfo)
+    # print(io, ' ', file, ':', line)
     # println(io)
 
     interp.depth[] += 1 # for debug
@@ -22,8 +24,9 @@ function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
 
     # # print debug info after typeinf
     # print_rails(io, depth)
-    # printstyled(io, "└─> "; color)
-    # printstyled(io, get_result(frame); color = TYPE_ANNOTATION_COLOR)
+    # printstyled(io, "└─→ "; color)
+    # result = get_result(frame)
+    # isa(result, InferenceState) || printstyled(io, get_result(frame); color = TYPE_ANNOTATION_COLOR)
     # printlnstyled(io, " ($(length(interp.reports)) reports)"; color = ERROR_COLOR)
 
     return ret
