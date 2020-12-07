@@ -5,9 +5,8 @@ include("patches.jl")
 # i.e. julia-dev -i test/interactive_utils.jl
 include("interactive_utils.jl")
 
-# for benchmarking or debugging JET analysis
-# TODO: setup proper benchmarks, separate them from the test suite
-include("benchmark.jl")
+# simple benchmark to check the minimum analysis accuracy and performance
+include(normpath(@__DIR__, "..", "benchmark", "simple.jl"))
 
 # stuff used across tests
 using Test
