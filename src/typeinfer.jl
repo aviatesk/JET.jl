@@ -96,10 +96,10 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
         throw_calls = filter(is_throw_call′, stmts)
         isempty(throw_calls) || report!(interp, ExceptionReport(interp, frame, throw_calls))
     else
-        # non-`Bottom` result here _may_ mean `throw` calls within the children frames are
-        # caught, so here we filter them out;
-        # NOTE: this is somewhat critical for performance
-        # xref: https://github.com/aviatesk/JET.jl/issues/71
+        # the non-`Bottom` result here means `throw` calls within the children frames
+        # reported so far (if exist) are caught and not propagated to the result;
+        # we don't want to cache for this frame and its parents, so just filter them away
+        # NOTE: this is critical for performance issue https://github.com/aviatesk/JET.jl/issues/71
         filter!(!Fix2(isa, ExceptionReport), interp.reports)
     end
 
