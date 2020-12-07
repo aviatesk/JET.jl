@@ -81,15 +81,23 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
         end
     end
 
-    # report `throw` calls "appropriately"; if the return type here is `Bottom` annotated,
-    # this _may_ mean there're uncaught `throw` calls
-    # XXX: well, it's possible that the `throw` calls within them are all caught but the
-    # other critical errors make the return type `Bottom`
-    # NOTE: to reduce the false positive `ExceptionReport`s described above, we count `throw`
-    # calls here after optimization, since it may have eliminated "unreachable" `throw` calls
+    # report `throw` calls "appropriately"
     if get_result(frame) === Bottom
+        # if the return type here is `Bottom` annotated, this _may_ mean there're uncaught
+        # `throw` calls
+        # XXX: well, it's possible that the `throw` calls within them are all caught but the
+        # other critical errors make the return type `Bottom`
+        # NOTE: to reduce the false positive `ExceptionReport`s described above, we count
+        # `throw` calls here after optimization, since it may have eliminated "unreachable"
+        # `throw` calls
         throw_calls = filter(is_throw_call′, stmts)
         isempty(throw_calls) || report!(interp, ExceptionReport(interp, frame, throw_calls))
+    else
+        # non-`Bottom` result here _may_ mean `throw` calls within the children frames are
+        # caught, so here we filter them out;
+        # NOTE: this is somewhat critical for performance
+        # xref: https://github.com/aviatesk/JET.jl/issues/71
+        filter!(!Fix2(isa, ExceptionReport), interp.reports)
     end
 
     after = Set(interp.reports)
