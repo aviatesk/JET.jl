@@ -53,6 +53,10 @@ test_sum_over_string(interp::JETInterpreter) = test_sum_over_string(interp.repor
     @static Sys.iswindows() || @testset "print.jl" begin
         include("test_print.jl")
     end
+
+    @testset "performance" begin
+        include("test_performance.jl")
+    end
 end
 
 # # test self profiling
