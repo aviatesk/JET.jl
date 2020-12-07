@@ -31,6 +31,9 @@ struct JETInterpreter <: AbstractInterpreter
     # reports found so far
     reports::Vector{InferenceErrorReport}
 
+    # stashes `ExceptionReport`s that are not caught so far
+    exception_reports::Vector{ExceptionReport}
+
     # toplevel profiling (skip inference on actually interpreted statements)
     concretized::BitVector
 
@@ -40,16 +43,17 @@ struct JETInterpreter <: AbstractInterpreter
     # debugging
     depth::Ref{Int}
 
-    function JETInterpreter(world           = get_world_counter();
-                            inf_params      = gen_inf_params(),
-                            opt_params      = gen_opt_params(),
-                            optimize        = true,
-                            compress        = false,
-                            discard_trees   = false,
-                            id              = gensym(:JETInterpreterID),
-                            reports         = [],
-                            concretized     = [],
-                            analysis_params = AnalysisParams(),
+    function JETInterpreter(world             = get_world_counter();
+                            inf_params        = gen_inf_params(),
+                            opt_params        = gen_opt_params(),
+                            optimize          = true,
+                            compress          = false,
+                            discard_trees     = false,
+                            id                = gensym(:JETInterpreterID),
+                            reports           = [],
+                            exception_reports = [],
+                            concretized       = [],
+                            analysis_params   = AnalysisParams(),
                             # dummy kwargs so that kwargs for other functions can be passed on
                             __kwargs...)
         @assert !opt_params.inlining "inlining should be disabled for JETInterpreter analysis"
@@ -62,6 +66,7 @@ struct JETInterpreter <: AbstractInterpreter
                    LocalCache(),
                    id,
                    reports,
+                   exception_reports,
                    concretized,
                    analysis_params,
                    Ref(0),

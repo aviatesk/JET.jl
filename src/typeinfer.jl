@@ -94,17 +94,19 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
         # `throw` calls here after optimization, since it may have eliminated "unreachable"
         # `throw` calls
         throw_calls = filter(is_throw_call′, stmts)
-        isempty(throw_calls) || report!(interp, ExceptionReport(interp, frame, throw_calls))
+        isempty(throw_calls) || push!(interp.exception_reports, ExceptionReport(interp, frame, throw_calls))
     else
         # the non-`Bottom` result here means `throw` calls within the children frames
         # reported so far (if exist) are caught and not propagated to the result;
         # we don't want to cache for this frame and its parents, so just filter them away
         # NOTE: this is critical for performance issue https://github.com/aviatesk/JET.jl/issues/71
-        filter!(!Fix2(isa, ExceptionReport), interp.reports)
+        isempty(interp.exception_reports) || empty!(interp.exception_reports)
     end
 
     after = Set(interp.reports)
     reports_for_this_linfo = setdiff(after, before)
+
+    isempty(interp.exception_reports) || push!(reports_for_this_linfo, interp.exception_reports...)
 
     if !isempty(reports_for_this_linfo)
         if is_constant_propagated(frame)

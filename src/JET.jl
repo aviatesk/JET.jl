@@ -403,10 +403,13 @@ function profile_frame!(interp::JETInterpreter, frame::InferenceState)
     typeinf(interp, frame)
 
     # report `throw` calls "appropriately";
-    # if the final return type here is NOT `Bottom`-annotated, it means the control flow
-    # so far catches all the `ExceptionReport`s even if exist, so let's filter them out
-    # TODO: maybe remove this logic to printing
-    get_result(frame) === Bottom || filter!(!Fix2(isa, ExceptionReport), interp.reports)
+    # if the final return type here is `Bottom`-annotated, it _may_ mean the control flow
+    # didn't catch some of the `ExceptionReport`s stashed within `interp.exception_reports`,
+    if get_result(frame) === Bottom
+        if !isempty(interp.exception_reports)
+            append!(interp.reports, interp.exception_reports)
+        end
+    end
 
     return interp, frame
 end
