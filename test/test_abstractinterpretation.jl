@@ -456,8 +456,7 @@ end
         @test_broken count(isa(report, NoMethodErrorReport) for report in interp.reports) == 2 # FIXME
     end
 
-    # COMBAK
-    false && @testset "more throw away false positive reports" begin
+    @testset "constant analysis throws away false positive reports" begin
         let
             m = @def begin
                 foo(a) = a > 0 ? a : "minus"
@@ -477,7 +476,6 @@ end
                 er.atype ⊑ Tuple{Any,Union{Int,String},Int}
 
             # if we run constant prop' that leads to the error pass, we should get the reports
-            # FIXME: constant prop' can produce more precise, but essentially duplicated error reports
             interp, frame = Core.eval(m, :($(profile_call)(()->bar(0))))
             @test length(interp.reports) === 1
             er = first(interp.reports)
@@ -486,8 +484,8 @@ end
                 er.atype ⊑ Tuple{Any,String,Int}
         end
 
-        # should threw away previously-collected reports from frame that is lineage of
-        # current constant prop'ed frame
+        # we should throw-away reports collected from frames that are revealed as "unreachable"
+        # by constant prop'
         let
             m = @def begin
                 foo(a) = bar(a)
@@ -509,7 +507,7 @@ end
             @test er isa NonBooleanCondErrorReport &&
                 er.t === Int
 
-            # constant prop should throw away non-boolean condition reports within `baz1`
+            # constant prop should throw away the non-boolean condition report from `baz1`
             interp, frame = Core.eval(m, quote
                 $(profile_call)() do
                     foo(1)
@@ -517,7 +515,7 @@ end
             end)
             @test isempty(interp.reports)
 
-            # constant prop'ed, still we want to have reports for this
+            # constant prop'ed, still we want to have the non-boolean condition report from `baz1`
             interp, frame = Core.eval(m, quote
                 $(profile_call)() do
                     foo(0)
@@ -533,8 +531,7 @@ end
             @test isempty(interp.reports)
         end
 
-        # constant prop' can exclude false positive alerts; well, this is really bad code
-        # so I rather feel we may want to have a report for this case
+        # end to end
         let
             res, interp = @profile_toplevel begin
                 function foo(n)
