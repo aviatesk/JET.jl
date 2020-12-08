@@ -50,9 +50,9 @@ struct JETInterpreter <: AbstractInterpreter
                             compress          = false,
                             discard_trees     = false,
                             id                = gensym(:JETInterpreterID),
-                            reports           = [],
-                            exception_reports = [],
-                            concretized       = [],
+                            reports           = InferenceErrorReport[],
+                            exception_reports = ExceptionReport[],
+                            concretized       = BitVector(),
                             analysis_params   = AnalysisParams(),
                             # dummy kwargs so that kwargs for other functions can be passed on
                             __kwargs...)

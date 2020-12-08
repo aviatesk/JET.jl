@@ -114,7 +114,7 @@ function print_reports(io::IO,
                        annotate_types::Bool = false,
                        # dummy kwargs so that kwargs for other functions can be passed on
                        __kwargs...)
-    reports = uniquify_reports(reports)
+    # reports = uniquify_reports(reports)
 
     if isempty(reports)
         if print_inference_sucess
@@ -143,17 +143,17 @@ function print_reports(io::IO,
     return true
 end
 
-# FIXME: this is a dirty fix for duplicated reports
-# reports can be duplicated mainly because of code cache invalidation, especaiily there're
-# lots of duplications reported when self-profiling
+# this is a dirty fix for duplicated reports
+# TODO: analysis can efficiently avoids collecting duplicated reports ?
 function uniquify_reports(reports)
     return unique(reports) do report; return #= uniquify keys =# (
-        # caller
-        first(report.st),
-        # error
-        last(report.st),
+        # report itself
         report.msg,
         report.sig,
+        # entry point
+        first(report.st),
+        # error point
+        last(report.st),
     ); end
 end
 
