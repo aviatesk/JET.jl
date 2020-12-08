@@ -205,7 +205,8 @@ function abstract_call_gf_by_type(interp::$(JETInterpreter), @nospecialize(f), a
     # this is in preparation for inlining, or improving the return result
     is_unused = call_result_unused(sv)
     #=== abstract_call_gf_by_type patch point 4-3 start ===#
-    if nonbot > 0 && seen == napplicable && (!edgecycle || !is_unused) && (isa(rettype, Type) || has_been_reported) && InferenceParams(interp).ipo_constant_propagation
+    if nonbot > 0 && seen == napplicable && (!edgecycle || !is_unused) &&
+        (is_improvable(rettype) || has_been_reported) && InferenceParams(interp).ipo_constant_propagation
     #=== abstract_call_gf_by_type patch point 4-3 end ===#
         # if there's a possibility we could constant-propagate a better result
         # (hopefully without doing too much work), try to do that now

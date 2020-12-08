@@ -1,5 +1,5 @@
 diff --git a/patches/abstract_call_gf_by_type.jl b/patches/abstract_call_gf_by_type.jl
-index 6cf261d..3f3fb8a 100644
+index e3e1e2b..384419d 100644
 --- a/patches/abstract_call_gf_by_type.jl
 +++ b/patches/abstract_call_gf_by_type.jl
 @@ -1,6 +1,6 @@
@@ -69,7 +69,7 @@ index 6cf261d..3f3fb8a 100644
              end
          else
              this_rt, edgecycle1, edge = abstract_call_method(interp, method, sig, match.sparams, multiple_matches, sv)
-@@ -125,12 +146,22 @@ function abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f),
+@@ -125,13 +146,23 @@ function abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f),
          end
          seen += 1
          rettype = tmerge(rettype, this_rt)
@@ -87,9 +87,10 @@ index 6cf261d..3f3fb8a 100644
      # try constant propagation if only 1 method is inferred to non-Bottom
      # this is in preparation for inlining, or improving the return result
      is_unused = call_result_unused(sv)
--    if nonbot > 0 && seen == napplicable && (!edgecycle || !is_unused) && isa(rettype, Type) && InferenceParams(interp).ipo_constant_propagation
 +    #=== abstract_call_gf_by_type patch point 4-3 start ===#
-+    if nonbot > 0 && seen == napplicable && (!edgecycle || !is_unused) && (isa(rettype, Type) || has_been_reported) && InferenceParams(interp).ipo_constant_propagation
+     if nonbot > 0 && seen == napplicable && (!edgecycle || !is_unused) &&
+-            is_improvable(rettype) && InferenceParams(interp).ipo_constant_propagation
++            (is_improvable(rettype) || has_been_reported) && InferenceParams(interp).ipo_constant_propagation
 +    #=== abstract_call_gf_by_type patch point 4-3 end ===#
          # if there's a possibility we could constant-propagate a better result
          # (hopefully without doing too much work), try to do that now
