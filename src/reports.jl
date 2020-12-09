@@ -315,6 +315,8 @@ extract_type_decls(x) = isexpr(x, :(::)) ? last(x.args) : Any
 
 @reportdef InvalidConstantRedefinition(interp, sv, mod::Module, name::Symbol, @nospecialize(t′), @nospecialize(t))
 
+@reportdef UndefKeywordErrorReport(interp, sv, err::UndefKeywordError)
+
 """
     ExceptionReport <: InferenceErrorReport
 
@@ -500,6 +502,7 @@ get_msg(::Type{NonBooleanCondErrorReport}, interp, sv, @nospecialize(t)) =
     "non-boolean ($(t)) used in boolean context"
 get_msg(::Type{InvalidConstantRedefinition}, interp, sv, mod, name, @nospecialize(t′), @nospecialize(t)) =
     "invalid redefinition of constant $(mod).$(name) (from $(t′) to $(t))"
+get_msg(::Type{UndefKeywordErrorReport}, interp, sv, err) = sprint(showerror, err)
 get_msg(::Type{ExceptionReport}, interp, sv, throw_blocks) = isone(length(throw_blocks)) ?
     "may throw" :
     "may throw either of"
