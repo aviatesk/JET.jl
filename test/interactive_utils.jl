@@ -6,8 +6,15 @@ import .CC:
     widenconst, ⊑
 
 import JET:
-    JETInterpreter, VirtualGlobalVariable, profile_call, get_result, virtual_process!,
-    gen_virtual_module, ToplevelErrorReport, InferenceErrorReport, print_reports
+    JETInterpreter,
+    VirtualGlobalVariable,
+    profile_call,
+    get_result,
+    virtual_process!,
+    gen_virtual_module,
+    ToplevelErrorReport,
+    InferenceErrorReport,
+    print_reports
 
 for sym in Symbol.(last.(Base.Fix2(split, '.').(string.(vcat(subtypes(JET, ToplevelErrorReport),
                                                              subtypes(JET, InferenceErrorReport),
@@ -16,7 +23,8 @@ for sym in Symbol.(last.(Base.Fix2(split, '.').(string.(vcat(subtypes(JET, Tople
 end
 
 import Base:
-    Fix1, Fix2
+    Fix1,
+    Fix2
 
 import Base.Meta:
     isexpr

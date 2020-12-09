@@ -5,8 +5,14 @@ include("patches.jl")
 # i.e. julia-dev -i test/interactive_utils.jl
 include("interactive_utils.jl")
 
-# simple benchmark to check the minimum analysis accuracy and performance
-include(normpath(@__DIR__, "..", "benchmark", "simple.jl"))
+let
+    BENCHMARK_DIR = normpath(@__DIR__, "..", "benchmark")
+
+    # simple benchmark to check the minimum analysis accuracy and performance
+    include(normpath(BENCHMARK_DIR, "benchmark_simple.jl"))
+
+    include(normpath(BENCHMARK_DIR, "benchmark_utils.jl"))
+end
 
 # stuff used across tests
 using Test
