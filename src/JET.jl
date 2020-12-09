@@ -459,23 +459,6 @@ end
 
 print_reports(args...; kwargs...) = print_reports(stdout::IO, args...; kwargs...)
 
-# for benchmarking JET analysis performance from call expression
-macro benchmark_call(ex0...)
-    call_ex = last(ex0)
-    profile_ex = InteractiveUtils.gen_call_with_extracted_types_and_kwargs(__module__, :profile_call, ex0)
-    print_header_ex = quote
-        printstyled("[ Benchmark for "; color = :blue)
-        printstyled($(QuoteNode(call_ex)); color = TYPE_ANNOTATION_COLOR)
-        print(": ")
-    end
-    return quote let
-        $(print_header_ex); println("start analysis ...")
-        $(print_header_ex); @time interp, frame = $(profile_ex)
-        $(print_header_ex); println("$(length(interp.reports)) errors reported")
-        interp, frame
-    end end
-end
-
 # for inspection
 macro lwr(ex) QuoteNode(lower(__module__, ex)) end
 macro src(ex) QuoteNode(first(lower(__module__, ex).args)) end
