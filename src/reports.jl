@@ -222,7 +222,7 @@ function get_file_line(linfo::MethodInstance)
     return file, line
 end
 
-# adapted from https://github.com/JuliaLang/julia/blob/519b04e4ada9b07c85427e303d3ce4c823a0310f/base/show.jl#L974-L987
+# adapted from https://github.com/JuliaLang/julia/blob/0f11a7bb07d2d0d8413da05dadd47441705bf0dd/base/show.jl#L989-L1011
 function get_sig(l::MethodInstance)
     def = l.def
     ret = if isa(def, Method)
@@ -232,11 +232,20 @@ function get_sig(l::MethodInstance)
             sprint(show, def)
         else
             # print(io, "MethodInstance for ")
-            # show_tuple_as_call(io, def.name, l.specTypes)
-            sprint(Base.show_tuple_as_call, def.name, l.specTypes)
+            # show_tuple_as_call(io, def.name, l.specTypes, false, nothing, nothing, true)
+            sprint(Base.show_tuple_as_call, def.name, l.specTypes, false, nothing, nothing, true)
         end
     else
         # print(io, "Toplevel MethodInstance thunk")
+        # # `thunk` is not very much information to go on. If this
+        # # MethodInstance is part of a stacktrace, it gets location info
+        # # added by other means.  But if it isn't, then we should try
+        # # to print a little more identifying information.
+        # if !from_stackframe
+        #     linetable = l.uninferred.linetable
+        #     line = isempty(linetable) ? "unknown" : (lt = linetable[1]; string(lt.file) * ':' * string(lt.line))
+        #     print(io, " from ", def, " starting at ", line)
+        # end
         "toplevel"
     end
     return Any[ret]
