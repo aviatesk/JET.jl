@@ -114,7 +114,7 @@ function print_reports(io::IO,
                        annotate_types::Bool = false,
                        # dummy kwargs so that kwargs for other functions can be passed on
                        __kwargs...)
-    # reports = uniquify_reports(reports)
+    reports = uniquify_reports(reports)
 
     if isempty(reports)
         if print_inference_sucess
