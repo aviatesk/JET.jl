@@ -226,7 +226,7 @@ macro reportdef(ex, kwargs...)
         st = VirtualFrame[]
         lineage = Lineage()
 
-        if $(track_from_frame)
+        @static $(track_from_frame) && let
             # when report is constructed _after_ the inference on `sv::InferenceState` has been done,
             # collect location information from `sv.linfo` and start traversal from `sv.parent`
             linfo = sv.linfo
