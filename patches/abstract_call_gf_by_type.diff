@@ -1,9 +1,9 @@
 diff --git a/patches/abstract_call_gf_by_type.jl b/patches/abstract_call_gf_by_type.jl
-index e3e1e2b..384419d 100644
+index d99f5f3..96cfa7e 100644
 --- a/patches/abstract_call_gf_by_type.jl
 +++ b/patches/abstract_call_gf_by_type.jl
 @@ -1,6 +1,6 @@
- # https://github.com/JuliaLang/julia/blob/b166d0d15f616f4a025ac5905a115399cc932ddc/base/compiler/abstractinterpretation.jl#L20-L184
+ # https://github.com/JuliaLang/julia/blob/5e048f3e537387fd388a5360ce6163c8f7c61ccf/base/compiler/abstractinterpretation.jl#L31-L196
  
 -function abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f), argtypes::Vector{Any}, @nospecialize(atype), sv::InferenceState,
 +function abstract_call_gf_by_type(interp::$(JETInterpreter), @nospecialize(f), argtypes::Vector{Any}, @nospecialize(atype), sv::InferenceState,
@@ -95,3 +95,15 @@ index e3e1e2b..384419d 100644
          # if there's a possibility we could constant-propagate a better result
          # (hopefully without doing too much work), try to do that now
          # TODO: it feels like this could be better integrated into abstract_call_method / typeinf_edge
+@@ -151,7 +182,10 @@ function abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f),
+         # and avoid keeping track of a more complex result type.
+         rettype = Any
+     end
+-    if !(rettype === Any) # adding a new method couldn't refine (widen) this type
++    #=== abstract_call_gf_by_type patch point 5 start ===#
++    # a new method may refine analysis, so we always add backedges
++    if true # !(rettype === Any) # adding a new method couldn't refine (widen) this type
++    #=== abstract_call_gf_by_type patch point 5 end ===#
+         for edge in edges
+             add_backedge!(edge::MethodInstance, sv)
+         end

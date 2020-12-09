@@ -35,6 +35,8 @@ the aims of this overload are:
 4. force constant prop' even if the inference result can't be improved anymore when `rettype`
    is already `Const`; this is because constant prop' can still produce more "correct"
    analysis by throwing away the error reports in the callee frames
+5. always add backedges (even if a new method can't refine the return type grew up to`Any`),
+   because a new method always may change the JET analysis result
 """
 function overload_abstract_call_gf_by_type!()
 
@@ -206,7 +208,7 @@ function abstract_call_gf_by_type(interp::$(JETInterpreter), @nospecialize(f), a
     is_unused = call_result_unused(sv)
     #=== abstract_call_gf_by_type patch point 4-3 start ===#
     if nonbot > 0 && seen == napplicable && (!edgecycle || !is_unused) &&
-        (is_improvable(rettype) || has_been_reported) && InferenceParams(interp).ipo_constant_propagation
+            (is_improvable(rettype) || has_been_reported) && InferenceParams(interp).ipo_constant_propagation
     #=== abstract_call_gf_by_type patch point 4-3 end ===#
         # if there's a possibility we could constant-propagate a better result
         # (hopefully without doing too much work), try to do that now
@@ -227,7 +229,10 @@ function abstract_call_gf_by_type(interp::$(JETInterpreter), @nospecialize(f), a
         # and avoid keeping track of a more complex result type.
         rettype = Any
     end
-    if !(rettype === Any) # adding a new method couldn't refine (widen) this type
+    #=== abstract_call_gf_by_type patch point 5 start ===#
+    # a new method may refine analysis, so we always add backedges
+    if true # !(rettype === Any) # adding a new method couldn't refine (widen) this type
+    #=== abstract_call_gf_by_type patch point 5 end ===#
         for edge in edges
             add_backedge!(edge::MethodInstance, sv)
         end

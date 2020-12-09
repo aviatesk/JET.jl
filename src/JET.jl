@@ -17,13 +17,14 @@ import .CC:
     OptimizationParams,
     get_world_counter,
     get_inference_cache,
-    code_cache,
     lock_mi_inference,
     unlock_mi_inference,
     add_remark!,
     may_optimize,
     may_compress,
     may_discard_trees,
+    # jetcache.jl
+    code_cache,
     # tfuncs.jl
     builtin_tfunction,
     return_type_tfunc,
@@ -65,6 +66,7 @@ import .CC:
     InternalCodeCache,
     CodeInstance,
     WorldRange,
+    WorldView,
     MethodInstance,
     Bottom,
     NOT_FOUND,
@@ -247,6 +249,7 @@ get_result(frame::InferenceState) = frame.result.result
 
 include("reports.jl")
 include("abstractinterpreterinterface.jl")
+include("jetcache.jl")
 include("tfuncs.jl")
 include("abstractinterpretation.jl")
 include("typeinfer.jl")
