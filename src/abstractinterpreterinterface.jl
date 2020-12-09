@@ -34,6 +34,9 @@ struct JETInterpreter <: AbstractInterpreter
     # stashes `ExceptionReport`s that are not caught so far
     exception_reports::Vector{ExceptionReport}
 
+    # stashes `NativeRemark`s
+    native_remarks::Vector{NativeRemark}
+
     # toplevel profiling (skip inference on actually interpreted statements)
     concretized::BitVector
 
@@ -52,6 +55,7 @@ struct JETInterpreter <: AbstractInterpreter
                             id                = gensym(:JETInterpreterID),
                             reports           = InferenceErrorReport[],
                             exception_reports = ExceptionReport[],
+                            native_remarks    = NativeRemark[],
                             concretized       = BitVector(),
                             analysis_params   = AnalysisParams(),
                             # dummy kwargs so that kwargs for other functions can be passed on
@@ -67,6 +71,7 @@ struct JETInterpreter <: AbstractInterpreter
                    id,
                    reports,
                    exception_reports,
+                   native_remarks,
                    concretized,
                    analysis_params,
                    Ref(0),
@@ -88,7 +93,7 @@ CC.unlock_mi_inference(::JETInterpreter, ::MethodInstance) = nothing
 
 function CC.add_remark!(interp::JETInterpreter, sv::InferenceState, s::String)
     AnalysisParams(interp).filter_native_remarks && return
-    report!(interp, NativeRemark(interp, sv, s))
+    push!(interp.native_remarks, NativeRemark(interp, sv, s))
     return
 end
 

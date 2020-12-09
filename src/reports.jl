@@ -312,7 +312,9 @@ Represents general `Exception`s traced during inference. They are reported only 
     NativeRemark <: InferenceErrorReport
 
 This special `InferenceErrorReport` is just for wrapping remarks from `NativeInterpreter`.
-Ideally all of them should be covered by the other `InferenceErrorReport`s.
+
+!!! note
+    Currently JET.jl doesn't make any use of `NativeRemark`.
 """
 :(NativeRemark)
 @reportdef NativeRemark(interp, sv, s::String)
