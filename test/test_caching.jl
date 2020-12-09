@@ -10,7 +10,21 @@
 
     # invalidation from deeper call site can refresh JET analysis
     let
-        l1, l2 = @freshexec begin
+        l1, l2, l3 = @freshexec begin
+            # ensure we start with this "errorneous" `show_sym`
+            @eval Base begin
+                function show_sym(io::IO, sym::Symbol; allow_macroname=false)
+                    if is_valid_identifier(sym)
+                        print(io, sym)
+                    elseif allow_macroname && (sym_str = string(sym); startswith(sym_str, '@'))
+                        print(io, '@')
+                        show_sym(io, sym_str[2:end]) # NOTE: `sym_str[2:end]` here is errorneous
+                    else
+                        print(io, "var", repr(string(sym)))
+                    end
+                end
+            end
+
             # should have error reported
             interp1, = @profile_call println(QuoteNode(nothing))
 
@@ -31,11 +45,29 @@
             # now we shouldn't have reports
             interp2, = @profile_call println(QuoteNode(nothing))
 
-            length(interp1.reports), length(interp2.reports) # return
+            # again, invoke invalidation
+            @eval Base begin
+                function show_sym(io::IO, sym::Symbol; allow_macroname=false)
+                    if is_valid_identifier(sym)
+                        print(io, sym)
+                    elseif allow_macroname && (sym_str = string(sym); startswith(sym_str, '@'))
+                        print(io, '@')
+                        show_sym(io, sym_str[2:end])
+                    else
+                        print(io, "var", repr(string(sym)))
+                    end
+                end
+            end
+
+            # now we should have reports, again
+            interp3, = @profile_call println(QuoteNode(nothing))
+
+            length(interp1.reports), length(interp2.reports), length(interp3.reports) # return
         end
 
         @test l1 > 0
         @test l2 == 0
+        @test l3 > 0 # XXX: `l1 == l3` doesn't hold, somehow
     end
 end
 
