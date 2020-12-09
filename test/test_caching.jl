@@ -1,10 +1,42 @@
-# invalidate native code cache in a system image if it has not been analyzed by JET
-# yes this slows down anlaysis for sure, but otherwise JET will miss obvious errors like below
 @testset "invalidate native code cache" begin
-    interp, frame = profile_call((Nothing,)) do a
-        a.field
+    # invalidate native code cache in a system image if it has not been analyzed by JET
+    # yes this slows down anlaysis for sure, but otherwise JET will miss obvious errors like below
+    let
+        interp, frame = profile_call((Nothing,)) do a
+            a.field
+        end
+        @test length(interp.reports) === 1
     end
-    @test length(interp.reports) === 1
+
+    # invalidation from deeper call site can refresh JET analysis
+    let
+        l1, l2 = @freshexec begin
+            # should have error reported
+            interp1, = @profile_call println(QuoteNode(nothing))
+
+            # should invoke invalidation in the deeper call site of `println(::QuoteNode)`
+            @eval Base begin
+                function show_sym(io::IO, sym::Symbol; allow_macroname=false)
+                    if is_valid_identifier(sym)
+                        print(io, sym)
+                    elseif allow_macroname && (sym_str = string(sym); startswith(sym_str, '@'))
+                        print(io, '@')
+                        show_sym(io, Symbol(sym_str[2:end]))
+                    else
+                        print(io, "var", repr(string(sym)))
+                    end
+                end
+            end
+
+            # now we shouldn't have reports
+            interp2, = @profile_call println(QuoteNode(nothing))
+
+            length(interp1.reports), length(interp2.reports) # return
+        end
+
+        @test l1 > 0
+        @test l2 == 0
+    end
 end
 
 @testset "integrate with global code cache" begin
