@@ -14,8 +14,7 @@ function CC.builtin_tfunction(interp::JETInterpreter, @nospecialize(f), argtypes
         if isa(fld, Const)
             name = fld.val
             if isa(name, Symbol)
-                if isa(obj, Const) && ⊑(obj, Module)
-                    mod = obj.val
+                if isa(obj, Const) && (mod = obj.val; isa(mod, Module))
                     if isdefined(mod, name)
                         # TODO: add report pass here (for performance linting)
                     else
