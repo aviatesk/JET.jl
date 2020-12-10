@@ -25,6 +25,7 @@ import .CC:
     may_discard_trees,
     # jetcache.jl
     code_cache,
+    cache_result!,
     # tfuncs.jl
     builtin_tfunction,
     return_type_tfunc,
