@@ -13,7 +13,7 @@
         l1, l2, l3 = @freshexec begin
             # ensure we start with this "errorneous" `show_sym`
             @eval Base begin
-                function show_sym(io::IO, sym::Symbol; allow_macroname=false)
+                function show_sym(io::IO, sym; allow_macroname=false)
                     if is_valid_identifier(sym)
                         print(io, sym)
                     elseif allow_macroname && (sym_str = string(sym); startswith(sym_str, '@'))
@@ -30,7 +30,7 @@
 
             # should invoke invalidation in the deeper call site of `println(::QuoteNode)`
             @eval Base begin
-                function show_sym(io::IO, sym::Symbol; allow_macroname=false)
+                function show_sym(io::IO, sym; allow_macroname=false)
                     if is_valid_identifier(sym)
                         print(io, sym)
                     elseif allow_macroname && (sym_str = string(sym); startswith(sym_str, '@'))
@@ -47,7 +47,7 @@
 
             # again, invoke invalidation
             @eval Base begin
-                function show_sym(io::IO, sym::Symbol; allow_macroname=false)
+                function show_sym(io::IO, sym; allow_macroname=false)
                     if is_valid_identifier(sym)
                         print(io, sym)
                     elseif allow_macroname && (sym_str = string(sym); startswith(sym_str, '@'))
