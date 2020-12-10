@@ -5,6 +5,10 @@ const CC = Core.Compiler
 
 @static if !isdefined(CC, :AbstractInterpreter)
     throw(ErrorException("JET.jl only works with Julia versions 1.6 and higher"))
+elseif :backedges ∉ fieldnames(Core.MethodInstance)
+    @warn """with your Julia version, JET.jl may not be able to update analysis result
+    correctly after refinement of a method in deeper call sites
+    """
 end
 
 # imports

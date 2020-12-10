@@ -26,6 +26,8 @@ function CC.cache_result!(interp::JETInterpreter, result::InferenceResult, valid
     end
     unlock_mi_inference(interp, linfo)
 
+    @static :backedges ∉ fieldnames(MethodInstance) && return nothing
+
     # this function is called from `_typeinf(interp::AbstractInterpreter, frame::InferenceState)`
     # and so at this point `linfo` is not registered in `ANALYZED_LINFOS`
     # (unless inference happens multiple times for this frame)
