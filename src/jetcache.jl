@@ -48,12 +48,7 @@ function add_jet_callback!(linfo)
     end
 end
 
-function invalidate_jet_cache!(replaced, max_world)
-    invalidate_jet_cache!(replaced, max_world, 0)
-    return nothing
-end
-
-function invalidate_jet_cache!(replaced, max_world, depth)
+function invalidate_jet_cache!(replaced, max_world, depth = 0)
     replaced ∉ ANALYZED_LINFOS && return
     delete!(ANALYZED_LINFOS, replaced)
     delete!(JET_GLOBAL_CACHE, replaced)
