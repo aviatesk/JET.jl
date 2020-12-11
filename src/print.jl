@@ -143,17 +143,17 @@ function print_reports(io::IO,
     return true
 end
 
-# FIXME: this is a dirty fix for duplicated reports
-# reports can be duplicated mainly because of code cache invalidation, especaiily there're
-# lots of duplications reported when self-profiling
+# this is a dirty fix for duplicated reports
+# TODO: analysis can efficiently avoids collecting duplicated reports ?
 function uniquify_reports(reports)
     return unique(reports) do report; return #= uniquify keys =# (
-        # caller
-        first(report.st),
-        # error
-        last(report.st),
+        # report itself
         report.msg,
         report.sig,
+        # entry point
+        first(report.st),
+        # error point
+        last(report.st),
     ); end
 end
 
@@ -191,16 +191,16 @@ function print_error_frame(io, report, depth; kwargs...)
     printlnstyled(io, '└', '─'^len; color)
 end
 
-function print_frame(io, (file, line, sig), depth, is_err;
+function print_frame(io, frame, depth, is_err;
                      fullpath = false,
                      annotate_types = false,
                      )
     print_rails(io, depth-1)
 
     color = is_err ? ERROR_COLOR : RAIL_COLORS[(depth)%N_RAILS+1]
-    s = string("┌ @ ", (fullpath ? tofullpath : identity)(string(file)), ':', line)
+    s = string("┌ @ ", (fullpath ? tofullpath : identity)(string(frame.file)), ':', frame.line)
     printstyled(io, s, ' '; color)
-    print_signature(io, sig; annotate_types)
+    print_signature(io, frame.sig; annotate_types)
 
     return length(s) # the length of frame info string
 end

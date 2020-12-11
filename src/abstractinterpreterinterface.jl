@@ -10,6 +10,8 @@ struct AnalysisParams
     end
 end
 
+const LocalCache = Dict{Vector{Any},Vector{InferenceErrorReportCache}}
+
 struct JETInterpreter <: AbstractInterpreter
     #= native =#
 
@@ -20,19 +22,25 @@ struct JETInterpreter <: AbstractInterpreter
 
     #= JET.jl specific =#
 
-    # for escaping force inference on "erroneous" cached frames, sequential assignment of virtual global variable
+    # local report cache for constant analysis
+    cache::LocalCache
+
+    # for sequential assignment of virtual global variables
     id::Symbol
 
     # reports found so far
     reports::Vector{InferenceErrorReport}
 
-    # keeps `throw` calls that are not caught within a single frame
-    exception_reports::Vector{Pair{Int,ExceptionReport}}
+    # stashes `ExceptionReport`s that are not caught so far
+    exception_reports::Vector{ExceptionReport}
+
+    # stashes `NativeRemark`s
+    native_remarks::Vector{NativeRemark}
 
     # toplevel profiling (skip inference on actually interpreted statements)
     concretized::BitVector
 
-    # configurations for analysis performed by `JETInterpreter`
+    # configurations for analysis performed by this interpreter
     analysis_params::AnalysisParams
 
     # debugging
@@ -45,9 +53,10 @@ struct JETInterpreter <: AbstractInterpreter
                             compress          = false,
                             discard_trees     = false,
                             id                = gensym(:JETInterpreterID),
-                            reports           = [],
-                            exception_reports = [],
-                            concretized       = [],
+                            reports           = InferenceErrorReport[],
+                            exception_reports = ExceptionReport[],
+                            native_remarks    = NativeRemark[],
+                            concretized       = BitVector(),
                             analysis_params   = AnalysisParams(),
                             # dummy kwargs so that kwargs for other functions can be passed on
                             __kwargs...)
@@ -58,9 +67,11 @@ struct JETInterpreter <: AbstractInterpreter
                    optimize,
                    compress,
                    discard_trees,
+                   LocalCache(),
                    id,
                    reports,
                    exception_reports,
+                   native_remarks,
                    concretized,
                    analysis_params,
                    Ref(0),
@@ -80,13 +91,9 @@ CC.get_inference_cache(interp::JETInterpreter) = get_inference_cache(interp.nati
 CC.lock_mi_inference(::JETInterpreter, ::MethodInstance) = nothing
 CC.unlock_mi_inference(::JETInterpreter, ::MethodInstance) = nothing
 
-function CC.add_remark!(interp::JETInterpreter, ::InferenceState, report::InferenceErrorReport)
-    push!(interp.reports, report)
-    return
-end
 function CC.add_remark!(interp::JETInterpreter, sv::InferenceState, s::String)
     AnalysisParams(interp).filter_native_remarks && return
-    add_remark!(interp, sv, NativeRemark(interp, sv, s))
+    push!(interp.native_remarks, NativeRemark(interp, sv, s))
     return
 end
 
@@ -124,3 +131,9 @@ function gen_opt_params(; # inlining should be disabled for `JETInterpreter`, ot
 end
 
 get_id(interp::JETInterpreter) = interp.id
+
+# TODO do report filtering or something configured by `AnalysisParams(interp)`
+function report!(interp::JETInterpreter, report::InferenceErrorReport)
+    push!(interp.reports, report)
+    return
+end

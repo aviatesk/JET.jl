@@ -5,6 +5,10 @@ const CC = Core.Compiler
 
 @static if !isdefined(CC, :AbstractInterpreter)
     throw(ErrorException("JET.jl only works with Julia versions 1.6 and higher"))
+elseif :backedges ∉ fieldnames(Core.MethodInstance)
+    @warn """with your Julia version, JET.jl may not be able to update analysis result
+    correctly after refinement of a method in deeper call sites
+    """
 end
 
 # imports
@@ -25,18 +29,20 @@ import .CC:
     may_discard_trees,
     # jetcache.jl
     code_cache,
-    WorldView,
+    cache_result!,
     # tfuncs.jl
     builtin_tfunction,
     return_type_tfunc,
     # abstractinterpretation.jl
     abstract_call_gf_by_type,
+    abstract_call_method_with_const_args,
     abstract_eval_special_value,
     abstract_eval_value,
     abstract_eval_statement,
     # typeinfer.jl
     typeinf,
-    _typeinf
+    _typeinf,
+    typeinf_edge
 
 # `ConcreteInterpreter`
 import JuliaInterpreter:
@@ -65,6 +71,7 @@ import .CC:
     InternalCodeCache,
     CodeInstance,
     WorldRange,
+    WorldView,
     MethodInstance,
     Bottom,
     NOT_FOUND,
@@ -207,10 +214,19 @@ end
 
 is_constant_propagated(frame::InferenceState) = CC.any(frame.result.overridden_by_const)
 
+# # XXX: should sync with the `haveconst` check within `abstract_call_method_with_const_args` ?
+# is_constant_propagated(frame::InferenceState) = is_constant_propagated(frame.result)
+# function is_constant_propagated(result::InferenceResult)
+#     for a in result.argtypes
+#         if CC.has_nontrivial_const_info(a) && CC.const_prop_profitable(a)
+#             return true
+#         end
+#     end
+#     return false
+# end
+
 istoplevel(linfo::MethodInstance) = linfo.def == __toplevel__
 istoplevel(sv::InferenceState)    = istoplevel(sv.linfo)
-
-isroot(frame::InferenceState) = isnothing(frame.parent)
 
 prewalk_inf_frame(@nospecialize(f), ::Nothing) = return
 function prewalk_inf_frame(@nospecialize(f), frame::InferenceState)
@@ -394,19 +410,13 @@ end
 function profile_frame!(interp::JETInterpreter, frame::InferenceState)
     typeinf(interp, frame)
 
-    # if return type is `Bottom`-annotated for this frame, this may mean some `throw`(s)
-    # aren't caught by at any level and get propagated here, or there're other critical
-    # inference error found
+    # report `throw` calls "appropriately";
+    # if the final return type here is `Bottom`-annotated, it _may_ mean the control flow
+    # didn't catch some of the `ExceptionReport`s stashed within `interp.exception_reports`,
     if get_result(frame) === Bottom
-        # let's report report `ExceptionReport`s only if there is no other error reported
-        # TODO: change behaviour according to severity of collected report, e.g. don't take
-        # into account `NativeRemark`s, etc
-        isempty(interp.reports) && append!(interp.reports, last.(interp.exception_reports))
-
-        # # just append collected `ExceptionReport`s
-        # for (i, (idx, report)) in enumerate(interp.exception_reports)
-        #     insert!(interp.reports, idx + i, report)
-        # end
+        if !isempty(interp.exception_reports)
+            append!(interp.reports, interp.exception_reports)
+        end
     end
 
     return interp, frame
@@ -448,23 +458,6 @@ function report_call(@nospecialize(f), @nospecialize(types = Tuple{}); kwargs...
 end
 
 print_reports(args...; kwargs...) = print_reports(stdout::IO, args...; kwargs...)
-
-# for benchmarking JET analysis performance from call expression
-macro benchmark_call(ex0...)
-    call_ex = last(ex0)
-    profile_ex = InteractiveUtils.gen_call_with_extracted_types_and_kwargs(__module__, :profile_call, ex0)
-    print_header_ex = quote
-        printstyled("[ Benchmark for "; color = :blue)
-        printstyled($(QuoteNode(call_ex)); color = TYPE_ANNOTATION_COLOR)
-        print(": ")
-    end
-    return quote let
-        $(print_header_ex); println("start analysis ...")
-        $(print_header_ex); @time interp, frame = $(profile_ex)
-        $(print_header_ex); println("$(length(interp.reports)) errors reported")
-        interp, frame
-    end end
-end
 
 # for inspection
 macro lwr(ex) QuoteNode(lower(__module__, ex)) end

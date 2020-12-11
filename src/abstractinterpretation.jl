@@ -26,7 +26,7 @@ end
     end
     push_inithook!(overload_abstract_call_gf_by_type!)
 
-the aim of this overloads are:
+the aims of this overload are:
 1. report `NoMethodErrorReport` on empty method signature matching
 2. keep inference on non-concrete call sites in toplevel frame created by [`virtual_process!`](@ref)
 3. don't bail out even after the current return type grows up to `Any` and collect as much
@@ -35,6 +35,8 @@ the aim of this overloads are:
 4. force constant prop' even if the inference result can't be improved anymore when `rettype`
    is already `Const`; this is because constant prop' can still produce more "correct"
    analysis by throwing away the error reports in the callee frames
+5. always add backedges (even if a new method can't refine the return type grew up to`Any`),
+   because a new method always may change the JET analysis result
 """
 function overload_abstract_call_gf_by_type!()
 
@@ -71,17 +73,14 @@ function abstract_call_gf_by_type(interp::$(JETInterpreter), @nospecialize(f), a
                 add_remark!(interp, sv, "For one of the union split cases, too many methods matched")
                 return CallMeta(Any, false)
             end
-            #=== abstract_call_gf_by_type monkey-patch 1-1 start ===#
-            #= keep original code
-            push!(infos, MethodMatchInfo(matches))
-            =#
+            #=== abstract_call_gf_by_type patch point 1-1 start ===#
             info = MethodMatchInfo(matches)
             if $(is_empty_match)(info)
                 # report `NoMethodErrorReport` for union-split signatures
-                $(add_remark!)(interp, sv, $(NoMethodErrorReport)(interp, sv, true, atype))
+                $(report!)(interp, $(NoMethodErrorReport)(interp, sv, true, atype))
             end
             push!(infos, info)
-            #=== abstract_call_gf_by_type monkey-patch 1-1 end ===#
+            #=== abstract_call_gf_by_type patch point 1-1 end ===#
             append!(applicable, matches)
             valid_worlds = intersect(valid_worlds, matches.valid_worlds)
             thisfullmatch = _any(match->(match::MethodMatch).fully_covers, matches)
@@ -116,12 +115,12 @@ function abstract_call_gf_by_type(interp::$(JETInterpreter), @nospecialize(f), a
         push!(mts, mt)
         push!(fullmatch, _any(match->(match::MethodMatch).fully_covers, matches))
         info = MethodMatchInfo(matches)
-        #=== abstract_call_gf_by_type monkey-patch 1-2 start ===#
+        #=== abstract_call_gf_by_type patch point 1-2 start ===#
         if $(is_empty_match)(info)
             # report `NoMethodErrorReport` for this call signature
-            $(add_remark!)(interp, sv, $(NoMethodErrorReport)(interp, sv, false, atype))
+            $(report!)(interp, $(NoMethodErrorReport)(interp, sv, false, atype))
         end
-        #=== abstract_call_gf_by_type monkey-patch 1-2 end ===#
+        #=== abstract_call_gf_by_type patch point 1-2 end ===#
         applicable = matches.matches
         valid_worlds = matches.valid_worlds
     end
@@ -144,20 +143,17 @@ function abstract_call_gf_by_type(interp::$(JETInterpreter), @nospecialize(f), a
         end
     end
 
-    #=== abstract_call_gf_by_type monkey-patch 4-1 start ===#
+    #=== abstract_call_gf_by_type patch point 4-1 start ===#
     nreports = length(interp.reports)
-    #=== abstract_call_gf_by_type monkey-patch 4-1 end ===#
+    #=== abstract_call_gf_by_type patch point 4-1 end ===#
 
     for i in 1:napplicable
         match = applicable[i]::MethodMatch
         method = match.method
         sig = match.spec_types
-        #=== abstract_call_gf_by_type monkey-patch 2 start ===#
-        #= keep original code
-        if istoplevel && !isdispatchtuple(sig)
-        =#
+        #=== abstract_call_gf_by_type patch point 2 start ===#
         if istoplevel && !isdispatchtuple(sig) && !$(istoplevel)(sv) # keep going for "our" toplevel frame
-        #=== abstract_call_gf_by_type monkey-patch 2 end ===#
+        #=== abstract_call_gf_by_type patch point 2 end ===#
             # only infer concrete call sites in top-level expressions
             add_remark!(interp, sv, "Refusing to infer non-concrete call site in top-level expression")
             rettype = Any
@@ -177,12 +173,9 @@ function abstract_call_gf_by_type(interp::$(JETInterpreter), @nospecialize(f), a
                 end
                 edgecycle |= edgecycle1::Bool
                 this_rt = tmerge(this_rt, rt)
-                #=== abstract_call_gf_by_type monkey-patch 3-1 start ===#
-                #= keep original code
-                this_rt === Any && break
-                =#
+                #=== abstract_call_gf_by_type patch point 3-1 start ===#
                 # this_rt === Any && break # keep going and collect as much error reports as possible
-                #=== abstract_call_gf_by_type monkey-patch 3-1 end ===#
+                #=== abstract_call_gf_by_type patch point 3-1 end ===#
             end
         else
             this_rt, edgecycle1, edge = abstract_call_method(interp, method, sig, match.sparams, multiple_matches, sv)
@@ -200,28 +193,23 @@ function abstract_call_gf_by_type(interp::$(JETInterpreter), @nospecialize(f), a
         end
         seen += 1
         rettype = tmerge(rettype, this_rt)
-        #=== abstract_call_gf_by_type monkey-patch 3-2 start ===#
-        #= keep original code
-        rettype === Any && break
-        =#
+        #=== abstract_call_gf_by_type patch point 3-2 start ===#
         # rettype === Any && break # keep going and collect as much error reports as possible
-        #=== abstract_call_gf_by_type monkey-patch 3-2 end ===#
+        #=== abstract_call_gf_by_type patch point 3-2 end ===#
     end
 
-    #=== abstract_call_gf_by_type monkey-patch 4-2 start ===#
+    #=== abstract_call_gf_by_type patch point 4-2 start ===#
     # check if constant propagation can improve analysis by throwing away possibly false positive reports
     has_been_reported = (length(interp.reports) - nreports) > 0
-    #=== abstract_call_gf_by_type monkey-patch 4-2 end ===#
+    #=== abstract_call_gf_by_type patch point 4-2 end ===#
 
     # try constant propagation if only 1 method is inferred to non-Bottom
     # this is in preparation for inlining, or improving the return result
     is_unused = call_result_unused(sv)
-    #=== abstract_call_gf_by_type monkey-patch 4-3 start ===#
-    #= keep original code
-    if nonbot > 0 && seen == napplicable && (!edgecycle || !is_unused) && isa(rettype, Type) && InferenceParams(interp).ipo_constant_propagation
-    =#
-    if nonbot > 0 && seen == napplicable && (!edgecycle || !is_unused) && (isa(rettype, Type) || has_been_reported) && InferenceParams(interp).ipo_constant_propagation
-    #=== abstract_call_gf_by_type monkey-patch 4-3 end ===#
+    #=== abstract_call_gf_by_type patch point 4-3 start ===#
+    if nonbot > 0 && seen == napplicable && (!edgecycle || !is_unused) &&
+            (is_improvable(rettype) || has_been_reported) && InferenceParams(interp).ipo_constant_propagation
+    #=== abstract_call_gf_by_type patch point 4-3 end ===#
         # if there's a possibility we could constant-propagate a better result
         # (hopefully without doing too much work), try to do that now
         # TODO: it feels like this could be better integrated into abstract_call_method / typeinf_edge
@@ -241,7 +229,10 @@ function abstract_call_gf_by_type(interp::$(JETInterpreter), @nospecialize(f), a
         # and avoid keeping track of a more complex result type.
         rettype = Any
     end
-    if !(rettype === Any) # adding a new method couldn't refine (widen) this type
+    #=== abstract_call_gf_by_type patch point 5 start ===#
+    # a new method may refine analysis, so we always add backedges
+    if true # !(rettype === Any) # adding a new method couldn't refine (widen) this type
+    #=== abstract_call_gf_by_type patch point 5 end ===#
         for edge in edges
             add_backedge!(edge::MethodInstance, sv)
         end
@@ -268,6 +259,140 @@ function is_empty_match(info)
     isa(res, MethodLookupResult) || return false # when does this happen ?
     return isempty(res.matches)
 end
+
+"""
+    function overload_abstract_call_method_with_const_args!()
+        ...
+    end
+    push_inithook!(overload_abstract_call_method_with_const_args!)
+
+the aim of this overloads is:
+1. force constant prop' even if the inference result can't be improved anymore when `rettype`
+   is already `Const`; this is because constant prop' can still produce more "correct"
+   analysis by throwing away the error reports in the callee frames
+2. when local cache for constant analysis is hit, reconstruct the "after-constant-prop' analysis"
+   state using `JETInterpreter`'s local report caches
+"""
+function overload_abstract_call_method_with_const_args!()
+
+# %% for easier interactive update of abstract_call_method_with_const_args
+Core.eval(CC, quote
+
+function abstract_call_method_with_const_args(interp::$(JETInterpreter), @nospecialize(rettype), @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch, sv::InferenceState, edgecycle::Bool)
+    method = match.method
+    nargs::Int = method.nargs
+    method.isva && (nargs -= 1)
+    length(argtypes) >= nargs || return Any
+    haveconst = false
+    allconst = true
+    # see if any or all of the arguments are constant and propagating constants may be worthwhile
+    for a in argtypes
+        a = widenconditional(a)
+        if allconst && !isa(a, Const) && !isconstType(a) && !isa(a, PartialStruct)
+            allconst = false
+        end
+        if !haveconst && has_nontrivial_const_info(a) && const_prop_profitable(a)
+            haveconst = true
+        end
+        if haveconst && !allconst
+            break
+        end
+    end
+    #=== abstract_call_method_with_const_args patch point 1 start ===#
+    # force constant propagation even if it doesn't improve return type;
+    # constant prop' may improve report accuracy
+    haveconst || #= improvable_via_constant_propagation(rettype) || =# return Any
+    #=== abstract_call_method_with_const_args patch point 1 end ===#
+    if nargs > 1
+        if istopfunction(f, :getindex) || istopfunction(f, :setindex!)
+            arrty = argtypes[2]
+            # don't propagate constant index into indexing of non-constant array
+            if arrty isa Type && arrty <: AbstractArray && !issingletontype(arrty)
+                return Any
+            elseif arrty ⊑ Array
+                return Any
+            end
+        elseif istopfunction(f, :iterate)
+            itrty = argtypes[2]
+            if itrty ⊑ Array
+                return Any
+            end
+        end
+    end
+    if !allconst && (istopfunction(f, :+) || istopfunction(f, :-) || istopfunction(f, :*) ||
+                     istopfunction(f, :(==)) || istopfunction(f, :!=) ||
+                     istopfunction(f, :<=) || istopfunction(f, :>=) || istopfunction(f, :<) || istopfunction(f, :>) ||
+                     istopfunction(f, :<<) || istopfunction(f, :>>))
+        return Any
+    end
+    force_inference = allconst || InferenceParams(interp).aggressive_constant_propagation
+    if istopfunction(f, :getproperty) || istopfunction(f, :setproperty!)
+        force_inference = true
+    end
+    mi = specialize_method(match, !force_inference)
+    mi === nothing && return Any
+    mi = mi::MethodInstance
+    # decide if it's likely to be worthwhile
+    if !force_inference && !const_prop_heuristic(interp, method, mi)
+        return Any
+    end
+    inf_cache = get_inference_cache(interp)
+    inf_result = cache_lookup(mi, argtypes, inf_cache)
+    if inf_result === nothing
+        if edgecycle
+            # if there might be a cycle, check to make sure we don't end up
+            # calling ourselves here.
+            infstate = sv
+            cyclei = 0
+            while !(infstate === nothing)
+                if method === infstate.linfo.def && any(infstate.result.overridden_by_const)
+                    return Any
+                end
+                if cyclei < length(infstate.callers_in_cycle)
+                    cyclei += 1
+                    infstate = infstate.callers_in_cycle[cyclei]
+                else
+                    cyclei = 0
+                    infstate = infstate.parent
+                end
+            end
+        end
+        inf_result = InferenceResult(mi, argtypes)
+        frame = InferenceState(inf_result, #=cache=#false, interp)
+        frame === nothing && return Any # this is probably a bad generated function (unsound), but just ignore it
+        frame.limited = true
+        frame.parent = sv
+        push!(inf_cache, inf_result)
+        typeinf(interp, frame) || return Any
+    #=== abstract_call_method_with_const_args patch point 2 start ===#
+    else
+        # local cache for this constant analysis is hit
+        inf_result = inf_result::InferenceResult
+        if !isa(inf_result.result, InferenceState)
+            # corresponds to report throw away logic in `_typeinf(interp::JETInterpreter, frame::InferenceState)`
+            $(filter!)(r->$(!is_lineage)(r.lineage, sv, inf_result.linfo), interp.reports)
+
+            local_cache = $(get)(interp.cache, argtypes, nothing)
+            if isa(local_cache, $(Vector{InferenceErrorReportCache}))
+                $(foreach)(local_cache) do cached
+                    $(restore_cached_report!)(cached, interp, sv)
+                end
+            end
+        end
+    #=== abstract_call_method_with_const_args patch point 2 end ===#
+    end
+    result = inf_result.result
+    # if constant inference hits a cycle, just bail out
+    isa(result, InferenceState) && return Any
+    add_backedge!(inf_result.linfo, sv)
+    return result
+end
+
+end) # Core.eval(CC, quote
+# %% for easier interactive update of abstract_call_method_with_const_args
+
+end # function overload_abstract_call_method_with_const_args!()
+push_inithook!(overload_abstract_call_method_with_const_args!)
 
 function CC.abstract_eval_special_value(interp::JETInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
     ret = @invoke abstract_eval_special_value(interp::AbstractInterpreter, e, vtypes::VarTable, sv::InferenceState)
@@ -302,7 +427,7 @@ function CC.abstract_eval_special_value(interp::JETInterpreter, @nospecialize(e)
             end
         else
             # report access to undefined global variable
-            add_remark!(interp, sv, GlobalUndefVarErrorReport(interp, sv, mod, name))
+            report!(interp, GlobalUndefVarErrorReport(interp, sv, mod, name))
 
             # `ret` at this point should be annotated as `Any` by `NativeInterpreter`, and
             # we just pass it as is to collect as much error points as possible within this
@@ -325,7 +450,7 @@ function CC.abstract_eval_value(interp::JETInterpreter, @nospecialize(e), vtypes
     if isa(stmt, GotoIfNot)
         t = widenconst(ret)
         if t !== Bottom && !⊑(Bool, t)
-            add_remark!(interp, sv, NonBooleanCondErrorReport(interp, sv, t))
+            report!(interp, NonBooleanCondErrorReport(interp, sv, t))
             ret = Bottom
         end
     end
@@ -370,7 +495,7 @@ function set_virtual_globalvar!(interp, mod, name, @nospecialize(t), sv)
         if isa(val, VirtualGlobalVariable)
             t′ = val.t
             if val.iscd && widenconst(t′) !== widenconst(t)
-                add_remark!(interp, sv, InvalidConstantRedefinition(interp, sv, mod, name, widenconst(t′), widenconst(t)))
+                report!(interp, InvalidConstantRedefinition(interp, sv, mod, name, widenconst(t′), widenconst(t)))
                 return
             end
 
@@ -381,7 +506,7 @@ function set_virtual_globalvar!(interp, mod, name, @nospecialize(t), sv)
             if isconst(mod, name)
                 t′ = typeof(val)
                 if t′ !== widenconst(t)
-                    add_remark!(interp, sv, InvalidConstantRedefinition(interp, sv, mod, name, t′, widenconst(t)))
+                    report!(interp, InvalidConstantRedefinition(interp, sv, mod, name, t′, widenconst(t)))
                     return
                 end
             end

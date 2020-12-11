@@ -54,25 +54,7 @@ end
 # TODO: maybe we want to use https://github.com/aviatesk/Mixin.jl
 abstract type InferenceErrorReport end
 
-function Base.show(io::IO, report::T) where {T<:InferenceErrorReport}
-    print(io, T.name.name, '(')
-    for a in report.sig
-        _print_signature(io, a; annotate_types = true, bold = true)
-    end
-    print(io, ')')
-end
-Base.show(io::IO, ::MIME"application/prs.juno.inline", report::T) where {T<:InferenceErrorReport} =
-    return report
-
-const VirtualFrame = @NamedTuple begin
-    file::Symbol
-    line::Int
-    sig::Vector{Any}
-    linfo::MethodInstance
-end
-const VirtualStackTrace = Vector{VirtualFrame}
-
-# `InferenceErrorReport` interface
+# to help inference
 function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
     return if sym === :st
         getfield(er, sym)::VirtualStackTrace
@@ -87,10 +69,134 @@ function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
     end
 end
 
-const Lineage = IdSet{MethodInstance}
+function Base.show(io::IO, report::T) where {T<:InferenceErrorReport}
+    print(io, T.name.name, '(')
+    for a in report.sig
+        _print_signature(io, a; annotate_types = true, bold = true)
+    end
+    print(io, ')')
+end
+Base.show(io::IO, ::MIME"application/prs.juno.inline", report::T) where {T<:InferenceErrorReport} =
+    return report
+
+struct VirtualFrame
+    file::Symbol
+    line::Int
+    sig::Vector{Any}
+    linfo::MethodInstance
+end
+function Base.hash(vf::VirtualFrame, h::UInt)
+    h = @static UInt === UInt64 ? 0x140ec41731a857a7 : 0x6e6397bc
+    h = hash(vf.file, h)
+    h = hash(vf.line, h)
+    h = hash(vf.sig, h)
+    h = hash(vf.linfo, h)
+    return h
+end
+function Base.:(==)(vf1::VirtualFrame, vf2::VirtualFrame)
+    return vf1.file === vf2.file &&
+           vf1.line == vf2.line &&
+           vf1.sig == vf2.sig &&
+           vf1.linfo == vf2.linfo
+end
+
+# `InferenceErrorReport` is supposed to keep its virtual stack trace in order of
+# "from entry call site to error point"
+const VirtualStackTrace = Vector{VirtualFrame}
+
+struct LineageKey
+    file::Symbol
+    line::Int
+    linfo::MethodInstance
+end
+const Lineage = Set{LineageKey}
+function Base.hash(lk::LineageKey, h::UInt)
+    h = @static UInt === UInt64 ? 0x895379e76333a606 : 0x3879844d
+    h = hash(lk.file, h)
+    h = hash(lk.line, h)
+    h = hash(lk.linfo, h)
+    return h
+end
+function Base.:(==)(lk1::LineageKey, lk2::LineageKey)
+    return lk1.file === lk2.file &&
+           lk1.line == lk2.line &&
+           lk1.linfo == lk2.linfo
+end
+
+get_lineage_key(frame::InferenceState) = LineageKey(get_file_line(frame)..., frame.linfo)
+get_lineage_key(vf::VirtualFrame)      = LineageKey(vf.file, vf.line, vf.linfo)
+
+function is_lineage(lineage::Lineage, parent::InferenceState, linfo::MethodInstance)
+    # check if current `linfo` is in `lineage`
+    # NOTE: we can't use `get_lineage_key` for this `linfo`, just because we don't analyze
+    # on cached frames and thus no appropriate lineage key (i.e. program counter) exists
+    for lk in lineage
+        lk.linfo === linfo && return is_lineage(lineage, parent)
+    end
+    return false
+end
+function is_lineage(lineage::Lineage, frame::InferenceState)
+    get_lineage_key(frame) in lineage || return false
+    return is_lineage(lineage, frame.parent)
+end
+is_lineage(::Lineage, ::Nothing) = true
+
+# `ViewedVirtualStackTrace` is for `InferenceErrorReportCache` and only keeps a part of the
+# stack trace of the original `InferenceErrorReport`, in the order of "from cached frame to error point"
+const ViewedVirtualStackTrace = typeof(view(VirtualStackTrace(), 1:0))
+
+struct InferenceErrorReportCache
+    T::Type{<:InferenceErrorReport}
+    st::ViewedVirtualStackTrace
+    msg::String
+    sig::Vector{Any}
+    spec_args::NTuple{N,Any} where N
+end
+
+function cache_report!(report::T, linfo, cache) where {T<:InferenceErrorReport}
+    st = report.st
+    i = findfirst(vf->vf.linfo==linfo, st)
+    # sometimes `linfo` can't be found within the `report.st` chain; e.g. frames for inner
+    # constructor methods doesn't seem to be tracked in the `(frame::InferenceState).parent`
+    # chain so that there is no `MethodInstance` within `report.st` for such a frame;
+    # XXX: reports from these frames might need to be cached as well rather than just giving up
+    i === nothing && return
+    st = view(st, i:length(st))
+    new = InferenceErrorReportCache(T, st, report.msg, report.sig, spec_args(report))
+    push!(cache, new)
+end
+
+function restore_cached_report!(cache::InferenceErrorReportCache,
+                                interp#=::JETInterpreter=#,
+                                caller::InferenceState,
+                                )
+    report = restore_cached_report(cache, caller)
+    push!(isa(report, ExceptionReport) ? interp.exception_reports : interp.reports, report)
+    return
+end
+
+function restore_cached_report(cache::InferenceErrorReportCache,
+                               caller::InferenceState,
+                               )
+    T = cache.T
+    msg = cache.msg
+    sig = cache.sig
+    st = collect(cache.st)
+    spec_args = cache.spec_args
+    lineage = Lineage(get_lineage_key(vf) for vf in st)
+
+    prewalk_inf_frame(caller) do frame::InferenceState
+        linfo = frame.linfo
+        vf = get_virtual_frame(frame)
+        pushfirst!(st, vf)
+        push!(lineage, get_lineage_key(vf))
+    end
+
+    return T(st, msg, sig, lineage, spec_args)
+end
 
 macro reportdef(ex, kwargs...)
-    T = first(ex.args)
+    T = esc(first(ex.args))
     args = map(ex.args) do x
         # unwrap @nospecialize
         if isexpr(x, :macrocall) && first(x.args) === Symbol("@nospecialize")
@@ -111,43 +217,36 @@ macro reportdef(ex, kwargs...)
 
     args′ = strip_type_decls.(args)
     spec_args′ = strip_type_decls.(spec_args)
-    constructor_body = Expr(:block, __source__, quote
-        interp = $(args[2])
-        sv = $(args[3])
+    interp_constructor = Expr(:function, ex, Expr(:block, __source__, quote
+        interp = $(args′[2])
+        sv = $(args′[3])
 
         msg = get_msg(#= T, interp, sv, ... =# $(args′...))
         sig = get_sig(#= T, interp, sv, ... =# $(args′...))
         st = VirtualFrame[]
         lineage = Lineage()
 
-        id = get_id(interp)
-        # COMBAK: is this branching really needed ?
-        # this frame may not introduce errors with the other constants, but this frame is
-        # probably already pushed into `ERRORNEOUS_LINFOS`
-        cache_erroneous_linfo! = is_constant_propagated(sv) ?
-                                 (linfo -> return) :
-                                 (linfo -> istoplevel(linfo) || (ERRONEOUS_LINFOS[linfo] = id))
-
-        if $(track_from_frame)
+        @static $(track_from_frame) && let
             # when report is constructed _after_ the inference on `sv::InferenceState` has been done,
             # collect location information from `sv.linfo` and start traversal from `sv.parent`
             linfo = sv.linfo
-            push!(st, get_virtual_frame(linfo))
-            push!(lineage, linfo)
-            cache_erroneous_linfo!(linfo)
+            vf = get_virtual_frame(linfo)
+            push!(st, vf)
+            push!(lineage, get_lineage_key(vf))
             sv = sv.parent
         end
 
         prewalk_inf_frame(sv) do frame::InferenceState
-            linfo = frame.linfo
-            push!(st, get_virtual_frame(frame))
-            push!(lineage, linfo)
-            cache_erroneous_linfo!(linfo)
+            vf = get_virtual_frame(frame)
+            pushfirst!(st, vf)
+            push!(lineage, get_lineage_key(vf))
         end
 
-        return new(reverse(st), msg, sig, lineage, $(spec_args′...))
-    end)
-    constructor_ex = Expr(:function, ex, constructor_body)
+        return new(st, msg, sig, lineage, $(spec_args′...))
+    end))
+
+    spec_args_unescaped = strip_escape.(spec_args′)
+    spec_args_types = extract_type_decls.(spec_args)
 
     return Expr(:block, __source__, quote
         struct $(T) <: InferenceErrorReport
@@ -157,8 +256,23 @@ macro reportdef(ex, kwargs...)
             lineage::Lineage
             $(spec_args...)
 
-            # inner constructor
-            $(constructor_ex)
+            # constructor from abstract interpretation process by `JETInterpreter`
+            $(interp_constructor)
+
+            # constructor from cache
+            function $(T)(st::VirtualStackTrace,
+                          msg::AbstractString,
+                          sig::AbstractVector,
+                          lineage::Lineage,
+                          @nospecialize(spec_args::NTuple{N,Any} where N),
+                          )
+                return new(st, msg, sig, lineage, $(esc(:(spec_args...)))) # `esc` is needed because `@nospecialize` escapes its argument anyway
+            end
+        end
+
+        function $(esc(:spec_args))(report::$(T))
+            gn = (getproperty(report, spec_arg) for spec_arg in ($(QuoteNode.(spec_args_unescaped)...),))
+            return (gn...,)::Tuple{$(spec_args_types...)}
         end
     end)
 end
@@ -167,6 +281,9 @@ function strip_type_decls(x)
     isexpr(x, :escape) && return Expr(:escape, strip_type_decls(first(x.args))) # keep escape
     return isexpr(x, :(::)) ? first(x.args) : x
 end
+
+strip_escape(x) = isexpr(x, :escape) ? first(x.args) : x
+extract_type_decls(x) = isexpr(x, :(::)) ? last(x.args) : Any
 
 @reportdef NoMethodErrorReport(interp, sv, unionsplit::Bool, @nospecialize(atype::Type))
 
@@ -188,37 +305,39 @@ end
 Represents general `Exception`s traced during inference. They are reported only when there's
   "inevitable" [`throw`](@ref) calls found by inter-frame analysis.
 """
+:(ExceptionReport)
 @reportdef ExceptionReport(interp, sv, throw_calls::Vector{Any}) track_from_frame = true
 
 """
     NativeRemark <: InferenceErrorReport
 
 This special `InferenceErrorReport` is just for wrapping remarks from `NativeInterpreter`.
-Ideally all of them should be covered by the other `InferenceErrorReport`s.
+
+!!! note
+    Currently JET.jl doesn't make any use of `NativeRemark`.
 """
+:(NativeRemark)
 @reportdef NativeRemark(interp, sv, s::String)
 
 function get_virtual_frame(loc::Union{InferenceState,MethodInstance})::VirtualFrame
     sig = get_sig(loc)
     file, line = get_file_line(loc)
     linfo = isa(loc, InferenceState) ? loc.linfo : loc
-    return (; file, line, sig, linfo)
+    return VirtualFrame(file, line, sig, linfo)
 end
-
-dummy_cacher(args...) = return
 
 get_file_line(frame::InferenceState) = get_file_line(get_cur_linfo(frame))
 get_file_line(linfo::LineInfoNode)   = linfo.file, linfo.line
 # this location is not exact, but this is whay we know at best
-function get_file_line(linfo::MethodInstance)
+function get_file_line(linfo::MethodInstance)::Tuple{Symbol,Int}
     def = linfo.def
 
-    isa(def, Method) && return linfo.def.file, linfo.def.line
+    isa(def, Method) && return def.file, def.line
 
     # toplevel
     src = linfo.uninferred::CodeInfo
-    file = first(unique(map(lin->lin.file, src.linetable)))
-    line = minimum(lin->lin.line, src.linetable)
+    file = first(unique(map(lin->lin.file, src.linetable)))::Symbol
+    line = minimum(lin->lin.line, src.linetable)::Int
     return file, line
 end
 
@@ -366,6 +485,6 @@ get_msg(::Type{NonBooleanCondErrorReport}, interp, sv, @nospecialize(t)) =
 get_msg(::Type{InvalidConstantRedefinition}, interp, sv, mod, name, @nospecialize(t′), @nospecialize(t)) =
     "invalid redefinition of constant $(mod).$(name) (from $(t′) to $(t))"
 get_msg(::Type{ExceptionReport}, interp, sv, throw_blocks) = isone(length(throw_blocks)) ?
-    "will throw" :
-    "will throw either of"
+    "may throw" :
+    "may throw either of"
 get_msg(::Type{NativeRemark}, interp, sv, s) = s

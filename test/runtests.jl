@@ -1,10 +1,11 @@
+# FIXME: patches to improve inferrability of Base methods
+include("patches.jl")
+
 # test utilities are extracted into a separate file for easier interactive testing from REPL
 # i.e. julia-dev -i test/interactive_utils.jl
 include("interactive_utils.jl")
 
-# for benchmarking or debugging JET analysis
-# TODO: setup proper benchmarks, separate them from the test suite
-include("benchmark.jl")
+include(normpath(@__DIR__, "..", "benchmark", "benchmark_utils.jl"))
 
 # stuff used across tests
 using Test
@@ -42,13 +43,17 @@ test_sum_over_string(interp::JETInterpreter) = test_sum_over_string(interp.repor
         include("test_tfuncs.jl")
     end
 
-    @testset "jetcache.jl" begin
-        include("test_jetcache.jl")
+    @testset "caching" begin
+        include("test_caching.jl")
     end
 
     # tests with Windows-paths is just an hell
     @static Sys.iswindows() || @testset "print.jl" begin
         include("test_print.jl")
+    end
+
+    @testset "performance" begin
+        include("test_performance.jl")
     end
 end
 

@@ -1,52 +1,62 @@
-# code cache interface
-# --------------------
+# XXX: additional backedges for JET analysis
+# currently invalidation of JET cache just relies on invalidation of native code cache, i.e.
+# it happens only when there is a backedge from erroneous frame, which is not always true
+# e.g. native interpreter doesn't add backedge when the return type is `Any`, but invalidation
+# may still change the result of JET analysis
+# so we may need to add additional backedges for frames from which some errors are reported
 
-CC.code_cache(interp::JETInterpreter) = JETCache(interp, code_cache(interp.native))
+# we just overload `cache_result!` and so we don't need to set up our own cache
+CC.code_cache(interp::JETInterpreter) = code_cache(interp.native)
 
-struct JETCache{NativeCache}
-    interp::JETInterpreter
-    native::NativeCache
-    JETCache(interp::JETInterpreter, native::NativeCache) where {NativeCache} =
-        new{NativeCache}(interp, native)
+# TODO better to use `overload_cache_result!!` hack ?
+function CC.cache_result!(interp::JETInterpreter, result::InferenceResult, valid_worlds::WorldRange)
+    linfo = result.linfo
+
+    # check if the existing linfo metadata is also sufficient to describe the current inference result
+    # to decide if it is worth caching this
+    already_inferred = CC.already_inferred_quick_test(interp, linfo) # always false
+    if !already_inferred && CC.haskey(WorldView(code_cache(interp), valid_worlds), linfo)
+        already_inferred = true
+    end
+
+    # TODO: also don't store inferred code if we've previously decided to interpret this function
+    if !already_inferred
+        inferred_result = CC.transform_result_for_cache(interp, linfo, result.src)
+        CC.setindex!(code_cache(interp), CodeInstance(result, inferred_result, valid_worlds), linfo)
+    end
+    unlock_mi_inference(interp, linfo)
+
+    @static :backedges ∉ fieldnames(MethodInstance) && return nothing
+
+    # this function is called from `_typeinf(interp::AbstractInterpreter, frame::InferenceState)`
+    # and so at this point `linfo` is not registered in `ANALYZED_LINFOS`
+    # (unless inference happens multiple times for this frame)
+    if linfo ∉ ANALYZED_LINFOS
+        add_jet_callback!(linfo)
+    end
+
+    return nothing
 end
-CC.WorldView(tpc::JETCache, wr::WorldRange) = JETCache(tpc.interp, WorldView(tpc.native, wr))
-CC.WorldView(tpc::JETCache, args...) = WorldView(tpc, WorldRange(args...))
 
-CC.haskey(tpc::JETCache, mi::MethodInstance) = CC.haskey(tpc.native, mi)
-
-const ANALYZED_LINFOS   = IdSet{MethodInstance}()         # keeps `MethodInstances` analyzed by JET
-const ERRONEOUS_LINFOS = IdDict{MethodInstance,Symbol}() # keeps `MethodInstances` analyzed as "erroneous" by JET
-
-function CC.get(tpc::JETCache, mi::MethodInstance, default)
-    # if we haven't analyzed this linfo, just invalidate native code cache and force analysis by JET
-    if mi ∉ ANALYZED_LINFOS
-        push!(ANALYZED_LINFOS, mi)
-        return default
-    end
-
-    ret = CC.get(tpc.native, mi, default)
-
-    # cache isn't really found
-    if ret === default
-        return ret
-    end
-
-    # cache hit, now we need to invalidate the cache lookup if this `mi` has been profiled
-    # as erroneous by JET analysis; otherwise the error reports that can occur from this
-    # frame will just be ignored
-    force_inference = false
-
-    if haskey(ERRONEOUS_LINFOS, mi)
-        # don't force re-inference for frames from the same inference process;
-        # FIXME: this is critical for profiling performance, but seems to lead to lots of false positives ...
-        if ERRONEOUS_LINFOS[mi] !== get_id(tpc.interp)
-            force_inference = true
+function add_jet_callback!(linfo)
+    if !isdefined(linfo, :callbacks)
+        linfo.callbacks = Any[invalidate_jet_cache!]
+    else
+        if !any(cb->cb!==invalidate_jet_cache!, linfo.callbacks)
+            push!(linfo.callbacks, invalidate_jet_cache!)
         end
     end
-
-    return force_inference ? default : ret
 end
 
-CC.getindex(tpc::JETCache, mi::MethodInstance) = CC.getindex(tpc.native, mi)
+function invalidate_jet_cache!(replaced, max_world, depth = 0)
+    replaced ∉ ANALYZED_LINFOS && return
+    delete!(ANALYZED_LINFOS, replaced)
+    delete!(JET_GLOBAL_CACHE, replaced)
 
-CC.setindex!(tpc::JETCache, ci::CodeInstance, mi::MethodInstance) = CC.setindex!(tpc.native, ci, mi)
+    if isdefined(replaced, :backedges)
+        for mi in replaced.backedges
+            invalidate_jet_cache!(mi, max_world, depth+1)
+        end
+    end
+    return nothing
+end

@@ -1,106 +1,109 @@
 diff --git a/patches/abstract_call_gf_by_type.jl b/patches/abstract_call_gf_by_type.jl
-index 6cf261d..5805ea3 100644
+index d99f5f3..96cfa7e 100644
 --- a/patches/abstract_call_gf_by_type.jl
 +++ b/patches/abstract_call_gf_by_type.jl
 @@ -1,6 +1,6 @@
- # https://github.com/JuliaLang/julia/blob/b166d0d15f616f4a025ac5905a115399cc932ddc/base/compiler/abstractinterpretation.jl#L20-L184
+ # https://github.com/JuliaLang/julia/blob/5e048f3e537387fd388a5360ce6163c8f7c61ccf/base/compiler/abstractinterpretation.jl#L31-L196
  
 -function abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f), argtypes::Vector{Any}, @nospecialize(atype), sv::InferenceState,
 +function abstract_call_gf_by_type(interp::$(JETInterpreter), @nospecialize(f), argtypes::Vector{Any}, @nospecialize(atype), sv::InferenceState,
                                    max_methods::Int = InferenceParams(interp).MAX_METHODS)
      if sv.params.unoptimize_throw_blocks && sv.currpc in sv.throw_blocks
          return CallMeta(Any, false)
-@@ -26,7 +26,17 @@ function abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f),
+@@ -26,7 +26,14 @@ function abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f),
                  add_remark!(interp, sv, "For one of the union split cases, too many methods matched")
                  return CallMeta(Any, false)
              end
-+            #=== abstract_call_gf_by_type monkey-patch 1-1 start ===#
-+            #= keep original code
-             push!(infos, MethodMatchInfo(matches))
-+            =#
+-            push!(infos, MethodMatchInfo(matches))
++            #=== abstract_call_gf_by_type patch point 1-1 start ===#
 +            info = MethodMatchInfo(matches)
 +            if $(is_empty_match)(info)
 +                # report `NoMethodErrorReport` for union-split signatures
-+                $(add_remark!)(interp, sv, $(NoMethodErrorReport)(interp, sv, true, atype))
++                $(report!)(interp, $(NoMethodErrorReport)(interp, sv, true, atype))
 +            end
 +            push!(infos, info)
-+            #=== abstract_call_gf_by_type monkey-patch 1-1 end ===#
++            #=== abstract_call_gf_by_type patch point 1-1 end ===#
              append!(applicable, matches)
              valid_worlds = intersect(valid_worlds, matches.valid_worlds)
              thisfullmatch = _any(match->(match::MethodMatch).fully_covers, matches)
-@@ -61,6 +71,12 @@ function abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f),
+@@ -61,6 +68,12 @@ function abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f),
          push!(mts, mt)
          push!(fullmatch, _any(match->(match::MethodMatch).fully_covers, matches))
          info = MethodMatchInfo(matches)
-+        #=== abstract_call_gf_by_type monkey-patch 1-2 start ===#
++        #=== abstract_call_gf_by_type patch point 1-2 start ===#
 +        if $(is_empty_match)(info)
 +            # report `NoMethodErrorReport` for this call signature
-+            $(add_remark!)(interp, sv, $(NoMethodErrorReport)(interp, sv, false, atype))
++            $(report!)(interp, $(NoMethodErrorReport)(interp, sv, false, atype))
 +        end
-+        #=== abstract_call_gf_by_type monkey-patch 1-2 end ===#
++        #=== abstract_call_gf_by_type patch point 1-2 end ===#
          applicable = matches.matches
          valid_worlds = matches.valid_worlds
      end
-@@ -83,11 +99,20 @@ function abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f),
+@@ -83,11 +96,17 @@ function abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f),
          end
      end
  
-+    #=== abstract_call_gf_by_type monkey-patch 4-1 start ===#
++    #=== abstract_call_gf_by_type patch point 4-1 start ===#
 +    nreports = length(interp.reports)
-+    #=== abstract_call_gf_by_type monkey-patch 4-1 end ===#
++    #=== abstract_call_gf_by_type patch point 4-1 end ===#
 +
      for i in 1:napplicable
          match = applicable[i]::MethodMatch
          method = match.method
          sig = match.spec_types
-+        #=== abstract_call_gf_by_type monkey-patch 2 start ===#
-+        #= keep original code
-         if istoplevel && !isdispatchtuple(sig)
-+        =#
+-        if istoplevel && !isdispatchtuple(sig)
++        #=== abstract_call_gf_by_type patch point 2 start ===#
 +        if istoplevel && !isdispatchtuple(sig) && !$(istoplevel)(sv) # keep going for "our" toplevel frame
-+        #=== abstract_call_gf_by_type monkey-patch 2 end ===#
++        #=== abstract_call_gf_by_type patch point 2 end ===#
              # only infer concrete call sites in top-level expressions
              add_remark!(interp, sv, "Refusing to infer non-concrete call site in top-level expression")
              rettype = Any
-@@ -107,7 +132,12 @@ function abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f),
+@@ -107,7 +126,9 @@ function abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f),
                  end
                  edgecycle |= edgecycle1::Bool
                  this_rt = tmerge(this_rt, rt)
-+                #=== abstract_call_gf_by_type monkey-patch 3-1 start ===#
-+                #= keep original code
-                 this_rt === Any && break
-+                =#
+-                this_rt === Any && break
++                #=== abstract_call_gf_by_type patch point 3-1 start ===#
 +                # this_rt === Any && break # keep going and collect as much error reports as possible
-+                #=== abstract_call_gf_by_type monkey-patch 3-1 end ===#
++                #=== abstract_call_gf_by_type patch point 3-1 end ===#
              end
          else
              this_rt, edgecycle1, edge = abstract_call_method(interp, method, sig, match.sparams, multiple_matches, sv)
-@@ -125,12 +155,28 @@ function abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f),
+@@ -125,13 +146,23 @@ function abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f),
          end
          seen += 1
          rettype = tmerge(rettype, this_rt)
-+        #=== abstract_call_gf_by_type monkey-patch 3-2 start ===#
-+        #= keep original code
-         rettype === Any && break
-+        =#
+-        rettype === Any && break
++        #=== abstract_call_gf_by_type patch point 3-2 start ===#
 +        # rettype === Any && break # keep going and collect as much error reports as possible
-+        #=== abstract_call_gf_by_type monkey-patch 3-2 end ===#
++        #=== abstract_call_gf_by_type patch point 3-2 end ===#
      end
 +
-+    #=== abstract_call_gf_by_type monkey-patch 4-2 start ===#
++    #=== abstract_call_gf_by_type patch point 4-2 start ===#
 +    # check if constant propagation can improve analysis by throwing away possibly false positive reports
 +    has_been_reported = (length(interp.reports) - nreports) > 0
-+    #=== abstract_call_gf_by_type monkey-patch 4-2 end ===#
++    #=== abstract_call_gf_by_type patch point 4-2 end ===#
 +
      # try constant propagation if only 1 method is inferred to non-Bottom
      # this is in preparation for inlining, or improving the return result
      is_unused = call_result_unused(sv)
-+    #=== abstract_call_gf_by_type monkey-patch 4-3 start ===#
-+    #= keep original code
-     if nonbot > 0 && seen == napplicable && (!edgecycle || !is_unused) && isa(rettype, Type) && InferenceParams(interp).ipo_constant_propagation
-+    =#
-+    if nonbot > 0 && seen == napplicable && (!edgecycle || !is_unused) && (isa(rettype, Type) || has_been_reported) && InferenceParams(interp).ipo_constant_propagation
-+    #=== abstract_call_gf_by_type monkey-patch 4-3 end ===#
++    #=== abstract_call_gf_by_type patch point 4-3 start ===#
+     if nonbot > 0 && seen == napplicable && (!edgecycle || !is_unused) &&
+-            is_improvable(rettype) && InferenceParams(interp).ipo_constant_propagation
++            (is_improvable(rettype) || has_been_reported) && InferenceParams(interp).ipo_constant_propagation
++    #=== abstract_call_gf_by_type patch point 4-3 end ===#
          # if there's a possibility we could constant-propagate a better result
          # (hopefully without doing too much work), try to do that now
          # TODO: it feels like this could be better integrated into abstract_call_method / typeinf_edge
+@@ -151,7 +182,10 @@ function abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f),
+         # and avoid keeping track of a more complex result type.
+         rettype = Any
+     end
+-    if !(rettype === Any) # adding a new method couldn't refine (widen) this type
++    #=== abstract_call_gf_by_type patch point 5 start ===#
++    # a new method may refine analysis, so we always add backedges
++    if true # !(rettype === Any) # adding a new method couldn't refine (widen) this type
++    #=== abstract_call_gf_by_type patch point 5 end ===#
+         for edge in edges
+             add_backedge!(edge::MethodInstance, sv)
+         end
