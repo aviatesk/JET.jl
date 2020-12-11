@@ -10,23 +10,25 @@ function CC.builtin_tfunction(interp::JETInterpreter, @nospecialize(f), argtypes
         return ret
     elseif f === getfield
         # getfield is so common, let's special case it
-        obj, fld = argtypes
-        if isa(fld, Const)
-            name = fld.val
-            if isa(name, Symbol)
-                if isa(obj, Const) && (mod = obj.val; isa(mod, Module))
-                    if isdefined(mod, name)
-                        # TODO: add report pass here (for performance linting)
-                    else
-                        # report access to undefined global variable
-                        report!(interp, GlobalUndefVarErrorReport(interp, sv, mod, name))
-                        # return Bottom
+        if 2 ≤ length(argtypes) ≤ 3
+            obj, fld = argtypes
+            if isa(fld, Const)
+                name = fld.val
+                if isa(name, Symbol)
+                    if isa(obj, Const) && (mod = obj.val; isa(mod, Module))
+                        if isdefined(mod, name)
+                            # TODO: add report pass here (for performance linting)
+                        else
+                            # report access to undefined global variable
+                            report!(interp, GlobalUndefVarErrorReport(interp, sv, mod, name))
+                            # return Bottom
+                        end
+                    elseif ret === Bottom
+                        # general case when an error is detected by the native `getfield_tfunc`
+                        typ = widenconst(obj)
+                        report!(interp, NoFieldErrorReport(interp, sv, typ, name))
+                        return ret
                     end
-                elseif ret === Bottom
-                    # general case when an error is detected by the native `getfield_tfunc`
-                    typ = widenconst(obj)
-                    report!(interp, NoFieldErrorReport(interp, sv, typ, name))
-                    return ret
                 end
             end
         end

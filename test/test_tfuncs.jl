@@ -37,6 +37,17 @@
     end
 end
 
+@testset "malformed getfield" begin
+    let
+        # shouldn't error
+        interp, frame = profile_call((Any,)) do a
+            getfield(a)
+        end
+        @test length(interp.reports) == 1
+        @test first(interp.reports) isa InvalidBuiltinCallErrorReport
+    end
+end
+
 @testset "getfield with virtual global variable" begin
     # nested module access may not be resolved as `GlobalRef` and can be propagated into `getfield`
     let
