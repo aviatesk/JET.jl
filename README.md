@@ -151,7 +151,6 @@ No errors !
 
 ### TODOs
 
-- nicely integrate our analysis with Julia's code cache logic so that we don't recur into the already-profiled erroneous method instance
 - more accurate error reports in general
 - report performance pitfalls
 - documentation
