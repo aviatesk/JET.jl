@@ -58,6 +58,21 @@ function CC.builtin_tfunction(interp::JETInterpreter, @nospecialize(f), argtypes
         if ret === Union{Type, TypeVar}
             return Any
         end
+    elseif length(argtypes) == 2 && begin
+            f === Intrinsics.checked_sdiv_int ||
+            f === Intrinsics.checked_srem_int ||
+            f === Intrinsics.checked_udiv_int ||
+            f === Intrinsics.checked_urem_int
+        end
+        # report `DivideError`
+        a = argtypes[2]
+        t = widenconst(a)
+        if t <: Base.BitSigned64 || t <: Base.BitUnsigned64
+            if isa(a, Const) && a.val === zero(t)
+                report!(interp, DivideErrorReport(interp, sv))
+                return Bottom
+            end
+        end
     end
 
     if isa(ret, VirtualGlobalVariable)

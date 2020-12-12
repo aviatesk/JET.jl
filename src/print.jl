@@ -226,4 +226,5 @@ end
 # those don't need explicit signatures
 print_error_report(io, report::NoFieldErrorReport)       = printlnstyled(io, "│ ", report.msg; color = ERROR_COLOR)
 print_error_report(io, report::LocalUndefVarErrorReport) = printlnstyled(io, "│ ", report.msg; color = ERROR_COLOR)
+print_error_report(io, report::DivideErrorReport)        = printlnstyled(io, "│ ", report.msg; color = ERROR_COLOR)
 print_error_report(io, report::UndefKeywordErrorReport)  = printlnstyled(io, "│ ", report.msg; color = ERROR_COLOR)
