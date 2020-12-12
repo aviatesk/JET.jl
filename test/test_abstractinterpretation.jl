@@ -274,6 +274,23 @@ end
     end
 end
 
+@testset "UndefKeywordError" begin
+    let
+        m = gen_virtual_module()
+        interp, frame = Core.eval(m, quote
+            foo(a; #= can be undef =# kw) =  a, kw
+            $(profile_call)(foo, (Any,))
+        end)
+        @test !isempty(interp.reports)
+        @test any(interp.reports) do r
+            r isa UndefKeywordErrorReport
+            r.err.var === :kw
+        end
+        # there shouldn't be duplicated report for the `throw` call
+        @test !any(Fix2(isa, UncaughtExceptionReport), interp.reports)
+    end
+end
+
 @testset "report `throw` calls" begin
     # simplest case
     let

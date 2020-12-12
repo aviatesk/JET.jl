@@ -14,10 +14,12 @@ import JET:
     gen_virtual_module,
     ToplevelErrorReport,
     InferenceErrorReport,
+    ExceptionReport,
     print_reports
 
 for sym in Symbol.(last.(Base.Fix2(split, '.').(string.(vcat(subtypes(JET, ToplevelErrorReport),
                                                              subtypes(JET, InferenceErrorReport),
+                                                             subtypes(JET, ExceptionReport),
                                                              )))))
     Core.eval(@__MODULE__, :(import JET: $(sym)))
 end
