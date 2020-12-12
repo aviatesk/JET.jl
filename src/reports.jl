@@ -245,8 +245,34 @@ macro reportdef(ex, kwargs...)
         return new(st, msg, sig, lineage, $(spec_args′...))
     end))
 
-    spec_args_unescaped = strip_escape.(spec_args′)
-    spec_args_types = extract_type_decls.(spec_args)
+    spec_types = extract_type_decls.(spec_args)
+
+    cache_constructor_sig = :($(T)(st::VirtualStackTrace,
+                                   msg::AbstractString,
+                                   sig::AbstractVector,
+                                   lineage::Lineage,
+                                   @nospecialize(spec_args),
+                                   ))
+    cache_constructor_call = Expr(:call, :new, :st, :msg, :sig, :lineage)
+    for (i, spec_type) in enumerate(spec_types)
+        push!(cache_constructor_call.args,
+              :($(esc(:spec_args))[$(i)]::$(spec_type)), # `esc` is needed because `@nospecialize` escapes its argument anyway
+              )
+    end
+    cache_constructor = Expr(:function, cache_constructor_sig, Expr(:block,
+        :(return $(cache_constructor_call))
+    ))
+
+    spec_getter_sig = :($(esc(:spec_args))(report::$(T)))
+    spec_getter_tuple = Expr(:tuple)
+    for spec_arg in QuoteNode.(strip_escape.(spec_args′))
+        push!(spec_getter_tuple.args,
+              Expr(:call, GlobalRef(Base, :getproperty), :report, spec_arg),
+              )
+    end
+    spec_args_getter = Expr(:function, spec_getter_sig, Expr(:block, __source__,
+        :(return $(spec_getter_tuple)::Tuple{$(spec_types...)})
+    ))
 
     return Expr(:block, __source__, quote
         struct $(T) <: InferenceErrorReport
@@ -260,20 +286,10 @@ macro reportdef(ex, kwargs...)
             $(interp_constructor)
 
             # constructor from cache
-            function $(T)(st::VirtualStackTrace,
-                          msg::AbstractString,
-                          sig::AbstractVector,
-                          lineage::Lineage,
-                          @nospecialize(spec_args::NTuple{N,Any} where N),
-                          )
-                return new(st, msg, sig, lineage, $(esc(:(spec_args...)))) # `esc` is needed because `@nospecialize` escapes its argument anyway
-            end
+            $(cache_constructor)
         end
 
-        function $(esc(:spec_args))(report::$(T))
-            gn = (getproperty(report, spec_arg) for spec_arg in ($(QuoteNode.(spec_args_unescaped)...),))
-            return (gn...,)::Tuple{$(spec_args_types...)}
-        end
+        $(spec_args_getter)
     end)
 end
 
