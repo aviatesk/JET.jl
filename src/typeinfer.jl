@@ -84,29 +84,43 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
         end
     end
 
+    after = Set(interp.reports)
+    reports_for_this_linfo = setdiff(after, before)
+
     # report `throw` calls "appropriately"
     if get_result(frame) === Bottom
         # if the return type here is `Bottom` annotated, this _may_ mean there're uncaught
         # `throw` calls
         # XXX: well, it's possible that the `throw` calls within them are all caught but the
         # other critical errors make the return type `Bottom`
-        # NOTE: to reduce the false positive `ExceptionReport`s described above, we count
+        # NOTE: to reduce the false positive `UncaughtExceptionReport`s described above, we count
         # `throw` calls here after optimization, since it may have eliminated "unreachable"
         # `throw` calls
-        throw_calls = filter(is_throw_call′, stmts)
-        isempty(throw_calls) || push!(interp.exception_reports, ExceptionReport(interp, frame, throw_calls))
+        codelocs    = frame.src.codelocs
+        linetable   = frame.src.linetable
+        throw_locs  = LineInfoNode[]
+        throw_calls = Any[]
+        for r in reports_for_this_linfo
+            if isa(r, ExceptionReport)
+                push!(throw_locs, r.lin)
+            end
+        end
+        for (i, stmt) in enumerate(stmts)
+            is_throw_call′(stmt) || continue
+            # if this `throw` is already reported, don't duplciate
+            linetable[codelocs[i]] in throw_locs && continue
+            push!(throw_calls, stmt)
+        end
+        isempty(throw_calls) || push!(interp.uncaught_exceptions, UncaughtExceptionReport(interp, frame, throw_calls))
     else
         # the non-`Bottom` result here means `throw` calls within the children frames
         # reported so far (if exist) are caught and not propagated to the result;
         # we don't want to cache for this frame and its parents, so just filter them away
         # NOTE: this is critical for performance issue https://github.com/aviatesk/JET.jl/issues/71
-        isempty(interp.exception_reports) || empty!(interp.exception_reports)
+        isempty(interp.uncaught_exceptions) || empty!(interp.uncaught_exceptions)
     end
 
-    after = Set(interp.reports)
-    reports_for_this_linfo = setdiff(after, before)
-
-    isempty(interp.exception_reports) || push!(reports_for_this_linfo, interp.exception_reports...)
+    isempty(interp.uncaught_exceptions) || push!(reports_for_this_linfo, interp.uncaught_exceptions...)
 
     if !isempty(reports_for_this_linfo)
         if is_constant_propagated(frame)

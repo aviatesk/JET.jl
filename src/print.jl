@@ -177,30 +177,24 @@ end
 
 function print_error_frame(io, report, depth; kwargs...)
     frame = report.st[depth]
-    color = ERROR_COLOR
 
     len = print_frame(io, frame, depth, true; kwargs...)
     print_rails(io, depth-1)
-    printstyled(io, "│ ", report.msg, ": "; color)
-    print_signature(io, report.sig;
-                    annotate_types = true, # always annotate types for errored signatures
-                    bold = true,
-                    )
+    print_error_report(io, report)
 
     print_rails(io, depth-1)
-    printlnstyled(io, '└', '─'^len; color)
+    printlnstyled(io, '└', '─'^len; color = ERROR_COLOR)
 end
 
 function print_frame(io, frame, depth, is_err;
                      fullpath = false,
-                     annotate_types = false,
-                     )
+                     kwargs...)
     print_rails(io, depth-1)
 
     color = is_err ? ERROR_COLOR : RAIL_COLORS[(depth)%N_RAILS+1]
     s = string("┌ @ ", (fullpath ? tofullpath : identity)(string(frame.file)), ':', frame.line)
     printstyled(io, s, ' '; color)
-    print_signature(io, frame.sig; annotate_types)
+    print_signature(io, frame.sig; kwargs...)
 
     return length(s) # the length of frame info string
 end
@@ -220,3 +214,16 @@ function _print_signature(io, @nospecialize(typ); annotate_types = false, kwargs
 
     printstyled(io, "::", string(typ); color = TYPE_ANNOTATION_COLOR, kwargs...)
 end
+
+# default error report printer
+function print_error_report(io, report::InferenceErrorReport)
+    printstyled(io, "│ ", report.msg, ": "; color = ERROR_COLOR)
+    print_signature(io, report.sig;
+                    annotate_types = true, # always annotate types for errored signatures
+                    bold = true,
+                    )
+end
+# those don't need explicit signatures
+print_error_report(io, report::NoFieldErrorReport)       = printlnstyled(io, "│ ", report.msg; color = ERROR_COLOR)
+print_error_report(io, report::LocalUndefVarErrorReport) = printlnstyled(io, "│ ", report.msg; color = ERROR_COLOR)
+print_error_report(io, report::UndefKeywordErrorReport)  = printlnstyled(io, "│ ", report.msg; color = ERROR_COLOR)

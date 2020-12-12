@@ -31,8 +31,8 @@ struct JETInterpreter <: AbstractInterpreter
     # reports found so far
     reports::Vector{InferenceErrorReport}
 
-    # stashes `ExceptionReport`s that are not caught so far
-    exception_reports::Vector{ExceptionReport}
+    # stashes `UncaughtExceptionReport`s that are not caught so far
+    uncaught_exceptions::Vector{UncaughtExceptionReport}
 
     # stashes `NativeRemark`s
     native_remarks::Vector{NativeRemark}
@@ -46,18 +46,18 @@ struct JETInterpreter <: AbstractInterpreter
     # debugging
     depth::Ref{Int}
 
-    function JETInterpreter(world             = get_world_counter();
-                            inf_params        = gen_inf_params(),
-                            opt_params        = gen_opt_params(),
-                            optimize          = true,
-                            compress          = false,
-                            discard_trees     = false,
-                            id                = gensym(:JETInterpreterID),
-                            reports           = InferenceErrorReport[],
-                            exception_reports = ExceptionReport[],
-                            native_remarks    = NativeRemark[],
-                            concretized       = BitVector(),
-                            analysis_params   = AnalysisParams(),
+    function JETInterpreter(world               = get_world_counter();
+                            inf_params          = gen_inf_params(),
+                            opt_params          = gen_opt_params(),
+                            optimize            = true,
+                            compress            = false,
+                            discard_trees       = false,
+                            id                  = gensym(:JETInterpreterID),
+                            reports             = InferenceErrorReport[],
+                            uncaught_exceptions = UncaughtExceptionReport[],
+                            native_remarks      = NativeRemark[],
+                            concretized         = BitVector(),
+                            analysis_params     = AnalysisParams(),
                             # dummy kwargs so that kwargs for other functions can be passed on
                             __kwargs...)
         @assert !opt_params.inlining "inlining should be disabled for JETInterpreter analysis"
@@ -70,7 +70,7 @@ struct JETInterpreter <: AbstractInterpreter
                    LocalCache(),
                    id,
                    reports,
-                   exception_reports,
+                   uncaught_exceptions,
                    native_remarks,
                    concretized,
                    analysis_params,
