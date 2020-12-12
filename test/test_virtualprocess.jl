@@ -51,7 +51,7 @@ end
     end
 
     # `c` wrapped in `GotoIfNot` node should be transformed into `GlobalRef(vmod, :c)`,
-    # otherwise `NonBooleanCondErrorReport` (and `ExceptionReport`) will be reported
+    # otherwise `NonBooleanCondErrorReport` (and `UncaughtExceptionReport`) will be reported
     let
         res, interp = @profile_toplevel begin
             c = false
@@ -218,7 +218,7 @@ end
             @test is_concrete(vmod, :isbar)
             @test is_concrete(vmod, :isbaz)
             @test length(res.inference_error_reports) == 2
-            @test all(er->isa(er, ExceptionReport), res.inference_error_reports)
+            @test all(er->isa(er, UncaughtExceptionReport), res.inference_error_reports)
         end
     end
 end
@@ -857,7 +857,7 @@ end
         throw("throw me")
     end
     @test length(res.inference_error_reports) == 1
-    @test first(res.inference_error_reports) isa ExceptionReport
+    @test first(res.inference_error_reports) isa UncaughtExceptionReport
 end
 
 @testset "error handling within ConcreteInterpreter" begin

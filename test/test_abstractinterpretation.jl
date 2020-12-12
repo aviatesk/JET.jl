@@ -279,7 +279,7 @@ end
     let
         interp, frame = profile_call(()->throw("foo"))
         @test !isempty(interp.reports)
-        @test first(interp.reports) isa ExceptionReport
+        @test first(interp.reports) isa UncaughtExceptionReport
     end
 
     # throws in deep level
@@ -287,7 +287,7 @@ end
         foo(a) = throw(a)
         interp, frame = profile_call(()->foo("foo"))
         @test !isempty(interp.reports)
-        @test first(interp.reports) isa ExceptionReport
+        @test first(interp.reports) isa UncaughtExceptionReport
     end
 
     # don't report possibly false negative `throw`s
@@ -302,7 +302,7 @@ end
         foo(a) = a ≤ 0 ? throw("a is $(a)") : a
         interp, frame = profile_call(()->foo(0))
         @test !isempty(interp.reports)
-        @test first(interp.reports) isa ExceptionReport
+        @test first(interp.reports) isa UncaughtExceptionReport
     end
 
     # report even if there're other "critical" error exist
@@ -325,7 +325,7 @@ end
         # this should report `throw(ArgumentError("Sampler for this object is not defined")`
         interp, frame = profile_call(rand, (Char,))
         @test !isempty(interp.reports)
-        @test first(interp.reports) isa ExceptionReport
+        @test first(interp.reports) isa UncaughtExceptionReport
 
         # this should not report `throw(DomainError(x, "sin(x) is only defined for finite x."))`
         interp, frame = profile_call(sin, (Int,))
@@ -334,7 +334,7 @@ end
         # again, constant prop sometimes can exclude false negatives
         interp, frame = profile_call(()->sin(Inf))
         @test !isempty(interp.reports)
-        @test first(interp.reports) isa ExceptionReport
+        @test first(interp.reports) isa UncaughtExceptionReport
     end
 end
 

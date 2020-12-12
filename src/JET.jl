@@ -245,7 +245,7 @@ end
 get_cur_pc(frame::InferenceState) = return frame.currpc
 get_cur_stmt(frame::InferenceState) = frame.src.code[get_cur_pc(frame)]
 get_cur_loc(frame::InferenceState) = frame.src.codelocs[get_cur_pc(frame)]
-get_cur_linfo(frame::InferenceState) = frame.src.linetable[get_cur_loc(frame)]
+get_cur_linfo(frame::InferenceState) = frame.src.linetable[get_cur_loc(frame)]::LineInfoNode
 get_cur_varstates(frame::InferenceState) = frame.stmt_types[get_cur_pc(frame)]
 get_result(frame::InferenceState) = frame.result.result
 
@@ -412,10 +412,10 @@ function profile_frame!(interp::JETInterpreter, frame::InferenceState)
 
     # report `throw` calls "appropriately";
     # if the final return type here is `Bottom`-annotated, it _may_ mean the control flow
-    # didn't catch some of the `ExceptionReport`s stashed within `interp.exception_reports`,
+    # didn't catch some of the `UncaughtExceptionReport`s stashed within `interp.uncaught_exceptions`,
     if get_result(frame) === Bottom
-        if !isempty(interp.exception_reports)
-            append!(interp.reports, interp.exception_reports)
+        if !isempty(interp.uncaught_exceptions)
+            append!(interp.reports, interp.uncaught_exceptions)
         end
     end
 

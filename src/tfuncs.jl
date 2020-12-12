@@ -7,7 +7,7 @@ function CC.builtin_tfunction(interp::JETInterpreter, @nospecialize(f), argtypes
 
     if f === throw
         # here we only report a selection of "serious" exceptions, i.e. those should be
-        # reported even if they may not happen in actual execution;
+        # reported even if they may be caught in actual execution;
         # other general `throw` calls will be reported within `_typeinf(interp::JETInterpreter, frame::InferenceState)`
         # only when they are not caught by control flow, which is judged by whether if the
         # final return type of `sv` is annotated as `Bottom` or not
@@ -16,7 +16,7 @@ function CC.builtin_tfunction(interp::JETInterpreter, @nospecialize(f), argtypes
             if isa(a, Const)
                 v = a.val
                 if isa(v, UndefKeywordError)
-                    report!(interp, UndefKeywordErrorReport(interp, sv, v))
+                    report!(interp, UndefKeywordErrorReport(interp, sv, v, get_cur_linfo(sv)))
                 end
             end
         end

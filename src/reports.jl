@@ -171,7 +171,7 @@ function restore_cached_report!(cache::InferenceErrorReportCache,
                                 caller::InferenceState,
                                 )
     report = restore_cached_report(cache, caller)
-    push!(isa(report, ExceptionReport) ? interp.exception_reports : interp.reports, report)
+    push!(isa(report, UncaughtExceptionReport) ? interp.uncaught_exceptions : interp.reports, report)
     return
 end
 
@@ -206,12 +206,15 @@ macro reportdef(ex, kwargs...)
     end
     spec_args = args[4:end] # keep those additional, specific fields
 
-    local track_from_frame::Bool = false
+    local track_from_frame = false
+    local supertype = InferenceErrorReport
     for ex in kwargs
         @assert isexpr(ex, :(=))
         kw, val = ex.args
         if kw === :track_from_frame
             track_from_frame = val
+        elseif kw === :supertype
+            supertype = val
         end
     end
 
@@ -275,7 +278,7 @@ macro reportdef(ex, kwargs...)
     ))
 
     return Expr(:block, __source__, quote
-        struct $(T) <: InferenceErrorReport
+        struct $(T) <: $(supertype)
             st::VirtualStackTrace
             msg::String
             sig::Vector{Any}
@@ -315,16 +318,32 @@ extract_type_decls(x) = isexpr(x, :(::)) ? last(x.args) : Any
 
 @reportdef InvalidConstantRedefinition(interp, sv, mod::Module, name::Symbol, @nospecialize(t′), @nospecialize(t))
 
-@reportdef UndefKeywordErrorReport(interp, sv, err::UndefKeywordError)
-
 """
     ExceptionReport <: InferenceErrorReport
 
-Represents general `Exception`s traced during inference. They are reported only when there's
-  "inevitable" [`throw`](@ref) calls found by inter-frame analysis.
+The abstract type for "serious" errors that are invoked by `throw` calls but should be
+    reported even if they may be caught in actual execution.
+In order to avoid duplicated reports for the `throw` call, any subtype of `ExceptionReport`
+    should keep `lin::LineInfoNode` field, which represents where the report gets collected.
 """
-:(ExceptionReport)
-@reportdef ExceptionReport(interp, sv, throw_calls::Vector{Any}) track_from_frame = true
+abstract type ExceptionReport <: InferenceErrorReport end
+
+# to help inference
+function Base.getproperty(er::ExceptionReport, sym::Symbol)
+    sym === :lin && return getfield(er, :lin)::LineInfoNode
+    return @invoke getproperty(er::InferenceErrorReport, sym::Symbol)
+end
+
+@reportdef UndefKeywordErrorReport(interp, sv, err::UndefKeywordError, lin::LineInfoNode) supertype = ExceptionReport
+
+"""
+    UncaughtExceptionReport <: InferenceErrorReport
+
+Represents general `throw` calls traced during inference.
+They are reported only when they're not caught by any control flow.
+"""
+:(UncaughtExceptionReport)
+@reportdef UncaughtExceptionReport(interp, sv, throw_calls::Vector{Any}) track_from_frame = true
 
 """
     NativeRemark <: InferenceErrorReport
@@ -394,7 +413,7 @@ get_sig(sv::InferenceState) = _get_sig(sv, get_cur_stmt(sv))
 
 # special cased entries
 get_sig(::Type{LocalUndefVarErrorReport}, interp, sv, name) = Any[""] # TODO
-function get_sig(::Type{ExceptionReport}, interp, sv, throw_calls)
+function get_sig(::Type{UncaughtExceptionReport}, interp, sv, throw_calls)
     sig = Any[]
     ncalls = length(throw_calls)
     for (i, call) in enumerate(throw_calls)
@@ -502,8 +521,8 @@ get_msg(::Type{NonBooleanCondErrorReport}, interp, sv, @nospecialize(t)) =
     "non-boolean ($(t)) used in boolean context"
 get_msg(::Type{InvalidConstantRedefinition}, interp, sv, mod, name, @nospecialize(t′), @nospecialize(t)) =
     "invalid redefinition of constant $(mod).$(name) (from $(t′) to $(t))"
-get_msg(::Type{UndefKeywordErrorReport}, interp, sv, err) = sprint(showerror, err)
-get_msg(::Type{ExceptionReport}, interp, sv, throw_blocks) = isone(length(throw_blocks)) ?
+get_msg(::Type{UndefKeywordErrorReport}, interp, sv, err, lin) = sprint(showerror, err)
+get_msg(::Type{UncaughtExceptionReport}, interp, sv, throw_blocks) = isone(length(throw_blocks)) ?
     "may throw" :
     "may throw either of"
 get_msg(::Type{NativeRemark}, interp, sv, s) = s
