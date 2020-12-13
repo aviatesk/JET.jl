@@ -112,4 +112,4 @@ const SUITE = BenchmarkGroup()
 #     @profile_call identity(nothing)
 # end
 
-SUITE["test"] = @jetbenchmarkable using JET seconds = 10
+SUITE["test"] = @jetbenchmarkable using JET seconds = 5
