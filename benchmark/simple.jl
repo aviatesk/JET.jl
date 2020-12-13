@@ -1,9 +1,11 @@
-include("benchmark_utils.jl")
+include("JETBenchmarkUtils.jl")
+
+using .JETBenchmarkUtils
 
 function simple_benchmark(ntimes = 5)
     ret = []
     function _simple_benchmark!(setup_ex, ex, desc)
-        stats = @nbenchmark_freshexec ntimes = $(ntimes) $(setup_ex) $(ex)
+        stats = @benchmark_freshexec ntimes = $(ntimes) $(setup_ex) $(ex)
         @info desc ntimes setup_ex ex stats
         push!(ret, stats)
     end
@@ -35,7 +37,7 @@ function simple_benchmark(ntimes = 5)
     let
         setup_ex = quote
             using JET
-            @profile_call sum("julia")
+            @profile_call identity(nothing)
         end
         ex       = :(@profile_call rand(Bool))
         _simple_benchmark!(setup_ex, ex, "benchmark a bit complex call")

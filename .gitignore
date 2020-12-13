@@ -1,0 +1,4 @@
+/.benchmarkci/
+/benchmark/*.json
+Manifest.toml
+!/benchmark/Manifest.toml
