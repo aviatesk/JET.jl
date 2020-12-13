@@ -55,7 +55,7 @@ macro jetbenchmarkable(ex, benchmark_params...)
             stdout = Base.BufferStream()
             stderr = IOBuffer()
 
-            pipe = pipeline(`$(normpath(Sys.BINDIR, "julia")) -e '
+            pipe = pipeline(`$(normpath(Sys.BINDIR, "julia")) --project=@. -e '
                 while true
                     s = readuntil(stdin, "JET_BENCHMARK_INPUT_EOL")
                     try
