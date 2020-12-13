@@ -6,7 +6,7 @@ function simple_benchmark(ntimes = 5; verbose = false)
     ret = []
     function _simple_benchmark!(setup_ex, ex, desc)
         stats = @benchmark_freshexec ntimes = $(ntimes) $(setup_ex) $(ex)
-        msg = string("benchmark: ", desc)
+        msg = string("benchmarking: ", desc)
         if verbose
             @info msg ntimes setup_ex ex stats
         else
