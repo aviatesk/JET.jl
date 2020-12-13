@@ -86,3 +86,7 @@ end
 is_concrete(mod, sym) = isdefined(mod, sym) && !isa(getfield(mod, sym), VirtualGlobalVariable)
 is_abstract(mod, sym) = isdefined(mod, sym) && isa(getfield(mod, sym), VirtualGlobalVariable)
 isa_abstract(vgv, @nospecialize(typ)) = isa(vgv, VirtualGlobalVariable) && vgv.t ⊑ typ
+
+# fresh execution/benchmark tools
+include(normpath(@__DIR__, "..", "benchmark", "JETBenchmarkUtils.jl"))
+using .JETBenchmarkUtils

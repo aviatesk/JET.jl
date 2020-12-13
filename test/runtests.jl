@@ -5,8 +5,6 @@ include("patches.jl")
 # i.e. julia-dev -i test/interactive_utils.jl
 include("interactive_utils.jl")
 
-include(normpath(@__DIR__, "..", "benchmark", "benchmark_utils.jl"))
-
 # stuff used across tests
 using Test
 
