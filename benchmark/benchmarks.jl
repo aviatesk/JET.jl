@@ -94,22 +94,20 @@ end
 
 using BenchmarkTools, .JETBenchmarkTools
 
-# BenchmarkTools.DEFAULT_PARAMETERS.seconds = 60
+BenchmarkTools.DEFAULT_PARAMETERS.seconds = 60
 
 const SUITE = BenchmarkGroup()
 
-# SUITE["identity(nothing) (first time)"] = @jetbenchmarkable (@profile_call identity(nothing)) setup = (using JET)
-# SUITE["sum(\"julia\")"] = @jetbenchmarkable (@profile_call sum("julia")) setup = begin
-#     using JET
-#     @profile_call identity(nothing)
-# end
-# SUITE["sum(\"julia\") (cached)"] = @jetbenchmarkable (@profile_call sum("julia")) setup = begin
-#     using JET
-#     @profile_call sum("julia")
-# end
-# SUITE["rand(Bool)"] = @jetbenchmarkable (@profile_call rand(Bool)) setup = begin
-#     using JET
-#     @profile_call identity(nothing)
-# end
-
-SUITE["test"] = @jetbenchmarkable using JET seconds = 5
+SUITE["identity(nothing) (first time)"] = @jetbenchmarkable (@profile_call identity(nothing)) setup = (using JET)
+SUITE["sum(\"julia\")"] = @jetbenchmarkable (@profile_call sum("julia")) setup = begin
+    using JET
+    @profile_call identity(nothing)
+end
+SUITE["sum(\"julia\") (cached)"] = @jetbenchmarkable (@profile_call sum("julia")) setup = begin
+    using JET
+    @profile_call sum("julia")
+end
+SUITE["rand(Bool)"] = @jetbenchmarkable (@profile_call rand(Bool)) setup = begin
+    using JET
+    @profile_call identity(nothing)
+end
