@@ -7,6 +7,7 @@ jobs:
   benchmark:
     runs-on: ubuntu-latest
     steps:
+      # setup
       - uses: actions/checkout@v2
       - uses: julia-actions/setup-julia@latest
         with:
@@ -14,12 +15,54 @@ jobs:
       - uses: julia-actions/julia-buildpkg@latest
       - name: install dependencies
         run: julia -e 'using Pkg; pkg"add PkgBenchmark BenchmarkCI@0.1"'
+
+      # benchmark
       - name: run benchmarks
-        run: julia -e 'using BenchmarkCI; BenchmarkCI.judge()'
-      - name: display results
-        run: julia -e 'using BenchmarkCI; BenchmarkCI.displayjudgement()'
-      - name: post results
-        run: julia -e 'using BenchmarkCI; BenchmarkCI.postjudge()'
-        if: github.event_name == 'pull_request'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          julia -e '
+            using BenchmarkCI
+            BenchmarkCI.judge()
+            BenchmarkCI.displayjudgement()
+            '
+
+      # generate result markdown
+      - name: generate benchmark result
+        id: generate-result-markdown
+        run: |
+          body=$(julia -e '
+          using BenchmarkCI
+
+          let
+              judgement = BenchmarkCI._loadjudge(BenchmarkCI.DEFAULT_WORKSPACE)
+              title = "JET Benchmark Result"
+              ciresult = BenchmarkCI.CIResult(; judgement, title)
+              BenchmarkCI.printcommentmd(stdout::IO, ciresult)
+          end
+          ')
+          body="${body//'%'/'%25'}"
+          body="${body//$'\n'/'%0A'}"
+          body="${body//$'\r'/'%0D'}"
+          echo ::set-output name=body::$body
+
+      # check if the previous comment exists
+      - name: find comment
+        uses: peter-evans/find-comment@v1
+        id: fc
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: 'github-actions[bot]'
+          body-includes: JET Benchmark Result
+
+      # create/update comment
+      - name: create comment
+        if: ${{ steps.fc.outputs.comment-id == 0 }}
+        uses: peter-evans/create-or-update-comment@v1
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body: ${{ steps.generate-result-markdown.outputs.body }}
+      - name: update comment
+        if: ${{ steps.fc.outputs.comment-id != 0 }}
+        uses: peter-evans/create-or-update-comment@v1
+        with:
+          comment-id: ${{ steps.fc.outputs.comment-id }}
+          body: ${{ steps.generate-result-markdown.outputs.body }}
