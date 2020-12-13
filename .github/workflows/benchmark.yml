@@ -1,0 +1,28 @@
+name: performance tracking
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: julia-actions/setup-julia@latest
+        with:
+          version: 'nightly'
+      - uses: julia-actions/julia-buildpkg@latest
+      - name: install dependencies
+        run: julia -e 'using Pkg; pkg"add PkgBenchmark BenchmarkCI@0.1"'
+      - name: run benchmarks
+        run: julia -e 'using BenchmarkCI; BenchmarkCI.judge()'
+      - name: display results
+        run: julia -e 'using BenchmarkCI; BenchmarkCI.displayjudgement()'
+      - name: post results
+        run: julia -e 'using BenchmarkCI; BenchmarkCI.postjudge()'
+        if: github.event_name == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
