@@ -228,7 +228,7 @@ function typeinf_edge(interp::$(JETInterpreter), method::Method, @nospecialize(a
         end
         typeinf(interp, frame)
         update_valid_age!(frame, caller)
-        return widenconst_bestguess(frame.bestguess), frame.inferred ? mi : nothing
+        return frame.bestguess, frame.inferred ? mi : nothing
     elseif frame === true
         # unresolvable cycle
         return Any, nothing
@@ -236,7 +236,7 @@ function typeinf_edge(interp::$(JETInterpreter), method::Method, @nospecialize(a
     # return the current knowledge about this cycle
     frame = frame::InferenceState
     update_valid_age!(frame, caller)
-    return widenconst_bestguess(frame.bestguess), nothing
+    return frame.bestguess, nothing
 end
 
 end) # Core.eval(CC, quote

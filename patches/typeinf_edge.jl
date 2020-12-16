@@ -1,4 +1,4 @@
-# https://github.com/JuliaLang/julia/blob/b166d0d15f616f4a025ac5905a115399cc932ddc/base/compiler/typeinfer.jl#L706-L756
+# https://github.com/JuliaLang/julia/blob/341d6c905037b9b5b1bde7877274ce11072ea909/base/compiler/typeinfer.jl#L722-L771
 
 # compute (and cache) an inferred AST and return the current best estimate of the result type
 function typeinf_edge(interp::AbstractInterpreter, method::Method, @nospecialize(atypes), sparams::SimpleVector, caller::InferenceState)
@@ -41,7 +41,7 @@ function typeinf_edge(interp::AbstractInterpreter, method::Method, @nospecialize
         end
         typeinf(interp, frame)
         update_valid_age!(frame, caller)
-        return widenconst_bestguess(frame.bestguess), frame.inferred ? mi : nothing
+        return frame.bestguess, frame.inferred ? mi : nothing
     elseif frame === true
         # unresolvable cycle
         return Any, nothing
@@ -49,5 +49,5 @@ function typeinf_edge(interp::AbstractInterpreter, method::Method, @nospecialize
     # return the current knowledge about this cycle
     frame = frame::InferenceState
     update_valid_age!(frame, caller)
-    return widenconst_bestguess(frame.bestguess), nothing
+    return frame.bestguess, nothing
 end

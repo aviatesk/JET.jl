@@ -1,9 +1,9 @@
 diff --git a/patches/typeinf_edge.jl b/patches/typeinf_edge.jl
-index e17dbdd..5399459 100644
+index 56ccc44..a928edd 100644
 --- a/patches/typeinf_edge.jl
 +++ b/patches/typeinf_edge.jl
 @@ -1,10 +1,21 @@
- # https://github.com/JuliaLang/julia/blob/b166d0d15f616f4a025ac5905a115399cc932ddc/base/compiler/typeinfer.jl#L706-L756
+ # https://github.com/JuliaLang/julia/blob/341d6c905037b9b5b1bde7877274ce11072ea909/base/compiler/typeinfer.jl#L722-L771
  
  # compute (and cache) an inferred AST and return the current best estimate of the result type
 -function typeinf_edge(interp::AbstractInterpreter, method::Method, @nospecialize(atypes), sparams::SimpleVector, caller::InferenceState)
