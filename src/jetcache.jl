@@ -9,9 +9,21 @@
 CC.code_cache(interp::JETInterpreter) = code_cache(interp.native)
 
 # TODO better to use `overload_cache_result!!` hack ?
-function CC.cache_result!(interp::JETInterpreter, result::InferenceResult, valid_worlds::WorldRange)
+let
+
+# branching on https://github.com/JuliaLang/julia/pull/38820
+islatest = first(methods(CC.cache_result!, CC)).nargs == 3
+
+Core.eval(@__MODULE__, Expr(
+    :function,
+    # signature
+    islatest ? :(CC.cache_result!(interp::JETInterpreter, result::InferenceResult)) :
+               :(CC.cache_result!(interp::JETInterpreter, result::InferenceResult, valid_worlds::WorldRange)),
+    # body
+    Expr(:block, LineNumberNode(@__LINE__, @__FILE__), quote
     linfo = result.linfo
 
+    $(islatest && :(valid_worlds = result.valid_worlds))
     # check if the existing linfo metadata is also sufficient to describe the current inference result
     # to decide if it is worth caching this
     already_inferred = CC.already_inferred_quick_test(interp, linfo) # always false
@@ -21,7 +33,8 @@ function CC.cache_result!(interp::JETInterpreter, result::InferenceResult, valid
 
     # TODO: also don't store inferred code if we've previously decided to interpret this function
     if !already_inferred
-        inferred_result = CC.transform_result_for_cache(interp, linfo, result.src)
+        $(islatest ? :(inferred_result = CC.transform_result_for_cache(interp, linfo, valid_worlds, result.src)) :
+                     :(inferred_result = CC.transform_result_for_cache(interp, linfo, result.src)))
         CC.setindex!(code_cache(interp), CodeInstance(result, inferred_result, valid_worlds), linfo)
     end
     unlock_mi_inference(interp, linfo)
@@ -36,6 +49,9 @@ function CC.cache_result!(interp::JETInterpreter, result::InferenceResult, valid
     end
 
     return nothing
+    end) # Expr(:block, LineNumberNode(@__LINE__, @__FILE__), quote
+))
+
 end
 
 function add_jet_callback!(linfo)
