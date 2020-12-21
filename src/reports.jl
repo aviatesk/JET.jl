@@ -262,7 +262,7 @@ macro reportdef(ex, kwargs...)
               :($(esc(:spec_args))[$(i)]::$(spec_type)), # `esc` is needed because `@nospecialize` escapes its argument anyway
               )
     end
-    cache_constructor = Expr(:function, cache_constructor_sig, Expr(:block,
+    cache_constructor = Expr(:function, cache_constructor_sig, Expr(:block, __source__,
         :(return $(cache_constructor_call))
     ))
 

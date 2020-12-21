@@ -282,7 +282,7 @@ partially interprets statements in `src` using JuliaInterpreter.jl:
 function partial_interpret!(interp, mod, src)
     concretize = select_statements(src)
 
-    # LoweredCodeUtils.print_with_code(stdout, src, concretize)
+    # LoweredCodeUtils.print_with_code(stdout::IO, src, concretize)
 
     selective_eval_fromstart!(interp, Frame(mod, src), concretize, #= istoplevel =# true)
 

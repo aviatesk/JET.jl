@@ -20,7 +20,6 @@ function CC.builtin_tfunction(interp::JETInterpreter, @nospecialize(f), argtypes
                 end
             end
         end
-
         return ret
     elseif f === getfield
         # getfield is so common, let's special case it
