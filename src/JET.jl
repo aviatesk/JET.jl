@@ -236,6 +236,44 @@ function destructure_callex(ex)
     return f, args, kwargs
 end
 
+"""
+    @jetconfigurable function funcname(args...; configuration_options...)
+        ...
+    end
+
+Adds a dummy keyword arguments to a function definition so that any keyword argument for
+  other `@jetconfigurable` functions can be passed on to it.
+This macro also asserts that there's no conflict with keyword arguments across the definitions
+  and a configuration for a `@jetconfigurable` function doesn't affect the other
+  `@jetconfigurable` functions.
+"""
+macro jetconfigurable(funcdef)
+    @assert @isexpr(funcdef, :(=)) || @isexpr(funcdef, :function) "function definition should be given"
+
+    defsig = funcdef.args[1]
+    funcname = first(defsig.args)
+    i = findfirst(a->@isexpr(a, :parameters), defsig.args)
+    if isnothing(i)
+        @warn "no JET configurations are defined for `$(funcname)`"
+        insert!(defsig.args, 2, Expr(:parameters, :(__dummy_kwargs...)))
+    else
+        kwargs = defsig.args[i]
+        for kwarg in kwargs.args
+            kwargex = first(kwarg.args)
+            kwargname = (@isexpr(kwargex, :(::)) ? first(kwargex.args) : kwargex)::Symbol
+            funcname′ = get!(_JET_CONFIGURATIONS, kwargname, funcname)
+            @assert begin
+                isnothing(funcname′) ||
+                funcname === funcname′ # same generic function or function refinement
+            end "`$(funcname)` uses `$(kwargname)` JET configuration name which is already used by `$(funcname′)`"
+        end
+        push!(kwargs.args, :(__dummy_kwargs...))
+    end
+
+    return esc(funcdef)
+end
+const _JET_CONFIGURATIONS = Dict{Symbol,Symbol}()
+
 # inference frame
 # ---------------
 

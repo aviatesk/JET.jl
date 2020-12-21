@@ -2,9 +2,8 @@ struct AnalysisParams
     # disables caching of native remarks (that may speed up profiling time)
     filter_native_remarks::Bool
 
-    function AnalysisParams(; filter_native_remarks::Bool = true,
-                              # dummy kwargs so that kwargs for other functions can be passed on
-                              __kwargs...)
+    @jetconfigurable function AnalysisParams(; filter_native_remarks::Bool = true,
+                                               )
         return new(filter_native_remarks,
                    )
     end
@@ -49,17 +48,16 @@ mutable struct JETInterpreter <: AbstractInterpreter
     # debugging
     depth::Int
 
-    function JETInterpreter(world               = get_world_counter();
-                            inf_params          = gen_inf_params(),
-                            opt_params          = gen_opt_params(),
-                            id                  = gensym(:JETInterpreterID),
-                            reports             = InferenceErrorReport[],
-                            uncaught_exceptions = UncaughtExceptionReport[],
-                            native_remarks      = NativeRemark[],
-                            concretized         = BitVector(),
-                            analysis_params     = AnalysisParams(),
-                            # dummy kwargs so that kwargs for other functions can be passed on
-                            __kwargs...)
+    @jetconfigurable function JETInterpreter(world               = get_world_counter();
+                                          inf_params          = gen_inf_params(),
+                                          opt_params          = gen_opt_params(),
+                                          id                  = gensym(:JETInterpreterID),
+                                          reports             = InferenceErrorReport[],
+                                          uncaught_exceptions = UncaughtExceptionReport[],
+                                          native_remarks      = NativeRemark[],
+                                          concretized         = BitVector(),
+                                          analysis_params     = AnalysisParams(),
+                                          )
         @assert !opt_params.inlining "inlining should be disabled for JETInterpreter analysis"
 
         native = NativeInterpreter(world; inf_params, opt_params)
@@ -104,13 +102,12 @@ CC.may_discard_trees(interp::JETInterpreter) = false
 
 AnalysisParams(interp::JETInterpreter) = interp.analysis_params
 
-function gen_inf_params(; # more constant prop, more correct reports ?
-                          aggressive_constant_propagation::Bool = true,
-                          # turn this off to get profiles on `throw` blocks, this might be good to default
-                          # to `true` since `throw` calls themselves will be reported anyway
-                          unoptimize_throw_blocks::Bool = true,
-                          # dummy kwargs so that kwargs for other functions can be passed on
-                          __kwargs...)
+@jetconfigurable function gen_inf_params(; # more constant prop, more correct reports ?
+                                           aggressive_constant_propagation::Bool = true,
+                                           # turn this off to get profiles on `throw` blocks, this might be good to default
+                                           # to `true` since `throw` calls themselves will be reported anyway
+                                           unoptimize_throw_blocks::Bool = true,
+                                           )
     return @static VERSION ≥ v"1.6.0-DEV.837" ?
            InferenceParams(; aggressive_constant_propagation,
                              unoptimize_throw_blocks,
@@ -119,11 +116,10 @@ function gen_inf_params(; # more constant prop, more correct reports ?
                              )
 end
 
-function gen_opt_params(; # inlining should be disabled for `JETInterpreter`, otherwise virtual stack frame
-                          # traversing will fail for frames after optimizer runs on
-                          inlining = false,
-                          # dummy kwargs so that kwargs for other functions can be passed on
-                          __kwargs...)
+@jetconfigurable function gen_opt_params(; # inlining should be disabled for `JETInterpreter`, otherwise virtual stack frame
+                                           # traversing will fail for frames after optimizer runs on
+                                           inlining = false,
+                                           )
     return OptimizationParams(; inlining,
                                 )
 end

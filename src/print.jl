@@ -48,14 +48,13 @@ end
 # toplevel
 # --------
 
-function print_reports(io::IO,
-                       reports::AbstractVector{<:ToplevelErrorReport},
-                       @nospecialize(postprocess = identity);
-                       print_toplevel_sucess::Bool = false,
-                       color::Bool = get(io, :color, false),
-                       fullpath::Bool = false,
-                       # dummy kwargs so that kwargs for other functions can be passed on
-                       __kwargs...)
+@jetconfigurable function print_reports(io::IO,
+                                        reports::AbstractVector{<:ToplevelErrorReport},
+                                        @nospecialize(postprocess = identity);
+                                        print_toplevel_sucess::Bool = false,
+                                        color::Bool = get(io, :color, false),
+                                        fullpath::Bool = false,
+                                        )
     if isempty(reports)
         if print_toplevel_sucess
             printlnstyled(io, "No toplevel errors !"; color = NOERROR_COLOR)
@@ -105,15 +104,14 @@ print_report(io, report::ActualErrorWrapped) = showerror(io, report.err, report.
 # inference
 # ---------
 
-function print_reports(io::IO,
-                       reports::AbstractVector{<:InferenceErrorReport},
-                       @nospecialize(postprocess = identity);
-                       print_inference_sucess::Bool = true,
-                       color::Bool = get(io, :color, false),
-                       fullpath::Bool = false,
-                       annotate_types::Bool = false,
-                       # dummy kwargs so that kwargs for other functions can be passed on
-                       __kwargs...)
+@jetconfigurable function print_reports(io::IO,
+                                        reports::AbstractVector{<:InferenceErrorReport},
+                                        @nospecialize(postprocess = identity);
+                                        print_inference_sucess::Bool = true,
+                                        color::Bool = get(io, :color, false),
+                                        fullpath::Bool = false,
+                                        annotate_types::Bool = false,
+                                        )
     reports = uniquify_reports(reports)
 
     if isempty(reports)
@@ -208,11 +206,11 @@ end
 _print_signature(io, a::Union{AbstractChar,AbstractString};
                  annotate_types = false,
                  kwargs...) =
-    printstyled(io, a; kwargs...)
+    printstyled(io, a)
 function _print_signature(io, @nospecialize(typ); annotate_types = false, kwargs...)
     annotate_types || return
 
-    printstyled(io, "::", string(typ); color = TYPE_ANNOTATION_COLOR, kwargs...)
+    printstyled(io, "::", string(typ); color = TYPE_ANNOTATION_COLOR)
 end
 
 # default error report printer
