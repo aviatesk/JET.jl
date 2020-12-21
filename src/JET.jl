@@ -339,34 +339,34 @@ include("watch.jl")
 function profile_file(io::IO,
                       filename::AbstractString,
                       mod::Module = Main;
-                      kwargs...)
+                      jetconfigs...)
     text = read(filename, String)
-    return profile_text(io, text, filename, mod; kwargs...)
+    return profile_text(io, text, filename, mod; jetconfigs...)
 end
-profile_file(args...; kwargs...) = profile_file(stdout::IO, args...; kwargs...)
+profile_file(args...; jetconfigs...) = profile_file(stdout::IO, args...; jetconfigs...)
 
 function profile_text(io::IO,
                       text::AbstractString,
                       filename::AbstractString = "top-level",
                       mod::Module = Main;
                       profiling_logger::Union{Nothing,IO} = nothing,
-                      kwargs...)
+                      jetconfigs...)
     included_files, reports, postprocess = collect_reports(profiling_logger,
                                                            mod,
                                                            text,
                                                            filename;
-                                                           kwargs...,
+                                                           jetconfigs...,
                                                            )
-    return included_files, print_reports(io, reports, postprocess; kwargs...)
+    return included_files, print_reports(io, reports, postprocess; jetconfigs...)
 end
-profile_text(args...; kwargs...) = profile_text(stdout::IO, args...; kwargs...)
+profile_text(args...; jetconfigs...) = profile_text(stdout::IO, args...; jetconfigs...)
 
-collect_reports(::Nothing, args...; kwargs...) = collect_reports(args...; kwargs...)
-function collect_reports(logger::IO, args...; kwargs...)
+collect_reports(::Nothing, args...; jetconfigs...) = collect_reports(args...; jetconfigs...)
+function collect_reports(logger::IO, args...; jetconfigs...)
     print(logger, "profiling from ", #= filename =# last(args), " ...")
     s = time()
 
-    ret = collect_reports(args...; kwargs...)
+    ret = collect_reports(args...; jetconfigs...)
 
     sec = round(time() - s; digits = 3)
 
@@ -376,14 +376,14 @@ function collect_reports(logger::IO, args...; kwargs...)
     return ret
 end
 
-function collect_reports(actualmod, text, filename; kwargs...)
+function collect_reports(actualmod, text, filename; jetconfigs...)
     virtualmod = gen_virtual_module(actualmod)
 
     interp = JETInterpreter(; # dummy
-                              inf_params      = gen_inf_params(; kwargs...),
-                              opt_params      = gen_opt_params(; kwargs...),
-                              analysis_params = AnalysisParams(; kwargs...),
-                              kwargs...)
+                              inf_params      = gen_inf_params(; jetconfigs...),
+                              opt_params      = gen_opt_params(; jetconfigs...),
+                              analysis_params = AnalysisParams(; jetconfigs...),
+                              jetconfigs...)
     ret, interp = virtual_process!(text,
                                    filename,
                                    virtualmod,
@@ -499,7 +499,7 @@ macro profile_call(ex0...)
     return InteractiveUtils.gen_call_with_extracted_types_and_kwargs(__module__, :profile_call, ex0)
 end
 
-function profile_call(@nospecialize(f), @nospecialize(types = Tuple{}); kwargs...)
+function profile_call(@nospecialize(f), @nospecialize(types = Tuple{}); jetconfigs...)
     ft = Core.Typeof(f)
     if isa(types, Type)
         u = unwrap_unionall(types)
@@ -508,10 +508,10 @@ function profile_call(@nospecialize(f), @nospecialize(types = Tuple{}); kwargs..
         tt = Tuple{ft, types...}
     end
 
-    interp = JETInterpreter(; inf_params      = gen_inf_params(; kwargs...),
-                              opt_params      = gen_opt_params(; kwargs...),
-                              analysis_params = AnalysisParams(; kwargs...),
-                              kwargs...)
+    interp = JETInterpreter(; inf_params      = gen_inf_params(; jetconfigs...),
+                              opt_params      = gen_opt_params(; jetconfigs...),
+                              analysis_params = AnalysisParams(; jetconfigs...),
+                              jetconfigs...)
     return profile_gf_by_type!(interp, tt)
 end
 
@@ -520,13 +520,13 @@ macro report_call(ex0...)
     return InteractiveUtils.gen_call_with_extracted_types_and_kwargs(__module__, :report_call, ex0)
 end
 
-function report_call(@nospecialize(f), @nospecialize(types = Tuple{}); kwargs...)
-    interp, frame = profile_call(f, types; kwargs...)
-    print_reports(interp.reports; kwargs...)
+function report_call(@nospecialize(f), @nospecialize(types = Tuple{}); jetconfigs...)
+    interp, frame = profile_call(f, types; jetconfigs...)
+    print_reports(interp.reports; jetconfigs...)
     return get_result(frame)
 end
 
-print_reports(args...; kwargs...) = print_reports(stdout::IO, args...; kwargs...)
+print_reports(args...; jetconfigs...) = print_reports(stdout::IO, args...; jetconfigs...)
 
 # for inspection
 macro lwr(ex) QuoteNode(lower(__module__, ex)) end
