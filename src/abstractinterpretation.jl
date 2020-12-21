@@ -572,7 +572,7 @@ function is_constant_declared(mod, name, stmts)
     # `fix_global_symbols!` replaces all the symbols in a toplevel frame with `GlobalRef`
     gr = GlobalRef(mod, name)
 
-    return any(stmts) do x
+    return any(stmts) do @nospecialize(x)
         if isexpr(x, :const)
             arg = first((x::Expr).args)
             isa(arg, GlobalRef) && return arg == gr

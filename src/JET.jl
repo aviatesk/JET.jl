@@ -138,7 +138,7 @@ using InteractiveUtils
 
 const INIT_HOOKS = Function[]
 push_inithook!(f) = push!(INIT_HOOKS, f)
-__init__() = foreach(f->f(), INIT_HOOKS)
+__init__() = foreach(@nospecialize(f)->f(), INIT_HOOKS)
 
 # macros
 # ------

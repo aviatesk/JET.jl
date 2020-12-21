@@ -58,7 +58,7 @@ function add_jet_callback!(linfo)
     if !isdefined(linfo, :callbacks)
         linfo.callbacks = Any[invalidate_jet_cache!]
     else
-        if !any(cb->cb!==invalidate_jet_cache!, linfo.callbacks)
+        if !any(@nospecialize(cb)->cb!==invalidate_jet_cache!, linfo.callbacks)
             push!(linfo.callbacks, invalidate_jet_cache!)
         end
     end
