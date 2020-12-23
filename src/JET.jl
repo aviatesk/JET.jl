@@ -155,8 +155,6 @@ _isexpr_check(ex::Expr, heads, n::Int)        = in(ex.head, heads) && length(ex.
 # macros
 # ------
 
-# TODO: upstream these macros into Base
-
 """
     @invoke f(arg::T, ...; kwargs...)
 
@@ -180,11 +178,7 @@ macro invoke(ex)
         @isexpr(x, :(::)) ? (x.args...,) : (x, GlobalRef(Core, :Any))
     end
     args, argtypes = first.(arg2typs), last.(arg2typs)
-    return if isempty(kwargs)
-        :($(GlobalRef(Core, :invoke))($(f), Tuple{$(argtypes...)}, $(args...))) # might not be necessary
-    else
-        :($(GlobalRef(Core, :invoke))($(f), Tuple{$(argtypes...)}, $(args...); $(kwargs...)))
-    end |> esc
+    return esc(:($(GlobalRef(Core, :invoke))($(f), Tuple{$(argtypes...)}, $(args...); $(kwargs...))))
 end
 
 function destructure_callex(ex)
@@ -215,11 +209,7 @@ Provides a convenient way to call [`Base.invokelatest`](@ref).
 """
 macro invokelatest(ex)
     f, args, kwargs = destructure_callex(ex)
-    return if isempty(kwargs) # eliminates dispatch to kwarg methods, might unnecessary to be special cased
-        :($(GlobalRef(Base, :invokelatest))($(f), $(args...)))
-    else
-        :($(GlobalRef(Base, :invokelatest))($(f), $(args...); $(kwargs...)))
-    end |> esc
+    return esc(:($(GlobalRef(Base, :invokelatest))($(f), $(args...); $(kwargs...))))
 end
 
 # inference frame
