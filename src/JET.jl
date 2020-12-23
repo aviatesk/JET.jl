@@ -139,6 +139,9 @@ const INIT_HOOKS = Function[]
 push_inithook!(f) = push!(INIT_HOOKS, f)
 __init__() = foreach(@nospecialize(f)->f(), INIT_HOOKS)
 
+# macros
+# ------
+
 # to circumvent https://github.com/JuliaLang/julia/issues/37342, we inline these `isa`
 # condition checks at surface AST level
 macro isexpr(ex, args...)
@@ -151,9 +154,6 @@ _isexpr_check(ex::Expr, head::Symbol)         = ex.head === head
 _isexpr_check(ex::Expr, heads)                = in(ex.head, heads)
 _isexpr_check(ex::Expr, head::Symbol, n::Int) = ex.head === head && length(ex.args) == n
 _isexpr_check(ex::Expr, heads, n::Int)        = in(ex.head, heads) && length(ex.args) == n
-
-# macros
-# ------
 
 """
     @invoke f(arg::T, ...; kwargs...)
