@@ -134,8 +134,6 @@ import JuliaInterpreter:
     is_return,
     is_quotenode_egal
 
-using FileWatching, Requires
-
 using InteractiveUtils
 
 # common
