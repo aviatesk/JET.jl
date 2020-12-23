@@ -199,7 +199,7 @@ macro reportdef(ex, kwargs...)
     T = esc(first(ex.args))
     args = map(ex.args) do x
         # unwrap @nospecialize
-        if isexpr(x, :macrocall) && first(x.args) === Symbol("@nospecialize")
+        if @isexpr(x, :macrocall) && first(x.args) === Symbol("@nospecialize")
             x = esc(last(x.args)) # `esc` is needed because `@nospecialize` escapes its argument anyway
         end
         return x
@@ -209,7 +209,7 @@ macro reportdef(ex, kwargs...)
     local track_from_frame = false
     local supertype = InferenceErrorReport
     for ex in kwargs
-        @assert isexpr(ex, :(=))
+        @assert @isexpr(ex, :(=))
         kw, val = ex.args
         if kw === :track_from_frame
             track_from_frame = val
@@ -297,12 +297,12 @@ macro reportdef(ex, kwargs...)
 end
 
 function strip_type_decls(x)
-    isexpr(x, :escape) && return Expr(:escape, strip_type_decls(first(x.args))) # keep escape
-    return isexpr(x, :(::)) ? first(x.args) : x
+    @isexpr(x, :escape) && return Expr(:escape, strip_type_decls(first(x.args))) # keep escape
+    return @isexpr(x, :(::)) ? first(x.args) : x
 end
 
-strip_escape(x) = isexpr(x, :escape) ? first(x.args) : x
-extract_type_decls(x) = isexpr(x, :(::)) ? last(x.args) : Any
+strip_escape(x) = @isexpr(x, :escape) ? first(x.args) : x
+extract_type_decls(x) = @isexpr(x, :(::)) ? last(x.args) : Any
 
 @reportdef NoMethodErrorReport(interp, sv, unionsplit::Bool, @nospecialize(atype::Type))
 

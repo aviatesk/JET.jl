@@ -108,7 +108,6 @@ import Base:
     IdSet
 
 import Base.Meta:
-    isexpr,
     _parse_string,
     lower
 
@@ -140,6 +139,19 @@ const INIT_HOOKS = Function[]
 push_inithook!(f) = push!(INIT_HOOKS, f)
 __init__() = foreach(@nospecialize(f)->f(), INIT_HOOKS)
 
+# to circumvent https://github.com/JuliaLang/julia/issues/37342, we inline these `isa`
+# condition checks at surface AST level
+macro isexpr(ex, args...)
+    ex   = esc(ex)
+    args = map(esc, args)
+    return :($(GlobalRef(Core, :isa))($(ex), $(GlobalRef(Core, :Expr))) && $(_isexpr_check)($(ex), $(args...)))
+end
+
+_isexpr_check(ex::Expr, head::Symbol)         = ex.head === head
+_isexpr_check(ex::Expr, heads)                = in(ex.head, heads)
+_isexpr_check(ex::Expr, head::Symbol, n::Int) = ex.head === head && length(ex.args) == n
+_isexpr_check(ex::Expr, heads, n::Int)        = in(ex.head, heads) && length(ex.args) == n
+
 # macros
 # ------
 
@@ -165,7 +177,7 @@ e.g. calls down to `NativeInterpreter`'s `abstract_call_gf_by_type` method:
 macro invoke(ex)
     f, args, kwargs = destructure_callex(ex)
     arg2typs = map(args) do x
-        isexpr(x, :(::)) ? (x.args...,) : (x, GlobalRef(Core, :Any))
+        @isexpr(x, :(::)) ? (x.args...,) : (x, GlobalRef(Core, :Any))
     end
     args, argtypes = first.(arg2typs), last.(arg2typs)
     return if isempty(kwargs)
@@ -176,15 +188,15 @@ macro invoke(ex)
 end
 
 function destructure_callex(ex)
-    @assert isexpr(ex, :call) "call expression f(args...; kwargs...) should be given"
+    @assert @isexpr(ex, :call) "call expression f(args...; kwargs...) should be given"
 
     f = first(ex.args)
     args = []
     kwargs = []
     for x in ex.args[2:end]
-        if isexpr(x, :parameters)
+        if @isexpr(x, :parameters)
             append!(kwargs, x.args)
-        elseif isexpr(x, :kw)
+        elseif @isexpr(x, :kw)
             push!(kwargs, x)
         else
             push!(args, x)

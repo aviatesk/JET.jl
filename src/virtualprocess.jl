@@ -63,7 +63,7 @@ function virtual_process!(s::AbstractString,
     toplevelex = parse_input_line(s; filename)
 
     # if there's any syntax error, try to identify all the syntax error location
-    if isexpr(toplevelex, (:error, :incomplete))
+    if @isexpr(toplevelex, (:error, :incomplete))
         append!(ret.toplevel_error_reports, collect_syntax_errors(s, filename))
         return ret, interp
     # just return if there is nothing to profile
@@ -81,7 +81,7 @@ function virtual_process!(toplevelex::Expr,
                           interp::JETInterpreter,
                           ret::VirtualProcessResult = gen_virtual_process_result(),
                           )::Tuple{VirtualProcessResult,JETInterpreter}
-    @assert isexpr(toplevelex, :toplevel)
+    @assert @isexpr(toplevelex, :toplevel)
 
     filename::String = filename
     lnn::LineNumberNode = LineNumberNode(0, filename)
@@ -97,7 +97,7 @@ function virtual_process!(toplevelex::Expr,
         lwr = lower(mod, x)
 
         # here we should capture syntax errors found during lowering
-        if isexpr(lwr, :error)
+        if @isexpr(lwr, :error)
             msg = first(lwr.args)
             push!(ret.toplevel_error_reports, SyntaxErrorReport("syntax: $(msg)", filename, lnn.line))
             return nothing
@@ -139,7 +139,7 @@ function virtual_process!(toplevelex::Expr,
         # macro can essentially generate `:toplevel` and `:module` expressions
 
         # flatten container expression
-        if isexpr(x, :toplevel)
+        if @isexpr(x, :toplevel)
             append!(exs, reverse(x.args))
             continue
         end
@@ -149,9 +149,9 @@ function virtual_process!(toplevelex::Expr,
         # "toplevel definitions" inside of the loaded modules shouldn't be evaluated in a
         # context of `virtualmod`
 
-        if isexpr(x, :module)
+        if @isexpr(x, :module)
             newblk = x.args[3]
-            @assert isexpr(newblk, :block)
+            @assert @isexpr(newblk, :block)
             newtoplevelex = Expr(:toplevel, newblk.args...)
 
             x.args[3] = Expr(:block) # empty module's code body
@@ -168,7 +168,7 @@ function virtual_process!(toplevelex::Expr,
         lwr = lower_with_err_handling(virtualmod, blk)
 
         isnothing(lwr) && continue # error happened during lowering
-        isexpr(lwr, :thunk) || continue # literal
+        @isexpr(lwr, :thunk) || continue # literal
 
         src = first((lwr::Expr).args)::CodeInfo
 
@@ -306,11 +306,11 @@ function select_statements(src)
             continue
         end
 
-        if isexpr(stmt, :(=))
-            stmt = (stmt::Expr).args[2] # rhs
+        if @isexpr(stmt, :(=))
+            stmt = stmt.args[2] # rhs
         end
-        if isexpr(stmt, :call)
-            f = (stmt::Expr).args[1]
+        if @isexpr(stmt, :call)
+            f = stmt.args[1]
 
             # special case `include` calls
             if f === :include
@@ -379,7 +379,7 @@ function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, 
     return @invoke step_expr!(interp, frame, node, istoplevel::Bool)
 end
 
-ismoduleusage(x) = isexpr(x, (:import, :using, :export))
+ismoduleusage(x) = @isexpr(x, (:import, :using, :export))
 
 function to_single_usages(x)
     if length(x.args) != 1
@@ -512,8 +512,8 @@ function collect_syntax_errors(s, filename)
             !isnothing(ex)
         end
         line += count(==('\n'), s[index:nextindex-1])
-        report = isexpr(ex, :error) ? SyntaxErrorReport(string("syntax: ", first(ex.args)), filename, line) :
-                 isexpr(ex, :incomplete) ? SyntaxErrorReport(first(ex.args), filename, line) :
+        report = @isexpr(ex, :error) ? SyntaxErrorReport(string("syntax: ", first(ex.args)), filename, line) :
+                 @isexpr(ex, :incomplete) ? SyntaxErrorReport(first(ex.args), filename, line) :
                  nothing
         isnothing(report) || push!(reports, report)
         index = nextindex

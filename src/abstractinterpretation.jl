@@ -472,7 +472,7 @@ function CC.abstract_eval_statement(interp::JETInterpreter, @nospecialize(e), vt
     # propagated even if they're non-constant
     if istoplevel(sv)
         stmt = get_cur_stmt(sv)
-        if isexpr(stmt, :(=))
+        if @isexpr(stmt, :(=))
             lhs = first(stmt.args)
 
             if isa(lhs, GlobalRef)
@@ -573,8 +573,8 @@ function is_constant_declared(mod, name, stmts)
     gr = GlobalRef(mod, name)
 
     return any(stmts) do @nospecialize(x)
-        if isexpr(x, :const)
-            arg = first((x::Expr).args)
+        if @isexpr(x, :const)
+            arg = first(x.args)
             isa(arg, GlobalRef) && return arg == gr
         end
         return false
