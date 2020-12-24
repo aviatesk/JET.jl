@@ -130,7 +130,7 @@ function virtual_process!(toplevelex::Expr,
         x = pop!(exs)
 
         # update line info
-        if islnn(x)
+        if isa(x, LineNumberNode)
             lnn = x
             continue
         end
@@ -520,6 +520,3 @@ function collect_syntax_errors(s, filename)
     end
     return reports
 end
-
-islnn(@nospecialize(_)) = false
-islnn(::LineNumberNode) = true
