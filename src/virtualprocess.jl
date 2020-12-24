@@ -366,7 +366,7 @@ function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, 
     # - support package profiling
     # - add report pass (report usage of undefined name, etc.)
     if ismoduleusage(node)
-        for ex in to_single_usages(node)
+        for ex in to_single_usages(node::Expr)
             # NOTE: usages of virtual global variables also work here, since they are supposed
             # to be actually evaluated into `interp.virtualmod` (as `VirtualGlobalVariable`
             # object) at this point
@@ -379,9 +379,10 @@ function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, 
     return @invoke step_expr!(interp, frame, node, istoplevel::Bool)
 end
 
-ismoduleusage(x) = @isexpr(x, (:import, :using, :export))
+ismoduleusage(@nospecialize(x)) = @isexpr(x, (:import, :using, :export))
 
-function to_single_usages(x)
+# assuming `ismoduleusage(x)` holds
+function to_single_usages(x::Expr)
     if length(x.args) != 1
         # using A, B, export a, b
         return Expr.(x.head, x.args)
@@ -390,13 +391,16 @@ function to_single_usages(x)
         if isa(arg, Symbol)
             # export a
             return [x]
-        elseif arg.head === :.
-            # using A
-            return [x]
-        elseif arg.head === :(:)
-            # using A: sym1, sym2, ...
-            args = Expr.(arg.head, Ref(first(arg.args)), arg.args[2:end])
-            return Expr.(x.head, args)
+        else
+            if arg.head === :.
+                # using A
+                return [x]
+            else
+                # using A: sym1, sym2, ...
+                @assert @isexpr(arg, :(:))
+                a, as... = arg.args
+                return Expr.(x.head, Expr.(arg.head, Ref(a), as))::Vector{Expr}
+            end
         end
     end
 end
