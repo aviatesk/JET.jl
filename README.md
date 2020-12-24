@@ -6,9 +6,9 @@
 JET.jl employs Julia's type inference for bug reports.
 
 !!! note
-    JET.jl needs Julia v1.6, especially [this commit](https://github.com/JuliaLang/julia/pull/33955);
-    as such I recommend you give a try on this package with [nightly](https://julialang.org/downloads/nightlies/)
-    or [building from source](https://github.com/JuliaLang/julia) after the commit.
+    JET.jl needs Julia versions 1.6 and higher;
+    as such I recommend you give a try on this package with [using nightly version](https://julialang.org/downloads/nightlies/)
+    or [building Julia from source](https://github.com/JuliaLang/julia).
 
 
 ### demo
@@ -151,17 +151,13 @@ No errors !
 
 ### TODOs
 
-- release
+- documentation, release
 - more accurate error reports in general
 - performance linting: report performance pitfalls
-- documentation
+- provide editor/IDE linters integrated with the watch mode, or even support some of LSPs for easier IDE integration
 - support package loading
   * enables profiling on code that uses packages, _without_ actual loading, which gets rid of the need to rely on Revise for signature changes in a package and circumvent its limitation around redefinition of types, etc.
   * but then it's highly possible that we face performance problem on profiling on code using "big" packages, and so we will need some kind of incremental profiling (for fast watch mode)
-- balance between Julia's inference approach and error profiling ?
-  - Julia's type inference allows abstract type (like `Any`) to slip into the inference process by various heuristics, in order to ensure its termination and obtain the performance
-  - but this is somewhat unideal in the context of bug reports, since the basic stance here might be _"better safe than sorry"_, meaning we ideally want to find all the possible errors even if some of them don't occur in actual execution
-- editor integration for watch mode (i.e. `profile_and_watch_file`)
 
 
 ### acknowledgement
