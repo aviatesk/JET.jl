@@ -390,8 +390,13 @@ function get_sig(l::MethodInstance)
             sprint(show, def)
         else
             # print(io, "MethodInstance for ")
-            # show_tuple_as_call(io, def.name, l.specTypes, false, nothing, nothing, true)
-            sprint(Base.show_tuple_as_call, def.name, l.specTypes, false, nothing, nothing, true)
+            @static if hasmethod(Base.show_tuple_as_call, (IO, Symbol, Type), (:demangle, :kwargs, :argnames, :qualified))
+                # show_tuple_as_call(io, def.name, l.specTypes; qualified=true)
+                sprint((args...)->Base.show_tuple_as_call(args...; qualified=true), def.name, l.specTypes)
+            else
+                # show_tuple_as_call(io, def.name, l.specTypes, false, nothing, nothing, true)
+                sprint(Base.show_tuple_as_call, def.name, l.specTypes, false, nothing, nothing, true)
+            end
         end
     else
         # print(io, "Toplevel MethodInstance thunk")
