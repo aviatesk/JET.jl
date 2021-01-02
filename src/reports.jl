@@ -160,7 +160,7 @@ function cache_report!(report::T, linfo, cache) where {T<:InferenceErrorReport}
     # constructor methods doesn't seem to be tracked in the `(frame::InferenceState).parent`
     # chain so that there is no `MethodInstance` within `report.st` for such a frame;
     # XXX: reports from these frames might need to be cached as well rather than just giving up
-    i === nothing && return
+    isnothing(i) && return
     st = view(st, i:length(st))
     new = InferenceErrorReportCache(T, st, report.msg, report.sig, spec_args(report))
     push!(cache, new)

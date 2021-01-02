@@ -40,7 +40,7 @@ this function first parses `s::AbstractString` into `toplevelex::Expr` and then 
 3. replaces self-references of the original root module (that is represented as `actualmodsym`)
      with that of `virtualmod`: see `fix_self_references`
 3. `ConcreteInterpreter` partially interprets some statements in `lwr` that should not be
-     abstracted away (e.g. a `:method` definition); see also [`partial_interpret!`](@ref)
+     abstracted away (e.g. a `:method` definition); see also [`partially_interpret!`](@ref)
 4. finally, `JETInterpreter` profiles the remaining statements by abstract interpretation
 
 !!! warning
@@ -83,9 +83,7 @@ function virtual_process!(toplevelex::Expr,
                           )::Tuple{VirtualProcessResult,JETInterpreter}
     @assert @isexpr(toplevelex, :toplevel)
 
-    filename::String = filename
-    lnn::LineNumberNode = LineNumberNode(0, filename)
-    interp::JETInterpreter = interp
+    local lnn::LineNumberNode = LineNumberNode(0, filename)
 
     function lower_err_handler(err, st)
         # `3` corresponds to `with_err_handling`, `f` and `lower`
@@ -182,7 +180,7 @@ function virtual_process!(toplevelex::Expr,
                                       interp,
                                       ret,
                                       )
-        concretized = @invokelatest partial_interpret!(interp′, virtualmod, src)
+        concretized = (@invokelatest partially_interpret!(interp′, virtualmod, src))::Vector{Bool}
 
         # NOTE: needs to happen here since JuliaInterpreter.jl assumes there're `Symbol`s as
         # `GlobalRef`s in toplevel frames
@@ -269,7 +267,7 @@ end
 _walk_and_transform!(pre, f, @nospecialize(_), scope) = return
 
 """
-    partial_interpret!(interp, mod, src)
+    partially_interpret!(interp, mod, src)
 
 partially interprets statements in `src` using JuliaInterpreter.jl:
 - concretize "toplevel definitions", i.e. `:method`, `:struct_type`, `:abstract_type` and
@@ -279,7 +277,7 @@ partially interprets statements in `src` using JuliaInterpreter.jl:
 - special case `include` calls so that [`virtual_process!`](@ref) recursively runs on the
     included file
 """
-function partial_interpret!(interp, mod, src)
+function partially_interpret!(interp, mod, src)
     concretize = select_statements(src)
 
     # LoweredCodeUtils.print_with_code(stdout::IO, src, concretize)
@@ -497,7 +495,7 @@ end
 
 function crop_stacktrace(pred, st, offset)
     i = findfirst(pred, st)
-    return st[1:(i === nothing ? end : i - offset)]
+    return st[1:(isnothing(i) ? end : i - offset)]
 end
 
 function crop_stacktrace(st, offset)
