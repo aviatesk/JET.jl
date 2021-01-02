@@ -51,8 +51,9 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
     # we may want to keep some "serious" error reports like `GlobalUndefVarErrorReport`
     # even when constant prop' reveals it never happens given the current constant arguments
     if is_constant_propagated(frame)
-        # check from `frame.parent` is because there might be other analysis for this
-        # `frame` with different constants in this abstract interpretation pass
+        # use `frame.linfo` instead of `frame` for lineage check since the program counter
+        # for this frame is not initialized yet; note that `frame.linfo` is the exactly same
+        # object as that of the previous only-type inference
         filter!(r->!is_lineage(r.lineage, frame.parent, linfo), interp.reports)
     end
 
