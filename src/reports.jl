@@ -97,7 +97,7 @@ function Base.:(==)(vf1::VirtualFrame, vf2::VirtualFrame)
     return vf1.file === vf2.file &&
            vf1.line == vf2.line &&
            vf1.sig == vf2.sig &&
-           vf1.linfo == vf2.linfo
+           vf1.linfo === vf2.linfo
 end
 
 # `InferenceErrorReport` is supposed to keep its virtual stack trace in order of
@@ -120,7 +120,7 @@ end
 function Base.:(==)(lk1::LineageKey, lk2::LineageKey)
     return lk1.file === lk2.file &&
            lk1.line == lk2.line &&
-           lk1.linfo == lk2.linfo
+           lk1.linfo === lk2.linfo
 end
 
 get_lineage_key(frame::InferenceState) = LineageKey(get_file_line(frame)..., frame.linfo)
