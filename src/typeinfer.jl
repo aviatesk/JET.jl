@@ -194,6 +194,21 @@ function typeinf_edge(interp::$(JETInterpreter), method::Method, @nospecialize(a
         end
         #=== typeinf_edge patch-point 2 end ===#
         update_valid_age!(caller, WorldRange(min_world(code), max_world(code)))
+        $(@static if isdefined(CC, :InterConditional) quote
+        rettype = code.rettype
+        if isdefined(code, :rettype_const)
+            rettype_const = code.rettype_const
+            if isa(rettype_const, InterConditional)
+                return rettype_const, mi
+            elseif isa(rettype_const, Vector{Any}) && !(Vector{Any} <: rettype)
+                return PartialStruct(rettype, rettype_const), mi
+            else
+                return Const(rettype_const), mi
+            end
+        else
+            return rettype, mi
+        end
+        end else quote
         if isdefined(code, :rettype_const)
             if isa(code.rettype_const, Vector{Any}) && !(Vector{Any} <: code.rettype)
                 return PartialStruct(code.rettype, code.rettype_const), mi
@@ -203,6 +218,7 @@ function typeinf_edge(interp::$(JETInterpreter), method::Method, @nospecialize(a
         else
             return code.rettype, mi
         end
+        end end)
     end
     if ccall(:jl_get_module_infer, Cint, (Any,), method.module) == 0
         return Any, nothing
