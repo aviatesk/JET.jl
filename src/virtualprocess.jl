@@ -180,7 +180,7 @@ function virtual_process!(toplevelex::Expr,
                                       interp,
                                       ret,
                                       )
-        concretized = (@invokelatest partially_interpret!(interp′, virtualmod, src))::Vector{Bool}
+        concretized = partially_interpret!(interp′, virtualmod, src)
 
         # NOTE: needs to happen here since JuliaInterpreter.jl assumes there're `Symbol`s as
         # `GlobalRef`s in toplevel frames
@@ -282,7 +282,7 @@ function partially_interpret!(interp, mod, src)
 
     # LoweredCodeUtils.print_with_code(stdout::IO, src, concretize)
 
-    selective_eval_fromstart!(interp, Frame(mod, src), concretize, #= istoplevel =# true)
+    @invokelatest selective_eval_fromstart!(interp, Frame(mod, src), concretize, #= istoplevel =# true)
 
     return concretize
 end
