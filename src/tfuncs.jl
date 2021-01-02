@@ -22,7 +22,7 @@ function CC.builtin_tfunction(interp::JETInterpreter, @nospecialize(f), argtypes
         end
         return ret
     elseif f === getfield
-        # getfield is so common, let's special case it
+        # `getfield` is so common, let's special case it
         if 2 ≤ length(argtypes) ≤ 3
             obj, fld = argtypes
             if isa(fld, Const)
@@ -48,11 +48,11 @@ function CC.builtin_tfunction(interp::JETInterpreter, @nospecialize(f), argtypes
     elseif f === fieldtype
         # the valid widest possible return type of `fieldtype_tfunc` is `Union{Type,TypeVar}`
         # because fields of unwrapped `DataType`s can legally be `TypeVar`s,
-        # but this will cause lots of false positive `NoMethodErrorReport` reports for
-        # inference with accessing to fields of abstract types since most methods don't
-        # expect `TypeVar` (e.g. `@report_call readuntil(stdin, 'c')`);
+        # but this will cause lots of false positive `NoMethodErrorReport`s for inference
+        # with accessing to abstract fields since most methods don't expect `TypeVar`
+        # (e.g. `@report_call readuntil(stdin, 'c')`)
         # JET.jl further widens this case to `Any` and give up further analysis rather than
-        # noisy and sound analysis
+        # trying hard to do sound and noisy analysis
         # xref: https://github.com/JuliaLang/julia/pull/38148
         if ret === Union{Type, TypeVar}
             return Any
@@ -63,7 +63,7 @@ function CC.builtin_tfunction(interp::JETInterpreter, @nospecialize(f), argtypes
             f === Intrinsics.checked_udiv_int ||
             f === Intrinsics.checked_urem_int
         end
-        # report `DivideError`
+        # `DivideError` for these intrinsics are handled in C and should be special cased
         a = argtypes[2]
         t = widenconst(a)
         if t <: Base.BitSigned64 || t <: Base.BitUnsigned64
