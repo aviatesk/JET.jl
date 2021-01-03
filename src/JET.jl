@@ -3,13 +3,7 @@ module JET
 
 const CC = Core.Compiler
 
-@static if !isdefined(CC, :AbstractInterpreter)
-    throw(ErrorException("JET.jl only works with Julia versions 1.6 and higher"))
-elseif :backedges ∉ fieldnames(Core.MethodInstance)
-    @warn """with your Julia version, JET.jl may not be able to update analysis result
-    correctly after refinement of a method in deeper call sites
-    """
-end
+@static isdefined(CC, :AbstractInterpreter) || throw(ErrorException("JET.jl only works with Julia versions 1.6 and higher"))
 
 # imports
 # =======
@@ -138,6 +132,17 @@ using InteractiveUtils
 const INIT_HOOKS = Function[]
 push_inithook!(f) = push!(INIT_HOOKS, f)
 __init__() = foreach(@nospecialize(f)->f(), INIT_HOOKS)
+
+# compat
+# ======
+
+const BACKEDGE_CALLBACK_ENABLED = :callbacks in fieldnames(Core.MethodInstance)
+
+@static BACKEDGE_CALLBACK_ENABLED || push_inithook!() do
+@warn """with your Julia version, JET.jl may not be able to update analysis result
+correctly after refinement of a method in deeper call sites
+"""
+end
 
 # macros
 # ------

@@ -5,6 +5,33 @@
 # may still change the result of JET analysis
 # so we may need to add additional backedges for frames from which some errors are reported
 
+const ANALYZED_LINFOS  = IdSet{MethodInstance}() # keeps `MethodInstance`s analyzed by JET
+
+const JET_GLOBAL_CACHE = IdDict{MethodInstance,Vector{InferenceErrorReportCache}}()
+
+function add_jet_callback!(linfo)
+    if !isdefined(linfo, :callbacks)
+        linfo.callbacks = Any[invalidate_jet_cache!]
+    else
+        if !any(@nospecialize(cb)->cb!==invalidate_jet_cache!, linfo.callbacks)
+            push!(linfo.callbacks, invalidate_jet_cache!)
+        end
+    end
+end
+
+function invalidate_jet_cache!(replaced, max_world, depth = 0)
+    replaced ∉ ANALYZED_LINFOS && return
+    delete!(ANALYZED_LINFOS, replaced)
+    delete!(JET_GLOBAL_CACHE, replaced)
+
+    if isdefined(replaced, :backedges)
+        for mi in replaced.backedges
+            invalidate_jet_cache!(mi, max_world, depth+1)
+        end
+    end
+    return nothing
+end
+
 # we just overload `cache_result!` and so we don't need to set up our own cache
 CC.code_cache(interp::JETInterpreter) = code_cache(interp.native)
 
@@ -39,8 +66,7 @@ Core.eval(@__MODULE__, Expr(
     end
     unlock_mi_inference(interp, linfo)
 
-    @static :backedges ∉ fieldnames(MethodInstance) && return nothing
-
+    @static BACKEDGE_CALLBACK_ENABLED || return nothing
     # this function is called from `_typeinf(interp::AbstractInterpreter, frame::InferenceState)`
     # and so at this point `linfo` is not registered in `ANALYZED_LINFOS`
     # (unless inference happens multiple times for this frame)
@@ -52,27 +78,4 @@ Core.eval(@__MODULE__, Expr(
     end) # Expr(:block, LineNumberNode(@__LINE__, @__FILE__), quote
 ))
 
-end
-
-function add_jet_callback!(linfo)
-    if !isdefined(linfo, :callbacks)
-        linfo.callbacks = Any[invalidate_jet_cache!]
-    else
-        if !any(@nospecialize(cb)->cb!==invalidate_jet_cache!, linfo.callbacks)
-            push!(linfo.callbacks, invalidate_jet_cache!)
-        end
-    end
-end
-
-function invalidate_jet_cache!(replaced, max_world, depth = 0)
-    replaced ∉ ANALYZED_LINFOS && return
-    delete!(ANALYZED_LINFOS, replaced)
-    delete!(JET_GLOBAL_CACHE, replaced)
-
-    if isdefined(replaced, :backedges)
-        for mi in replaced.backedges
-            invalidate_jet_cache!(mi, max_world, depth+1)
-        end
-    end
-    return nothing
 end

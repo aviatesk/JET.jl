@@ -261,7 +261,3 @@ end) # Core.eval(CC, quote
 
 end # function overload_typeinf_edge!()
 push_inithook!(overload_typeinf_edge!)
-
-const ANALYZED_LINFOS  = IdSet{MethodInstance}() # keeps `MethodInstance`s analyzed by JET
-
-const JET_GLOBAL_CACHE = IdDict{MethodInstance,Vector{InferenceErrorReportCache}}()
