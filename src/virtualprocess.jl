@@ -502,7 +502,7 @@ function crop_stacktrace(st, offset)
     file = Symbol(@__FILE__)
     func = Symbol(with_err_handling)
     return crop_stacktrace(st, offset) do frame
-        frame.file ===  file && frame.func === func
+        frame.file === file && frame.func === func
     end
 end
 
