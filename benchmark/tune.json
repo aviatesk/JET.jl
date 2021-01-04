@@ -7,7 +7,7 @@
       "BenchmarkGroup",
       {
         "data": {
-          "sum(\"julia\") (cached)": [
+          "first time": [
             "BenchmarkTools.Parameters",
             {
               "gctrial": true,
@@ -20,7 +20,7 @@
               "memory_tolerance": 0.01
             }
           ],
-          "identity(nothing) (first time)": [
+          "easy": [
             "BenchmarkTools.Parameters",
             {
               "gctrial": true,
@@ -33,7 +33,7 @@
               "memory_tolerance": 0.01
             }
           ],
-          "sum(\"julia\")": [
+          "cached easy": [
             "BenchmarkTools.Parameters",
             {
               "gctrial": true,
@@ -46,7 +46,20 @@
               "memory_tolerance": 0.01
             }
           ],
-          "rand(Bool)": [
+          "a bit complex": [
+            "BenchmarkTools.Parameters",
+            {
+              "gctrial": true,
+              "time_tolerance": 0.05,
+              "samples": 10000,
+              "evals": 1,
+              "gcsample": false,
+              "seconds": 60.0,
+              "overhead": 0.0,
+              "memory_tolerance": 0.01
+            }
+          ],
+          "invalidation": [
             "BenchmarkTools.Parameters",
             {
               "gctrial": true,
