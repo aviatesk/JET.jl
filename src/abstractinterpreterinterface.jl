@@ -43,6 +43,9 @@ struct JETInterpreter <: AbstractInterpreter
     # configurations for analysis performed by this interpreter
     analysis_params::AnalysisParams
 
+    # keeps track of the current inference frame (needed for report cache reconstruction)
+    current_frame::Ref{Union{Nothing,InferenceState}}
+
     # debugging
     depth::Ref{Int}
 
@@ -74,6 +77,7 @@ struct JETInterpreter <: AbstractInterpreter
                    native_remarks,
                    concretized,
                    analysis_params,
+                   Ref{Union{Nothing,InferenceState}}(nothing),
                    Ref(0),
                    )
     end
