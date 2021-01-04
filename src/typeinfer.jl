@@ -41,6 +41,7 @@ end
 # where type inference (and also optimization if applied) already ran on
 function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
     linfo = frame.linfo
+    iscp = is_constant_propagated(frame)
 
     # some methods like `getproperty` can't propagate accurate types without actual values,
     # and constant prop' plays a somewhat critical role in those cases by overwriteing the
@@ -55,7 +56,7 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
     # IDEA:
     # we may want to keep some "serious" error reports like `GlobalUndefVarErrorReport`
     # even when constant prop' reveals it never happens given the current constant arguments
-    if is_constant_propagated(frame)
+    if iscp
         # use `frame.linfo` instead of `frame` for lineage check since the program counter
         # for this frame is not initialized yet; note that `frame.linfo` is the exactly same
         # object as that of the previous only-type inference
@@ -129,7 +130,7 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
     isempty(interp.uncaught_exceptions) || push!(reports_for_this_linfo, interp.uncaught_exceptions...)
 
     if !isempty(reports_for_this_linfo)
-        if is_constant_propagated(frame)
+        if iscp
             argtypes = frame.result.argtypes
             cache = interp.cache
 
@@ -153,6 +154,14 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
             for report in reports_for_this_linfo
                 cache_report!(report, linfo, global_cache)
             end
+        end
+    end
+
+    if !iscp
+        # refinement for this `linfo` may change analysis result for parent frame
+        # XXX: is this okay from performance perspective ?
+        if (parent = frame.parent; !isnothing(parent))
+            add_backedge!(linfo, parent)
         end
     end
 
