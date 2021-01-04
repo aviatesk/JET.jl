@@ -1,6 +1,5 @@
 [
   {
-    "Julia": "1.7.0-DEV.224",
     "BenchmarkTools": "0.4.3"
   },
   [
