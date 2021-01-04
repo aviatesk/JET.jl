@@ -14,12 +14,17 @@ function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
     # print(io, ' ', file, ':', line)
     # println(io)
 
+    current_frame_ref = interp.current_frame
+
+    prev_frame = current_frame_ref[]
+    current_frame_ref[] = frame
     interp.depth[] += 1 # for debug
 
     ret = @invoke typeinf(interp::AbstractInterpreter, frame::InferenceState)
 
     push!(ANALYZED_LINFOS, frame.linfo) # analyzed !
 
+    current_frame_ref[] = prev_frame
     interp.depth[] -= 1 # for debug
 
     # # print debug info after typeinf
@@ -36,6 +41,7 @@ end
 # where type inference (and also optimization if applied) already ran on
 function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
     linfo = frame.linfo
+    iscp = is_constant_propagated(frame)
 
     # some methods like `getproperty` can't propagate accurate types without actual values,
     # and constant prop' plays a somewhat critical role in those cases by overwriteing the
@@ -50,7 +56,7 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
     # IDEA:
     # we may want to keep some "serious" error reports like `GlobalUndefVarErrorReport`
     # even when constant prop' reveals it never happens given the current constant arguments
-    if is_constant_propagated(frame)
+    if iscp
         # use `frame.linfo` instead of `frame` for lineage check since the program counter
         # for this frame is not initialized yet; note that `frame.linfo` is the exactly same
         # object as that of the previous only-type inference
@@ -124,7 +130,7 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
     isempty(interp.uncaught_exceptions) || push!(reports_for_this_linfo, interp.uncaught_exceptions...)
 
     if !isempty(reports_for_this_linfo)
-        if is_constant_propagated(frame)
+        if iscp
             argtypes = frame.result.argtypes
             cache = interp.cache
 
@@ -151,6 +157,14 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
         end
     end
 
+    if !iscp
+        # refinement for this `linfo` may change analysis result for parent frame
+        # XXX: is this okay from performance perspective ?
+        if (parent = frame.parent; !isnothing(parent))
+            add_backedge!(linfo, parent)
+        end
+    end
+
     return ret
 end
 
@@ -159,105 +173,3 @@ is_unreachable(rn::ReturnNode)   = !isdefined(rn, :val)
 
 is_throw_call′(@nospecialize(_)) = false
 is_throw_call′(e::Expr)          = is_throw_call(e)
-
-"""
-    function overload_typeinf_edge!()
-        ...
-    end
-    push_inithook!(overload_typeinf_edge!)
-
-the aims of this overload are:
-1. invalidate code cache for a `MethodInstance` that is not yet analyzed by JET;
-   it happens when the `MethodInstance` is cached within the system image itself
-2. when cache is hit (i.e. any further inference won't occcur for the cached frame),
-   append cached reports associated with the cached `MethodInstance`
-"""
-function overload_typeinf_edge!()
-
-# %% for easier interactive update of typeinf_edge
-Core.eval(CC, quote
-
-# compute (and cache) an inferred AST and return the current best estimate of the result type
-function typeinf_edge(interp::$(JETInterpreter), method::Method, @nospecialize(atypes), sparams::SimpleVector, caller::InferenceState)
-    mi = specialize_method(method, atypes, sparams)::MethodInstance
-    #=== typeinf_edge patch-point 1 start ===#
-    code = $(∉)(mi, $(ANALYZED_LINFOS)) ? nothing : get(code_cache(interp), mi, nothing)
-    #=== typeinf_edge patch-point 1 end ===#
-    if code isa CodeInstance # return existing rettype if the code is already inferred
-        #=== typeinf_edge patch-point 2 start ===#
-        # cache hit, now we need to append cached reports associated with this `MethodInstance`
-        global_cache = $(get)($(JET_GLOBAL_CACHE), mi, nothing)
-        if isa(global_cache, $(Vector{InferenceErrorReportCache}))
-            $(foreach)(global_cache) do cached
-                $(restore_cached_report!)(cached, interp, caller)
-            end
-        end
-        #=== typeinf_edge patch-point 2 end ===#
-        update_valid_age!(caller, WorldRange(min_world(code), max_world(code)))
-        $(@static if isdefined(CC, :InterConditional) quote
-        rettype = code.rettype
-        if isdefined(code, :rettype_const)
-            rettype_const = code.rettype_const
-            if isa(rettype_const, InterConditional)
-                return rettype_const, mi
-            elseif isa(rettype_const, Vector{Any}) && !(Vector{Any} <: rettype)
-                return PartialStruct(rettype, rettype_const), mi
-            else
-                return Const(rettype_const), mi
-            end
-        else
-            return rettype, mi
-        end
-        end else quote
-        if isdefined(code, :rettype_const)
-            if isa(code.rettype_const, Vector{Any}) && !(Vector{Any} <: code.rettype)
-                return PartialStruct(code.rettype, code.rettype_const), mi
-            else
-                return Const(code.rettype_const), mi
-            end
-        else
-            return code.rettype, mi
-        end
-        end end)
-    end
-    if ccall(:jl_get_module_infer, Cint, (Any,), method.module) == 0
-        return Any, nothing
-    end
-    if !caller.cached && caller.parent === nothing
-        # this caller exists to return to the user
-        # (if we asked resolve_call_cyle, it might instead detect that there is a cycle that it can't merge)
-        frame = false
-    else
-        frame = resolve_call_cycle!(interp, mi, caller)
-    end
-    if frame === false
-        # completely new
-        lock_mi_inference(interp, mi)
-        result = InferenceResult(mi)
-        frame = InferenceState(result, #=cached=#true, interp) # always use the cache for edge targets
-        if frame === nothing
-            # can't get the source for this, so we know nothing
-            unlock_mi_inference(interp, mi)
-            return Any, nothing
-        end
-        if caller.cached || caller.limited # don't involve uncached functions in cycle resolution
-            frame.parent = caller
-        end
-        typeinf(interp, frame)
-        update_valid_age!(frame, caller)
-        return frame.bestguess, frame.inferred ? mi : nothing
-    elseif frame === true
-        # unresolvable cycle
-        return Any, nothing
-    end
-    # return the current knowledge about this cycle
-    frame = frame::InferenceState
-    update_valid_age!(frame, caller)
-    return frame.bestguess, nothing
-end
-
-end) # Core.eval(CC, quote
-# %% for easier interactive update of typeinf_edge
-
-end # function overload_typeinf_edge!()
-push_inithook!(overload_typeinf_edge!)
