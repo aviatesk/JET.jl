@@ -1,81 +1,96 @@
-# XXX: additional backedges for JET analysis
-# currently invalidation of JET cache just relies on invalidation of native code cache, i.e.
-# it happens only when there is a backedge from erroneous frame, which is not always true
-# e.g. native interpreter doesn't add backedge when the return type is `Any`, but invalidation
-# may still change the result of JET analysis
-# so we may need to add additional backedges for frames from which some errors are reported
-
 const ANALYZED_LINFOS  = IdSet{MethodInstance}() # keeps `MethodInstance`s analyzed by JET
 
 const JET_GLOBAL_CACHE = IdDict{MethodInstance,Vector{InferenceErrorReportCache}}()
 
+function CC.code_cache(interp::JETInterpreter)
+    cache  = JETCache(interp, code_cache(interp.native))
+    worlds = WorldRange(get_world_counter(interp))
+    return WorldView(cache, worlds)
+end
+
+struct JETCache
+    interp::JETInterpreter
+    native::WorldView{InternalCodeCache}
+end
+
+function CC.haskey(wvc::WorldView{JETCache}, mi::MethodInstance)
+    ret = CC.haskey(WorldView(wvc.cache.native, wvc.worlds), mi)
+    if ret && !(mi in ANALYZED_LINFOS)
+        add_jet_callback!(mi) # XXX: forcibly register a callback for caches in system image
+    end
+    return ret
+end
+
+function CC.get(wvc::WorldView{JETCache}, mi::MethodInstance, default)
+    # ignore code cache for a `MethodInstance` that is not yet analyzed by JET;
+    # this happens when the `MethodInstance` is cached within the system image
+    mi in ANALYZED_LINFOS || return default # force inference
+
+    ret = CC.get(WorldView(wvc.cache.native, wvc.worlds), mi, default)
+    if isa(ret, CodeInstance)
+        # cache hit, now we need to append cached reports associated with this `MethodInstance`
+        global_cache = get(JET_GLOBAL_CACHE, mi, nothing)
+        if isa(global_cache, Vector{InferenceErrorReportCache})
+            interp = wvc.cache.interp
+            caller = interp.current_frame[]::InferenceState
+            for cached in global_cache
+                restore_cached_report!(cached, interp, caller)
+            end
+        end
+    end
+    return ret
+end
+
+function CC.getindex(wvc::WorldView{JETCache}, mi::MethodInstance)
+    return CC.getindex(WorldView(wvc.cache.native, wvc.worlds), mi)
+end
+
+function CC.setindex!(wvc::WorldView{JETCache}, ci::CodeInstance, mi::MethodInstance)
+    CC.setindex!(WorldView(wvc.cache.native, wvc.worlds), ci, mi)
+    add_jet_callback!(mi)
+    return nothing
+end
+
 function add_jet_callback!(linfo)
+    @static BACKEDGE_CALLBACK_ENABLED || return nothing
+
     if !isdefined(linfo, :callbacks)
         linfo.callbacks = Any[invalidate_jet_cache!]
     else
-        if !any(@nospecialize(cb)->cb!==invalidate_jet_cache!, linfo.callbacks)
+        if !any(@nospecialize(cb)->cb===invalidate_jet_cache!, linfo.callbacks)
             push!(linfo.callbacks, invalidate_jet_cache!)
         end
     end
+    return nothing
 end
 
 function invalidate_jet_cache!(replaced, max_world, depth = 0)
-    replaced ∉ ANALYZED_LINFOS && return
     delete!(ANALYZED_LINFOS, replaced)
     delete!(JET_GLOBAL_CACHE, replaced)
 
     if isdefined(replaced, :backedges)
         for mi in replaced.backedges
+            mi = mi::MethodInstance
+            (mi in ANALYZED_LINFOS || haskey(JET_GLOBAL_CACHE, mi)) || continue # otherwise infinite loop
             invalidate_jet_cache!(mi, max_world, depth+1)
         end
     end
     return nothing
 end
 
-# we just overload `cache_result!` and so we don't need to set up our own cache
-CC.code_cache(interp::JETInterpreter) = code_cache(interp.native)
+# optimizer
+# =========
 
-# TODO better to use `overload_cache_result!!` hack ?
-let
+# `JETInterpreter` don't recur into the optimization step via `@invoke` macro
+# but rather we just go through `NativeInterpreter`'s optimization pass
+# this is necessary because `CC.get(wvc::WorldView{JETCache}, mi::MethodInstance, default)`
+# can be called from optimization pass otherwise, and it may cause errors because our report
+# construction is only valid before optimization
 
-# branching on https://github.com/JuliaLang/julia/pull/38820
-islatest = first(methods(CC.cache_result!, CC)).nargs == 3
+function CC.OptimizationState(linfo::MethodInstance, params::OptimizationParams, interp::JETInterpreter)
+    return OptimizationState(linfo, params, interp.native)
+end
 
-Core.eval(@__MODULE__, Expr(
-    :function,
-    # signature
-    islatest ? :(CC.cache_result!(interp::JETInterpreter, result::InferenceResult)) :
-               :(CC.cache_result!(interp::JETInterpreter, result::InferenceResult, valid_worlds::WorldRange)),
-    # body
-    Expr(:block, LineNumberNode(@__LINE__, @__FILE__), quote
-    linfo = result.linfo
-
-    $(islatest && :(valid_worlds = result.valid_worlds))
-    # check if the existing linfo metadata is also sufficient to describe the current inference result
-    # to decide if it is worth caching this
-    already_inferred = CC.already_inferred_quick_test(interp, linfo) # always false
-    if !already_inferred && CC.haskey(WorldView(code_cache(interp), valid_worlds), linfo)
-        already_inferred = true
-    end
-
-    # TODO: also don't store inferred code if we've previously decided to interpret this function
-    if !already_inferred
-        $(islatest ? :(inferred_result = CC.transform_result_for_cache(interp, linfo, valid_worlds, result.src)) :
-                     :(inferred_result = CC.transform_result_for_cache(interp, linfo, result.src)))
-        CC.setindex!(code_cache(interp), CodeInstance(result, inferred_result, valid_worlds), linfo)
-    end
-    unlock_mi_inference(interp, linfo)
-
-    @static BACKEDGE_CALLBACK_ENABLED || return nothing
-    # this function is called from `_typeinf(interp::AbstractInterpreter, frame::InferenceState)`
-    # and so at this point `linfo` is not registered in `ANALYZED_LINFOS`
-    # (unless inference happens multiple times for this frame)
-    if linfo ∉ ANALYZED_LINFOS
-        add_jet_callback!(linfo)
-    end
-
-    return nothing
-    end) # Expr(:block, LineNumberNode(@__LINE__, @__FILE__), quote
-))
-
+function CC.optimize(interp::JETInterpreter, opt::OptimizationState, params::OptimizationParams, result)
+    return optimize(interp.native, opt, params, result)
 end

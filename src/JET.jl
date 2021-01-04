@@ -24,6 +24,8 @@ import .CC:
     # jetcache.jl
     code_cache,
     cache_result!,
+    OptimizationState,
+    optimize,
     # tfuncs.jl
     builtin_tfunction,
     return_type_tfunc,
@@ -35,8 +37,7 @@ import .CC:
     abstract_eval_statement,
     # typeinfer.jl
     typeinf,
-    _typeinf,
-    typeinf_edge
+    _typeinf
 
 # `ConcreteInterpreter`
 import JuliaInterpreter:
