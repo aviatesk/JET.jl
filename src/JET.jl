@@ -23,7 +23,10 @@ import .CC:
     may_discard_trees,
     # jetcache.jl
     code_cache,
-    cache_result!,
+    # haskey,
+    # get,
+    # getindex,
+    # setindex!,
     OptimizationState,
     optimize,
     # tfuncs.jl
