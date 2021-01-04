@@ -98,16 +98,32 @@ BenchmarkTools.DEFAULT_PARAMETERS.seconds = 60
 
 const SUITE = BenchmarkGroup()
 
-SUITE["identity(nothing) (first time)"] = @jetbenchmarkable (@profile_call identity(nothing)) setup = (using JET)
-SUITE["sum(\"julia\")"] = @jetbenchmarkable (@profile_call sum("julia")) setup = begin
+SUITE["first time"] = @jetbenchmarkable (@profile_call identity(nothing)) setup = (using JET)
+SUITE["easy"] = @jetbenchmarkable (@profile_call sum("julia")) setup = begin
     using JET
     @profile_call identity(nothing)
 end
-SUITE["sum(\"julia\") (cached)"] = @jetbenchmarkable (@profile_call sum("julia")) setup = begin
+SUITE["cached easy"] = @jetbenchmarkable (@profile_call sum("julia")) setup = begin
     using JET
     @profile_call sum("julia")
 end
-SUITE["rand(Bool)"] = @jetbenchmarkable (@profile_call rand(Bool)) setup = begin
+SUITE["a bit complex"] = @jetbenchmarkable (@profile_call rand(Bool)) setup = begin
     using JET
     @profile_call identity(nothing)
+end
+SUITE["invalidation"] = @jetbenchmarkable (@profile_call println(QuoteNode(nothing))) setup = begin
+    using JET
+    @profile_call println(QuoteNode(nothing))
+    @eval Base begin
+        function show_sym(io::IO, sym::Symbol; allow_macroname=false)
+            if is_valid_identifier(sym)
+                print(io, sym)
+            elseif allow_macroname && (sym_str = string(sym); startswith(sym_str, '@'))
+                print(io, '@')
+                show_sym(io, sym_str[2:end]) # NOTE: `sym_str[2:end]` here is errorneous
+            else
+                print(io, "var", repr(string(sym)))
+            end
+        end
+    end
 end
