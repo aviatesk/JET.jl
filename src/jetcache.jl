@@ -42,7 +42,9 @@ function CC.get(wvc::WorldView{JETCache}, mi::MethodInstance, default)
 end
 
 function CC.getindex(wvc::WorldView{JETCache}, mi::MethodInstance)
-    return CC.getindex(WorldView(wvc.cache.native, wvc.worlds), mi)
+    r = CC.get(wvc, mi, nothing)
+    r === nothing && throw(KeyError(mi))
+    return r::CodeInstance
 end
 
 function CC.setindex!(wvc::WorldView{JETCache}, ci::CodeInstance, mi::MethodInstance)

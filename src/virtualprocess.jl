@@ -157,7 +157,7 @@ function virtual_process!(toplevelex::Expr,
 
             isnothing(newvirtualmod) && continue # error happened, e.g. duplicated naming
 
-            virtual_process!(newtoplevelex, filename, newvirtualmod, actualmodsym, interp, ret)
+            virtual_process!(newtoplevelex, filename, newvirtualmod::Module, actualmodsym, interp, ret)
 
             continue
         end
@@ -450,7 +450,7 @@ function handle_include(interp, fargs)
 
     isnothing(include_text) && return nothing # typically no file error
 
-    virtual_process!(include_text, include_file, interp.virtualmod, interp.actualmodsym, interp.interp, interp.ret)
+    virtual_process!(include_text::String, include_file, interp.virtualmod, interp.actualmodsym, interp.interp, interp.ret)
 
     # TODO: actually, here we need to try to get the last profiling result of the `virtual_process!` call above
     return nothing
