@@ -48,14 +48,11 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
     # previously-inferred lousy result; JET.jl also needs that to reduce false positive reports,
     # and so here we will throw-away previously-collected error reports that are "lineage" of
     # this frame, when it is being re-inferred with constant-prop'ed inputs
-    #
-    # NOTE:
     # - constant prop' only happens after inference with non-constant abstract values (i.e. types)
-    # - xref to track the change in the native constant propagation logic:
+    # - xref to track the change in the native abstract interpretation logic:
     #   https://github.com/JuliaLang/julia/blob/a108d6cb8fdc7924fe2b8d831251142386cb6525/base/compiler/abstractinterpretation.jl#L153
-    # IDEA:
-    # we may want to keep some "serious" error reports like `GlobalUndefVarErrorReport`
-    # even when constant prop' reveals it never happens given the current constant arguments
+    # - IDEA: we may want to keep some "serious" error reports like `GlobalUndefVarErrorReport`
+    #   even when constant prop' reveals it never happens given the current constant arguments
     if iscp
         # use `frame.linfo` instead of `frame` for lineage check since the program counter
         # for this frame is not initialized yet; note that `frame.linfo` is the exactly same
