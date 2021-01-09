@@ -12,7 +12,7 @@ end
 
 const LocalCache = Dict{Vector{Any},Vector{InferenceErrorReportCache}}
 
-struct JETInterpreter <: AbstractInterpreter
+mutable struct JETInterpreter <: AbstractInterpreter
     #= native =#
 
     native::NativeInterpreter
@@ -44,10 +44,10 @@ struct JETInterpreter <: AbstractInterpreter
     analysis_params::AnalysisParams
 
     # keeps track of the current inference frame (needed for report cache reconstruction)
-    current_frame::Ref{Union{Nothing,InferenceState}}
+    current_frame::Union{Nothing,InferenceState}
 
     # debugging
-    depth::Ref{Int}
+    depth::Int
 
     function JETInterpreter(world               = get_world_counter();
                             inf_params          = gen_inf_params(),
@@ -77,8 +77,8 @@ struct JETInterpreter <: AbstractInterpreter
                    native_remarks,
                    concretized,
                    analysis_params,
-                   Ref{Union{Nothing,InferenceState}}(nothing),
-                   Ref(0),
+                   nothing,
+                   0,
                    )
     end
 end

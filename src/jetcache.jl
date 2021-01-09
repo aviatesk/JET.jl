@@ -32,7 +32,7 @@ function CC.get(wvc::WorldView{JETCache}, mi::MethodInstance, default)
         global_cache = get(JET_GLOBAL_CACHE, mi, nothing)
         if isa(global_cache, Vector{InferenceErrorReportCache})
             interp = wvc.cache.interp
-            caller = interp.current_frame[]::InferenceState
+            caller = interp.current_frame::InferenceState
             for cached in global_cache
                 restore_cached_report!(cached, interp, caller)
             end

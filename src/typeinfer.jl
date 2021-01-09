@@ -1,7 +1,7 @@
 # in this overload we will work on some meta/debug information management
 function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
     # # print debug info before typeinf
-    # depth = interp.depth[]
+    # depth = interp.depth
     # io = stdout::IO
     # color = RAIL_COLORS[(depth+1)%N_RAILS+1]
     # print_rails(io, depth)
@@ -14,18 +14,16 @@ function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
     # print(io, ' ', file, ':', line)
     # println(io)
 
-    current_frame_ref = interp.current_frame
-
-    prev_frame = current_frame_ref[]
-    current_frame_ref[] = frame
-    interp.depth[] += 1 # for debug
+    prev_frame = interp.current_frame
+    interp.current_frame = frame
+    interp.depth += 1 # for debug
 
     ret = @invoke typeinf(interp::AbstractInterpreter, frame::InferenceState)
 
     push!(ANALYZED_LINFOS, frame.linfo) # analyzed !
 
-    current_frame_ref[] = prev_frame
-    interp.depth[] -= 1 # for debug
+    interp.current_frame = prev_frame
+    interp.depth -= 1 # for debug
 
     # # print debug info after typeinf
     # print_rails(io, depth)
