@@ -369,7 +369,7 @@ function profile_toplevel!(interp::JETInterpreter, mod::Module, src::CodeInfo)
     mi.def = mod
 
     result = InferenceResult(mi);
-    frame = InferenceState(result, src, #= cached =# true, interp);
+    frame = InferenceState(result, src, #=cached=# true, interp);
 
     mi.def = __toplevel__ # set to the dummy module
 
@@ -419,7 +419,7 @@ function profile_method_signature!(interp::JETInterpreter,
 
     result = InferenceResult(mi)
 
-    frame = InferenceState(result, #= cached =# true, interp)
+    frame = InferenceState(result, #=cached=# true, interp)
 
     return profile_frame!(interp, frame)
 end

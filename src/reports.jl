@@ -64,6 +64,8 @@ function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
         getfield(er, sym)::Vector{Any}
     elseif sym === :lineage
         getfield(er, sym)::Lineage
+    elseif sym === :lin # only needed for ExceptionReport
+        getfield(er, sym)::LineInfoNode
     else
         getfield(er, sym) # fallback
     end
@@ -155,7 +157,7 @@ end
 
 function cache_report!(report::T, linfo, cache) where {T<:InferenceErrorReport}
     st = report.st
-    i = findfirst(vf->vf.linfo==linfo, st)
+    i = findfirst(vf->vf.linfo===linfo, st)
     # sometimes `linfo` can't be found within the `report.st` chain; e.g. frames for inner
     # constructor methods doesn't seem to be tracked in the `(frame::InferenceState).parent`
     # chain so that there is no `MethodInstance` within `report.st` for such a frame;
@@ -330,11 +332,13 @@ In order to avoid duplicated reports for the `throw` call, any subtype of `Excep
 """
 abstract type ExceptionReport <: InferenceErrorReport end
 
-# to help inference
-function Base.getproperty(er::ExceptionReport, sym::Symbol)
-    sym === :lin && return getfield(er, :lin)::LineInfoNode
-    return @invoke getproperty(er::InferenceErrorReport, sym::Symbol)
-end
+# # NOTE: this mixin implementation is cleaner but doesn't help inference,
+# # because this `getproperty` interface relies on constant prop' and it won't happen when
+# # there're multiple applicable methods.
+# function Base.getproperty(er::ExceptionReport, sym::Symbol)
+#     sym === :lin && return getfield(er, :lin)::LineInfoNode
+#     return @invoke getproperty(er::InferenceErrorReport, sym::Symbol)
+# end
 
 @reportdef UndefKeywordErrorReport(interp, sv, err::UndefKeywordError, lin::LineInfoNode) supertype = ExceptionReport
 
