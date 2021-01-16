@@ -78,6 +78,7 @@ import .CC:
     UnionSplitInfo,
     MethodLookupResult,
     Const,
+    VarState,
     VarTable,
     SSAValue,
     SlotNumber,
@@ -253,13 +254,17 @@ function postwalk_inf_frame(@nospecialize(f), frame::InferenceState)
     return f(frame)
 end
 
-# NOTE: these methods assume `frame` is not inlined
-get_cur_pc(frame::InferenceState) = return frame.currpc
-get_cur_stmt(frame::InferenceState) = frame.src.code[get_cur_pc(frame)]
-get_cur_loc(frame::InferenceState) = frame.src.codelocs[get_cur_pc(frame)]
-get_cur_linfo(frame::InferenceState) = frame.src.linetable[get_cur_loc(frame)]::LineInfoNode
-get_cur_varstates(frame::InferenceState) = frame.stmt_types[get_cur_pc(frame)]
-get_result(frame::InferenceState) = frame.result.result
+# NOTE: these methods are supposed to be called while abstract interpretaion
+# and as such aren't valid after finishing it (i.e. optimization, etc.)
+get_currpc(frame::InferenceState)                          = frame.currpc
+get_stmt(frame::InferenceState, pc = get_currpc(frame))    = frame.src.code[pc]
+get_states(frame::InferenceState, pc = get_currpc(frame))  = frame.stmt_types[pc]::VarTable
+get_codeloc(frame::InferenceState, pc = get_currpc(frame)) = frame.src.codelocs[pc]
+get_lin(frame::InferenceState, loc = get_codeloc(frame))   = frame.src.linetable[loc]::LineInfoNode
+
+get_slotname(frame::InferenceState, slot::Slot) = frame.src.slotnames[slot_id(slot)]
+
+get_result(frame::InferenceState) = frame.bestguess
 
 # includes
 # ========

@@ -446,7 +446,7 @@ function CC.abstract_eval_value(interp::JETInterpreter, @nospecialize(e), vtypes
     ret = @invoke abstract_eval_value(interp::AbstractInterpreter, e, vtypes::VarTable, sv::InferenceState)
 
     # report non-boolean condition error
-    stmt = get_cur_stmt(sv)
+    stmt = get_stmt(sv)
     if isa(stmt, GotoIfNot)
         t = widenconst(ret)
         if t !== Bottom && !⊑(Bool, t)
@@ -460,7 +460,7 @@ end
 
 function CC.abstract_eval_statement(interp::JETInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
     if istoplevel(sv)
-        if interp.concretized[get_cur_pc(sv)]
+        if interp.concretized[get_currpc(sv)]
             return Any # bail out if it has been interpreted by `ConcreteInterpreter`
         end
     end
@@ -471,7 +471,7 @@ function CC.abstract_eval_statement(interp::JETInterpreter, @nospecialize(e), vt
     # for toplevel frames, we do virtual global variable assignments, whose types are
     # propagated even if they're non-constant
     if istoplevel(sv)
-        stmt = get_cur_stmt(sv)
+        stmt = get_stmt(sv)
         if @isexpr(stmt, :(=))
             lhs = first(stmt.args)
 
@@ -581,7 +581,7 @@ function is_constant_declared(mod, name, stmts)
     end
 end
 
-is_nondeterministic(sv) = is_nondeterministic(get_cur_pc(sv), compute_basic_blocks(sv.src.code))
+is_nondeterministic(sv) = is_nondeterministic(get_currpc(sv), compute_basic_blocks(sv.src.code))
 
 # XXX: does this approach really cover all the control flow ?
 function is_nondeterministic(pc, bbs)

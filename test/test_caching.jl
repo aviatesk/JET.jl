@@ -70,6 +70,7 @@
             length(interp1.reports), length(interp2.reports), length(interp3.reports) # return
         end
 
+        # @info "\"invalidate native code cache\" test result" l1 l2 l3
         @test l1 > 0
         @test l2 == 0
         @test l3 > 0 # XXX: `l1 == l3` doesn't hold, somehow

@@ -16,7 +16,7 @@ function CC.builtin_tfunction(interp::JETInterpreter, @nospecialize(f), argtypes
             if isa(a, Const)
                 v = a.val
                 if isa(v, UndefKeywordError)
-                    report!(interp, UndefKeywordErrorReport(interp, sv, v, get_cur_linfo(sv)))
+                    report!(interp, UndefKeywordErrorReport(interp, sv, v, get_lin(sv)))
                 end
             end
         end

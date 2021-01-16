@@ -35,11 +35,14 @@ function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
     return ret
 end
 
+# TODO: disable optimization for performance, only do necessary analysis work by ourselves
+
 # in this overload we can work on `frame.src::CodeInfo` (and also `frame::InferenceState`)
 # where type inference (and also optimization if applied) already ran on
 function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
     linfo = frame.linfo
     iscp = is_constant_propagated(frame)
+    reports = interp.reports
 
     # some methods like `getproperty` can't propagate accurate types without actual values,
     # and constant prop' plays a somewhat critical role in those cases by overwriteing the
@@ -55,10 +58,10 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
         # use `frame.linfo` instead of `frame` for lineage check since the program counter
         # for this frame is not initialized yet; note that `frame.linfo` is the exactly same
         # object as that of the previous only-type inference
-        filter!(r->!is_lineage(r.lineage, frame.parent, linfo), interp.reports)
+        filter!(r->!is_lineage(r.lineage, frame.parent, linfo), reports)
     end
 
-    before = Set(interp.reports)
+    before = Set(reports)
 
     ret = @invoke _typeinf(interp::AbstractInterpreter, frame::InferenceState)
 
@@ -101,28 +104,33 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
         codelocs    = frame.src.codelocs
         linetable   = frame.src.linetable
         throw_locs  = LineInfoNode[]
-        throw_calls = Any[]
-        for r in reports_for_this_linfo
-            if isa(r, ExceptionReport)
+        throw_calls = Expr[]
+        for r in reports
+            if isa(r, ExceptionReport) && last(r.st).linfo === linfo
                 push!(throw_locs, r.lin)
             end
         end
         for (i, stmt) in enumerate(stmts)
             is_throw_call′(stmt) || continue
             # if this `throw` is already reported, don't duplciate
-            linetable[codelocs[i]] in throw_locs && continue
+            linetable[codelocs[i]]::LineInfoNode in throw_locs && continue
             push!(throw_calls, stmt)
         end
-        isempty(throw_calls) || push!(interp.uncaught_exceptions, UncaughtExceptionReport(interp, frame, throw_calls))
+        if !isempty(throw_calls)
+            stash_uncaught_exception!(interp, UncaughtExceptionReport(interp, frame, throw_calls))
+        end
     else
-        # the non-`Bottom` result here means `throw` calls within the children frames
-        # reported so far (if exist) are caught and not propagated to the result;
-        # we don't want to cache for this frame and its parents, so just filter them away
-        # NOTE: this is critical for performance issue https://github.com/aviatesk/JET.jl/issues/71
-        isempty(interp.uncaught_exceptions) || empty!(interp.uncaught_exceptions)
+        # the non-`Bottom` result here may mean `throw` calls from the children frames
+        # (if exists) are caught and not propagated here;
+        # we don't want to cache `UncaughtExceptionReport`s for those calls for this frame
+        # and its parents, so just filter them away
+        empty!(interp.uncaught_exceptions)
     end
 
-    isempty(interp.uncaught_exceptions) || push!(reports_for_this_linfo, interp.uncaught_exceptions...)
+    # cache uncaught exceptions so far
+    if !isempty(interp.uncaught_exceptions)
+        push!(reports_for_this_linfo, interp.uncaught_exceptions...)
+    end
 
     if !isempty(reports_for_this_linfo)
         if iscp

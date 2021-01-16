@@ -229,15 +229,15 @@ macro reportdef(ex, kwargs...)
         st = VirtualFrame[]
         lineage = Lineage()
 
-        @static $(track_from_frame) && let
-            # when report is constructed _after_ the inference on `sv::InferenceState` has been done,
+        $(track_from_frame && :(let
+            # when report is constructed _after_ the inference on `sv` has been done,
             # collect location information from `sv.linfo` and start traversal from `sv.parent`
             linfo = sv.linfo
             vf = get_virtual_frame(linfo)
             push!(st, vf)
             push!(lineage, get_lineage_key(vf))
             sv = sv.parent
-        end
+        end))
 
         prewalk_inf_frame(sv) do frame::InferenceState
             vf = get_virtual_frame(frame)
@@ -256,14 +256,14 @@ macro reportdef(ex, kwargs...)
                                    lineage::Lineage,
                                    @nospecialize(spec_args),
                                    ))
-    cache_constructor_call = Expr(:call, :new, :st, :msg, :sig, :lineage)
+    cache_constructor_call = :(new(st, msg, sig, lineage))
     for (i, spec_type) in enumerate(spec_types)
         push!(cache_constructor_call.args,
               :($(esc(:spec_args))[$(i)]::$(spec_type)), # `esc` is needed because `@nospecialize` escapes its argument anyway
               )
     end
     cache_constructor = Expr(:function, cache_constructor_sig, Expr(:block, __source__,
-        :(return $(cache_constructor_call))
+        :(return @inbounds $(cache_constructor_call))
     ))
 
     spec_getter_sig = :($(esc(:spec_args))(report::$(T)))
@@ -345,7 +345,7 @@ Represents general `throw` calls traced during inference.
 They are reported only when they're not caught by any control flow.
 """
 :(UncaughtExceptionReport)
-@reportdef UncaughtExceptionReport(interp, sv, throw_calls::Vector{Any}) track_from_frame = true
+@reportdef UncaughtExceptionReport(interp, sv, throw_calls::Vector{Expr}) track_from_frame = true
 
 """
     NativeRemark <: InferenceErrorReport
@@ -365,7 +365,7 @@ function get_virtual_frame(loc::Union{InferenceState,MethodInstance})::VirtualFr
     return VirtualFrame(file, line, sig, linfo)
 end
 
-get_file_line(frame::InferenceState) = get_file_line(get_cur_linfo(frame))
+get_file_line(frame::InferenceState) = get_file_line(get_lin(frame))
 get_file_line(linfo::LineInfoNode)   = linfo.file, linfo.line
 # this location is not exact, but this is whay we know at best
 function get_file_line(linfo::MethodInstance)::Tuple{Symbol,Int}
@@ -416,7 +416,7 @@ end
 
 # entry
 get_sig(::Type{<:InferenceErrorReport}, interp, sv, @nospecialize(args...)) = get_sig(sv)
-get_sig(sv::InferenceState) = _get_sig(sv, get_cur_stmt(sv))
+get_sig(sv::InferenceState) = _get_sig(sv, get_stmt(sv))
 
 # special cased entries
 get_sig(::Type{LocalUndefVarErrorReport}, interp, sv, name) = Any[""] # TODO
@@ -486,11 +486,11 @@ function _get_sig_type(sv::InferenceState, ssa::SSAValue)
     return sig, typ
 end
 function _get_sig_type(sv::InferenceState, slot::SlotNumber)
-    sig = string(sv.src.slotnames[slot.id])
+    sig = string(get_slotname(sv, slot))
     if isempty(sig)
         sig = string(slot) # fallback if no explicit slotname
     end
-    typ = widenconst(get_cur_varstates(sv)[slot.id].typ)
+    typ = widenconst((get_states(sv)[slot.id]::VarState).typ)
     return Any[sig, typ], typ
 end
 _get_sig_type(::InferenceState, gr::GlobalRef) = Any[string(gr.mod, '.', gr.name)], nothing

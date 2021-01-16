@@ -139,5 +139,8 @@ get_id(interp::JETInterpreter) = interp.id
 # TODO do report filtering or something configured by `AnalysisParams(interp)`
 function report!(interp::JETInterpreter, report::InferenceErrorReport)
     push!(interp.reports, report)
-    return
+end
+
+function stash_uncaught_exception!(interp::JETInterpreter, report::UncaughtExceptionReport)
+    push!(interp.uncaught_exceptions, report)
 end
