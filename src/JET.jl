@@ -292,6 +292,7 @@ macro withmixedhash(typedef)
     for (fld, typ) in fld2typs
         push!(hash_body.args, :(h = $(Base.hash)(x.$fld, h)))
     end
+    push!(hash_body.args, :(return h))
     hash_func = :(function Base.hash(x::$name, h::UInt); $(hash_body); end)
     eq_body = foldr(fld2typs; init = true) do (fld, typ), x
         eq_ex = if all(in(EGAL_TYPES), typenames(typ))
