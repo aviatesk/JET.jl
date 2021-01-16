@@ -129,21 +129,14 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
             argtypes = frame.result.argtypes
             cache = interp.cache
 
-            # if haskey(cache, argtypes)
-            #     @warn "this control flow shouldn't happen ..." linfo argtypes
-            # end
+            @assert !haskey(cache, argtypes) "invalid local caching"
             local_cache = cache[argtypes] = InferenceErrorReportCache[]
 
             for report in reports_for_this_linfo
                 cache_report!(report, linfo, local_cache)
             end
-        else
-            # if haskey(JET_GLOBAL_CACHE, linfo)
-            #     # can happen when the inference for this frame was manually invoked,
-            #     # e.g. calling `@report_call sum("julia")`  two times from REPL
-            #     # but we will just update the cache anyway
-            #     @warn "deplicated analysis happened" linfo
-            # end
+        elseif frame.cached # only cache when `NativeInterpreter` does
+            @assert !haskey(JET_GLOBAL_CACHE, linfo) || isnothing(frame.parent) "invalid global caching"
             global_cache = JET_GLOBAL_CACHE[linfo] = InferenceErrorReportCache[]
 
             for report in reports_for_this_linfo
