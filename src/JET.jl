@@ -128,16 +128,6 @@ using FileWatching, Requires
 
 using InteractiveUtils
 
-# common
-# ======
-
-# hooks
-# -----
-
-const INIT_HOOKS = Function[]
-push_inithook!(f) = push!(INIT_HOOKS, f)
-__init__() = foreach(@nospecialize(f)->f(), INIT_HOOKS)
-
 # compat
 # ======
 
@@ -148,6 +138,16 @@ const BACKEDGE_CALLBACK_ENABLED = :callbacks in fieldnames(Core.MethodInstance)
 correctly after refinement of a method in deeper call sites
 """
 end
+
+# common
+# ======
+
+# hooks
+# -----
+
+const INIT_HOOKS = Function[]
+push_inithook!(f) = push!(INIT_HOOKS, f)
+__init__() = foreach(@nospecialize(f)->f(), INIT_HOOKS)
 
 # macros
 # ------
@@ -191,6 +191,18 @@ macro invoke(ex)
     return esc(:($(GlobalRef(Core, :invoke))($(f), Tuple{$(argtypes...)}, $(args...); $(kwargs...))))
 end
 
+"""
+    @invokelatest f(args...; kwargs...)
+
+Provides a convenient way to call [`Base.invokelatest`](@ref).
+`@invokelatest f(args...; kwargs...)` will simply be expanded into
+`Base.invokelatest(f, args...; kwargs...)`.
+"""
+macro invokelatest(ex)
+    f, args, kwargs = destructure_callex(ex)
+    return esc(:($(GlobalRef(Base, :invokelatest))($(f), $(args...); $(kwargs...))))
+end
+
 function destructure_callex(ex)
     @assert @isexpr(ex, :call) "call expression f(args...; kwargs...) should be given"
 
@@ -208,18 +220,6 @@ function destructure_callex(ex)
     end
 
     return f, args, kwargs
-end
-
-"""
-    @invokelatest f(args...; kwargs...)
-
-Provides a convenient way to call [`Base.invokelatest`](@ref).
-`@invokelatest f(args...; kwargs...)` will simply be expanded into
-`Base.invokelatest(f, args...; kwargs...)`.
-"""
-macro invokelatest(ex)
-    f, args, kwargs = destructure_callex(ex)
-    return esc(:($(GlobalRef(Base, :invokelatest))($(f), $(args...); $(kwargs...))))
 end
 
 # inference frame
