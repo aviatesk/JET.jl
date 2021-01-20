@@ -132,17 +132,6 @@ using FileWatching, Requires
 
 using InteractiveUtils
 
-# compat
-# ======
-
-const BACKEDGE_CALLBACK_ENABLED = :callbacks in fieldnames(Core.MethodInstance)
-
-@static BACKEDGE_CALLBACK_ENABLED || push_inithook!() do
-@warn """with your Julia version, JET.jl may not be able to update analysis result
-correctly after refinement of a method in deeper call sites
-"""
-end
-
 # common
 # ======
 
@@ -152,6 +141,17 @@ end
 const INIT_HOOKS = Function[]
 push_inithook!(f) = push!(INIT_HOOKS, f)
 __init__() = foreach(@nospecialize(f)->f(), INIT_HOOKS)
+
+# compat
+# ------
+
+const BACKEDGE_CALLBACK_ENABLED = :callbacks in fieldnames(Core.MethodInstance)
+
+@static BACKEDGE_CALLBACK_ENABLED || push_inithook!() do
+@warn """with your Julia version, JET.jl may not be able to update analysis result
+correctly after refinement of a method in deeper call sites
+"""
+end
 
 # macros
 # ------
@@ -269,7 +269,7 @@ end
 @inline get_slotname(frame::InferenceState, slot::Int)             = @inbounds frame.src.slotnames[slot]
 @inline get_slotname(frame::InferenceState, slot::Slot)            = get_slotname(frame, slot_id(slot))
 
-get_result(frame::InferenceState) = frame.bestguess
+@inline get_result(frame::InferenceState)                          = frame.bestguess
 
 # includes
 # ========
