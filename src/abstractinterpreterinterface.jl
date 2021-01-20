@@ -16,9 +16,6 @@ mutable struct JETInterpreter <: AbstractInterpreter
     #= native =#
 
     native::NativeInterpreter
-    optimize::Bool
-    compress::Bool
-    discard_trees::Bool
 
     #= JET.jl specific =#
 
@@ -46,15 +43,15 @@ mutable struct JETInterpreter <: AbstractInterpreter
     # keeps track of the current inference frame (needed for report cache reconstruction)
     current_frame::Union{Nothing,InferenceState}
 
+    # stashes explicitly declared local variables (FILO, i.e. the last element is for the current frame)
+    locals_stack::Vector{Set{Int}}
+
     # debugging
     depth::Int
 
     function JETInterpreter(world               = get_world_counter();
                             inf_params          = gen_inf_params(),
                             opt_params          = gen_opt_params(),
-                            optimize            = true,
-                            compress            = false,
-                            discard_trees       = false,
                             id                  = gensym(:JETInterpreterID),
                             reports             = InferenceErrorReport[],
                             uncaught_exceptions = UncaughtExceptionReport[],
@@ -67,9 +64,6 @@ mutable struct JETInterpreter <: AbstractInterpreter
 
         native = NativeInterpreter(world; inf_params, opt_params)
         return new(native,
-                   optimize,
-                   compress,
-                   discard_trees,
                    LocalCache(),
                    id,
                    reports,
@@ -78,6 +72,7 @@ mutable struct JETInterpreter <: AbstractInterpreter
                    concretized,
                    analysis_params,
                    nothing,
+                   Set{Symbol}[],
                    0,
                    )
     end
@@ -86,9 +81,9 @@ end
 # AbstractInterpreter API
 # -----------------------
 
-CC.InferenceParams(interp::JETInterpreter) = InferenceParams(interp.native)
+CC.InferenceParams(interp::JETInterpreter)    = InferenceParams(interp.native)
 CC.OptimizationParams(interp::JETInterpreter) = OptimizationParams(interp.native)
-CC.get_world_counter(interp::JETInterpreter) = get_world_counter(interp.native)
+CC.get_world_counter(interp::JETInterpreter)  = get_world_counter(interp.native)
 
 # JET only works for runtime inference
 CC.lock_mi_inference(::JETInterpreter, ::MethodInstance) = nothing
@@ -100,9 +95,9 @@ function CC.add_remark!(interp::JETInterpreter, sv::InferenceState, s::String)
     return
 end
 
-CC.may_optimize(interp::JETInterpreter) = interp.optimize
-CC.may_compress(interp::JETInterpreter) = interp.compress
-CC.may_discard_trees(interp::JETInterpreter) = interp.discard_trees
+CC.may_optimize(interp::JETInterpreter)      = false
+CC.may_compress(interp::JETInterpreter)      = false
+CC.may_discard_trees(interp::JETInterpreter) = false
 
 # JETInterpreter specific
 # -----------------------
@@ -143,3 +138,18 @@ end
 function stash_uncaught_exception!(interp::JETInterpreter, report::UncaughtExceptionReport)
     push!(interp.uncaught_exceptions, report)
 end
+
+locals(interp::JETInterpreter) = last(interp.locals_stack)
+
+function setup_locals!(interp::JETInterpreter, frame::InferenceState)
+    locals = Set{Int}()
+    # slotnames = frame.src.slotnames
+    for node in frame.src.code
+        if isa(node, NewvarNode)
+            push!(locals, slot_id(node.slot))
+        end
+    end
+    push!(interp.locals_stack, locals)
+end
+
+remove_locals!(interp::JETInterpreter, frame::InferenceState) = pop!(interp.locals_stack)

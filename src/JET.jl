@@ -42,7 +42,8 @@ import .CC:
     abstract_eval_statement,
     # typeinfer.jl
     typeinf,
-    _typeinf
+    _typeinf,
+    maybe_compress_codeinfo
 
 # `ConcreteInterpreter`
 import JuliaInterpreter:
@@ -60,6 +61,7 @@ import Core:
     Builtin,
     MethodMatch,
     LineInfoNode,
+    NewvarNode,
     SimpleVector,
     svec
 
@@ -258,13 +260,14 @@ end
 
 # NOTE: these methods are supposed to be called while abstract interpretaion
 # and as such aren't valid after finishing it (i.e. optimization, etc.)
-get_currpc(frame::InferenceState)                          = frame.currpc
-get_stmt(frame::InferenceState, pc = get_currpc(frame))    = frame.src.code[pc]
-get_states(frame::InferenceState, pc = get_currpc(frame))  = frame.stmt_types[pc]::VarTable
-get_codeloc(frame::InferenceState, pc = get_currpc(frame)) = frame.src.codelocs[pc]
-get_lin(frame::InferenceState, loc = get_codeloc(frame))   = frame.src.linetable[loc]::LineInfoNode
+@inline get_currpc(frame::InferenceState)                          = min(frame.currpc, length(frame.src.code))
+@inline get_stmt(frame::InferenceState, pc = get_currpc(frame))    = @inbounds frame.src.code[pc]
+@inline get_states(frame::InferenceState, pc = get_currpc(frame))  = @inbounds frame.stmt_types[pc]::VarTable
+@inline get_codeloc(frame::InferenceState, pc = get_currpc(frame)) = @inbounds frame.src.codelocs[pc]
+@inline get_lin(frame::InferenceState, loc = get_codeloc(frame))   = @inbounds frame.src.linetable[loc]::LineInfoNode
 
-get_slotname(frame::InferenceState, slot::Slot) = frame.src.slotnames[slot_id(slot)]
+@inline get_slotname(frame::InferenceState, slot::Int)             = @inbounds frame.src.slotnames[slot]
+@inline get_slotname(frame::InferenceState, slot::Slot)            = get_slotname(frame, slot_id(slot))
 
 get_result(frame::InferenceState) = frame.bestguess
 
