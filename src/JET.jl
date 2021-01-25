@@ -14,7 +14,6 @@ import .CC:
     InferenceParams,
     OptimizationParams,
     get_world_counter,
-    get_inference_cache,
     lock_mi_inference,
     unlock_mi_inference,
     add_remark!,
@@ -27,6 +26,9 @@ import .CC:
     # get,
     # getindex,
     # setindex!,
+    get_inference_cache,
+    cache_lookup,
+    # push!,
     OptimizationState,
     optimize,
     # tfuncs.jl
@@ -396,10 +398,10 @@ function profile_method!(interp::JETInterpreter,
                          m::Method,
                          world::UInt = get_world_counter(interp),
                          )
-    return profile_method_signature!(interp, m, m.sig, sparams_from_method_signature(m), world)
+    return profile_method_signature!(interp, m, m.sig, method_sparams(m), world)
 end
 
-function sparams_from_method_signature(m)
+function method_sparams(m::Method)
     s = TypeVar[]
     sig = m.sig
     while isa(sig, UnionAll)
