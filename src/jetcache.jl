@@ -1,3 +1,6 @@
+# global cache
+# ============
+
 const ANALYZED_LINFOS  = IdSet{MethodInstance}() # keeps `MethodInstance`s analyzed by JET
 
 const JET_GLOBAL_CACHE = IdDict{MethodInstance,Vector{InferenceErrorReportCache}}()
@@ -79,6 +82,41 @@ function invalidate_jet_cache!(replaced, max_world, depth = 0)
     end
     return nothing
 end
+
+# local cache
+# ===========
+
+struct JETLocalCache
+    interp::JETInterpreter
+    cache::Vector{InferenceResult}
+end
+
+CC.get_inference_cache(interp::JETInterpreter) = JETLocalCache(interp, get_inference_cache(interp.native))
+
+function CC.cache_lookup(linfo::MethodInstance, given_argtypes::Vector{Any}, cache::JETLocalCache)
+    inf_result = cache_lookup(linfo, given_argtypes, cache.cache)
+
+    isa(inf_result, InferenceResult) || return nothing
+
+    # cache hit, restore local report caches
+    interp = cache.interp
+    sv = interp.current_frame::InferenceState
+    if !isa(inf_result.result, InferenceState)
+        # corresponds to report throw away logic in `_typeinf(interp::JETInterpreter, frame::InferenceState)`
+        filter!(r->!is_lineage(r.lineage, sv, inf_result.linfo), interp.reports)
+
+        local_cache = get(interp.cache, given_argtypes, nothing)
+        if isa(local_cache, Vector{InferenceErrorReportCache})
+            for cached in local_cache
+                restore_cached_report!(cached, interp, sv)
+            end
+        end
+    end
+
+    return inf_result
+end
+
+CC.push!(cache::JETLocalCache, inf_result::InferenceResult) = CC.push!(cache.cache, inf_result)
 
 # optimizer
 # =========

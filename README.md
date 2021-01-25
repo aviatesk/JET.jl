@@ -151,6 +151,7 @@ No errors !
 
 ### TODOs
 
+- remove `Core.eval(CC, ...)` monkey patches
 - documentation, release
 - more accurate error reports in general
 - performance linting: report performance pitfalls
@@ -158,6 +159,22 @@ No errors !
 - support package loading
   * enables profiling on code that uses packages, _without_ actual loading, which gets rid of the need to rely on Revise for signature changes in a package and circumvent its limitation around redefinition of types, etc.
   * but then it's highly possible that we face performance problem on profiling on code using "big" packages, and so we will need some kind of incremental profiling (for fast watch mode)
+
+
+### developer note
+
+JET.jl overloads functions from Juila's `Core.Compiler` module, which are intended for its native JIT type inference.
+
+They're overloaded on `JETInterpreter` so that `typeinf(::JETInterpreter, ::InferenceState)` will do abstract interpretation tuned for JET.jl's type error analysis.
+Most overloads are done by using `invoke`, which allows us to call down to and reuse the original `NativeInterpreter`'s abstract interpretation methods while passing `JETInterpreter` for subsequent (maybe overloaded) callees (see `@invoke` macro).
+
+But sometimes we can't just use `@invoke` and have to change/discard some logics that are hard-coded within original native function.
+In such cases, currently JET.jl copy-and-pasted the original body of the overloaded function and applies monkey patches.
+I'm planning to remove those monkey patches by adding some tweaks to Julia's compiler code itself, but for now, in order to keep the least maintainability, we do:
+- use syntactic hacks (`#=== ... ===#`) to indicate the locations and purposes of each patch
+- each overload is directly evaluated in the `Core.Compiler` module so that we don't need to maintain miscellaneous imports
+- as such, the overloads are done within `__init__` hook; there are wrapper functions whose name starts with `overload_`  for each overloading and the wrappers are registered to `push_inithook!`
+- the docstrings of the wrappers tell the purposes of each overload
 
 
 ### acknowledgement

@@ -245,6 +245,18 @@ function abstract_call_gf_by_type(interp::$(JETInterpreter), @nospecialize(f), a
         end
     end
     #print("=> ", rettype, "\n")
+    :(isdefined(CC, :LimitedAccurary) && quote
+    if rettype isa LimitedAccuracy
+        union!(sv.pclimitations, rettype.causes)
+        rettype = rettype.typ
+    end
+    if !isempty(sv.pclimitations) # remove self, if present
+        delete!(sv.pclimitations, sv)
+        for caller in sv.callers_in_cycle
+            delete!(sv.pclimitations, caller)
+        end
+    end
+    end)
     return CallMeta(rettype, info)
 end
 
@@ -270,8 +282,6 @@ the aim of this overloads is:
 1. force constant prop' even if the inference result can't be improved anymore when `rettype`
    is already `Const`; this is because constant prop' can still produce more "correct"
    analysis by throwing away the error reports in the callee frames
-2. when local cache for constant analysis is hit, reconstruct the "after-constant-prop' analysis"
-   state using `JETInterpreter`'s local report caches
 """
 function overload_abstract_call_method_with_const_args!()
 
@@ -360,26 +370,10 @@ function abstract_call_method_with_const_args(interp::$(JETInterpreter), @nospec
         inf_result = InferenceResult(mi, argtypes)
         frame = InferenceState(inf_result, #=cache=#false, interp)
         frame === nothing && return Any # this is probably a bad generated function (unsound), but just ignore it
-        frame.limited = true
+        :(isdefined(CC, :LimitedAccurary) || frame.limited = true)
         frame.parent = sv
         push!(inf_cache, inf_result)
         typeinf(interp, frame) || return Any
-    #=== abstract_call_method_with_const_args patch point 2 start ===#
-    else
-        # local cache for this constant analysis is hit
-        inf_result = inf_result::InferenceResult
-        if !isa(inf_result.result, InferenceState)
-            # corresponds to report throw away logic in `_typeinf(interp::JETInterpreter, frame::InferenceState)`
-            $(filter!)(r->$(!is_lineage)(r.lineage, sv, inf_result.linfo), interp.reports)
-
-            local_cache = $(get)(interp.cache, argtypes, nothing)
-            if isa(local_cache, $(Vector{InferenceErrorReportCache}))
-                $(foreach)(local_cache) do cached
-                    $(restore_cached_report!)(cached, interp, sv)
-                end
-            end
-        end
-    #=== abstract_call_method_with_const_args patch point 2 end ===#
     end
     result = inf_result.result
     # if constant inference hits a cycle, just bail out

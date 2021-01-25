@@ -89,7 +89,6 @@ end
 CC.InferenceParams(interp::JETInterpreter) = InferenceParams(interp.native)
 CC.OptimizationParams(interp::JETInterpreter) = OptimizationParams(interp.native)
 CC.get_world_counter(interp::JETInterpreter) = get_world_counter(interp.native)
-CC.get_inference_cache(interp::JETInterpreter) = get_inference_cache(interp.native)
 
 # JET only works for runtime inference
 CC.lock_mi_inference(::JETInterpreter, ::MethodInstance) = nothing
