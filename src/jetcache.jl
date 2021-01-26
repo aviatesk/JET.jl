@@ -132,5 +132,5 @@ function CC.OptimizationState(linfo::MethodInstance, params::OptimizationParams,
 end
 
 function CC.optimize(interp::JETInterpreter, opt::OptimizationState, params::OptimizationParams, result)
-    return optimize(interp.native, opt, params, result)
+    return # do nothing
 end
