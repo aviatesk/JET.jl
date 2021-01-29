@@ -358,25 +358,23 @@ function gen_postprocess(virtualmod, actualmod)
     virtual = string(virtualmod)
     actual  = string(actualmod)
     return actualmod == Main ?
-        Fix2(replace, "Main." => "") ∘ Fix2(replace, virtual => actual) :
-        Fix2(replace, virtual => actual)
+           Fix2(replace, "Main." => "") ∘ Fix2(replace, virtual => actual) :
+           Fix2(replace, virtual => actual)
 end
 
 # this dummy module will be used by `istoplevel` to check if the current inference frame is
 # created by `profile_toplevel!` or not (i.e. `@generated` function)
 module __toplevel__ end
 
-function profile_toplevel!(interp::JETInterpreter, mod::Module, src::CodeInfo)
+function profile_toplevel!(interp::JETInterpreter, src::CodeInfo)
     # construct toplevel `MethodInstance`
     mi = ccall(:jl_new_method_instance_uninit, Ref{Core.MethodInstance}, ());
     mi.uninferred = src
     mi.specTypes = Tuple{}
-    mi.def = mod
+    mi.def = __toplevel__ # set to the dummy module
 
     result = InferenceResult(mi);
     frame = InferenceState(result, src, #=cached=# true, interp);
-
-    mi.def = __toplevel__ # set to the dummy module
 
     return profile_frame!(interp, frame)
 end

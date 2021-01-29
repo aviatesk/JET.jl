@@ -201,7 +201,7 @@ function virtual_process!(toplevelex::Expr,
                                   analysis_params = AnalysisParams(interp),
                                   )
 
-        profile_toplevel!(interp, virtualmod, src)
+        profile_toplevel!(interp, src)
 
         append!(ret.inference_error_reports, interp.reports) # collect error reports
     end
