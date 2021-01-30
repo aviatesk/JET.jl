@@ -435,7 +435,7 @@ function get_sig(::Type{UncaughtExceptionReport}, interp, sv, throw_calls)
     return sig
 end
 
-_get_sig(args...) = first(_get_sig_type(args...))
+_get_sig(args...) = first(_get_sig_type(args...))::Vector{Any}
 
 function _get_sig_type(sv::InferenceState, expr::Expr)
     head = expr.head
