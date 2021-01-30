@@ -189,6 +189,9 @@ e.g. calls down to `NativeInterpreter`'s `abstract_call_gf_by_type` method:
 macro invoke(ex)
     f, args, kwargs = destructure_callex(ex)
     arg2typs = map(args) do x
+        if @isexpr(x, :macrocall) && first(x.args) === Symbol("@nospecialize")
+            x = last(x.args)
+        end
         @isexpr(x, :(::)) ? (x.args...,) : (x, GlobalRef(Core, :Any))
     end
     args, argtypes = first.(arg2typs), last.(arg2typs)

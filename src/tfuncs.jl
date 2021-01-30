@@ -106,7 +106,7 @@ function CC.return_type_tfunc(interp::JETInterpreter, argtypes::Vector{Any}, sv:
                                             ))
         return Bottom
     else
-        # don't recursively pass on `JETInterpreter` via `@invoke_native`
+        # don't recursively pass on `JETInterpreter` via `@invoke`
         return return_type_tfunc(interp.native, argtypes, sv)
     end
 end
