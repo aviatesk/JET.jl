@@ -370,7 +370,7 @@ function abstract_call_method_with_const_args(interp::$(JETInterpreter), @nospec
         inf_result = InferenceResult(mi, argtypes)
         frame = InferenceState(inf_result, #=cache=#false, interp)
         frame === nothing && return Any # this is probably a bad generated function (unsound), but just ignore it
-        :(isdefined(CC, :LimitedAccurary) || frame.limited = true)
+        :(isdefined(CC, :LimitedAccurary) || :(frame.limited = true))
         frame.parent = sv
         push!(inf_cache, inf_result)
         typeinf(interp, frame) || return Any
