@@ -245,7 +245,7 @@ function abstract_call_gf_by_type(interp::$(JETInterpreter), @nospecialize(f), a
         end
     end
     #print("=> ", rettype, "\n")
-    :(isdefined(CC, :LimitedAccurary) && quote
+    $(isdefined(CC, :LimitedAccuracy) && quote
     if rettype isa LimitedAccuracy
         union!(sv.pclimitations, rettype.causes)
         rettype = rettype.typ
@@ -370,7 +370,7 @@ function abstract_call_method_with_const_args(interp::$(JETInterpreter), @nospec
         inf_result = InferenceResult(mi, argtypes)
         frame = InferenceState(inf_result, #=cache=#false, interp)
         frame === nothing && return Any # this is probably a bad generated function (unsound), but just ignore it
-        :(isdefined(CC, :LimitedAccurary) || :(frame.limited = true))
+        $(isdefined(CC, :LimitedAccuracy) || :(frame.limited = true))
         frame.parent = sv
         push!(inf_cache, inf_result)
         typeinf(interp, frame) || return Any

@@ -96,7 +96,7 @@ end
 # the  `abstract_call`, which isn't the abstraction of actual execution, thus here we just
 # check if the call of `return_type` is valid or not
 function CC.return_type_tfunc(interp::JETInterpreter, argtypes::Vector{Any}, sv::InferenceState)
-    if length(argtypes) !== 3
+    if length(argtypes) ≠ 3
         # invalid argument number, let's report and return error result (i.e. `Bottom`)
         report!(interp, NoMethodErrorReport(interp,
                                             sv,
