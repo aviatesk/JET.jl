@@ -6,7 +6,7 @@ function CC.OptimizationState(linfo::MethodInstance, params::OptimizationParams,
     return OptimizationState(linfo, params, interp.native)
 end
 
-function CC.optimize(interp::JETInterpreter, opt::JETOptimizationState, params::OptimizationParams, result)
+function CC.optimize(interp::JETInterpreter, opt::OptimizationState, params::OptimizationParams, result)
     return nothing # do nothing
 
     # # NOTE: to keep the previous implementations as a future reference
