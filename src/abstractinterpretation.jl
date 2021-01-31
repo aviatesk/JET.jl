@@ -313,7 +313,8 @@ function abstract_call_method_with_const_args(interp::$(JETInterpreter), @nospec
     # constant prop' may improve report accuracy
     haveconst || #= improvable_via_constant_propagation(rettype) || =# return Any
     #=== abstract_call_method_with_const_args patch point 1 end ===#
-    if nargs > 1
+    force_inference = $(hasfield(Method, :aggressive_constprop) ? :(method.aggressive_constprop) : false) || InferenceParams(interp).aggressive_constant_propagation
+    if !force_inference && nargs > 1
         if istopfunction(f, :getindex) || istopfunction(f, :setindex!)
             arrty = argtypes[2]
             # don't propagate constant index into indexing of non-constant array
@@ -329,16 +330,28 @@ function abstract_call_method_with_const_args(interp::$(JETInterpreter), @nospec
             end
         end
     end
-    if !allconst && (istopfunction(f, :+) || istopfunction(f, :-) || istopfunction(f, :*) ||
-                     istopfunction(f, :(==)) || istopfunction(f, :!=) ||
-                     istopfunction(f, :<=) || istopfunction(f, :>=) || istopfunction(f, :<) || istopfunction(f, :>) ||
-                     istopfunction(f, :<<) || istopfunction(f, :>>))
-        return Any
+    if !force_inference && !allconst &&
+        (istopfunction(f, :+) || istopfunction(f, :-) || istopfunction(f, :*) ||
+         istopfunction(f, :(==)) || istopfunction(f, :!=) ||
+         istopfunction(f, :<=) || istopfunction(f, :>=) || istopfunction(f, :<) || istopfunction(f, :>) ||
+         istopfunction(f, :<<) || istopfunction(f, :>>))
+         # it is almost useless to inline the op of when all the same type,
+         # but highly worthwhile to inline promote of a constant
+         length(argtypes) > 2 || return Any
+         t1 = widenconst(argtypes[2])
+         all_same = true
+         for i in 3:length(argtypes)
+             if widenconst(argtypes[i]) !== t1
+                 all_same = false
+                 break
+             end
+         end
+         all_same && return Any
     end
-    force_inference = allconst || InferenceParams(interp).aggressive_constant_propagation
     if istopfunction(f, :getproperty) || istopfunction(f, :setproperty!)
         force_inference = true
     end
+    force_inference |= allconst
     mi = specialize_method(match, !force_inference)
     mi === nothing && return Any
     mi = mi::MethodInstance
