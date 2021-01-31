@@ -29,8 +29,6 @@ import .CC:
     get_inference_cache,
     cache_lookup,
     # push!,
-    OptimizationState,
-    optimize,
     # tfuncs.jl
     builtin_tfunction,
     return_type_tfunc,
@@ -43,7 +41,10 @@ import .CC:
     # typeinfer.jl
     typeinf,
     _typeinf,
-    maybe_compress_codeinfo
+    maybe_compress_codeinfo,
+    # optimize.jl
+    OptimizationState,
+    optimize
 
 # `ConcreteInterpreter`
 import JuliaInterpreter:
@@ -289,6 +290,7 @@ include("jetcache.jl")
 include("tfuncs.jl")
 include("abstractinterpretation.jl")
 include("typeinfer.jl")
+include("optimize.jl")
 include("print.jl")
 include("virtualprocess.jl")
 include("watch.jl")
