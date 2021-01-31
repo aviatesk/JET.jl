@@ -153,6 +153,12 @@ correctly after refinement of a method in deeper call sites
 """
 end
 
+@static if isdefined(CC, :LimitedAccuracy)
+    import .CC: ignorelimited
+else
+    ignorelimited(@nospecialize(x)) = x
+end
+
 # macros
 # ------
 

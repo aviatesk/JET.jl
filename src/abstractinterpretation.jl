@@ -482,7 +482,7 @@ function CC.abstract_eval_statement(interp::JETInterpreter, @nospecialize(e), vt
             lhs = first(stmt.args)
 
             if isa(lhs, GlobalRef)
-                set_virtual_globalvar!(interp, lhs.mod, lhs.name, ret, sv)
+                set_virtual_globalvar!(interp, lhs.mod, lhs.name, ignorelimited(ret), sv)
             end
         end
     end
