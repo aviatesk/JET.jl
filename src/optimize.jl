@@ -2,10 +2,8 @@
 # currently `may_optimize(::JETInterpreter)` always returns `false`,
 # as such we even don't need the definitions below, but I'd define them to minimize codegen time
 
-struct JETOptimizationState end
-
 function CC.OptimizationState(linfo::MethodInstance, params::OptimizationParams, interp::JETInterpreter)
-    return JETOptimizationState()
+    return OptimizationState(linfo, params, interp.native)
 end
 
 function CC.optimize(interp::JETInterpreter, opt::JETOptimizationState, params::OptimizationParams, result)
