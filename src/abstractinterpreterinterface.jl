@@ -1,15 +1,9 @@
+const LocalCache = Dict{Vector{Any},Vector{InferenceErrorReportCache}}
+
 struct AnalysisParams
     # disables caching of native remarks (that may speed up profiling time)
     filter_native_remarks::Bool
-
-    @jetconfigurable function AnalysisParams(; filter_native_remarks::Bool = true,
-                                               )
-        return new(filter_native_remarks,
-                   )
-    end
 end
-
-const LocalCache = Dict{Vector{Any},Vector{InferenceErrorReportCache}}
 
 mutable struct JETInterpreter <: AbstractInterpreter
     #= native =#
@@ -49,16 +43,16 @@ mutable struct JETInterpreter <: AbstractInterpreter
     depth::Int
 
     @jetconfigurable function JETInterpreter(world               = get_world_counter();
-                                          inf_params          = gen_inf_params(),
-                                          opt_params          = gen_opt_params(),
-                                          id                  = gensym(:JETInterpreterID),
-                                          reports             = InferenceErrorReport[],
-                                          uncaught_exceptions = UncaughtExceptionReport[],
-                                          native_remarks      = NativeRemark[],
-                                          concretized         = BitVector(),
-                                          analysis_params     = AnalysisParams(),
-                                          )
+                                             id                  = gensym(:JETInterpreterID),
+                                             reports             = InferenceErrorReport[],
+                                             uncaught_exceptions = UncaughtExceptionReport[],
+                                             native_remarks      = NativeRemark[],
+                                             concretized         = BitVector(),
+                                             )
+        inf_params      = gen_inf_params(; jetconfigs...)
+        opt_params      = gen_opt_params()
         @assert !opt_params.inlining "inlining should be disabled for JETInterpreter analysis"
+        analysis_params = gen_analysis_params(; jetconfigs...)
 
         native = NativeInterpreter(world; inf_params, opt_params)
         return new(native,
@@ -116,12 +110,17 @@ AnalysisParams(interp::JETInterpreter) = interp.analysis_params
                              )
 end
 
-@jetconfigurable function gen_opt_params(; # inlining should be disabled for `JETInterpreter`, otherwise virtual stack frame
-                                           # traversing will fail for frames after optimizer runs on
-                                           inlining = false,
-                                           )
-    return OptimizationParams(; inlining,
+function gen_opt_params()
+    return OptimizationParams(; # inlining should be disabled for `JETInterpreter`, otherwise
+                                # virtual stack frame traversing will fail for frames after
+                                # optimizer runs on
+                                inlining = false,
                                 )
+end
+
+@jetconfigurable function gen_analysis_params(; filter_native_remarks::Bool = true,
+                                                )
+    return AnalysisParams(filter_native_remarks)
 end
 
 get_id(interp::JETInterpreter) = interp.id

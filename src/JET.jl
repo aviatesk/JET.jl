@@ -255,19 +255,17 @@ macro jetconfigurable(funcdef)
     i = findfirst(a->@isexpr(a, :parameters), defsig.args)
     if isnothing(i)
         @warn "no JET configurations are defined for `$(funcname)`"
-        insert!(defsig.args, 2, Expr(:parameters, :(__dummy_kwargs...)))
+        insert!(defsig.args, 2, Expr(:parameters, :(jetconfigs...)))
     else
         kwargs = defsig.args[i]
         for kwarg in kwargs.args
             kwargex = first(kwarg.args)
             kwargname = (@isexpr(kwargex, :(::)) ? first(kwargex.args) : kwargex)::Symbol
             funcname′ = get!(_JET_CONFIGURATIONS, kwargname, funcname)
-            @assert begin
-                isnothing(funcname′) ||
-                funcname === funcname′ # same generic function or function refinement
-            end "`$(funcname)` uses `$(kwargname)` JET configuration name which is already used by `$(funcname′)`"
+            # allows same configurations for same generic function or function refinement
+            @assert funcname === funcname′ "`$(funcname)` uses `$(kwargname)` JET configuration name which is already used by `$(funcname′)`"
         end
-        push!(kwargs.args, :(__dummy_kwargs...))
+        push!(kwargs.args, :(jetconfigs...))
     end
 
     return esc(funcdef)
@@ -379,11 +377,7 @@ end
 function collect_reports(actualmod, text, filename; jetconfigs...)
     virtualmod = gen_virtual_module(actualmod)
 
-    interp = JETInterpreter(; # dummy
-                              inf_params      = gen_inf_params(; jetconfigs...),
-                              opt_params      = gen_opt_params(; jetconfigs...),
-                              analysis_params = AnalysisParams(; jetconfigs...),
-                              jetconfigs...)
+    interp = JETInterpreter(; jetconfigs...)
     ret, interp = virtual_process!(text,
                                    filename,
                                    virtualmod,
@@ -508,10 +502,7 @@ function profile_call(@nospecialize(f), @nospecialize(types = Tuple{}); jetconfi
         tt = Tuple{ft, types...}
     end
 
-    interp = JETInterpreter(; inf_params      = gen_inf_params(; jetconfigs...),
-                              opt_params      = gen_opt_params(; jetconfigs...),
-                              analysis_params = AnalysisParams(; jetconfigs...),
-                              jetconfigs...)
+    interp = JETInterpreter(; jetconfigs...)
     return profile_gf_by_type!(interp, tt)
 end
 
