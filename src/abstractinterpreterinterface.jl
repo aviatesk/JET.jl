@@ -70,6 +70,30 @@ mutable struct JETInterpreter <: AbstractInterpreter
     end
 end
 
+function Base.show(io::IO, interp::JETInterpreter)
+    rn = length(interp.reports)
+    en = length(interp.uncaught_exceptions)
+    print(io, "JETInterpreter with $(rn) reports and $(en) uncaught exceptions")
+    frame = interp.current_frame
+    if !isnothing(frame)
+        print(io, " at ")
+        show(io, frame.linfo)
+    end
+end
+Base.show(io::IO, ::MIME"application/prs.juno.inline", interp::JETInterpreter) =
+    return interp
+Base.show(io::IO, ::MIME"application/prs.juno.inline", interp::NativeInterpreter) =
+    return interp
+
+# XXX: this should be upstreamed
+function Base.show(io::IO, frame::InferenceState)
+    print(io, "InfernceState for ")
+    show(io, frame.linfo)
+    print(io, " with currpc ", frame.currpc, '/', length(frame.src.code))
+end
+Base.show(io::IO, ::MIME"application/prs.juno.inline", frame::InferenceState) =
+    return frame
+
 # AbstractInterpreter API
 # -----------------------
 
@@ -87,7 +111,7 @@ function CC.add_remark!(interp::JETInterpreter, sv::InferenceState, s::String)
     return
 end
 
-CC.may_optimize(interp::JETInterpreter)      = false
+CC.may_optimize(interp::JETInterpreter)      = true
 CC.may_compress(interp::JETInterpreter)      = false
 CC.may_discard_trees(interp::JETInterpreter) = false
 
