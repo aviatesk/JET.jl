@@ -89,6 +89,8 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
         end
     end
 
+    uniquify_reports!(interp.reports)
+
     after = Set(interp.reports)
     reports_for_this_linfo = setdiff(after, before)
 
@@ -162,6 +164,20 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
     end
 
     return ret
+end
+
+# this is a dirty fix for performance problem, and corresponds to `uniquify_reports`
+# in ./print.jl
+function uniquify_reports!(reports)
+    return unique!(reports) do report; #= uniquify keys =# (
+        # report itself
+        report.msg,
+        report.sig,
+        # entry point
+        first(report.st),
+        # error point
+        last(report.st),
+    ); end
 end
 
 is_unreachable(@nospecialize(_)) = false
