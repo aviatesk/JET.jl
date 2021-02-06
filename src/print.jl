@@ -112,7 +112,8 @@ print_report(io, report::ActualErrorWrapped) = showerror(io, report.err, report.
                                         fullpath::Bool = false,
                                         annotate_types::Bool = false,
                                         )
-    reports = uniquify_reports(reports)
+    # XXX the same hack is already imposed in `_typeinf`, so we may not need this
+    reports = unique(get_identity_key, reports)
 
     if isempty(reports)
         if print_inference_sucess
@@ -139,20 +140,6 @@ print_report(io, report::ActualErrorWrapped) = showerror(io, report.err, report.
     end |> postprocess |> Fix1(print, io)
 
     return true
-end
-
-# this is a dirty fix for duplicated reports
-# TODO: analysis can efficiently avoids collecting duplicated reports ?
-function uniquify_reports(reports)
-    return unique(reports) do report; return #= uniquify keys =# (
-        # report itself
-        report.msg,
-        report.sig,
-        # entry point
-        first(report.st),
-        # error point
-        last(report.st),
-    ); end
 end
 
 # traverse abstract call stack, print frames

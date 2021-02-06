@@ -87,6 +87,10 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
         end
     end
 
+    # XXX this is a dirty fix for performance problem, we need more "proper" fix
+    # https://github.com/aviatesk/JET.jl/issues/75
+    unique!(get_identity_key, interp.reports)
+
     after = Set(interp.reports)
     reports_for_this_linfo = setdiff(after, before)
 
