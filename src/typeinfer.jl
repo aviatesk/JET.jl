@@ -58,7 +58,7 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
         # use `frame.linfo` instead of `frame` for lineage check since the program counter
         # for this frame is not initialized yet; note that `frame.linfo` is the exactly same
         # object as that of the previous only-type inference
-        filter!(r->!is_lineage(r.lineage, frame.parent, linfo), reports)
+        filter!(r->!is_lineage(r.lineage, frame.parent::InferenceState, linfo), reports)
     end
 
     before = Set(reports)
