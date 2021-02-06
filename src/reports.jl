@@ -197,6 +197,30 @@ function restore_cached_report(cache::InferenceErrorReportCache,
     return T(st, msg, sig, lineage, spec_args)
 end
 
+struct IdentityKey
+    T::Type{<:InferenceErrorReport}
+    sig::Vector{Any}
+    entry_frame::VirtualFrame
+    error_frame::VirtualFrame
+end
+function Base.hash(ik::IdentityKey, h::UInt)
+    h = @static UInt === UInt64 ? 0xeb9de6e5d9a21983 : 0x860a6f32
+    h = hash(ik.T, h)
+    h = hash(ik.sig, h)
+    h = hash(ik.entry_frame, h)
+    h = hash(ik.error_frame, h)
+    return h
+end
+function Base.:(==)(ik1::IdentityKey, ik2::IdentityKey)
+    return ik1.T === ik2.T &&
+           ik1.sig == ik2.sig &&
+           ik1.entry_frame == ik2.entry_frame &&
+           ik1.error_frame == ik2.error_frame
+end
+
+get_identity_key(report::InferenceErrorReport) =
+    IdentityKey(typeof(report), report.sig, first(report.st), last(report.st))
+
 macro reportdef(ex, kwargs...)
     T = esc(first(ex.args))
     args = map(ex.args) do x
