@@ -111,6 +111,19 @@ end
             first(interp.reports) isa LocalUndefVarErrorReport &&
             first(interp.reports).name === :bar
     end
+
+    let
+        interp, frame = profile_call((Int,)) do a
+            function inner(n)
+                if n > 0
+                   a = n
+                end
+            end
+            inner(rand(Int))
+            return a
+        end
+        @test isempty(interp.reports)
+    end
 end
 
 @testset "report undefined (global) variables" begin

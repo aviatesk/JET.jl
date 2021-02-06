@@ -36,9 +36,6 @@ mutable struct JETInterpreter <: AbstractInterpreter
     # keeps track of the current inference frame (needed for report cache reconstruction)
     current_frame::Union{Nothing,InferenceState}
 
-    # stashes explicitly declared local variables (FILO, i.e. the last element is for the current frame)
-    locals_stack::Vector{Set{Int}}
-
     # debugging
     depth::Int
 
@@ -64,7 +61,6 @@ mutable struct JETInterpreter <: AbstractInterpreter
                    concretized,
                    analysis_params,
                    nothing,
-                   Set{Symbol}[],
                    0,
                    )
     end
@@ -157,18 +153,3 @@ end
 function stash_uncaught_exception!(interp::JETInterpreter, report::UncaughtExceptionReport)
     push!(interp.uncaught_exceptions, report)
 end
-
-locals(interp::JETInterpreter) = last(interp.locals_stack)
-
-function setup_locals!(interp::JETInterpreter, frame::InferenceState)
-    locals = Set{Int}()
-    # slotnames = frame.src.slotnames
-    for node in frame.src.code
-        if isa(node, NewvarNode)
-            push!(locals, slot_id(node.slot))
-        end
-    end
-    push!(interp.locals_stack, locals)
-end
-
-remove_locals!(interp::JETInterpreter, frame::InferenceState) = pop!(interp.locals_stack)
