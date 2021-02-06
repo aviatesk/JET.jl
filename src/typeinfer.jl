@@ -16,7 +16,6 @@ function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
 
     prev_frame = interp.current_frame
     interp.current_frame = frame
-    setup_locals!(interp, frame)
     interp.depth += 1 # for debug
 
     ret = @invoke typeinf(interp::AbstractInterpreter, frame::InferenceState)
@@ -24,7 +23,6 @@ function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
     push!(ANALYZED_LINFOS, frame.linfo) # analyzed !
 
     interp.current_frame = prev_frame
-    remove_locals!(interp, frame)
     interp.depth -= 1 # for debug
 
     # # print debug info after typeinf
@@ -68,6 +66,28 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
     ret = @invoke _typeinf(interp::AbstractInterpreter, frame::InferenceState)
 
     stmts = frame.src.code
+
+    # report (local) undef var error
+    # this only works when optimization is enabled, just because `:throw_undef_if_not` and
+    # `:(unreachable)` are introduced by `optimize`
+    if may_optimize(interp)
+        for (idx, stmt) in enumerate(stmts)
+            if isa(stmt, Expr) && stmt.head === :throw_undef_if_not
+                sym, _ = stmt.args
+                next_idx = idx + 1
+                if checkbounds(Bool, stmts, next_idx) && is_unreachable(@inbounds stmts[next_idx])
+                    # the optimization so far has found this statement is never "reachable";
+                    # JET reports it since it will invoke undef var error at runtime, or will just
+                    # be dead code otherwise
+
+                    report!(interp, LocalUndefVarErrorReport(interp, frame, sym))
+                # else
+                    # by excluding this pass, JET accepts some false negatives (i.e. don't report
+                    # those that may actually happen on actual execution)
+                end
+            end
+        end
+    end
 
     after = Set(interp.reports)
     reports_for_this_linfo = setdiff(after, before)
@@ -149,11 +169,3 @@ is_unreachable(rn::ReturnNode)   = !isdefined(rn, :val)
 
 is_throw_call′(@nospecialize(_)) = false
 is_throw_call′(e::Expr)          = is_throw_call(e)
-
-function CC.maybe_compress_codeinfo(interp::JETInterpreter, linfo::MethodInstance, ci::CodeInfo)
-    # force cache retrieval for this unoptimized code cache
-    # (xref: https://github.com/JuliaLang/julia/blob/a7848a28e5d450dcc48ef99320d3220618dba501/src/gf.c#L335-L337)
-    ci.inferred = true
-
-    return @invoke maybe_compress_codeinfo(interp::AbstractInterpreter, linfo::MethodInstance, ci::CodeInfo)
-end

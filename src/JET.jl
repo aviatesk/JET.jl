@@ -41,7 +41,6 @@ import .CC:
     # typeinfer.jl
     typeinf,
     _typeinf,
-    maybe_compress_codeinfo,
     # optimize.jl
     OptimizationState,
     optimize

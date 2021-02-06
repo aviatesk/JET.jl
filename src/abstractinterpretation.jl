@@ -444,18 +444,6 @@ function CC.abstract_eval_special_value(interp::JETInterpreter, @nospecialize(e)
             # undefined variable just works because we will invalidate the cache for this frame
             # anyway
         end
-    elseif isa(e, Slot)
-        # report local `UndefVarError`
-        # NOTE: this slot is only annotated as `Bottom` when it is really undefined,
-        # and so this approach includes false negatives
-        if ret === Bottom
-            slot = slot_id(e)
-            if slot in locals(interp)
-                # `locals(interp)` keeps explicitly declared local variables (i.e. those defined with `NewvarNode`)
-                # (otherwise there may be implicitly declared local variables that can be annotated as `Bottom`)
-                report!(interp, LocalUndefVarErrorReport(interp, sv, get_slotname(sv, slot)))
-            end
-        end
     end
 
     return ret

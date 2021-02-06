@@ -314,7 +314,7 @@ extract_type_decls(x) = @isexpr(x, :(::)) ? last(x.args) : Any
 
 @reportdef GlobalUndefVarErrorReport(interp, sv, mod::Module, name::Symbol)
 
-@reportdef LocalUndefVarErrorReport(interp, sv, name::Symbol)
+@reportdef LocalUndefVarErrorReport(interp, sv, name::Symbol) track_from_frame = true
 
 @reportdef NonBooleanCondErrorReport(interp, sv, @nospecialize(t::Type))
 
