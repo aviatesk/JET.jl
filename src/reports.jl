@@ -218,8 +218,8 @@ function Base.:(==)(ik1::IdentityKey, ik2::IdentityKey)
            ik1.error_frame == ik2.error_frame
 end
 
-get_identity_key(report::InferenceErrorReport) =
-    IdentityKey(typeof(report), report.sig, first(report.st), last(report.st))
+get_identity_key(report::T) where {T<:InferenceErrorReport} =
+    IdentityKey(T, report.sig, first(report.st), last(report.st))
 
 macro reportdef(ex, kwargs...)
     T = esc(first(ex.args))
