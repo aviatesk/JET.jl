@@ -104,7 +104,7 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
         # `throw` calls here after optimization, since it may have eliminated "unreachable"
         # `throw` calls
         codelocs    = frame.src.codelocs
-        linetable   = frame.src.linetable
+        linetable   = frame.src.linetable::Vector
         throw_locs  = LineInfoNode[]
         throw_calls = Expr[]
         for r in reports

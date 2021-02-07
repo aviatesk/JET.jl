@@ -346,7 +346,7 @@ This special `InferenceErrorReport` is just for wrapping remarks from `NativeInt
 :(NativeRemark)
 @reportdef NativeRemark(interp, sv, s::String)
 
-function get_virtual_frame(loc::Union{InferenceState,MethodInstance})::VirtualFrame
+function get_virtual_frame(loc::Union{InferenceState,MethodInstance})
     sig = get_sig(loc)
     file, line = get_file_line(loc)
     linfo = isa(loc, InferenceState) ? loc.linfo : loc
@@ -356,16 +356,14 @@ end
 get_file_line(frame::InferenceState) = get_file_line(get_lin(frame))
 get_file_line(linfo::LineInfoNode)   = linfo.file, linfo.line
 # this location is not exact, but this is whay we know at best
-function get_file_line(linfo::MethodInstance)::Tuple{Symbol,Int}
+function get_file_line(linfo::MethodInstance)
     def = linfo.def
 
-    isa(def, Method) && return def.file, def.line
+    isa(def, Method) && return def.file, Int(def.line)
 
     # toplevel
     src = linfo.uninferred::CodeInfo
-    file = first(unique(map(lin->lin.file, src.linetable)))::Symbol
-    line = minimum(lin->lin.line, src.linetable)::Int
-    return file, line
+    return get_file_line(first(src.linetable::Vector)::LineInfoNode)
 end
 
 # adapted from https://github.com/JuliaLang/julia/blob/0f11a7bb07d2d0d8413da05dadd47441705bf0dd/base/show.jl#L989-L1011

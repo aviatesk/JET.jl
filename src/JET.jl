@@ -401,7 +401,7 @@ end
 @inline get_stmt(frame::InferenceState, pc = get_currpc(frame))    = @inbounds frame.src.code[pc]
 @inline get_states(frame::InferenceState, pc = get_currpc(frame))  = @inbounds frame.stmt_types[pc]::VarTable
 @inline get_codeloc(frame::InferenceState, pc = get_currpc(frame)) = @inbounds frame.src.codelocs[pc]
-@inline get_lin(frame::InferenceState, loc = get_codeloc(frame))   = @inbounds frame.src.linetable[loc]::LineInfoNode
+@inline get_lin(frame::InferenceState, loc = get_codeloc(frame))   = @inbounds (frame.src.linetable::Vector)[loc]::LineInfoNode
 
 @inline get_slotname(frame::InferenceState, slot::Int)             = @inbounds frame.src.slotnames[slot]
 @inline get_slotname(frame::InferenceState, slot::Slot)            = get_slotname(frame, slot_id(slot))
