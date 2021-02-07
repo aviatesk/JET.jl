@@ -38,11 +38,15 @@ function with_bufferring(f, args...)
 end
 
 # we may need something like this for stdlibs as well ?
-expandbasepath(filename) =
-    return normpath(Sys.BINDIR::String, Base.DATAROOTDIR, "julia", "base", filename)
+
 function tofullpath(filename::AbstractString)
     path = abspath(filename)
-    return isfile(path) ? path : expandbasepath(filename)
+    return isfile(path) ? path : fullbasepath(filename)
+end
+function fullbasepath(filename)
+    return @static occursin("DEV", string(VERSION)) ? # TODO make this configurable
+           normpath(Sys.BINDIR::String, "..", "..", "..", "julia", "base", filename) :
+           normpath(Sys.BINDIR::String, DATAROOTDIR, "julia", "base", filename)
 end
 
 # toplevel
