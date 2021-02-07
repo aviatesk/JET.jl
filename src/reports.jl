@@ -81,49 +81,23 @@ end
 Base.show(io::IO, ::MIME"application/prs.juno.inline", report::T) where {T<:InferenceErrorReport} =
     return report
 
-struct VirtualFrame
+@withmixedhash struct VirtualFrame
     file::Symbol
     line::Int
     sig::Vector{Any}
     linfo::MethodInstance
-end
-function Base.hash(vf::VirtualFrame, h::UInt)
-    h = @static UInt === UInt64 ? 0x140ec41731a857a7 : 0x6e6397bc
-    h = hash(vf.file, h)
-    h = hash(vf.line, h)
-    h = hash(vf.sig, h)
-    h = hash(vf.linfo, h)
-    return h
-end
-function Base.:(==)(vf1::VirtualFrame, vf2::VirtualFrame)
-    return vf1.file === vf2.file &&
-           vf1.line == vf2.line &&
-           vf1.sig == vf2.sig &&
-           vf1.linfo === vf2.linfo
 end
 
 # `InferenceErrorReport` is supposed to keep its virtual stack trace in order of
 # "from entry call site to error point"
 const VirtualStackTrace = Vector{VirtualFrame}
 
-struct LineageKey
+@withmixedhash struct LineageKey
     file::Symbol
     line::Int
     linfo::MethodInstance
 end
 const Lineage = Set{LineageKey}
-function Base.hash(lk::LineageKey, h::UInt)
-    h = @static UInt === UInt64 ? 0x895379e76333a606 : 0x3879844d
-    h = hash(lk.file, h)
-    h = hash(lk.line, h)
-    h = hash(lk.linfo, h)
-    return h
-end
-function Base.:(==)(lk1::LineageKey, lk2::LineageKey)
-    return lk1.file === lk2.file &&
-           lk1.line == lk2.line &&
-           lk1.linfo === lk2.linfo
-end
 
 get_lineage_key(frame::InferenceState) = LineageKey(get_file_line(frame)..., frame.linfo)
 get_lineage_key(vf::VirtualFrame)      = LineageKey(vf.file, vf.line, vf.linfo)
@@ -197,25 +171,11 @@ function restore_cached_report(cache::InferenceErrorReportCache,
     return T(st, msg, sig, lineage, spec_args)
 end
 
-struct IdentityKey
+@withmixedhash struct IdentityKey
     T::Type{<:InferenceErrorReport}
     sig::Vector{Any}
     entry_frame::VirtualFrame
     error_frame::VirtualFrame
-end
-function Base.hash(ik::IdentityKey, h::UInt)
-    h = @static UInt === UInt64 ? 0xeb9de6e5d9a21983 : 0x860a6f32
-    h = hash(ik.T, h)
-    h = hash(ik.sig, h)
-    h = hash(ik.entry_frame, h)
-    h = hash(ik.error_frame, h)
-    return h
-end
-function Base.:(==)(ik1::IdentityKey, ik2::IdentityKey)
-    return ik1.T === ik2.T &&
-           ik1.sig == ik2.sig &&
-           ik1.entry_frame == ik2.entry_frame &&
-           ik1.error_frame == ik2.error_frame
 end
 
 get_identity_key(report::InferenceErrorReport) =
