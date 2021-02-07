@@ -236,6 +236,97 @@ function destructure_callex(ex)
 end
 
 """
+    @withmixedhash (mutable) struct T
+        fields ...
+    end
+
+Defines struct `T` while automatically defining its `Base.hash(::T, ::UInt)` method which
+  mixes hashes of all of `T`'s fields (and also corresponding `Base.:(==)(::T, ::T)` method).
+
+This macro is supposed to abstract the following kind of pattern:
+
+> https://github.com/aviatesk/julia/blob/999973df2850d6b2e0bd4bcf03ef90a14217b63c/base/pkgid.jl#L3-L25
+```julia
+struct PkgId
+    uuid::Union{UUID,Nothing}
+    name::String
+end
+
+==(a::PkgId, b::PkgId) = a.uuid == b.uuid && a.name == b.name
+
+function hash(pkg::PkgId, h::UInt)
+    h += 0xc9f248583a0ca36c % UInt
+    h = hash(pkg.uuid, h)
+    h = hash(pkg.name, h)
+    return h
+end
+```
+
+> with `@withmixedhash`
+```julia
+@withmixedhash struct PkgId
+    uuid::Union{UUID,Nothing}
+    name::String
+end
+```
+
+See also: [`EGAL_TYPES`](@ref)
+"""
+macro withmixedhash(typedef)
+    @assert @isexpr(typedef, :struct) "struct definition should be given"
+    name = typedef.args[2]
+    flddef = typedef.args[3]
+    fld2typs = map(filter(!islnn, typedef.args[3].args)) do x
+        if @isexpr(x, :(::))
+            fld, typex = x.args
+            typ = Core.eval(__module__, typex)
+            fld, typ
+        else
+            (x, Any)
+        end
+    end
+    @assert !isempty(fld2typs) "no fields given, nothing to hash"
+
+    h_init = UInt === UInt64 ? rand(UInt64) : rand(UInt32)
+    hash_body = quote h = $(h_init) end
+    for (fld, typ) in fld2typs
+        push!(hash_body.args, :(h = $(Base.hash)(x.$fld, h)))
+    end
+    hash_func = :(function Base.hash(x::$name, h::UInt); $(hash_body); end)
+    eq_body = foldr(fld2typs; init = true) do (fld, typ), x
+        eq_ex = if all(in(EGAL_TYPES), typenames(typ))
+            :(x1.$fld === x2.$fld)
+        else
+            :(x1.$fld == x2.$fld)
+        end
+        Expr(:&&, eq_ex, x)
+    end
+    eq_func = :(function Base.:(==)(x1::$name, x2::$name); $(eq_body); end)
+
+    return quote
+        $(typedef)
+        $(hash_func)
+        $(eq_func)
+    end
+end
+
+islnn(@nospecialize(_)) = false
+islnn(::LineNumberNode) = true
+
+"""
+    const EGAL_TYPES = $(EGAL_TYPES)
+
+Keeps names of types that should be compared by `===` rather than `==`.
+
+See also: [`@withmixedhash`](@ref)
+"""
+const EGAL_TYPES = Set{Symbol}((:Type, :Symbol, :MethodInstance))
+
+typenames(@nospecialize(t::DataType)) = [t.name.name]
+typenames(u::Union)                   = collect(Base.Iterators.flatten(typenames.(CC.uniontypes(u))))
+typenames(u::UnionAll)                = [u.body.name.name]
+
+"""
     @jetconfigurable function funcname(args...; configuration_options...)
         ...
     end
