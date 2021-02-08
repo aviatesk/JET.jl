@@ -1194,18 +1194,17 @@ function set_abstract_global!(interp, mod, name, @nospecialize(t), isnd, sv)
     end
 
     ex = if update
-        quote
-            local name = $(name)
+        quote let name = $name::$AbstractGlobal
             name.t = $(t)
             name.id = $(QuoteNode(id))
             name.edge_sym = $(QuoteNode(edge_sym))
             name.li = $(li)
             name
-        end
+        end end
     else
-        :(const $(name) = $(AbstractGlobal(t, id, edge_sym, li, iscd)))
+        :(const $name = $(AbstractGlobal(t, id, edge_sym, li, iscd)))
     end
-    return Core.eval(mod, ex)::AbstractGlobal
+    return Core.eval(mod, ex)
 end
 
 function is_constant_declared(name, sv)
