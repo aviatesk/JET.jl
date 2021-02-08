@@ -656,3 +656,21 @@ end
             er.name === :bar
     end
 end
+
+@static JET.IS_LATEST && @testset "abstract_invoke" begin
+    # non-`Type` `argtypes`
+    interp, frame = profile_call() do
+        invoke(sin, :this_should_be_type, 1.0)
+    end
+    @test length(interp.reports) == 1
+    r = first(interp.reports)
+    @test isa(r, InvalidInvokeErrorReport)
+
+    # invalid `argtype`
+    interp, frame = profile_call() do
+        Base.@invoke sin(1.0::Int)
+    end
+    @test length(interp.reports) == 1
+    r = first(interp.reports)
+    @test isa(r, InvalidInvokeErrorReport)
+end
