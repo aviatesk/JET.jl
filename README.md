@@ -87,9 +87,9 @@ profiling from demo.jl (finished in 6.198 sec)
 Hooray !
 JET.jl found possible error points (e.g. `MethodError: no method matching isless(::String, ::Int64)`) given toplevel call signatures of generic functions (e.g. `fib("1000")`).
 
-Note that JET can find these errors while demo.jl is so ridiculous (especially the `fib` implementation) that it would never terminate in actual execution.
-That is possible because JET profiles code only on _type level_.
-This technique is often called "abstract interpretation" and JET internally uses Julia's native abstract interpreter implementation (for its JIT compile), so it can profile code as fast/correctly as Julia's code generation.
+Note that JET can find these errors while demo.jl is so inefficient (especially the `fib` implementation) that it would never terminate in actual execution.
+That is possible because JET analyzes code only on _type level_.
+This technique is often called "abstract interpretation" and JET internally uses Julia's native type inference implementation, so it can analyze code as fast/correctly as Julia's code generation.
 
 Lastly let's apply the following diff to demo.jl so that it works nicely:
 
@@ -151,14 +151,16 @@ No errors !
 
 ### TODOs
 
-- remove `Core.eval(CC, ...)` monkey patches
+- fix analysis performance problem (<https://github.com/aviatesk/JET.jl/issues/75>, see also <https://github.com/aviatesk/JET.jl/pull/90>)
+- remove `Core.eval(CC, ...)` monkey patches (<https://github.com/JuliaLang/julia/pull/39439>, <https://github.com/JuliaLang/julia/pull/39305>, see also "developer note" section)
 - documentation, release
 - more accurate error reports in general
-- performance linting: report performance pitfalls
-- provide editor/IDE linters integrated with the watch mode, or even support some of LSPs for easier IDE integration
-- support package loading
-  * enables profiling on code that uses packages, _without_ actual loading, which gets rid of the need to rely on Revise for signature changes in a package and circumvent its limitation around redefinition of types, etc.
-  * but then it's highly possible that we face performance problem on profiling on code using "big" packages, and so we will need some kind of incremental profiling (for fast watch mode)
+  * inter-procedural conditional type constraint back-propagation (<https://github.com/JuliaLang/julia/pull/38905>): should remove the need to annotate `x::Expr` in `if isexpr(x::Union{Nothing,Expr}, :call); x.args; end`
+  * enable constant propagation on union-split signatures (<https://github.com/JuliaLang/julia/pull/39305>)
+- provide editor/IDE integrations for "watch" mode (<https://github.com/aviatesk/JET.jl/pull/85> will be a starting point)
+- support package profiling (issue <https://github.com/aviatesk/JET.jl/issues/76>, something like PR <https://github.com/aviatesk/JET.jl/pull/101> can be a starting point)
+- performance linting (report performance pitfalls, i.e. report an error when there're too many methods matched)
+- ideally, I want to extend JET.jl to provide some of LSPs other than diagnostics, e.g. providers of completions, rename refactor, etc.
 
 
 ### developer note
