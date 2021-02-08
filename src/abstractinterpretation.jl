@@ -915,13 +915,19 @@ end
 
 import .CC:
     abstract_invoke,
+    InvokeCallInfo,
     instanceof_tfunc
 
 function CC.abstract_invoke(interp::JETInterpreter, argtypes::Vector{Any}, sv::InferenceState)
     ret = @invoke abstract_invoke(interp::AbstractInterpreter, argtypes::Vector{Any}, sv::InferenceState)
 
     if ret.rt === Bottom
-        report!(interp, InvalidInvokeErrorReport(interp, sv, argtypes))
+        # here we report error that happens at the call of `invoke` itself.
+        # if the error type (`Bottom`) is propagated from the `invoke`d call, the error has
+        # already been reported within `typeinf_edge`, so ignore that case
+        if !isa(ret.info, InvokeCallInfo)
+            report!(interp, InvalidInvokeErrorReport(interp, sv, argtypes))
+        end
     end
 
     return ret
