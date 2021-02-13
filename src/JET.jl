@@ -363,8 +363,8 @@ macro jetconfigurable(funcdef)
 end
 const _JET_CONFIGURATIONS = Dict{Symbol,Symbol}()
 
-# inference frame
-# ---------------
+# utils
+# -----
 
 is_constant_propagated(frame::InferenceState) = CC.any(frame.result.overridden_by_const)
 
@@ -407,6 +407,8 @@ end
 @inline get_slotname(frame::InferenceState, slot::Slot)            = get_slotname(frame, slot_id(slot))
 
 @inline get_result(frame::InferenceState)                          = frame.bestguess
+
+ignorenotfound(@nospecialize(t)) = t === NOT_FOUND ? Bottom : t
 
 # includes
 # ========

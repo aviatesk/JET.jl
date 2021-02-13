@@ -118,9 +118,11 @@ AnalysisParams(interp::JETInterpreter) = interp.analysis_params
 
 @jetconfigurable function gen_inf_params(; # more constant prop, more correct reports ?
                                            aggressive_constant_propagation::Bool = true,
-                                           # turn this off to get profiles on `throw` blocks, this might be good to default
-                                           # to `true` since `throw` calls themselves will be reported anyway
-                                           unoptimize_throw_blocks::Bool = true,
+                                           # turn this on to skip analysis on `throw` blocks;
+                                           # this is better to be turned off for JET analysis because
+                                           # there may be other errors in blocks that lead to a `throw` call
+                                           # while we will report the uncaught `throw`s anyway
+                                           unoptimize_throw_blocks::Bool = false,
                                            )
     return @static VERSION ≥ v"1.6.0-DEV.837" ?
            InferenceParams(; aggressive_constant_propagation,
