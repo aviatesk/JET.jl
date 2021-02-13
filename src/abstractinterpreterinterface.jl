@@ -123,6 +123,7 @@ AnalysisParams(interp::JETInterpreter) = interp.analysis_params
                                            # there may be other errors in blocks that lead to a `throw` call
                                            # while we will report the `throw` anyway when the return type is
                                            # annotated as `Bottom`
+                                           # unoptimize_throw_blocks::Bool = (@static VERSION ≥ v"1.7.0-DEV.525" ? false : true),
                                            unoptimize_throw_blocks::Bool = false,
                                            )
     return @static VERSION ≥ v"1.6.0-DEV.837" ?
