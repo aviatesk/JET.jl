@@ -45,7 +45,7 @@ mutable struct JETInterpreter <: AbstractInterpreter
                                              uncaught_exceptions = UncaughtExceptionReport[],
                                              native_remarks      = NativeRemark[],
                                              concretized         = BitVector(),
-                                             )
+                                             jetconfigs...)
         inf_params      = gen_inf_params(; jetconfigs...)
         opt_params      = gen_opt_params()
         @assert !opt_params.inlining "inlining should be disabled for JETInterpreter analysis"

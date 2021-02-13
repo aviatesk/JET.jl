@@ -349,14 +349,19 @@ macro jetconfigurable(funcdef)
         insert!(defsig.args, 2, Expr(:parameters, :(jetconfigs...)))
     else
         kwargs = defsig.args[i]
+        found = false
         for kwarg in kwargs.args
+            if @isexpr(kwarg, :...)
+                found = true
+                continue
+            end
             kwargex = first(kwarg.args)
             kwargname = (@isexpr(kwargex, :(::)) ? first(kwargex.args) : kwargex)::Symbol
             funcname′ = get!(_JET_CONFIGURATIONS, kwargname, funcname)
             # allows same configurations for same generic function or function refinement
             @assert funcname === funcname′ "`$(funcname)` uses `$(kwargname)` JET configuration name which is already used by `$(funcname′)`"
         end
-        push!(kwargs.args, :(jetconfigs...))
+        found || push!(kwargs.args, :(jetconfigs...))
     end
 
     return esc(funcdef)
