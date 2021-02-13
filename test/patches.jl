@@ -1,6 +1,7 @@
 # NOTE: this file keeps patches for julia itself to make JET.jl test keep passing
 
 @static if VERSION < v"1.7.0-DEV.0"
+    # take in https://github.com/JuliaLang/julia/pull/38832
     @eval Base function _split(str::AbstractString, splitter::F, limit::Integer, keepempty::Bool, strs::Vector) where F
         # Forcing specialization on `splitter` improves performance (roughly 30% decrease in runtime)
         # and prevents a major invalidation risk (1550 MethodInstances)

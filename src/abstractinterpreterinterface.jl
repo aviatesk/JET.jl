@@ -121,9 +121,7 @@ AnalysisParams(interp::JETInterpreter) = interp.analysis_params
                                            # turn this on to skip analysis on `throw` blocks;
                                            # this is better to be turned off for JET analysis because
                                            # there may be other errors in blocks that lead to a `throw` call
-                                           # while we will report the `throw` anyway when the return type is
-                                           # annotated as `Bottom`
-                                           # unoptimize_throw_blocks::Bool = (@static VERSION ≥ v"1.7.0-DEV.525" ? false : true),
+                                           # while we will report the uncaught `throw`s anyway
                                            unoptimize_throw_blocks::Bool = false,
                                            )
     return @static VERSION ≥ v"1.6.0-DEV.837" ?
