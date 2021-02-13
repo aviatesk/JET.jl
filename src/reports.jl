@@ -467,7 +467,7 @@ function _get_sig_type(sv::InferenceState, expr::Expr)
 end
 function _get_sig_type(sv::InferenceState, ssa::SSAValue)
     sig, sig_typ = _get_sig_type(sv, sv.src.code[ssa.id])
-    typ = widenconst(ignorelimited(sv.src.ssavaluetypes[ssa.id]))
+    typ = widenconst(ignorelimited(ignorenotfound(sv.src.ssavaluetypes[ssa.id])))
     sig_typ == typ || push!(sig, typ)
     return sig, typ
 end

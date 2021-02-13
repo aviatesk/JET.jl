@@ -533,13 +533,6 @@ function set_virtual_globalvar!(interp, mod, name, @nospecialize(t), sv)
         return Core.eval(mod, :(const $(name) = $(t.val)))
     end
 
-    # at this point undefined slots may still be annotated as `NOT_FOUND` (e.g. when there is
-    # undefined slot, etc.), which can't be used as abstract value for later profiling,
-    # so replace it with Bottom
-    if t === NOT_FOUND
-        t = Bottom
-    end
-
     if begin
             # if the previous virtual global variable assignment happened in the same inference process,
             # JET needs to perform type merge
