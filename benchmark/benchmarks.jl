@@ -127,3 +127,10 @@ SUITE["invalidation"] = @jetbenchmarkable (@profile_call println(QuoteNode(nothi
         end
     end
 end
+SUITE["self profiling"] = @jetbenchmarkable(profile_call(JET.virtual_process!,
+                                                         (AbstractString, AbstractString, Module, Symbol, JET.JETInterpreter),
+                                                         ),
+                                            setup = begin
+                                                using JET
+                                                @profile_call identity(nothing)
+                                            end)
