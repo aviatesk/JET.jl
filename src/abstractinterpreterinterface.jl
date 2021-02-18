@@ -24,6 +24,8 @@ mutable struct JETInterpreter <: AbstractInterpreter
     # stashes `UncaughtExceptionReport`s that are not caught so far
     uncaught_exceptions::Vector{UncaughtExceptionReport}
 
+    # keeps reports that should be updated when returning back the parent frame (i.e. the next time we get back to inter-procedural context)
+    to_be_updated::Set{InferenceErrorReport}
 
     # toplevel profiling (skip inference on actually interpreted statements)
     concretized::BitVector
@@ -54,6 +56,7 @@ mutable struct JETInterpreter <: AbstractInterpreter
                    id,
                    reports,
                    uncaught_exceptions,
+                   Set{InferenceErrorReport}(),
                    concretized,
                    analysis_params,
                    nothing,

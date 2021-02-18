@@ -35,6 +35,7 @@ import .CC:
     # abstractinterpretation.jl
     abstract_call_gf_by_type,
     abstract_call_method_with_const_args,
+    abstract_call_method,
     abstract_eval_special_value,
     abstract_eval_value,
     abstract_eval_statement,
