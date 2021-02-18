@@ -62,8 +62,6 @@ function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
         getfield(er, sym)::String
     elseif sym === :sig
         getfield(er, sym)::Vector{Any}
-    elseif sym === :lineage
-        getfield(er, sym)::Lineage
     elseif sym === :lin # only needed for ExceptionReport
         getfield(er, sym)::LineInfoNode
     else
@@ -92,94 +90,47 @@ end
 # "from entry call site to error point"
 const VirtualStackTrace = Vector{VirtualFrame}
 
-@withmixedhash struct LineageKey
-    file::Symbol
-    line::Int
-    linfo::MethodInstance
-end
-const Lineage = Set{LineageKey}
-
-get_lineage_key(frame::InferenceState) = LineageKey(get_file_line(frame)..., frame.linfo)
-get_lineage_key(vf::VirtualFrame)      = LineageKey(vf.file, vf.line, vf.linfo)
-
-function is_lineage(lineage::Lineage, parent::InferenceState, linfo::MethodInstance)
-    # check if current `linfo` is in `lineage`
-    # NOTE: we can't use `get_lineage_key` for this `linfo`, just because we don't analyze
-    # on cached frames and thus no appropriate lineage key (i.e. program counter) exists
-    for lk in lineage
-        lk.linfo === linfo && return is_lineage(lineage, parent)
-    end
-    return false
-end
-function is_lineage(lineage::Lineage, frame::InferenceState)
-    get_lineage_key(frame) in lineage || return false
-    return is_lineage(lineage, frame.parent)
-end
-is_lineage(::Lineage, ::Nothing) = true
-
-# `ViewedVirtualStackTrace` is for `InferenceErrorReportCache` and only keeps a part of the
-# stack trace of the original `InferenceErrorReport`, in the order of "from cached frame to error point"
-const ViewedVirtualStackTrace = typeof(view(VirtualStackTrace(), 1:0))
-
 struct InferenceErrorReportCache
     T::Type{<:InferenceErrorReport}
-    st::ViewedVirtualStackTrace
+    st::VirtualStackTrace
     msg::String
     sig::Vector{Any}
     spec_args::NTuple{N,Any} where N
 end
 
-function cache_report!(report::T, linfo, cache) where {T<:InferenceErrorReport}
-    st = report.st
-    i = findfirst(vf->vf.linfo===linfo, st)
-    # sometimes `linfo` can't be found within the `report.st` chain; e.g. frames for inner
-    # constructor methods doesn't seem to be tracked in the `(frame::InferenceState).parent`
-    # chain so that there is no `MethodInstance` within `report.st` for such a frame;
-    # XXX: reports from these frames might need to be cached as well rather than just giving up
-    isnothing(i) && return
-    st = view(st, i:length(st))
+function cache_report!(report::T, cache) where {T<:InferenceErrorReport}
+    st = copy(report.st)
     new = InferenceErrorReportCache(T, st, report.msg, report.sig, spec_args(report))
     push!(cache, new)
 end
 
 function restore_cached_report!(cache::InferenceErrorReportCache,
                                 interp#=::JETInterpreter=#,
-                                caller::InferenceState,
                                 )
-    report = restore_cached_report(cache, caller)
-    push!(isa(report, UncaughtExceptionReport) ? interp.uncaught_exceptions : interp.reports, report)
-    return
+    report = restore_cached_report(cache)
+    if isa(report, UncaughtExceptionReport)
+        stash_uncaught_exception!(interp, report)
+    else
+        report!(interp, report)
+    end
+    return report
 end
 
-function restore_cached_report(cache::InferenceErrorReportCache,
-                               caller::InferenceState,
-                               )
+function restore_cached_report(cache::InferenceErrorReportCache)
     T = cache.T
-    msg = cache.msg
-    sig = cache.sig
-    st = collect(cache.st)
-    spec_args = cache.spec_args
-    lineage = Lineage(get_lineage_key(vf) for vf in st)
-
-    prewalk_inf_frame(caller) do frame::InferenceState
-        linfo = frame.linfo
-        vf = get_virtual_frame(frame)
-        pushfirst!(st, vf)
-        push!(lineage, get_lineage_key(vf))
-    end
-
-    return T(st, msg, sig, lineage, spec_args)
+    st = copy(cache.st)
+    return T(st, cache.msg, cache.sig, cache.spec_args)::InferenceErrorReport
 end
 
 @withmixedhash struct IdentityKey
     T::Type{<:InferenceErrorReport}
     sig::Vector{Any}
-    entry_frame::VirtualFrame
+    # entry_frame::VirtualFrame
     error_frame::VirtualFrame
 end
 
 get_identity_key(report::T) where {T<:InferenceErrorReport} =
-    IdentityKey(T, report.sig, first(report.st), last(report.st))
+    IdentityKey(T, report.sig, #=first(report.st),=# last(report.st))
 
 macro reportdef(ex, kwargs...)
     T = esc(first(ex.args))
@@ -212,26 +163,16 @@ macro reportdef(ex, kwargs...)
 
         msg = get_msg(#= T, interp, sv, ... =# $(args′...))
         sig = get_sig(#= T, interp, sv, ... =# $(args′...))
-        st = VirtualFrame[]
-        lineage = Lineage()
 
-        $(track_from_frame && :(let
+        $(if track_from_frame quote
             # when report is constructed _after_ the inference on `sv` has been done,
-            # collect location information from `sv.linfo` and start traversal from `sv.parent`
-            linfo = sv.linfo
-            vf = get_virtual_frame(linfo)
-            push!(st, vf)
-            push!(lineage, get_lineage_key(vf))
-            sv = sv.parent
-        end))
+            # collect location information from `sv.linfo`
+            st = VirtualFrame[get_virtual_frame(sv.linfo)]
+        end else quote
+            st = VirtualFrame[get_virtual_frame(sv)]
+        end end)
 
-        prewalk_inf_frame(sv) do frame::InferenceState
-            vf = get_virtual_frame(frame)
-            pushfirst!(st, vf)
-            push!(lineage, get_lineage_key(vf))
-        end
-
-        return new(st, msg, sig, lineage, $(spec_args′...))
+        return new(st, msg, sig, $(spec_args′...))
     end))
 
     spec_types = extract_type_decls.(spec_args)
@@ -239,10 +180,9 @@ macro reportdef(ex, kwargs...)
     cache_constructor_sig = :($(T)(st::VirtualStackTrace,
                                    msg::AbstractString,
                                    sig::AbstractVector,
-                                   lineage::Lineage,
                                    @nospecialize(spec_args),
                                    ))
-    cache_constructor_call = :(new(st, msg, sig, lineage))
+    cache_constructor_call = :(new(st, msg, sig))
     for (i, spec_type) in enumerate(spec_types)
         push!(cache_constructor_call.args,
               :($(esc(:spec_args))[$(i)]::$(spec_type)), # `esc` is needed because `@nospecialize` escapes its argument anyway
@@ -268,7 +208,6 @@ macro reportdef(ex, kwargs...)
             st::VirtualStackTrace
             msg::String
             sig::Vector{Any}
-            lineage::Lineage
             $(spec_args...)
 
             # constructor from abstract interpretation process by `JETInterpreter`

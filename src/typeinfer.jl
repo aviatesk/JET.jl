@@ -41,6 +41,8 @@ end
 # where type inference (and also optimization if applied) already ran on
 function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
     linfo = frame.linfo
+    parent = frame.parent
+    isentry = parent === nothing
     iscp = is_constant_propagated(frame)
     reports = interp.reports
 
@@ -50,18 +52,21 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
     # and so here we will throw-away previously-collected error reports that are "lineage" of
     # this frame, when it is being re-inferred with constant-prop'ed inputs
     # - constant prop' only happens after inference with non-constant abstract values (i.e. types)
-    # - xref to track the change in the native abstract interpretation logic:
-    #   https://github.com/JuliaLang/julia/blob/a108d6cb8fdc7924fe2b8d831251142386cb6525/base/compiler/abstractinterpretation.jl#L153
+    # - NOTE track the change in the native abstract interpretation logic, like
+    #   * https://github.com/JuliaLang/julia/pull/39305
     # - IDEA: we may want to keep some "serious" error reports like `GlobalUndefVarErrorReport`
     #   even when constant prop' reveals it never happens given the current constant arguments
     if iscp
         # use `frame.linfo` instead of `frame` for lineage check since the program counter
         # for this frame is not initialized yet; note that `frame.linfo` is the exactly same
         # object as that of the previous only-type inference
-        filter!(r->!is_lineage(r.lineage, frame.parent::InferenceState, linfo), reports)
+        if !isentry
+            filter!(!is_from_same_frame(parent.linfo, linfo), reports)
+        end
     end
 
-    before = Set(reports)
+    reports_before             = Set(reports)
+    uncaught_exceptions_before = Set(interp.uncaught_exceptions)
 
     ret = @invoke _typeinf(interp::AbstractInterpreter, frame::InferenceState)
 
@@ -89,10 +94,9 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
 
     # XXX this is a dirty fix for performance problem, we need more "proper" fix
     # https://github.com/aviatesk/JET.jl/issues/75
-    unique!(get_identity_key, interp.reports)
+    unique!(get_identity_key, reports)
 
-    after = Set(interp.reports)
-    reports_for_this_linfo = setdiff(after, before)
+    reports_after = Set(reports)
 
     # report `throw` calls "appropriately"
     if get_result(frame) === Bottom
@@ -113,7 +117,7 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
             end
         end
         for (i, stmt) in enumerate(stmts)
-            is_throw_call′(stmt) || continue
+            is_throw_call_expr(stmt) || continue
             # if this `throw` is already reported, don't duplciate
             linetable[codelocs[i]]::LineInfoNode in throw_locs && continue
             push!(throw_calls, stmt)
@@ -129,45 +133,84 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
         empty!(interp.uncaught_exceptions)
     end
 
-    # cache uncaught exceptions so far
-    if !isempty(interp.uncaught_exceptions)
-        push!(reports_for_this_linfo, interp.uncaught_exceptions...)
-    end
+    uncaught_exceptions_after = Set(interp.uncaught_exceptions)
 
-    if !isempty(reports_for_this_linfo)
+    # compute JET analysis results that should be cached for this linfo
+    this_caches = union!(setdiff!(reports_after, reports_before),
+                         setdiff!(uncaught_exceptions_after, uncaught_exceptions_before))
+
+    if !isempty(this_caches)
         if iscp
             argtypes = frame.result.argtypes
             cache = interp.cache
 
-            @assert !haskey(cache, argtypes) "invalid local caching"
+            @assert !haskey(cache, argtypes) "invalid local caching $argtypes"
             local_cache = cache[argtypes] = InferenceErrorReportCache[]
 
-            for report in reports_for_this_linfo
-                cache_report!(report, linfo, local_cache)
+            for report in this_caches
+                # # TODO make this hold
+                # @assert first(report.st).linfo === linfo "invalid local caching"
+                cache_report!(report, local_cache)
             end
         elseif frame.cached # only cache when `NativeInterpreter` does
-            @assert !haskey(JET_GLOBAL_CACHE, linfo) || isnothing(frame.parent) "invalid global caching"
+            @assert !haskey(JET_GLOBAL_CACHE, linfo) || isentry "invalid global caching $linfo"
             global_cache = JET_GLOBAL_CACHE[linfo] = InferenceErrorReportCache[]
 
-            for report in reports_for_this_linfo
-                cache_report!(report, linfo, global_cache)
+            for report in this_caches
+                # # TODO make this hold
+                # @assert first(report.st).linfo === linfo "invalid global caching"
+                cache_report!(report, global_cache)
             end
         end
     end
 
-    if !iscp
+    interp.to_be_updated = this_caches
+
+    if !iscp && !isentry
         # refinement for this `linfo` may change analysis result for parent frame
         # XXX: is this okay from performance perspective ?
-        if (parent = frame.parent; !isnothing(parent))
-            add_backedge!(linfo, parent)
-        end
+        add_backedge!(linfo, parent)
     end
 
     return ret
 end
 
-is_unreachable(@nospecialize(_)) = false
-is_unreachable(rn::ReturnNode)   = !isdefined(rn, :val)
+"""
+    is_from_same_frame(parent_linfo::MethodInstance, current_linfo::MethodInstance) ->
+        (report::InferenceErrorReport) -> Bool
 
-is_throw_call′(@nospecialize(_)) = false
-is_throw_call′(e::Expr)          = is_throw_call(e)
+Returns a function that checks if a given `InferenceErrorReport` is generated from `current_linfo`.
+It also checks `current_linfo` is a "lineage" of `parent_linfo` (i.e. entered from it).
+
+This function is supposed to be used to filter out reports from analysis on `current_linfo`
+  without using constants when entering into the constant analysis. As such, this function
+  assumes that when a report should be filtered out, the first elment of its virtual stack
+  frame `st` is for `parent_linfo` and the second element of that is for `current_linfo`.
+
+Example:
+Assume `linfo2` will produce a report for some reason.
+In the example analysis below, `report2` will be filtered out on re-entering into `linfo3`
+  with constants (i.e. `linfo3′`). Note that `report1` is still kept there because of the
+  lineage check.
+```
+entry
+└─ linfo1
+   ├─ linfo2 (report1: linfo2)
+   ├─ linfo3 (report1: linfo1->linfo2, report2: linfo3->linfo2)
+   │  └─ linfo2 (report1: linfo2, report2: linfo2)
+   └─ linfo3′ (report1: linfo1->linfo2, ~~report2: linfo1->linfo3->linfo2~~)
+```
+"""
+function is_from_same_frame(parent_linfo::MethodInstance,
+                            current_linfo::MethodInstance,
+                            )
+    return @inbounds function (report::InferenceErrorReport)
+        st = report.st
+        length(st) > 1 || return false
+        st[1].linfo === parent_linfo || return false
+        return st[2].linfo === current_linfo
+    end
+end
+
+is_unreachable(@nospecialize(x))     = isa(x, ReturnNode) && !isdefined(x, :val)
+is_throw_call_expr(@nospecialize(x)) = isa(x, Expr)       && is_throw_call(x)
