@@ -24,8 +24,6 @@ mutable struct JETInterpreter <: AbstractInterpreter
     # stashes `UncaughtExceptionReport`s that are not caught so far
     uncaught_exceptions::Vector{UncaughtExceptionReport}
 
-    # stashes `NativeRemark`s
-    native_remarks::Vector{NativeRemark}
 
     # toplevel profiling (skip inference on actually interpreted statements)
     concretized::BitVector
@@ -43,7 +41,6 @@ mutable struct JETInterpreter <: AbstractInterpreter
                                              id                  = gensym(:JETInterpreterID),
                                              reports             = InferenceErrorReport[],
                                              uncaught_exceptions = UncaughtExceptionReport[],
-                                             native_remarks      = NativeRemark[],
                                              concretized         = BitVector(),
                                              jetconfigs...)
         inf_params      = gen_inf_params(; jetconfigs...)
@@ -57,7 +54,6 @@ mutable struct JETInterpreter <: AbstractInterpreter
                    id,
                    reports,
                    uncaught_exceptions,
-                   native_remarks,
                    concretized,
                    analysis_params,
                    nothing,
@@ -101,11 +97,12 @@ CC.get_world_counter(interp::JETInterpreter)  = get_world_counter(interp.native)
 CC.lock_mi_inference(::JETInterpreter, ::MethodInstance) = nothing
 CC.unlock_mi_inference(::JETInterpreter, ::MethodInstance) = nothing
 
-function CC.add_remark!(interp::JETInterpreter, sv::InferenceState, s::String)
-    AnalysisParams(interp).filter_native_remarks && return
-    push!(interp.native_remarks, NativeRemark(interp, sv, s))
-    return
-end
+# function CC.add_remark!(interp::JETInterpreter, sv::InferenceState, s::String)
+#     AnalysisParams(interp).filter_native_remarks && return
+#     push!(interp.native_remarks, NativeRemark(interp, sv, s))
+#     return
+# end
+CC.add_remark!(interp::JETInterpreter, sv::InferenceState, s::String) = return
 
 CC.may_optimize(interp::JETInterpreter)      = true
 CC.may_compress(interp::JETInterpreter)      = false
@@ -140,6 +137,7 @@ function gen_opt_params()
                                 )
 end
 
+# TODO configurable analysis, e.g. ignore user-specified modules and such
 @jetconfigurable function gen_analysis_params(; filter_native_remarks::Bool = true,
                                                 )
     return AnalysisParams(filter_native_remarks)
