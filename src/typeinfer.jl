@@ -29,7 +29,7 @@ function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
     # print_rails(io, depth)
     # printstyled(io, "└─→ "; color)
     # result = get_result(frame)
-    # isa(result, InferenceState) || printstyled(io, get_result(frame); color = TYPE_ANNOTATION_COLOR)
+    # isa(result, InferenceState) || printstyled(io, result; color = TYPE_ANNOTATION_COLOR)
     # printlnstyled(io, " ($(length(interp.reports)) reports)"; color = ERROR_COLOR)
 
     return ret
