@@ -30,7 +30,13 @@ function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
     # printstyled(io, "└─→ "; color)
     # result = get_result(frame)
     # isa(result, InferenceState) || printstyled(io, result; color = TYPE_ANNOTATION_COLOR)
-    # printlnstyled(io, " ($(length(interp.reports)) reports)"; color = ERROR_COLOR)
+    # println(io, " (",
+    #             join(filter(!isnothing, (
+    #                  frame.linfo,
+    #                  ret ? nothing : "in cycle",
+    #                  string(length(interp.reports), " reports"),
+    #                  )), ", "),
+    #             ')')
 
     return ret
 end

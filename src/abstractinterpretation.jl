@@ -1,7 +1,7 @@
 mutable struct VirtualGlobalVariable
-    # actual profiled type
+    # actually profiled type
     t::Any
-    # keeps `id` of `JETInterpreter` that defined this
+    # `id` of `JETInterpreter` that defined this
     id::Symbol
     # `Symbol` of a dummy generic function that generates dummy backedge (i.e. `li`)
     edge_sym::Symbol
@@ -450,8 +450,8 @@ function CC.abstract_eval_special_value(interp::JETInterpreter, @nospecialize(e)
 
             # TODO: add report pass here (for performance linting)
 
-            # special case and propagate `Main` module as constant adn this is somewhat
-            # critical for performance when self-profiling
+            # special case and propagate `Main` module as constant
+            # XXX this was somewhat critical for accuracy and performance, but I'm not sure this still holds
             if name === :Main
                 ret = Const(Main)
             end
