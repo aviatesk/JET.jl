@@ -151,14 +151,14 @@ No errors !
 
 ### TODOs
 
-- fix analysis performance problem (<https://github.com/aviatesk/JET.jl/issues/75>, see also <https://github.com/aviatesk/JET.jl/pull/90>)
-- remove `Core.eval(CC, ...)` monkey patches (<https://github.com/JuliaLang/julia/pull/39439>, <https://github.com/JuliaLang/julia/pull/39305>, see also "developer note" section)
 - documentation, release
+- remove `Core.eval(CC, ...)` monkey patches (<https://github.com/JuliaLang/julia/pull/39439>, <https://github.com/JuliaLang/julia/pull/39305>, see also "developer note" section)
 - more accurate error reports in general
   * inter-procedural conditional type constraint back-propagation (<https://github.com/JuliaLang/julia/pull/38905>): should remove the need to annotate `x::Expr` in `if isexpr(x::Union{Nothing,Expr}, :call); x.args; end`
   * enable constant propagation on union-split signatures (<https://github.com/JuliaLang/julia/pull/39305>)
 - provide editor/IDE integrations for "watch" mode (<https://github.com/aviatesk/JET.jl/pull/85> will be a starting point)
 - support package profiling (issue <https://github.com/aviatesk/JET.jl/issues/76>, something like PR <https://github.com/aviatesk/JET.jl/pull/101> can be a starting point)
+- implement a "global" version of type inference algorithm (see [this comment](https://github.com/aviatesk/JET.jl/blob/80fd0d9586a01dda7e460ccd71d3d9f33189d4ba/src/abstractinterpretation.jl#L517-L523))
 - performance linting (report performance pitfalls, i.e. report an error when there're too many methods matched)
 - ideally, I want to extend JET.jl to provide some of LSPs other than diagnostics, e.g. providers of completions, rename refactor, etc.
 
