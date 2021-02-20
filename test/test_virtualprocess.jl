@@ -948,3 +948,23 @@ end
         @test er.unionsplit
     end
 end
+
+@testset "docstrings" begin
+    # can find errors within docstring generation
+    let
+        vmod = gen_virtual_module()
+        res, interp = @profile_toplevel vmod begin
+            """
+                foo
+
+            This is a invalid docstring for `$(foo)`,
+            becuase `foo` is undefined at this point.
+            """
+            :(foo)
+        end
+        @test any(res.inference_error_reports) do r
+            r isa GlobalUndefVarErrorReport &&
+            r.name === :foo
+        end
+    end
+end
