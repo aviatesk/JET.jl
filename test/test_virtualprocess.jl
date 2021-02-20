@@ -272,6 +272,38 @@ end
         @test_broken isempty(res.toplevel_error_reports)
         @test isempty(res.inference_error_reports)
     end
+
+    # macros that can general :module or :toplevel expressions
+    let
+        # if we don't expand macros before we check `:toplevel` or `:module` expressions,
+        # we may pass `:toplevel` or `:module` expressions to `partially_interpret!` and
+        # eventually we will fail to concretize them and their toplevel definitions
+        vmod = gen_virtual_module()
+        res, interp = @profile_toplevel vmod begin
+            macro wrap_in_mod(blk)
+                ex = Expr(:module, true, esc(:foo), esc(blk))
+                return Expr(:toplevel, ex)
+            end
+
+            @wrap_in_mod begin
+                bar() = nothing
+            end
+        end
+        @test isdefined(vmod, :foo) && isdefined(vmod.foo, :bar)
+
+        vmod = gen_virtual_module()
+        res, interp = @profile_toplevel vmod begin
+            """
+                foo
+
+            Docstring for module `foo`
+            """
+            module foo
+            bar() = nothing
+            end
+        end
+        @test isdefined(vmod, :foo) && isdefined(vmod.foo, :bar)
+    end
 end
 
 @testset "remove `const`" begin
