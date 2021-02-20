@@ -138,7 +138,7 @@ function virtual_process!(toplevelex::Expr,
         if @isexpr(x, :macrocall)
             newx = macroexpand_with_err_handling(virtualmod, x)
             # unless (toplevel) error happened during macro expansion, queue it and continue
-            isnothing(newx) || pushfirst!(exs, newx)
+            isnothing(newx) || push!(exs, newx)
             continue
         end
 
