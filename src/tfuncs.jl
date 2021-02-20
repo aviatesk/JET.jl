@@ -104,7 +104,11 @@ function CC.return_type_tfunc(interp::JETInterpreter, argtypes::Vector{Any}, sv:
                                             # this is not necessary to be computed correctly, though
                                             argtypes_to_type(argtypes),
                                             ))
-        return Bottom
+        @static if isdefined(CC, :ReturnTypeCallInfo)
+            return CallMeta(Bottom, nothing)
+        else
+            return Bottom
+        end
     else
         # don't recursively pass on `JETInterpreter` via `@invoke`
         return return_type_tfunc(interp.native, argtypes, sv)
