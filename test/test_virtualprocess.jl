@@ -1000,3 +1000,14 @@ end
         end
     end
 end
+
+@testset "world age" begin
+    # https://github.com/aviatesk/JET.jl/issues/104
+    res, interp = @profile_toplevel begin
+        using Test
+        @testset begin
+            a = @inferred(ones(Int,ntuple(d->1,1)), ntuple(x->x+1,1))
+        end
+    end
+    @test !isempty(res.toplevel_error_reports)
+end

@@ -123,6 +123,7 @@ function virtual_process!(toplevelex::Expr,
     end
 
     # transform, and then profile sequentially
+    # IDEA the following code has some of duplicated work with `JuliaInterpreter.ExprSpliter` and we may want to factor them out
     exs = reverse(toplevelex.args)
     while !isempty(exs)
         x = pop!(exs)
@@ -285,7 +286,7 @@ function partially_interpret!(interp, mod, src)
 
     # LoweredCodeUtils.print_with_code(stdout::IO, src, concretize)
 
-    @invokelatest selective_eval_fromstart!(interp, Frame(mod, src), concretize, #= istoplevel =# true)
+    selective_eval_fromstart!(interp, Frame(mod, src), concretize, #= istoplevel =# true)
 
     return concretize
 end
@@ -407,8 +408,10 @@ function to_single_usages(x::Expr)
 end
 
 # adapted from https://github.com/JuliaDebug/JuliaInterpreter.jl/blob/2f5f80034bc287a60fe77c4e3b5a49a087e38f8b/src/interpret.jl#L188-L199
-# works as `JuliaInterpreter.evaluate_call_compiled!`, but special cases for JET.jl added
-function JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)
+# works almost same as `JuliaInterpreter.evaluate_call_compiled!`, but also added special
+# cases for JET analysis
+# NOTE don't inline this so we can find it in the stacktrace
+@noinline function JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)
     # @assert !enter_generated
     pc = frame.pc
     ret = bypass_builtins(frame, call_expr, pc)
@@ -423,8 +426,12 @@ function JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, fr
     if isinclude(f)
         return handle_include(interp, fargs)
     else
-        ret = f(fargs...)
-        return ret
+        # `virtualprocess!` iteratively interpret toplevel expressions but it doesn't hit toplevel
+        # we may want to make `virtualprocess!` hit the toplevel on each interation rather than
+        # using `invokelatest` here, but assuming concretized calls are supposed only to be 
+        # used for other toplevel definitions and as such not so computational heavy,
+        # I'd like to go with this simplest way
+        return @invokelatest f(fargs...)
     end
 end
 
@@ -459,21 +466,24 @@ function handle_include(interp, fargs)
     return nothing
 end
 
+# handle errors from toplevel user code
 function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame, err)
-    # this error handler is only supposed to be called from toplevel frame
-    data = frame.framedata
-    @assert isempty(data.exception_frames) && !data.caller_will_catch_err
-
     # catch stack trace
     bt = catch_backtrace()
     st = stacktrace(bt)
-    st = crop_stacktrace(st, 1) do frame
+
+    # this error handler is supposed to catch errors that may happen at `@invokelatest f(fargs...)`
+    # in `JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)`
+    file = Symbol(@__FILE__)
+    name = Symbol(evaluate_call_recurse!)
+    offset = 4 # `evaluate_call_recurse` -> kw method -> `invokelatest` -> kw method
+    st = crop_stacktrace(st, offset) do frame
         # cut until the internal frame (i.e the one within this module or JuliaInterpreter)
         linfo = frame.linfo
         isa(linfo, MethodInstance) || return false
         def = linfo.def
-        mod = isa(def, Method) ? def.module : def
-        return mod == JuliaInterpreter || mod == @__MODULE__
+        isa(def, Method) || return false
+        return def.file === file && def.name === name
     end
 
     push!(interp.ret.toplevel_error_reports, ActualErrorWrapped(err,
@@ -485,7 +495,7 @@ function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame, err)
     return nothing
 end
 
-# don't inline this so we can find it in the stacktrace
+# NOTE don't inline this so we can find it in the stacktrace
 @noinline function with_err_handling(f, err_handler)
     return try
         f()
@@ -498,7 +508,8 @@ end
 
 function crop_stacktrace(pred, st, offset)
     i = findfirst(pred, st)
-    return st[1:(isnothing(i) ? end : i - offset)]
+    @assert i !== nothing
+    return st[1:(i - offset)]
 end
 
 function crop_stacktrace(st, offset)
