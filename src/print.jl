@@ -46,7 +46,7 @@ end
 function fullbasepath(filename)
     return @static occursin("DEV", string(VERSION)) ? # TODO make this configurable
            normpath(Sys.BINDIR::String, "..", "..", "..", "julia", "base", filename) :
-           normpath(Sys.BINDIR::String, DATAROOTDIR, "julia", "base", filename)
+           normpath(Sys.BINDIR::String, Base.DATAROOTDIR, "julia", "base", filename)
 end
 
 # toplevel
