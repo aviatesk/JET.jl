@@ -103,15 +103,15 @@ function virtual_process!(toplevelex::Expr,
 
         return lwr
     end
-    # function macroexpand_err_handler(err, st)
-    #     # `4` corresponds to `with_err_handling`, `f`, `macroexpand` and its kwfunc
-    #     st = crop_stacktrace(st, 4)
-    #     push!(ret.toplevel_error_reports, ActualErrorWrapped(err, st, filename, lnn.line))
-    #     return nothing
-    # end
-    # macroexpand_with_err_handling(mod, x) = with_err_handling(macroexpand_err_handler) do
-    #     return macroexpand(mod, x)
-    # end
+    function macroexpand_err_handler(err, st)
+        # `4` corresponds to `with_err_handling`, `f`, `macroexpand` and its kwfunc
+        st = crop_stacktrace(st, 4)
+        push!(ret.toplevel_error_reports, ActualErrorWrapped(err, st, filename, lnn.line))
+        return nothing
+    end
+    macroexpand_with_err_handling(mod, x) = with_err_handling(macroexpand_err_handler) do
+        return macroexpand(mod, x; recursive = false)
+    end
     function eval_err_handler(err, st)
         # `3` corresponds to `with_err_handling`, `f` and `eval`
         st = crop_stacktrace(st, 3)
@@ -133,8 +133,14 @@ function virtual_process!(toplevelex::Expr,
             continue
         end
 
-        # XXX: expand macros at this point ?
-        # macro can essentially generate `:toplevel` and `:module` expressions
+        # we will end up lowering `x` later, but special case `macrocall`s and expand it here
+        # this is because macros can arbitrarily generate `:toplevel` and `:module` expressions
+        if @isexpr(x, :macrocall)
+            newx = macroexpand_with_err_handling(virtualmod, x)
+            # unless (toplevel) error happened during macro expansion, queue it and continue
+            isnothing(newx) || push!(exs, newx)
+            continue
+        end
 
         # flatten container expression
         if @isexpr(x, :toplevel)
