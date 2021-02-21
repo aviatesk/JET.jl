@@ -6,17 +6,17 @@ const ANALYZED_LINFOS  = IdSet{MethodInstance}() # keeps `MethodInstance`s analy
 const JET_GLOBAL_CACHE = IdDict{MethodInstance,Vector{InferenceErrorReportCache}}()
 
 function CC.code_cache(interp::JETInterpreter)
-    cache  = JETCache(interp, code_cache(interp.native))
+    cache  = JETGlobalCache(interp, code_cache(interp.native))
     worlds = WorldRange(get_world_counter(interp))
     return WorldView(cache, worlds)
 end
 
-struct JETCache
+struct JETGlobalCache
     interp::JETInterpreter
     native::WorldView{InternalCodeCache}
 end
 
-function CC.haskey(wvc::WorldView{JETCache}, mi::MethodInstance)
+function CC.haskey(wvc::WorldView{JETGlobalCache}, mi::MethodInstance)
     ret = CC.haskey(WorldView(wvc.cache.native, wvc.worlds), mi)
     if ret && !(mi in ANALYZED_LINFOS)
         add_jet_callback!(mi) # XXX: forcibly register a callback for caches in system image
@@ -24,7 +24,7 @@ function CC.haskey(wvc::WorldView{JETCache}, mi::MethodInstance)
     return ret
 end
 
-function CC.get(wvc::WorldView{JETCache}, mi::MethodInstance, default)
+function CC.get(wvc::WorldView{JETGlobalCache}, mi::MethodInstance, default)
     # ignore code cache for a `MethodInstance` that is not yet analyzed by JET;
     # this happens when the `MethodInstance` is cached within the system image
     mi in ANALYZED_LINFOS || return default # force inference
@@ -46,13 +46,13 @@ function CC.get(wvc::WorldView{JETCache}, mi::MethodInstance, default)
     return ret
 end
 
-function CC.getindex(wvc::WorldView{JETCache}, mi::MethodInstance)
+function CC.getindex(wvc::WorldView{JETGlobalCache}, mi::MethodInstance)
     r = CC.get(wvc, mi, nothing)
     r === nothing && throw(KeyError(mi))
     return r::CodeInstance
 end
 
-function CC.setindex!(wvc::WorldView{JETCache}, ci::CodeInstance, mi::MethodInstance)
+function CC.setindex!(wvc::WorldView{JETGlobalCache}, ci::CodeInstance, mi::MethodInstance)
     CC.setindex!(WorldView(wvc.cache.native, wvc.worlds), ci, mi)
     add_jet_callback!(mi)
     return nothing
