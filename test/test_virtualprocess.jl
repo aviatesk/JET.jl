@@ -1049,5 +1049,12 @@ end
             a = @inferred(ones(Int,ntuple(d->1,1)), ntuple(x->x+1,1))
         end
     end
-    @test !isempty(res.toplevel_error_reports)
+    @test true
+
+    res, interp = @profile_toplevel begin
+        using Test
+
+        @test_warn "foo" println(stderr, "foo")
+    end
+    @test isempty(res.toplevel_error_reports)
 end

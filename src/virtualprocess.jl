@@ -91,7 +91,10 @@ function virtual_process!(toplevelex::Expr,
     end
     # `scrub_offset = 4` corresponds to `with_err_handling` -> `f` -> `macroexpand` -> kwfunc (`macroexpand`)
     macroexpand_with_err_handling(mod, x) = with_err_handling(macroexpand_err_handler, #= scrub_offset =# 4) do
-        return macroexpand(mod, x; recursive = false)
+        # XXX we want to non-recursive, sequential partial macro expansion here, which allows
+        # us to collect more fine-grained error reports within macro expansions
+        # but it can lead to invalid macro hygiene escaping because of https://github.com/JuliaLang/julia/issues/20241
+        return macroexpand(mod, x; recursive = true #= but want to use `false` here =#)
     end
     function eval_err_handler(err, st)
         push!(ret.toplevel_error_reports, ActualErrorWrapped(err, st, filename, lnn.line))
