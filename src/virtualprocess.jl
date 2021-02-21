@@ -466,25 +466,41 @@ function handle_include(interp, fargs)
     return nothing
 end
 
+const JET_VIRTUALPROCESS_FILE = Symbol(@__FILE__)
+const JULIAINTERPRETER_BUILTINS_FILE = let
+    jlfile = pathof(JuliaInterpreter)::String
+    Symbol(normpath(jlfile, "..", "builtins.jl"))
+end
+
 # handle errors from toplevel user code
 function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame, err)
     # catch stack trace
     bt = catch_backtrace()
     st = stacktrace(bt)
 
-    # this error handler is supposed to catch errors that may happen at `@invokelatest f(fargs...)`
-    # in `JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)`
-    file = Symbol(@__FILE__)
-    name = Symbol(evaluate_call_recurse!)
-    offset = 4 # `evaluate_call_recurse` -> kw method -> `invokelatest` -> kw method
-    st = crop_stacktrace(st, offset) do frame
-        # cut until the internal frame (i.e the one within this module or JuliaInterpreter)
-        linfo = frame.linfo
-        isa(linfo, MethodInstance) || return false
-        def = linfo.def
-        isa(def, Method) || return false
-        return def.file === file && def.name === name
+    # scrub the original stacktrace so that it only contains frames from user code
+    i = 0
+    for (j, frame) in enumerate(st)
+        # if errors happen in `JuliaInterpreter.maybe_evaluate_builtin`, we just discard all
+        # the stacktrace assuming they are enough self-explanatory (corresponding to the last logic below)
+        if frame.file === JULIAINTERPRETER_BUILTINS_FILE && frame.func === :maybe_evaluate_builtin
+            break # keep `i = 0`
+        end
+
+        # find an error frame that happened at `@invokelatest f(fargs...)` in the overload
+        # `JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)`
+        if frame.file === JET_VIRTUALPROCESS_FILE && frame.func === :evaluate_call_recurse!
+            i = j - 4 # offset(`evaluate_call_recurse` -> kw method -> `invokelatest` -> kw method)
+            break
+        end
+
+        # other general errors may happen at `collect_args`, etc.
+        # we don't show any stacktrace for those errors (by keeping the original `i = 0`)
+        # since they are hopefully enough self-explanatory (XXX is it really so ?) and even
+        # Julia's base error handler only shows something like `[1] top-level scope` in these cases
+        continue
     end
+    st = st[1:i]
 
     push!(interp.ret.toplevel_error_reports, ActualErrorWrapped(err,
                                                                 st,

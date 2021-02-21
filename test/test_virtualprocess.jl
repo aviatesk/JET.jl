@@ -905,21 +905,42 @@ end
         @test er.file == (@__FILE__) && er.line == (@__LINE__) - 7
     end
 
-    # stacktrace cropping
-    let
-        res, interp = @profile_toplevel begin
-            foo() = throw("don't call me, pal")
-            struct A <: foo() end
+    @testset "stacktrace scrubbing" begin
+        # NOTE some of the tests below are line-number-sensitive
+
+        # scrub all the internal frame when errors happens in `maybe_evaluate_builtin`
+        let
+            res, interp = @profile_toplevel begin
+                struct A
+                    fld::UndefinedType
+                end
+            end
+
+            @test !isempty(res.toplevel_error_reports)
+            er = first(res.toplevel_error_reports)
+            @test er isa ActualErrorWrapped
+            @test er.err == UndefVarError(:UndefinedType)
+            @test er.file == (@__FILE__) && er.line == (@__LINE__) - 9
+            @test isempty(er.st)
         end
 
-        @test !isempty(res.toplevel_error_reports)
-        er = first(res.toplevel_error_reports)
-        @test er isa ActualErrorWrapped
-        @test er.err == "don't call me, pal"
-        @test er.file == (@__FILE__) && er.line == (@__LINE__) - 7
-        @test length(er.st) == 1
-        sf = first(er.st)
-        @test sf.file === Symbol(@__FILE__) && sf.line == (@__LINE__) - 11
+        # errors from user functions (i.e. those from `@invokelatest f(fargs...)` in the overload
+        # `JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)`)
+        let
+            res, interp = @profile_toplevel begin
+                foo() = throw("don't call me, pal")
+                struct A <: foo() end
+            end
+
+            @test !isempty(res.toplevel_error_reports)
+            er = first(res.toplevel_error_reports)
+            @test er isa ActualErrorWrapped
+            @test er.err == "don't call me, pal"
+            @test er.file == (@__FILE__) && er.line == (@__LINE__) - 7
+            @test length(er.st) == 1
+            sf = first(er.st)
+            @test sf.file === Symbol(@__FILE__) && sf.line == (@__LINE__) - 11
+        end
     end
 end
 
