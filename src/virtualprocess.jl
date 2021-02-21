@@ -410,8 +410,7 @@ end
 # adapted from https://github.com/JuliaDebug/JuliaInterpreter.jl/blob/2f5f80034bc287a60fe77c4e3b5a49a087e38f8b/src/interpret.jl#L188-L199
 # works almost same as `JuliaInterpreter.evaluate_call_compiled!`, but also added special
 # cases for JET analysis
-# NOTE don't inline this so we can find it in the stacktrace
-@noinline function JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)
+function JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)
     # @assert !enter_generated
     pc = frame.pc
     ret = bypass_builtins(frame, call_expr, pc)
@@ -511,8 +510,7 @@ function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame, err)
     return nothing
 end
 
-# NOTE don't inline this so we can find it in the stacktrace
-@noinline function with_err_handling(f, err_handler)
+function with_err_handling(f, err_handler)
     return try
         f()
     catch err
