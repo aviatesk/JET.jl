@@ -1,4 +1,15 @@
-const LocalCache = Dict{Vector{Any},Vector{InferenceErrorReportCache}}
+# TODO world range
+struct AnalysisResult
+    linfo::MethodInstance
+    argtypes::Vector{Any}
+    overridden_by_const::CC.BitVector
+    cache::Vector{InferenceErrorReportCache}
+    # adapted from https://github.com/JuliaLang/julia/blob/3129a5bef56bb7216024ae606c02b413b00990e3/base/compiler/types.jl#L32-L35
+    function AnalysisResult(linfo::MethodInstance, given_argtypes::Vector{Any}, cache::Vector{InferenceErrorReportCache})
+        argtypes, overridden_by_const = matching_cache_argtypes(linfo, given_argtypes)
+        return new(linfo, argtypes, overridden_by_const, cache)
+    end
+end
 
 struct AnalysisParams
     # disables caching of native remarks (that may speed up profiling time)
@@ -13,7 +24,7 @@ mutable struct JETInterpreter <: AbstractInterpreter
     #= JET.jl specific =#
 
     # local report cache for constant analysis
-    cache::LocalCache
+    cache::Vector{AnalysisResult}
 
     # for sequential assignment of virtual global variables
     id::Symbol
@@ -52,7 +63,7 @@ mutable struct JETInterpreter <: AbstractInterpreter
 
         native = NativeInterpreter(world; inf_params, opt_params)
         return new(native,
-                   LocalCache(),
+                   AnalysisResult[],
                    id,
                    reports,
                    uncaught_exceptions,

@@ -100,25 +100,58 @@ function CC.cache_lookup(linfo::MethodInstance, given_argtypes::Vector{Any}, cac
 
     isa(inf_result, InferenceResult) || return nothing
 
-    # cache hit, restore local report caches
+    # cache hit, try to restore local report caches
     interp = cache.interp
     sv = interp.current_frame::InferenceState
-    if !isa(inf_result.result, InferenceState)
-        # corresponds to report throw away logic in `_typeinf(interp::JETInterpreter, frame::InferenceState)`
-        filter!(!is_from_same_frame(sv.linfo, linfo), interp.reports)
 
-        local_cache = get(interp.cache, given_argtypes, nothing)
-        if isa(local_cache, Vector{InferenceErrorReportCache})
-            for cached in local_cache
-                restored = restore_cached_report!(cached, interp)
-                push!(interp.to_be_updated, restored) # should be updated in `abstract_call_method_with_const_args`
-                # # TODO make this hold
-                # @assert first(cached.st).linfo === linfo "invalid local restoring"
-            end
+    # constant prop' hits a cycle (recur into same non-constant analysis), we just bail out
+    isa(inf_result.result, InferenceState) && return inf_result
+
+    analysis_result = jet_cache_lookup(linfo, given_argtypes, interp.cache)
+
+    # corresponds to report throw away logic in `_typeinf(interp::JETInterpreter, frame::InferenceState)`
+    filter!(!is_from_same_frame(sv.linfo, linfo), interp.reports)
+
+    if isa(analysis_result, AnalysisResult)
+        for cached in analysis_result.cache
+            restored = restore_cached_report!(cached, interp)
+            push!(interp.to_be_updated, restored) # should be updated in `abstract_call_method_with_const_args`
+            # # TODO make this hold
+            # @assert first(cached.st).linfo === linfo "invalid local restoring"
         end
     end
 
     return inf_result
+end
+
+# should sync with the implementation of `cache_lookup(linfo::MethodInstance, given_argtypes::Vector{Any}, cache::Vector{InferenceResult})`
+function jet_cache_lookup(linfo::MethodInstance, given_argtypes::Vector{Any}, cache::Vector{AnalysisResult})
+    method = linfo.def::Method
+    nargs::Int = method.nargs
+    method.isva && (nargs -= 1)
+    length(given_argtypes) >= nargs || return nothing
+    for cached_result in cache
+        cached_result.linfo === linfo || continue
+        cache_match = true
+        cache_argtypes = cached_result.argtypes
+        cache_overridden_by_const = cached_result.overridden_by_const
+        for i in 1:nargs
+            if !is_argtype_match(given_argtypes[i],
+                                 cache_argtypes[i],
+                                 CC.getindex(cache_overridden_by_const, i))
+                cache_match = false
+                break
+            end
+        end
+        if method.isva && cache_match
+            cache_match = is_argtype_match(tuple_tfunc(given_argtypes[(nargs + 1):end]),
+                                           cache_argtypes[end],
+                                           CC.getindex(cache_overridden_by_const, CC.length(cache_overridden_by_const)))
+        end
+        cache_match || continue
+        return cached_result
+    end
+    return nothing
 end
 
 CC.push!(cache::JETLocalCache, inf_result::InferenceResult) = CC.push!(cache.cache, inf_result)
