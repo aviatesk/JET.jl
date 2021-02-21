@@ -143,7 +143,9 @@ end
 
         @test !isempty(interp.reports)
         @test !isempty(interp.cache)
-        @test haskey(interp.cache, Any[CC.Const(getproperty),m.Foo{Int},CC.Const(:baz)])
+        @test any(interp.cache) do analysis_result
+            analysis_result.argtypes==Any[CC.Const(getproperty),m.Foo{Int},CC.Const(:baz)]
+        end
     end
 
     let
@@ -162,7 +164,11 @@ end
         # there should be local cache for each errorneous constant analysis
         @test !isempty(interp.reports)
         @test !isempty(interp.cache)
-        @test haskey(interp.cache, Any[CC.Const(m.getter),m.Foo{Int},CC.Const(:baz)])
-        @test haskey(interp.cache, Any[CC.Const(m.getter),m.Foo{Int},CC.Const(:qux)])
+        @test any(interp.cache) do analysis_result
+            analysis_result.argtypes==Any[CC.Const(m.getter),m.Foo{Int},CC.Const(:baz)]
+        end
+        @test any(interp.cache) do analysis_result
+            analysis_result.argtypes==Any[CC.Const(m.getter),m.Foo{Int},CC.Const(:qux)]
+        end
     end
 end

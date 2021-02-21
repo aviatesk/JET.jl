@@ -101,7 +101,10 @@ import .CC:
     _methods_by_ftype,
     specialize_method,
     add_backedge!,
-    compute_basic_blocks
+    compute_basic_blocks,
+    matching_cache_argtypes,
+    is_argtype_match,
+    tuple_tfunc
 
 import Base:
     parse_input_line,
@@ -372,18 +375,9 @@ const _JET_CONFIGURATIONS = Dict{Symbol,Symbol}()
 # utils
 # -----
 
-is_constant_propagated(frame::InferenceState) = CC.any(frame.result.overridden_by_const)
-
-# # XXX: should sync with the `haveconst` check within `abstract_call_method_with_const_args` ?
-# is_constant_propagated(frame::InferenceState) = is_constant_propagated(frame.result)
-# function is_constant_propagated(result::InferenceResult)
-#     for a in result.argtypes
-#         if CC.has_nontrivial_const_info(a) && CC.const_prop_profitable(a)
-#             return true
-#         end
-#     end
-#     return false
-# end
+function is_constant_propagated(frame::InferenceState)
+    return !frame.cached && CC.any(frame.result.overridden_by_const)
+end
 
 istoplevel(linfo::MethodInstance) = linfo.def == __toplevel__
 istoplevel(sv::InferenceState)    = istoplevel(sv.linfo)

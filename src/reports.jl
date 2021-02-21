@@ -98,10 +98,10 @@ struct InferenceErrorReportCache
     spec_args::NTuple{N,Any} where N
 end
 
-function cache_report!(report::T, cache) where {T<:InferenceErrorReport}
+function cache_report!(cache, report::T) where {T<:InferenceErrorReport}
     st = copy(report.st)
     new = InferenceErrorReportCache(T, st, report.msg, report.sig, spec_args(report))
-    push!(cache, new)
+    return push!(cache, new)
 end
 
 function restore_cached_report!(cache::InferenceErrorReportCache,
