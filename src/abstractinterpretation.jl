@@ -418,7 +418,7 @@ function is_const_prop_profitable_arg(@nospecialize(arg))
             is_const_prop_profitable_arg(b) && return true
         end
     end
-    isa(arg, PartialOpaque) && return true
+    $(isdefined(CC, :PartialOpaque) && :(isa(arg, PartialOpaque) && return true))
     isa(arg, Const) || return true
     val = arg.val
     # don't consider mutable values or Strings useful constants
@@ -428,7 +428,8 @@ end
 function is_allconst(argtypes::Vector{Any})
     for a in argtypes
         a = widenconditional(a)
-        if !isa(a, Const) && !isconstType(a) && !isa(a, PartialStruct) && !isa(a, PartialOpaque)
+        if !isa(a, Const) && !isconstType(a) && !isa(a, PartialStruct) &&
+           $(isdefined(CC, :PartialOpaque) ? :(!isa(a, PartialOpaque)) : true)
             return false
         end
     end
@@ -436,7 +437,7 @@ function is_allconst(argtypes::Vector{Any})
 end
 
 function force_const_prop(interp::AbstractInterpreter, @nospecialize(f), method::Method)
-    return method.aggressive_constprop ||
+    return $(hasfield(Method, :aggressive_constprop) ? :(method.aggressive_constprop) : false) ||
            InferenceParams(interp).aggressive_constant_propagation ||
            istopfunction(f, :getproperty) ||
            istopfunction(f, :setproperty!)
