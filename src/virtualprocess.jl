@@ -85,13 +85,28 @@ function virtual_process!(toplevelex::Expr,
 
     local lnn::LineNumberNode = LineNumberNode(0, filename)
 
-    function lower_err_handler(err, st)
-        # `3` corresponds to `with_err_handling`, `f` and `lower`
-        st = crop_stacktrace(st, 3)
+    function macroexpand_err_handler(err, st)
         push!(ret.toplevel_error_reports, ActualErrorWrapped(err, st, filename, lnn.line))
         return nothing
     end
-    lower_with_err_handling(mod, x) = with_err_handling(lower_err_handler) do
+    # `scrub_offset = 4` corresponds to `with_err_handling` -> `f` -> `macroexpand` -> kwfunc (`macroexpand`)
+    macroexpand_with_err_handling(mod, x) = with_err_handling(macroexpand_err_handler, #= scrub_offset =# 4) do
+        return macroexpand(mod, x; recursive = false)
+    end
+    function eval_err_handler(err, st)
+        push!(ret.toplevel_error_reports, ActualErrorWrapped(err, st, filename, lnn.line))
+        return nothing
+    end
+    # `scrub_offset = 3` corresponds to `with_err_handling` -> `f` -> `eval`
+    eval_with_err_handling(mod, x) = with_err_handling(eval_err_handler, #= scrub_offset =# 3) do
+        return Core.eval(mod, x)
+    end
+    function lower_err_handler(err, st)
+        push!(ret.toplevel_error_reports, ActualErrorWrapped(err, st, filename, lnn.line))
+        return nothing
+    end
+    # `scrub_offset = 3` corresponds to `with_err_handling` -> `f` -> `lower`
+    lower_with_err_handling(mod, x) = with_err_handling(lower_err_handler, #= scrub_offset =# 3) do
         lwr = lower(mod, x)
 
         # here we should capture syntax errors found during lowering
@@ -102,24 +117,6 @@ function virtual_process!(toplevelex::Expr,
         end
 
         return lwr
-    end
-    function macroexpand_err_handler(err, st)
-        # `4` corresponds to `with_err_handling`, `f`, `macroexpand` and its kwfunc
-        st = crop_stacktrace(st, 4)
-        push!(ret.toplevel_error_reports, ActualErrorWrapped(err, st, filename, lnn.line))
-        return nothing
-    end
-    macroexpand_with_err_handling(mod, x) = with_err_handling(macroexpand_err_handler) do
-        return macroexpand(mod, x; recursive = false)
-    end
-    function eval_err_handler(err, st)
-        # `3` corresponds to `with_err_handling`, `f` and `eval`
-        st = crop_stacktrace(st, 3)
-        push!(ret.toplevel_error_reports, ActualErrorWrapped(err, st, filename, lnn.line))
-        return nothing
-    end
-    eval_with_err_handling(mod, x) = with_err_handling(eval_err_handler) do
-        return Core.eval(mod, x)
     end
 
     # transform, and then profile sequentially
@@ -427,7 +424,7 @@ function JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, fr
     else
         # `virtualprocess!` iteratively interpret toplevel expressions but it doesn't hit toplevel
         # we may want to make `virtualprocess!` hit the toplevel on each interation rather than
-        # using `invokelatest` here, but assuming concretized calls are supposed only to be 
+        # using `invokelatest` here, but assuming concretized calls are supposed only to be
         # used for other toplevel definitions and as such not so computational heavy,
         # I'd like to go with this simplest way
         return @invokelatest f(fargs...)
@@ -489,7 +486,7 @@ function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame, err)
         # find an error frame that happened at `@invokelatest f(fargs...)` in the overload
         # `JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)`
         if frame.file === JET_VIRTUALPROCESS_FILE && frame.func === :evaluate_call_recurse!
-            i = j - 4 # offset(`evaluate_call_recurse` -> kw method -> `invokelatest` -> kw method)
+            i = j - 4 # offset: `evaluate_call_recurse` -> kwfunc (`evaluate_call_recurse`) -> `invokelatest` -> kwfunc (`invokelatest`)
             break
         end
 
@@ -510,27 +507,21 @@ function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame, err)
     return nothing
 end
 
-function with_err_handling(f, err_handler)
+function with_err_handling(f, err_handler, scrub_offset)
     return try
         f()
     catch err
         bt = catch_backtrace()
         st = stacktrace(bt)
+
+        # scrub the original stacktrace so that it only contains frames from user code
+        i = findfirst(st) do frame
+            frame.file === JET_VIRTUALPROCESS_FILE && frame.func === :with_err_handling
+        end
+        @assert i !== nothing
+        st = st[1:(i - scrub_offset)]
+
         err_handler(err, st)
-    end
-end
-
-function crop_stacktrace(pred, st, offset)
-    i = findfirst(pred, st)
-    @assert i !== nothing
-    return st[1:(i - offset)]
-end
-
-function crop_stacktrace(st, offset)
-    file = Symbol(@__FILE__)
-    func = Symbol(with_err_handling)
-    return crop_stacktrace(st, offset) do frame
-        frame.file === file && frame.func === func
     end
 end
 
