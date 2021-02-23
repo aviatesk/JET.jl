@@ -415,7 +415,7 @@ function _get_sig_type(sv::InferenceState, slot::SlotNumber)
     if isempty(sig)
         sig = string(slot) # fallback if no explicit slotname
     end
-    typ = widenconst(ignorelimited((get_states(sv)[slot.id]::VarState).typ))
+    typ = widenconst(ignorelimited(get_slottype(sv, slot)))
     return Any[sig, typ], typ
 end
 _get_sig_type(::InferenceState, gr::GlobalRef) = Any[string(gr.mod, '.', gr.name)], nothing

@@ -405,6 +405,8 @@ end
 
 @inline get_slotname(frame::InferenceState, slot::Int)             = @inbounds frame.src.slotnames[slot]
 @inline get_slotname(frame::InferenceState, slot::Slot)            = get_slotname(frame, slot_id(slot))
+@inline get_slottype(frame::InferenceState, slot::Int)             = @inbounds (get_states(frame)[slot]::VarState).typ
+@inline get_slottype(frame::InferenceState, slot::Slot)            = get_slottype(frame, slot_id(slot))
 
 @inline get_result(frame::InferenceState)                          = frame.bestguess
 
