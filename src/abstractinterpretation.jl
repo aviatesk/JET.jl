@@ -558,8 +558,10 @@ function set_virtual_globalvar!(interp, mod, name, @nospecialize(t), sv)
     end
 
     # if this is constant declared and it's value is known to be constant, let's concretize
-    # it for good reasons; this will help us analyse on code with global type aliases, etc.
-    if !(t ⊑ VirtualGlobalVariable) && isa(t, Const) && iscd
+    # it for good reasons; we will be able to use it in concrete interpretation and so
+    # this allows us to define structs with global type aliases, etc.
+    # XXX maybe check for constant declaration is not necessary
+    if isa(t, Const) && iscd
         return Core.eval(mod, :(const $(name) = $(t.val)))
     end
 
