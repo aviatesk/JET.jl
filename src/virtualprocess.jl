@@ -85,13 +85,31 @@ function virtual_process!(toplevelex::Expr,
 
     local lnn::LineNumberNode = LineNumberNode(0, filename)
 
-    function lower_err_handler(err, st)
-        # `3` corresponds to `with_err_handling`, `f` and `lower`
-        st = crop_stacktrace(st, 3)
+    function macroexpand_err_handler(err, st)
         push!(ret.toplevel_error_reports, ActualErrorWrapped(err, st, filename, lnn.line))
         return nothing
     end
-    lower_with_err_handling(mod, x) = with_err_handling(lower_err_handler) do
+    # `scrub_offset = 4` corresponds to `with_err_handling` -> `f` -> `macroexpand` -> kwfunc (`macroexpand`)
+    macroexpand_with_err_handling(mod, x) = with_err_handling(macroexpand_err_handler, #= scrub_offset =# 4) do
+        # XXX we want to non-recursive, sequential partial macro expansion here, which allows
+        # us to collect more fine-grained error reports within macro expansions
+        # but it can lead to invalid macro hygiene escaping because of https://github.com/JuliaLang/julia/issues/20241
+        return macroexpand(mod, x; recursive = true #= but want to use `false` here =#)
+    end
+    function eval_err_handler(err, st)
+        push!(ret.toplevel_error_reports, ActualErrorWrapped(err, st, filename, lnn.line))
+        return nothing
+    end
+    # `scrub_offset = 3` corresponds to `with_err_handling` -> `f` -> `eval`
+    eval_with_err_handling(mod, x) = with_err_handling(eval_err_handler, #= scrub_offset =# 3) do
+        return Core.eval(mod, x)
+    end
+    function lower_err_handler(err, st)
+        push!(ret.toplevel_error_reports, ActualErrorWrapped(err, st, filename, lnn.line))
+        return nothing
+    end
+    # `scrub_offset = 3` corresponds to `with_err_handling` -> `f` -> `lower`
+    lower_with_err_handling(mod, x) = with_err_handling(lower_err_handler, #= scrub_offset =# 3) do
         lwr = lower(mod, x)
 
         # here we should capture syntax errors found during lowering
@@ -103,26 +121,9 @@ function virtual_process!(toplevelex::Expr,
 
         return lwr
     end
-    function macroexpand_err_handler(err, st)
-        # `4` corresponds to `with_err_handling`, `f`, `macroexpand` and its kwfunc
-        st = crop_stacktrace(st, 4)
-        push!(ret.toplevel_error_reports, ActualErrorWrapped(err, st, filename, lnn.line))
-        return nothing
-    end
-    macroexpand_with_err_handling(mod, x) = with_err_handling(macroexpand_err_handler) do
-        return macroexpand(mod, x; recursive = false)
-    end
-    function eval_err_handler(err, st)
-        # `3` corresponds to `with_err_handling`, `f` and `eval`
-        st = crop_stacktrace(st, 3)
-        push!(ret.toplevel_error_reports, ActualErrorWrapped(err, st, filename, lnn.line))
-        return nothing
-    end
-    eval_with_err_handling(mod, x) = with_err_handling(eval_err_handler) do
-        return Core.eval(mod, x)
-    end
 
     # transform, and then profile sequentially
+    # IDEA the following code has some of duplicated work with `JuliaInterpreter.ExprSpliter` and we may want to factor them out
     exs = reverse(toplevelex.args)
     while !isempty(exs)
         x = pop!(exs)
@@ -285,7 +286,7 @@ function partially_interpret!(interp, mod, src)
 
     # LoweredCodeUtils.print_with_code(stdout::IO, src, concretize)
 
-    @invokelatest selective_eval_fromstart!(interp, Frame(mod, src), concretize, #= istoplevel =# true)
+    selective_eval_fromstart!(interp, Frame(mod, src), concretize, #= istoplevel =# true)
 
     return concretize
 end
@@ -407,13 +408,14 @@ function to_single_usages(x::Expr)
 end
 
 # adapted from https://github.com/JuliaDebug/JuliaInterpreter.jl/blob/2f5f80034bc287a60fe77c4e3b5a49a087e38f8b/src/interpret.jl#L188-L199
-# works as `JuliaInterpreter.evaluate_call_compiled!`, but special cases for JET.jl added
+# works almost same as `JuliaInterpreter.evaluate_call_compiled!`, but also added special
+# cases for JET analysis
 function JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)
     # @assert !enter_generated
     pc = frame.pc
     ret = bypass_builtins(frame, call_expr, pc)
     isa(ret, Some{Any}) && return ret.value
-    ret = maybe_evaluate_builtin(frame, call_expr, false)
+    ret = @invokelatest maybe_evaluate_builtin(frame, call_expr, false)
     isa(ret, Some{Any}) && return ret.value
     fargs = collect_args(frame, call_expr)
     f = fargs[1]
@@ -423,8 +425,12 @@ function JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, fr
     if isinclude(f)
         return handle_include(interp, fargs)
     else
-        ret = f(fargs...)
-        return ret
+        # `virtualprocess!` iteratively interpret toplevel expressions but it doesn't hit toplevel
+        # we may want to make `virtualprocess!` hit the toplevel on each interation rather than
+        # using `invokelatest` here, but assuming concretized calls are supposed only to be
+        # used for other toplevel definitions and as such not so computational heavy,
+        # I'd like to go with this simplest way
+        return @invokelatest f(fargs...)
     end
 end
 
@@ -459,22 +465,41 @@ function handle_include(interp, fargs)
     return nothing
 end
 
-function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame, err)
-    # this error handler is only supposed to be called from toplevel frame
-    data = frame.framedata
-    @assert isempty(data.exception_frames) && !data.caller_will_catch_err
+const JET_VIRTUALPROCESS_FILE = Symbol(@__FILE__)
+const JULIAINTERPRETER_BUILTINS_FILE = let
+    jlfile = pathof(JuliaInterpreter)::String
+    Symbol(normpath(jlfile, "..", "builtins.jl"))
+end
 
+# handle errors from toplevel user code
+function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame, err)
     # catch stack trace
     bt = catch_backtrace()
     st = stacktrace(bt)
-    st = crop_stacktrace(st, 1) do frame
-        # cut until the internal frame (i.e the one within this module or JuliaInterpreter)
-        linfo = frame.linfo
-        isa(linfo, MethodInstance) || return false
-        def = linfo.def
-        mod = isa(def, Method) ? def.module : def
-        return mod == JuliaInterpreter || mod == @__MODULE__
+
+    # scrub the original stacktrace so that it only contains frames from user code
+    i = 0
+    for (j, frame) in enumerate(st)
+        # if errors happen in `JuliaInterpreter.maybe_evaluate_builtin`, we just discard all
+        # the stacktrace assuming they are enough self-explanatory (corresponding to the last logic below)
+        if frame.file === JULIAINTERPRETER_BUILTINS_FILE && frame.func === :maybe_evaluate_builtin
+            break # keep `i = 0`
+        end
+
+        # find an error frame that happened at `@invokelatest f(fargs...)` in the overload
+        # `JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)`
+        if frame.file === JET_VIRTUALPROCESS_FILE && frame.func === :evaluate_call_recurse!
+            i = j - 4 # offset: `evaluate_call_recurse` -> kwfunc (`evaluate_call_recurse`) -> `invokelatest` -> kwfunc (`invokelatest`)
+            break
+        end
+
+        # other general errors may happen at `collect_args`, etc.
+        # we don't show any stacktrace for those errors (by keeping the original `i = 0`)
+        # since they are hopefully enough self-explanatory (XXX is it really so ?) and even
+        # Julia's base error handler only shows something like `[1] top-level scope` in these cases
+        continue
     end
+    st = st[1:i]
 
     push!(interp.ret.toplevel_error_reports, ActualErrorWrapped(err,
                                                                 st,
@@ -485,27 +510,21 @@ function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame, err)
     return nothing
 end
 
-# don't inline this so we can find it in the stacktrace
-@noinline function with_err_handling(f, err_handler)
+function with_err_handling(f, err_handler, scrub_offset)
     return try
         f()
     catch err
         bt = catch_backtrace()
         st = stacktrace(bt)
+
+        # scrub the original stacktrace so that it only contains frames from user code
+        i = findfirst(st) do frame
+            frame.file === JET_VIRTUALPROCESS_FILE && frame.func === :with_err_handling
+        end
+        @assert i !== nothing
+        st = st[1:(i - scrub_offset)]
+
         err_handler(err, st)
-    end
-end
-
-function crop_stacktrace(pred, st, offset)
-    i = findfirst(pred, st)
-    return st[1:(isnothing(i) ? end : i - offset)]
-end
-
-function crop_stacktrace(st, offset)
-    file = Symbol(@__FILE__)
-    func = Symbol(with_err_handling)
-    return crop_stacktrace(st, offset) do frame
-        frame.file === file && frame.func === func
     end
 end
 
