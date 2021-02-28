@@ -501,11 +501,8 @@ function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame, err)
     end
     st = st[1:i]
 
-    push!(interp.ret.toplevel_error_reports, ActualErrorWrapped(err,
-                                                                st,
-                                                                interp.filename,
-                                                                interp.lnn.line
-                                                                ))
+    push!(interp.ret.toplevel_error_reports,
+          ActualErrorWrapped(err, st, interp.filename, interp.lnn.line))
 
     return nothing
 end

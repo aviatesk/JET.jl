@@ -1,7 +1,7 @@
 # this file is horrible because we don't have a stable `AbstractInterpreter` API yet
 # TODO once https://github.com/JuliaLang/julia/pull/39305 gets merged, we can remove the
 # overloadings of `abstract_call_gf_by_type` and `abstract_call_method_with_const_args`
-# and move their legacy definitions into a separate file
+# and keep their legacy definitions in a separate file for compatbility with older Julia versions
 
 const IS_LATEST = isdefined(Core, :InterConditional)
 
@@ -1100,7 +1100,7 @@ function is_nondeterministic(pc, bbs)
 end
 
 function gen_dummy_backedge(mod)
-    @gensym edge_sym
+    edge_sym = gensym(:dummy_edge_sym)
     return edge_sym, force_invalidate!(mod, edge_sym) # just generate dummy `MethodInstance` to be invalidated
 end
 
