@@ -84,12 +84,15 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
     for (idx, stmt) in enumerate(stmts)
         if isa(stmt, Expr) && stmt.head === :throw_undef_if_not
             sym, _ = stmt.args
+
+            # slots in toplevel frame may be a virtual global slot
+            istoplevel(frame) && is_global_slot(interp, sym) && continue
+
             next_idx = idx + 1
             if checkbounds(Bool, stmts, next_idx) && is_unreachable(@inbounds stmts[next_idx])
                 # the optimization so far has found this statement is never "reachable";
                 # JET reports it since it will invoke undef var error at runtime, or will just
                 # be dead code otherwise
-
                 report!(interp, LocalUndefVarErrorReport(interp, frame, sym))
             # else
                 # by excluding this pass, JET accepts some false negatives (i.e. don't report
@@ -123,7 +126,7 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
             end
         end
         for (i, stmt) in enumerate(stmts)
-            is_throw_call_expr(stmt) || continue
+            is_throw_call_expr(interp, frame, stmt) || continue
             # if this `throw` is already reported, don't duplciate
             linetable[codelocs[i]]::LineInfoNode in throw_locs && continue
             push!(throw_calls, stmt)
@@ -217,5 +220,23 @@ function is_from_same_frame(parent_linfo::MethodInstance,
     end
 end
 
-is_unreachable(@nospecialize(x))     = isa(x, ReturnNode) && !isdefined(x, :val)
-is_throw_call_expr(@nospecialize(x)) = isa(x, Expr)       && is_throw_call(x)
+is_unreachable(@nospecialize(x)) = isa(x, ReturnNode) && !isdefined(x, :val)
+
+# basically same as `is_throw_call`, but also toplevel module handling added
+function is_throw_call_expr(interp::JETInterpreter, frame::InferenceState, @nospecialize(e))
+    if isa(e, Expr)
+        if e.head === :call
+            f = e.args[1]
+            if istoplevel(frame) && isa(f, Symbol)
+                f = GlobalRef(interp.toplevelmod, f)
+            end
+            if isa(f, GlobalRef)
+                ff = CC.abstract_eval_global(f.mod, f.name)
+                if isa(ff, Const) && ff.val === Core.throw
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
