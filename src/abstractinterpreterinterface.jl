@@ -26,7 +26,7 @@ mutable struct JETInterpreter <: AbstractInterpreter
     # local report cache for constant analysis
     cache::Vector{AnalysisResult}
 
-    # for sequential assignment of virtual global variables
+    # for sequential assignment of abstract global variables
     id::Symbol
 
     # reports found so far

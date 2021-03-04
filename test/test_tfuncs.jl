@@ -48,7 +48,7 @@ end
     end
 end
 
-@testset "getfield with virtual global variable" begin
+@testset "getfield with abstract global variable" begin
     # nested module access may not be resolved as `GlobalRef` and can be propagated into `getfield`
     let
         res, interp = @profile_toplevel begin

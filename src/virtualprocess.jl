@@ -348,8 +348,8 @@ function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, 
     # - add report pass (report usage of undefined name, etc.)
     if ismoduleusage(node)
         for ex in to_single_usages(node::Expr)
-            # NOTE: usages of virtual global variables also work here, since they are supposed
-            # to be actually evaluated into `interp.virtualmod` (as `VirtualGlobalVariable`
+            # NOTE: usages of abstract global variables also work here, since they are supposed
+            # to be actually evaluated into `interp.virtualmod` (as `AbstractGlobalVariable`
             # object) at this point
 
             interp.eval_with_err_handling(interp.virtualmod, ex)
