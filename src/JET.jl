@@ -381,8 +381,8 @@ function is_constant_propagated(frame::InferenceState)
     return !frame.cached && CC.any(frame.result.overridden_by_const)
 end
 
-istoplevel(linfo::MethodInstance) = linfo.def == __virtual_toplevel__
-istoplevel(sv::InferenceState)    = istoplevel(sv.linfo)
+@inline istoplevel(linfo::MethodInstance) = linfo.def === __virtual_toplevel__
+@inline istoplevel(sv::InferenceState)    = istoplevel(sv.linfo)
 
 prewalk_inf_frame(@nospecialize(f), ::Nothing) = return
 function prewalk_inf_frame(@nospecialize(f), frame::InferenceState)
