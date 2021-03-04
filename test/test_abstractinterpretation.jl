@@ -181,7 +181,7 @@ end
     end
 end
 
-@testset "inference with virtual global variable" begin
+@testset "inference with abstract global variable" begin
     let
         vmod = gen_virtual_module()
         res, interp = @profile_toplevel vmod begin

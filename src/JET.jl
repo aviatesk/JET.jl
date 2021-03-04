@@ -524,7 +524,7 @@ end
 # HACK this is an native hack to re-use `AbstractInterpreter`'s approximated slot types for
 # assignment of abstract global variable, which are represented as toplevel symbols at this point;
 # the idea is just transform them into slots and use their approximated type for their
-# virtual global assignment.
+# abstract global assignment.
 # NOTE that transformations by `transform_abstract_global_symbols!` will produce really
 # invalid code for interpreting transformed statments, but all the statements won't be
 # actually executed nor interpreted by `ConcreteInterpreter`

@@ -5,7 +5,7 @@
 
 const IS_LATEST = isdefined(Core, :InterConditional)
 
-mutable struct VirtualGlobalVariable
+mutable struct AbstractGlobalVariable
     # actually profiled type
     t::Any
     # `id` of `JETInterpreter` that defined this
@@ -14,15 +14,15 @@ mutable struct VirtualGlobalVariable
     edge_sym::Symbol
     # dummy backedge, which will be invalidated on update of `t`
     li::MethodInstance
-    # whether this virtual global variable is declarared as constant or not
+    # whether this abstract global variable is declarared as constant or not
     iscd::Bool
 
-    function VirtualGlobalVariable(@nospecialize(t),
-                                   id::Symbol,
-                                   edge_sym::Symbol,
-                                   li::MethodInstance,
-                                   iscd::Bool,
-                                   )
+    function AbstractGlobalVariable(@nospecialize(t),
+                                    id::Symbol,
+                                    edge_sym::Symbol,
+                                    li::MethodInstance,
+                                    iscd::Bool,
+                                    )
         return new(t, id, edge_sym, li, iscd)
     end
 end
@@ -895,7 +895,7 @@ function CC.abstract_eval_special_value(interp::JETInterpreter, @nospecialize(e)
     if istoplevel(sv)
         if isa(e, Slot) && is_global_slot(interp, e)
             if get_slottype(sv, e) === Bottom
-                # if this virtual global variable is not initialized, form the virtual global
+                # if this abstract global variable is not initialized, form the global
                 # reference and abstract intepret it; we may have abstract interpreted this
                 # variable and it may have a type
                 # if it's really not defined, the error will be generated later anyway
@@ -910,9 +910,9 @@ function CC.abstract_eval_special_value(interp::JETInterpreter, @nospecialize(e)
     ret = @invoke abstract_eval_special_value(interp::AbstractInterpreter, e, vtypes::VarTable, sv::InferenceState)
 
     if isa(ret, Const)
-        # unwrap virtual global variable to actual type
+        # unwrap abstract global variable to actual type
         val = ret.val
-        if isa(val, VirtualGlobalVariable)
+        if isa(val, AbstractGlobalVariable)
             # add dummy backedge, which will be invalidated on update of this vitual global variable
             add_backedge!(val.li, sv)
 
@@ -984,7 +984,7 @@ function CC.finish(me::InferenceState, interp::JETInterpreter)
     @invoke finish(me::InferenceState, interp::AbstractInterpreter)
 
     if istoplevel(me)
-        # types of virtual global variables are computed as a fixed point at this point
+        # types of abstract global variables are computed as a fixed point at this point
         # (see `record_slot_assign!`)
         # let's define them virtually globally for succeeding interpretation
 
@@ -1078,14 +1078,14 @@ function set_virtual_globalvar!(interp, mod, name, @nospecialize(t), isnd, sv)
 
     t′, id′, (edge_sym, li) = if isdefined(mod, name)
         val = getfield(mod, name)
-        if isa(val, VirtualGlobalVariable)
+        if isa(val, AbstractGlobalVariable)
             t′ = val.t
             if val.iscd && widenconst(t′) !== widenconst(t)
                 report!(interp, InvalidConstantRedefinition(interp, sv, mod, name, widenconst(t′), widenconst(t)))
                 return
             end
 
-            # update previously-defined virtual global variable
+            # update previously-defined abstract global variable
             update = true
             t′, val.id, (val.edge_sym, val.li)
         else
@@ -1102,7 +1102,7 @@ function set_virtual_globalvar!(interp, mod, name, @nospecialize(t), isnd, sv)
             return
         end
     else
-        # define new virtual global variable
+        # define new abstract global variable
         Bottom, id, gen_dummy_backedge(mod)
     end
 
@@ -1118,7 +1118,7 @@ function set_virtual_globalvar!(interp, mod, name, @nospecialize(t), isnd, sv)
     isnd && (t = tmerge(t′, t))
 
     if id !== id′
-        # invalidate the dummy backedge that is bound to this virtual global variable,
+        # invalidate the dummy backedge that is bound to this abstract global variable,
         # so that depending `MethodInstance` will run fresh type inference on the next hit
         li = force_invalidate!(mod, edge_sym)
     end
@@ -1133,10 +1133,10 @@ function set_virtual_globalvar!(interp, mod, name, @nospecialize(t), isnd, sv)
             name
         end
     else
-        vgv = VirtualGlobalVariable(t, id, edge_sym, li, iscd)
-        :(const $(name) = $(vgv))
+        agv = AbstractGlobalVariable(t, id, edge_sym, li, iscd)
+        :(const $(name) = $(agv))
     end
-    return Core.eval(mod, ex)::VirtualGlobalVariable
+    return Core.eval(mod, ex)::AbstractGlobalVariable
 end
 
 function is_constant_declared(name, sv)

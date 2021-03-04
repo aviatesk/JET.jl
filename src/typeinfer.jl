@@ -85,7 +85,7 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
         if isa(stmt, Expr) && stmt.head === :throw_undef_if_not
             sym, _ = stmt.args
 
-            # slots in toplevel frame may be a virtual global slot
+            # slots in toplevel frame may be a abstract global slot
             istoplevel(frame) && is_global_slot(interp, sym) && continue
 
             next_idx = idx + 1

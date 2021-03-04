@@ -534,7 +534,7 @@ end
         test_sum_over_string(res)
     end
 
-    @testset "module usage of virtual global variable" begin
+    @testset "module usage of abstract global variable" begin
         let
             res, interp = @profile_toplevel begin
                 module foo
@@ -640,7 +640,7 @@ end
     end
 end
 
-@testset "virtual global variables" begin
+@testset "abstract global variables" begin
     let
         vmod = gen_virtual_module()
         res, interp = @profile_toplevel vmod begin
@@ -964,7 +964,7 @@ end
 end
 
 @testset "invalid constant redefinition" begin
-    # for virtual global assignment
+    # for abstract global assignment
     let
         vmod = gen_virtual_module()
         res, interp = @profile_toplevel vmod begin
