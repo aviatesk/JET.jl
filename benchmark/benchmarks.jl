@@ -127,10 +127,29 @@ SUITE["invalidation"] = @jetbenchmarkable (@profile_call println(QuoteNode(nothi
         end
     end
 end
-SUITE["self profiling"] = @jetbenchmarkable(profile_call(JET.virtual_process!,
-                                                         (AbstractString, AbstractString, Module, Symbol, JET.JETInterpreter),
-                                                         ),
-                                            setup = begin
-                                                using JET
-                                                @profile_call identity(nothing)
-                                            end)
+SUITE["self profiling"] = @jetbenchmarkable(
+    profile_call(JET.virtual_process!,
+                 (AbstractString, AbstractString, Module, Symbol, JET.JETInterpreter),
+                 ),
+    setup = begin
+        using JET
+        @profile_call identity(nothing)
+    end)
+SUITE["toplevel"] = @jetbenchmarkable(
+    (@profile_toplevel begin
+        foo(args...) = sum(args)
+        foo(rand(Char, 1000000000)...)
+    end),
+    setup = begin
+        include("test/interactive_utils.jl")
+        @profile_toplevel begin
+            const myidentity = identity
+            myidentity(nothing)
+        end
+    end)
+SUITE["toplevel first time"] = @jetbenchmarkable(
+    (@profile_toplevel begin
+        foo(args...) = sum(args)
+        foo(rand(Char, 1000000000)...)
+    end),
+    setup = include("test/interactive_utils.jl"))
