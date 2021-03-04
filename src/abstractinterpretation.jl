@@ -1036,7 +1036,7 @@ function CC.finish(me::InferenceState, interp::JETInterpreter)
             for (slot, isnd) in assigns
                 slotname = interp.global_slots[slot]
                 typ = slottypes[slot]
-                set_virtual_globalvar!(interp, interp.toplevelmod, slotname, typ, isnd, me)
+                set_abstract_global!(interp, interp.toplevelmod, slotname, typ, isnd, me)
             end
         end
     end
@@ -1085,12 +1085,12 @@ end
 
 # XXX and TODO this is a super coarse version of what Julia's type inference routine does
 # for local function body (types of variables are computed as a fixed point of the abstract
-# interpretation algorithm); `set_virtual_globalvar!` assumes global variable assignments
+# interpretation algorithm); `set_abstract_global!` assumes global variable assignments
 # happen sequentially and deterministically, which is obviously not always correct.
-# Currently `set_virtual_globalvar!` only handles super simple branching, but ideally we
+# Currently `set_abstract_global!` only handles super simple branching, but ideally we
 # want to implement a "global version" of the type inference routine which should handle all
 # the control flows correctly
-function set_virtual_globalvar!(interp, mod, name, @nospecialize(t), isnd, sv)
+function set_abstract_global!(interp, mod, name, @nospecialize(t), isnd, sv)
     local update::Bool = false
     id = get_id(interp)
 
