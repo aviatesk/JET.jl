@@ -189,10 +189,6 @@ function virtual_process!(toplevelex::Expr,
                                       )
         concretized = partially_interpret!(interp′, virtualmod, src)
 
-        # NOTE: needs to happen here since JuliaInterpreter.jl assumes there're `Symbol`s as
-        # `GlobalRef`s in toplevel frames
-        fix_global_symbols!(src, virtualmod)
-
         # bail out if nothing to profile (just a performance optimization)
         if all(is_return(last(src.code)) ? concretized[begin:end-1] : concretized)
             continue
@@ -202,6 +198,7 @@ function virtual_process!(toplevelex::Expr,
                                   inf_params      = InferenceParams(interp),
                                   opt_params      = OptimizationParams(interp),
                                   concretized     = concretized, # or construct partial `CodeInfo` from remaining abstract statements
+                                  toplevelmod     = virtualmod,
                                   analysis_params = AnalysisParams(interp),
                                   )
 
@@ -229,24 +226,6 @@ function fix_self_references!(ex, actualmodsym, virtualmod)
     end
 
     prewalk_and_transform!(_fix_self_reference, ex)
-end
-
-# replace global `Symbol`s with `GlobalRef`s
-function fix_global_symbols!(ex, mod)
-    function _fix_global_symbols(x, scope)
-        # `_walk_and_transform!` doesn't recur into `QuoteNode`, so this apparently simple
-        # approach just works
-        if isa(x, Symbol)
-            return GlobalRef(mod, x)
-        elseif isa(x, GotoIfNot)
-            newcond = _fix_global_symbols(x.cond, scope)
-            return GotoIfNot(newcond, x.dest)
-        end
-
-        return x
-    end
-
-    prewalk_and_transform!(_fix_global_symbols, ex)
 end
 
 prewalk_and_transform!(args...) = walk_and_transform!(true, args...)

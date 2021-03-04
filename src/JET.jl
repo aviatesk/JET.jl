@@ -42,6 +42,7 @@ import .CC:
     # typeinfer.jl
     typeinf,
     _typeinf,
+    finish,
     # optimize.jl
     OptimizationState,
     optimize
@@ -380,7 +381,7 @@ function is_constant_propagated(frame::InferenceState)
     return !frame.cached && CC.any(frame.result.overridden_by_const)
 end
 
-istoplevel(linfo::MethodInstance) = linfo.def == __toplevel__
+istoplevel(linfo::MethodInstance) = linfo.def == __virtual_toplevel__
 istoplevel(sv::InferenceState)    = istoplevel(sv.linfo)
 
 prewalk_inf_frame(@nospecialize(f), ::Nothing) = return
@@ -503,19 +504,72 @@ end
 
 # this dummy module will be used by `istoplevel` to check if the current inference frame is
 # created by `profile_toplevel!` or not (i.e. `@generated` function)
-module __toplevel__ end
+module __virtual_toplevel__ end
 
 function profile_toplevel!(interp::JETInterpreter, src::CodeInfo)
     # construct toplevel `MethodInstance`
     mi = ccall(:jl_new_method_instance_uninit, Ref{Core.MethodInstance}, ());
     mi.uninferred = src
     mi.specTypes = Tuple{}
-    mi.def = __toplevel__ # set to the dummy module
+
+    transform_abstract_global_symbols!(interp, src)
+    mi.def = __virtual_toplevel__ # set to the dummy module
 
     result = InferenceResult(mi);
     frame = InferenceState(result, src, #=cached=# true, interp);
 
     return profile_frame!(interp, frame)
+end
+
+# HACK this is an native hack to re-use `AbstractInterpreter`'s approximated slot types for
+# assignment of abstract global variable, which are represented as toplevel symbols at this point;
+# the idea is just transform them into slots and use their approximated type for their
+# virtual global assignment.
+# NOTE that transformations by `transform_abstract_global_symbols!` will produce really
+# invalid code for interpreting transformed statments, but all the statements won't be
+# actually executed nor interpreted by `ConcreteInterpreter`
+function transform_abstract_global_symbols!(interp::JETInterpreter, src::CodeInfo)
+    nslots = length(src.slotnames)
+    abstrct_global_variables = Dict{Symbol,Int}()
+    concretized = interp.concretized
+
+    # linear scan, and find assignments of abstract global variables
+    for (i, stmt) in enumerate(src.code::Vector{Any})
+        if @isexpr(stmt, :(=))
+            lhs = first(stmt.args)
+            if isa(lhs, Symbol)
+                if !(concretized[i])
+                    if !haskey(abstrct_global_variables, lhs)
+                        nslots += 1
+                        push!(abstrct_global_variables, lhs => nslots)
+                    end
+                end
+            end
+        end
+    end
+
+    function _transform_abstract_global_symbols!(x, scope)
+        if isa(x, Symbol)
+            slot = get(abstrct_global_variables, x, nothing)
+            if !isnothing(slot)
+                return SlotNumber(slot)
+            end
+        elseif isa(x, GotoIfNot)
+            newcond = _transform_abstract_global_symbols!(x.cond, scope)
+            return GotoIfNot(newcond, x.dest)
+        end
+
+        return x
+    end
+    prewalk_and_transform!(_transform_abstract_global_symbols!, src)
+
+    resize!(src.slotnames, nslots)
+    resize!(src.slotflags, nslots)
+    for (slotname, idx) in abstrct_global_variables
+        src.slotnames[idx] = slotname
+    end
+
+    interp.global_slots = Dict(idx => slotname for (slotname, idx) in abstrct_global_variables)
 end
 
 # TODO `profile_call_builtin!` ?

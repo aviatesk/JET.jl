@@ -167,9 +167,9 @@ macro reportdef(ex, kwargs...)
         $(if track_from_frame quote
             # when report is constructed _after_ the inference on `sv` has been done,
             # collect location information from `sv.linfo`
-            st = VirtualFrame[get_virtual_frame(sv.linfo)]
+            st = VirtualFrame[get_virtual_frame(interp, sv.linfo)]
         end else quote
-            st = VirtualFrame[get_virtual_frame(sv)]
+            st = VirtualFrame[get_virtual_frame(interp, sv)]
         end end)
 
         return new(st, msg, sig, $(spec_args′...))
@@ -285,8 +285,8 @@ This special `InferenceErrorReport` is just for wrapping remarks from `NativeInt
 :(NativeRemark)
 @reportdef NativeRemark(interp, sv, s::String)
 
-function get_virtual_frame(loc::Union{InferenceState,MethodInstance})
-    sig = get_sig(loc)
+function get_virtual_frame(interp#=::JETInterpreter=#, loc::Union{InferenceState,MethodInstance})
+    sig = get_sig(interp, loc)
     file, line = get_file_line(loc)
     linfo = isa(loc, InferenceState) ? loc.linfo : loc
     return VirtualFrame(file, line, sig, linfo)
@@ -306,7 +306,7 @@ function get_file_line(linfo::MethodInstance)
 end
 
 # adapted from https://github.com/JuliaLang/julia/blob/0f11a7bb07d2d0d8413da05dadd47441705bf0dd/base/show.jl#L989-L1011
-function get_sig(l::MethodInstance)
+function get_sig(interp#=::JETInterpreter=#, l::MethodInstance)
     def = l.def
     ret = if isa(def, Method)
         if isdefined(def, :generator) && l === def.generator
@@ -340,16 +340,16 @@ function get_sig(l::MethodInstance)
 end
 
 # entry
-get_sig(::Type{<:InferenceErrorReport}, interp, sv, @nospecialize(args...)) = get_sig(sv)
-get_sig(sv::InferenceState) = _get_sig(sv, get_stmt(sv))
+get_sig(::Type{<:InferenceErrorReport}, interp#=::JETInterpreter=#, sv, @nospecialize(args...)) = get_sig(interp, sv)
+get_sig(interp#=::JETInterpreter=#, sv::InferenceState) = _get_sig(interp, sv, get_stmt(sv))
 
 # special cased entries
-get_sig(::Type{LocalUndefVarErrorReport}, interp, sv, name) = Any[""] # TODO
-function get_sig(::Type{UncaughtExceptionReport}, interp, sv, throw_calls)
+get_sig(::Type{LocalUndefVarErrorReport}, interp#=::JETInterpreter=#, sv, name) = Any[""] # TODO
+function get_sig(::Type{UncaughtExceptionReport}, interp#=::JETInterpreter=#, sv, throw_calls)
     sig = Any[]
     ncalls = length(throw_calls)
     for (i, call) in enumerate(throw_calls)
-        call_sig = _get_sig(sv, call)
+        call_sig = _get_sig(interp, sv, call)
         append!(sig, call_sig)
         i ≠ ncalls && push!(sig, ", ")
     end
@@ -358,7 +358,7 @@ end
 
 _get_sig(args...) = first(_get_sig_type(args...))::Vector{Any}
 
-function _get_sig_type(sv::InferenceState, expr::Expr)
+function _get_sig_type(interp#=::JETInterpreter=#, sv::InferenceState, expr::Expr)
     head = expr.head
     return if head === :call
         f = first(expr.args)
@@ -372,22 +372,22 @@ function _get_sig_type(sv::InferenceState, expr::Expr)
             f = args[2]
             args = args[3:end]
 
-            sig = _get_sig(sv, f)
+            sig = _get_sig(interp, sv, f)
             push!(sig, '(')
 
             nargs = length(args)
             for (i, arg) in enumerate(args)
-                arg_sig = _get_sig(sv, arg)
+                arg_sig = _get_sig(interp, sv, arg)
                 append!(sig, arg_sig)
                 i ≠ nargs ? push!(sig, ", ") : push!(sig, "...)")
             end
         else
-            sig = _get_sig(sv, f)
+            sig = _get_sig(interp, sv, f)
             push!(sig, '(')
 
             nargs = length(args)
             for (i, arg) in enumerate(args)
-                arg_sig = _get_sig(sv, arg)
+                arg_sig = _get_sig(interp, sv, arg)
                 append!(sig, arg_sig)
                 i ≠ nargs && push!(sig, ", ")
             end
@@ -396,7 +396,7 @@ function _get_sig_type(sv::InferenceState, expr::Expr)
 
         sig, nothing
     elseif head === :(=)
-        _get_sig_type(sv, last(expr.args))
+        _get_sig_type(interp, sv, last(expr.args))
     elseif head === :static_parameter
         typ = widenconst(sv.sptypes[first(expr.args)])
         Any['_', typ], typ
@@ -404,39 +404,48 @@ function _get_sig_type(sv::InferenceState, expr::Expr)
         Any[string(expr)], nothing
     end
 end
-function _get_sig_type(sv::InferenceState, ssa::SSAValue)
-    sig, sig_typ = _get_sig_type(sv, sv.src.code[ssa.id])
+function _get_sig_type(interp#=::JETInterpreter=#, sv::InferenceState, ssa::SSAValue)
+    sig, sig_typ = _get_sig_type(interp, sv, sv.src.code[ssa.id])
     typ = widenconst(ignorelimited(ignorenotfound(sv.src.ssavaluetypes[ssa.id])))
     sig_typ == typ || push!(sig, typ)
     return sig, typ
 end
-function _get_sig_type(sv::InferenceState, slot::SlotNumber)
-    sig = string(get_slotname(sv, slot))
+function _get_sig_type(interp#=::JETInterpreter=#, sv::InferenceState, slot::SlotNumber)
+    name = get_slotname(sv, slot)
+    sig = string(name)
     if isempty(sig)
         sig = string(slot) # fallback if no explicit slotname
     end
-    typ = widenconst(ignorelimited(get_slottype(sv, slot)))
-    return Any[sig, typ], typ
+    if istoplevel(sv)
+        # this is a abstract global variable, form the global reference
+        return _get_sig_type(interp, sv, GlobalRef(interp.toplevelmod, name))
+    else
+        typ = widenconst(ignorelimited(get_slottype(sv, slot)))
+        return Any[sig, typ], typ
+    end
 end
-_get_sig_type(::InferenceState, gr::GlobalRef) = Any[string(gr.mod, '.', gr.name)], nothing
-function _get_sig_type(sv::InferenceState, s::Symbol)
-    # for toplevel frame, we need to resolve symbols to global references by ourselves
-    istoplevel(sv) && return _get_sig_type(sv, GlobalRef(sv.mod, s))
-    return Any[repr(s; context = :compact => true)], nothing
+_get_sig_type(interp#=::JETInterpreter=#, ::InferenceState, gr::GlobalRef) = Any[string(gr.mod, '.', gr.name)], nothing
+function _get_sig_type(interp#=::JETInterpreter=#, sv::InferenceState, s::Symbol)
+    if istoplevel(sv)
+        # this is concrete global variable, form the global reference
+        return _get_sig_type(interp, sv, GlobalRef(interp.toplevelmod, s))
+    else
+        return Any[repr(s; context = :compact => true)]
+    end
 end
-function _get_sig_type(sv::InferenceState, gotoifnot::GotoIfNot)
-    sig  = Any[string("goto %", gotoifnot.dest, " if not "), _get_sig(sv, gotoifnot.cond)...]
+function _get_sig_type(interp, sv::InferenceState, gotoifnot::GotoIfNot)
+    sig  = Any[string("goto %", gotoifnot.dest, " if not "), _get_sig(interp, sv, gotoifnot.cond)...]
     return sig, nothing
 end
-function _get_sig_type(sv::InferenceState, rn::ReturnNode)
-    sig = is_unreachable(rn) ? Any["unreachable"] : Any["return ", _get_sig(sv, rn.val)...]
+function _get_sig_type(interp#=::JETInterpreter=#, sv::InferenceState, rn::ReturnNode)
+    sig = is_unreachable(rn) ? Any["unreachable"] : Any["return ", _get_sig(interp, sv, rn.val)...]
     return sig, nothing
 end
-function _get_sig_type(::InferenceState, qn::QuoteNode)
+function _get_sig_type(interp#=::JETInterpreter=#, ::InferenceState, qn::QuoteNode)
     typ = typeof(qn.value)
     return Any[string(qn), typ], typ
 end
-_get_sig_type(::InferenceState, @nospecialize(x)) = Any[repr(x; context = :compact => true)], nothing
+_get_sig_type(interp#=::JETInterpreter=#, ::InferenceState, @nospecialize(x)) = Any[repr(x; context = :compact => true)], nothing
 
 get_msg(::Type{NoMethodErrorReport}, interp, sv, unionsplit, @nospecialize(args...)) = unionsplit ?
     "for one of the union split cases, no matching method found for signature" :

@@ -41,6 +41,12 @@ mutable struct JETInterpreter <: AbstractInterpreter
     # toplevel profiling (skip inference on actually interpreted statements)
     concretized::BitVector
 
+    # virtual toplevel module
+    toplevelmod::Module
+
+    # slots to represent toplevel global variables
+    global_slots::Dict{Int,Symbol}
+
     # configurations for analysis performed by this interpreter
     analysis_params::AnalysisParams
 
@@ -54,7 +60,9 @@ mutable struct JETInterpreter <: AbstractInterpreter
                                              id                  = gensym(:JETInterpreterID),
                                              reports             = InferenceErrorReport[],
                                              uncaught_exceptions = UncaughtExceptionReport[],
+                                             toplevelmod         = __virtual_toplevel__,
                                              concretized         = BitVector(),
+                                             global_slots        = Dict{Int,Symbol}(),
                                              jetconfigs...)
         inf_params      = gen_inf_params(; jetconfigs...)
         opt_params      = gen_opt_params()
@@ -69,6 +77,8 @@ mutable struct JETInterpreter <: AbstractInterpreter
                    uncaught_exceptions,
                    Set{InferenceErrorReport}(),
                    concretized,
+                   toplevelmod,
+                   global_slots,
                    analysis_params,
                    nothing,
                    0,
@@ -167,3 +177,7 @@ end
 function stash_uncaught_exception!(interp::JETInterpreter, report::UncaughtExceptionReport)
     push!(interp.uncaught_exceptions, report)
 end
+
+is_global_slot(interp::JETInterpreter, slot::Int)   = slot in keys(interp.global_slots)
+is_global_slot(interp::JETInterpreter, slot::Slot)  = is_global_slot(interp, slot_id(slot))
+is_global_slot(interp::JETInterpreter, sym::Symbol) = sym in values(interp.global_slots)

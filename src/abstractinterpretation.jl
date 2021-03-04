@@ -883,7 +883,7 @@ end
 function update_reports!(interp::JETInterpreter, sv::InferenceState)
     rs = interp.to_be_updated
     if !isempty(rs)
-        vf = get_virtual_frame(sv)
+        vf = get_virtual_frame(interp, sv)
         for r in rs
             pushfirst!(r.st, vf)
         end
@@ -892,6 +892,21 @@ function update_reports!(interp::JETInterpreter, sv::InferenceState)
 end
 
 function CC.abstract_eval_special_value(interp::JETInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
+    if istoplevel(sv)
+        if isa(e, Slot) && is_global_slot(interp, e)
+            if get_slottype(sv, e) === Bottom
+                # if this virtual global variable is not initialized, form the virtual global
+                # reference and abstract intepret it; we may have abstract interpreted this
+                # variable and it may have a type
+                # if it's really not defined, the error will be generated later anyway
+                e = GlobalRef(interp.toplevelmod, get_slotname(sv, e))
+            end
+        elseif isa(e, Symbol)
+            # (already concretized) toplevel global symbols
+            e = GlobalRef(interp.toplevelmod, e)
+        end
+    end
+
     ret = @invoke abstract_eval_special_value(interp::AbstractInterpreter, e, vtypes::VarTable, sv::InferenceState)
 
     if isa(ret, Const)
@@ -962,23 +977,90 @@ function CC.abstract_eval_statement(interp::JETInterpreter, @nospecialize(e), vt
         end
     end
 
-    ret = @invoke abstract_eval_statement(interp::AbstractInterpreter, e, vtypes::VarTable, sv::InferenceState)
+    return @invoke abstract_eval_statement(interp::AbstractInterpreter, e, vtypes::VarTable, sv::InferenceState)
+end
 
-    # assign virtual global variable
-    # for toplevel frames, we do virtual global variable assignments, whose types are
-    # propagated even if they're non-constant
-    if istoplevel(sv)
-        stmt = get_stmt(sv)
-        if @isexpr(stmt, :(=))
+function CC.finish(me::InferenceState, interp::JETInterpreter)
+    @invoke finish(me::InferenceState, interp::AbstractInterpreter)
+
+    if istoplevel(me)
+        # types of virtual global variables are computed as a fixed point at this point
+        # (see `record_slot_assign!`)
+        # let's define them virtually globally for succeeding interpretation
+
+        stmts = me.src.code
+        bbs = compute_basic_blocks(stmts)
+        assigns = Dict{Int,Bool}() # slot id => is this deterministic
+        for (pc, stmt) in enumerate(stmts)
+            if @isexpr(stmt, :(=))
+                lhs = first(stmt.args)
+                if isa(lhs, Slot)
+                    slot = slot_id(lhs)
+                    if is_global_slot(interp, slot)
+                        isnd = is_nondeterministic(pc, bbs)
+
+                        # COMBAK this approach is really not true when there're multiple
+                        # assignments in different basic blocks
+                        if haskey(assigns, slot)
+                            assigns[slot] |= isnd
+                        else
+                            assigns[slot] = isnd
+                        end
+                    end
+                end
+            end
+        end
+
+        if !isempty(assigns)
+            slottypes = collect_slottypes(me)
+            for (slot, isnd) in assigns
+                slotname = interp.global_slots[slot]
+                typ = slottypes[slot]
+                set_virtual_globalvar!(interp, interp.toplevelmod, slotname, typ, isnd, me)
+            end
+        end
+    end
+end
+
+# mostly same as `record_slot_assign!(sv::InferenceState)`, but don't `widenconst`
+function collect_slottypes(sv::InferenceState)
+    states = sv.stmt_types
+    ssavaluetypes = sv.src.ssavaluetypes::Vector{Any}
+    stmts = sv.src.code::Vector{Any}
+    slottypes = Any[Bottom for _ in sv.src.slottypes::Vector{Any}]
+    for i = 1:length(stmts)
+        stmt = stmts[i]
+        state = states[i]
+        # find all reachable assignments to locals
+        if isa(state, VarTable) && @isexpr(stmt, :(=))
             lhs = first(stmt.args)
+            if isa(lhs, Slot)
+                vt = ssavaluetypes[i] # don't widen const
+                if vt !== Bottom
+                    id = slot_id(lhs)
+                    otherTy = slottypes[id]
+                    slottypes[id] = tmerge(otherTy, vt)
+                end
+            end
+        end
+    end
+    return slottypes
+end
 
-            if isa(lhs, GlobalRef)
-                set_virtual_globalvar!(interp, lhs.mod, lhs.name, ignorelimited(ret), sv)
+function is_nondeterministic(pc, bbs)
+    isnd = false
+
+    for (idx, bb) in enumerate(bbs.blocks)
+        if pc in bb.stmts
+            for bb′ in bbs.blocks
+                if idx in bb′.succs
+                    isnd |= length(bb′.succs) > 1
+                end
             end
         end
     end
 
-    return ret
+    return isnd
 end
 
 # XXX and TODO this is a super coarse version of what Julia's type inference routine does
@@ -988,11 +1070,11 @@ end
 # Currently `set_virtual_globalvar!` only handles super simple branching, but ideally we
 # want to implement a "global version" of the type inference routine which should handle all
 # the control flows correctly
-function set_virtual_globalvar!(interp, mod, name, @nospecialize(t), sv)
+function set_virtual_globalvar!(interp, mod, name, @nospecialize(t), isnd, sv)
     local update::Bool = false
     id = get_id(interp)
 
-    iscd = is_constant_declared(mod, name, sv.src.code)
+    iscd = is_constant_declared(name, sv)
 
     t′, id′, (edge_sym, li) = if isdefined(mod, name)
         val = getfield(mod, name)
@@ -1032,18 +1114,8 @@ function set_virtual_globalvar!(interp, mod, name, @nospecialize(t), sv)
         return Core.eval(mod, :(const $(name) = $(t.val)))
     end
 
-    if begin
-            # if the previous virtual global variable assignment happened in the same inference process,
-            # JET needs to perform type merge
-            id === id′ ||
-            # if this assignment happens in an non-deterministic way, we still need to perform type merge
-            # NOTE: this may happen multiple times for the same statement (within an iteration for
-            # maximum fixed point computation), so pre-computing basic blocks before entering a toplevel
-            # inference frame might be better
-            is_nondeterministic(sv)
-        end
-        t = tmerge(t′, t)
-    end
+    # if this assignment happens in an non-deterministic way, we need to perform type merge
+    isnd && (t = tmerge(t′, t))
 
     if id !== id′
         # invalidate the dummy backedge that is bound to this virtual global variable,
@@ -1067,36 +1139,17 @@ function set_virtual_globalvar!(interp, mod, name, @nospecialize(t), sv)
     return Core.eval(mod, ex)::VirtualGlobalVariable
 end
 
-function is_constant_declared(mod, name, stmts)
-    # `fix_global_symbols!` replaces all the symbols in a toplevel frame with `GlobalRef`
-    gr = GlobalRef(mod, name)
-
-    return any(stmts) do @nospecialize(x)
+function is_constant_declared(name, sv)
+    return any(sv.src.code) do @nospecialize(x)
         if @isexpr(x, :const)
             arg = first(x.args)
-            isa(arg, GlobalRef) && return arg == gr
+            # `transform_global_symbols!` replaces all the global symbols in this toplevel frame with `Slot`s
+            if isa(arg, Slot)
+                return get_slotname(sv, arg) === name
+            end
         end
         return false
     end
-end
-
-is_nondeterministic(sv) = is_nondeterministic(get_currpc(sv), compute_basic_blocks(sv.src.code))
-
-# XXX: does this approach really cover all the control flow ?
-function is_nondeterministic(pc, bbs)
-    isnd = false
-
-    for (idx, bb) in enumerate(bbs.blocks)
-        if pc in bb.stmts
-            for bb′ in bbs.blocks
-                if idx in bb′.succs
-                    isnd |= length(bb′.succs) > 1
-                end
-            end
-        end
-    end
-
-    return isnd
 end
 
 function gen_dummy_backedge(mod)
