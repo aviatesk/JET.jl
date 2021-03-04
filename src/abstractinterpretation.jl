@@ -5,24 +5,44 @@
 
 const IS_LATEST = isdefined(Core, :InterConditional)
 
-mutable struct AbstractGlobalVariable
-    # actually profiled type
+"""
+    mutable struct AbstractGlobal
+        # analyzed type
+        t::Any
+        # `id` of `JETInterpreter` that defined this
+        id::Symbol
+        # `Symbol` of a dummy generic function that generates dummy backedge (i.e. `li`)
+        edge_sym::Symbol
+        # dummy backedge, which will be invalidated on update of `t`
+        li::MethodInstance
+        # whether this abstract global variable is declarared as constant or not
+        iscd::Bool
+    end
+
+Wraps a global variable whose type is analyzed by abtract interpretation.
+`AbstractGlobal` object will be actually evaluated into the context module, and a later
+  analysis may refer to its type or alter it on another assignment.
+On the refinement of the abstract global variable, the dummy backedge associated with it
+  will be invalidated, and inference depending on that will be re-run on the next analysis.
+"""
+mutable struct AbstractGlobal
+    # analyzed type
     t::Any
-    # `id` of `JETInterpreter` that defined this
+    # `id` of `JETInterpreter` that lastly assigned this global variable
     id::Symbol
-    # `Symbol` of a dummy generic function that generates dummy backedge (i.e. `li`)
+    # the name of a dummy generic function that generates dummy backedge `li`
     edge_sym::Symbol
-    # dummy backedge, which will be invalidated on update of `t`
+    # dummy backedge associated to this global variable, which will be invalidated on update of `t`
     li::MethodInstance
     # whether this abstract global variable is declarared as constant or not
     iscd::Bool
 
-    function AbstractGlobalVariable(@nospecialize(t),
-                                    id::Symbol,
-                                    edge_sym::Symbol,
-                                    li::MethodInstance,
-                                    iscd::Bool,
-                                    )
+    function AbstractGlobal(@nospecialize(t),
+                            id::Symbol,
+                            edge_sym::Symbol,
+                            li::MethodInstance,
+                            iscd::Bool,
+                            )
         return new(t, id, edge_sym, li, iscd)
     end
 end
@@ -912,7 +932,7 @@ function CC.abstract_eval_special_value(interp::JETInterpreter, @nospecialize(e)
     if isa(ret, Const)
         # unwrap abstract global variable to actual type
         val = ret.val
-        if isa(val, AbstractGlobalVariable)
+        if isa(val, AbstractGlobal)
             # add dummy backedge, which will be invalidated on update of this vitual global variable
             add_backedge!(val.li, sv)
 
@@ -1078,7 +1098,7 @@ function set_virtual_globalvar!(interp, mod, name, @nospecialize(t), isnd, sv)
 
     t′, id′, (edge_sym, li) = if isdefined(mod, name)
         val = getfield(mod, name)
-        if isa(val, AbstractGlobalVariable)
+        if isa(val, AbstractGlobal)
             t′ = val.t
             if val.iscd && widenconst(t′) !== widenconst(t)
                 report!(interp, InvalidConstantRedefinition(interp, sv, mod, name, widenconst(t′), widenconst(t)))
@@ -1133,10 +1153,9 @@ function set_virtual_globalvar!(interp, mod, name, @nospecialize(t), isnd, sv)
             name
         end
     else
-        agv = AbstractGlobalVariable(t, id, edge_sym, li, iscd)
-        :(const $(name) = $(agv))
+        :(const $(name) = $(AbstractGlobal(t, id, edge_sym, li, iscd)))
     end
-    return Core.eval(mod, ex)::AbstractGlobalVariable
+    return Core.eval(mod, ex)::AbstractGlobal
 end
 
 function is_constant_declared(name, sv)

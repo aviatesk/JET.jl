@@ -7,7 +7,7 @@ import .CC:
 
 import JET:
     JETInterpreter,
-    AbstractGlobalVariable,
+    AbstractGlobal,
     profile_call,
     get_result,
     virtual_process!,
@@ -83,9 +83,9 @@ function profile_toplevel(virtualmod, ex, lnn)
     end end
 end
 
-is_concrete(mod, sym) = isdefined(mod, sym) && !isa(getfield(mod, sym), AbstractGlobalVariable)
-is_abstract(mod, sym) = isdefined(mod, sym) && isa(getfield(mod, sym), AbstractGlobalVariable)
-isa_abstract(agv, @nospecialize(typ)) = isa(agv, AbstractGlobalVariable) && agv.t ⊑ typ
+is_concrete(mod, sym) = isdefined(mod, sym) && !isa(getfield(mod, sym), AbstractGlobal)
+is_abstract(mod, sym) = isdefined(mod, sym) && isa(getfield(mod, sym), AbstractGlobal)
+isa_abstract(x, @nospecialize(typ)) = isa(x, AbstractGlobal) && x.t ⊑ typ
 
 # fresh execution/benchmark tools
 include(normpath(@__DIR__, "..", "benchmark", "JETBenchmarkUtils.jl"))

@@ -349,7 +349,7 @@ function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, 
     if ismoduleusage(node)
         for ex in to_single_usages(node::Expr)
             # NOTE: usages of abstract global variables also work here, since they are supposed
-            # to be actually evaluated into `interp.virtualmod` (as `AbstractGlobalVariable`
+            # to be actually evaluated into `interp.virtualmod` (as `AbstractGlobal`
             # object) at this point
 
             interp.eval_with_err_handling(interp.virtualmod, ex)

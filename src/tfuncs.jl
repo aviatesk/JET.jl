@@ -74,7 +74,7 @@ function CC.builtin_tfunction(interp::JETInterpreter, @nospecialize(f), argtypes
         end
     end
 
-    if isa(ret, AbstractGlobalVariable)
+    if isa(ret, AbstractGlobal)
         # propagate abstract global variable
 
         add_backedge!(ret.li, sv)
