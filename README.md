@@ -154,7 +154,6 @@ No errors !
 - documentation, release
 - remove `Core.eval(CC, ...)` monkey patches (<https://github.com/JuliaLang/julia/pull/39439>, <https://github.com/JuliaLang/julia/pull/39305>, see also "developer note" section)
 - more accurate error reports in general
-  * inter-procedural conditional type constraint back-propagation (<https://github.com/JuliaLang/julia/pull/38905>): should remove the need to annotate `x::Expr` in `if isexpr(x::Union{Nothing,Expr}, :call); x.args; end`
   * enable constant propagation on union-split signatures (<https://github.com/JuliaLang/julia/pull/39305>)
 - provide editor/IDE integrations for "watch" mode (<https://github.com/aviatesk/JET.jl/pull/85> will be a starting point)
 - support package profiling (issue <https://github.com/aviatesk/JET.jl/issues/76>, something like PR <https://github.com/aviatesk/JET.jl/pull/101> can be a starting point)
