@@ -1004,9 +1004,8 @@ function CC.finish(me::InferenceState, interp::JETInterpreter)
     @invoke finish(me::InferenceState, interp::AbstractInterpreter)
 
     if istoplevel(me)
-        # types of abstract global variables are computed as a fixed point at this point
-        # (see `record_slot_assign!`)
-        # let's define them virtually globally for succeeding interpretation
+        # find assignments of abstract global variables, and assign types to them,
+        # so that later analysis can refer to them
 
         stmts = me.src.code
         bbs = compute_basic_blocks(stmts)
@@ -1042,7 +1041,11 @@ function CC.finish(me::InferenceState, interp::JETInterpreter)
     end
 end
 
-# mostly same as `record_slot_assign!(sv::InferenceState)`, but don't `widenconst`
+# at this point all the types of SSA values are iterated to maximum fixed point,
+# and we can compute types of slot as least upper bound of types of all the possible
+# assignment of the slot (the type of assignment statement is available as SSA value type)
+# the implementation is mostly same as `record_slot_assign!(sv::InferenceState)`, but
+# we don't `widenconst` each SSA value type
 function collect_slottypes(sv::InferenceState)
     states = sv.stmt_types
     ssavaluetypes = sv.src.ssavaluetypes::Vector{Any}
