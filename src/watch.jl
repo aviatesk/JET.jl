@@ -1,65 +1,81 @@
-profile_and_watch_file(args...; kwargs...) = profile_and_watch_file(stdout, args...; kwargs...)
-function profile_and_watch_file(io::IO,
-                                filename::AbstractString,
-                                args...;
-                                profiling_logger::Union{Nothing,IO} = io, # enable logger by default for watch mode
-                                jetconfigs...)
-    while true
-        do_prehooks(io,
-                    filename,
-                    args...;
-                    profiling_logger,
-                    jetconfigs...)
-
-        included_files, _ = try
-            println(io)
-            profile_file(io, filename, args...;
-                         profiling_logger,
-                         jetconfigs...)
-        catch err
-            println(io)
-            @error "internal error occured:"
-            showerror(stderr, err, catch_backtrace())
-            [filename], true
-        end
-
-        # TODO: is there a way to abort tasks that are defeated in the race ?
-        watch_chn = Channel{FileWatching.FileEvent}()
-        for file in included_files
-            @async put!(watch_chn, watch_file(file))
-        end
-        take!(watch_chn) # wait until any of the scheduled tasks fulfilled
-
-        if !isfile(filename)
-            @info "$(filename) has been removed"
-            return
-        end
-
-        do_posthooks(io,
-                     filename,
-                     args...;
-                     profiling_logger,
-                     jetconfigs...)
+function profile_and_watch_file(args...; kwargs...)
+    if @isdefined(Revise)
+        _profile_and_watch_file(args...; kwargs...)
+    else
+        init_revise!()
+        @invokelatest _profile_and_watch_file(args...; kwargs...)
     end
 end
 
-# hooks
-# -----
+# HACK to avoid Revise loading overhead when just using `@report_call`, etc.
+function init_revise!()
+    @eval (@__MODULE__) using Revise
+end
 
-const PRE_HOOKS = Function[]
-push_prehook!(f) = push!(PRE_HOOKS, f)
-do_prehooks(args...; jetconfigs...) = foreach(@nospecialize(f)->f(args...; jetconfigs...), PRE_HOOKS)
+_profile_and_watch_file(args...; kwargs...) = _profile_and_watch_file(stdout::IO, args...; kwargs...)
+function _profile_and_watch_file(io::IO,
+                                 filename::AbstractString,
+                                 args...;
+                                 # revise options
+                                 modules = nothing,
+                                 all::Bool = true,
+                                 # JET configurations
+                                 profiling_logger::Union{Nothing,IO} = io, # enable logger by default for watch mode
+                                 jetconfigs...)
+    included_files, _ = profile_file(io, filename, args...;
+                                     profiling_logger,
+                                     jetconfigs...)
 
-const POST_HOOKS = Function[]
-push_posthook!(f) = push!(POST_HOOKS, f)
-do_posthooks(args...; jetconfigs...) = foreach(@nospecialize(f)->f(args...; jetconfigs...), POST_HOOKS)
+    interrupted = false
+    while !interrupted
+        try
+            Revise.entr(collect(included_files), modules; all) do
+                println(io)
+                included_files′, _ = profile_file(io, filename, args...;
+                                                  profiling_logger,
+                                                  jetconfigs...)
+                if any(∉(included_files), included_files′)
+                    # refresh watch files
+                    throw(InsufficientWatches(included_files′))
+                end
+                return nothing
+            end
+            interrupted = true # `InterruptException` was gracefully handled within `entr`, shutdown watch mode
+        catch err
+            # handle "expected" errors, keep running
 
-function __init_revise__()
-    @require Revise = "295af30f-e4ad-537b-8983-00126c2a3abe" begin
-        using .Revise
+            if isa(err, InsufficientWatches)
+                included_files = err.included_files
+                continue
+            elseif isa(err, LoadError) ||
+                   (isa(err, ErrorException) && startswith(err.msg, "lowering returned an error")) ||
+                   isa(err, Revise.ReviseEvalException)
+                continue
 
-        function __hook_revise__(args...; jetconfigs...)
-            revise()
-        end |> push_prehook!
+            # async errors
+            elseif isa(err, CompositeException)
+                errs = err.exceptions
+                i = findfirst(e->isa(e, TaskFailedException), errs)
+                if !isnothing(i)
+                    tfe = errs[i]::TaskFailedException
+                    res = tfe.task.result
+                    if isa(res, InsufficientWatches)
+                        included_files = res.included_files
+                        continue
+                    elseif isa(res, LoadError) ||
+                           (isa(res, ErrorException) && startswith(res.msg, "lowering returned an error")) ||
+                           isa(res, Revise.ReviseEvalException)
+                        continue
+                    end
+                end
+            end
+
+            # fatal uncaght error happened in Revise.jl
+            rethrow(err)
+        end
     end
-end |> push_inithook!
+end
+
+struct InsufficientWatches <: Exception
+    included_files::Set{String}
+end
