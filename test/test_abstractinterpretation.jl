@@ -673,4 +673,12 @@ end
     @test length(interp.reports) == 1
     r = first(interp.reports)
     @test isa(r, InvalidInvokeErrorReport)
+
+    # don't report errors collected in `invoke`d functions
+    foo(i::Integer) = throw(string(i))
+    interp, frame = profile_call((Any,)) do a
+        Base.@invoke foo(a::Integer)
+    end
+    @test !isempty(interp.reports)
+    @test !any(r->isa(r, InvalidInvokeErrorReport), interp.reports)
 end
