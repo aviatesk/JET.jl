@@ -911,6 +911,47 @@ function update_reports!(interp::JETInterpreter, sv::InferenceState)
     end
 end
 
+@static if IS_LATEST
+
+import .CC:
+    abstract_invoke,
+    instanceof_tfunc
+
+function CC.abstract_invoke(interp::JETInterpreter, argtypes::Vector{Any}, sv::InferenceState)
+    ret = @invoke abstract_invoke(interp::AbstractInterpreter, argtypes::Vector{Any}, sv::InferenceState)
+
+    if ret.rt === Bottom
+        report!(interp, InvalidInvokeErrorReport(interp, sv, argtypes))
+    end
+
+    return ret
+end
+
+@reportdef InvalidInvokeErrorReport(interp, sv, argtypes::Vector{Any})
+
+function get_msg(::Type{InvalidInvokeErrorReport}, interp, sv, argtypes::Vector{Any})
+    fallback_msg = "invalid invoke" # mostly because of runtime unreachable
+
+    ft = widenconst(argtype_by_index(argtypes, 2))
+    ft === Bottom && return fallback_msg
+    t = argtype_by_index(argtypes, 3)
+    (types, isexact, isconcrete, istype) = instanceof_tfunc(t)
+    if types === Bottom
+        if isa(t, Const)
+            type = typeof(t.val)
+            return "argument type should be `Type`-object (given `$type`)"
+        end
+        return fallback_msg
+    end
+
+    argtype = argtypes_to_type(argtype_tail(argtypes, 4))
+    nargtype = typeintersect(types, argtype)
+    @assert nargtype === Bottom
+    return "actual argument type (`$argtype`) doesn't intersect with specified argument type (`$types`)"
+end
+
+end # @static if IS_LATEST
+
 function CC.abstract_eval_special_value(interp::JETInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
     if istoplevel(sv)
         if isa(e, Slot) && is_global_slot(interp, e)

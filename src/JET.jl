@@ -99,6 +99,8 @@ import .CC:
     is_throw_call,
     tmerge,
     argtypes_to_type,
+    argtype_by_index,
+    argtype_tail,
     _methods_by_ftype,
     specialize_method,
     add_backedge!,
