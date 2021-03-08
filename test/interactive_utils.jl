@@ -36,7 +36,9 @@ macro def(ex)
     @assert isexpr(ex, :block)
     return quote let
         vmod = $(gen_virtual_module)()
-        Core.eval(vmod, $(QuoteNode(ex)))
+        for x in $(ex.args)
+            Core.eval(vmod, x)
+        end
         vmod # return virtual module
     end end
 end
