@@ -195,11 +195,11 @@ function virtual_process!(toplevelex::Expr,
         end
 
         interp = JETInterpreter(; # world age gets updated to take in newly added methods defined by `ConcreteInterpreter`
+                                  analysis_params = AnalysisParams(interp),
                                   inf_params      = InferenceParams(interp),
                                   opt_params      = OptimizationParams(interp),
                                   concretized     = concretized, # or construct partial `CodeInfo` from remaining abstract statements
                                   toplevelmod     = virtualmod,
-                                  analysis_params = AnalysisParams(interp),
                                   )
 
         profile_toplevel!(interp, src)

@@ -17,17 +17,13 @@ struct AnalysisParams
 end
 
 mutable struct JETInterpreter <: AbstractInterpreter
-    #= native =#
+    ### native ###
 
     native::NativeInterpreter
 
-    #= JET.jl specific =#
+    ### JET.jl specific ###
 
-    # local report cache for constant analysis
-    cache::Vector{AnalysisResult}
-
-    # for sequential assignment of abstract global variables
-    id::Symbol
+    ## general ##
 
     # reports found so far
     reports::Vector{InferenceErrorReport}
@@ -38,6 +34,20 @@ mutable struct JETInterpreter <: AbstractInterpreter
     # keeps reports that should be updated when returning back the parent frame (i.e. the next time we get back to inter-procedural context)
     to_be_updated::Set{InferenceErrorReport}
 
+    # keeps track of the current inference frame (needed for report cache reconstruction)
+    current_frame::Union{Nothing,InferenceState}
+
+    # local report cache for constant analysis
+    cache::Vector{AnalysisResult}
+
+    # configurations for JET analysis
+    analysis_params::AnalysisParams
+
+    ## virtual toplevel execution ##
+
+    # for sequential assignment of abstract global variables
+    id::Symbol
+
     # toplevel profiling (skip inference on actually interpreted statements)
     concretized::BitVector
 
@@ -47,44 +57,51 @@ mutable struct JETInterpreter <: AbstractInterpreter
     # slots to represent toplevel global variables
     global_slots::Dict{Int,Symbol}
 
-    # configurations for analysis performed by this interpreter
-    analysis_params::AnalysisParams
+    ## debug ##
 
-    # keeps track of the current inference frame (needed for report cache reconstruction)
-    current_frame::Union{Nothing,InferenceState}
-
-    # debugging
+    # records depth of call stack
     depth::Int
 
-    @jetconfigurable function JETInterpreter(world               = get_world_counter();
-                                             id                  = gensym(:JETInterpreterID),
-                                             reports             = InferenceErrorReport[],
-                                             uncaught_exceptions = UncaughtExceptionReport[],
-                                             toplevelmod         = __virtual_toplevel__,
-                                             concretized         = BitVector(),
-                                             global_slots        = Dict{Int,Symbol}(),
-                                             jetconfigs...)
-        inf_params      = gen_inf_params(; jetconfigs...)
-        opt_params      = gen_opt_params()
-        @assert !opt_params.inlining "inlining should be disabled for JETInterpreter analysis"
-        analysis_params = gen_analysis_params(; jetconfigs...)
-
-        native = NativeInterpreter(world; inf_params, opt_params)
-        return new(native,
-                   AnalysisResult[],
-                   id,
-                   reports,
-                   uncaught_exceptions,
-                   Set{InferenceErrorReport}(),
-                   concretized,
-                   toplevelmod,
-                   global_slots,
-                   analysis_params,
-                   nothing,
-                   0,
-                   )
+    function JETInterpreter(native::NativeInterpreter, args...)
+        @assert !native.opt_params.inlining "inlining should be disabled for JETInterpreter analysis"
+        new(native, args...)
     end
 end
+
+# constructor for fresh analysis
+@jetconfigurable function JETInterpreter(world           = get_world_counter();
+                                         current_frame   = nothing,
+                                         cache           = AnalysisResult[],
+                                         analysis_params = nothing,
+                                         inf_params      = nothing,
+                                         opt_params      = nothing,
+                                         id              = gensym(:JETInterpreterID),
+                                         concretized     = _CONCRETIZED,
+                                         toplevelmod     = _TOPLEVELMOD,
+                                         global_slots    = _GLOBAL_SLOTS,
+                                         depth           = 0,
+                                         jetconfigs...)
+    isnothing(analysis_params) && (analysis_params = gen_analysis_params(; jetconfigs...))
+    isnothing(inf_params)      && (inf_params = gen_inf_params(; jetconfigs...))
+    isnothing(opt_params)      && (opt_params = gen_opt_params())
+    return JETInterpreter(NativeInterpreter(world; inf_params, opt_params),
+                          InferenceErrorReport[],
+                          UncaughtExceptionReport[],
+                          Set{InferenceErrorReport}(),
+                          current_frame,
+                          cache,
+                          analysis_params,
+                          id,
+                          concretized,
+                          toplevelmod,
+                          global_slots,
+                          0,
+                          )
+end
+# dummies to interpret non-toplevel frames
+const _CONCRETIZED  = BitVector()
+const _TOPLEVELMOD  = @__MODULE__
+const _GLOBAL_SLOTS = Dict{Int,Symbol}()
 
 function Base.show(io::IO, interp::JETInterpreter)
     rn = length(interp.reports)
