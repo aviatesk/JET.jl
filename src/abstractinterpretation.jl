@@ -676,7 +676,8 @@ function analyze_task_parallel_code!(interp::JETInterpreter, @nospecialize(f), a
               isa(v, Core.PartialStruct) ? v.typ :
               isa(v, DataType) ? v :
               return)::Type
-        return profile_additional_pass_by_type!(interp, Tuple{ft}, sv)
+        profile_additional_pass_by_type!(interp, Tuple{ft}, sv)
+        return
     end
     return
 end
@@ -692,8 +693,6 @@ function profile_additional_pass_by_type!(interp::JETInterpreter, @nospecialize(
     # but what we're doing here is essentially equivalent to modifying the user code and inlining
     # the threaded code block as a usual code block, and thus the side-effects won't (hopefully)
     # confuse the abstract interpretation, which is supposed to terminate on any kind of code
-    # while we just run an additional analysis pass and don't record a result of the call
-    # for later, there still may be a risk to produce an invalid code after type inference
     mm = get_single_method_match(tt, InferenceParams(newinterp).MAX_METHODS, get_world_counter(newinterp))
     abstract_call_method(newinterp, mm.method, mm.spec_types, mm.sparams, false, sv)
 
