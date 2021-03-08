@@ -516,7 +516,7 @@ function profile_toplevel!(interp::JETInterpreter, src::CodeInfo)
     mi.def = __virtual_toplevel__ # set to the dummy module
 
     result = InferenceResult(mi);
-    frame = InferenceState(result, src, #=cached=# true, interp);
+    frame = InferenceState(result, src, #=cached=# true, interp)::InferenceState;
 
     return profile_frame!(interp, frame)
 end
@@ -578,7 +578,7 @@ function profile_gf_by_type!(interp::JETInterpreter,
                              world::UInt = get_world_counter(interp),
                              )
     mms = _methods_by_ftype(tt, InferenceParams(interp).MAX_METHODS, world)
-    @assert mms !== false "unable to find matching method for $(tt)"
+    @assert !isa(mms, Bool) "unable to find matching method for $(tt)"
 
     filter!(mm::MethodMatch->mm.spec_types===tt, mms)
     @assert length(mms) == 1 "unable to find single target method for $(tt)"
@@ -615,7 +615,7 @@ function profile_method_signature!(interp::JETInterpreter,
 
     result = InferenceResult(mi)
 
-    frame = InferenceState(result, #=cached=# true, interp)
+    frame = InferenceState(result, #=cached=# true, interp)::InferenceState
 
     return profile_frame!(interp, frame)
 end
