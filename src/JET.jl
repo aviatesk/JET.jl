@@ -108,8 +108,7 @@ import .CC:
     compute_basic_blocks,
     matching_cache_argtypes,
     is_argtype_match,
-    tuple_tfunc,
-    abstract_eval_global
+    tuple_tfunc
 
 import Base:
     parse_input_line,

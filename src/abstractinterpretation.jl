@@ -665,21 +665,18 @@ function analyze_task_parallel_code!(interp::JETInterpreter, @nospecialize(f), a
     # and so we may not be able to access to the closure at the point
     # as a compromise, JET now invokes the additional analysis on `Task` construction,
     # regardless of whether it's really `schedule`d or not
-    if f === Task
+    if f === Task &&
+       length(argtypes) ≥ 2 &&
+       (v = argtypes[2]; v ⊑ Function)
         # if we encounter `Task(::Function)`, try to get its inner function and run analysis on it
         # the closure can be a nullary lambda that really doesn't depend on
         # the captured environment, and in that case we can retrieve it as
         # a function object, otherwise we will try to retrieve the type of the closure
-        if length(argtypes) ≥ 2
-            v = argtypes[2]
-            if v ⊑ Function
-                ft = (isa(v, Const) ? Core.Typeof(v.val) :
-                      isa(v, Core.PartialStruct) ? v.typ :
-                      isa(v, DataType) ? v :
-                      return)::Type
-                return profile_additional_pass_by_type!(interp, Tuple{ft}, sv)
-            end
-        end
+        ft = (isa(v, Const) ? Core.Typeof(v.val) :
+              isa(v, Core.PartialStruct) ? v.typ :
+              isa(v, DataType) ? v :
+              return)::Type
+        return profile_additional_pass_by_type!(interp, Tuple{ft}, sv)
     end
     return
 end
