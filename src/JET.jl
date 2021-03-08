@@ -108,7 +108,8 @@ import .CC:
     compute_basic_blocks,
     matching_cache_argtypes,
     is_argtype_match,
-    tuple_tfunc
+    tuple_tfunc,
+    abstract_eval_global
 
 import Base:
     parse_input_line,
@@ -573,27 +574,23 @@ function transform_abstract_global_symbols!(interp::JETInterpreter, src::CodeInf
 end
 
 # TODO `profile_call_builtin!` ?
-function profile_gf_by_type!(interp::JETInterpreter,
-                             @nospecialize(tt::Type{<:Tuple}),
-                             world::UInt = get_world_counter(interp),
-                             )
-    mms = _methods_by_ftype(tt, InferenceParams(interp).MAX_METHODS, world)
+function profile_gf_by_type!(interp::JETInterpreter, @nospecialize(tt::Type{<:Tuple}))
+    mm = get_single_method_match(tt, InferenceParams(interp).MAX_METHODS, get_world_counter(interp))
+    return profile_method_signature!(interp, mm.method, mm.spec_types, mm.sparams)
+end
+
+function get_single_method_match(@nospecialize(tt), lim, world)
+    mms = _methods_by_ftype(tt, lim, world)
     @assert !isa(mms, Bool) "unable to find matching method for $(tt)"
 
     filter!(mm::MethodMatch->mm.spec_types===tt, mms)
     @assert length(mms) == 1 "unable to find single target method for $(tt)"
 
-    mm = first(mms)::MethodMatch
-
-    return profile_method_signature!(interp, mm.method, mm.spec_types, mm.sparams)
+    return first(mms)::MethodMatch
 end
 
-function profile_method!(interp::JETInterpreter,
-                         m::Method,
-                         world::UInt = get_world_counter(interp),
-                         )
-    return profile_method_signature!(interp, m, m.sig, method_sparams(m), world)
-end
+profile_method!(interp::JETInterpreter, m::Method) =
+    profile_method_signature!(interp, m, m.sig, method_sparams(m))
 
 function method_sparams(m::Method)
     s = TypeVar[]
@@ -609,7 +606,6 @@ function profile_method_signature!(interp::JETInterpreter,
                                    m::Method,
                                    @nospecialize(atype),
                                    sparams::SimpleVector,
-                                   world::UInt = get_world_counter(interp),
                                    )
     mi = specialize_method(m, atype, sparams)
 

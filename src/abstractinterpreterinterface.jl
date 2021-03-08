@@ -103,6 +103,18 @@ const _CONCRETIZED  = BitVector()
 const _TOPLEVELMOD  = @__MODULE__
 const _GLOBAL_SLOTS = Dict{Int,Symbol}()
 
+# constructor to do additional JET analysis in the middle of parent (non-toplevel) interpretation
+function JETInterpreter(interp::JETInterpreter)
+    return JETInterpreter(get_world_counter(interp);
+                          current_frame   = interp.current_frame,
+                          cache           = interp.cache,
+                          analysis_params = AnalysisParams(interp),
+                          inf_params      = InferenceParams(interp),
+                          opt_params      = OptimizationParams(interp),
+                          depth           = interp.depth,
+                          )
+end
+
 function Base.show(io::IO, interp::JETInterpreter)
     rn = length(interp.reports)
     en = length(interp.uncaught_exceptions)

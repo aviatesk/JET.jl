@@ -372,6 +372,9 @@ function abstract_call_gf_by_type(interp::$JETInterpreter, @nospecialize(f),
             delete!(sv.pclimitations, caller)
         end
     end
+
+    $analyze_task_parallel_code!(interp, f, argtypes, sv)
+
     #print("=> ", rettype, "\n")
     return CallMeta(rettype, info)
 end
@@ -588,6 +591,9 @@ function abstract_call_gf_by_type(interp::$JETInterpreter, @nospecialize(f), arg
         end
     end
     end)
+
+    $analyze_task_parallel_code!(interp, f, argtypes, sv)
+
     return CallMeta(rettype, info)
 end
 
@@ -643,6 +649,59 @@ function add_call_backedges!(interp::JETInterpreter,
 end
 
 end # @static if IS_LATEST
+
+# add special cased analysis pass for task parallelism (xref: https://github.com/aviatesk/JET.jl/issues/114)
+# in Julia's task parallelism implementation, parallel code is represented as closure
+# and it's wrapped in `Task` object
+# `NativeInterpreter` doesn't run type inference nor optimization on the body of those closures
+# when compiling code that creates parallel tasks, but JET will try to run additional
+# analysis pass by recurring into the closures
+# NOTE JET won't do anything other than doing JET analysis, e.g. won't annotate return type
+# of wrapped code block in order to not confuse the original `AbstractInterpreter` routine
+# track https://github.com/JuliaLang/julia/pull/39773 for the changes in native abstract interpretation routine
+function analyze_task_parallel_code!(interp::JETInterpreter, @nospecialize(f), argtypes::Vector{Any}, sv::InferenceState)
+    # TODO ideally JET should analyze a closure wrapped in a `Task` only when encontering `schedule` call on it
+    # but the `Task` construction may not happen in the same frame where `schedule` is called,
+    # and so we may not be able to access to the closure at the point
+    # as a compromise, JET now invokes the additional analysis on `Task` construction,
+    # regardless of whether it's really `schedule`d or not
+    if f === Task
+        # if we encounter `Task(::Function)`, try to get its inner function and run analysis on it
+        # the closure can be a nullary lambda that really doesn't depend on
+        # the captured environment, and in that case we can retrieve it as
+        # a function object, otherwise we will try to retrieve the type of the closure
+        if length(argtypes) ≥ 2
+            v = argtypes[2]
+            if v ⊑ Function
+                ft = (isa(v, Const) ? Core.Typeof(v.val) :
+                      isa(v, Core.PartialStruct) ? v.typ :
+                      isa(v, DataType) ? v :
+                      return)::Type
+                return profile_additional_pass_by_type!(interp, Tuple{ft}, sv)
+            end
+        end
+    end
+    return
+end
+
+# run additional interpretation with a new interpreter,
+# and then append the reports to the original interpreter
+function profile_additional_pass_by_type!(interp::JETInterpreter, @nospecialize(tt::Type{<:Tuple}), sv::InferenceState)
+    newinterp = JETInterpreter(interp)
+
+    # in order to preserve the inference termination, we keep to use the current frame
+    # and borrow the `AbstractInterpreter`'s cycle detection logic
+    # XXX the additional analysis pass by `abstract_call_method` may involve various site-effects,
+    # but what we're doing here is essentially equivalent to modifying the user code and inlining
+    # the threaded code block as a usual code block, and thus the side-effects won't (hopefully)
+    # confuse the abstract interpretation, which is supposed to terminate on any kind of code
+    # while we just run an additional analysis pass and don't record a result of the call
+    # for later, there still may be a risk to produce an invalid code after type inference
+    mm = get_single_method_match(tt, InferenceParams(newinterp).MAX_METHODS, get_world_counter(newinterp))
+    abstract_call_method(newinterp, mm.method, mm.spec_types, mm.sparams, false, sv)
+
+    append!(interp.reports, newinterp.reports)
+end
 
 """
     function overload_abstract_call_method_with_const_args!()
