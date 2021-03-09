@@ -56,7 +56,6 @@ end
                                         reports::AbstractVector{<:ToplevelErrorReport},
                                         @nospecialize(postprocess = identity);
                                         print_toplevel_sucess::Bool = false,
-                                        color::Bool = get(io, :color, false),
                                         fullpath::Bool = false,
                                         )
     if isempty(reports)
@@ -66,12 +65,11 @@ end
         return false
     end
 
-    arg = :color => color
-    color = ERROR_COLOR
-
-    with_bufferring(arg) do io
+    with_bufferring(:color => get(io, :color, false)) do io
         s = string(pluralize(length(reports), "toplevel error"), " found")
         printlnstyled(io, LEFT_ROOF, s, RIGHT_ROOF; color = HEADER_COLOR)
+
+        color = ERROR_COLOR
 
         rail = with_bufferring(arg) do io
             printstyled(io, "│ "; color)
@@ -112,7 +110,6 @@ print_report(io, report::ActualErrorWrapped) = showerror(io, report.err, report.
                                         reports::AbstractVector{<:InferenceErrorReport},
                                         @nospecialize(postprocess = identity);
                                         print_inference_sucess::Bool = true,
-                                        color::Bool = get(io, :color, false),
                                         fullpath::Bool = false,
                                         annotate_types::Bool = false,
                                         )
@@ -126,7 +123,7 @@ print_report(io, report::ActualErrorWrapped) = showerror(io, report.err, report.
         return false
     end
 
-    with_bufferring(:color => color) do io
+    with_bufferring(:color => get(io, :color, false)) do io
         s = string(pluralize(length(reports), "possible error"), " found")
         printlnstyled(io, LEFT_ROOF, s, RIGHT_ROOF; color = HEADER_COLOR)
 
