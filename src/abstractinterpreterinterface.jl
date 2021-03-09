@@ -15,7 +15,7 @@ Configurations for JET analysis:
     - `!(::Function) -> Function`
     - `!(::Missing) -> Missing`
     - `==(::Missing, ::Any) -> Missing`
-    - `==(::Any, ::Missing)::Missing`
+    - `==(::Any, ::Missing) -> Missing`
     and thus loosely-typed conditional expression often becomes e.g. `Union{Bool, Missing}`,
     and consequently JET will report it as "non-boolean" type
     (NOTE: in Julia `Missing` is certainly not valid conditional type).

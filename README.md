@@ -151,7 +151,8 @@ No errors !
 
 ### TODOs
 
-- documentation, release
+- documentation: WIP at <https://github.com/aviatesk/JET.jl/pull/127>
+- release: see <https://github.com/aviatesk/JET.jl/issues/121>
 - remove `Core.eval(CC, ...)` monkey patches (<https://github.com/JuliaLang/julia/pull/39439>, <https://github.com/JuliaLang/julia/pull/39305>, see also "developer note" section)
 - more accurate error reports in general
   * enable constant propagation on union-split signatures (<https://github.com/JuliaLang/julia/pull/39305>)
