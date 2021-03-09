@@ -334,24 +334,24 @@ typenames(u::Union)                   = collect(Base.Iterators.flatten(typenames
 typenames(u::UnionAll)                = [u.body.name.name]
 
 """
-    @jetconfigurable function funcname(args...; configuration_options...)
+    @jetconfigurable function config_func(args...; configurations...)
         ...
     end
 
-Adds a dummy keyword arguments to a function definition so that any keyword argument for
-  other `@jetconfigurable` functions can be passed on to it.
-This macro also asserts that there's no conflict with keyword arguments across the definitions
-  and a configuration for a `@jetconfigurable` function doesn't affect the other
+This macro asserts that there's no configuration naming conflict across the `@jetconfigurable`
+  functions so that a configuration for a `@jetconfigurable` function  doesn't affect the other
   `@jetconfigurable` functions.
+This macro also adds a dummy splat keyword arguments (`jetconfigs...`) to the function definition
+  so that any configuration of other `@jetconfigurable` functions can be passed on to it.
 """
 macro jetconfigurable(funcdef)
     @assert @isexpr(funcdef, :(=)) || @isexpr(funcdef, :function) "function definition should be given"
 
     defsig = funcdef.args[1]
-    funcname = first(defsig.args)
+    thisname = first(defsig.args)
     i = findfirst(a->@isexpr(a, :parameters), defsig.args)
     if isnothing(i)
-        @warn "no JET configurations are defined for `$(funcname)`"
+        @warn "no JET configurations are defined for `$thisname`"
         insert!(defsig.args, 2, Expr(:parameters, :(jetconfigs...)))
     else
         kwargs = defsig.args[i]
@@ -363,9 +363,9 @@ macro jetconfigurable(funcdef)
             end
             kwargex = first(kwarg.args)
             kwargname = (@isexpr(kwargex, :(::)) ? first(kwargex.args) : kwargex)::Symbol
-            funcname′ = get!(_JET_CONFIGURATIONS, kwargname, funcname)
+            othername = get!(_JET_CONFIGURATIONS, kwargname, thisname)
             # allows same configurations for same generic function or function refinement
-            @assert funcname === funcname′ "`$(funcname)` uses `$(kwargname)` JET configuration name which is already used by `$(funcname′)`"
+            @assert thisname === othername "`$thisname` uses `$kwargname` JET configuration name which is already used by `$othername`"
         end
         found || push!(kwargs.args, :(jetconfigs...))
     end

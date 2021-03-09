@@ -1,4 +1,93 @@
-# TODO world range
+# configurations
+# --------------
+
+# TODO more configurations, e.g. ignore user-specified modules and such
+"""
+Configurations for JET analysis:
+
+- `ignore_native_remarks::Bool = true` \\
+  If `true`, JET won't construct nor cache reports of "native remarks", which may speed up analysis time.
+  "Native remarks" are information that Julia's native compiler emits about how type inference routine goes,
+  and those remarks are less interesting in term of "error checking", so JET ignores them by default.
+"""
+struct JETAnalysisParams
+    ignore_native_remarks::Bool
+    @jetconfigurable JETAnalysisParams(; ignore_native_remarks::Bool = true,
+                                         ) =
+        return new(ignore_native_remarks,
+                   )
+end
+
+"""
+Configurations for Julia's native type inference routine:
+
+- `ipo_constant_propagation::Bool = true` \\
+  Enables constant propagation in abstract interpretation.
+  It is _**highly**_ recommended that you keep this configuration `true` to get reasonable analysis,
+  because constant propagation can cut off lots of false positive errorenous code paths and
+  thus lead to more accurate and useful analysis results.
+
+- `aggressive_constant_propagation::Bool = true` \\
+  If `true`, JET will try to do constant propagation more "aggressively".
+  As explained above, it can lead to more accurate analysis, but also lead to worse analysis
+  performance at the cost of that.
+
+- `unoptimize_throw_blocks::Bool = false` \\
+  Turn this on to skip analysis on code blocks that will eventually lead to a `throw` call.
+  This configuration may improve the analysis performance, but it's better to be turned off
+    for JET analysis, because there may be other errors even in those code blocks.
+
+!!! note
+    You can also specify all the other parameters that `Core.Compiler.InferenceParams` can accept,
+    e.g. `max_methods`, `union_splitting`, etc.
+"""
+@jetconfigurable JETInferenceParams(; ipo_constant_propagation::Bool = true,
+                                      aggressive_constant_propagation::Bool = true,
+                                      unoptimize_throw_blocks::Bool = false,
+                                      max_methods::Int = 3,
+                                      union_splitting::Int = 4,
+                                      apply_union_enum::Int = 8,
+                                      tupletype_depth::Int = 3,
+                                      tuple_splat::Int = 32,
+                                      ) =
+    return InferenceParams(; ipo_constant_propagation,
+                             aggressive_constant_propagation,
+                             unoptimize_throw_blocks,
+                             max_methods,
+                             union_splitting,
+                             apply_union_enum,
+                             tupletype_depth,
+                             tuple_splat,
+                             )
+
+# here we just try to sync `OptimizationParams` with  `InferenceParams`
+# (the same JET configurations will be passed on here)
+JETOptimizationParams(; # inlining::Bool = inlining_enabled(),
+                        # inline_cost_threshold::Int = 100,
+                        # inline_nonleaf_penalty::Int = 1000,
+                        # inline_tupleret_bonus::Int = 250,
+                        # inline_error_path_cost::Int = 20,
+                        max_methods::Int = 3,
+                        tuple_splat::Int = 32,
+                        union_splitting::Int = 4,
+                        unoptimize_throw_blocks::Bool = false,
+                        _jetconfigs...) =
+    # NOTE we always disable inlining, because our current strategy to find undefined
+    # local variable assumes un-inlined frames
+    # TODO enable inlining to get better JET analysis performance ?
+    # XXX but the self-profiling with `inlining = true` shows performance regression ...
+    return OptimizationParams(; inlining = false,
+                                # inline_cost_threshold::Int = 100,
+                                # inline_nonleaf_penalty::Int = 1000,
+                                # inline_tupleret_bonus::Int = 250,
+                                # inline_error_path_cost::Int = 20,
+                                max_methods,
+                                tuple_splat,
+                                union_splitting,
+                                unoptimize_throw_blocks,
+                                )
+
+# XXX we need to consider world range ?
 struct AnalysisResult
     linfo::MethodInstance
     argtypes::Vector{Any}
@@ -9,11 +98,6 @@ struct AnalysisResult
         argtypes, overridden_by_const = matching_cache_argtypes(linfo, given_argtypes)
         return new(linfo, argtypes, overridden_by_const, cache)
     end
-end
-
-struct AnalysisParams
-    # ignores (don't construct nor cache) reports of native remarks (, which may speed up profiling time)
-    ignore_native_remarks::Bool
 end
 
 mutable struct JETInterpreter <: AbstractInterpreter
@@ -41,7 +125,7 @@ mutable struct JETInterpreter <: AbstractInterpreter
     cache::Vector{AnalysisResult}
 
     # configurations for JET analysis
-    analysis_params::AnalysisParams
+    analysis_params::JETAnalysisParams
 
     ## virtual toplevel execution ##
 
@@ -81,9 +165,9 @@ end
                                          global_slots    = _GLOBAL_SLOTS,
                                          depth           = 0,
                                          jetconfigs...)
-    isnothing(analysis_params) && (analysis_params = gen_analysis_params(; jetconfigs...))
-    isnothing(inf_params)      && (inf_params = gen_inf_params(; jetconfigs...))
-    isnothing(opt_params)      && (opt_params = gen_opt_params())
+    isnothing(analysis_params) && (analysis_params = JETAnalysisParams(; jetconfigs...))
+    isnothing(inf_params)      && (inf_params = JETInferenceParams(; jetconfigs...))
+    isnothing(opt_params)      && (opt_params = JETOptimizationParams(; jetconfigs...))
     return JETInterpreter(NativeInterpreter(world; inf_params, opt_params),
                           InferenceErrorReport[],
                           UncaughtExceptionReport[],
@@ -108,7 +192,7 @@ function JETInterpreter(interp::JETInterpreter)
     return JETInterpreter(get_world_counter(interp);
                           current_frame   = interp.current_frame,
                           cache           = interp.cache,
-                          analysis_params = AnalysisParams(interp),
+                          analysis_params = JETAnalysisParams(interp),
                           inf_params      = InferenceParams(interp),
                           opt_params      = OptimizationParams(interp),
                           depth           = interp.depth,
@@ -151,7 +235,7 @@ CC.lock_mi_inference(::JETInterpreter, ::MethodInstance) = nothing
 CC.unlock_mi_inference(::JETInterpreter, ::MethodInstance) = nothing
 
 # function CC.add_remark!(interp::JETInterpreter, sv::InferenceState, s::String)
-#     AnalysisParams(interp).ignore_native_remarks && return
+#     JETAnalysisParams(interp).ignore_native_remarks && return
 #     push!(interp.native_remarks, NativeRemark(interp, sv, s))
 #     return
 # end
@@ -164,41 +248,11 @@ CC.may_discard_trees(interp::JETInterpreter) = false
 # JETInterpreter specific
 # -----------------------
 
-AnalysisParams(interp::JETInterpreter) = interp.analysis_params
-
-@jetconfigurable function gen_inf_params(; # more constant prop, more correct reports ?
-                                           aggressive_constant_propagation::Bool = true,
-                                           # turn this on to skip analysis on `throw` blocks;
-                                           # this is better to be turned off for JET analysis because
-                                           # there may be other errors in blocks that lead to a `throw` call
-                                           # while we will report the uncaught `throw`s anyway
-                                           unoptimize_throw_blocks::Bool = false,
-                                           )
-    return @static VERSION ≥ v"1.6.0-DEV.837" ?
-           InferenceParams(; aggressive_constant_propagation,
-                             unoptimize_throw_blocks,
-                             ) :
-           InferenceParams(; aggressive_constant_propagation,
-                             )
-end
-
-function gen_opt_params()
-    return OptimizationParams(; # inlining should be disabled for `JETInterpreter`, otherwise
-                                # virtual stack frame traversing will fail for frames after
-                                # optimizer runs on
-                                inlining = false,
-                                )
-end
-
-# TODO configurable analysis, e.g. ignore user-specified modules and such
-@jetconfigurable function gen_analysis_params(; ignore_native_remarks::Bool = true,
-                                                )
-    return AnalysisParams(ignore_native_remarks)
-end
+JETAnalysisParams(interp::JETInterpreter) = interp.analysis_params
 
 get_id(interp::JETInterpreter) = interp.id
 
-# TODO do report filtering or something configured by `AnalysisParams(interp)`
+# TODO do report filtering or something configured by `JETAnalysisParams(interp)`
 function report!(interp::JETInterpreter, report::InferenceErrorReport)
     push!(interp.reports, report)
 end
