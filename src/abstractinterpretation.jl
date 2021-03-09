@@ -660,9 +660,9 @@ end # @static if IS_LATEST
 # of wrapped code block in order to not confuse the original `AbstractInterpreter` routine
 # track https://github.com/JuliaLang/julia/pull/39773 for the changes in native abstract interpretation routine
 function analyze_task_parallel_code!(interp::JETInterpreter, @nospecialize(f), argtypes::Vector{Any}, sv::InferenceState)
-    # TODO ideally JET should analyze a closure wrapped in a `Task` only when encontering `schedule` call on it
-    # but the `Task` construction may not happen in the same frame where `schedule` is called,
-    # and so we may not be able to access to the closure at the point
+    # TODO ideally JET should analyze a closure wrapped in a `Task` only when it's `schedule`d
+    # but the `Task` construction may not happen in the same frame where it's `schedule`d
+    # and so we may not be able to access to the closure at that point
     # as a compromise, JET now invokes the additional analysis on `Task` construction,
     # regardless of whether it's really `schedule`d or not
     if f === Task &&
@@ -694,7 +694,14 @@ function profile_additional_pass_by_type!(interp::JETInterpreter, @nospecialize(
     # the threaded code block as a usual code block, and thus the side-effects won't (hopefully)
     # confuse the abstract interpretation, which is supposed to terminate on any kind of code
     mm = get_single_method_match(tt, InferenceParams(newinterp).MAX_METHODS, get_world_counter(newinterp))
-    abstract_call_method(newinterp, mm.method, mm.spec_types, mm.sparams, false, sv)
+    rt, _, _ = abstract_call_method(newinterp, mm.method, mm.spec_types, mm.sparams, false, sv)
+
+    # corresponding to the same logic in `profile_frame!`
+    if rt === Bottom
+        if !isempty(newinterp.uncaught_exceptions)
+            append!(newinterp.reports, newinterp.uncaught_exceptions)
+        end
+    end
 
     append!(interp.reports, newinterp.reports)
 end

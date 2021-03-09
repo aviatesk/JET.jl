@@ -759,12 +759,19 @@ end
         run_task(t)
     end
     test_sum_over_string(interp)
-    let r = interp.reports[1]
+    let r = first(interp.reports)
         # we want report to come from `run_task`, but currently we invoke JET analysis on `Task` construction
         @test_broken any(r.st) do vf
             vf.linfo.def.name === :run_task
         end
     end
+
+    # report uncaught exception happened in a task
+    interp, frame = profile_call() do
+        fetch(Threads.@spawn throw("foo"))
+    end
+    @test length(interp.reports) == 1
+    @test isa(first(interp.reports), UncaughtExceptionReport)
 
     # don't fail into infinite loop (rather, don't spoil inference termination)
     m = @def begin
