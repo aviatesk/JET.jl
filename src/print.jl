@@ -1,3 +1,104 @@
+# configuration
+# -------------
+
+"""
+JET configurations for error printing:
+
+- `print_toplevel_success::Bool = false` \\
+  If `true`, prints a message when there is no toplevel errors found.
+
+- `print_inference_sucess::Bool = true` \\
+  If `true`, print a message when there is no errors found in abstract interpretation based analysis pass.
+
+- `annotate_types::Bool = false` \\
+  When set to `true`, annotates types when printing analyzed call stack.
+  Here are examples:
+  > Default (no annotations):
+  ```julia
+  julia> @report_call sum("julia")
+  ═════ 2 possible errors found ═════
+  ┌ @ reduce.jl:530 Base.#sum#241(Base.pairs(Core.NamedTuple()), #self#, a)
+  │┌ @ reduce.jl:530 Base.sum(Base.identity, a)
+  ││┌ @ reduce.jl:503 Base.#sum#240(Base.pairs(Core.NamedTuple()), #self#, f, a)
+  │││┌ @ reduce.jl:503 Base.mapreduce(f, Base.add_sum, a)
+  ││││┌ @ reduce.jl:289 Base.#mapreduce#237(Base.pairs(Core.NamedTuple()), #self#, f, op, itr)
+  │││││┌ @ reduce.jl:289 Base.mapfoldl(f, op, itr)
+  ││││││┌ @ reduce.jl:162 Base.#mapfoldl#233(Base._InitialValue(), #self#, f, op, itr)
+  │││││││┌ @ reduce.jl:162 Base.mapfoldl_impl(f, op, init, itr)
+  ││││││││┌ @ reduce.jl:44 Base.foldl_impl(op′, nt, itr′)
+  │││││││││┌ @ reduce.jl:48 Base._foldl_impl(op, nt, itr)
+  ││││││││││┌ @ reduce.jl:62 op(v, Base.getindex(y, 1))
+  │││││││││││┌ @ reduce.jl:81 Base.getproperty(op, :rf)(acc, x)
+  ││││││││││││┌ @ reduce.jl:24 Base.+(x, y)
+  │││││││││││││ no matching method found for call signature: Base.+(x::Char, y::Char)
+  ││││││││││││└────────────────
+  │││││││││┌ @ reduce.jl:49 Base.reduce_empty_iter(op, itr)
+  ││││││││││┌ @ reduce.jl:356 Base.reduce_empty_iter(op, itr, Base.IteratorEltype(itr))
+  │││││││││││┌ @ reduce.jl:357 Base.reduce_empty(op, Base.eltype(itr))
+  ││││││││││││┌ @ reduce.jl:330 Base.reduce_empty(Base.getproperty(op, :rf), _)
+  │││││││││││││┌ @ reduce.jl:322 Base.reduce_empty(Base.+, _)
+  ││││││││││││││┌ @ reduce.jl:313 Base.zero(_)
+  │││││││││││││││ no matching method found for call signature: Base.zero(_::Type{Char})
+  ││││││││││││││└─────────────────
+  Char
+  ```
+  > With type annotations:
+  ```julia
+  julia> @report_call annotate_types = true sum("julia")
+  ═════ 2 possible errors found ═════
+  ┌ @ reduce.jl:530 Base.#sum#241(Base.pairs(Core.NamedTuple()::NamedTuple{(), Tuple{}})::Base.Pairs{Symbol, Union{}, Tuple{}, NamedTuple{(), Tuple{}}}, #self#::typeof(sum), a::String)
+  │┌ @ reduce.jl:530 Base.sum(Base.identity, a::String)
+  ││┌ @ reduce.jl:503 Base.#sum#240(Base.pairs(Core.NamedTuple()::NamedTuple{(), Tuple{}})::Base.Pairs{Symbol, Union{}, Tuple{}, NamedTuple{(), Tuple{}}}, #self#::typeof(sum), f::typeof(identity), a::String)
+  │││┌ @ reduce.jl:503 Base.mapreduce(f::typeof(identity), Base.add_sum, a::String)
+  ││││┌ @ reduce.jl:289 Base.#mapreduce#237(Base.pairs(Core.NamedTuple()::NamedTuple{(), Tuple{}})::Base.Pairs{Symbol, Union{}, Tuple{}, NamedTuple{(), Tuple{}}}, #self#::typeof(mapreduce), f::typeof(identity), op::typeof(Base.add_sum), itr::String)
+  │││││┌ @ reduce.jl:289 Base.mapfoldl(f::typeof(identity), op::typeof(Base.add_sum), itr::String)
+  ││││││┌ @ reduce.jl:162 Base.#mapfoldl#233(Base._InitialValue()::Base._InitialValue, #self#::typeof(mapfoldl), f::typeof(identity), op::typeof(Base.add_sum), itr::String)
+  │││││││┌ @ reduce.jl:162 Base.mapfoldl_impl(f::typeof(identity), op::typeof(Base.add_sum), init::Base._InitialValue, itr::String)
+  ││││││││┌ @ reduce.jl:44 Base.foldl_impl(op′::Base.BottomRF{typeof(Base.add_sum)}, nt::Base._InitialValue, itr′::String)
+  │││││││││┌ @ reduce.jl:49 Base.reduce_empty_iter(op::Base.BottomRF{typeof(Base.add_sum)}, itr::String)
+  ││││││││││┌ @ reduce.jl:356 Base.reduce_empty_iter(op::Base.BottomRF{typeof(Base.add_sum)}, itr::String, Base.IteratorEltype(itr::String)::Base.HasEltype)
+  │││││││││││┌ @ reduce.jl:357 Base.reduce_empty(op::Base.BottomRF{typeof(Base.add_sum)}, Base.eltype(itr::String)::Type{Char})
+  ││││││││││││┌ @ reduce.jl:330 Base.reduce_empty(Base.getproperty(op::Base.BottomRF{typeof(Base.add_sum)}, :rf::Symbol)::typeof(Base.add_sum), _::Type{Char})
+  │││││││││││││┌ @ reduce.jl:322 Base.reduce_empty(Base.+, _::Type{Char})
+  ││││││││││││││┌ @ reduce.jl:313 Base.zero(_::Type{Char})
+  │││││││││││││││ no matching method found for call signature: Base.zero(_::Type{Char})
+  ││││││││││││││└─────────────────
+  │││││││││┌ @ reduce.jl:48 Base._foldl_impl(op::Base.BottomRF{typeof(Base.add_sum)}, nt::Base._InitialValue, itr::String)
+  ││││││││││┌ @ reduce.jl:62 op::Base.BottomRF{typeof(Base.add_sum)}(v::Char, Base.getindex(y::Tuple{Char, Int64}, 1)::Char)
+  │││││││││││┌ @ reduce.jl:81 Base.getproperty(op::Base.BottomRF{typeof(Base.add_sum)}, :rf::Symbol)::typeof(Base.add_sum)(acc::Char, x::Char)
+  ││││││││││││┌ @ reduce.jl:24 Base.+(x::Char, y::Char)
+  │││││││││││││ no matching method found for call signature: Base.+(x::Char, y::Char)
+  ││││││││││││└────────────────
+  Char
+  ```
+
+  !!! note
+      JET always annotates types when printing the error point, e.g. in the example above,
+      the error points below are always type-annotated regardless of this configuration:
+      - `no matching method found for call signature: Base.zero(_::Type{Char})`
+      - `no matching method found for call signature: Base.+(x::Char, y::Char)`
+
+- `fullpath::Bool = false` \\
+  Controls whether or not expand a file path to full path when printing analyzed call stack.
+  Note that paths of Julia's `Base` files will also be expanded when set to `true`.
+"""
+struct PrintConfig
+    print_toplevel_success::Bool
+    print_inference_sucess::Bool
+    annotate_types::Bool
+    fullpath::Bool
+    @jetconfigurable PrintConfig(; print_toplevel_success::Bool = false,
+                                   print_inference_sucess::Bool = true,
+                                   annotate_types::Bool         = false,
+                                   fullpath::Bool               = false,
+                                   ) =
+        return new(print_toplevel_success,
+                   print_inference_sucess,
+                   annotate_types,
+                   fullpath,
+                   )
+end
+
 # utility
 # -------
 
@@ -52,20 +153,21 @@ end
 # toplevel
 # --------
 
-@jetconfigurable function print_reports(io::IO,
-                                        reports::AbstractVector{<:ToplevelErrorReport},
-                                        @nospecialize(postprocess = identity);
-                                        print_toplevel_sucess::Bool = false,
-                                        fullpath::Bool = false,
-                                        )
+function print_reports(io::IO,
+                       reports::AbstractVector{<:ToplevelErrorReport},
+                       @nospecialize(postprocess = identity);
+                       jetconfigs...)
+    config = PrintConfig(; jetconfigs...)
+
     if isempty(reports)
-        if print_toplevel_sucess
+        if config.print_toplevel_sucess
             printlnstyled(io, "No toplevel errors !"; color = NOERROR_COLOR)
         end
         return false
     end
 
-    with_bufferring(:color => get(io, :color, false)) do io
+    arg = :color => get(io, :color, false)
+    with_bufferring(arg) do io
         s = string(pluralize(length(reports), "toplevel error"), " found")
         printlnstyled(io, LEFT_ROOF, s, RIGHT_ROOF; color = HEADER_COLOR)
 
@@ -76,7 +178,7 @@ end
         end
 
         for report in reports
-            s = string("┌ @ ", (fullpath ? tofullpath : identity)(string(report.file)), ':', report.line, ' ')
+            s = string("┌ @ ", (config.fullpath ? tofullpath : identity)(string(report.file)), ':', report.line, ' ')
             printlnstyled(io, s; color)
 
             errlines = with_bufferring(arg) do io
@@ -106,18 +208,17 @@ print_report(io, report::ActualErrorWrapped) = showerror(io, report.err, report.
 # inference
 # ---------
 
-@jetconfigurable function print_reports(io::IO,
-                                        reports::AbstractVector{<:InferenceErrorReport},
-                                        @nospecialize(postprocess = identity);
-                                        print_inference_sucess::Bool = true,
-                                        fullpath::Bool = false,
-                                        annotate_types::Bool = false,
-                                        )
+function print_reports(io::IO,
+                       reports::AbstractVector{<:InferenceErrorReport},
+                       @nospecialize(postprocess = identity);
+                       jetconfigs...)
+    config = PrintConfig(; jetconfigs...)
+
     # XXX the same hack is already imposed in `_typeinf`, so we may not need this
     reports = unique(get_identity_key, reports)
 
     if isempty(reports)
-        if print_inference_sucess
+        if config.print_inference_sucess
             printlnstyled(io, "No errors !"; color = NOERROR_COLOR)
         end
         return false
@@ -136,7 +237,7 @@ print_report(io, report::ActualErrorWrapped) = showerror(io, report.err, report.
                 toplevel_linfo_hash = new_toplevel_linfo_hash
                 wrote_linfos = Set{UInt64}()
             end
-            print_report(io, report, wrote_linfos; fullpath, annotate_types)
+            print_report(io, report, config, wrote_linfos)
         end
     end |> postprocess |> Fix1(print, io)
 
@@ -144,9 +245,9 @@ print_report(io, report::ActualErrorWrapped) = showerror(io, report.err, report.
 end
 
 # traverse abstract call stack, print frames
-function print_report(io, report::InferenceErrorReport, wrote_linfos, depth = 1; kwargs...)
+function print_report(io, report::InferenceErrorReport, config, wrote_linfos, depth = 1)
     if length(report.st) == depth # error here
-        return print_error_frame(io, report, depth; kwargs...)
+        return print_error_frame(io, report, config, depth)
     end
 
     frame = report.st[depth]
@@ -157,14 +258,14 @@ function print_report(io, report::InferenceErrorReport, wrote_linfos, depth = 1;
     push!(wrote_linfos, linfo_hash)
 
     # print current frame and go into deeper
-    should_print && print_frame(io, frame, depth, false; kwargs...)
-    print_report(io, report, wrote_linfos, depth + 1; kwargs...)
+    should_print && print_frame(io, frame, config, depth, false)
+    print_report(io, report, config, wrote_linfos, depth + 1)
 end
 
-function print_error_frame(io, report, depth; kwargs...)
+function print_error_frame(io, report, config, depth)
     frame = report.st[depth]
 
-    len = print_frame(io, frame, depth, true; kwargs...)
+    len = print_frame(io, frame, config, depth, true)
     print_rails(io, depth-1)
     print_error_report(io, report)
 
@@ -172,40 +273,35 @@ function print_error_frame(io, report, depth; kwargs...)
     printlnstyled(io, '└', '─'^len; color = ERROR_COLOR)
 end
 
-function print_frame(io, frame, depth, is_err;
-                     fullpath = false,
-                     kwargs...)
+function print_frame(io, frame, config, depth, is_err)
     print_rails(io, depth-1)
 
     color = is_err ? ERROR_COLOR : RAIL_COLORS[(depth)%N_RAILS+1]
-    s = string("┌ @ ", (fullpath ? tofullpath : identity)(string(frame.file)), ':', frame.line)
+    s = string("┌ @ ", (config.fullpath ? tofullpath : identity)(string(frame.file)), ':', frame.line)
     printstyled(io, s, ' '; color)
-    print_signature(io, frame.sig; kwargs...)
+    print_signature(io, frame.sig, config)
 
     return length(s) # the length of frame info string
 end
 
-function print_signature(io, sig; kwargs...)
+function print_signature(io, sig, config; kwargs...)
     for a in sig
-        _print_signature(io, a; kwargs...)
+        _print_signature(io, a, config; kwargs...)
     end
     println(io)
 end
-_print_signature(io, a::Union{AbstractChar,AbstractString};
-                 annotate_types = false,
-                 kwargs...) =
-    printstyled(io, a)
-function _print_signature(io, @nospecialize(typ); annotate_types = false, kwargs...)
-    annotate_types || return
-
-    printstyled(io, "::", string(typ); color = TYPE_ANNOTATION_COLOR)
+_print_signature(io, a::Union{AbstractChar,AbstractString}, config; kwargs...) =
+    printstyled(io, a; kwargs...)
+function _print_signature(io, @nospecialize(typ), config; kwargs...)
+    config.annotate_types || return
+    printstyled(io, "::", string(typ); color = TYPE_ANNOTATION_COLOR, kwargs...)
 end
 
 # default error report printer
 function print_error_report(io, report::InferenceErrorReport)
     printstyled(io, "│ ", report.msg, ": "; color = ERROR_COLOR)
-    print_signature(io, report.sig;
-                    annotate_types = true, # always annotate types for errored signatures
+    print_signature(io, report.sig,
+                    (; annotate_types = true); # always annotate types for errored signatures
                     bold = true,
                     )
 end
