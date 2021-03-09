@@ -39,7 +39,7 @@ Configurations for Julia's native type inference routine:
 
 !!! note
     You can also specify all the other parameters that `Core.Compiler.InferenceParams` can accept,
-    e.g. `max_methods`, `union_splitting`, etc.
+    e.g. `max_methods::Int = 3`, `union_splitting::Int = 4`, etc.
 """
 @jetconfigurable JETInferenceParams(; ipo_constant_propagation::Bool = true,
                                       aggressive_constant_propagation::Bool = true,
