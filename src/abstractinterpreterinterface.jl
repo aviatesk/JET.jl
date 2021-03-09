@@ -5,16 +5,69 @@
 """
 Configurations for JET analysis:
 
+- `strict_condition_check::Bool = false` \\
+  Enables strict condition check.
+  JET reports an error if a condition expression type is "non-boolean" type. In a case when
+    the condition type is `Union`, JET will report if either of union split case is
+    non-boolean type, but this can lead to lots of false positive error reports when the
+    code is not well-typed, because Julia `Base` defines generic functions that are commonly
+    used at a conditional context but also may return "non-boolean" values, e.g.:
+    - `!(::Function) -> Function`
+    - `!(::Missing) -> Missing`
+    - `==(::Missing, ::Any) -> Missing`
+    - `==(::Any, ::Missing)::Missing`
+    and thus loosely-typed conditional expression often becomes e.g. `Union{Bool, Missing}`,
+    and consequently JET will report it as "non-boolean" type
+    (NOTE: in Julia `Missing` is certainly not valid conditional type).
+  If this configuration is set to `false`, JET enables an heuristic to avoid those false
+    positive error reports and won't report an error if a condition expression type is
+    `Union` and either of its union split case is `Function` or `Missing`.
+
+  The effect of this configuration can be described with the following example:
+
+  > with `strict_condition_check::Bool = false` (default)
+  ```julia
+  julia> test_f() = Dict('a' => 1, :b => 2) # ::Dict{Any,Int}
+  test_f (generic function with 1 method)
+
+  julia> @report_call test_f()
+  No errors !
+  Dict{Any, Int64}
+  ```
+
+  > with `strict_condition_check::Bool = true`
+  ```julia
+  julia> test_f() = Dict('a' => 1, :b => 2) # ::Dict{Any,Int}
+  test_f (generic function with 1 method)
+
+  julia> @report_call strict_condition_check = true test_f()
+  ═════ 1 possible error found ═════
+  ┌ @ REPL[2]:1 Main.Dict(Main.=>('a', 1), Main.=>(:b, 2))
+  │┌ @ dict.jl:125 Base.Dict(ps)
+  ││┌ @ dict.jl:129 Base.dict_with_eltype(#308, kv, Base.eltype(kv))
+  │││┌ @ abstractdict.jl:539 Base.grow_to!(Base.dict_with_eltype(DT_apply, _5), kv)
+  ││││┌ @ dict.jl:145 Base.grow_to!(dest2, itr, st)
+  │││││┌ @ dict.jl:159 Base.setindex!(new, v, k)
+  ││││││┌ @ dict.jl:383 Base.ht_keyindex2!(h, key)
+  │││││││┌ @ dict.jl:328 goto %35 if not Base.isequal(key, Base.getindex(keys, index))
+  ││││││││ for 1 of union split cases, non-boolean (Missing) used in boolean context: goto %35 if not Base.isequal(key::Symbol, Base.getindex(keys::Vector{Any}, index::Int64)::Any)::Union{Missing, Bool}
+  │││││││└───────────────
+  Dict{Any, Int64}
+  ```
+
 - `ignore_native_remarks::Bool = true` \\
   If `true`, JET won't construct nor cache reports of "native remarks", which may speed up analysis time.
   "Native remarks" are information that Julia's native compiler emits about how type inference routine goes,
   and those remarks are less interesting in term of "error checking", so JET ignores them by default.
 """
 struct JETAnalysisParams
+    strict_condition_check::Bool
     ignore_native_remarks::Bool
-    @jetconfigurable JETAnalysisParams(; ignore_native_remarks::Bool = true,
+    @jetconfigurable JETAnalysisParams(; strict_condition_check::Bool = false,
+                                         ignore_native_remarks::Bool  = true,
                                          ) =
-        return new(ignore_native_remarks,
+        return new(strict_condition_check,
+                   ignore_native_remarks,
                    )
 end
 

@@ -1095,7 +1095,8 @@ function CC.abstract_eval_value(interp::JETInterpreter, @nospecialize(e), vtypes
                 ts = Type[]
                 for t in Base.uniontypes(t)
                     if typeintersect(Bool, t) !== Bool
-                        if !(t <: Function || # !(::Function)
+                        if JETAnalysisParams(interp).strict_condition_check ||
+                           !(t <: Function || # !(::Function)
                              t === Missing || # ==(::Missing, ::Any), ==(::Any, ::Missing), ...
                              false)
                             push!(ts, t)

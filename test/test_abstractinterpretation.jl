@@ -194,6 +194,22 @@ end
         end
         @test isempty(interp.reports) # very untyped, we can't report on this ...
     end
+
+    # `strict_condition_check` configuration
+    let
+        # `==(::Missing, ::Any)`
+        interp, frame = profile_call((Any,Symbol); strict_condition_check = false) do a, b
+            a == b ? 0 : 1
+        end
+        @test isempty(interp.reports)
+        interp, frame = profile_call((Any,Symbol); strict_condition_check = true) do a, b
+            a == b ? 0 : 1
+        end
+        @test any(interp.reports) do r
+            isa(r, NonBooleanCondErrorReport) &&
+            r.t == Type[Missing]
+        end
+    end
 end
 
 @testset "inference with abstract global variable" begin
