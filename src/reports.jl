@@ -239,7 +239,7 @@ extract_type_decls(x) = @isexpr(x, :(::)) ? last(x.args) : Any
 
 @reportdef LocalUndefVarErrorReport(interp, sv, name::Symbol) track_from_frame = true
 
-@reportdef NonBooleanCondErrorReport(interp, sv, @nospecialize(t::Type))
+@reportdef NonBooleanCondErrorReport(interp, sv, @nospecialize(t::Union{Type,Vector{Type}}))
 
 @reportdef DivideErrorReport(interp, sv)
 
@@ -447,8 +447,9 @@ function _get_sig_type(interp#=::JETInterpreter=#, ::InferenceState, qn::QuoteNo
 end
 _get_sig_type(interp#=::JETInterpreter=#, ::InferenceState, @nospecialize(x)) = Any[repr(x; context = :compact => true)], nothing
 
+# TODO count invalid unon split case
 get_msg(::Type{NoMethodErrorReport}, interp, sv, unionsplit, @nospecialize(args...)) = unionsplit ?
-    "for one of the union split cases, no matching method found for signature" :
+    "for any of the union split cases, no matching method found for call signature" :
     "no matching method found for call signature"
 get_msg(::Type{InvalidBuiltinCallErrorReport}, interp, sv, @nospecialize(args...)) =
     "invalid builtin function call"
@@ -458,8 +459,10 @@ get_msg(::Type{GlobalUndefVarErrorReport}, interp, sv, mod, name) =
     "variable $(mod).$(name) is not defined"
 get_msg(::Type{LocalUndefVarErrorReport}, interp, sv, name) =
     "local variable $(name) is not defined"
-get_msg(::Type{NonBooleanCondErrorReport}, interp, sv, @nospecialize(t)) =
-    "non-boolean ($(t)) used in boolean context"
+get_msg(::Type{NonBooleanCondErrorReport}, interp, sv, @nospecialize(t::Type)) =
+    "non-boolean ($t) used in boolean context"
+get_msg(::Type{NonBooleanCondErrorReport}, interp, sv, ts::Vector{Type}) =
+    "for $(length(ts)) of union split cases, non-boolean ($(join(ts, ','))) used in boolean context"
 @eval get_msg(::Type{DivideErrorReport}, interp, sv) = $(let
     io = IOBuffer()
     showerror(io, DivideError())

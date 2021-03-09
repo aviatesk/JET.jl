@@ -155,6 +155,7 @@ end
 end
 
 @testset "report non-boolean condition error" begin
+    # simple case
     let
         interp, frame = profile_call((Int,)) do a
             a ? a : nothing
@@ -165,11 +166,25 @@ end
         @test er.t === Int
     end
 
+    # don't report when a type can be `Bool` (Bool ⊑ type)
     let
-        interp, frame = profile_call((Any,)) do a
+        interp, frame = profile_call((Integer,)) do a
             a ? a : nothing
         end
         @test isempty(interp.reports)
+    end
+
+    # report union split case
+    let
+        interp, frame = profile_call((Union{Nothing,Bool},)) do a
+            a ? a : false
+        end
+        @test length(interp.reports) === 1
+        let r = first(interp.reports)
+            @test r isa NonBooleanCondErrorReport
+            @test r.t == [Nothing]
+            @test occursin("for 1 of union split cases", r.msg)
+        end
     end
 
     let
@@ -178,6 +193,22 @@ end
             first(anyary) ? first(anyary) : nothing
         end
         @test isempty(interp.reports) # very untyped, we can't report on this ...
+    end
+
+    # `strict_condition_check` configuration
+    let
+        # `==(::Missing, ::Any)`
+        interp, frame = profile_call((Any,Symbol); strict_condition_check = false) do a, b
+            a == b ? 0 : 1
+        end
+        @test isempty(interp.reports)
+        interp, frame = profile_call((Any,Symbol); strict_condition_check = true) do a, b
+            a == b ? 0 : 1
+        end
+        @test any(interp.reports) do r
+            isa(r, NonBooleanCondErrorReport) &&
+            r.t == Type[Missing]
+        end
     end
 end
 

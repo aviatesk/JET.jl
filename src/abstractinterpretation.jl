@@ -1090,9 +1090,28 @@ function CC.abstract_eval_value(interp::JETInterpreter, @nospecialize(e), vtypes
     stmt = get_stmt(sv)
     if isa(stmt, GotoIfNot)
         t = widenconst(ret)
-        if t !== Bottom && !⊑(Bool, t)
-            report!(interp, NonBooleanCondErrorReport(interp, sv, t))
-            ret = Bottom
+        if t !== Bottom
+            if isa(t, Union)
+                ts = Type[]
+                for t in Base.uniontypes(t)
+                    if typeintersect(Bool, t) !== Bool
+                        if JETAnalysisParams(interp).strict_condition_check ||
+                           !(t <: Function || # !(::Function)
+                             t === Missing || # ==(::Missing, ::Any), ==(::Any, ::Missing), ...
+                             false)
+                            push!(ts, t)
+                        end
+                    end
+                end
+                if !isempty(ts)
+                    report!(interp, NonBooleanCondErrorReport(interp, sv, ts))
+                end
+            else
+                if typeintersect(Bool, t) !== Bool
+                    report!(interp, NonBooleanCondErrorReport(interp, sv, t))
+                    ret = Bottom
+                end
+            end
         end
     end
 
