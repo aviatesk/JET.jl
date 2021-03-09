@@ -12,8 +12,8 @@ struct AnalysisResult
 end
 
 struct AnalysisParams
-    # disables caching of native remarks (that may speed up profiling time)
-    filter_native_remarks::Bool
+    # ignores (don't construct nor cache) reports of native remarks (, which may speed up profiling time)
+    ignore_native_remarks::Bool
 end
 
 mutable struct JETInterpreter <: AbstractInterpreter
@@ -151,7 +151,7 @@ CC.lock_mi_inference(::JETInterpreter, ::MethodInstance) = nothing
 CC.unlock_mi_inference(::JETInterpreter, ::MethodInstance) = nothing
 
 # function CC.add_remark!(interp::JETInterpreter, sv::InferenceState, s::String)
-#     AnalysisParams(interp).filter_native_remarks && return
+#     AnalysisParams(interp).ignore_native_remarks && return
 #     push!(interp.native_remarks, NativeRemark(interp, sv, s))
 #     return
 # end
@@ -191,9 +191,9 @@ function gen_opt_params()
 end
 
 # TODO configurable analysis, e.g. ignore user-specified modules and such
-@jetconfigurable function gen_analysis_params(; filter_native_remarks::Bool = true,
+@jetconfigurable function gen_analysis_params(; ignore_native_remarks::Bool = true,
                                                 )
-    return AnalysisParams(filter_native_remarks)
+    return AnalysisParams(ignore_native_remarks)
 end
 
 get_id(interp::JETInterpreter) = interp.id
