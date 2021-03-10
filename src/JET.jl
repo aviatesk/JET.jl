@@ -444,37 +444,19 @@ function profile_text(io::IO,
                       text::AbstractString,
                       filename::AbstractString = "top-level",
                       mod::Module = Main;
-                      profiling_logger::Union{Nothing,IO} = nothing,
                       jetconfigs...)
-    included_files, reports, postprocess = collect_reports(profiling_logger,
-                                                           mod,
+    included_files, reports, postprocess = collect_reports(mod,
                                                            text,
                                                            filename;
-                                                           jetconfigs...,
-                                                           )
+                                                           jetconfigs...)
     return included_files, print_reports(io, reports, postprocess; jetconfigs...)
 end
 profile_text(args...; jetconfigs...) = profile_text(stdout::IO, args...; jetconfigs...)
 
-collect_reports(::Nothing, args...; jetconfigs...) = collect_reports(args...; jetconfigs...)
-function collect_reports(logger::IO, args...; jetconfigs...)
-    print(logger, "profiling from ", #= filename =# last(args), " ...")
-    s = time()
-
-    ret = collect_reports(args...; jetconfigs...)
-
-    sec = round(time() - s; digits = 3)
-
-    print(logger, '\b'^3)
-    println(logger, "(finished in $(sec) sec)")
-
-    return ret
-end
-
 function collect_reports(actualmod, text, filename; jetconfigs...)
-    virtualmod = gen_virtual_module(actualmod)
-
     interp = JETInterpreter(; jetconfigs...)
+
+    virtualmod = gen_virtual_module(actualmod)
     ret, interp = virtual_process!(text,
                                    filename,
                                    virtualmod,
