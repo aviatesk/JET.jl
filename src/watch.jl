@@ -1,3 +1,42 @@
+"""
+Configurations for "watch" mode.
+
+---
+- `revise_all::Bool = true` \\
+  Redirected to `Revise.entr`'s `all` keyword argument.
+  When set to `true`, JET will retrigger analysis as soon as code updates are detected in
+    any module tracked by Revise.
+  Currently when encountering `import/using` statements, JET won't perform analysis, but
+    rather will just load the modules as usual execution (this also means Revise will track
+    those modules).
+  So if you're editing both files analyzed by JET and modules that are used within the files,
+    this configuration should be enabled.
+---
+- `revise_modules = nothing` \\
+  Redirected to `Revise.entr`'s `modules` positional argument.
+  If a iterator of `Module` is given, JET will retrigger analysis whenever code in `modules` updates.
+
+  !!! tip
+      This configuration is useful when your're also editing files that are not tracked by Revise,
+      e.g. editing functions defined in `Base`:
+      ```julia
+      # re-performe analysis when you make a change to `Base`
+      profile_and_watch_file(yourfile; revise_modules = [Base])
+      ```
+-
+"""
+struct WatchConfig
+    # Revise configurations
+    revise_all::Bool
+    revise_modules
+    @jetconfigurable WatchConfig(; revise_all::Bool = true,
+                                   revise_modules   = nothing,
+                                   ) =
+        return new(revise_all,
+                   revise_modules,
+                   )
+end
+
 function profile_and_watch_file(args...; kwargs...)
     if @isdefined(Revise)
         _profile_and_watch_file(args...; kwargs...)
@@ -16,23 +55,22 @@ _profile_and_watch_file(args...; kwargs...) = _profile_and_watch_file(stdout::IO
 function _profile_and_watch_file(io::IO,
                                  filename::AbstractString,
                                  args...;
-                                 # revise options
-                                 modules = nothing,
-                                 all::Bool = true,
-                                 # JET configurations
-                                 profiling_logger::Union{Nothing,IO} = io, # enable logger by default for watch mode
+                                 # enable info logger by default for watch mode
+                                 toplevel_logger::Union{Nothing,IO} = IOContext(io, LOGGER_LEVEL_KEY => INFO_LOGGER_LEVEL),
                                  jetconfigs...)
+    config = WatchConfig(; jetconfigs...)
+
     included_files, _ = profile_file(io, filename, args...;
-                                     profiling_logger,
+                                     toplevel_logger,
                                      jetconfigs...)
 
     interrupted = false
     while !interrupted
         try
-            Revise.entr(collect(included_files), modules; all) do
+            Revise.entr(collect(included_files), config.revise_modules; all = config.revise_all) do
                 println(io)
                 included_files′, _ = profile_file(io, filename, args...;
-                                                  profiling_logger,
+                                                  toplevel_logger,
                                                   jetconfigs...)
                 if any(∉(included_files), included_files′)
                     # refresh watch files
