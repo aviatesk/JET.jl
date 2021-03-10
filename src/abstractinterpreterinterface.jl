@@ -24,37 +24,37 @@ Configurations for JET analysis
     positive error reports and won't report an error if a condition expression type is
     `Union` and either of its union split case is `Function` or `Missing`.
 
-  The effect of this configuration can be described with the following example:
+  The effect of this configuration can be described with the following examples:
 
-  > with `strict_condition_check::Bool = false` (default)
-  ```julia
-  julia> test_f() = Dict('a' => 1, :b => 2) # ::Dict{Any,Int}
-  test_f (generic function with 1 method)
+  * with `strict_condition_check::Bool = false` (default)
+    ```julia
+    julia> test_f() = Dict('a' => 1, :b => 2) # ::Dict{Any,Int}
+    test_f (generic function with 1 method)
 
-  julia> @report_call test_f()
-  No errors !
-  Dict{Any, Int64}
-  ```
+    julia> @report_call test_f()
+    No errors !
+    Dict{Any, Int64}
+    ```
 
-  > with `strict_condition_check::Bool = true`
-  ```julia
-  julia> test_f() = Dict('a' => 1, :b => 2) # ::Dict{Any,Int}
-  test_f (generic function with 1 method)
+  * with `strict_condition_check::Bool = true`
+    ```julia
+    julia> test_f() = Dict('a' => 1, :b => 2) # ::Dict{Any,Int}
+    test_f (generic function with 1 method)
 
-  julia> @report_call strict_condition_check = true test_f()
-  ═════ 1 possible error found ═════
-  ┌ @ REPL[2]:1 Main.Dict(Main.=>('a', 1), Main.=>(:b, 2))
-  │┌ @ dict.jl:125 Base.Dict(ps)
-  ││┌ @ dict.jl:129 Base.dict_with_eltype(#308, kv, Base.eltype(kv))
-  │││┌ @ abstractdict.jl:539 Base.grow_to!(Base.dict_with_eltype(DT_apply, _5), kv)
-  ││││┌ @ dict.jl:145 Base.grow_to!(dest2, itr, st)
-  │││││┌ @ dict.jl:159 Base.setindex!(new, v, k)
-  ││││││┌ @ dict.jl:383 Base.ht_keyindex2!(h, key)
-  │││││││┌ @ dict.jl:328 goto %35 if not Base.isequal(key, Base.getindex(keys, index))
-  ││││││││ for 1 of union split cases, non-boolean (Missing) used in boolean context: goto %35 if not Base.isequal(key::Symbol, Base.getindex(keys::Vector{Any}, index::Int64)::Any)::Union{Missing, Bool}
-  │││││││└───────────────
-  Dict{Any, Int64}
-  ```
+    julia> @report_call strict_condition_check = true test_f()
+    ═════ 1 possible error found ═════
+    ┌ @ REPL[2]:1 Main.Dict(Main.=>('a', 1), Main.=>(:b, 2))
+    │┌ @ dict.jl:125 Base.Dict(ps)
+    ││┌ @ dict.jl:129 Base.dict_with_eltype(#308, kv, Base.eltype(kv))
+    │││┌ @ abstractdict.jl:539 Base.grow_to!(Base.dict_with_eltype(DT_apply, _5), kv)
+    ││││┌ @ dict.jl:145 Base.grow_to!(dest2, itr, st)
+    │││││┌ @ dict.jl:159 Base.setindex!(new, v, k)
+    ││││││┌ @ dict.jl:383 Base.ht_keyindex2!(h, key)
+    │││││││┌ @ dict.jl:328 goto %35 if not Base.isequal(key, Base.getindex(keys, index))
+    ││││││││ for 1 of union split cases, non-boolean (Missing) used in boolean context: goto %35 if not Base.isequal(key::Symbol, Base.getindex(keys::Vector{Any}, index::Int64)::Any)::Union{Missing, Bool}
+    │││││││└───────────────
+    Dict{Any, Int64}
+    ```
 ---
 - `ignore_native_remarks::Bool = true` \\
   If `true`, JET won't construct nor cache reports of "native remarks", which may speed up analysis time.
@@ -166,14 +166,14 @@ Logging configurations for JET analysis:
   Currently supported logging levels are either of $(LOGGER_LEVELS_DESC).
 
   Examples:
-  > logs into `stdout`
-  ```julia
-  julia> profile_file(filename; toplevel_logger = stdout)
-  ```
-  > logs into `io::IOBuffer` with "debug" logger level
-  ```julia
-  profile_file(filename; toplevel_logger = IOContext(io, $(repr(LOGGER_LEVEL_KEY)) => $DEBUG_LOGGER_LEVEL));
-  ```
+  * logs into `stdout`
+    ```julia
+    julia> profile_file(filename; toplevel_logger = stdout)
+    ```
+  * logs into `io::IOBuffer` with "debug" logger level
+    ```julia
+    profile_file(filename; toplevel_logger = IOContext(io, $(repr(LOGGER_LEVEL_KEY)) => $DEBUG_LOGGER_LEVEL));
+    ```
 ---
 - `inference_logger::Union{Nothing,IO} = nothing` \\
   If `IO` object is given, it will track JET's abstract interpretation routine.
@@ -181,14 +181,14 @@ Logging configurations for JET analysis:
   Currently supported logging levels are either of $(LOGGER_LEVELS_DESC).
 
   Examples:
-  > logs into `stdout`
-  ```julia
-  profile_call(f, args...; inference_logger = stdout)
-  ```
-  > logs into `io::IOBuffer` with "debug" logger level
-  ```julia
-  profile_call(f, args...; inference_logger = IOContext(io, $(repr(LOGGER_LEVEL_KEY)) => $DEBUG_LOGGER_LEVEL))
-  ```
+  * logs into `stdout`
+    ```julia
+    profile_call(f, args...; inference_logger = stdout)
+    ```
+  * logs into `io::IOBuffer` with "debug" logger level
+    ```julia
+    profile_call(f, args...; inference_logger = IOContext(io, $(repr(LOGGER_LEVEL_KEY)) => $DEBUG_LOGGER_LEVEL))
+    ```
 ---
 !!! tip
     Of course you can specify both `toplevel_logger` and `inference_logger` at the same time like below:

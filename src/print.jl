@@ -14,64 +14,64 @@ JET configurations for error printing
 - `annotate_types::Bool = false` \\
   When set to `true`, annotates types when printing analyzed call stack.
   Here are examples:
-  > Default (no annotations):
-  ```julia
-  julia> @report_call sum("julia")
-  ═════ 2 possible errors found ═════
-  ┌ @ reduce.jl:530 Base.#sum#241(Base.pairs(Core.NamedTuple()), #self#, a)
-  │┌ @ reduce.jl:530 Base.sum(Base.identity, a)
-  ││┌ @ reduce.jl:503 Base.#sum#240(Base.pairs(Core.NamedTuple()), #self#, f, a)
-  │││┌ @ reduce.jl:503 Base.mapreduce(f, Base.add_sum, a)
-  ││││┌ @ reduce.jl:289 Base.#mapreduce#237(Base.pairs(Core.NamedTuple()), #self#, f, op, itr)
-  │││││┌ @ reduce.jl:289 Base.mapfoldl(f, op, itr)
-  ││││││┌ @ reduce.jl:162 Base.#mapfoldl#233(Base._InitialValue(), #self#, f, op, itr)
-  │││││││┌ @ reduce.jl:162 Base.mapfoldl_impl(f, op, init, itr)
-  ││││││││┌ @ reduce.jl:44 Base.foldl_impl(op′, nt, itr′)
-  │││││││││┌ @ reduce.jl:48 Base._foldl_impl(op, nt, itr)
-  ││││││││││┌ @ reduce.jl:62 op(v, Base.getindex(y, 1))
-  │││││││││││┌ @ reduce.jl:81 Base.getproperty(op, :rf)(acc, x)
-  ││││││││││││┌ @ reduce.jl:24 Base.+(x, y)
-  │││││││││││││ no matching method found for call signature: Base.+(x::Char, y::Char)
-  ││││││││││││└────────────────
-  │││││││││┌ @ reduce.jl:49 Base.reduce_empty_iter(op, itr)
-  ││││││││││┌ @ reduce.jl:356 Base.reduce_empty_iter(op, itr, Base.IteratorEltype(itr))
-  │││││││││││┌ @ reduce.jl:357 Base.reduce_empty(op, Base.eltype(itr))
-  ││││││││││││┌ @ reduce.jl:330 Base.reduce_empty(Base.getproperty(op, :rf), _)
-  │││││││││││││┌ @ reduce.jl:322 Base.reduce_empty(Base.+, _)
-  ││││││││││││││┌ @ reduce.jl:313 Base.zero(_)
-  │││││││││││││││ no matching method found for call signature: Base.zero(_::Type{Char})
-  ││││││││││││││└─────────────────
-  Char
-  ```
-  > With type annotations:
-  ```julia
-  julia> @report_call annotate_types = true sum("julia")
-  ═════ 2 possible errors found ═════
-  ┌ @ reduce.jl:530 Base.#sum#241(Base.pairs(Core.NamedTuple()::NamedTuple{(), Tuple{}})::Base.Pairs{Symbol, Union{}, Tuple{}, NamedTuple{(), Tuple{}}}, #self#::typeof(sum), a::String)
-  │┌ @ reduce.jl:530 Base.sum(Base.identity, a::String)
-  ││┌ @ reduce.jl:503 Base.#sum#240(Base.pairs(Core.NamedTuple()::NamedTuple{(), Tuple{}})::Base.Pairs{Symbol, Union{}, Tuple{}, NamedTuple{(), Tuple{}}}, #self#::typeof(sum), f::typeof(identity), a::String)
-  │││┌ @ reduce.jl:503 Base.mapreduce(f::typeof(identity), Base.add_sum, a::String)
-  ││││┌ @ reduce.jl:289 Base.#mapreduce#237(Base.pairs(Core.NamedTuple()::NamedTuple{(), Tuple{}})::Base.Pairs{Symbol, Union{}, Tuple{}, NamedTuple{(), Tuple{}}}, #self#::typeof(mapreduce), f::typeof(identity), op::typeof(Base.add_sum), itr::String)
-  │││││┌ @ reduce.jl:289 Base.mapfoldl(f::typeof(identity), op::typeof(Base.add_sum), itr::String)
-  ││││││┌ @ reduce.jl:162 Base.#mapfoldl#233(Base._InitialValue()::Base._InitialValue, #self#::typeof(mapfoldl), f::typeof(identity), op::typeof(Base.add_sum), itr::String)
-  │││││││┌ @ reduce.jl:162 Base.mapfoldl_impl(f::typeof(identity), op::typeof(Base.add_sum), init::Base._InitialValue, itr::String)
-  ││││││││┌ @ reduce.jl:44 Base.foldl_impl(op′::Base.BottomRF{typeof(Base.add_sum)}, nt::Base._InitialValue, itr′::String)
-  │││││││││┌ @ reduce.jl:49 Base.reduce_empty_iter(op::Base.BottomRF{typeof(Base.add_sum)}, itr::String)
-  ││││││││││┌ @ reduce.jl:356 Base.reduce_empty_iter(op::Base.BottomRF{typeof(Base.add_sum)}, itr::String, Base.IteratorEltype(itr::String)::Base.HasEltype)
-  │││││││││││┌ @ reduce.jl:357 Base.reduce_empty(op::Base.BottomRF{typeof(Base.add_sum)}, Base.eltype(itr::String)::Type{Char})
-  ││││││││││││┌ @ reduce.jl:330 Base.reduce_empty(Base.getproperty(op::Base.BottomRF{typeof(Base.add_sum)}, :rf::Symbol)::typeof(Base.add_sum), _::Type{Char})
-  │││││││││││││┌ @ reduce.jl:322 Base.reduce_empty(Base.+, _::Type{Char})
-  ││││││││││││││┌ @ reduce.jl:313 Base.zero(_::Type{Char})
-  │││││││││││││││ no matching method found for call signature: Base.zero(_::Type{Char})
-  ││││││││││││││└─────────────────
-  │││││││││┌ @ reduce.jl:48 Base._foldl_impl(op::Base.BottomRF{typeof(Base.add_sum)}, nt::Base._InitialValue, itr::String)
-  ││││││││││┌ @ reduce.jl:62 op::Base.BottomRF{typeof(Base.add_sum)}(v::Char, Base.getindex(y::Tuple{Char, Int64}, 1)::Char)
-  │││││││││││┌ @ reduce.jl:81 Base.getproperty(op::Base.BottomRF{typeof(Base.add_sum)}, :rf::Symbol)::typeof(Base.add_sum)(acc::Char, x::Char)
-  ││││││││││││┌ @ reduce.jl:24 Base.+(x::Char, y::Char)
-  │││││││││││││ no matching method found for call signature: Base.+(x::Char, y::Char)
-  ││││││││││││└────────────────
-  Char
-  ```
+  * with `annotate_types = false` (default):
+    ```julia
+    julia> @report_call sum("julia")
+    ═════ 2 possible errors found ═════
+    ┌ @ reduce.jl:530 Base.#sum#241(Base.pairs(Core.NamedTuple()), #self#, a)
+    │┌ @ reduce.jl:530 Base.sum(Base.identity, a)
+    ││┌ @ reduce.jl:503 Base.#sum#240(Base.pairs(Core.NamedTuple()), #self#, f, a)
+    │││┌ @ reduce.jl:503 Base.mapreduce(f, Base.add_sum, a)
+    ││││┌ @ reduce.jl:289 Base.#mapreduce#237(Base.pairs(Core.NamedTuple()), #self#, f, op, itr)
+    │││││┌ @ reduce.jl:289 Base.mapfoldl(f, op, itr)
+    ││││││┌ @ reduce.jl:162 Base.#mapfoldl#233(Base._InitialValue(), #self#, f, op, itr)
+    │││││││┌ @ reduce.jl:162 Base.mapfoldl_impl(f, op, init, itr)
+    ││││││││┌ @ reduce.jl:44 Base.foldl_impl(op′, nt, itr′)
+    │││││││││┌ @ reduce.jl:48 Base._foldl_impl(op, nt, itr)
+    ││││││││││┌ @ reduce.jl:62 op(v, Base.getindex(y, 1))
+    │││││││││││┌ @ reduce.jl:81 Base.getproperty(op, :rf)(acc, x)
+    ││││││││││││┌ @ reduce.jl:24 Base.+(x, y)
+    │││││││││││││ no matching method found for call signature: Base.+(x::Char, y::Char)
+    ││││││││││││└────────────────
+    │││││││││┌ @ reduce.jl:49 Base.reduce_empty_iter(op, itr)
+    ││││││││││┌ @ reduce.jl:356 Base.reduce_empty_iter(op, itr, Base.IteratorEltype(itr))
+    │││││││││││┌ @ reduce.jl:357 Base.reduce_empty(op, Base.eltype(itr))
+    ││││││││││││┌ @ reduce.jl:330 Base.reduce_empty(Base.getproperty(op, :rf), _)
+    │││││││││││││┌ @ reduce.jl:322 Base.reduce_empty(Base.+, _)
+    ││││││││││││││┌ @ reduce.jl:313 Base.zero(_)
+    │││││││││││││││ no matching method found for call signature: Base.zero(_::Type{Char})
+    ││││││││││││││└─────────────────
+    Char
+    ```
+  * with `annotate_types = true`
+    ```julia
+    julia> @report_call annotate_types = true sum("julia")
+    ═════ 2 possible errors found ═════
+    ┌ @ reduce.jl:530 Base.#sum#241(Base.pairs(Core.NamedTuple()::NamedTuple{(), Tuple{}})::Base.Pairs{Symbol, Union{}, Tuple{}, NamedTuple{(), Tuple{}}}, #self#::typeof(sum), a::String)
+    │┌ @ reduce.jl:530 Base.sum(Base.identity, a::String)
+    ││┌ @ reduce.jl:503 Base.#sum#240(Base.pairs(Core.NamedTuple()::NamedTuple{(), Tuple{}})::Base.Pairs{Symbol, Union{}, Tuple{}, NamedTuple{(), Tuple{}}}, #self#::typeof(sum), f::typeof(identity), a::String)
+    │││┌ @ reduce.jl:503 Base.mapreduce(f::typeof(identity), Base.add_sum, a::String)
+    ││││┌ @ reduce.jl:289 Base.#mapreduce#237(Base.pairs(Core.NamedTuple()::NamedTuple{(), Tuple{}})::Base.Pairs{Symbol, Union{}, Tuple{}, NamedTuple{(), Tuple{}}}, #self#::typeof(mapreduce), f::typeof(identity), op::typeof(Base.add_sum), itr::String)
+    │││││┌ @ reduce.jl:289 Base.mapfoldl(f::typeof(identity), op::typeof(Base.add_sum), itr::String)
+    ││││││┌ @ reduce.jl:162 Base.#mapfoldl#233(Base._InitialValue()::Base._InitialValue, #self#::typeof(mapfoldl), f::typeof(identity), op::typeof(Base.add_sum), itr::String)
+    │││││││┌ @ reduce.jl:162 Base.mapfoldl_impl(f::typeof(identity), op::typeof(Base.add_sum), init::Base._InitialValue, itr::String)
+    ││││││││┌ @ reduce.jl:44 Base.foldl_impl(op′::Base.BottomRF{typeof(Base.add_sum)}, nt::Base._InitialValue, itr′::String)
+    │││││││││┌ @ reduce.jl:49 Base.reduce_empty_iter(op::Base.BottomRF{typeof(Base.add_sum)}, itr::String)
+    ││││││││││┌ @ reduce.jl:356 Base.reduce_empty_iter(op::Base.BottomRF{typeof(Base.add_sum)}, itr::String, Base.IteratorEltype(itr::String)::Base.HasEltype)
+    │││││││││││┌ @ reduce.jl:357 Base.reduce_empty(op::Base.BottomRF{typeof(Base.add_sum)}, Base.eltype(itr::String)::Type{Char})
+    ││││││││││││┌ @ reduce.jl:330 Base.reduce_empty(Base.getproperty(op::Base.BottomRF{typeof(Base.add_sum)}, :rf::Symbol)::typeof(Base.add_sum), _::Type{Char})
+    │││││││││││││┌ @ reduce.jl:322 Base.reduce_empty(Base.+, _::Type{Char})
+    ││││││││││││││┌ @ reduce.jl:313 Base.zero(_::Type{Char})
+    │││││││││││││││ no matching method found for call signature: Base.zero(_::Type{Char})
+    ││││││││││││││└─────────────────
+    │││││││││┌ @ reduce.jl:48 Base._foldl_impl(op::Base.BottomRF{typeof(Base.add_sum)}, nt::Base._InitialValue, itr::String)
+    ││││││││││┌ @ reduce.jl:62 op::Base.BottomRF{typeof(Base.add_sum)}(v::Char, Base.getindex(y::Tuple{Char, Int64}, 1)::Char)
+    │││││││││││┌ @ reduce.jl:81 Base.getproperty(op::Base.BottomRF{typeof(Base.add_sum)}, :rf::Symbol)::typeof(Base.add_sum)(acc::Char, x::Char)
+    ││││││││││││┌ @ reduce.jl:24 Base.+(x::Char, y::Char)
+    │││││││││││││ no matching method found for call signature: Base.+(x::Char, y::Char)
+    ││││││││││││└────────────────
+    Char
+    ```
 
   !!! note
       JET always annotates types when printing the error point, e.g. in the example above,
