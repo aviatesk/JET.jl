@@ -23,7 +23,6 @@ Configurations for "watch" mode.
       # re-performe analysis when you make a change to `Base`
       profile_and_watch_file(yourfile; revise_modules = [Base])
       ```
--
 """
 struct WatchConfig
     # Revise configurations
