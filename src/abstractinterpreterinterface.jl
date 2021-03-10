@@ -7,7 +7,7 @@ Configurations for JET analysis:
 
 - `strict_condition_check::Bool = false` \\
   Enables strict condition check.
-  JET reports an error if a condition expression type is "non-boolean" type. In a case when
+  JET reports an error if a condition expression type is "non-boolean". In a case when
     the condition type is `Union`, JET will report if either of union split case is
     non-boolean type, but this can lead to lots of false positive error reports when the
     code is not well-typed, because Julia `Base` defines generic functions that are commonly
@@ -94,14 +94,14 @@ Configurations for Julia's native type inference routine:
     You can also specify all the other parameters that `Core.Compiler.InferenceParams` can accept,
     e.g. `max_methods::Int = 3`, `union_splitting::Int = 4`, etc.
 """
-@jetconfigurable JETInferenceParams(; ipo_constant_propagation::Bool = true,
+@jetconfigurable JETInferenceParams(; ipo_constant_propagation::Bool        = true,
                                       aggressive_constant_propagation::Bool = true,
-                                      unoptimize_throw_blocks::Bool = false,
-                                      max_methods::Int = 3,
-                                      union_splitting::Int = 4,
-                                      apply_union_enum::Int = 8,
-                                      tupletype_depth::Int = 3,
-                                      tuple_splat::Int = 32,
+                                      unoptimize_throw_blocks::Bool         = false,
+                                      max_methods::Int                      = 3,
+                                      union_splitting::Int                  = 4,
+                                      apply_union_enum::Int                 = 8,
+                                      tupletype_depth::Int                  = 3,
+                                      tuple_splat::Int                      = 32,
                                       ) =
     return InferenceParams(; ipo_constant_propagation,
                              aggressive_constant_propagation,
@@ -115,14 +115,14 @@ Configurations for Julia's native type inference routine:
 
 # here we just try to sync `OptimizationParams` with  `InferenceParams`
 # (the same JET configurations will be passed on here)
-JETOptimizationParams(; # inlining::Bool = inlining_enabled(),
-                        # inline_cost_threshold::Int = 100,
-                        # inline_nonleaf_penalty::Int = 1000,
-                        # inline_tupleret_bonus::Int = 250,
-                        # inline_error_path_cost::Int = 20,
-                        max_methods::Int = 3,
-                        tuple_splat::Int = 32,
-                        union_splitting::Int = 4,
+JETOptimizationParams(; # inlining::Bool                = inlining_enabled(),
+                        # inline_cost_threshold::Int    = 100,
+                        # inline_nonleaf_penalty::Int   = 1000,
+                        # inline_tupleret_bonus::Int    = 250,
+                        # inline_error_path_cost::Int   = 20,
+                        max_methods::Int              = 3,
+                        tuple_splat::Int              = 32,
+                        union_splitting::Int          = 4,
                         unoptimize_throw_blocks::Bool = false,
                         _jetconfigs...) =
     # NOTE we always disable inlining, because our current strategy to find undefined
@@ -130,10 +130,10 @@ JETOptimizationParams(; # inlining::Bool = inlining_enabled(),
     # TODO enable inlining to get better JET analysis performance ?
     # XXX but the self-profiling with `inlining = true` shows performance regression ...
     return OptimizationParams(; inlining = false,
-                                # inline_cost_threshold::Int = 100,
-                                # inline_nonleaf_penalty::Int = 1000,
-                                # inline_tupleret_bonus::Int = 250,
-                                # inline_error_path_cost::Int = 20,
+                                # inline_cost_threshold,
+                                # inline_nonleaf_penalty,
+                                # inline_tupleret_bonus,
+                                # inline_error_path_cost,
                                 max_methods,
                                 tuple_splat,
                                 union_splitting,
