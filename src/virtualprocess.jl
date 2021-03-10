@@ -24,12 +24,12 @@ gen_virtual_process_result() = (; included_files = Set{String}(),
                      )::Tuple{VirtualProcessResult,JETInterpreter}
 
 simulates Julia's toplevel execution and profiles error reports, and returns
-`ret::VirtualProcessResult`, which keeps the following information:
-- `ret.included_files::Set{String}`: files that have been profiled
-- `ret.toplevel_error_reports::Vector{ToplevelErrorReport}`: toplevel errors found during the
+`res::VirtualProcessResult`, which keeps the following information:
+- `res.included_files::Set{String}`: files that have been profiled
+- `res.toplevel_error_reports::Vector{ToplevelErrorReport}`: toplevel errors found during the
     text parsing or partial (actual) interpretation; these reports are "critical" and should
     have precedence over `inference_error_reports`
-- `ret.inference_error_reports::Vector{InferenceErrorReport}`: possible error reports found
+- `res.inference_error_reports::Vector{InferenceErrorReport}`: possible error reports found
     by `JETInterpreter`
 
 this function first parses `s::AbstractString` into `toplevelex::Expr` and then iterate the
@@ -56,22 +56,35 @@ function virtual_process!(s::AbstractString,
                           virtualmod::Module,
                           actualmodsym::Symbol,
                           interp::JETInterpreter,
-                          ret::VirtualProcessResult = gen_virtual_process_result(),
+                          res::VirtualProcessResult = gen_virtual_process_result(),
                           )::Tuple{VirtualProcessResult,JETInterpreter}
-    push!(ret.included_files, filename)
+    start = time()
+
+    with_toplevel_logger(interp) do io
+        println(io, "analysis entered into $filename")
+    end
+
+    push!(res.included_files, filename)
 
     toplevelex = parse_input_line(s; filename)
 
     # if there's any syntax error, try to identify all the syntax error location
-    if @isexpr(toplevelex, (:error, :incomplete))
-        append!(ret.toplevel_error_reports, collect_syntax_errors(s, filename))
-        return ret, interp
+    ret = if @isexpr(toplevelex, (:error, :incomplete))
+        append!(res.toplevel_error_reports, collect_syntax_errors(s, filename))
+        res, interp
     # just return if there is nothing to profile
     elseif isnothing(toplevelex)
-        return ret, interp
+        res, interp
+    else
+        virtual_process!(toplevelex, filename, virtualmod, actualmodsym, interp, res)
     end
 
-    return virtual_process!(toplevelex, filename, virtualmod, actualmodsym, interp, ret)
+    with_toplevel_logger(interp) do io
+        sec = round(time() - start; digits = 3)
+        println(io, "analysis from $filename finished in $sec sec")
+    end
+
+    return ret
 end
 
 function virtual_process!(toplevelex::Expr,
@@ -79,14 +92,14 @@ function virtual_process!(toplevelex::Expr,
                           virtualmod::Module,
                           actualmodsym::Symbol,
                           interp::JETInterpreter,
-                          ret::VirtualProcessResult = gen_virtual_process_result(),
+                          res::VirtualProcessResult = gen_virtual_process_result(),
                           )::Tuple{VirtualProcessResult,JETInterpreter}
     @assert @isexpr(toplevelex, :toplevel)
 
     local lnn::LineNumberNode = LineNumberNode(0, filename)
 
     function macroexpand_err_handler(err, st)
-        push!(ret.toplevel_error_reports, ActualErrorWrapped(err, st, filename, lnn.line))
+        push!(res.toplevel_error_reports, ActualErrorWrapped(err, st, filename, lnn.line))
         return nothing
     end
     # `scrub_offset = 4` corresponds to `with_err_handling` -> `f` -> `macroexpand` -> kwfunc (`macroexpand`)
@@ -97,7 +110,7 @@ function virtual_process!(toplevelex::Expr,
         return macroexpand(mod, x; recursive = true #= but want to use `false` here =#)
     end
     function eval_err_handler(err, st)
-        push!(ret.toplevel_error_reports, ActualErrorWrapped(err, st, filename, lnn.line))
+        push!(res.toplevel_error_reports, ActualErrorWrapped(err, st, filename, lnn.line))
         return nothing
     end
     # `scrub_offset = 3` corresponds to `with_err_handling` -> `f` -> `eval`
@@ -105,7 +118,7 @@ function virtual_process!(toplevelex::Expr,
         return Core.eval(mod, x)
     end
     function lower_err_handler(err, st)
-        push!(ret.toplevel_error_reports, ActualErrorWrapped(err, st, filename, lnn.line))
+        push!(res.toplevel_error_reports, ActualErrorWrapped(err, st, filename, lnn.line))
         return nothing
     end
     # `scrub_offset = 3` corresponds to `with_err_handling` -> `f` -> `lower`
@@ -115,7 +128,7 @@ function virtual_process!(toplevelex::Expr,
         # here we should capture syntax errors found during lowering
         if @isexpr(lwr, :error)
             msg = first(lwr.args)
-            push!(ret.toplevel_error_reports, SyntaxErrorReport("syntax: $(msg)", filename, lnn.line))
+            push!(res.toplevel_error_reports, SyntaxErrorReport("syntax: $(msg)", filename, lnn.line))
             return nothing
         end
 
@@ -127,6 +140,10 @@ function virtual_process!(toplevelex::Expr,
     exs = reverse(toplevelex.args)
     while !isempty(exs)
         x = pop!(exs)
+
+        with_toplevel_logger(interp, ≥(DEBUG_LOGGER_LEVEL)) do io
+            println(io, "analyzing ", x)
+        end
 
         # update line info
         if isa(x, LineNumberNode)
@@ -164,7 +181,7 @@ function virtual_process!(toplevelex::Expr,
 
             isnothing(newvirtualmod) && continue # error happened, e.g. duplicated naming
 
-            virtual_process!(newtoplevelex, filename, newvirtualmod::Module, actualmodsym, interp, ret)
+            virtual_process!(newtoplevelex, filename, newvirtualmod::Module, actualmodsym, interp, res)
 
             continue
         end
@@ -185,7 +202,7 @@ function virtual_process!(toplevelex::Expr,
                                       virtualmod,
                                       actualmodsym,
                                       interp,
-                                      ret,
+                                      res,
                                       )
         concretized = partially_interpret!(interp′, virtualmod, src)
 
@@ -194,20 +211,14 @@ function virtual_process!(toplevelex::Expr,
             continue
         end
 
-        interp = JETInterpreter(; # world age gets updated to take in newly added methods defined by `ConcreteInterpreter`
-                                  analysis_params = JETAnalysisParams(interp),
-                                  inf_params      = InferenceParams(interp),
-                                  opt_params      = OptimizationParams(interp),
-                                  concretized     = concretized, # or construct partial `CodeInfo` from remaining abstract statements
-                                  toplevelmod     = virtualmod,
-                                  )
+        interp = JETInterpreter(interp, concretized, virtualmod)
 
         profile_toplevel!(interp, src)
 
-        append!(ret.inference_error_reports, interp.reports) # collect error reports
+        append!(res.inference_error_reports, interp.reports) # collect error reports
     end
 
-    return ret, interp
+    return res, interp
 end
 
 # replace self references of `actualmodsym` with `virtualmod` (as is)
@@ -263,7 +274,10 @@ partially interprets statements in `src` using JuliaInterpreter.jl:
 function partially_interpret!(interp, mod, src)
     concretize = select_statements(src)
 
-    # LoweredCodeUtils.print_with_code(stdout::IO, src, concretize)
+    with_toplevel_logger(interp.interp, ≥(DEBUG_LOGGER_LEVEL)) do io
+        println(io, "concretization plan:")
+        LoweredCodeUtils.print_with_code(io, src, concretize)
+    end
 
     selective_eval_fromstart!(interp, Frame(mod, src), concretize, #= istoplevel =# true)
 
@@ -339,7 +353,7 @@ struct ConcreteInterpreter
     virtualmod::Module
     actualmodsym::Symbol
     interp::JETInterpreter
-    ret::VirtualProcessResult
+    res::VirtualProcessResult
 end
 
 function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node), istoplevel::Bool)
@@ -400,7 +414,6 @@ function JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, fr
     f = fargs[1]
     popfirst!(fargs)  # now it's really just `args`
 
-    # @info "concretizing: " call_expr
     if isinclude(f)
         return handle_include(interp, fargs)
     else
@@ -418,7 +431,7 @@ isinclude(@nospecialize(f::Function)) = nameof(f) === :include
 
 function handle_include(interp, fargs)
     filename = interp.filename
-    ret = interp.ret
+    res = interp.res
     lnn = interp.lnn
     eval_with_err_handling = interp.eval_with_err_handling
     virtualmod = interp.virtualmod
@@ -427,9 +440,9 @@ function handle_include(interp, fargs)
     include_file = normpath(dirname(filename), first(fargs))
 
     # handle recursive `include`s
-    if include_file in ret.included_files
-        report = RecursiveIncludeErrorReport(include_file, ret.included_files, filename, lnn.line)
-        push!(ret.toplevel_error_reports, report)
+    if include_file in res.included_files
+        report = RecursiveIncludeErrorReport(include_file, res.included_files, filename, lnn.line)
+        push!(res.toplevel_error_reports, report)
         return nothing
     end
 
@@ -438,7 +451,7 @@ function handle_include(interp, fargs)
 
     isnothing(include_text) && return nothing # typically no file error
 
-    virtual_process!(include_text::String, include_file, interp.virtualmod, interp.actualmodsym, interp.interp, interp.ret)
+    virtual_process!(include_text::String, include_file, interp.virtualmod, interp.actualmodsym, interp.interp, interp.res)
 
     # TODO: actually, here we need to try to get the last profiling result of the `virtual_process!` call above
     return nothing
@@ -480,7 +493,7 @@ function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame, err)
     end
     st = st[1:i]
 
-    push!(interp.ret.toplevel_error_reports,
+    push!(interp.res.toplevel_error_reports,
           ActualErrorWrapped(err, st, interp.filename, interp.lnn.line))
 
     return nothing

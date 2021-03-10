@@ -1,42 +1,61 @@
 # in this overload we will work on some meta/debug information management
 function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
-    # # print debug info before typeinf
-    # depth = interp.depth
-    # io = stdout::IO
-    # color = RAIL_COLORS[(depth+1)%N_RAILS+1]
-    # print_rails(io, depth)
-    # printstyled(io, "┌ @ "; color)
-    # print(io, frame.linfo)
-    # if is_constant_propagated(frame)
-    #     printstyled(io, " (constant prop': ", frame.result.argtypes, ')'; color = :cyan)
-    # end
-    # file, line = get_file_line(frame.linfo)
-    # print(io, ' ', file, ':', line)
-    # println(io)
+    linfo = frame.linfo
+
+    #= logging start =#
+    local sec, depth
+    logger_activated = !isnothing(JETLogger(interp).inference_logger)
+    if logger_activated
+        sec = time()
+        with_inference_logger(interp, ==(DEBUG_LOGGER_LEVEL)) do io
+            depth = interp.depth
+
+            print_rails(io, depth)
+            printstyled(io, "┌ @ "; color = RAIL_COLORS[(depth+1)%N_RAILS+1])
+            print(io, linfo)
+            if is_constant_propagated(frame)
+                printstyled(io, " (constant prop': ", frame.result.argtypes, ')'; color = NOERROR_COLOR)
+            end
+            file, line = get_file_line(linfo)
+            print(io, ' ', file, ':', line)
+            println(io)
+            interp.depth += 1 # manipulate this only in debug mode
+        end
+    end
+    #= logging end =#
 
     prev_frame = interp.current_frame
     interp.current_frame = frame
-    interp.depth += 1 # for debug
 
     ret = @invoke typeinf(interp::AbstractInterpreter, frame::InferenceState)
 
-    push!(ANALYZED_LINFOS, frame.linfo) # analyzed !
+    push!(ANALYZED_LINFOS, linfo) # analyzed !
 
     interp.current_frame = prev_frame
-    interp.depth -= 1 # for debug
 
-    # # print debug info after typeinf
-    # print_rails(io, depth)
-    # printstyled(io, "└─→ "; color)
-    # result = get_result(frame)
-    # isa(result, InferenceState) || printstyled(io, result; color = TYPE_ANNOTATION_COLOR)
-    # println(io, " (",
-    #             join(filter(!isnothing, (
-    #                  frame.linfo,
-    #                  ret ? nothing : "in cycle",
-    #                  string(length(interp.reports), " reports"),
-    #                  )), ", "),
-    #             ')')
+    #= logging start =#
+    if logger_activated
+        sec = round(time() - sec; digits = 3)
+        with_inference_logger(interp, ==(INFO_LOGGER_LEVEL)) do io
+            println(io, "inference on $linfo finished in $sec sec")
+        end
+        with_inference_logger(interp, ==(DEBUG_LOGGER_LEVEL)) do io
+            print_rails(io, depth)
+            printstyled(io, "└─→ "; color = RAIL_COLORS[(depth+1)%N_RAILS+1])
+            result = get_result(frame)
+            isa(result, InferenceState) || printstyled(io, result; color = TYPE_ANNOTATION_COLOR)
+            println(io, " (",
+                        join(filter(!isnothing, (
+                             linfo,
+                             ret ? nothing : "in cycle",
+                             "$(length(interp.reports)) reports",
+                             "finished in $sec sec"
+                             )), ", "),
+                        ')')
+            interp.depth -= 1 # manipulate this only in debug mode
+        end
+    end
+    #= logging end =#
 
     return ret
 end

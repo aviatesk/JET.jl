@@ -140,6 +140,80 @@ JETOptimizationParams(; # inlining::Bool                = inlining_enabled(),
                                 unoptimize_throw_blocks,
                                 )
 
+const LOGGER_LEVEL_KEY     = :JET_LOGGER_LEVEL
+const INFO_LOGGER_LEVEL    = 0
+const DEBUG_LOGGER_LEVEL   = 1
+const LOGGER_LEVELS        = Dict(INFO_LOGGER_LEVEL  => :info,
+                                  DEBUG_LOGGER_LEVEL => :debug,
+                                  )
+const LOGGER_LEVELS_DESC   = let
+    map(collect(LOGGER_LEVELS)) do (level, desc)
+        "`$level` (\"$desc\" level)"
+    end |> Fix2(join, ", ")
+end
+const DEFAULT_LOGGER_LEVEL = INFO_LOGGER_LEVEL
+get_logger_level(io::IO)   = get(io, LOGGER_LEVEL_KEY, DEFAULT_LOGGER_LEVEL)::Int
+
+"""
+Logging configurations for JET analysis:
+
+---
+- `toplevel_logger::Union{Nothing,IO} = nothing` \\
+  If `IO` object is given, it will track JET's toplevel analysis.
+  Logging level can be specified with `$(repr(LOGGER_LEVEL_KEY))` `IO` property.
+  Currently supported logging levels are either of $(LOGGER_LEVELS_DESC).
+
+  Examples:
+  > logs into `stdout`
+  ```julia
+  julia> profile_file(filename; toplevel_logger = stdout)
+  ```
+  > logs into `io::IOBuffer` with "debug" logger level
+  ```julia
+  profile_file(filename; toplevel_logger = IOContext(io, $(repr(LOGGER_LEVEL_KEY)) => $DEBUG_LOGGER_LEVEL));
+  ```
+---
+- `inference_logger::Union{Nothing,IO} = nothing` \\
+  If `IO` object is given, it will track JET's abstract interpretation routine.
+  Logging level can be specified with `$(repr(LOGGER_LEVEL_KEY))` `IO` property.
+  Currently supported logging levels are either of $(LOGGER_LEVELS_DESC).
+
+  Examples:
+  > logs into `stdout`
+  ```julia
+  profile_call(f, args...; inference_logger = stdout)
+  ```
+  > logs into `io::IOBuffer` with "debug" logger level
+  ```julia
+  profile_call(f, args...; inference_logger = IOContext(io, $(repr(LOGGER_LEVEL_KEY)) => $DEBUG_LOGGER_LEVEL))
+  ```
+---
+!!! tip
+    Of course you can specify both `toplevel_logger` and `inference_logger` at the same time like below:
+    ```julia
+    profile_and_watch_file(filename;
+                           toplevel_logger = IOContext(logger_io, $(repr(LOGGER_LEVEL_KEY)) => $DEBUG_LOGGER_LEVEL),
+                           inference_logger = inference_io)
+    ```
+"""
+struct JETLogger
+    # logger to track toplevel interpretation
+    toplevel_logger::Union{Nothing,IO}
+    # logger to track abstract interpretation routine
+    inference_logger::Union{Nothing,IO}
+    @jetconfigurable function JETLogger(; toplevel_logger::Union{Nothing,IO} = nothing,
+                                          inference_logger::Union{Nothing,IO} = nothing,
+                                          )
+        if isa(toplevel_logger, IO)
+            @assert get_logger_level(toplevel_logger) in keys(LOGGER_LEVELS) "toplevel_logger's $LOGGER_LEVEL_KEY should be either of $LOGGER_LEVELS_DESC"
+        end
+        if isa(inference_logger, IO)
+            @assert get_logger_level(inference_logger) in keys(LOGGER_LEVELS) "inference_logger's $LOGGER_LEVEL_KEY should be either of $LOGGER_LEVELS_DESC"
+        end
+        new(toplevel_logger, inference_logger)
+    end
+end
+
 # XXX we need to consider world range ?
 struct AnalysisResult
     linfo::MethodInstance
@@ -196,6 +270,8 @@ mutable struct JETInterpreter <: AbstractInterpreter
 
     ## debug ##
 
+    logger::JETLogger
+
     # records depth of call stack
     depth::Int
 
@@ -206,7 +282,7 @@ mutable struct JETInterpreter <: AbstractInterpreter
 end
 
 # constructor for fresh analysis
-@jetconfigurable function JETInterpreter(world           = get_world_counter();
+@jetconfigurable function JETInterpreter(world::UInt     = get_world_counter();
                                          current_frame   = nothing,
                                          cache           = AnalysisResult[],
                                          analysis_params = nothing,
@@ -216,11 +292,13 @@ end
                                          concretized     = _CONCRETIZED,
                                          toplevelmod     = _TOPLEVELMOD,
                                          global_slots    = _GLOBAL_SLOTS,
+                                         logger          = nothing,
                                          depth           = 0,
                                          jetconfigs...)
     isnothing(analysis_params) && (analysis_params = JETAnalysisParams(; jetconfigs...))
     isnothing(inf_params)      && (inf_params = JETInferenceParams(; jetconfigs...))
     isnothing(opt_params)      && (opt_params = JETOptimizationParams(; jetconfigs...))
+    isnothing(logger)          && (logger = JETLogger(; jetconfigs...))
     return JETInterpreter(NativeInterpreter(world; inf_params, opt_params),
                           InferenceErrorReport[],
                           UncaughtExceptionReport[],
@@ -232,6 +310,7 @@ end
                           concretized,
                           toplevelmod,
                           global_slots,
+                          logger,
                           0,
                           )
 end
@@ -239,6 +318,20 @@ end
 const _CONCRETIZED  = BitVector()
 const _TOPLEVELMOD  = @__MODULE__
 const _GLOBAL_SLOTS = Dict{Int,Symbol}()
+
+# constructor for sequential toplevel JET analysis
+function JETInterpreter(interp::JETInterpreter, concretized, toplevelmod)
+    return JETInterpreter(# update world age to take in newly added methods defined
+                          # in a previous toplevel interpretation performed by `ConcreteInterpreter`
+                          get_world_counter();
+                          analysis_params = JETAnalysisParams(interp),
+                          inf_params      = InferenceParams(interp),
+                          opt_params      = OptimizationParams(interp),
+                          concretized     = concretized, # or construct partial `CodeInfo` from remaining abstract statements ?
+                          toplevelmod     = toplevelmod,
+                          logger          = JETLogger(interp),
+                          )
+end
 
 # constructor to do additional JET analysis in the middle of parent (non-toplevel) interpretation
 function JETInterpreter(interp::JETInterpreter)
@@ -248,6 +341,7 @@ function JETInterpreter(interp::JETInterpreter)
                           analysis_params = JETAnalysisParams(interp),
                           inf_params      = InferenceParams(interp),
                           opt_params      = OptimizationParams(interp),
+                          logger          = JETLogger(interp),
                           depth           = interp.depth,
                           )
 end
@@ -303,6 +397,8 @@ CC.may_discard_trees(interp::JETInterpreter) = false
 
 JETAnalysisParams(interp::JETInterpreter) = interp.analysis_params
 
+JETLogger(interp::JETInterpreter) = interp.logger
+
 get_id(interp::JETInterpreter) = interp.id
 
 # TODO do report filtering or something configured by `JETAnalysisParams(interp)`
@@ -317,3 +413,18 @@ end
 is_global_slot(interp::JETInterpreter, slot::Int)   = slot in keys(interp.global_slots)
 is_global_slot(interp::JETInterpreter, slot::Slot)  = is_global_slot(interp, slot_id(slot))
 is_global_slot(interp::JETInterpreter, sym::Symbol) = sym in values(interp.global_slots)
+
+@inline with_toplevel_logger(@nospecialize(f), interp::JETInterpreter, @nospecialize(filter = ≥(DEFAULT_LOGGER_LEVEL))) =
+    with_logger(f, JETLogger(interp).toplevel_logger, filter, "toplevel")
+
+@inline with_inference_logger(@nospecialize(f), interp::JETInterpreter, @nospecialize(filter = ≥(DEFAULT_LOGGER_LEVEL))) =
+    with_logger(f, JETLogger(interp).inference_logger, filter, "inference")
+
+@inline function with_logger(
+    @nospecialize(f), io::Union{Nothing,IO}, @nospecialize(filter), logger_name)
+    isnothing(io) && return
+    level = get_logger_level(io)
+    filter(level) || return
+    print(io, "[$logger_name-$(LOGGER_LEVELS[level])] ")
+    f(io)
+end
