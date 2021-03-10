@@ -417,8 +417,8 @@ function JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, fr
     if isinclude(f)
         return handle_include(interp, fargs)
     else
-        # `virtualprocess!` iteratively interpret toplevel expressions but it doesn't hit toplevel
-        # we may want to make `virtualprocess!` hit the toplevel on each interation rather than
+        # `virtual_process!` iteratively interpret toplevel expressions but it doesn't hit toplevel
+        # we may want to make `virtual_process!` hit the toplevel on each interation rather than
         # using `invokelatest` here, but assuming concretized calls are supposed only to be
         # used for other toplevel definitions and as such not so computational heavy,
         # I'd like to go with this simplest way

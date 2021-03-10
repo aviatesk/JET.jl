@@ -1,5 +1,5 @@
 """
-Configurations for "watch" mode.
+Configurations for "watch" mode
 
 ---
 - `revise_all::Bool = true` \\
