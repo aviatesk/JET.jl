@@ -167,14 +167,6 @@ No errors !
 - ideally, I want to extend JET.jl to provide some of LSPs other than diagnostics, e.g. providers of completions, rename refactor, etc.
 
 
-### developer note
-
-JET.jl overloads functions from Juila's `Core.Compiler` module, which are intended for its native JIT type inference.
-
-They're overloaded on `JETInterpreter` so that `typeinf(::JETInterpreter, ::InferenceState)` will do abstract interpretation tuned for JET.jl's type error analysis.
-Most overloads are done by using `invoke`, which allows us to call down to and reuse the original `NativeInterpreter`'s abstract interpretation methods while passing `JETInterpreter` for subsequent (maybe overloaded) callees (see `@invoke` macro).
-
-
 ### acknowledgement
 
 This project started as my grad thesis project at Kyoto University, supervised by Prof. Takashi Sakuragawa.
