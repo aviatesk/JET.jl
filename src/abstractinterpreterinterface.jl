@@ -3,8 +3,9 @@
 
 # TODO more configurations, e.g. ignore user-specified modules and such
 """
-Configurations for JET analysis:
+Configurations for JET analysis
 
+---
 - `strict_condition_check::Bool = false` \\
   Enables strict condition check.
   JET reports an error if a condition expression type is "non-boolean". In a case when
@@ -54,7 +55,7 @@ Configurations for JET analysis:
   │││││││└───────────────
   Dict{Any, Int64}
   ```
-
+---
 - `ignore_native_remarks::Bool = true` \\
   If `true`, JET won't construct nor cache reports of "native remarks", which may speed up analysis time.
   "Native remarks" are information that Julia's native compiler emits about how type inference routine goes,
@@ -72,24 +73,25 @@ struct JETAnalysisParams
 end
 
 """
-Configurations for Julia's native type inference routine:
+Configurations for Julia's native type inference routine
 
+---
 - `ipo_constant_propagation::Bool = true` \\
   Enables constant propagation in abstract interpretation.
   It is _**highly**_ recommended that you keep this configuration `true` to get reasonable analysis,
   because constant propagation can cut off lots of false positive errorenous code paths and
   thus lead to more accurate and useful analysis results.
-
+---
 - `aggressive_constant_propagation::Bool = true` \\
   If `true`, JET will try to do constant propagation more "aggressively".
   As explained above, it can lead to more accurate analysis, but also lead to worse analysis
   performance at the cost of that.
-
+---
 - `unoptimize_throw_blocks::Bool = false` \\
   Turn this on to skip analysis on code blocks that will eventually lead to a `throw` call.
   This configuration may improve the analysis performance, but it's better to be turned off
     for JET analysis, because there may be other errors even in those code blocks.
-
+---
 !!! note
     You can also specify all the other parameters that `Core.Compiler.InferenceParams` can accept,
     e.g. `max_methods::Int = 3`, `union_splitting::Int = 4`, etc.

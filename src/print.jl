@@ -2,14 +2,15 @@
 # -------------
 
 """
-JET configurations for error printing:
+JET configurations for error printing
 
+---
 - `print_toplevel_success::Bool = false` \\
   If `true`, prints a message when there is no toplevel errors found.
-
+---
 - `print_inference_sucess::Bool = true` \\
   If `true`, print a message when there is no errors found in abstract interpretation based analysis pass.
-
+---
 - `annotate_types::Bool = false` \\
   When set to `true`, annotates types when printing analyzed call stack.
   Here are examples:
@@ -77,7 +78,7 @@ JET configurations for error printing:
       the error points below are always type-annotated regardless of this configuration:
       - `no matching method found for call signature: Base.zero(_::Type{Char})`
       - `no matching method found for call signature: Base.+(x::Char, y::Char)`
-
+---
 - `fullpath::Bool = false` \\
   Controls whether or not expand a file path to full path when printing analyzed call stack.
   Note that paths of Julia's `Base` files will also be expanded when set to `true`.
