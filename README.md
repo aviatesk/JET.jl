@@ -63,27 +63,27 @@ You can have JET.jl detect possible errors:
 julia> using JET
 
 julia> profile_and_watch_file("demo.jl"; annotate_types = true)
-
-profiling from demo.jl (finished in 6.198 sec)
+[toplevel-info] analysis entered into demo.jl
+[toplevel-info] analysis from demo.jl finished in 3.455 sec
 ═════ 4 possible errors found ═════
-┌ @ demo.jl:11 fib(m)
+┌ @ demo.jl:10 fib(m)
 │ variable m is not defined: fib(m)
 └──────────────
-┌ @ demo.jl:12 fib("1000")
-│┌ @ demo.jl:8 ≤(n::String, 2)
-││┌ @ operators.jl:328 Base.<(x::String, y::Int64)
-│││┌ @ operators.jl:279 Base.isless(x::String, y::Int64)
+┌ @ demo.jl:11 fib("1000")
+│┌ @ demo.jl:7 ≤(n::String, 2)
+││┌ @ operators.jl:385 Base.<(x::String, y::Int64)
+│││┌ @ operators.jl:336 Base.isless(x::String, y::Int64)
 ││││ no matching method found for call signature: Base.isless(x::String, y::Int64)
 │││└────────────────────
-┌ @ demo.jl:33 foo(1.2)
-│┌ @ demo.jl:25 bar(v::Ty{Float64})
-││┌ @ demo.jl:30 Base.getproperty(v::Ty{Float64}, :fdl::Symbol)
+┌ @ demo.jl:32 foo(1.2)
+│┌ @ demo.jl:24 bar(v::Ty{Float64})
+││┌ @ demo.jl:29 Base.getproperty(v::Ty{Float64}, :fdl::Symbol)
 │││┌ @ Base.jl:33 Base.getfield(x::Ty{Float64}, f::Symbol)
-││││ type Ty{Float64} has no field fdl: Base.getfield(x::Ty{Float64}, f::Symbol)
+││││ type Ty{Float64} has no field fdl
 │││└──────────────
-┌ @ demo.jl:34 foo("1")
-│┌ @ demo.jl:25 bar(v::Ty{String})
-││┌ @ demo.jl:31 convert(Number, Base.getproperty(v::Ty{String}, :fld::Symbol)::String)
+┌ @ demo.jl:33 foo("1")
+│┌ @ demo.jl:24 bar(v::Ty{String})
+││┌ @ demo.jl:30 convert(Number, Base.getproperty(v::Ty{String}, :fld::Symbol)::String)
 │││ no matching method found for call signature: convert(Number, Base.getproperty(v::Ty{String}, :fld::Symbol)::String)
 ││└──────────────
 ```
@@ -148,7 +148,8 @@ If you apply the diff (i.e. update and save the demo.jl), JET will automatically
 > `git apply fix-demo.jl.diff`
 
 ```julia
-profiling from demo.jl (finished in 0.317 sec)
+[toplevel-info] analysis entered into demo.jl
+[toplevel-info] analysis from demo.jl finished in 3.423 sec
 No errors !
 ```
 
