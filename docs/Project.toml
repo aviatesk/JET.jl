@@ -1,0 +1,6 @@
+[deps]
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
+
+[compat]
+Documenter = "~0.26"
