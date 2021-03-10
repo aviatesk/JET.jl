@@ -8,7 +8,11 @@ JET.jl employs Julia's type inference for bug reports.
 !!! note
     JET.jl needs Julia versions 1.6 and higher;
     as such I recommend you give a try on this package with [using nightly version](https://julialang.org/downloads/nightlies/)
-    or [building Julia from source](https://github.com/JuliaLang/julia).
+    or [building Julia from source](https://github.com/JuliaLang/julia). \
+    Also note that JET deeply relies on the type inference routine implemented in [Julia's compiler](https://github.com/JuliaLang/julia/tree/master/base/compiler),
+    and so JET analysis result can vary depending on your Julia version.
+    In general, the newer your Julia version is, your can expect JET to analyze your code more accurately and quickly,
+    because Julia's compiler is rapidly-advancing, literally day by day.
 
 
 ### demo
@@ -141,7 +145,7 @@ index d2b188a..1d1b3da 100644
 
 If you apply the diff (i.e. update and save the demo.jl), JET will automatically re-trigger profiling, and this time, won't complain anything:
 
-> git apply fix-demo.jl.diff
+> `git apply fix-demo.jl.diff`
 
 ```julia
 profiling from demo.jl (finished in 0.317 sec)
