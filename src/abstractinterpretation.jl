@@ -1,10 +1,3 @@
-# this file is horrible because we don't have a stable `AbstractInterpreter` API yet
-# TODO once https://github.com/JuliaLang/julia/pull/39305 gets merged, we can remove the
-# overloadings of `abstract_call_gf_by_type` and `abstract_call_method_with_const_args`
-# and keep their legacy definitions in a separate file for compatbility with older Julia versions
-
-const IS_LATEST = isdefined(Core, :InterConditional)
-
 """
     mutable struct AbstractGlobal
         # analyzed type
@@ -47,589 +40,85 @@ mutable struct AbstractGlobal
     end
 end
 
-"""
-    function overload_abstract_call_gf_by_type!()
-        ...
-    end
-    push_inithook!(overload_abstract_call_gf_by_type!)
+# branching on https://github.com/JuliaLang/julia/pull/39305
+const IS_LATEST_CALL_INTERFACE = isdefined(CC, :maybe_get_const_prop_profitable)
+@static if IS_LATEST_CALL_INTERFACE
 
-the aims of this overload are:
-1. report `NoMethodErrorReport` on empty method signature matching
-2. keep inference on non-concrete call sites in toplevel frame created by [`virtual_process!`](@ref)
-3. don't bail out even after the current return type grows up to `Any` and collect as much
-   error points as possible; of course it slows down inference performance, but hopefully it
-   stays to be "practical" speed (because the number of matching methods is limited beforehand)
-4. force constant prop' even if the inference result can't be improved anymore when `rettype`
-   is already `Const`; this is because constant prop' can still produce more "correct"
-   analysis by throwing away the error reports in the callee frames
-5. always add backedges (even if a new method can't refine the return type grew up to`Any`),
-   because a new method always may change the JET analysis result
-"""
-function overload_abstract_call_gf_by_type!()
-
-# %% for easier interactive update of abstract_call_gf_by_type
-
-ex = @static if IS_LATEST; quote
+import .CC:
+    bail_out_toplevel_call,
+    bail_out_call,
+    add_call_backedges!,
+    ConstCallInfo,
+    const_prop_entry_heuristic,
+    const_prop_rettype_heuristic
 
 # TODO:
 # - report "too many method matched"
 # - maybe "cound not identify method table for call" won't happen since we eagerly propagate bottom for e.g. undef var case, etc.
 
-function abstract_call_gf_by_type(interp::$JETInterpreter, @nospecialize(f),
-                                  fargs::Union{Nothing,Vector{Any}}, argtypes::Vector{Any}, @nospecialize(atype),
-                                  sv::InferenceState, max_methods::Int = InferenceParams(interp).MAX_METHODS)
-    if sv.params.unoptimize_throw_blocks && sv.currpc in sv.throw_blocks
-        return CallMeta(Any, false)
-    end
-    valid_worlds = WorldRange()
-    atype_params = unwrap_unionall(atype).parameters
-    splitunions = 1 < unionsplitcost(atype_params) <= InferenceParams(interp).MAX_UNION_SPLITTING
-    mts = Core.MethodTable[]
-    fullmatch = Bool[]
-    if splitunions
-        splitsigs = switchtupleunion(atype)
-        applicable = Any[]
-        infos = MethodMatchInfo[]
-        for sig_n in splitsigs
-            mt = ccall(:jl_method_table_for, Any, (Any,), sig_n)
-            if mt === nothing
-                add_remark!(interp, sv, "Could not identify method table for call")
-                return CallMeta(Any, false)
-            end
-            mt = mt::Core.MethodTable
-            matches = findall(sig_n, method_table(interp); limit=max_methods)
-            if matches === missing
-                add_remark!(interp, sv, "For one of the union split cases, too many methods matched")
-                return CallMeta(Any, false)
-            end
-            #=== abstract_call_gf_by_type patch point 1-1 start ===#
-            info = MethodMatchInfo(matches)
-            if $is_empty_match(info)
-                # report `NoMethodErrorReport` for union-split signatures
-                $report!(interp, $NoMethodErrorReport(interp, sv, true, atype))
-            end
-            push!(infos, info)
-            #=== abstract_call_gf_by_type patch point 1-1 end ===#
-            append!(applicable, matches)
-            valid_worlds = intersect(valid_worlds, matches.valid_worlds)
-            thisfullmatch = _any(match->(match::MethodMatch).fully_covers, matches)
-            found = false
-            for (i, mt′) in enumerate(mts)
-                if mt′ === mt
-                    fullmatch[i] &= thisfullmatch
-                    found = true
-                    break
-                end
-            end
-            if !found
-                push!(mts, mt)
-                push!(fullmatch, thisfullmatch)
-            end
-        end
-        info = UnionSplitInfo(infos)
-    else
-        mt = ccall(:jl_method_table_for, Any, (Any,), atype)
-        if mt === nothing
-            add_remark!(interp, sv, "Could not identify method table for call")
-            return CallMeta(Any, false)
-        end
-        mt = mt::Core.MethodTable
-        matches = findall(atype, method_table(interp, sv); limit=max_methods)
-        if matches === missing
-            # this means too many methods matched
-            # (assume this will always be true, so we don't compute / update valid age in this case)
-            add_remark!(interp, sv, "Too many methods matched")
-            return CallMeta(Any, false)
-        end
-        push!(mts, mt)
-        push!(fullmatch, _any(match->(match::MethodMatch).fully_covers, matches))
-        info = MethodMatchInfo(matches)
-        #=== abstract_call_gf_by_type patch point 1-2 start ===#
-        if $is_empty_match(info)
-            # report `NoMethodErrorReport` for this call signature
-            $report!(interp, $NoMethodErrorReport(interp, sv, false, atype))
-        end
-        #=== abstract_call_gf_by_type patch point 1-2 end ===#
-        applicable = matches.matches
-        valid_worlds = matches.valid_worlds
-    end
-    update_valid_age!(sv, valid_worlds)
-    applicable = applicable::Array{Any,1}
-    napplicable = length(applicable)
-    rettype = Bottom
-    edgecycle = false
-    edges = MethodInstance[]
-    conditionals = nothing # keeps refinement information of call argument types when the return type is boolean
-    nonbot = 0             # the index of the only non-Bottom inference result if > 0
-    seen = 0               # number of signatures actually inferred
-    multiple_matches = napplicable > 1
+function CC.abstract_call_gf_by_type(interp::JETInterpreter, @nospecialize(f),
+                                     fargs::Union{Nothing,Vector{Any}}, argtypes::Vector{Any}, @nospecialize(atype),
+                                     sv::InferenceState, max_methods::Int = InferenceParams(interp).MAX_METHODS)
+    ret = @invoke abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f),
+                                           fargs::Union{Nothing,Vector{Any}}, argtypes::Vector{Any}, @nospecialize(atype),
+                                           sv::InferenceState, max_methods::Int)
 
-    if f !== nothing && napplicable == 1 && is_method_pure(applicable[1]::MethodMatch)
-        val = pure_eval_call(f, argtypes)
-        if val !== false
-            # TODO: add some sort of edge(s)
-            return CallMeta(val, MethodResultPure())
-        end
+    info = ret.info
+    if isa(info, ConstCallInfo)
+        info = info.call # unwrap to `MethodMatchInfo` or `UnionSplitInfo`
     end
-
-    #=== abstract_call_gf_by_type patch point 4-1 start ===#
-    nreports = length(interp.reports)
-    #=== abstract_call_gf_by_type patch point 4-1 end ===#
-
-    for i in 1:napplicable
-        match = applicable[i]::MethodMatch
-        method = match.method
-        sig = match.spec_types
-        if bail_out_toplevel_call(interp, sig, sv)
-            # only infer concrete call sites in top-level expressions
-            add_remark!(interp, sv, "Refusing to infer non-concrete call site in top-level expression")
-            rettype = Any
-            break
+    if isa(info, MethodMatchInfo)
+        if is_empty_match(info)
+            report!(interp, NoMethodErrorReport(interp, sv, false, atype))
         end
-        sigtuple = unwrap_unionall(sig)::DataType
-        this_rt = Bottom
-        splitunions = false
-        # TODO: splitunions = 1 < unionsplitcost(sigtuple.parameters) * napplicable <= InferenceParams(interp).MAX_UNION_SPLITTING
-        # this used to trigger a bug in inference recursion detection, and is unmaintained now
-        if splitunions
-            splitsigs = switchtupleunion(sig)
-            for sig_n in splitsigs
-                rt, edgecycle1, edge = abstract_call_method(interp, method, sig_n, svec(), multiple_matches, sv)
-                edgecycle |= edgecycle1::Bool
-                if edge !== nothing
-                    push!(edges, edge)
-                end
-                this_rt = tmerge(this_rt, rt)
-                if bail_out_call(interp, this_rt, sv)
-                    break
-                end
-            end
-        else
-            this_rt, edgecycle1, edge = abstract_call_method(interp, method, sig, match.sparams, multiple_matches, sv)
-            edgecycle |= edgecycle1::Bool
-            if edge !== nothing
-                push!(edges, edge)
-            end
-        end
-        this_conditional = ignorelimited(this_rt)
-        this_rt = widenwrappedconditional(this_rt)
-        @assert !(this_conditional isa Conditional) "invalid lattice element returned from inter-procedural context"
-        if this_rt !== Bottom
-            if nonbot === 0
-                nonbot = i
-            else
-                nonbot = -1
-            end
-        end
-        seen += 1
-        rettype = tmerge(rettype, this_rt)
-        if bail_out_call(interp, rettype, sv)
-            break
-        end
-        if this_conditional !== Bottom && is_lattice_bool(rettype) && fargs !== nothing
-            if conditionals === nothing
-                conditionals = Any[Bottom for _ in 1:length(argtypes)],
-                               Any[Bottom for _ in 1:length(argtypes)]
-            end
-            condval = maybe_extract_const_bool(this_conditional)
-            for i = 1:length(argtypes)
-                fargs[i] isa Slot || continue
-                if this_conditional isa InterConditional && this_conditional.slot == i
-                    vtype = this_conditional.vtype
-                    elsetype = this_conditional.elsetype
-                else
-                    elsetype = vtype = tmeet(argtypes[i], fieldtype(sig, i))
-                    condval === true && (elsetype = Union{})
-                    condval === false && (vtype = Union{})
-                end
-                conditionals[1][i] = tmerge(conditionals[1][i], vtype)
-                conditionals[2][i] = tmerge(conditionals[2][i], elsetype)
+    elseif isa(info, UnionSplitInfo)
+        # check each match for union-split signature
+        for matchinfo in info.matches
+            if is_empty_match(matchinfo)
+                report!(interp, NoMethodErrorReport(interp, sv, true, atype))
             end
         end
     end
 
-    #=== abstract_call_gf_by_type patch point 4-2 start ===#
-    # check if constant propagation can improve analysis by throwing away possibly false positive reports
-    has_been_reported = (length(interp.reports) - nreports) > 0
-    #=== abstract_call_gf_by_type patch point 4-2 end ===#
+    analyze_task_parallel_code!(interp, f, argtypes, sv)
 
-    # try constant propagation if only 1 method is inferred to non-Bottom
-    # this is in preparation for inlining, or improving the return result
-    is_unused = call_result_unused(sv)
-    #=== abstract_call_gf_by_type patch point 4-3 start ===#
-    if nonbot > 0 && seen == napplicable && (!edgecycle || !is_unused) &&
-            (is_improvable(rettype) || has_been_reported) && InferenceParams(interp).ipo_constant_propagation
-    #=== abstract_call_gf_by_type patch point 4-3 end ===#
-        # if there's a possibility we could constant-propagate a better result
-        # (hopefully without doing too much work), try to do that now
-        # TODO: refactor this, enable constant propagation for each (union-split) signature
-        match = applicable[nonbot]::MethodMatch
-        const_rettype, result = abstract_call_method_with_const_args(interp, rettype, f, argtypes, applicable[nonbot]::MethodMatch, sv, edgecycle)
-        const_conditional = ignorelimited(const_rettype)
-        @assert !(const_conditional isa Conditional) "invalid lattice element returned from inter-procedural context"
-        const_rettype = widenwrappedconditional(const_rettype)
-        if ignorelimited(const_rettype) ⊑ rettype
-            # use the better result, if it is a refinement of rettype
-            rettype = const_rettype
-            if const_conditional isa InterConditional && conditionals === nothing && fargs !== nothing
-                arg = fargs[const_conditional.slot]
-                if arg isa Slot
-                    rettype = Conditional(arg, const_conditional.vtype, const_conditional.elsetype)
-                    if const_rettype isa LimitedAccuracy
-                        rettype = LimitedAccuracy(rettype, const_rettype.causes)
-                    end
-                end
-            end
-        end
-        if result !== nothing
-            info = ConstCallInfo(info, result)
-        end
-        # and update refinements with the InterConditional info too
-        # (here we ignorelimited, since there isn't much below this in the
-        # lattice, particularly when we're already using tmeet)
-        if const_conditional isa InterConditional && conditionals !== nothing
-            let i = const_conditional.slot,
-                vtype = const_conditional.vtype,
-                elsetype = const_conditional.elsetype
-                if !(vtype ⊑ conditionals[1][i])
-                    vtype = tmeet(conditionals[1][i], widenconst(vtype))
-                end
-                if !(elsetype ⊑ conditionals[2][i])
-                    elsetype = tmeet(conditionals[2][i], widenconst(elsetype))
-                end
-                conditionals[1][i] = vtype
-                conditionals[2][i] = elsetype
-            end
-        end
-    end
-    if rettype isa LimitedAccuracy
-        union!(sv.pclimitations, rettype.causes)
-        rettype = rettype.typ
-    end
-    # if we have argument refinement information, apply that now to get the result
-    if is_lattice_bool(rettype) && conditionals !== nothing && fargs !== nothing
-        slot = 0
-        vtype = elsetype = Any
-        condval = maybe_extract_const_bool(rettype)
-        for i in 1:length(fargs)
-            # find the first argument which supports refinment,
-            # and intersect all equvalent arguments with it
-            arg = fargs[i]
-            arg isa Slot || continue # can't refine
-            old = argtypes[i]
-            old isa Type || continue # unlikely to refine
-            id = slot_id(arg)
-            if slot == 0 || id == slot
-                new_vtype = conditionals[1][i]
-                if condval === false
-                    vtype = Union{}
-                elseif new_vtype ⊑ vtype
-                    vtype = new_vtype
-                else
-                    vtype = tmeet(vtype, widenconst(new_vtype))
-                end
-                new_elsetype = conditionals[2][i]
-                if condval === true
-                    elsetype = Union{}
-                elseif new_elsetype ⊑ elsetype
-                    elsetype = new_elsetype
-                else
-                    elsetype = tmeet(elsetype, widenconst(new_elsetype))
-                end
-                if (slot > 0 || condval !== false) && !(old ⊑ vtype) # essentially vtype ⋤ old
-                    slot = id
-                elseif (slot > 0 || condval !== true) && !(old ⊑ elsetype) # essentially elsetype ⋤ old
-                    slot = id
-                else # reset: no new useful information for this slot
-                    vtype = elsetype = Any
-                    if slot > 0
-                        slot = 0
-                    end
-                end
-            end
-        end
-        if vtype === Bottom && elsetype === Bottom
-            rettype = Bottom # accidentally proved this call to be dead / throw !
-        elseif slot > 0
-            rettype = Conditional(SlotNumber(slot), vtype, elsetype) # record a Conditional improvement to this slot
-        end
-    end
-    @assert !(rettype isa InterConditional) "invalid lattice element returned from inter-procedural context"
-    if is_unused && !(rettype === Bottom)
-        add_remark!(interp, sv, "Call result type was widened because the return value is unused")
-        # We're mainly only here because the optimizer might want this code,
-        # but we ourselves locally don't typically care about it locally
-        # (beyond checking if it always throws).
-        # So avoid adding an edge, since we don't want to bother attempting
-        # to improve our result even if it does change (to always throw),
-        # and avoid keeping track of a more complex result type.
-        rettype = Any
-    end
-    add_call_backedges!(interp, rettype, edges, fullmatch, mts, atype, sv)
-    if !isempty(sv.pclimitations) # remove self, if present
-        delete!(sv.pclimitations, sv)
-        for caller in sv.callers_in_cycle
-            delete!(sv.pclimitations, caller)
-        end
-    end
-
-    $analyze_task_parallel_code!(interp, f, argtypes, sv)
-
-    #print("=> ", rettype, "\n")
-    return CallMeta(rettype, info)
+    return ret
 end
 
-end; else; quote # @static if IS_LATEST; quote
+@doc """
+    bail_out_toplevel_call(interp::JETInterpreter, ...)
 
-function abstract_call_gf_by_type(interp::$JETInterpreter, @nospecialize(f), argtypes::Vector{Any}, @nospecialize(atype), sv::InferenceState,
-                                  max_methods::Int = InferenceParams(interp).MAX_METHODS)
-    if sv.params.unoptimize_throw_blocks && sv.currpc in sv.throw_blocks
-        return CallMeta(Any, false)
-    end
-    valid_worlds = WorldRange()
-    atype_params = unwrap_unionall(atype).parameters
-    splitunions = 1 < unionsplitcost(atype_params) <= InferenceParams(interp).MAX_UNION_SPLITTING
-    mts = Core.MethodTable[]
-    fullmatch = Bool[]
-    if splitunions
-        splitsigs = switchtupleunion(atype)
-        applicable = Any[]
-        infos = MethodMatchInfo[]
-        for sig_n in splitsigs
-            mt = ccall(:jl_method_table_for, Any, (Any,), sig_n)
-            if mt === nothing
-                add_remark!(interp, sv, "Could not identify method table for call")
-                return CallMeta(Any, false)
-            end
-            mt = mt::Core.MethodTable
-            matches = findall(sig_n, method_table(interp); limit=max_methods)
-            if matches === missing
-                add_remark!(interp, sv, "For one of the union split cases, too many methods matched")
-                return CallMeta(Any, false)
-            end
-            #=== abstract_call_gf_by_type patch point 1-1 start ===#
-            info = MethodMatchInfo(matches)
-            if $is_empty_match(info)
-                # report `NoMethodErrorReport` for union-split signatures
-                $report!(interp, $NoMethodErrorReport(interp, sv, true, atype))
-            end
-            push!(infos, info)
-            #=== abstract_call_gf_by_type patch point 1-1 end ===#
-            append!(applicable, matches)
-            valid_worlds = intersect(valid_worlds, matches.valid_worlds)
-            thisfullmatch = _any(match->(match::MethodMatch).fully_covers, matches)
-            found = false
-            for (i, mt′) in enumerate(mts)
-                if mt′ === mt
-                    fullmatch[i] &= thisfullmatch
-                    found = true
-                    break
-                end
-            end
-            if !found
-                push!(mts, mt)
-                push!(fullmatch, thisfullmatch)
-            end
-        end
-        info = UnionSplitInfo(infos)
-    else
-        mt = ccall(:jl_method_table_for, Any, (Any,), atype)
-        if mt === nothing
-            add_remark!(interp, sv, "Could not identify method table for call")
-            return CallMeta(Any, false)
-        end
-        mt = mt::Core.MethodTable
-        matches = findall(atype, method_table(interp, sv); limit=max_methods)
-        if matches === missing
-            # this means too many methods matched
-            # (assume this will always be true, so we don't compute / update valid age in this case)
-            add_remark!(interp, sv, "Too many methods matched")
-            return CallMeta(Any, false)
-        end
-        push!(mts, mt)
-        push!(fullmatch, _any(match->(match::MethodMatch).fully_covers, matches))
-        info = MethodMatchInfo(matches)
-        #=== abstract_call_gf_by_type patch point 1-2 start ===#
-        if $is_empty_match(info)
-            # report `NoMethodErrorReport` for this call signature
-            $report!(interp, $NoMethodErrorReport(interp, sv, false, atype))
-        end
-        #=== abstract_call_gf_by_type patch point 1-2 end ===#
-        applicable = matches.matches
-        valid_worlds = matches.valid_worlds
-    end
-    update_valid_age!(sv, valid_worlds)
-    applicable = applicable::Array{Any,1}
-    napplicable = length(applicable)
-    rettype = Bottom
-    edgecycle = false
-    edges = MethodInstance[]
-    nonbot = 0  # the index of the only non-Bottom inference result if > 0
-    seen = 0    # number of signatures actually inferred
-    istoplevel = sv.linfo.def isa Module
-    multiple_matches = napplicable > 1
-
-    if f !== nothing && napplicable == 1 && is_method_pure(applicable[1]::MethodMatch)
-        val = pure_eval_call(f, argtypes)
-        if val !== false
-            # TODO: add some sort of edge(s)
-            return CallMeta(val, MethodResultPure())
-        end
-    end
-
-    #=== abstract_call_gf_by_type patch point 4-1 start ===#
-    nreports = length(interp.reports)
-    #=== abstract_call_gf_by_type patch point 4-1 end ===#
-
-    for i in 1:napplicable
-        match = applicable[i]::MethodMatch
-        method = match.method
-        sig = match.spec_types
-        #=== abstract_call_gf_by_type patch point 2 start ===#
-        if istoplevel && !isdispatchtuple(sig) && !$istoplevel(sv) # keep going for "our" toplevel frame
-        #=== abstract_call_gf_by_type patch point 2 end ===#
-            # only infer concrete call sites in top-level expressions
-            add_remark!(interp, sv, "Refusing to infer non-concrete call site in top-level expression")
-            rettype = Any
-            break
-        end
-        sigtuple = unwrap_unionall(sig)::DataType
-        splitunions = false
-        this_rt = Bottom
-        # TODO: splitunions = 1 < unionsplitcost(sigtuple.parameters) * napplicable <= InferenceParams(interp).MAX_UNION_SPLITTING
-        # currently this triggers a bug in inference recursion detection
-        if splitunions
-            splitsigs = switchtupleunion(sig)
-            for sig_n in splitsigs
-                rt, edgecycle1, edge = abstract_call_method(interp, method, sig_n, svec(), multiple_matches, sv)
-                if edge !== nothing
-                    push!(edges, edge)
-                end
-                edgecycle |= edgecycle1::Bool
-                this_rt = tmerge(this_rt, rt)
-                #=== abstract_call_gf_by_type patch point 3-1 start ===#
-                # this_rt === Any && break # keep going and collect as much error reports as possible
-                #=== abstract_call_gf_by_type patch point 3-1 end ===#
-            end
-        else
-            this_rt, edgecycle1, edge = abstract_call_method(interp, method, sig, match.sparams, multiple_matches, sv)
-            edgecycle |= edgecycle1::Bool
-            if edge !== nothing
-                push!(edges, edge)
-            end
-        end
-        if this_rt !== Bottom
-            if nonbot === 0
-                nonbot = i
-            else
-                nonbot = -1
-            end
-        end
-        seen += 1
-        rettype = tmerge(rettype, this_rt)
-        #=== abstract_call_gf_by_type patch point 3-2 start ===#
-        # rettype === Any && break # keep going and collect as much error reports as possible
-        #=== abstract_call_gf_by_type patch point 3-2 end ===#
-    end
-
-    #=== abstract_call_gf_by_type patch point 4-2 start ===#
-    # check if constant propagation can improve analysis by throwing away possibly false positive reports
-    has_been_reported = (length(interp.reports) - nreports) > 0
-    #=== abstract_call_gf_by_type patch point 4-2 end ===#
-
-    # try constant propagation if only 1 method is inferred to non-Bottom
-    # this is in preparation for inlining, or improving the return result
-    is_unused = call_result_unused(sv)
-    #=== abstract_call_gf_by_type patch point 4-3 start ===#
-    if nonbot > 0 && seen == napplicable && (!edgecycle || !is_unused) &&
-            (is_improvable(rettype) || has_been_reported) && InferenceParams(interp).ipo_constant_propagation
-    #=== abstract_call_gf_by_type patch point 4-3 end ===#
-        # if there's a possibility we could constant-propagate a better result
-        # (hopefully without doing too much work), try to do that now
-        # TODO: it feels like this could be better integrated into abstract_call_method / typeinf_edge
-        const_rettype = abstract_call_method_with_const_args(interp, rettype, f, argtypes, applicable[nonbot]::MethodMatch, sv, edgecycle)
-        if const_rettype ⊑ rettype
-            # use the better result, if it's a refinement of rettype
-            rettype = const_rettype
-        end
-    end
-    if is_unused && !(rettype === Bottom)
-        add_remark!(interp, sv, "Call result type was widened because the return value is unused")
-        # We're mainly only here because the optimizer might want this code,
-        # but we ourselves locally don't typically care about it locally
-        # (beyond checking if it always throws).
-        # So avoid adding an edge, since we don't want to bother attempting
-        # to improve our result even if it does change (to always throw),
-        # and avoid keeping track of a more complex result type.
-        rettype = Any
-    end
-    #=== abstract_call_gf_by_type patch point 5 start ===#
-    # a new method may refine analysis, so we always add backedges
-    if true # !(rettype === Any) # adding a new method couldn't refine (widen) this type
-    #=== abstract_call_gf_by_type patch point 5 end ===#
-        for edge in edges
-            add_backedge!(edge::MethodInstance, sv)
-        end
-        for (thisfullmatch, mt) in zip(fullmatch, mts)
-            if !thisfullmatch
-                # also need an edge to the method table in case something gets
-                # added that did not intersect with any existing method
-                add_mt_backedge!(mt, atype, sv)
-            end
-        end
-    end
-    #print("=> ", rettype, "\n")
-    $(isdefined(CC, :LimitedAccuracy) && quote
-    if rettype isa LimitedAccuracy
-        union!(sv.pclimitations, rettype.causes)
-        rettype = rettype.typ
-    end
-    if !isempty(sv.pclimitations) # remove self, if present
-        delete!(sv.pclimitations, sv)
-        for caller in sv.callers_in_cycle
-            delete!(sv.pclimitations, caller)
-        end
-    end
-    end)
-
-    $analyze_task_parallel_code!(interp, f, argtypes, sv)
-
-    return CallMeta(rettype, info)
-end
-
-end; end # @static if IS_LATEST; quote
-
-Core.eval(CC, ex)
-# %% for easier interactive update of abstract_call_gf_by_type
-
-end # function overload_abstract_call_gf_by_type!()
-push_inithook!(overload_abstract_call_gf_by_type!)
-
-function is_empty_match(info)
-    res = info.results
-    isa(res, MethodLookupResult) || return false # when does this happen ?
-    return isempty(res.matches)
-end
-
-@static if IS_LATEST
-
-import .CC:
-    bail_out_call,
-    bail_out_toplevel_call,
-    add_call_backedges!
-
-# keep going and collect as much error reports as possible
-bail_out_call(interp::JETInterpreter, @nospecialize(t), sv) = false
-
-function bail_out_toplevel_call(interp::JETInterpreter, @nospecialize(sig), sv)
+An overload for `abstract_call_gf_by_type(interp::JETInterpreter, ...)`, which keeps
+  inference on non-concrete call sites in a toplevel frame created by
+  [`virtual_process!`](@ref).
+"""
+function CC.bail_out_toplevel_call(interp::JETInterpreter, @nospecialize(sig), sv)
     return isa(sv.linfo.def, Module) && !isdispatchtuple(sig) && !istoplevel(sv)
 end
 
-function add_call_backedges!(interp::JETInterpreter,
-                             @nospecialize(rettype),
-                             edges::Vector{MethodInstance},
-                             fullmatch::Vector{Bool}, mts::Vector{Core.MethodTable}, @nospecialize(atype),
-                             sv::InferenceState)
+@doc """
+    bail_out_call(interp::JETInterpreter, ...)
+
+With this overload, `abstract_call_gf_by_type(interp::JETInterpreter, ...)` doesn't bail out
+  inference even after the current return type grows up to `Any` and collects as much error
+  points as possible.
+Of course this slows down inference performance, but hoopefully it stays to be "practical"
+  speed since the number of matching methods are limited beforehand.
+"""
+CC.bail_out_call(interp::JETInterpreter, @nospecialize(t), sv) = false
+
+@doc """
+    add_call_backedges!(interp::JETInterpreter, ...)
+
+An overload for `abstract_call_gf_by_type(interp::JETInterpreter, ...)`, which always add
+  backedges (even if a new method can't refine the return type grew up to `Any`).
+This is because a new method definition always has a potential to change the JET analysis result.
+"""
+function CC.add_call_backedges!(interp::JETInterpreter,
+                                @nospecialize(rettype),
+                                edges::Vector{MethodInstance},
+                                fullmatch::Vector{Bool}, mts::Vector{Core.MethodTable}, @nospecialize(atype),
+                                sv::InferenceState)
     # a new method may refine analysis, so we always add backedges
     # if rettype === Any
     #     # for `NativeInterpreter`, we don't add backedges when a new method couldn't refine
@@ -648,17 +137,64 @@ function add_call_backedges!(interp::JETInterpreter,
     end
 end
 
-end # @static if IS_LATEST
+function CC.abstract_call_method_with_const_args(interp::JETInterpreter, @nospecialize(rettype),
+                                                 @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch,
+                                                 sv::InferenceState, edgecycle::Bool)
+    result, inf_result = @invoke abstract_call_method_with_const_args(interp::AbstractInterpreter, @nospecialize(rettype),
+                                                                      @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch,
+                                                                      sv::InferenceState, edgecycle::Bool)
 
-# add special cased analysis pass for task parallelism (xref: https://github.com/aviatesk/JET.jl/issues/114)
-# in Julia's task parallelism implementation, parallel code is represented as closure
-# and it's wrapped in `Task` object
-# `NativeInterpreter` doesn't run type inference nor optimization on the body of those closures
-# when compiling code that creates parallel tasks, but JET will try to run additional
-# analysis pass by recurring into the closures
-# NOTE JET won't do anything other than doing JET analysis, e.g. won't annotate return type
-# of wrapped code block in order to not confuse the original `AbstractInterpreter` routine
-# track https://github.com/JuliaLang/julia/pull/39773 for the changes in native abstract interpretation routine
+    if isa(inf_result, InferenceResult)
+        # successful constant prop', we also need to update reports
+        update_reports!(interp, sv)
+    end
+
+    return result, inf_result
+end
+
+@doc """
+    const_prop_entry_heuristic(interp::JETInterpreter, @nospecialize(rettype), sv::InferenceState, edgecycle::Bool)
+
+An overload for `abstract_call_method_with_const_args(interp::JETInterpreter, ...)`, which
+  forces constant prop' even if the inference result can't be improved anymore, e.g. when
+  `rettype` is already `Const`; this is because constant prop' can still produce more accurate
+  analysis by throwing away false positive error reports by cutting off the unreachable
+  control flow.
+"""
+function CC.const_prop_entry_heuristic(interp::JETInterpreter, @nospecialize(rettype), sv::InferenceState, edgecycle::Bool)
+    anyerror = interp.anyerror
+    interp.anyerror = false # reset immediately, this `anyerror` is only valid for this match
+    CC.call_result_unused(sv) && edgecycle && return false
+    return InferenceParams(interp).ipo_constant_propagation && (anyerror || CC.is_improvable(rettype))
+end
+
+else # @static if IS_LATEST_CALL_INTERFACE
+
+include("legacy/abstractinterpretation")
+
+end # @static if IS_LATEST_CALL_INTERFACE
+
+function is_empty_match(info::MethodMatchInfo)
+    res = info.results
+    isa(res, MethodLookupResult) || return false # when does this happen ?
+    return isempty(res.matches)
+end
+
+"""
+    analyze_task_parallel_code!(interp::JETInterpreter, @nospecialize(f), argtypes::Vector{Any}, sv::InferenceState)
+
+Adds special cased analysis pass for task parallelism (xref: https://github.com/aviatesk/JET.jl/issues/114).
+In Julia's task parallelism implementation, parallel code is represented as closure and it's
+  wrapped in a `Task` object. `NativeInterpreter` doesn't run type inference nor optimization
+  on the body of those closures when compiling code that creates parallel tasks, but JET will
+  try to run additional analysis pass by recurring into the closures.
+
+!!! note
+    JET won't do anything other than doing JET analysis, e.g. won't annotate return type
+    of wrapped code block in order to not confuse the original `AbstractInterpreter` routine
+    track <https://github.com/JuliaLang/julia/pull/39773> for the changes in native abstract
+    interpretation routine.
+"""
 function analyze_task_parallel_code!(interp::JETInterpreter, @nospecialize(f), argtypes::Vector{Any}, sv::InferenceState)
     # TODO ideally JET should analyze a closure wrapped in a `Task` only when it's `schedule`d
     # but the `Task` construction may not happen in the same frame where it's `schedule`d
@@ -706,256 +242,15 @@ function profile_additional_pass_by_type!(interp::JETInterpreter, @nospecialize(
     append!(interp.reports, newinterp.reports)
 end
 
-"""
-    function overload_abstract_call_method_with_const_args!()
-        ...
-    end
-    push_inithook!(overload_abstract_call_method_with_const_args!)
-
-the aim of this overloads is:
-1. force constant prop' even if the inference result can't be improved anymore when `rettype`
-   is already `Const`; this is because constant prop' can still produce more "correct"
-   analysis by throwing away the error reports in the callee frames
-"""
-function overload_abstract_call_method_with_const_args!()
-
-# %% for easier interactive update of abstract_call_method_with_const_args
-
-ex = @static if IS_LATEST; quote
-
-function abstract_call_method_with_const_args(interp::$JETInterpreter, @nospecialize(rettype), @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch, sv::InferenceState, edgecycle::Bool)
-    method = match.method
-    nargs::Int = method.nargs
-    method.isva && (nargs -= 1)
-    length(argtypes) >= nargs || return Any, nothing
-    haveconst = false
-    allconst = true
-    # see if any or all of the arguments are constant and propagating constants may be worthwhile
-    for a in argtypes
-        a = widenconditional(a)
-        if allconst && !isa(a, Const) && !isconstType(a) && !isa(a, PartialStruct) && !isa(a, PartialOpaque)
-            allconst = false
-        end
-        if !haveconst && has_nontrivial_const_info(a) && const_prop_profitable(a)
-            haveconst = true
-        end
-        if haveconst && !allconst
-            break
-        end
-    end
-    #=== abstract_call_method_with_const_args patch point 1 start ===#
-    # force constant propagation even if it doesn't improve return type;
-    # constant prop' may improve report accuracy
-    haveconst || #= improvable_via_constant_propagation(rettype) || =# return Any, nothing
-    #=== abstract_call_method_with_const_args patch point 1 end ===#
-    force_inference = method.aggressive_constprop || InferenceParams(interp).aggressive_constant_propagation
-    if !force_inference && nargs > 1
-        if istopfunction(f, :getindex) || istopfunction(f, :setindex!)
-            arrty = argtypes[2]
-            # don't propagate constant index into indexing of non-constant array
-            if arrty isa Type && arrty <: AbstractArray && !issingletontype(arrty)
-                return Any, nothing
-            elseif arrty ⊑ Array
-                return Any, nothing
-            end
-        elseif istopfunction(f, :iterate)
-            itrty = argtypes[2]
-            if itrty ⊑ Array
-                return Any, nothing
-            end
-        end
-    end
-    if !force_inference && !allconst &&
-        (istopfunction(f, :+) || istopfunction(f, :-) || istopfunction(f, :*) ||
-         istopfunction(f, :(==)) || istopfunction(f, :!=) ||
-         istopfunction(f, :<=) || istopfunction(f, :>=) || istopfunction(f, :<) || istopfunction(f, :>) ||
-         istopfunction(f, :<<) || istopfunction(f, :>>))
-        # it is almost useless to inline the op of when all the same type,
-        # but highly worthwhile to inline promote of a constant
-        length(argtypes) > 2 || return Any, nothing
-        t1 = widenconst(argtypes[2])
-        all_same = true
-        for i in 3:length(argtypes)
-            if widenconst(argtypes[i]) !== t1
-                all_same = false
-                break
-            end
-        end
-        all_same && return Any, nothing
-    end
-    if istopfunction(f, :getproperty) || istopfunction(f, :setproperty!)
-        force_inference = true
-    end
-    force_inference |= allconst
-    mi = specialize_method(match, !force_inference)
-    mi === nothing && return Any, nothing
-    mi = mi::MethodInstance
-    # decide if it's likely to be worthwhile
-    if !force_inference && !const_prop_heuristic(interp, method, mi)
-        return Any, nothing
-    end
-    inf_cache = get_inference_cache(interp)
-    inf_result = cache_lookup(mi, argtypes, inf_cache)
-    if inf_result === nothing
-        if edgecycle
-            # if there might be a cycle, check to make sure we don't end up
-            # calling ourselves here.
-            infstate = sv
-            cyclei = 0
-            while !(infstate === nothing)
-                if method === infstate.linfo.def && any(infstate.result.overridden_by_const)
-                    return Any, nothing
-                end
-                if cyclei < length(infstate.callers_in_cycle)
-                    cyclei += 1
-                    infstate = infstate.callers_in_cycle[cyclei]
-                else
-                    cyclei = 0
-                    infstate = infstate.parent
-                end
-            end
-        end
-        inf_result = InferenceResult(mi, argtypes)
-        frame = InferenceState(inf_result, #=cache=#false, interp)
-        frame === nothing && return Any, nothing # this is probably a bad generated function (unsound), but just ignore it
-        frame.parent = sv
-        push!(inf_cache, inf_result)
-        typeinf(interp, frame) || return Any, nothing
-    end
-    result = inf_result.result
-    # if constant inference hits a cycle, just bail out
-    isa(result, InferenceState) && return Any, nothing
-    #=== abstract_call_method_with_const_args patch point 3 start ===#
-    add_backedge!(mi, sv)
-    $update_reports!(interp, sv)
-    #=== abstract_call_method_with_const_args patch point 3 end ===#
-    return result, inf_result
-end
-
-end; else; quote # @static if IS_LATEST; quote
-
-function abstract_call_method_with_const_args(interp::$JETInterpreter, @nospecialize(rettype), @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch, sv::InferenceState, edgecycle::Bool)
-    method = match.method
-    nargs::Int = method.nargs
-    method.isva && (nargs -= 1)
-    length(argtypes) >= nargs || return Any
-    haveconst = false
-    allconst = true
-    # see if any or all of the arguments are constant and propagating constants may be worthwhile
-    for a in argtypes
-        a = widenconditional(a)
-        if allconst && !isa(a, Const) && !isconstType(a) && !isa(a, PartialStruct)
-            allconst = false
-        end
-        if !haveconst && has_nontrivial_const_info(a) && const_prop_profitable(a)
-            haveconst = true
-        end
-        if haveconst && !allconst
-            break
-        end
-    end
-    #=== abstract_call_method_with_const_args patch point 1 start ===#
-    # force constant propagation even if it doesn't improve return type;
-    # constant prop' may improve report accuracy
-    haveconst || #= improvable_via_constant_propagation(rettype) || =# return Any
-    #=== abstract_call_method_with_const_args patch point 1 end ===#
-    force_inference = $(hasfield(Method, :aggressive_constprop) ? :(method.aggressive_constprop) : false) || InferenceParams(interp).aggressive_constant_propagation
-    if !force_inference && nargs > 1
-        if istopfunction(f, :getindex) || istopfunction(f, :setindex!)
-            arrty = argtypes[2]
-            # don't propagate constant index into indexing of non-constant array
-            if arrty isa Type && arrty <: AbstractArray && !issingletontype(arrty)
-                return Any
-            elseif arrty ⊑ Array
-                return Any
-            end
-        elseif istopfunction(f, :iterate)
-            itrty = argtypes[2]
-            if itrty ⊑ Array
-                return Any
-            end
-        end
-    end
-    if !force_inference && !allconst &&
-        (istopfunction(f, :+) || istopfunction(f, :-) || istopfunction(f, :*) ||
-         istopfunction(f, :(==)) || istopfunction(f, :!=) ||
-         istopfunction(f, :<=) || istopfunction(f, :>=) || istopfunction(f, :<) || istopfunction(f, :>) ||
-         istopfunction(f, :<<) || istopfunction(f, :>>))
-         # it is almost useless to inline the op of when all the same type,
-         # but highly worthwhile to inline promote of a constant
-         length(argtypes) > 2 || return Any
-         t1 = widenconst(argtypes[2])
-         all_same = true
-         for i in 3:length(argtypes)
-             if widenconst(argtypes[i]) !== t1
-                 all_same = false
-                 break
-             end
-         end
-         all_same && return Any
-    end
-    if istopfunction(f, :getproperty) || istopfunction(f, :setproperty!)
-        force_inference = true
-    end
-    force_inference |= allconst
-    mi = specialize_method(match, !force_inference)
-    mi === nothing && return Any
-    mi = mi::MethodInstance
-    # decide if it's likely to be worthwhile
-    if !force_inference && !const_prop_heuristic(interp, method, mi)
-        return Any
-    end
-    inf_cache = get_inference_cache(interp)
-    inf_result = cache_lookup(mi, argtypes, inf_cache)
-    if inf_result === nothing
-        if edgecycle
-            # if there might be a cycle, check to make sure we don't end up
-            # calling ourselves here.
-            infstate = sv
-            cyclei = 0
-            while !(infstate === nothing)
-                if method === infstate.linfo.def && any(infstate.result.overridden_by_const)
-                    return Any
-                end
-                if cyclei < length(infstate.callers_in_cycle)
-                    cyclei += 1
-                    infstate = infstate.callers_in_cycle[cyclei]
-                else
-                    cyclei = 0
-                    infstate = infstate.parent
-                end
-            end
-        end
-        inf_result = InferenceResult(mi, argtypes)
-        frame = InferenceState(inf_result, #=cache=#false, interp)
-        frame === nothing && return Any # this is probably a bad generated function (unsound), but just ignore it
-        $(isdefined(CC, :LimitedAccuracy) || :(frame.limited = true))
-        frame.parent = sv
-        push!(inf_cache, inf_result)
-        typeinf(interp, frame) || return Any
-    end
-    result = inf_result.result
-    # if constant inference hits a cycle, just bail out
-    isa(result, InferenceState) && return Any
-    #=== abstract_call_method_with_const_args patch point 3 start ===#
-    add_backedge!(mi, sv)
-    $update_reports!(interp, sv)
-    #=== abstract_call_method_with_const_args patch point 3 end ===#
-    return result
-end
-
-end; end # @static if IS_LATEST; quote
-
-Core.eval(CC, ex)
-
-# %% for easier interactive update of abstract_call_method_with_const_args
-
-end # function overload_abstract_call_method_with_const_args!()
-push_inithook!(overload_abstract_call_method_with_const_args!)
-
 # works within inter-procedural context
 function CC.abstract_call_method(interp::JETInterpreter, method::Method, @nospecialize(sig), sparams::SimpleVector, hardlimit::Bool, sv::InferenceState)
+    @static IS_LATEST_CALL_INTERFACE && @assert !interp.anyerror
+
+    @static IS_LATEST_CALL_INTERFACE && (nreports = length(interp.reports))
+
     ret = @invoke abstract_call_method(interp::AbstractInterpreter, method::Method, sig, sparams::SimpleVector, hardlimit::Bool, sv::InferenceState)
+
+    @static IS_LATEST_CALL_INTERFACE && (interp.anyerror = (length(interp.reports) - nreports) > 0)
 
     update_reports!(interp, sv)
 
@@ -973,7 +268,7 @@ function update_reports!(interp::JETInterpreter, sv::InferenceState)
     end
 end
 
-@static if IS_LATEST
+@static if isdefined(CC, :abstract_invoke)
 
 import .CC:
     abstract_invoke,
@@ -1018,7 +313,7 @@ function get_msg(::Type{InvalidInvokeErrorReport}, interp, sv, argtypes::Vector{
     return "actual argument type (`$argtype`) doesn't intersect with specified argument type (`$types`)"
 end
 
-end # @static if IS_LATEST
+end # @static if isdefined(CC, :abstract_invoke)
 
 function CC.abstract_eval_special_value(interp::JETInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
     if istoplevel(sv)
