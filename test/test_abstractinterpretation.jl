@@ -688,7 +688,7 @@ end
     end
 end
 
-@static JET.IS_LATEST && @testset "abstract_invoke" begin
+@static isdefined(CC, :abstract_invoke) && @testset "abstract_invoke" begin
     # non-`Type` `argtypes`
     interp, frame = profile_call() do
         invoke(sin, :this_should_be_type, 1.0)
