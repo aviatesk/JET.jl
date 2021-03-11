@@ -56,9 +56,9 @@ import .CC:
 # - report "too many method matched"
 # - maybe "cound not identify method table for call" won't happen since we eagerly propagate bottom for e.g. undef var case, etc.
 
-function abstract_call_gf_by_type(interp::JETInterpreter, @nospecialize(f),
-                                  fargs::Union{Nothing,Vector{Any}}, argtypes::Vector{Any}, @nospecialize(atype),
-                                  sv::InferenceState, max_methods::Int = InferenceParams(interp).MAX_METHODS)
+function CC.abstract_call_gf_by_type(interp::JETInterpreter, @nospecialize(f),
+                                     fargs::Union{Nothing,Vector{Any}}, argtypes::Vector{Any}, @nospecialize(atype),
+                                     sv::InferenceState, max_methods::Int = InferenceParams(interp).MAX_METHODS)
     ret = @invoke abstract_call_gf_by_type(interp::AbstractInterpreter, @nospecialize(f),
                                            fargs::Union{Nothing,Vector{Any}}, argtypes::Vector{Any}, @nospecialize(atype),
                                            sv::InferenceState, max_methods::Int)
@@ -92,7 +92,7 @@ An overload for `abstract_call_gf_by_type(interp::JETInterpreter, ...)`, which k
   inference on non-concrete call sites in a toplevel frame created by
   [`virtual_process!`](@ref).
 """
-function bail_out_toplevel_call(interp::JETInterpreter, @nospecialize(sig), sv)
+function CC.bail_out_toplevel_call(interp::JETInterpreter, @nospecialize(sig), sv)
     return isa(sv.linfo.def, Module) && !isdispatchtuple(sig) && !istoplevel(sv)
 end
 
@@ -105,7 +105,7 @@ With this overload, `abstract_call_gf_by_type(interp::JETInterpreter, ...)` does
 Of course this slows down inference performance, but hoopefully it stays to be "practical"
   speed since the number of matching methods are limited beforehand.
 """
-bail_out_call(interp::JETInterpreter, @nospecialize(t), sv) = false
+CC.bail_out_call(interp::JETInterpreter, @nospecialize(t), sv) = false
 
 @doc """
     add_call_backedges!(interp::JETInterpreter, ...)
@@ -114,11 +114,11 @@ An overload for `abstract_call_gf_by_type(interp::JETInterpreter, ...)`, which a
   backedges (even if a new method can't refine the return type grew up to `Any`).
 This is because a new method definition always has a potential to change the JET analysis result.
 """
-function add_call_backedges!(interp::JETInterpreter,
-                             @nospecialize(rettype),
-                             edges::Vector{MethodInstance},
-                             fullmatch::Vector{Bool}, mts::Vector{Core.MethodTable}, @nospecialize(atype),
-                             sv::InferenceState)
+function CC.add_call_backedges!(interp::JETInterpreter,
+                                @nospecialize(rettype),
+                                edges::Vector{MethodInstance},
+                                fullmatch::Vector{Bool}, mts::Vector{Core.MethodTable}, @nospecialize(atype),
+                                sv::InferenceState)
     # a new method may refine analysis, so we always add backedges
     # if rettype === Any
     #     # for `NativeInterpreter`, we don't add backedges when a new method couldn't refine
@@ -137,9 +137,9 @@ function add_call_backedges!(interp::JETInterpreter,
     end
 end
 
-function abstract_call_method_with_const_args(interp::JETInterpreter, @nospecialize(rettype),
-                                              @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch,
-                                              sv::InferenceState, edgecycle::Bool)
+function CC.abstract_call_method_with_const_args(interp::JETInterpreter, @nospecialize(rettype),
+                                                 @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch,
+                                                 sv::InferenceState, edgecycle::Bool)
     result, inf_result = @invoke abstract_call_method_with_const_args(interp::AbstractInterpreter, @nospecialize(rettype),
                                                                       @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch,
                                                                       sv::InferenceState, edgecycle::Bool)
@@ -161,7 +161,7 @@ An overload for `abstract_call_method_with_const_args(interp::JETInterpreter, ..
   analysis by throwing away false positive error reports by cutting off the unreachable
   control flow.
 """
-function const_prop_entry_heuristic(interp::JETInterpreter, @nospecialize(rettype), sv::InferenceState, edgecycle::Bool)
+function CC.const_prop_entry_heuristic(interp::JETInterpreter, @nospecialize(rettype), sv::InferenceState, edgecycle::Bool)
     anyerror = interp.anyerror
     interp.anyerror = false # reset immediately, this `anyerror` is only valid for this match
     CC.call_result_unused(sv) && edgecycle && return false
