@@ -170,7 +170,7 @@ end
 
 else # @static if IS_LATEST_CALL_INTERFACE
 
-include("legacy/abstractinterpretation.jl")
+include("legacy/abstractinterpretation")
 
 end # @static if IS_LATEST_CALL_INTERFACE
 
