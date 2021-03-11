@@ -85,7 +85,7 @@ function abstract_call_gf_by_type(interp::JETInterpreter, @nospecialize(f),
     return ret
 end
 
-"""
+@doc """
     bail_out_toplevel_call(interp::JETInterpreter, ...)
 
 An overload for `abstract_call_gf_by_type(interp::JETInterpreter, ...)`, which keeps
@@ -96,7 +96,7 @@ function bail_out_toplevel_call(interp::JETInterpreter, @nospecialize(sig), sv)
     return isa(sv.linfo.def, Module) && !isdispatchtuple(sig) && !istoplevel(sv)
 end
 
-"""
+@doc """
     bail_out_call(interp::JETInterpreter, ...)
 
 With this overload, `abstract_call_gf_by_type(interp::JETInterpreter, ...)` doesn't bail out
@@ -107,7 +107,7 @@ Of course this slows down inference performance, but hoopefully it stays to be "
 """
 bail_out_call(interp::JETInterpreter, @nospecialize(t), sv) = false
 
-"""
+@doc """
     add_call_backedges!(interp::JETInterpreter, ...)
 
 An overload for `abstract_call_gf_by_type(interp::JETInterpreter, ...)`, which always add
@@ -152,7 +152,7 @@ function abstract_call_method_with_const_args(interp::JETInterpreter, @nospecial
     return result, inf_result
 end
 
-"""
+@doc """
     const_prop_entry_heuristic(interp::JETInterpreter, @nospecialize(rettype), sv::InferenceState, edgecycle::Bool)
 
 An overload for `abstract_call_method_with_const_args(interp::JETInterpreter, ...)`, which
