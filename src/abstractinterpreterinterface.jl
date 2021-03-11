@@ -3,7 +3,7 @@
 
 # TODO more configurations, e.g. ignore user-specified modules and such
 """
-Configurations for JET analysis
+Configurations for JET analysis.
 
 ---
 - `strict_condition_check::Bool = false` \\
@@ -73,7 +73,10 @@ struct JETAnalysisParams
 end
 
 """
-Configurations for Julia's native type inference routine
+Configurations for Julia's native type inference routine.
+You can specify all the keyword parameters of `Core.Compiler.InferenceParams`, e.g.
+  `max_methods::Int = 3`, `union_splitting::Int = 4`.
+Listed here are selections of those parameters that can have a potent influence on JET analysis.
 
 ---
 - `ipo_constant_propagation::Bool = true` \\
@@ -92,9 +95,6 @@ Configurations for Julia's native type inference routine
   This configuration may improve the analysis performance, but it's better to be turned off
     for JET analysis, because there may be other errors even in those code blocks.
 ---
-!!! note
-    You can also specify all the other parameters that `Core.Compiler.InferenceParams` can accept,
-    e.g. `max_methods::Int = 3`, `union_splitting::Int = 4`, etc.
 """
 @jetconfigurable JETInferenceParams(; ipo_constant_propagation::Bool        = true,
                                       aggressive_constant_propagation::Bool = true,
@@ -157,7 +157,7 @@ const DEFAULT_LOGGER_LEVEL = INFO_LOGGER_LEVEL
 get_logger_level(io::IO)   = get(io, LOGGER_LEVEL_KEY, DEFAULT_LOGGER_LEVEL)::Int
 
 """
-Logging configurations for JET analysis
+Logging configurations for JET analysis.
 
 ---
 - `toplevel_logger::Union{Nothing,IO} = nothing` \\

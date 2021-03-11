@@ -2,7 +2,7 @@
 # -------------
 
 """
-JET configurations for error printing
+JET configurations for error printing.
 
 ---
 - `print_toplevel_success::Bool = false` \\
