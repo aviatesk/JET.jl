@@ -98,22 +98,22 @@ BenchmarkTools.DEFAULT_PARAMETERS.seconds = 60
 
 const SUITE = BenchmarkGroup()
 
-SUITE["first time"] = @jetbenchmarkable (@profile_call identity(nothing)) setup = (using JET)
-SUITE["easy"] = @jetbenchmarkable (@profile_call sum("julia")) setup = begin
+SUITE["first time"] = @jetbenchmarkable (@analyze_call identity(nothing)) setup = (using JET)
+SUITE["easy"] = @jetbenchmarkable (@analyze_call sum("julia")) setup = begin
     using JET
-    @profile_call identity(nothing)
+    @analyze_call identity(nothing)
 end
-SUITE["cached easy"] = @jetbenchmarkable (@profile_call sum("julia")) setup = begin
+SUITE["cached easy"] = @jetbenchmarkable (@analyze_call sum("julia")) setup = begin
     using JET
-    @profile_call sum("julia")
+    @analyze_call sum("julia")
 end
-SUITE["a bit complex"] = @jetbenchmarkable (@profile_call rand(Bool)) setup = begin
+SUITE["a bit complex"] = @jetbenchmarkable (@analyze_call rand(Bool)) setup = begin
     using JET
-    @profile_call identity(nothing)
+    @analyze_call identity(nothing)
 end
-SUITE["invalidation"] = @jetbenchmarkable (@profile_call println(QuoteNode(nothing))) setup = begin
+SUITE["invalidation"] = @jetbenchmarkable (@analyze_call println(QuoteNode(nothing))) setup = begin
     using JET
-    @profile_call println(QuoteNode(nothing))
+    @analyze_call println(QuoteNode(nothing))
     @eval Base begin
         function show_sym(io::IO, sym::Symbol; allow_macroname=false)
             if is_valid_identifier(sym)
@@ -128,27 +128,27 @@ SUITE["invalidation"] = @jetbenchmarkable (@profile_call println(QuoteNode(nothi
     end
 end
 SUITE["self profiling"] = @jetbenchmarkable(
-    profile_call(JET.virtual_process!,
+    analyze_call(JET.virtual_process!,
                  (AbstractString, AbstractString, Module, Symbol, JET.JETInterpreter),
                  ),
     setup = begin
         using JET
-        @profile_call identity(nothing)
+        @analyze_call identity(nothing)
     end)
 SUITE["toplevel"] = @jetbenchmarkable(
-    (@profile_toplevel begin
+    (@analyze_toplevel begin
         foo(args...) = sum(args)
         foo(rand(Char, 1000000000)...)
     end),
     setup = begin
         include("test/interactive_utils.jl")
-        @profile_toplevel begin
+        @analyze_toplevel begin
             const myidentity = identity
             myidentity(nothing)
         end
     end)
 SUITE["toplevel first time"] = @jetbenchmarkable(
-    (@profile_toplevel begin
+    (@analyze_toplevel begin
         foo(args...) = sum(args)
         foo(rand(Char, 1000000000)...)
     end),

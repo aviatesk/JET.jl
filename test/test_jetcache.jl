@@ -2,7 +2,7 @@
     # invalidate native code cache in a system image if it has not been analyzed by JET
     # yes this slows down anlaysis for sure, but otherwise JET will miss obvious errors like below
     let
-        interp, frame = profile_call((Nothing,)) do a
+        interp, frame = analyze_call((Nothing,)) do a
             a.field
         end
         @test length(interp.reports) === 1
@@ -31,7 +31,7 @@
             end
 
             # should have error reported
-            interp1, = @profile_call println(QuoteNode(nothing))
+            interp1, = @analyze_call println(QuoteNode(nothing))
 
             # should invoke invalidation in the deeper call site of `println(::QuoteNode)`
             @eval Base begin
@@ -48,7 +48,7 @@
             end
 
             # now we shouldn't have reports
-            interp2, = @profile_call println(QuoteNode(nothing))
+            interp2, = @analyze_call println(QuoteNode(nothing))
 
             # again, invoke invalidation
             @eval Base begin
@@ -65,7 +65,7 @@
             end
 
             # now we should have reports, again
-            interp3, = @profile_call println(QuoteNode(nothing))
+            interp3, = @analyze_call println(QuoteNode(nothing))
 
             length(interp1.reports), length(interp2.reports), length(interp3.reports) # return
         end
@@ -83,7 +83,7 @@ end
         interp, frame = Core.eval(m, quote
             sum′(s) = sum(s)
             sum′′(s) = sum′(s)
-            $(profile_call)() do
+            $(analyze_call)() do
                 sum′′("julia")
             end
         end)
@@ -95,7 +95,7 @@ end
         m = gen_virtual_module()
 
         interp, frame = Core.eval(m, quote
-            $(profile_call)() do
+            $(analyze_call)() do
                 sum("julia")
             end
         end)
@@ -103,7 +103,7 @@ end
 
         interp, frame = Core.eval(m, quote
             sum′(s) = sum(s)
-            $(profile_call)() do
+            $(analyze_call)() do
                 sum′("julia")
             end
         end)
@@ -111,7 +111,7 @@ end
 
         interp, frame = Core.eval(m, quote
             sum′′(s) = sum′(s)
-            $(profile_call)() do
+            $(analyze_call)() do
                 sum′′("julia")
             end
         end)
@@ -121,7 +121,7 @@ end
     # should not error for virtual stacktrace traversing with a frame for inner constructor
     # https://github.com/aviatesk/JET.jl/pull/69
     let
-        res, frame = @profile_toplevel begin
+        res, frame = @analyze_toplevel begin
             struct Foo end
             println(Foo())
         end
@@ -136,7 +136,7 @@ end
             struct Foo{T}
                 bar::T
             end
-            $(profile_call)((Foo{Int},)) do foo
+            $(analyze_call)((Foo{Int},)) do foo
                 foo.baz # typo
             end
         end)
@@ -155,7 +155,7 @@ end
                 bar::T
             end
             getter(foo, prop) = getproperty(foo, prop)
-            $(profile_call)((Foo{Int}, Bool)) do foo, cond
+            $(analyze_call)((Foo{Int}, Bool)) do foo, cond
                 getter(foo, :bar)
                 cond ? getter(foo, :baz) : getter(foo, :qux) # non-deterministic typos
             end

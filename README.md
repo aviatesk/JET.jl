@@ -62,7 +62,7 @@ You can have JET.jl detect possible errors:
 ```julia
 julia> using JET
 
-julia> profile_and_watch_file("demo.jl"; annotate_types = true)
+julia> report_and_watch_file("demo.jl"; annotate_types = true)
 [toplevel-info] analysis entered into demo.jl
 [toplevel-info] analysis from demo.jl finished in 3.455 sec
 ═════ 4 possible errors found ═════
@@ -165,14 +165,6 @@ No errors !
 - implement a "global" version of type inference algorithm (see [this comment](https://github.com/aviatesk/JET.jl/blob/80fd0d9586a01dda7e460ccd71d3d9f33189d4ba/src/abstractinterpretation.jl#L517-L523))
 - performance linting (report performance pitfalls, i.e. report an error when there're too many methods matched)
 - ideally, I want to extend JET.jl to provide some of LSPs other than diagnostics, e.g. providers of completions, rename refactor, etc.
-
-
-### developer note
-
-JET.jl overloads functions from Juila's `Core.Compiler` module, which are intended for its native JIT type inference.
-
-They're overloaded on `JETInterpreter` so that `typeinf(::JETInterpreter, ::InferenceState)` will do abstract interpretation tuned for JET.jl's type error analysis.
-Most overloads are done by using `invoke`, which allows us to call down to and reuse the original `NativeInterpreter`'s abstract interpretation methods while passing `JETInterpreter` for subsequent (maybe overloaded) callees (see `@invoke` macro).
 
 
 ### acknowledgement

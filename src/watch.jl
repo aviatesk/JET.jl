@@ -1,5 +1,6 @@
 """
 Configurations for "watch" mode.
+The configurations will only be active when used with [`report_and_watch_file`](@ref).
 
 ---
 - `revise_all::Bool = true` \\
@@ -21,7 +22,7 @@ Configurations for "watch" mode.
       e.g. editing functions defined in `Base`:
       ```julia
       # re-performe analysis when you make a change to `Base`
-      julia> profile_and_watch_file(yourfile; revise_modules = [Base])
+      julia> report_and_watch_file(yourfile; revise_modules = [Base])
       ```
 """
 struct WatchConfig
@@ -36,12 +37,32 @@ struct WatchConfig
                    )
 end
 
-function profile_and_watch_file(args...; kwargs...)
+"""
+    report_and_watch_file([io::IO = stdout],
+                          filename::AbstractString,
+                          mod::Module = Main;
+                          # enable info logger by default for watch mode
+                          toplevel_logger::Union{Nothing,IO} = IOContext(io, $LOGGER_LEVEL_KEY => $INFO_LOGGER_LEVEL),
+                          jetconfigs...)
+
+Watches `filename` and trigger JET analysis with [`report_file`](@ref) on code update.
+JET will try to analyze all the `include`d files and so it will re-trigger analysis if there
+  is any update in the `include`d detected.
+
+This function internally uses [Revise.jl](https://timholy.github.io/Revise.jl/stable/) to
+  track code updates. Revise also offers possibilities to track changes in files that are
+  not directly analyzed by JET, or even changes in `Base` files. See [`WatchConfig`](@ref)
+  in the [JET configurations](@ref) documentation for more details.
+
+!!! note
+    This function will enable the toplevel logger (see [`JETLogger`](@ref) for details) by default with the default logging level.
+"""
+function report_and_watch_file(args...; kwargs...)
     if @isdefined(Revise)
-        _profile_and_watch_file(args...; kwargs...)
+        _report_and_watch_file(args...; kwargs...)
     else
         init_revise!()
-        @invokelatest _profile_and_watch_file(args...; kwargs...)
+        @invokelatest _report_and_watch_file(args...; kwargs...)
     end
 end
 
@@ -50,27 +71,27 @@ function init_revise!()
     @eval (@__MODULE__) using Revise
 end
 
-_profile_and_watch_file(args...; kwargs...) = _profile_and_watch_file(stdout::IO, args...; kwargs...)
-function _profile_and_watch_file(io::IO,
-                                 filename::AbstractString,
-                                 args...;
-                                 # enable info logger by default for watch mode
-                                 toplevel_logger::Union{Nothing,IO} = IOContext(io, LOGGER_LEVEL_KEY => INFO_LOGGER_LEVEL),
-                                 jetconfigs...)
+_report_and_watch_file(args...; kwargs...) = _report_and_watch_file(stdout::IO, args...; kwargs...)
+function _report_and_watch_file(io::IO,
+                                filename::AbstractString,
+                                args...;
+                                # enable info logger by default for watch mode
+                                toplevel_logger::Union{Nothing,IO} = IOContext(io, LOGGER_LEVEL_KEY => INFO_LOGGER_LEVEL),
+                                jetconfigs...)
     config = WatchConfig(; jetconfigs...)
 
-    included_files, _ = profile_file(io, filename, args...;
-                                     toplevel_logger,
-                                     jetconfigs...)
+    included_files, _ = report_file(io, filename, args...;
+                                    toplevel_logger,
+                                    jetconfigs...)
 
     interrupted = false
     while !interrupted
         try
             Revise.entr(collect(included_files), config.revise_modules; all = config.revise_all) do
                 println(io)
-                included_files′, _ = profile_file(io, filename, args...;
-                                                  toplevel_logger,
-                                                  jetconfigs...)
+                included_files′, _ = report_file(io, filename, args...;
+                                                 toplevel_logger,
+                                                 jetconfigs...)
                 if any(∉(included_files), included_files′)
                     # refresh watch files
                     throw(InsufficientWatches(included_files′))

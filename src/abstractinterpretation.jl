@@ -212,7 +212,7 @@ function analyze_task_parallel_code!(interp::JETInterpreter, @nospecialize(f), a
               isa(v, Core.PartialStruct) ? v.typ :
               isa(v, DataType) ? v :
               return)::Type
-        profile_additional_pass_by_type!(interp, Tuple{ft}, sv)
+        analyze_additional_pass_by_type!(interp, Tuple{ft}, sv)
         return
     end
     return
@@ -220,7 +220,7 @@ end
 
 # run additional interpretation with a new interpreter,
 # and then append the reports to the original interpreter
-function profile_additional_pass_by_type!(interp::JETInterpreter, @nospecialize(tt::Type{<:Tuple}), sv::InferenceState)
+function analyze_additional_pass_by_type!(interp::JETInterpreter, @nospecialize(tt::Type{<:Tuple}), sv::InferenceState)
     newinterp = JETInterpreter(interp)
 
     # in order to preserve the inference termination, we keep to use the current frame
@@ -232,7 +232,7 @@ function profile_additional_pass_by_type!(interp::JETInterpreter, @nospecialize(
     mm = get_single_method_match(tt, InferenceParams(newinterp).MAX_METHODS, get_world_counter(newinterp))
     rt, _, _ = abstract_call_method(newinterp, mm.method, mm.spec_types, mm.sparams, false, sv)
 
-    # corresponding to the same logic in `profile_frame!`
+    # corresponding to the same logic in `analyze_frame!`
     if rt === Bottom
         if !isempty(newinterp.uncaught_exceptions)
             append!(newinterp.reports, newinterp.uncaught_exceptions)

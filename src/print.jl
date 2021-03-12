@@ -3,6 +3,7 @@
 
 """
 JET configurations for error printing.
+If the entry renders the collected error points, the configurations below will be active.
 
 ---
 - `print_toplevel_success::Bool = false` \\

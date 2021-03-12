@@ -1,4 +1,6 @@
 /.benchmarkci/
+/docs/build/
 !benchmark/tune.json
 Manifest.toml
 !/benchmark/Manifest.toml
+!/docs/Manifest.toml

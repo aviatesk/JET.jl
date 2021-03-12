@@ -184,7 +184,7 @@ _isexpr_check(ex::Expr, heads, n::Int)        = in(ex.head, heads) && length(ex.
 """
     @invoke f(arg::T, ...; kwargs...)
 
-Provides a convenient way to call [`invoke`](@ref);
+Provides a convenient way to call [`invoke`](https://docs.julialang.org/en/v1/base/base/#Core.invoke);
 `@invoke f(arg1::T1, arg2::T2; kwargs...)` will be expanded into `invoke(f, Tuple{T1,T2}, arg1, arg2; kwargs...)`.
 When an argument's type annotation is omitted, it's specified as `Any` argument, e.g.
 `@invoke f(arg1::T, arg2)` will be expanded into `invoke(f, Tuple{T,Any}, arg1, arg2)`.
@@ -213,7 +213,7 @@ end
 """
     @invokelatest f(args...; kwargs...)
 
-Provides a convenient way to call [`Base.invokelatest`](@ref).
+Provides a convenient way to call [`Base.invokelatest`](https://docs.julialang.org/en/v1/base/base/#Base.invokelatest).
 `@invokelatest f(args...; kwargs...)` will simply be expanded into
 `Base.invokelatest(f, args...; kwargs...)`.
 """
@@ -431,27 +431,49 @@ include("watch.jl")
 # entry
 # =====
 
-function profile_file(io::IO,
-                      filename::AbstractString,
-                      mod::Module = Main;
-                      jetconfigs...)
-    text = read(filename, String)
-    return profile_text(io, text, filename, mod; jetconfigs...)
-end
-profile_file(args...; jetconfigs...) = profile_file(stdout::IO, args...; jetconfigs...)
+"""
+    report_file([io::IO = stdout],
+                filename::AbstractString,
+                mod::Module = Main;
+                jetconfigs...) -> included_files::Set{String}, any_reported::Bool
 
-function profile_text(io::IO,
-                      text::AbstractString,
-                      filename::AbstractString = "top-level",
-                      mod::Module = Main;
-                      jetconfigs...)
+Reads a text of `filename` and then calls [`report_text`](@ref) on it.
+"""
+function report_file(io::IO,
+                     filename::AbstractString,
+                     mod::Module = Main;
+                     jetconfigs...)
+    text = read(filename, String)
+    return report_text(io, text, filename, mod; jetconfigs...)
+end
+report_file(args...; jetconfigs...) = report_file(stdout::IO, args...; jetconfigs...)
+
+"""
+    report_text([io::IO = stdout],
+                text::AbstractString,
+                filename::AbstractString = "top-level",
+                mod::Module = Main;
+                jetconfigs...) -> included_files::Set{String}, any_reported::Bool
+
+Analyzes `text`, prints the collected error reports to the `io` stream, and finally returns:
+- `included_files::Set{String}`: files analyzed by JET
+- `any_reported`: indicates if there was any error point reported
+
+`filename` is supposed to be the name of file, whose content is `text`, and `mod` will
+  specify the module context of toplevel execution simulation.
+"""
+function report_text(io::IO,
+                     text::AbstractString,
+                     filename::AbstractString = "top-level",
+                     mod::Module = Main;
+                     jetconfigs...)
     included_files, reports, postprocess = collect_reports(mod,
                                                            text,
                                                            filename;
                                                            jetconfigs...)
     return included_files, print_reports(io, reports, postprocess; jetconfigs...)
 end
-profile_text(args...; jetconfigs...) = profile_text(stdout::IO, args...; jetconfigs...)
+report_text(args...; jetconfigs...) = report_text(stdout::IO, args...; jetconfigs...)
 
 function collect_reports(actualmod, text, filename; jetconfigs...)
     interp = JETInterpreter(; jetconfigs...)
@@ -485,10 +507,10 @@ function gen_postprocess(virtualmod, actualmod)
 end
 
 # this dummy module will be used by `istoplevel` to check if the current inference frame is
-# created by `profile_toplevel!` or not (i.e. `@generated` function)
+# created by `analyze_toplevel!` or not (i.e. `@generated` function)
 module __virtual_toplevel__ end
 
-function profile_toplevel!(interp::JETInterpreter, src::CodeInfo)
+function analyze_toplevel!(interp::JETInterpreter, src::CodeInfo)
     # construct toplevel `MethodInstance`
     mi = ccall(:jl_new_method_instance_uninit, Ref{Core.MethodInstance}, ());
     mi.uninferred = src
@@ -500,7 +522,7 @@ function profile_toplevel!(interp::JETInterpreter, src::CodeInfo)
     result = InferenceResult(mi);
     frame = InferenceState(result, src, #=cached=# true, interp)::InferenceState;
 
-    return profile_frame!(interp, frame)
+    return analyze_frame!(interp, frame)
 end
 
 # HACK this is an native hack to re-use `AbstractInterpreter`'s approximated slot types for
@@ -554,10 +576,10 @@ function transform_abstract_global_symbols!(interp::JETInterpreter, src::CodeInf
     interp.global_slots = Dict(idx => slotname for (slotname, idx) in abstrct_global_variables)
 end
 
-# TODO `profile_call_builtin!` ?
-function profile_gf_by_type!(interp::JETInterpreter, @nospecialize(tt::Type{<:Tuple}))
+# TODO `analyze_call_builtin!` ?
+function analyze_gf_by_type!(interp::JETInterpreter, @nospecialize(tt::Type{<:Tuple}))
     mm = get_single_method_match(tt, InferenceParams(interp).MAX_METHODS, get_world_counter(interp))
-    return profile_method_signature!(interp, mm.method, mm.spec_types, mm.sparams)
+    return analyze_method_signature!(interp, mm.method, mm.spec_types, mm.sparams)
 end
 
 function get_single_method_match(@nospecialize(tt), lim, world)
@@ -570,8 +592,8 @@ function get_single_method_match(@nospecialize(tt), lim, world)
     return first(mms)::MethodMatch
 end
 
-profile_method!(interp::JETInterpreter, m::Method) =
-    profile_method_signature!(interp, m, m.sig, method_sparams(m))
+analyze_method!(interp::JETInterpreter, m::Method) =
+    analyze_method_signature!(interp, m, m.sig, method_sparams(m))
 
 function method_sparams(m::Method)
     s = TypeVar[]
@@ -583,7 +605,7 @@ function method_sparams(m::Method)
     return svec(s...)
 end
 
-function profile_method_signature!(interp::JETInterpreter,
+function analyze_method_signature!(interp::JETInterpreter,
                                    m::Method,
                                    @nospecialize(atype),
                                    sparams::SimpleVector,
@@ -594,10 +616,10 @@ function profile_method_signature!(interp::JETInterpreter,
 
     frame = InferenceState(result, #=cached=# true, interp)::InferenceState
 
-    return profile_frame!(interp, frame)
+    return analyze_frame!(interp, frame)
 end
 
-function profile_frame!(interp::JETInterpreter, frame::InferenceState)
+function analyze_frame!(interp::JETInterpreter, frame::InferenceState)
     typeinf(interp, frame)
 
     # report `throw` calls "appropriately";
@@ -615,12 +637,30 @@ end
 # test, interactive
 # =================
 
-# profiles from call expression
-macro profile_call(ex0...)
-    return InteractiveUtils.gen_call_with_extracted_types_and_kwargs(__module__, :profile_call, ex0)
+"""
+    @analyze_call [jetconfigs...] f(args...)
+
+Evaluates the arguments to the function call, determines its types, and then calls
+  [`analyze_call`](@ref) on the resulting expression.
+As with `@code_typed` and its family, any of [JET configurations](@ref) can be given as the optional
+  arguments like this:
+```julia
+# analyzes `rand(::Type{Bool})` with `aggressive_constant_propagation` configuration turned off
+julia> @analyze_call aggressive_constant_propagation=false rand(Bool)
+```
+"""
+macro analyze_call(ex0...)
+    return InteractiveUtils.gen_call_with_extracted_types_and_kwargs(__module__, :analyze_call, ex0)
 end
 
-function profile_call(@nospecialize(f), @nospecialize(types = Tuple{}); jetconfigs...)
+"""
+    analyze_call(f, types = Tuple{}; jetconfigs...) -> (interp::JETInterpreter, frame::InferenceFrame)
+
+Analyzes the generic function call with the given type signature, and returns:
+- `interp::JETInterpreter`, which contains analyzed error reports and such
+- `frame::InferenceFrame`, which is the final state of the abstract interpretation
+"""
+function analyze_call(@nospecialize(f), @nospecialize(types = Tuple{}); jetconfigs...)
     ft = Core.Typeof(f)
     if isa(types, Type)
         u = unwrap_unionall(types)
@@ -630,16 +670,33 @@ function profile_call(@nospecialize(f), @nospecialize(types = Tuple{}); jetconfi
     end
 
     interp = JETInterpreter(; jetconfigs...)
-    return profile_gf_by_type!(interp, tt)
+    return analyze_gf_by_type!(interp, tt)
 end
 
-# collects and prints reports from call expression
+"""
+    @report_call [jetconfigs...] f(args...)
+
+Evaluates the arguments to the function call, determines its types, and then calls
+  [`report_call`](@ref) on the resulting expression.
+As with `@code_typed` and its family, any of [JET configurations](@ref) can be given as the optional
+  arguments like this:
+```julia
+# reports `rand(::Type{Bool})` with `aggressive_constant_propagation` configuration turned off
+julia> @report_call aggressive_constant_propagation=false rand(Bool)
+```
+"""
 macro report_call(ex0...)
     return InteractiveUtils.gen_call_with_extracted_types_and_kwargs(__module__, :report_call, ex0)
 end
 
+"""
+    report_call(f, types = Tuple{}; jetconfigs...) -> result_type::Any
+
+Analyzes the generic function call with the given type signature, and then prints collected
+  error points to `stdout`, and finally returns the result type of the call.
+"""
 function report_call(@nospecialize(f), @nospecialize(types = Tuple{}); jetconfigs...)
-    interp, frame = profile_call(f, types; jetconfigs...)
+    interp, frame = analyze_call(f, types; jetconfigs...)
     print_reports(interp.reports; jetconfigs...)
     return get_result(frame)
 end
@@ -654,11 +711,11 @@ macro src(ex) QuoteNode(first(lower(__module__, ex).args)) end
 # =======
 
 export
-    profile_file,
-    profile_and_watch_file,
-    profile_text,
-    @profile_call,
-    profile_call,
+    report_file,
+    report_and_watch_file,
+    report_text,
+    @analyze_call,
+    analyze_call,
     @report_call,
     report_call
 

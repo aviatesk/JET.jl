@@ -4,6 +4,7 @@
 # TODO more configurations, e.g. ignore user-specified modules and such
 """
 Configurations for JET analysis.
+These configurations will be active for all the entries.
 
 ---
 - `strict_condition_check::Bool = false` \\
@@ -74,6 +75,8 @@ end
 
 """
 Configurations for Julia's native type inference routine.
+These configurations will be active for all the entries.
+
 You can specify all the keyword parameters of `Core.Compiler.InferenceParams`, e.g.
   `max_methods::Int = 3`, `union_splitting::Int = 4`.
 Listed here are selections of those parameters that can have a potent influence on JET analysis.
@@ -167,11 +170,11 @@ Logging configurations for JET analysis.
   Examples:
   * logs into `stdout`
     ```julia
-    julia> profile_file(filename; toplevel_logger = stdout)
+    julia> report_file(filename; toplevel_logger = stdout)
     ```
   * logs into `io::IOBuffer` with "debug" logger level
     ```julia
-    julia> profile_file(filename; toplevel_logger = IOContext(io, $(repr(LOGGER_LEVEL_KEY)) => $DEBUG_LOGGER_LEVEL));
+    julia> report_file(filename; toplevel_logger = IOContext(io, $(repr(LOGGER_LEVEL_KEY)) => $DEBUG_LOGGER_LEVEL));
     ```
 ---
 - `inference_logger::Union{Nothing,IO} = nothing` \\
@@ -182,19 +185,19 @@ Logging configurations for JET analysis.
   Examples:
   * logs into `stdout`
     ```julia
-    profile_call(f, args...; inference_logger = stdout)
+    analyze_call(f, args...; inference_logger = stdout)
     ```
   * logs into `io::IOBuffer` with "debug" logger level
     ```julia
-    julia> profile_call(f, args...; inference_logger = IOContext(io, $(repr(LOGGER_LEVEL_KEY)) => $DEBUG_LOGGER_LEVEL))
+    julia> analyze_call(f, args...; inference_logger = IOContext(io, $(repr(LOGGER_LEVEL_KEY)) => $DEBUG_LOGGER_LEVEL))
     ```
 ---
 !!! tip
     Of course you can specify both `toplevel_logger` and `inference_logger` at the same time like below:
     ```julia
-    julia> profile_and_watch_file(filename;
-                                  toplevel_logger = IOContext(logger_io, $(repr(LOGGER_LEVEL_KEY)) => $DEBUG_LOGGER_LEVEL),
-                                  inference_logger = inference_io)
+    julia> report_and_watch_file(filename;
+                                 toplevel_logger = IOContext(logger_io, $(repr(LOGGER_LEVEL_KEY)) => $DEBUG_LOGGER_LEVEL),
+                                 inference_logger = inference_io)
     ```
 """
 struct JETLogger
