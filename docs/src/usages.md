@@ -41,9 +41,9 @@ There are utilities for checking JET analysis in a running Julia session like RE
     compiler produces. In particular, JET currently disables inlining for reasons and it can have a potent impact on the
     performance of your code in actual execution.
 
-    JET in the future will offer a "proper" UI to render JET analysis result to users, whose process isn't supposed to
+    JET in the future will offer a more "proper" UI to render JET analysis result to users, whose process isn't supposed to
     interact with actual user's runtime in any way (I'm thinking of IDE/CI integration or such).
-    Then these utilities will only be used for JET's testing.
+    Then these utilities will only be used for JET's testing, and not be really user-facing.
 
 ```@docs
 report_call
