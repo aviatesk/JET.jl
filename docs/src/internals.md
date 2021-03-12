@@ -1,12 +1,4 @@
-# JET Internals
-
-## Toplevel Analysis
-
-```@docs
-JET.virtual_process!
-JET.partially_interpret!
-JET.ConcreteInterpreter
-```
+# JET's Internals
 
 ## Abstract Interpretation
 
@@ -24,6 +16,16 @@ JET.analyze_task_parallel_code!
 JET.is_from_same_frame
 JET.AbstractGlobal
 ```
+
+
+## Toplevel Analysis
+
+```@docs
+JET.virtual_process!
+JET.partially_interpret!
+JET.ConcreteInterpreter
+```
+
 
 ## Utilities
 
