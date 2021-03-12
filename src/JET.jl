@@ -184,7 +184,7 @@ _isexpr_check(ex::Expr, heads, n::Int)        = in(ex.head, heads) && length(ex.
 """
     @invoke f(arg::T, ...; kwargs...)
 
-Provides a convenient way to call [`invoke`](@ref);
+Provides a convenient way to call [`invoke`](https://docs.julialang.org/en/v1/base/base/#Core.invoke);
 `@invoke f(arg1::T1, arg2::T2; kwargs...)` will be expanded into `invoke(f, Tuple{T1,T2}, arg1, arg2; kwargs...)`.
 When an argument's type annotation is omitted, it's specified as `Any` argument, e.g.
 `@invoke f(arg1::T, arg2)` will be expanded into `invoke(f, Tuple{T,Any}, arg1, arg2)`.
@@ -213,7 +213,7 @@ end
 """
     @invokelatest f(args...; kwargs...)
 
-Provides a convenient way to call [`Base.invokelatest`](@ref).
+Provides a convenient way to call [`Base.invokelatest`](https://docs.julialang.org/en/v1/base/base/#Base.invokelatest).
 `@invokelatest f(args...; kwargs...)` will simply be expanded into
 `Base.invokelatest(f, args...; kwargs...)`.
 """
@@ -431,6 +431,14 @@ include("watch.jl")
 # entry
 # =====
 
+"""
+    report_file([io::IO = stdout],
+                filename::AbstractString,
+                mod::Module = Main;
+                jetconfigs...) -> included_files::Set{String}, any_reported::Bool
+
+Reads a text of `filename` and then calls [`report_text`](@ref) on it.
+"""
 function report_file(io::IO,
                      filename::AbstractString,
                      mod::Module = Main;
@@ -440,6 +448,20 @@ function report_file(io::IO,
 end
 report_file(args...; jetconfigs...) = report_file(stdout::IO, args...; jetconfigs...)
 
+"""
+    report_text([io::IO = stdout],
+                text::AbstractString,
+                filename::AbstractString = "top-level",
+                mod::Module = Main;
+                jetconfigs...) -> included_files::Set{String}, any_reported::Bool
+
+Analyzes `text`, prints the collected error reports to the `io` stream, and finally returns:
+- `included_files::Set{String}`: files analyzed by JET
+- `any_reported`: indicates if there was any error point reported
+
+`filename` is supposed to be the name of file, whose content is `text`, and `mod` will
+  specify the module context of toplevel execution simulation.
+"""
 function report_text(io::IO,
                      text::AbstractString,
                      filename::AbstractString = "top-level",
@@ -615,11 +637,29 @@ end
 # test, interactive
 # =================
 
-# enters analysis from call expression
+"""
+    @analyze_call [jetconfigs...] f(args...)
+
+Evaluates the arguments to the function call, determines its types, and then calls
+  [`analyze_call`](@ref) on the resulting expression.
+As with `@code_typed` and its family, any of [JET configurations](@ref) can be given as the optional
+  arguments like this:
+```julia
+# analyzes `rand(::Type{Bool})` with `aggressive_constant_propagation` configuration turned off
+julia> @analyze_call aggressive_constant_propagation=false rand(Bool)
+```
+"""
 macro analyze_call(ex0...)
     return InteractiveUtils.gen_call_with_extracted_types_and_kwargs(__module__, :analyze_call, ex0)
 end
 
+"""
+    analyze_call(f, types = Tuple{}; jetconfigs...) -> (interp::JETInterpreter, frame::InferenceFrame)
+
+Analyzes the generic function call with the given type signature, and returns:
+- `interp::JETInterpreter`, which contains analyzed error reports and such
+- `frame::InferenceFrame`, which is the final state of the abstract interpretation
+"""
 function analyze_call(@nospecialize(f), @nospecialize(types = Tuple{}); jetconfigs...)
     ft = Core.Typeof(f)
     if isa(types, Type)
@@ -633,11 +673,28 @@ function analyze_call(@nospecialize(f), @nospecialize(types = Tuple{}); jetconfi
     return analyze_gf_by_type!(interp, tt)
 end
 
-# collects and prints reports from call expression
+"""
+    @report_call [jetconfigs...] f(args...)
+
+Evaluates the arguments to the function call, determines its types, and then calls
+  [`report_call`](@ref) on the resulting expression.
+As with `@code_typed` and its family, any of [JET configurations](@ref) can be given as the optional
+  arguments like this:
+```julia
+# reports `rand(::Type{Bool})` with `aggressive_constant_propagation` configuration turned off
+julia> @report_call aggressive_constant_propagation=false rand(Bool)
+```
+"""
 macro report_call(ex0...)
     return InteractiveUtils.gen_call_with_extracted_types_and_kwargs(__module__, :report_call, ex0)
 end
 
+"""
+    report_call(f, types = Tuple{}; jetconfigs...) -> result_type::Any
+
+Analyzes the generic function call with the given type signature, and then prints collected
+  error points to `stdout`, and finally returns the result type of the call.
+"""
 function report_call(@nospecialize(f), @nospecialize(types = Tuple{}); jetconfigs...)
     interp, frame = analyze_call(f, types; jetconfigs...)
     print_reports(interp.reports; jetconfigs...)

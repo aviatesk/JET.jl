@@ -1,4 +1,4 @@
-# JET Configurations
+# [Configurations](@id JET configurations)
 
 ```@docs
 JET.JETAnalysisParams

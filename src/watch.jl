@@ -36,6 +36,26 @@ struct WatchConfig
                    )
 end
 
+"""
+    report_and_watch_file([io::IO = stdout],
+                          filename::AbstractString,
+                          mod::Module = Main;
+                          # enable info logger by default for watch mode
+                          toplevel_logger::Union{Nothing,IO} = IOContext(io, $LOGGER_LEVEL_KEY => $INFO_LOGGER_LEVEL),
+                          jetconfigs...)
+
+Watches `filename` and trigger JET analysis with [`report_file`](@ref) on code update.
+JET will try to analyze all the `include`d files and so it will re-trigger analysis if there
+  is any update in the `include`d detected.
+
+This function internally uses [Revise.jl](https://timholy.github.io/Revise.jl/stable/) to
+  track code updates. Revise also offers possibilities to track changes in files that are
+  not directly analyzed by JET, or even changes in `Base` files. See [`WatchConfig`](@ref)
+  in the [JET configurations](@ref) documentation for more details.
+
+!!! note
+    This function will enable the toplevel logger (see [`JETLogger`](@ref) for details) by default with the default logging level.
+"""
 function report_and_watch_file(args...; kwargs...)
     if @isdefined(Revise)
         _report_and_watch_file(args...; kwargs...)
