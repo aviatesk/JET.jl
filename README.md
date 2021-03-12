@@ -1,5 +1,6 @@
 ![CI](https://github.com/aviatesk/JET.jl/workflows/CI/badge.svg)
 [![codecov](https://codecov.io/gh/aviatesk/JET.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/aviatesk/JET.jl)
+[![](https://img.shields.io/badge/docs-dev-blue.svg)](https://aviatesk.github.io/JET.jl/dev/)
 
 ## behind the moar for performance ...
 
@@ -13,6 +14,12 @@ JET.jl employs Julia's type inference for bug reports.
     and so JET analysis result can vary depending on your Julia version.
     In general, the newer your Julia version is, your can expect JET to analyze your code more accurately and quickly,
     because Julia's compiler is rapidly-advancing, literally day by day.
+
+
+### documentation
+
+JET's documentation is now available at [here](https://aviatesk.github.io/JET.jl/dev/) !
+Any kind of feedback or help will be very appreciated.
 
 
 ### demo
