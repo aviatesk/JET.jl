@@ -4,6 +4,7 @@
 # TODO more configurations, e.g. ignore user-specified modules and such
 """
 Configurations for JET analysis.
+These configurations will be active for all the entries.
 
 ---
 - `strict_condition_check::Bool = false` \\
@@ -74,6 +75,8 @@ end
 
 """
 Configurations for Julia's native type inference routine.
+These configurations will be active for all the entries.
+
 You can specify all the keyword parameters of `Core.Compiler.InferenceParams`, e.g.
   `max_methods::Int = 3`, `union_splitting::Int = 4`.
 Listed here are selections of those parameters that can have a potent influence on JET analysis.

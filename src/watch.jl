@@ -1,5 +1,6 @@
 """
 Configurations for "watch" mode.
+The configurations will only be active when used with [`report_and_watch_file`](@ref).
 
 ---
 - `revise_all::Bool = true` \\
