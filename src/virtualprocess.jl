@@ -15,13 +15,13 @@ gen_virtual_process_result() = (; included_files = Set{String}(),
                      virtualmod::Module,
                      actualmodsym::Symbol,
                      interp::JETInterpreter,
-                     )::Tuple{VirtualProcessResult,JETInterpreter}
+                     ) -> Tuple{VirtualProcessResult,JETInterpreter}
     virtual_process!(toplevelex::Expr,
                      filename::AbstractString,
                      virtualmod::Module,
                      actualmodsym::Symbol,
                      interp::JETInterpreter,
-                     )::Tuple{VirtualProcessResult,JETInterpreter}
+                     ) -> Tuple{VirtualProcessResult,JETInterpreter}
 
 simulates Julia's toplevel execution and profiles error reports, and returns
 `res::VirtualProcessResult`, which keeps the following information:

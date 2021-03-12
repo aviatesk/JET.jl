@@ -21,7 +21,7 @@ Configurations for "watch" mode.
       e.g. editing functions defined in `Base`:
       ```julia
       # re-performe analysis when you make a change to `Base`
-      profile_and_watch_file(yourfile; revise_modules = [Base])
+      julia> profile_and_watch_file(yourfile; revise_modules = [Base])
       ```
 """
 struct WatchConfig
