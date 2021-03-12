@@ -11,7 +11,7 @@ using Test
 const FIXTURE_DIR = normpath(@__DIR__, "fixtures")
 
 const ERROR_REPORTS_FROM_SUM_OVER_STRING = let
-    interp, frame = profile_call(sum, (String,))
+    interp, frame = analyze_call(sum, (String,))
     @test !isempty(interp.reports)
     interp.reports
 end

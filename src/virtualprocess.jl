@@ -23,9 +23,9 @@ gen_virtual_process_result() = (; included_files = Set{String}(),
                      interp::JETInterpreter,
                      ) -> Tuple{VirtualProcessResult,JETInterpreter}
 
-simulates Julia's toplevel execution and profiles error reports, and returns
+simulates Julia's toplevel execution and analyzes error points, and returns
 `res::VirtualProcessResult`, which keeps the following information:
-- `res.included_files::Set{String}`: files that have been profiled
+- `res.included_files::Set{String}`: files that have been analyzed
 - `res.toplevel_error_reports::Vector{ToplevelErrorReport}`: toplevel errors found during the
     text parsing or partial (actual) interpretation; these reports are "critical" and should
     have precedence over `inference_error_reports`
@@ -41,7 +41,7 @@ this function first parses `s::AbstractString` into `toplevelex::Expr` and then 
      with that of `virtualmod`: see `fix_self_references`
 3. `ConcreteInterpreter` partially interprets some statements in `lwr` that should not be
      abstracted away (e.g. a `:method` definition); see also [`partially_interpret!`](@ref)
-4. finally, `JETInterpreter` profiles the remaining statements by abstract interpretation
+4. finally, `JETInterpreter` analyzes the remaining statements by abstract interpretation
 
 !!! warning
     the current approach splits entire code into code blocks and we're not tracking
@@ -72,7 +72,7 @@ function virtual_process!(s::AbstractString,
     ret = if @isexpr(toplevelex, (:error, :incomplete))
         append!(res.toplevel_error_reports, collect_syntax_errors(s, filename))
         res, interp
-    # just return if there is nothing to profile
+    # just return if there is nothing to analyze
     elseif isnothing(toplevelex)
         res, interp
     else
@@ -135,7 +135,7 @@ function virtual_process!(toplevelex::Expr,
         return lwr
     end
 
-    # transform, and then profile sequentially
+    # transform, and then analyze sequentially
     # IDEA the following code has some of duplicated work with `JuliaInterpreter.ExprSpliter` and we may want to factor them out
     exs = reverse(toplevelex.args)
     while !isempty(exs)
@@ -206,14 +206,14 @@ function virtual_process!(toplevelex::Expr,
                                       )
         concretized = partially_interpret!(interp′, virtualmod, src)
 
-        # bail out if nothing to profile (just a performance optimization)
+        # bail out if nothing to analyze (just a performance optimization)
         if all(is_return(last(src.code)) ? concretized[begin:end-1] : concretized)
             continue
         end
 
         interp = JETInterpreter(interp, concretized, virtualmod)
 
-        profile_toplevel!(interp, src)
+        analyze_toplevel!(interp, src)
 
         append!(res.inference_error_reports, interp.reports) # collect error reports
     end
@@ -266,8 +266,8 @@ _walk_and_transform!(pre, f, @nospecialize(_), scope) = return
 partially interprets statements in `src` using JuliaInterpreter.jl:
 - concretize "toplevel definitions", i.e. `:method`, `:struct_type`, `:abstract_type` and
     `:primitive_type` expressions and their dependencies
-- directly evaluates module usage expressions and report error of invalid module usages;
-    or profile the package loading
+- directly evaluates module usage expressions and report error of invalid module usages
+  (TODO: enter into the loaded module and keep JET analysis)
 - special case `include` calls so that [`virtual_process!`](@ref) recursively runs on the
     included file
 """

@@ -50,7 +50,7 @@ Each "evaluation" of `ex` is done in new Julia process in order to benchmark the
   have no effect for execution (of course, this is very time-consuming though ...).
 The optional positional argument `setup_ex` runs before each execution of `ex` and its
   execution statistis are not included in the benchmark result; it defaults to
-  `JET_WARMUP_EX`, which loads JET and runs a warm up analysis `@profile identity(nothing)`.
+  `JET_WARMUP_EX`, which loads JET and runs a warm up analysis `@analyze_call identity(nothing)`.
 """
 macro benchmark_freshexec(args...)
     isn(x) = isexpr(x, :(=)) && first(x.args) === :ntimes
@@ -102,7 +102,7 @@ end
 const JET_LOAD_EX = :(using JET)
 const JET_WARMUP_EX = quote
     using JET
-    @profile_call identity(nothing) # warm-up for JET analysis
+    @analyze_call identity(nothing) # warm-up for JET analysis
 end
 const JULIA_BIN = normpath(Sys.BINDIR, "julia")
 

@@ -62,7 +62,7 @@ You can have JET.jl detect possible errors:
 ```julia
 julia> using JET
 
-julia> profile_and_watch_file("demo.jl"; annotate_types = true)
+julia> report_and_watch_file("demo.jl"; annotate_types = true)
 [toplevel-info] analysis entered into demo.jl
 [toplevel-info] analysis from demo.jl finished in 3.455 sec
 ═════ 4 possible errors found ═════

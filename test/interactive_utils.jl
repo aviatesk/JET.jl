@@ -8,7 +8,7 @@ import .CC:
 import JET:
     JETInterpreter,
     AbstractGlobal,
-    profile_call,
+    analyze_call,
     get_result,
     virtual_process!,
     gen_virtual_module,
@@ -43,17 +43,17 @@ macro def(ex)
     end end
 end
 
-# profile from file name
-profile_file′(filename, args...; kwargs...) =
-    return profile_text′(read(filename, String), args...; filename, kwargs...)
+# enters analysis from file name
+analyze_file(filename, args...; kwargs...) =
+    return analyze_text(read(filename, String), args...; filename, kwargs...)
 
-# profile from string
-function profile_text′(s,
-                       virtualmod = gen_virtual_module(@__MODULE__);
-                       filename = "top-level",
-                       actualmodsym = Symbol(parentmodule(virtualmod)),
-                       interp = JETInterpreter(),
-                       )
+# enters analysis from string
+function analyze_text(s,
+                      virtualmod = gen_virtual_module(@__MODULE__);
+                      filename = "top-level",
+                      actualmodsym = Symbol(parentmodule(virtualmod)),
+                      interp = JETInterpreter(),
+                      )
     return virtual_process!(s,
                             filename,
                             virtualmod,
@@ -61,17 +61,17 @@ function profile_text′(s,
                             interp)
 end
 
-# profile from toplevel expression
-macro profile_toplevel(virtualmod, ex)
-    return profile_toplevel(virtualmod, ex, __source__)
+# enters analysis from toplevel expression
+macro analyze_toplevel(virtualmod, ex)
+    return analyze_toplevel(virtualmod, ex, __source__)
 end
 
-macro profile_toplevel(ex)
+macro analyze_toplevel(ex)
     virtualmod = gen_virtual_module(__module__)
-    return profile_toplevel(virtualmod, ex, __source__)
+    return analyze_toplevel(virtualmod, ex, __source__)
 end
 
-function profile_toplevel(virtualmod, ex, lnn)
+function analyze_toplevel(virtualmod, ex, lnn)
     toplevelex = (isexpr(ex, :block) ?
                   Expr(:toplevel, lnn, ex.args...) : # flatten here
                   Expr(:toplevel, lnn, ex)

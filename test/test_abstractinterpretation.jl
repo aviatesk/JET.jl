@@ -5,7 +5,7 @@
         m = gen_virtual_module()
         interp, frame = Core.eval(m, quote
             foo(a::Integer) = :Integer
-            $(profile_call)((AbstractString,)) do a
+            $(analyze_call)((AbstractString,)) do a
                 foo(a)
             end
         end)
@@ -18,7 +18,7 @@
     # we want to get report on `zero(Any)` for this case, but `Any`-typed statement can't
     # propagate to the error points ...
     let
-        interp, report = profile_call(()->sum([]))
+        interp, report = analyze_call(()->sum([]))
         @test_broken !isempty(interp.reports)
     end
 
@@ -29,7 +29,7 @@
             foo(a::Integer) = :Integer
             foo(a::AbstractString) = "AbstractString"
 
-            $(profile_call)(a->foo(a), (Union{Nothing,Int},))
+            $(analyze_call)(a->foo(a), (Union{Nothing,Int},))
         end)
 
         @test length(interp.reports) === 1
@@ -40,7 +40,7 @@ end
 
 @testset "report undefined slots" begin
     let
-        interp, frame = profile_call((Bool,)) do b
+        interp, frame = analyze_call((Bool,)) do b
             if b
                 bar = rand(Int)
                 return bar
@@ -65,13 +65,13 @@ end
             baz(a) = foo(a)
         end
 
-        interp, frame = Core.eval(m, :($(profile_call)(baz, (Bool,))))
+        interp, frame = Core.eval(m, :($(analyze_call)(baz, (Bool,))))
         @test length(interp.reports) === 1
         @test first(interp.reports) isa LocalUndefVarErrorReport
         @test first(interp.reports).name === :bar
 
         # works when cached
-        interp, frame = Core.eval(m, :($(profile_call)(baz, (Bool,))))
+        interp, frame = Core.eval(m, :($(analyze_call)(baz, (Bool,))))
         @test length(interp.reports) === 1
         @test first(interp.reports) isa LocalUndefVarErrorReport
         @test first(interp.reports).name === :bar
@@ -79,7 +79,7 @@ end
 
     # try to exclude false negatives as possible (by collecting reports in after-optimization pass)
     let
-        interp, frame = profile_call((Bool,)) do b
+        interp, frame = analyze_call((Bool,)) do b
             if b
                 bar = rand()
             end
@@ -94,7 +94,7 @@ end
     end
 
     let
-        interp, frame = profile_call((Bool,)) do b
+        interp, frame = analyze_call((Bool,)) do b
             if b
                 bar = rand()
             end
@@ -113,7 +113,7 @@ end
     end
 
     let
-        interp, frame = profile_call((Int,)) do a
+        interp, frame = analyze_call((Int,)) do a
             function inner(n)
                 if n > 0
                    a = n
@@ -128,7 +128,7 @@ end
 
 @testset "report undefined (global) variables" begin
     let
-        interp, frame = profile_call(()->foo)
+        interp, frame = analyze_call(()->foo)
         @test length(interp.reports) === 1
         @test first(interp.reports) isa GlobalUndefVarErrorReport
         @test first(interp.reports).name === :foo
@@ -141,13 +141,13 @@ end
             qux(a) = foo(a)
         end
 
-        interp, frame = Core.eval(m, :($(profile_call)(qux, (Int,))))
+        interp, frame = Core.eval(m, :($(analyze_call)(qux, (Int,))))
         @test length(interp.reports) === 1
         @test first(interp.reports) isa GlobalUndefVarErrorReport
         @test first(interp.reports).name === :baz
 
         # works when cached
-        interp, frame = Core.eval(m, :($(profile_call)(qux, (Int,))))
+        interp, frame = Core.eval(m, :($(analyze_call)(qux, (Int,))))
         @test length(interp.reports) === 1
         @test first(interp.reports) isa GlobalUndefVarErrorReport
         @test first(interp.reports).name === :baz
@@ -157,7 +157,7 @@ end
 @testset "report non-boolean condition error" begin
     # simple case
     let
-        interp, frame = profile_call((Int,)) do a
+        interp, frame = analyze_call((Int,)) do a
             a ? a : nothing
         end
         @test length(interp.reports) === 1
@@ -168,7 +168,7 @@ end
 
     # don't report when a type can be `Bool` (Bool ⊑ type)
     let
-        interp, frame = profile_call((Integer,)) do a
+        interp, frame = analyze_call((Integer,)) do a
             a ? a : nothing
         end
         @test isempty(interp.reports)
@@ -176,7 +176,7 @@ end
 
     # report union split case
     let
-        interp, frame = profile_call((Union{Nothing,Bool},)) do a
+        interp, frame = analyze_call((Union{Nothing,Bool},)) do a
             a ? a : false
         end
         @test length(interp.reports) === 1
@@ -188,7 +188,7 @@ end
     end
 
     let
-        interp, frame = profile_call() do
+        interp, frame = analyze_call() do
             anyary = Any[1,2,3]
             first(anyary) ? first(anyary) : nothing
         end
@@ -198,11 +198,11 @@ end
     # `strict_condition_check` configuration
     let
         # `==(::Missing, ::Any)`
-        interp, frame = profile_call((Any,Symbol); strict_condition_check = false) do a, b
+        interp, frame = analyze_call((Any,Symbol); strict_condition_check = false) do a, b
             a == b ? 0 : 1
         end
         @test isempty(interp.reports)
-        interp, frame = profile_call((Any,Symbol); strict_condition_check = true) do a, b
+        interp, frame = analyze_call((Any,Symbol); strict_condition_check = true) do a, b
             a == b ? 0 : 1
         end
         @test any(interp.reports) do r
@@ -215,7 +215,7 @@ end
 @testset "inference with abstract global variable" begin
     let
         vmod = gen_virtual_module()
-        res, interp = @profile_toplevel vmod begin
+        res, interp = @analyze_toplevel vmod begin
             s = "julia"
             sum(s)
         end
@@ -228,7 +228,7 @@ end
     @testset "union assignment" begin
         let
             vmod = gen_virtual_module()
-            res, interp = @profile_toplevel vmod  begin
+            res, interp = @analyze_toplevel vmod  begin
                 global globalvar
                 if rand(Bool)
                     globalvar = "String"
@@ -243,7 +243,7 @@ end
 
         let
             vmod = gen_virtual_module()
-            res, interp = @profile_toplevel vmod begin
+            res, interp = @analyze_toplevel vmod begin
                 if rand(Bool)
                     globalvar = "String"
                 else
@@ -265,7 +265,7 @@ end
         # sequential
         let
             vmod = gen_virtual_module()
-            res, interp = @profile_toplevel vmod begin
+            res, interp = @analyze_toplevel vmod begin
                 if rand(Bool)
                     globalvar = "String"
                 else
@@ -295,7 +295,7 @@ end
 
     @testset "invalidate code cache" begin
         let
-            res, interp = @profile_toplevel begin
+            res, interp = @analyze_toplevel begin
                 foo(::Integer) = "good call, pal"
                 bar() = a
 
@@ -323,7 +323,7 @@ end
         m = gen_virtual_module()
         interp, frame = Core.eval(m, quote
             foo(a; #= can be undef =# kw) =  a, kw
-            $(profile_call)(foo, (Any,))
+            $(analyze_call)(foo, (Any,))
         end)
         @test !isempty(interp.reports)
         @test any(interp.reports) do r
@@ -339,20 +339,20 @@ end
     let
         apply(f, args...) = f(args...)
 
-        interp, frame = profile_call() do
+        interp, frame = analyze_call() do
             apply(div, 1, 0)
         end
         @test !isempty(interp.reports)
         @test any(Fix2(isa, DivideErrorReport), interp.reports)
 
-        interp, frame = profile_call() do
+        interp, frame = analyze_call() do
             apply(rem, 1, 0)
         end
         @test !isempty(interp.reports)
         @test any(Fix2(isa, DivideErrorReport), interp.reports)
 
         # JET analysis isn't sound
-        interp, frame = profile_call((Int,Int)) do a, b
+        interp, frame = analyze_call((Int,Int)) do a, b
             apply(div, a, b)
         end
         @test isempty(interp.reports)
@@ -362,7 +362,7 @@ end
 @testset "report `throw` calls" begin
     # simplest case
     let
-        interp, frame = profile_call(()->throw("foo"))
+        interp, frame = analyze_call(()->throw("foo"))
         @test !isempty(interp.reports)
         @test first(interp.reports) isa UncaughtExceptionReport
     end
@@ -370,7 +370,7 @@ end
     # throws in deep level
     let
         foo(a) = throw(a)
-        interp, frame = profile_call(()->foo("foo"))
+        interp, frame = analyze_call(()->foo("foo"))
         @test !isempty(interp.reports)
         @test first(interp.reports) isa UncaughtExceptionReport
     end
@@ -378,14 +378,14 @@ end
     # don't report possibly false negative `throw`s
     let
         foo(a) = a ≤ 0 ? throw("a is $(a)") : a
-        interp, frame = profile_call(foo, (Int,))
+        interp, frame = analyze_call(foo, (Int,))
         @test isempty(interp.reports)
     end
 
     # constant prop sometimes helps exclude false negatives
     let
         foo(a) = a ≤ 0 ? throw("a is $(a)") : a
-        interp, frame = profile_call(()->foo(0))
+        interp, frame = analyze_call(()->foo(0))
         @test !isempty(interp.reports)
         @test first(interp.reports) isa UncaughtExceptionReport
     end
@@ -396,7 +396,7 @@ end
         interp, frame = Core.eval(m, quote
             foo(a) = sum(a) # should be reported
             bar(a) = throw(a) # shouldn't be reported first
-            $(profile_call)((Bool, String)) do b, s
+            $(analyze_call)((Bool, String)) do b, s
                 b && foo(s)
                 bar(s)
             end
@@ -408,16 +408,16 @@ end
     # end to end
     let
         # this should report `throw(ArgumentError("Sampler for this object is not defined")`
-        interp, frame = profile_call(rand, (Char,))
+        interp, frame = analyze_call(rand, (Char,))
         @test !isempty(interp.reports)
         @test first(interp.reports) isa UncaughtExceptionReport
 
         # this should not report `throw(DomainError(x, "sin(x) is only defined for finite x."))`
-        interp, frame = profile_call(sin, (Int,))
+        interp, frame = analyze_call(sin, (Int,))
         @test isempty(interp.reports)
 
         # again, constant prop sometimes can exclude false negatives
-        interp, frame = profile_call(()->sin(Inf))
+        interp, frame = analyze_call(()->sin(Inf))
         @test !isempty(interp.reports)
         @test first(interp.reports) isa UncaughtExceptionReport
     end
@@ -435,11 +435,11 @@ end
         end
 
         # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)" should be threw away
-        interp, frame = Core.eval(m, :($(profile_call)(foo, (P, Int))))
+        interp, frame = Core.eval(m, :($(analyze_call)(foo, (P, Int))))
         @test isempty(interp.reports)
 
         # works for cache
-        interp, frame = Core.eval(m, :($(profile_call)(foo, (P, Int))))
+        interp, frame = Core.eval(m, :($(analyze_call)(foo, (P, Int))))
         @test isempty(interp.reports)
     end
 
@@ -455,11 +455,11 @@ end
         end
 
         # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)" should be threw away
-        interp, frame = Core.eval(m, :($(profile_call)(bar, (P, Int))))
+        interp, frame = Core.eval(m, :($(analyze_call)(bar, (P, Int))))
         @test isempty(interp.reports)
 
         # works for cache
-        interp, frame = Core.eval(m, :($(profile_call)(bar, (P, Int))))
+        interp, frame = Core.eval(m, :($(analyze_call)(bar, (P, Int))))
         @test isempty(interp.reports)
     end
 
@@ -476,7 +476,7 @@ end
                 p.s = s
             end
 
-            $(profile_call)(foo, (P, Int, #= invalid =# Int))
+            $(analyze_call)(foo, (P, Int, #= invalid =# Int))
         end)
 
         # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)" should be threw away, while
@@ -500,7 +500,7 @@ end
                 p.s = s
             end
 
-            $(profile_call)(foo, (P, String, Int))
+            $(analyze_call)(foo, (P, String, Int))
         end)
 
         # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::String)" should be narrowed down to "no matching method found for call signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{Int}, v::String)"
@@ -520,7 +520,7 @@ end
         interp, frame = Core.eval(m, quote
             foo(a) = a<0 ? a+string(a) : a
             bar() = foo(-1), foo(1) # constant analysis on `foo(1)` shouldn't throw away reports from `foo(-1)`
-            $(profile_call)(bar)
+            $(analyze_call)(bar)
         end)
         @test !isempty(interp.reports)
         @test any(r->isa(r,NoMethodErrorReport), interp.reports)
@@ -535,7 +535,7 @@ end
                 b = foo(-1)
                 return a, b
             end
-            $(profile_call)(bar, (Bool,))
+            $(analyze_call)(bar, (Bool,))
         end)
         @test !isempty(interp.reports)
         @test_broken count(isa(report, NoMethodErrorReport) for report in interp.reports) == 2 # FIXME
@@ -549,11 +549,11 @@ end
             end
 
             # constant propagation can reveal the error pass can't happen
-            interp, frame = Core.eval(m, :($(profile_call)(()->bar(10))))
+            interp, frame = Core.eval(m, :($(analyze_call)(()->bar(10))))
             @test isempty(interp.reports)
 
             # for this case, no constant prop' doesn't happen, we can't throw away error pass
-            interp, frame = Core.eval(m, :($(profile_call)(bar, (Int,))))
+            interp, frame = Core.eval(m, :($(analyze_call)(bar, (Int,))))
             @test length(interp.reports) === 1
             er = first(interp.reports)
             @test er isa NoMethodErrorReport &&
@@ -561,7 +561,7 @@ end
                 er.atype ⊑ Tuple{Any,Union{Int,String},Int}
 
             # if we run constant prop' that leads to the error pass, we should get the reports
-            interp, frame = Core.eval(m, :($(profile_call)(()->bar(0))))
+            interp, frame = Core.eval(m, :($(analyze_call)(()->bar(0))))
             @test length(interp.reports) === 1
             er = first(interp.reports)
             @test er isa NoMethodErrorReport &&
@@ -586,7 +586,7 @@ end
             end
 
             # no constant prop, just report everything
-            interp, frame = Core.eval(m, :($(profile_call)(foo, (Int,))))
+            interp, frame = Core.eval(m, :($(analyze_call)(foo, (Int,))))
             @test length(interp.reports) === 1
             er = first(interp.reports)
             @test er isa NonBooleanCondErrorReport &&
@@ -594,7 +594,7 @@ end
 
             # constant prop should throw away the non-boolean condition report from `baz1`
             interp, frame = Core.eval(m, quote
-                $(profile_call)() do
+                $(analyze_call)() do
                     foo(1)
                 end
             end)
@@ -602,7 +602,7 @@ end
 
             # constant prop'ed, still we want to have the non-boolean condition report from `baz1`
             interp, frame = Core.eval(m, quote
-                $(profile_call)() do
+                $(analyze_call)() do
                     foo(0)
                 end
             end)
@@ -612,13 +612,13 @@ end
                 er.t === Int
 
             # so `Bool` is good for `foo` after all
-            interp, frame = Core.eval(m, :($(profile_call)(foo, (Bool,))))
+            interp, frame = Core.eval(m, :($(analyze_call)(foo, (Bool,))))
             @test isempty(interp.reports)
         end
 
         # end to end
         let
-            res, interp = @profile_toplevel begin
+            res, interp = @analyze_toplevel begin
                 function foo(n)
                     if n < 10
                         return n
@@ -647,7 +647,7 @@ end
 @testset "keyword argument methods" begin
     interp, frame = Core.eval(gen_virtual_module(), quote
         f(a; b = nothing, c = nothing) = return
-        $(profile_call)((Any,)) do b
+        $(analyze_call)((Any,)) do b
             f(1; b)
         end
     end)
@@ -656,7 +656,7 @@ end
 
 @testset "don't early escape if type grows up to `Any`" begin
     vmod = gen_virtual_module()
-    res, interp = @profile_toplevel vmod begin
+    res, interp = @analyze_toplevel vmod begin
         abstract type Foo end
         struct Foo1 <: Foo
             bar
@@ -690,7 +690,7 @@ end
 
 @static isdefined(CC, :abstract_invoke) && @testset "abstract_invoke" begin
     # non-`Type` `argtypes`
-    interp, frame = profile_call() do
+    interp, frame = analyze_call() do
         invoke(sin, :this_should_be_type, 1.0)
     end
     @test length(interp.reports) == 1
@@ -698,7 +698,7 @@ end
     @test isa(r, InvalidInvokeErrorReport)
 
     # invalid `argtype`
-    interp, frame = profile_call() do
+    interp, frame = analyze_call() do
         Base.@invoke sin(1.0::Int)
     end
     @test length(interp.reports) == 1
@@ -707,7 +707,7 @@ end
 
     # don't report errors collected in `invoke`d functions
     foo(i::Integer) = throw(string(i))
-    interp, frame = profile_call((Any,)) do a
+    interp, frame = analyze_call((Any,)) do a
         Base.@invoke foo(a::Integer)
     end
     @test !isempty(interp.reports)
@@ -716,7 +716,7 @@ end
 
 @testset "additional analysis pass for task parallelism code" begin
     # general case with `schedule(::Task)` pattern
-    interp, frame = profile_call() do
+    interp, frame = analyze_call() do
         t = Task() do
             sum("julia")
         end
@@ -726,7 +726,7 @@ end
     test_sum_over_string(interp)
 
     # handle `Threads.@spawn` (https://github.com/aviatesk/JET.jl/issues/114)
-    interp, frame = profile_call() do
+    interp, frame = analyze_call() do
         fetch(Threads.@spawn 1 + "foo")
     end
     @test length(interp.reports) == 1
@@ -736,7 +736,7 @@ end
     end
 
     # handle `Threads.@threads`
-    interp, frame = profile_call((Int,)) do n
+    interp, frame = analyze_call((Int,)) do n
         a = String[]
         Threads.@threads for i in 1:n
             push!(a, i)
@@ -750,7 +750,7 @@ end
     end
 
     # multiple tasks in the same frame
-    interp, frame = profile_call() do
+    interp, frame = analyze_call() do
         t1 = Threads.@spawn 1 + "foo"
         t2 = Threads.@spawn "foo" + 1
         fetch(t1), fetch(t2)
@@ -766,7 +766,7 @@ end
     end
 
     # nested tasks
-    interp, frame = profile_call() do
+    interp, frame = analyze_call() do
         t0 = Task() do
             t = Threads.@spawn sum("julia")
             fetch(t)
@@ -784,7 +784,7 @@ end
         schedule(t)
         fetch(t)
     end
-    interp, frame = profile_call() do
+    interp, frame = analyze_call() do
         t = make_task("julia")
 
         run_task(t)
@@ -798,7 +798,7 @@ end
     end
 
     # report uncaught exception happened in a task
-    interp, frame = profile_call() do
+    interp, frame = analyze_call() do
         fetch(Threads.@spawn throw("foo"))
     end
     @test length(interp.reports) == 1
@@ -848,6 +848,6 @@ end
             return v
         end
     end
-    interp, frame = profile_call(m.psort!, (Vector{Int},))
+    interp, frame = analyze_call(m.psort!, (Vector{Int},))
     @test true
 end

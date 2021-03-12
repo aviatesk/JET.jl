@@ -21,7 +21,7 @@ Configurations for "watch" mode.
       e.g. editing functions defined in `Base`:
       ```julia
       # re-performe analysis when you make a change to `Base`
-      julia> profile_and_watch_file(yourfile; revise_modules = [Base])
+      julia> report_and_watch_file(yourfile; revise_modules = [Base])
       ```
 """
 struct WatchConfig
@@ -36,12 +36,12 @@ struct WatchConfig
                    )
 end
 
-function profile_and_watch_file(args...; kwargs...)
+function report_and_watch_file(args...; kwargs...)
     if @isdefined(Revise)
-        _profile_and_watch_file(args...; kwargs...)
+        _report_and_watch_file(args...; kwargs...)
     else
         init_revise!()
-        @invokelatest _profile_and_watch_file(args...; kwargs...)
+        @invokelatest _report_and_watch_file(args...; kwargs...)
     end
 end
 
@@ -50,27 +50,27 @@ function init_revise!()
     @eval (@__MODULE__) using Revise
 end
 
-_profile_and_watch_file(args...; kwargs...) = _profile_and_watch_file(stdout::IO, args...; kwargs...)
-function _profile_and_watch_file(io::IO,
-                                 filename::AbstractString,
-                                 args...;
-                                 # enable info logger by default for watch mode
-                                 toplevel_logger::Union{Nothing,IO} = IOContext(io, LOGGER_LEVEL_KEY => INFO_LOGGER_LEVEL),
-                                 jetconfigs...)
+_report_and_watch_file(args...; kwargs...) = _report_and_watch_file(stdout::IO, args...; kwargs...)
+function _report_and_watch_file(io::IO,
+                                filename::AbstractString,
+                                args...;
+                                # enable info logger by default for watch mode
+                                toplevel_logger::Union{Nothing,IO} = IOContext(io, LOGGER_LEVEL_KEY => INFO_LOGGER_LEVEL),
+                                jetconfigs...)
     config = WatchConfig(; jetconfigs...)
 
-    included_files, _ = profile_file(io, filename, args...;
-                                     toplevel_logger,
-                                     jetconfigs...)
+    included_files, _ = report_file(io, filename, args...;
+                                    toplevel_logger,
+                                    jetconfigs...)
 
     interrupted = false
     while !interrupted
         try
             Revise.entr(collect(included_files), config.revise_modules; all = config.revise_all) do
                 println(io)
-                included_files′, _ = profile_file(io, filename, args...;
-                                                  toplevel_logger,
-                                                  jetconfigs...)
+                included_files′, _ = report_file(io, filename, args...;
+                                                 toplevel_logger,
+                                                 jetconfigs...)
                 if any(∉(included_files), included_files′)
                     # refresh watch files
                     throw(InsufficientWatches(included_files′))
