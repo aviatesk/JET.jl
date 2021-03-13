@@ -134,7 +134,8 @@ import JuliaInterpreter:
     maybe_evaluate_builtin,
     collect_args,
     is_return,
-    is_quotenode_egal
+    is_quotenode_egal,
+    @lookup
 
 import MacroTools: @capture
 
@@ -585,13 +586,35 @@ function analyze_text(text::AbstractString,
                       jetconfigs...)
     interp = JETInterpreter(; jetconfigs...)
     config = ToplevelConfig(; jetconfigs...)
-    return virtual_process!(text,
-                            filename,
-                            actualmod,
-                            interp,
-                            config,
-                            virtualmod,
-                            )
+    res = virtual_process!(text,
+                           filename,
+                           actualmod,
+                           interp,
+                           config,
+                           virtualmod,
+                           )
+
+    # analyzed collected method signatures unless critical error happened
+    if isempty(res.toplevel_error_reports)
+        # TODO configurable
+        # TODO maybe move this into `virtual_process!`
+        for tt in res.method_signatures
+            mms = _methods_by_ftype(tt, -1, get_world_counter())
+            isa(mms, Bool) && continue
+            filter!(mm::MethodMatch->mm.spec_types===tt, mms)
+            if length(mms) == 1
+                interp = JETInterpreter(interp, _CONCRETIZED, _TOPLEVELMOD)
+                mm = first(mms)
+                analyze_method_signature!(interp, mm.method, mm.spec_types, mm.sparams)
+                append!(res.inference_error_reports, interp.reports)
+            else
+                # @info "skipped" tt length(mms)
+                continue
+            end
+        end
+    end
+
+    return res
 end
 
 function analyze_toplevel!(interp::JETInterpreter, src::CodeInfo)

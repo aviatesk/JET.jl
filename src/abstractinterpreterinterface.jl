@@ -298,10 +298,10 @@ end
                                          analysis_params = nothing,
                                          inf_params      = nothing,
                                          opt_params      = nothing,
-                                         concretized     = BitVector(),
-                                         toplevelmod     = __toplevelmod__,
-                                         toplevelmods    = Set{Module}(),
-                                         global_slots    = Dict{Int,Symbol}(),
+                                         concretized     = _CONCRETIZED,
+                                         toplevelmod     = _TOPLEVELMOD,
+                                         toplevelmods    = _TOPLEVELMODS,
+                                         global_slots    = _GLOBAL_SLOTS,
                                          logger          = nothing,
                                          depth           = 0,
                                          jetconfigs...)
@@ -328,6 +328,10 @@ end
 
 # dummies for non-toplevel analysis
 module __toplevelmod__ end
+const _CONCRETIZED  = BitVector()
+const _TOPLEVELMOD  = __toplevelmod__
+const _TOPLEVELMODS = Set{Module}()
+const _GLOBAL_SLOTS = Dict{Int,Symbol}()
 
 # constructor for sequential toplevel JET analysis
 function JETInterpreter(interp::JETInterpreter, concretized, toplevelmod)

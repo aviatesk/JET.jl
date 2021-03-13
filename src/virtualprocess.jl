@@ -109,6 +109,7 @@ const VirtualProcessResult = @NamedTuple begin
     included_files::Set{String}
     toplevel_error_reports::Vector{ToplevelErrorReport}
     inference_error_reports::Vector{InferenceErrorReport}
+    method_signatures::Vector{Type}
     actual2virtual::Actual2Virtual
 end
 
@@ -116,6 +117,7 @@ function gen_virtual_process_result(actualmod, virtualmod)
     return (; included_files          = Set{String}(),
               toplevel_error_reports  = ToplevelErrorReport[],
               inference_error_reports = InferenceErrorReport[],
+              method_signatures       = Type[],
               actual2virtual          = Actual2Virtual(actualmod, virtualmod),
               )::VirtualProcessResult
 end
@@ -149,6 +151,7 @@ Simulates Julia's toplevel execution and collects error points, and finally retu
     have precedence over `inference_error_reports`
 - `res.inference_error_reports::Vector{InferenceErrorReport}`: possible error reports found
     by `JETInterpreter`
+- `res.method_signatures`: signatures of methods defined within the analyzed files
 - `res.actual2virtual::$Actual2Virtual`: keeps actual and virtual module
 
 This function first parses `s::AbstractString` into `toplevelex::Expr` and then iterate the
@@ -538,7 +541,25 @@ function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, 
         return nothing
     end
 
-    return @invoke step_expr!(interp, frame, node, istoplevel::Bool)
+    res = @invoke step_expr!(interp, frame, node, istoplevel::Bool)
+
+    collect_method_signature!(interp, frame, node)
+
+    return res
+end
+
+function collect_method_signature!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node))
+    if @isexpr(node, :method, 3)
+        sigs = node.args[2]
+        atype_params, sparams, _ = @lookup(frame, sigs)::SimpleVector
+        # t = atype_params[1]
+        # if isdefined(t, :name)
+        #     # XXX ignore constructor methods, just because it can lead to false positives ...
+        #     t.name === CC._TYPE_NAME && return
+        # end
+        atype = Tuple{(atype_params::SimpleVector)...}
+        push!(interp.res.method_signatures, atype)
+    end
 end
 
 ismoduleusage(@nospecialize(x)) = @isexpr(x, (:import, :using, :export))
