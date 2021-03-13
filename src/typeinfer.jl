@@ -49,7 +49,7 @@ function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
                              linfo,
                              ret ? nothing : "in cycle",
                              "$(length(interp.reports)) reports",
-                             "finished in $sec sec"
+                             "$sec sec"
                              )), ", "),
                         ')')
             interp.depth -= 1 # manipulate this only in debug mode

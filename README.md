@@ -155,8 +155,8 @@ If you apply the diff (i.e. update and save the demo.jl), JET will automatically
 > `git apply fix-demo.jl.diff`
 
 ```julia
-[toplevel-info] analysis entered into demo.jl
-[toplevel-info] analysis from demo.jl finished in 3.423 sec
+[toplevel-info] entered into demo.jl
+[toplevel-info]  exited from demo.jl (took 3.423 sec)
 No errors !
 ```
 

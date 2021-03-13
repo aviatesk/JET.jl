@@ -62,7 +62,7 @@ function virtual_process!(s::AbstractString,
     start = time()
 
     with_toplevel_logger(interp) do io
-        println(io, "analysis entered into $filename")
+        println(io, "entered into $filename")
     end
 
     push!(res.included_files, filename)
@@ -80,7 +80,7 @@ function virtual_process!(s::AbstractString,
 
     with_toplevel_logger(interp) do io
         sec = round(time() - start; digits = 3)
-        println(io, "analysis from $filename finished in $sec sec")
+        println(io, " exited from $filename (took $sec sec)")
     end
 
     return res
