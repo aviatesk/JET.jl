@@ -1058,3 +1058,17 @@ end
     end
     @test isempty(res.toplevel_error_reports)
 end
+
+@testset "constant abstract global" begin
+    m = gen_virtual_module()
+    @analyze_toplevel m begin
+        const a = 0
+    end
+    @test is_concrete(m, :a) && m.a == 0
+
+    m = gen_virtual_module()
+    @analyze_toplevel m begin
+        const a = :jetzero # should be quoted, otherwise undef var error
+    end
+    @test is_concrete(m, :a) && m.a === :jetzero
+end
