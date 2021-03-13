@@ -1,6 +1,6 @@
 # [Configurations](@id JET configurations)
 
-JET analysis can be flexibly fine-tuned with the following configurations.
+JET analysis can be flexibly fine-tuned.
 Any entry point explained in [Usages](@ref) can accept any of the configuration parameter described below as keyword
 arguments (or optional parameters for macros).
 For example, if you want to analyze `your_awesome_file.jl` with turning on `strict_condition_check` configuration and
