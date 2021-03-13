@@ -851,3 +851,17 @@ end
     interp, frame = analyze_call(m.psort!, (Vector{Int},))
     @test true
 end
+
+@static if VERSION ≥ v"1.7.0-DEV.705"
+
+@testset "opaque closure" begin
+    # can cache const prop' result with varargs
+    function oc_varargs_constprop()
+        oc = Base.Experimental.@opaque (args...)->args[1]+args[2]+arg[3] # typo on `arg[3]`
+        return Val{oc(1,2,3)}()
+    end
+    interp, = @analyze_call oc_varargs_constprop()
+    @test !isempty(interp.cache)
+end
+
+end # @static if VERSION ≥ v"1.7.0-DEV.705"

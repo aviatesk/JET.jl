@@ -169,7 +169,8 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
 
     if !isempty(this_caches)
         if iscp
-            argtypes = frame.result.argtypes
+            result = frame.result
+            argtypes = result.argtypes
             cache = interp.cache
             @assert jet_cache_lookup(linfo, argtypes, cache) === nothing "invalid local caching $linfo, $argtypes"
             local_cache = InferenceErrorReportCache[]
@@ -178,7 +179,15 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
                 # @assert first(report.st).linfo === linfo "invalid local caching"
                 cache_report!(local_cache, report)
             end
-            push!(cache, AnalysisResult(linfo, argtypes, local_cache))
+            # branching on https://github.com/JuliaLang/julia/pull/39972
+            given_argtypes, overridden_by_const = @static if VERSION ≥ v"1.7.0-DEV.705"
+                def = result.linfo.def
+                va_overwride = isa(def, Method) && def.is_for_opaque_closure
+                matching_cache_argtypes(linfo, argtypes, va_overwride)
+            else
+                matching_cache_argtypes(linfo, argtypes)
+            end
+            push!(cache, AnalysisResult(linfo, given_argtypes, overridden_by_const, local_cache))
         elseif frame.cached # only cache when `NativeInterpreter` does
             @assert !haskey(JET_GLOBAL_CACHE, linfo) || isentry "invalid global caching $linfo"
             global_cache = InferenceErrorReportCache[]
