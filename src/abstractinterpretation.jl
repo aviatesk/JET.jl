@@ -139,10 +139,12 @@ end
 
 function CC.abstract_call_method_with_const_args(interp::JETInterpreter, @nospecialize(rettype),
                                                  @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch,
-                                                 sv::InferenceState, edgecycle::Bool)
+                                                 sv::InferenceState, edgecycle::Bool,
+                                                 va_override::Bool)
     result, inf_result = @invoke abstract_call_method_with_const_args(interp::AbstractInterpreter, @nospecialize(rettype),
                                                                       @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch,
-                                                                      sv::InferenceState, edgecycle::Bool)
+                                                                      sv::InferenceState, edgecycle::Bool,
+                                                                      va_override::Bool)
 
     if isa(inf_result, InferenceResult)
         # successful constant prop', we also need to update reports

@@ -851,3 +851,15 @@ end
     interp, frame = analyze_call(m.psort!, (Vector{Int},))
     @test true
 end
+
+@testset "opaque closure" begin
+    using Base.Experimental: @opaque
+
+    # can cache const prop' result with varargs
+    function oc_varargs_constprop()
+        oc = @opaque (args...)->args[1]+args[2]+arg[3] # typo on `arg[3]`
+        return Val{oc(1,2,3)}()
+    end
+    interp, = @analyze_call oc_varargs_constprop()
+    @test !isempty(interp.cache)
+end
