@@ -852,14 +852,16 @@ end
     @test true
 end
 
-@testset "opaque closure" begin
-    using Base.Experimental: @opaque
+@static if VERSION ≥ v"1.7.0-DEV.705"
 
+@testset "opaque closure" begin
     # can cache const prop' result with varargs
     function oc_varargs_constprop()
-        oc = @opaque (args...)->args[1]+args[2]+arg[3] # typo on `arg[3]`
+        oc = Base.Experimental.@opaque (args...)->args[1]+args[2]+arg[3] # typo on `arg[3]`
         return Val{oc(1,2,3)}()
     end
     interp, = @analyze_call oc_varargs_constprop()
     @test !isempty(interp.cache)
 end
+
+end # @static if VERSION ≥ v"1.7.0-DEV.705"
