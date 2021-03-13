@@ -38,7 +38,7 @@
     end
 end
 
-@testset "report undefined slots" begin
+@testset "report local undefined variables" begin
     let
         interp, frame = analyze_call((Bool,)) do b
             if b
@@ -123,6 +123,21 @@ end
             return a
         end
         @test isempty(interp.reports)
+    end
+
+    # with the current approach, local undefined variables in toplevel frame can't be found
+    # since we don't cache toplevel frame and thus it won't be optimized
+    let
+        res = @analyze_toplevel begin
+            foo = let
+                if rand(Bool)
+                    bar = rand(Int)
+                else
+                    bar # undefined in this pass
+                end
+            end
+        end
+        @test_broken !isempty(res.inference_error_reports)
     end
 end
 
@@ -865,3 +880,10 @@ end
 end
 
 end # @static if VERSION ≥ v"1.7.0-DEV.705"
+
+@testset "https://github.com/aviatesk/JET.jl/issues/133" begin
+    res = @analyze_toplevel begin
+        @ccall strlen("foo"::Cstring)::Csize_t
+    end
+    @test isempty(res.inference_error_reports)
+end

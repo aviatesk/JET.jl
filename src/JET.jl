@@ -520,7 +520,8 @@ function analyze_toplevel!(interp::JETInterpreter, src::CodeInfo)
     mi.def = __virtual_toplevel__ # set to the dummy module
 
     result = InferenceResult(mi);
-    frame = InferenceState(result, src, #=cached=# true, interp)::InferenceState;
+    # toplevel frame doesn't need to be cached (and so it won't be optimized)
+    frame = InferenceState(result, src, #=cached=# false, interp)::InferenceState;
 
     return analyze_frame!(interp, frame)
 end
