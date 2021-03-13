@@ -1,11 +1,13 @@
-# JET's Internals
+# Internals of JET.jl
 
-## Abstract Interpretation
+## Abstract Interpretation Based Analysis
 
-JET.jl overloads functions from Juila's [`Core.Compiler`](https://github.com/JuliaLang/julia/tree/master/base/compiler) module, which are intended for its native JIT type inference.
+JET.jl overloads functions with the [`Core.Compiler.AbstractInterpreter` interface](https://github.com/JuliaLang/julia/blob/master/base/compiler/types.jl), and customizes its abstract interpretation routine.
+The overloads are done on `JETInterpreter <: AbstractInterpreter` so that `typeinf(::JETInterpreter, ::InferenceState)` will do the customized abstract interpretation and collect type errors.
 
-They're overloaded on `JETInterpreter` so that `typeinf(::JETInterpreter, ::InferenceState)` will do abstract interpretation tuned for JET.jl's type error analysis.
-Most overloads are done by using [`invoke`](https://docs.julialang.org/en/v1/base/base/#Core.invoke), which allows us to call down to and reuse the original `NativeInterpreter`'s abstract interpretation methods while passing `JETInterpreter` for subsequent (maybe overloaded) callees (see [`JET.@invoke`](@ref) macro).
+Most overloads use the [`invoke`](https://docs.julialang.org/en/v1/base/base/#Core.invoke) reflection, which allows
+`JETInterpreter` to dispatch to the original `AbstractInterpreter`'s abstract interpretation methods and still keep passing
+it to the subsequent (maybe overloaded) callees (see [`JET.@invoke`](@ref) macro).
 
 ```@docs
 JET.bail_out_toplevel_call
@@ -18,12 +20,12 @@ JET.AbstractGlobal
 ```
 
 
-## Toplevel Analysis
+## Top-level Analysis
 
 ```@docs
 JET.virtual_process!
-JET.partially_interpret!
 JET.ConcreteInterpreter
+JET.partially_interpret!
 ```
 
 

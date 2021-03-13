@@ -8,7 +8,7 @@
         end
         """
 
-        res, interp = analyze_text(s)
+        res = analyze_text(s)
 
         @test !isempty(res.toplevel_error_reports)
         @test first(res.toplevel_error_reports) isa SyntaxErrorReport
@@ -17,7 +17,7 @@ end
 
 @testset "fix self-reference of virtual module" begin
     let
-        res, interp = @analyze_toplevel begin
+        res = @analyze_toplevel begin
             const foo = sum
             Main.foo("julia") # `Main.sum` should be resolved as constant
         end
@@ -25,7 +25,7 @@ end
     end
 
     let
-        res, interp = @analyze_toplevel begin
+        res = @analyze_toplevel begin
             let
                 Main = "julia" # local `Main` should not be resolved to virtual module
                 sum(Main)
@@ -38,7 +38,7 @@ end
 @testset "fix toplevel global `Symbol`" begin
     # this case otherwise will throw an error in `CC.typ_for_val` in optimization
     let
-        res, interp = @analyze_toplevel begin
+        res = @analyze_toplevel begin
             v = '1'
             v = if rand(Bool)
                 rand(Int)
@@ -53,7 +53,7 @@ end
     # `c` wrapped in `GotoIfNot` node should be transformed into `GlobalRef(vmod, :c)`,
     # otherwise `NonBooleanCondErrorReport` (and `UncaughtExceptionReport`) will be reported
     let
-        res, interp = @analyze_toplevel begin
+        res = @analyze_toplevel begin
             c = false
             if c
                 throw("should be ignored")
@@ -120,7 +120,7 @@ end
     # basic profiling with user-defined types
     let
         vmod = gen_virtual_module()
-        res, interp = @analyze_toplevel vmod begin
+        res = @analyze_toplevel vmod begin
             gb = rand(Bool)
 
             struct Foo
@@ -163,7 +163,7 @@ end
     # a toplevel definition within a block
     let
         vmod = gen_virtual_module()
-        res, interp = @analyze_toplevel vmod begin
+        res = @analyze_toplevel vmod begin
             begin
                 struct Foo
                     bar
@@ -182,7 +182,7 @@ end
     # well, the actual error here is world age error ...
     let
         vmod = gen_virtual_module()
-        res, interp = @analyze_toplevel vmod begin
+        res = @analyze_toplevel vmod begin
             begin
                 abstract type Foo end
                 struct Foo1 <: Foo
@@ -200,7 +200,7 @@ end
     @testset "toplevel definitions by `eval` calls" begin
         let
             vmod = gen_virtual_module()
-            res, interp = @analyze_toplevel vmod begin
+            res = @analyze_toplevel vmod begin
                 # these definitions shouldn't be abstracted away
                 for fname in (:foo, :bar, :baz)
                     @eval begin
@@ -226,7 +226,7 @@ end
 @testset "macro expansions" begin
     let
         vmod = gen_virtual_module()
-        res, interp = @analyze_toplevel vmod begin
+        res = @analyze_toplevel vmod begin
             @inline foo(a) = identity(a)
             foo(10)
         end
@@ -238,7 +238,7 @@ end
 
     let
         vmod = gen_virtual_module()
-        res, interp = @analyze_toplevel vmod begin
+        res = @analyze_toplevel vmod begin
             macro foo(ex)
                 @assert Meta.isexpr(ex, :call)
                 push!(ex.args, 1)
@@ -256,7 +256,7 @@ end
     # macro expansions with access to global variables will fail
     let
         vmod = gen_virtual_module()
-        res, interp = @analyze_toplevel vmod begin
+        res = @analyze_toplevel vmod begin
             const arg = rand(Bool)
 
             macro foo(ex)
@@ -279,7 +279,7 @@ end
         # we may pass `:toplevel` or `:module` expressions to `partially_interpret!` and
         # eventually we will fail to concretize them and their toplevel definitions
         vmod = gen_virtual_module()
-        res, interp = @analyze_toplevel vmod begin
+        res = @analyze_toplevel vmod begin
             macro wrap_in_mod(blk)
                 ex = Expr(:module, true, esc(:foo), esc(blk))
                 return Expr(:toplevel, ex)
@@ -292,7 +292,7 @@ end
         @test isdefined(vmod, :foo) && isdefined(vmod.foo, :bar)
 
         vmod = gen_virtual_module()
-        res, interp = @analyze_toplevel vmod begin
+        res = @analyze_toplevel vmod begin
             """
                 foo
 
@@ -308,7 +308,7 @@ end
 
 @testset "remove `const`" begin
     let
-        res, interp = @analyze_toplevel begin
+        res = @analyze_toplevel begin
             const s = "julia"
             sum(s)
         end
@@ -318,7 +318,7 @@ end
     end
 
     let
-        res, interp = @analyze_toplevel begin
+        res = @analyze_toplevel begin
             let
                 const s = "julia"
                 sum(s)
@@ -334,7 +334,7 @@ end
     let
         @test (begin
             # internal error shouldn't occur
-            res, interp = @analyze_toplevel begin
+            res = @analyze_toplevel begin
                 r = rand(); s = sin(a); c = cos(b); tan(c)
             end
         end; true)
@@ -347,7 +347,7 @@ end
         f2 = normpath(FIXTURE_DIR, "include1.jl")
 
         vmod = gen_virtual_module()
-        res, interp = analyze_file(f1, vmod)
+        res = analyze_file(f1, vmod)
 
         @test f1 in res.included_files
         @test f2 in res.included_files
@@ -358,7 +358,7 @@ end
 
     let
         f = normpath(FIXTURE_DIR, "nonexistinclude.jl")
-        res, interp = analyze_file(f)
+        res = analyze_file(f)
 
         @test f in res.included_files
         @test !isempty(res.toplevel_error_reports)
@@ -369,7 +369,7 @@ end
 
     let
         f = normpath(FIXTURE_DIR, "selfrecursiveinclude.jl")
-        res, interp = analyze_file(f)
+        res = analyze_file(f)
 
         @test f in res.included_files
         @test !isempty(res.toplevel_error_reports)
@@ -379,7 +379,7 @@ end
     let
         f1 = normpath(FIXTURE_DIR, "chainrecursiveinclude1.jl")
         f2 = normpath(FIXTURE_DIR, "chainrecursiveinclude2.jl")
-        res, interp = analyze_file(f1)
+        res = analyze_file(f1)
 
         @test f1 in res.included_files
         @test f2 in res.included_files
@@ -408,14 +408,14 @@ end
                                        end
                                        """
                                        )
-    res, interp = analyze_text(s)
+    res = analyze_text(s)
     @test isempty(res.toplevel_error_reports)
 end
 
 @testset "module usage" begin
     # using
     let
-        res, interp = @analyze_toplevel begin
+        res = @analyze_toplevel begin
             module foo
 
             using Base.Meta: isexpr
@@ -434,7 +434,7 @@ end
 
     # error handling for module usages
     let
-        res, interp = @analyze_toplevel begin
+        res = @analyze_toplevel begin
             using Base: foo
         end
 
@@ -447,7 +447,7 @@ end
 
     # sequential usage
     let
-        res, interp = @analyze_toplevel begin
+        res = @analyze_toplevel begin
             module foo
 
             bar(s) = sum(s)
@@ -470,7 +470,7 @@ end
 
     # usage of global objects
     let
-        res, interp = @analyze_toplevel begin
+        res = @analyze_toplevel begin
             module foo
 
             bar(s) = sum(s)
@@ -491,7 +491,7 @@ end
     end
 
     let
-        res, interp = @analyze_toplevel begin
+        res = @analyze_toplevel begin
             module foo
 
             bar(s) = sum(s)
@@ -513,7 +513,7 @@ end
 
     # module usage within a block
     let
-        res, interp = @analyze_toplevel begin
+        res = @analyze_toplevel begin
             module foo
 
             bar(s) = sum(s)
@@ -536,7 +536,7 @@ end
 
     @testset "module usage of abstract global variable" begin
         let
-            res, interp = @analyze_toplevel begin
+            res = @analyze_toplevel begin
                 module foo
 
                 const bar = sum
@@ -557,7 +557,7 @@ end
         end
 
         let
-            res, interp = @analyze_toplevel begin
+            res = @analyze_toplevel begin
                 module foo
 
                 const bar = "julia"
@@ -578,7 +578,7 @@ end
         end
 
         let
-            res, interp = @analyze_toplevel begin
+            res = @analyze_toplevel begin
                 module foo
 
                 const bar = "julia"
@@ -598,7 +598,7 @@ end
 
     # export
     let
-        res, interp = @analyze_toplevel begin
+        res = @analyze_toplevel begin
             module foo
 
             bar(s) = sum(s)
@@ -619,7 +619,7 @@ end
 
 @testset "sequential" begin
     let
-        res, interp = @analyze_toplevel begin
+        res = @analyze_toplevel begin
             foo(1:1000)
 
             foo(a) = length(a)
@@ -629,7 +629,7 @@ end
     end
 
     let
-        res, interp = @analyze_toplevel begin
+        res = @analyze_toplevel begin
             foo(a) = length(a)
             foo("julia") # should not error
 
@@ -643,7 +643,7 @@ end
 @testset "abstract global variables" begin
     let
         vmod = gen_virtual_module()
-        res, interp = @analyze_toplevel vmod begin
+        res = @analyze_toplevel vmod begin
             var = rand(Bool)
             const constvar = rand(Bool)
         end
@@ -660,7 +660,7 @@ end
 
         let
             vmod = gen_virtual_module()
-            res, interp = @analyze_toplevel vmod begin
+            res = @analyze_toplevel vmod begin
                 begin
                     local localvar = rand(Bool)
                     global globalvar = rand(Bool)
@@ -677,7 +677,7 @@ end
 
         let
             vmod = gen_virtual_module()
-            res, interp = @analyze_toplevel vmod begin
+            res = @analyze_toplevel vmod begin
                 begin
                     globalvar = rand(Bool)
                 end
@@ -689,7 +689,7 @@ end
 
         let
             vmod = gen_virtual_module()
-            res, interp = @analyze_toplevel vmod begin
+            res = @analyze_toplevel vmod begin
                 begin
                     local localvar = rand(Bool)
                     globalvar = localvar
@@ -703,7 +703,7 @@ end
 
         let
             vmod = gen_virtual_module()
-            res, interp = @analyze_toplevel vmod begin
+            res = @analyze_toplevel vmod begin
                 begin
                     local localvar
                     localvar = rand(Bool) # this shouldn't be annotated as `global`
@@ -718,7 +718,7 @@ end
 
         let
             vmod = gen_virtual_module()
-            res, interp = @analyze_toplevel vmod begin
+            res = @analyze_toplevel vmod begin
                 globalvar2 = begin
                     local localvar = rand(Bool)
                     globalvar1 = localvar
@@ -734,7 +734,7 @@ end
 
         let
             vmod = gen_virtual_module()
-            res, interp = @analyze_toplevel vmod begin
+            res = @analyze_toplevel vmod begin
                 let
                     localvar = rand(Bool)
                 end
@@ -745,7 +745,7 @@ end
 
         let
             vmod = gen_virtual_module()
-            res, interp = @analyze_toplevel vmod begin
+            res = @analyze_toplevel vmod begin
                 globalvar = let
                     localvar = rand(Bool)
                     localvar
@@ -762,7 +762,7 @@ end
 
         let
             vmod = gen_virtual_module()
-            res, interp = @analyze_toplevel vmod begin
+            res = @analyze_toplevel vmod begin
                 for i = 1:100
                     localvar = i
                 end
@@ -773,7 +773,7 @@ end
 
         let
             vmod = gen_virtual_module()
-            res, interp = @analyze_toplevel vmod begin
+            res = @analyze_toplevel vmod begin
                 for i in 1:10
                     localvar = rand(Bool)
                     global globalvar = localvar
@@ -787,7 +787,7 @@ end
 
         let
             vmod = gen_virtual_module()
-            res, interp = @analyze_toplevel vmod begin
+            res = @analyze_toplevel vmod begin
                 while true
                     localvar = rand(Bool)
                 end
@@ -798,7 +798,7 @@ end
 
         let
             vmod = gen_virtual_module()
-            res, interp = @analyze_toplevel vmod begin
+            res = @analyze_toplevel vmod begin
                 while true
                     localvar = rand(Bool)
                     global globalvar = localvar
@@ -814,7 +814,7 @@ end
     @testset "multiple declaration/assignment" begin
         let
             vmod = gen_virtual_module()
-            res, interp = @analyze_toplevel vmod begin
+            res = @analyze_toplevel vmod begin
                 s, c = sincos(1)
             end
 
@@ -826,7 +826,7 @@ end
 
         let
             vmod = gen_virtual_module()
-            res, interp = @analyze_toplevel vmod begin
+            res = @analyze_toplevel vmod begin
                 begin
                     local s, c
                     s, c = sincos(1)
@@ -839,7 +839,7 @@ end
 
         let
             vmod = gen_virtual_module()
-            res, interp = @analyze_toplevel vmod begin
+            res = @analyze_toplevel vmod begin
                 let
                     global s, c
                     s, c = sincos(1)
@@ -854,7 +854,7 @@ end
 
         let
             vmod = gen_virtual_module()
-            res, interp = @analyze_toplevel vmod begin
+            res = @analyze_toplevel vmod begin
                 so, co = let
                     si, ci = sincos(1)
                     si, ci
@@ -871,7 +871,7 @@ end
 
         let
             vmod = gen_virtual_module()
-            res, interp = @analyze_toplevel vmod begin
+            res = @analyze_toplevel vmod begin
                 begin
                     local l
                     l, g = sincos(1)
@@ -885,7 +885,7 @@ end
 end
 
 @testset "toplevel throw" begin
-    res, interp = @analyze_toplevel begin
+    res = @analyze_toplevel begin
         throw("throw me")
     end
     @test length(res.inference_error_reports) == 1
@@ -894,7 +894,7 @@ end
 
 @testset "error handling within ConcreteInterpreter" begin
     let
-        res, interp = @analyze_toplevel begin
+        res = @analyze_toplevel begin
             struct A <: B end # UndefVarError(:B) should be handled into `res.toplevel_error_reports`
         end
 
@@ -910,7 +910,7 @@ end
 
         # scrub internal frames until (errored) user macro
         let
-            res, interp = @analyze_toplevel begin
+            res = @analyze_toplevel begin
                 macro badmacro(s) throw(s) end # L1
                 @badmacro "hi"                 # L2
             end
@@ -929,7 +929,7 @@ end
 
         # scrub all the internal frame when errors happens in `maybe_evaluate_builtin`
         let
-            res, interp = @analyze_toplevel begin
+            res = @analyze_toplevel begin
                 struct A
                     fld::UndefinedType
                 end
@@ -946,7 +946,7 @@ end
         # errors from user functions (i.e. those from `@invokelatest f(fargs...)` in the overload
         # `JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)`)
         let
-            res, interp = @analyze_toplevel begin
+            res = @analyze_toplevel begin
                 foo() = throw("don't call me, pal")
                 struct A <: foo() end
             end
@@ -967,7 +967,7 @@ end
     # for abstract global assignment
     let
         vmod = gen_virtual_module()
-        res, interp = @analyze_toplevel vmod begin
+        res = @analyze_toplevel vmod begin
             fib(n) = n≤2 ? n : fib(n-1)+fib(n-1)
 
             const foo = fib(1000000000000) # ::Int
@@ -985,7 +985,7 @@ end
     # for concretized constants
     let
         vmod = gen_virtual_module()
-        res, interp = @analyze_toplevel vmod begin
+        res = @analyze_toplevel vmod begin
             fib(n) = n≤2 ? n : fib(n-1)+fib(n-1)
             const T = typeof(fib(1000000000000)) # never terminates, yes
 
@@ -1003,7 +1003,7 @@ end
 @testset "control flows in toplevel frames" begin
     let
         vmod = gen_virtual_module()
-        res, interp = @analyze_toplevel vmod begin
+        res = @analyze_toplevel vmod begin
             v = rand(Int)
 
             if rand(Bool)
@@ -1025,7 +1025,7 @@ end
     # can find errors within docstring generation
     let
         vmod = gen_virtual_module()
-        res, interp = @analyze_toplevel vmod begin
+        res = @analyze_toplevel vmod begin
             """
                 foo
 
@@ -1043,7 +1043,7 @@ end
 
 @testset "world age" begin
     # https://github.com/aviatesk/JET.jl/issues/104
-    res, interp = @analyze_toplevel begin
+    res = @analyze_toplevel begin
         using Test
         @testset begin
             a = @inferred(ones(Int,ntuple(d->1,1)), ntuple(x->x+1,1))
@@ -1051,7 +1051,7 @@ end
     end
     @test true
 
-    res, interp = @analyze_toplevel begin
+    res = @analyze_toplevel begin
         using Test
 
         @test_warn "foo" println(stderr, "foo")

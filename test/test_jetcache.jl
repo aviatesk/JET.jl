@@ -121,7 +121,7 @@ end
     # should not error for virtual stacktrace traversing with a frame for inner constructor
     # https://github.com/aviatesk/JET.jl/pull/69
     let
-        res, frame = @analyze_toplevel begin
+        res = @analyze_toplevel begin
             struct Foo end
             println(Foo())
         end
