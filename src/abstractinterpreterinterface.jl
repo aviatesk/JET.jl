@@ -160,7 +160,6 @@ const LOGGER_LEVELS_DESC   = let
         end
     end |> Fix2(join, ", ")
 end
-const DEFAULT_LOGGER_LEVEL = INFO_LOGGER_LEVEL
 get_logger_level(io::IO)   = get(io, LOGGER_LEVEL_KEY, DEFAULT_LOGGER_LEVEL)::Int
 
 """
