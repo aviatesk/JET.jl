@@ -552,7 +552,7 @@ function set_abstract_global!(interp, mod, name, @nospecialize(t), isnd, sv)
     # this allows us to define structs with global type aliases, etc.
     # XXX maybe check for constant declaration is not necessary
     if isa(t, Const) && iscd
-        return Core.eval(mod, :(const $(name) = $(t.val)))
+        return Core.eval(mod, :(const $(name) = $(QuoteNode(t.val))))
     end
 
     # if this assignment happens in an non-deterministic way, we need to perform type merge
