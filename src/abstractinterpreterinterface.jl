@@ -147,12 +147,17 @@ JETOptimizationParams(; # inlining::Bool                = inlining_enabled(),
 const LOGGER_LEVEL_KEY     = :JET_LOGGER_LEVEL
 const INFO_LOGGER_LEVEL    = 0
 const DEBUG_LOGGER_LEVEL   = 1
-const LOGGER_LEVELS        = Dict(INFO_LOGGER_LEVEL  => "(info level, default)",
-                                  DEBUG_LOGGER_LEVEL => "(debug level)",
+const LOGGER_LEVELS        = Dict(INFO_LOGGER_LEVEL  => :info,
+                                  DEBUG_LOGGER_LEVEL => :debug,
                                   )
+const DEFAULT_LOGGER_LEVEL = INFO_LOGGER_LEVEL
 const LOGGER_LEVELS_DESC   = let
     map(collect(LOGGER_LEVELS)) do (level, desc)
-        "`$level` $desc"
+        if level == DEFAULT_LOGGER_LEVEL
+            "`$level` (\"$desc\" level, default)"
+        else
+            "`$level` (\"$desc\" level)"
+        end
     end |> Fix2(join, ", ")
 end
 const DEFAULT_LOGGER_LEVEL = INFO_LOGGER_LEVEL
