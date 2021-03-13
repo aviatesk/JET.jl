@@ -44,7 +44,7 @@ This function first parses `s::AbstractString` into `toplevelex::Expr` and then 
 4. finally, `JETInterpreter` analyzes the remaining statements by abstract interpretation
 
 !!! warning
-    In order to process the toplevel code sequentially as with Julia runtime, `virtual_process!`
+    In order to process the toplevel code sequentially as Julia runtime does, `virtual_process!`
       splits the entire code, and then iterate a simulation process on each code block.
     With this approach, we can't track the inter-code-block level dependencies, and so a
       partial interpretation of toplevle definitions will fail if it needs an access to global
