@@ -11,7 +11,7 @@
             end
             """
 
-        res, interp = analyze_text(s; filename = @__FILE__)
+        res = analyze_text(s; filename = @__FILE__)
         print_reports(io, res.toplevel_error_reports)
         let s = String(take!(io))
             @test occursin("1 toplevel error found", s)
@@ -19,7 +19,7 @@
             @test occursin("syntax: unexpected \"end\"", s)
         end
 
-        res, interp = analyze_text(s; filename = "foo")
+        res = analyze_text(s; filename = "foo")
         print_reports(io, res.toplevel_error_reports)
         let s = String(take!(io))
             @test occursin("1 toplevel error found", s)
@@ -31,7 +31,7 @@ end
 
 @testset "print inference errors" begin
     let
-        res, interp = @analyze_toplevel begin
+        res = @analyze_toplevel begin
             s = "julia"
             sum(s)
         end
@@ -47,7 +47,7 @@ end
     @testset "special case splat call signature" begin
         let
             vmod = gen_virtual_module()
-            res, interp = @analyze_toplevel vmod begin
+            res = @analyze_toplevel vmod begin
                 foo(args...) = sum(args)
                 foo(rand(Char, 1000000000)...)
             end

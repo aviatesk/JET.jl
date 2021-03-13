@@ -51,7 +51,7 @@ end
 @testset "getfield with abstract global variable" begin
     # nested module access may not be resolved as `GlobalRef` and can be propagated into `getfield`
     let
-        res, interp = @analyze_toplevel begin
+        res = @analyze_toplevel begin
             module foo
 
             const bar = sum

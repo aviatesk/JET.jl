@@ -15,15 +15,15 @@ gen_virtual_process_result() = (; included_files = Set{String}(),
                      virtualmod::Module,
                      actualmodsym::Symbol,
                      interp::JETInterpreter,
-                     ) -> Tuple{VirtualProcessResult,JETInterpreter}
+                     ) -> VirtualProcessResult
     virtual_process!(toplevelex::Expr,
                      filename::AbstractString,
                      virtualmod::Module,
                      actualmodsym::Symbol,
                      interp::JETInterpreter,
-                     ) -> Tuple{VirtualProcessResult,JETInterpreter}
+                     ) -> VirtualProcessResult
 
-simulates Julia's toplevel execution and analyzes error points, and returns
+Simulates Julia's toplevel execution and collects error points, and finally returns
 `res::VirtualProcessResult`, which keeps the following information:
 - `res.included_files::Set{String}`: files that have been analyzed
 - `res.toplevel_error_reports::Vector{ToplevelErrorReport}`: toplevel errors found during the
@@ -32,7 +32,7 @@ simulates Julia's toplevel execution and analyzes error points, and returns
 - `res.inference_error_reports::Vector{InferenceErrorReport}`: possible error reports found
     by `JETInterpreter`
 
-this function first parses `s::AbstractString` into `toplevelex::Expr` and then iterate the
+This function first parses `s::AbstractString` into `toplevelex::Expr` and then iterate the
   following steps on each code block (`blk`) of `toplevelex`:
 1. if `blk` is a `:module` expression, recusively call `virtual_process!` with an newly defined
      virtual module
@@ -44,10 +44,11 @@ this function first parses `s::AbstractString` into `toplevelex::Expr` and then 
 4. finally, `JETInterpreter` analyzes the remaining statements by abstract interpretation
 
 !!! warning
-    the current approach splits entire code into code blocks and we're not tracking
-      inter-code-block level dependencies, and so a partial interpretation of toplevle
-      definitions will fail if it needs an access to global variables that are defined
-      in the other code block
+    In order to process the toplevel code sequentially as with Julia runtime, `virtual_process!`
+      splits the entire code, and then iterate a simulation process on each code block.
+    With this approach, we can't track the inter-code-block level dependencies, and so a
+      partial interpretation of toplevle definitions will fail if it needs an access to global
+      variables defined in other code blocks that are not interpreted but just abstracted.
 """
 function virtual_process! end
 
@@ -57,7 +58,7 @@ function virtual_process!(s::AbstractString,
                           actualmodsym::Symbol,
                           interp::JETInterpreter,
                           res::VirtualProcessResult = gen_virtual_process_result(),
-                          )::Tuple{VirtualProcessResult,JETInterpreter}
+                          )::VirtualProcessResult
     start = time()
 
     with_toplevel_logger(interp) do io
@@ -68,15 +69,13 @@ function virtual_process!(s::AbstractString,
 
     toplevelex = parse_input_line(s; filename)
 
-    # if there's any syntax error, try to identify all the syntax error location
-    ret = if @isexpr(toplevelex, (:error, :incomplete))
+    if @isexpr(toplevelex, (:error, :incomplete))
+        # if there's any syntax error, try to identify all the syntax error location
         append!(res.toplevel_error_reports, collect_syntax_errors(s, filename))
-        res, interp
-    # just return if there is nothing to analyze
     elseif isnothing(toplevelex)
-        res, interp
+        # just return if there is nothing to analyze
     else
-        virtual_process!(toplevelex, filename, virtualmod, actualmodsym, interp, res)
+        res = virtual_process!(toplevelex, filename, virtualmod, actualmodsym, interp, res)
     end
 
     with_toplevel_logger(interp) do io
@@ -84,7 +83,7 @@ function virtual_process!(s::AbstractString,
         println(io, "analysis from $filename finished in $sec sec")
     end
 
-    return ret
+    return res
 end
 
 function virtual_process!(toplevelex::Expr,
@@ -93,7 +92,7 @@ function virtual_process!(toplevelex::Expr,
                           actualmodsym::Symbol,
                           interp::JETInterpreter,
                           res::VirtualProcessResult = gen_virtual_process_result(),
-                          )::Tuple{VirtualProcessResult,JETInterpreter}
+                          )::VirtualProcessResult
     @assert @isexpr(toplevelex, :toplevel)
 
     local lnn::LineNumberNode = LineNumberNode(0, filename)
@@ -218,7 +217,7 @@ function virtual_process!(toplevelex::Expr,
         append!(res.inference_error_reports, interp.reports) # collect error reports
     end
 
-    return res, interp
+    return res
 end
 
 # replace self references of `actualmodsym` with `virtualmod` (as is)
@@ -261,9 +260,29 @@ end
 _walk_and_transform!(pre, f, @nospecialize(_), scope) = return
 
 """
-    partially_interpret!(interp, mod, src)
+    ConcreteInterpreter
 
-partially interprets statements in `src` using JuliaInterpreter.jl:
+The trait to inject code into JuliaInterpreter's interpretation process; JET.jl overloads:
+- `JuliaInterpreter.step_expr!` to add error report pass for module usage expressions and
+    support package profiling
+- `JuliaInterpreter.evaluate_call_recurse!` to special case `include` calls
+- `JuliaInterpreter.handle_err` to wrap an error happened during interpretation into
+    `ActualErrorWrapped`
+"""
+struct ConcreteInterpreter
+    filename::String
+    lnn::LineNumberNode
+    eval_with_err_handling::Function
+    virtualmod::Module
+    actualmodsym::Symbol
+    interp::JETInterpreter
+    res::VirtualProcessResult
+end
+
+"""
+    partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::CodeInfo)
+
+Partially interprets statements in `src` using JuliaInterpreter.jl:
 - concretize "toplevel definitions", i.e. `:method`, `:struct_type`, `:abstract_type` and
     `:primitive_type` expressions and their dependencies
 - directly evaluates module usage expressions and report error of invalid module usages
@@ -271,7 +290,7 @@ partially interprets statements in `src` using JuliaInterpreter.jl:
 - special case `include` calls so that [`virtual_process!`](@ref) recursively runs on the
     included file
 """
-function partially_interpret!(interp, mod, src)
+function partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::CodeInfo)
     concretize = select_statements(src)
 
     with_toplevel_logger(interp.interp, ≥(DEBUG_LOGGER_LEVEL)) do io
@@ -334,26 +353,6 @@ function select_statements(src)
     lines_required!(concretize, src, edges)
 
     return concretize
-end
-
-"""
-    ConcreteInterpreter
-
-trait to inject code into JuliaInterpreter's interpretation process; JET.jl overloads:
-- `JuliaInterpreter.step_expr!` to add error report pass for module usage expressions and
-    support package profiling
-- `JuliaInterpreter.evaluate_call_recurse!` to special case `include` calls
-- `JuliaInterpreter.handle_err` to wrap an error happened during interpretation into
-    `ActualErrorWrapped`
-"""
-struct ConcreteInterpreter
-    filename::String
-    lnn::LineNumberNode
-    eval_with_err_handling::Function
-    virtualmod::Module
-    actualmodsym::Symbol
-    interp::JETInterpreter
-    res::VirtualProcessResult
 end
 
 function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node), istoplevel::Bool)

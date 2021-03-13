@@ -215,7 +215,7 @@ end
 @testset "inference with abstract global variable" begin
     let
         vmod = gen_virtual_module()
-        res, interp = @analyze_toplevel vmod begin
+        res = @analyze_toplevel vmod begin
             s = "julia"
             sum(s)
         end
@@ -228,7 +228,7 @@ end
     @testset "union assignment" begin
         let
             vmod = gen_virtual_module()
-            res, interp = @analyze_toplevel vmod  begin
+            res = @analyze_toplevel vmod  begin
                 global globalvar
                 if rand(Bool)
                     globalvar = "String"
@@ -243,7 +243,7 @@ end
 
         let
             vmod = gen_virtual_module()
-            res, interp = @analyze_toplevel vmod begin
+            res = @analyze_toplevel vmod begin
                 if rand(Bool)
                     globalvar = "String"
                 else
@@ -265,7 +265,7 @@ end
         # sequential
         let
             vmod = gen_virtual_module()
-            res, interp = @analyze_toplevel vmod begin
+            res = @analyze_toplevel vmod begin
                 if rand(Bool)
                     globalvar = "String"
                 else
@@ -295,7 +295,7 @@ end
 
     @testset "invalidate code cache" begin
         let
-            res, interp = @analyze_toplevel begin
+            res = @analyze_toplevel begin
                 foo(::Integer) = "good call, pal"
                 bar() = a
 
@@ -618,7 +618,7 @@ end
 
         # end to end
         let
-            res, interp = @analyze_toplevel begin
+            res = @analyze_toplevel begin
                 function foo(n)
                     if n < 10
                         return n
@@ -656,7 +656,7 @@ end
 
 @testset "don't early escape if type grows up to `Any`" begin
     vmod = gen_virtual_module()
-    res, interp = @analyze_toplevel vmod begin
+    res = @analyze_toplevel vmod begin
         abstract type Foo end
         struct Foo1 <: Foo
             bar

@@ -479,17 +479,17 @@ function collect_reports(actualmod, text, filename; jetconfigs...)
     interp = JETInterpreter(; jetconfigs...)
 
     virtualmod = gen_virtual_module(actualmod)
-    ret, interp = virtual_process!(text,
-                                   filename,
-                                   virtualmod,
-                                   Symbol(actualmod),
-                                   interp,
-                                   )
+    res = virtual_process!(text,
+                           filename,
+                           virtualmod,
+                           Symbol(actualmod),
+                           interp,
+                           )
 
-    return ret.included_files,
+    return res.included_files,
            # non-empty `ret.toplevel_error_reports` means critical errors happened during
            # the AST transformation, so they always have precedence over `ret.inference_error_reports`
-           !isempty(ret.toplevel_error_reports) ? ret.toplevel_error_reports : ret.inference_error_reports,
+           !isempty(res.toplevel_error_reports) ? res.toplevel_error_reports : res.inference_error_reports,
            gen_postprocess(virtualmod, actualmod)
 end
 
