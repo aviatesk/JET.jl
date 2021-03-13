@@ -130,16 +130,6 @@ function restore_cached_report(cache::InferenceErrorReportCache)
     return T(st, cache.msg, cache.sig, cache.spec_args)::InferenceErrorReport
 end
 
-@withmixedhash struct IdentityKey
-    T::Type{<:InferenceErrorReport}
-    sig::Vector{Any}
-    # entry_frame::VirtualFrame
-    error_frame::VirtualFrame
-end
-
-get_identity_key(report::T) where {T<:InferenceErrorReport} =
-    IdentityKey(T, report.sig, #=first(report.st),=# last(report.st))
-
 macro reportdef(ex, kwargs...)
     T = esc(first(ex.args))
     args = map(ex.args) do x

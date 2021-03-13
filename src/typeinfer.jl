@@ -122,7 +122,7 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
 
     # XXX this is a dirty fix for performance problem, we need more "proper" fix
     # https://github.com/aviatesk/JET.jl/issues/75
-    unique!(get_identity_key, reports)
+    unique!(report_identity_key, reports)
 
     reports_after = Set(reports)
 
@@ -249,6 +249,16 @@ function is_from_same_frame(parent_linfo::MethodInstance,
 end
 
 is_unreachable(@nospecialize(x)) = isa(x, ReturnNode) && !isdefined(x, :val)
+
+@withmixedhash struct ReportIdentityKey
+    T::Type{<:InferenceErrorReport}
+    sig::Vector{Any}
+    # entry_frame::VirtualFrame
+    error_frame::VirtualFrame
+end
+
+report_identity_key(report::T) where {T<:InferenceErrorReport} =
+    ReportIdentityKey(T, report.sig, #=first(report.st),=# last(report.st))
 
 # basically same as `is_throw_call`, but also toplevel module handling added
 function is_throw_call_expr(interp::JETInterpreter, frame::InferenceState, @nospecialize(e))
