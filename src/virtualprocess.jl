@@ -206,9 +206,7 @@ function virtual_process!(toplevelex::Expr,
         concretized = partially_interpret!(interp′, virtualmod, src)
 
         # bail out if nothing to analyze (just a performance optimization)
-        if all(length(src.code)≠1 && is_return(last(src.code)) ? concretized[begin:end-1] : concretized)
-            continue
-        end
+        all(concretized) && continue
 
         interp = JETInterpreter(interp, concretized, virtualmod)
 

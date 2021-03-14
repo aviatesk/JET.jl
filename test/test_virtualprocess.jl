@@ -1073,10 +1073,19 @@ end
     @test is_concrete(m, :a) && m.a === :jetzero
 end
 
-# avoid too much bail out from `virtual_process!`
-let
-    res = @analyze_toplevel begin
-        sin′
-    end;
-    @test !isempty(res.inference_error_reports)
+@testset "avoid too much bail out from `virtual_process!`" begin
+    let
+        res = @analyze_toplevel begin
+            sin′
+        end;
+        @test !isempty(res.inference_error_reports)
+    end
+
+    let
+        res = @analyze_toplevel begin
+            s = nothing
+            sin′
+        end;
+        @test !isempty(res.inference_error_reports)
+    end
 end
