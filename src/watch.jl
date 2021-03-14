@@ -4,7 +4,7 @@ The configurations will only be active when used with [`report_and_watch_file`](
 
 ---
 - `revise_all::Bool = true` \\
-  Redirected to `Revise.entr`'s `all` keyword argument.
+  Redirected to [`Revise.entr`](https://timholy.github.io/Revise.jl/stable/user_reference/#Revise.entr)'s `all` keyword argument.
   When set to `true`, JET will retrigger analysis as soon as code updates are detected in
     any module tracked by Revise.
   Currently when encountering `import/using` statements, JET won't perform analysis, but
@@ -14,7 +14,7 @@ The configurations will only be active when used with [`report_and_watch_file`](
     this configuration should be enabled.
 ---
 - `revise_modules = nothing` \\
-  Redirected to `Revise.entr`'s `modules` positional argument.
+  Redirected to [`Revise.entr`](https://timholy.github.io/Revise.jl/stable/user_reference/#Revise.entr)'s `modules` positional argument.
   If a iterator of `Module` is given, JET will retrigger analysis whenever code in `modules` updates.
 
   !!! tip
@@ -45,9 +45,9 @@ end
                           toplevel_logger::Union{Nothing,IO} = IOContext(io, $LOGGER_LEVEL_KEY => $INFO_LOGGER_LEVEL),
                           jetconfigs...)
 
-Watches `filename` and trigger JET analysis with [`report_file`](@ref) on code update.
-JET will try to analyze all the `include`d files and so it will re-trigger analysis if there
-  is any update in the `include`d detected.
+Watches `filename` and keeps re-triggering analysis with [`report_file`](@ref) on code update.
+JET will try to analyze all the `include`d files reachable from `filename`, and it will
+  re-trigger analysis if there is code update detected in any of the `include`d files.
 
 This function internally uses [Revise.jl](https://timholy.github.io/Revise.jl/stable/) to
   track code updates. Revise also offers possibilities to track changes in files that are
