@@ -1072,3 +1072,11 @@ end
     end
     @test is_concrete(m, :a) && m.a === :jetzero
 end
+
+# avoid too much bail out from `virtual_process!`
+let
+    res = @analyze_toplevel begin
+        sin′
+    end;
+    @test !isempty(res.inference_error_reports)
+end
