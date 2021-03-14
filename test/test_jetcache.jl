@@ -164,6 +164,9 @@ end
         # there should be local cache for each errorneous constant analysis
         @test !isempty(interp.reports)
         @test !isempty(interp.cache)
+        for cache in interp.cache
+            @show cache.linfo cache.argtypes
+        end
         @test any(interp.cache) do analysis_result
             analysis_result.argtypes==Any[CC.Const(m.getter),m.Foo{Int},CC.Const(:baz)]
         end
