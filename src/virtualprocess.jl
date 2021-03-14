@@ -140,9 +140,9 @@ function virtual_process!(toplevelex::Expr,
     while !isempty(exs)
         x = pop!(exs)
 
-        with_toplevel_logger(interp, ≥(DEBUG_LOGGER_LEVEL)) do io
-            println(io, "analyzing ", x)
-        end
+        # with_toplevel_logger(interp, ≥(DEBUG_LOGGER_LEVEL)) do io
+        #     println(io, "analyzing ", x)
+        # end
 
         # update line info
         if isa(x, LineNumberNode)
