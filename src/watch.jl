@@ -128,7 +128,7 @@ function _report_and_watch_file(io::IO,
                 end
             end
 
-            # fatal uncaght error happened in Revise.jl
+            # fatal uncaught error happened in Revise.jl
             rethrow(err)
         end
     end
