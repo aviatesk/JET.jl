@@ -1,3 +1,23 @@
+"""
+    ToplevelConfig
+
+Configurations for top-level analysis.
+These configurations will be active for entries explained in [Analysis entry points](@ref).
+
+---
+- `concretization_patterns::Vector{Expr} = Expr[]` \\
+
+  Also see: [`virtual_process!`](@ref).
+---
+"""
+struct ToplevelConfig
+    concretization_patterns::Vector{Expr}
+    @jetconfigurable ToplevelConfig(; concretization_patterns::Vector{Expr} = Expr[],
+                                      ) =
+        return new(concretization_patterns,
+                   )
+end
+
 const VirtualProcessResult = @NamedTuple begin
     included_files::Set{String}
     toplevel_error_reports::Vector{ToplevelErrorReport}
@@ -15,12 +35,14 @@ gen_virtual_process_result() = (; included_files = Set{String}(),
                      virtualmod::Module,
                      actualmodsym::Symbol,
                      interp::JETInterpreter,
+                     config::ToplevelConfig,
                      ) -> VirtualProcessResult
     virtual_process!(toplevelex::Expr,
                      filename::AbstractString,
                      virtualmod::Module,
                      actualmodsym::Symbol,
                      interp::JETInterpreter,
+                     config::ToplevelConfig,
                      ) -> VirtualProcessResult
 
 Simulates Julia's toplevel execution and collects error points, and finally returns
@@ -49,6 +71,9 @@ This function first parses `s::AbstractString` into `toplevelex::Expr` and then 
     With this approach, we can't track the inter-code-block level dependencies, and so a
       partial interpretation of toplevle definitions will fail if it needs an access to global
       variables defined in other code blocks that are not interpreted but just abstracted.
+    We can circumvent this issue using JET's `concretization_patterns` configuration, which
+      allows us to customize JET's concretization strategy.
+    See [`ToplevelConfig`](@ref) for more details.
 """
 function virtual_process! end
 
@@ -57,6 +82,7 @@ function virtual_process!(s::AbstractString,
                           virtualmod::Module,
                           actualmodsym::Symbol,
                           interp::JETInterpreter,
+                          config::ToplevelConfig,
                           res::VirtualProcessResult = gen_virtual_process_result(),
                           )::VirtualProcessResult
     start = time()
@@ -75,7 +101,7 @@ function virtual_process!(s::AbstractString,
     elseif isnothing(toplevelex)
         # just return if there is nothing to analyze
     else
-        res = virtual_process!(toplevelex, filename, virtualmod, actualmodsym, interp, res)
+        res = virtual_process!(toplevelex, filename, virtualmod, actualmodsym, interp, config, res)
     end
 
     with_toplevel_logger(interp) do io
@@ -91,6 +117,7 @@ function virtual_process!(toplevelex::Expr,
                           virtualmod::Module,
                           actualmodsym::Symbol,
                           interp::JETInterpreter,
+                          config::ToplevelConfig,
                           res::VirtualProcessResult = gen_virtual_process_result(),
                           )::VirtualProcessResult
     @assert @isexpr(toplevelex, :toplevel)
@@ -180,7 +207,7 @@ function virtual_process!(toplevelex::Expr,
 
             isnothing(newvirtualmod) && continue # error happened, e.g. duplicated naming
 
-            virtual_process!(newtoplevelex, filename, newvirtualmod::Module, actualmodsym, interp, res)
+            virtual_process!(newtoplevelex, filename, newvirtualmod::Module, actualmodsym, interp, config, res)
 
             continue
         end
@@ -201,6 +228,7 @@ function virtual_process!(toplevelex::Expr,
                                       virtualmod,
                                       actualmodsym,
                                       interp,
+                                      config,
                                       res,
                                       )
         concretized = partially_interpret!(interp′, virtualmod, src)
@@ -257,6 +285,24 @@ function _walk_and_transform!(pre, f, src::CodeInfo, scope)
 end
 _walk_and_transform!(pre, f, @nospecialize(_), scope) = return
 
+# # configure user-specified concretization strategy with pattern matching on surface level AST
+# # `select_statements` will use and actually apply configuration using :force_concretize_(start|end) annotations
+# function annotate_force_concretizations(@nospecialize(x), config::ToplevelConfig)
+#     patterns = config.concretization_patterns
+#     return MacroTools.postwalk(x) do @nospecialize(x)
+#         for pat in patterns
+#             if @capture(x, $pat)
+#                 return Expr(:block,
+#                             Expr(:meta, :force_concretize_start),
+#                             Expr(:local, Expr(:(=), :ret, x)),
+#                             Expr(:meta, :force_concretize_end),
+#                             :ret)
+#             end
+#         end
+#         return x
+#     end
+# end
+
 """
     ConcreteInterpreter
 
@@ -274,6 +320,7 @@ struct ConcreteInterpreter
     virtualmod::Module
     actualmodsym::Symbol
     interp::JETInterpreter
+    config::ToplevelConfig
     res::VirtualProcessResult
 end
 
@@ -281,15 +328,16 @@ end
     partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::CodeInfo)
 
 Partially interprets statements in `src` using JuliaInterpreter.jl:
-- concretize "toplevel definitions", i.e. `:method`, `:struct_type`, `:abstract_type` and
+- concretizes "toplevel definitions", i.e. `:method`, `:struct_type`, `:abstract_type` and
     `:primitive_type` expressions and their dependencies
+- concretizes user-specified toplevel code (see [`ToplevelConfig`](@ref))
 - directly evaluates module usage expressions and report error of invalid module usages
   (TODO: enter into the loaded module and keep JET analysis)
-- special case `include` calls so that [`virtual_process!`](@ref) recursively runs on the
+- special-cases `include` calls so that [`virtual_process!`](@ref) recursively runs on the
     included file
 """
 function partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::CodeInfo)
-    concretize = select_statements(src)
+    concretize = select_statements(src, interp.config)
 
     with_toplevel_logger(interp.interp, ≥(DEBUG_LOGGER_LEVEL)) do io
         println(io, "concretization plan:")
@@ -302,7 +350,7 @@ function partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::Cod
 end
 
 # select statements that should be not abstracted away, but rather actually interpreted
-function select_statements(src)
+function select_statements(src, config)
     stmts = src.code
     edges = CodeEdges(src)
 
@@ -318,8 +366,28 @@ function select_statements(src)
             continue
         end
 
+        # apply user-specified concretization strategy
+        # currently our concretization strategy is configured here with expression pattern
+        # matching on lowered representation; while it can be a bit user-unfriendly, but it
+        # has several benefits over the pattern matching with surface level AST,
+        # especially, here in lowered representation a function definition signature
+        # (`f(args...)`) is clearly distinguished from the call expression while within
+        # surface AST level we should care about the scope of the expression, etc.
+        local force_concretize = false
+        for pat in config.concretization_patterns
+            if @capture(stmt, $pat)
+                force_concretize = true
+                continue
+            end
+        end
+        if force_concretize
+            concretize[i] = true
+            continue
+        end
+
         if @isexpr(stmt, :(=))
-            stmt = stmt.args[2] # rhs
+            lhs, rhs = stmt.args
+            stmt = rhs
         end
         if @isexpr(stmt, :call)
             f = stmt.args[1]
@@ -448,7 +516,7 @@ function handle_include(interp, fargs)
 
     isnothing(include_text) && return nothing # typically no file error
 
-    virtual_process!(include_text::String, include_file, interp.virtualmod, interp.actualmodsym, interp.interp, interp.res)
+    virtual_process!(include_text::String, include_file, interp.virtualmod, interp.actualmodsym, interp.interp, interp.config, interp.res)
 
     # TODO: actually, here we need to try to get the last profiling result of the `virtual_process!` call above
     return nothing

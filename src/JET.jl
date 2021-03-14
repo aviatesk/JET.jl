@@ -136,6 +136,8 @@ import JuliaInterpreter:
     is_return,
     is_quotenode_egal
 
+import MacroTools: @capture
+
 using InteractiveUtils
 
 # common
@@ -484,6 +486,7 @@ function collect_reports(actualmod, text, filename; jetconfigs...)
                            virtualmod,
                            Symbol(actualmod),
                            interp,
+                           ToplevelConfig(; jetconfigs...),
                            )
 
     return res.included_files,

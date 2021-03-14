@@ -10,6 +10,7 @@ import JET:
     AbstractGlobal,
     analyze_call,
     get_result,
+    ToplevelConfig,
     virtual_process!,
     gen_virtual_module,
     ToplevelErrorReport,
@@ -44,21 +45,21 @@ macro def(ex)
 end
 
 # enters analysis from file name
-analyze_file(filename, args...; kwargs...) =
-    return analyze_text(read(filename, String), args...; filename, kwargs...)
+analyze_file(filename, args...; jetconfigs...) =
+    return analyze_text(read(filename, String), filename, args...; jetconfigs...)
 
 # enters analysis from string
 function analyze_text(s,
-                      virtualmod = gen_virtual_module(@__MODULE__);
                       filename = "top-level",
-                      actualmodsym = Symbol(parentmodule(virtualmod)),
-                      interp = JETInterpreter(),
-                      )
+                      virtualmod = gen_virtual_module(@__MODULE__),
+                      actualmodsym = Symbol(parentmodule(virtualmod));
+                      jetconfigs...)
     return virtual_process!(s,
                             filename,
                             virtualmod,
                             actualmodsym,
-                            interp)
+                            JETInterpreter(; jetconfigs...),
+                            ToplevelConfig(; jetconfigs...))
 end
 
 # enters analysis from toplevel expression
@@ -71,17 +72,18 @@ macro analyze_toplevel(ex)
     return analyze_toplevel(virtualmod, ex, __source__)
 end
 
-function analyze_toplevel(virtualmod, ex, lnn)
+function analyze_toplevel(virtualmod, ex, lnn; jetconfigs...)
     toplevelex = (isexpr(ex, :block) ?
                   Expr(:toplevel, lnn, ex.args...) : # flatten here
                   Expr(:toplevel, lnn, ex)
                   ) |> QuoteNode
+    interp = JETInterpreter(; jetconfigs...)
+    config = ToplevelConfig(; jetconfigs...)
     return quote let
-        interp = $(JETInterpreter)()
         ret = $(JET.gen_virtual_process_result)()
         virtualmod = $(esc(virtualmod))
         actualmodsym = Symbol(parentmodule(virtualmod))
-        $(virtual_process!)($(toplevelex), $(string(lnn.file)), virtualmod, actualmodsym, interp, ret)
+        $(virtual_process!)($(toplevelex), $(string(lnn.file)), virtualmod, actualmodsym, $interp, $config, ret)
     end end
 end
 

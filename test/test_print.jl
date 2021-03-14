@@ -11,7 +11,7 @@
             end
             """
 
-        res = analyze_text(s; filename = @__FILE__)
+        res = analyze_text(s, @__FILE__)
         print_reports(io, res.toplevel_error_reports)
         let s = String(take!(io))
             @test occursin("1 toplevel error found", s)
@@ -19,7 +19,7 @@
             @test occursin("syntax: unexpected \"end\"", s)
         end
 
-        res = analyze_text(s; filename = "foo")
+        res = analyze_text(s, "foo")
         print_reports(io, res.toplevel_error_reports)
         let s = String(take!(io))
             @test occursin("1 toplevel error found", s)
