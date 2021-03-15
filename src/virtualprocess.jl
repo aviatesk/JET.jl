@@ -1,6 +1,4 @@
 """
-    ToplevelConfig
-
 Configurations for top-level analysis.
 These configurations will be active for all the top-level entries explained in [Analysis entry points](@ref).
 
@@ -8,14 +6,15 @@ These configurations will be active for all the top-level entries explained in [
 - `concretization_patterns::Vector{Expr} = Expr[]` \\
   Specifies a customized top-level code concretization strategy.
 
-  When analyzing a top-level code, JET first splits the entire code and then iterate a simulation
-    process on each code block, in order to process the top-level code sequentially as Julia runtime does.
-  However, with this approach, JET can't track the inter-code-block level dependencies, and
-    so a partial interpretation of top-level definitions will fail if it needs an access to
+  When analyzing a top-level code, JET first splits the entire code and then iterate a virtual
+    top-level code execution process on each code block, in order to simulate Julia's sequential
+    top-level code execution.
+  However, with this approach, JET can't track the "inter-code-block" level dependencies, and
+    so a partial interpretation of top-level definitions can fail if it needs an access to
     global variables defined in other code blocks that are not actually interpreted ("concretized")
     but just abstract-interpreted ("abstracted").
 
-  For example, the issue happens when your macro accesses a global variable during its expansion, e.g.:
+  For example, the issue happens when your macro accesses to a global variable during its expansion, e.g.:
   > test/fixtures/concretization_patterns.jl
   $(let
       text = read(normpath(@__DIR__, "..", "test", "fixtures", "concretization_patterns.jl"), String)

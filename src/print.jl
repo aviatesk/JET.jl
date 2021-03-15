@@ -212,7 +212,7 @@ function print_report(io, report::MissingConcretization)
     printlnstyled(io, """
     the following error happened mostly because of the missing JET analysis configurations,
     and this could be fixed with the `concretization_patterns` configuration.
-    Check [TODO URI] for the details.
+    Check https://aviatesk.github.io/JET.jl/dev/config/#JET.ToplevelConfig for the details.
     ---"""; color = HINT_COLOR)
 
     showerror(io, report.err, report.st)
