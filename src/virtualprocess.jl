@@ -468,14 +468,11 @@ function select_statements(src, config)
         local force_concretize = false
         for pat in config.concretization_patterns
             if @capture(stmt, $pat)
-                force_concretize = true
-                continue
+                force_concretize = concretize[i] = true
+                break
             end
         end
-        if force_concretize
-            concretize[i] = true
-            continue
-        end
+        force_concretize && continue
 
         if @isexpr(stmt, :(=))
             lhs, rhs = stmt.args
