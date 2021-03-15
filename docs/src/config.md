@@ -6,12 +6,20 @@ arguments (or optional parameters for macros).
 For example, if you want to analyze `your_awesome_file.jl` with turning on `strict_condition_check` configuration and
 also logs inference process into `stdout`, your can do:
 ```julia
-report_file("your_awesome_file.jl"; strict_condition_check = true, inference_logger = stdout)
+report_file("your_awesome_file.jl";
+            strict_condition_check = true,
+            inference_logger = stdout)
 ```
 
 !!! note
-    Please ignore the names of documented objects below, like `JETAnalysisParams`.
+    Please ignore the names of documented objects below, like "`JET.ToplevelConfig`".
     They are just remnants of documentation internals, and you will never directly interact with them.
+
+## Configurations for Top-level Analysis
+
+```@docs
+JET.ToplevelConfig
+```
 
 
 ## Configurations for Abstract Interpretation

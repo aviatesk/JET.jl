@@ -120,6 +120,7 @@ const RIGHT_ROOF = " ═════"
 const HEADER_COLOR = :reverse
 const ERROR_SIG_COLOR = :bold
 const TYPE_ANNOTATION_COLOR = :light_cyan
+const HINT_COLOR = :light_green
 
 pluralize(n::Integer, one::AbstractString, more::AbstractString = string(one, 's')) =
     string(n, ' ', isone(n) ? one : more)
@@ -206,6 +207,16 @@ function print_report(io, report::RecursiveIncludeErrorReport)
 end
 # TODO: add context information, i.e. during macroexpansion, defining something
 print_report(io, report::ActualErrorWrapped) = showerror(io, report.err, report.st)
+function print_report(io, report::MissingConcretization)
+    printstyled(io, "HINT: "; bold = true, color = HINT_COLOR)
+    printlnstyled(io, """
+    the following error happened mostly because of the missing JET analysis configurations,
+    and this could be fixed with the `concretization_patterns` configuration.
+    Check [TODO URI] for the details.
+    ---"""; color = HINT_COLOR)
+
+    showerror(io, report.err, report.st)
+end
 
 # inference
 # ---------

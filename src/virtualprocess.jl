@@ -2,12 +2,96 @@
     ToplevelConfig
 
 Configurations for top-level analysis.
-These configurations will be active for entries explained in [Analysis entry points](@ref).
+These configurations will be active for all the top-level entries explained in [Analysis entry points](@ref).
 
 ---
 - `concretization_patterns::Vector{Expr} = Expr[]` \\
+  Specifies a customized top-level code concretization strategy.
 
-  Also see: [`virtual_process!`](@ref).
+  When analyzing a top-level code, JET first splits the entire code and then iterate a simulation
+    process on each code block, in order to process the top-level code sequentially as Julia runtime does.
+  However, with this approach, JET can't track the inter-code-block level dependencies, and
+    so a partial interpretation of top-level definitions will fail if it needs an access to
+    global variables defined in other code blocks that are not actually interpreted ("concretized")
+    but just abstract-interpreted ("abstracted").
+
+  For example, the issue happens when your macro accesses a global variable during its expansion, e.g.:
+  > test/fixtures/concretization_patterns.jl
+  $(let
+      text = read(normpath(@__DIR__, "..", "test", "fixtures", "concretization_patterns.jl"), String)
+      lines = split(text, '\n')
+      pushfirst!(lines, "```julia"); push!(lines, "```")
+      join(lines, "\n  ")
+  end)
+
+  To circumvent this issue, JET offers the `concretization_patterns::Vector{Expr}` configuration,
+    which allows us to customize JET's top-level code concretization strategy.
+  `concretization_patterns` specifies the _patterns of code_ that should be concretized.
+  JET internally uses [MacroTools.jl's expression pattern match](https://fluxml.ai/MacroTools.jl/stable/pattern-matching/),
+    and thus we can specify any expression pattern that is expected by the `MacroTools.@capture` macro.
+  For example, in order to solve the issue explained above, we can have:
+  ```julia
+  concretization_patterns = [:(GLOBAL_CODE_STORE = x_)]
+  ```
+  Please note that we must use `:(GLOBAL_CODE_STORE = x_)` rather than `:(const GLOBAL_CODE_STORE = x_)`.
+  This is because currently the specified patterns will be matched against [the lowered code representation](https://juliadebug.github.io/JuliaInterpreter.jl/stable/ast/),
+    in which `const x = y` has been lowered to the sequence of 1.) the declaration `const x`,
+    2.) value computation `%2 = Dict()` and 3.) actual assignment part `x = %2`.
+  Although this could be really tricky, we can effectively debug JET's top-level code concretization plan
+    using [`JETLogger`](@ref)'s `toplevel_logger` with the logging level above than `$DEBUG_LOGGER_LEVEL` ("debug") level,
+    where `t`-annotated statements will be concretize while `f`-annotated statements will be analyzed by abstract interpretation.
+  ```julia
+  julia> report_file("test/fixtures/concretization_patterns.jl";
+                     concretization_patterns = [:(GLOBAL_CODE_STORE = x_)],
+                     toplevel_logger = IOContext(stdout, :JET_LOGGER_LEVEL => 1))
+  [toplevel-debug] entered into test/fixtures/concretization_patterns.jl
+  [toplevel-debug] concretization plan:
+  1 f 1 ─      const GLOBAL_CODE_STORE
+  2 t │   %2 = Dict()
+  3 t │        GLOBAL_CODE_STORE = %2
+  4 f └──      return %2
+  [toplevel-debug] concretization plan:
+  1 f 1 ─      \$(Expr(:thunk, CodeInfo(
+      @ none within `top-level scope'
+  1 ─     return \$(Expr(:method, Symbol("@with_code_record")))
+  )))
+  2 t │        \$(Expr(:method, Symbol("@with_code_record")))
+  3 t │   %3 = Core.Typeof(var"@with_code_record")
+  4 t │   %4 = Core.svec(%3, Core.LineNumberNode, Core.Module, Core.Any)
+  5 t │   %5 = Core.svec()
+  6 t │   %6 = Core.svec(%4, %5, \$(QuoteNode(:(#= test/fixtures/concretization_patterns.jl:4 =#))))
+  7 t │        \$(Expr(:method, Symbol("@with_code_record"), :(%6), CodeInfo(
+      @ test/fixtures/concretization_patterns.jl:5 within `none'
+  1 ─      \$(Expr(:meta, :nospecialize, :(a)))
+  │        Base.setindex!(GLOBAL_CODE_STORE, a, __source__)
+  │   @ test/fixtures/concretization_patterns.jl:6 within `none'
+  │   %3 = esc(a)
+  └──      return %3
+  )))
+  8 f └──      return var"@with_code_record"
+  [toplevel-debug] concretization plan:
+  1 f 1 ─      \$(Expr(:thunk, CodeInfo(
+      @ none within `top-level scope'
+  1 ─     return \$(Expr(:method, :foo))
+  )))
+  2 t │        \$(Expr(:method, :foo))
+  3 t │   %3 = Core.Typeof(foo)
+  4 t │   %4 = Core.svec(%3, Core.Any)
+  5 t │   %5 = Core.svec()
+  6 t │   %6 = Core.svec(%4, %5, \$(QuoteNode(:(#= test/fixtures/concretization_patterns.jl:11 =#))))
+  7 t │        \$(Expr(:method, :foo, :(%6), CodeInfo(
+      @ test/fixtures/concretization_patterns.jl:11 within `none'
+  1 ─ %1 = identity(a)
+  └──      return %1
+  )))
+  8 f └──      return foo
+  [toplevel-debug] concretization plan:
+  1 f 1 ─ %1 = foo(10)
+  2 f └──      return %1
+  [toplevel-debug]  exited from test/fixtures/concretization_patterns.jl (took 0.018 sec)
+  ```
+
+  Also see: [`JETLogger`](@ref), [`virtual_process!`](@ref).
 ---
 """
 struct ToplevelConfig
@@ -125,7 +209,10 @@ function virtual_process!(toplevelex::Expr,
     local lnn::LineNumberNode = LineNumberNode(0, filename)
 
     function macroexpand_err_handler(err, st)
-        push!(res.toplevel_error_reports, ActualErrorWrapped(err, st, filename, lnn.line))
+        report = is_missing_concretization(err) ?
+                 MissingConcretization(err, st, filename, lnn.line) :
+                 ActualErrorWrapped(err, st, filename, lnn.line)
+        push!(res.toplevel_error_reports, report)
         return nothing
     end
     # `scrub_offset = 4` corresponds to `with_err_handling` -> `f` -> `macroexpand` -> kwfunc (`macroexpand`)
@@ -136,7 +223,10 @@ function virtual_process!(toplevelex::Expr,
         return macroexpand(mod, x; recursive = true #= but want to use `false` here =#)
     end
     function eval_err_handler(err, st)
-        push!(res.toplevel_error_reports, ActualErrorWrapped(err, st, filename, lnn.line))
+        report = is_missing_concretization(err) ?
+                 MissingConcretization(err, st, filename, lnn.line) :
+                 ActualErrorWrapped(err, st, filename, lnn.line)
+        push!(res.toplevel_error_reports, report)
         return nothing
     end
     # `scrub_offset = 3` corresponds to `with_err_handling` -> `f` -> `eval`
@@ -144,7 +234,10 @@ function virtual_process!(toplevelex::Expr,
         return Core.eval(mod, x)
     end
     function lower_err_handler(err, st)
-        push!(res.toplevel_error_reports, ActualErrorWrapped(err, st, filename, lnn.line))
+        report = is_missing_concretization(err) ?
+                 MissingConcretization(err, st, filename, lnn.line) :
+                 ActualErrorWrapped(err, st, filename, lnn.line)
+        push!(res.toplevel_error_reports, report)
         return nothing
     end
     # `scrub_offset = 3` corresponds to `with_err_handling` -> `f` -> `lower`
@@ -154,7 +247,7 @@ function virtual_process!(toplevelex::Expr,
         # here we should capture syntax errors found during lowering
         if @isexpr(lwr, :error)
             msg = first(lwr.args)
-            push!(res.toplevel_error_reports, SyntaxErrorReport("syntax: $(msg)", filename, lnn.line))
+            push!(res.toplevel_error_reports, SyntaxErrorReport("syntax: \$(msg)", filename, lnn.line))
             return nothing
         end
 
@@ -558,8 +651,10 @@ function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame, err)
     end
     st = st[1:i]
 
-    push!(interp.res.toplevel_error_reports,
-          ActualErrorWrapped(err, st, interp.filename, interp.lnn.line))
+    report = is_missing_concretization(err) ?
+             MissingConcretization(err, st, interp.filename, interp.lnn.line) :
+             ActualErrorWrapped(err, st, interp.filename, interp.lnn.line)
+    push!(interp.res.toplevel_error_reports, report)
 
     return nothing
 end
@@ -580,6 +675,12 @@ function with_err_handling(f, err_handler, scrub_offset)
 
         err_handler(err, st)
     end
+end
+
+function is_missing_concretization(@nospecialize(err))
+    io = IOBuffer()
+    showerror(io, err)
+    occursin(string(AbstractGlobal), String(take!(io)))
 end
 
 function collect_syntax_errors(s, filename)

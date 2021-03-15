@@ -48,6 +48,14 @@ struct ActualErrorWrapped <: ToplevelErrorReport
     end
 end
 
+# wraps an error that might happen because of inappropriate top-level code abstraction
+struct MissingConcretization <: ToplevelErrorReport
+    err
+    st::Vector{Base.StackTraces.StackFrame}
+    file::String
+    line::Int
+end
+
 # inference
 # ---------
 
