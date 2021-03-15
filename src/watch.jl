@@ -41,8 +41,7 @@ end
     report_and_watch_file([io::IO = stdout],
                           filename::AbstractString,
                           mod::Module = Main;
-                          # enable info logger by default for watch mode
-                          toplevel_logger::Union{Nothing,IO} = IOContext(io, $LOGGER_LEVEL_KEY => $INFO_LOGGER_LEVEL),
+                          toplevel_logger::Union{Nothing,IO} = IOContext(io, $(repr(LOGGER_LEVEL_KEY)) => $INFO_LOGGER_LEVEL),
                           jetconfigs...)
 
 Watches `filename` and keeps re-triggering analysis with [`report_file`](@ref) on code update.
@@ -54,8 +53,14 @@ This function internally uses [Revise.jl](https://timholy.github.io/Revise.jl/st
   not directly analyzed by JET, or even changes in `Base` files. See [`WatchConfig`](@ref)
   in the [JET configurations](@ref) documentation for more details.
 
+Note that [`report_file`](@ref) will look for `$CONFIG_FILE_NAME` in the directory of `filename`,
+  and search _up_ the file tree until a JET configuration file is (or isn't) found.
+When found, the configurations specified in the file will overwrite the given `jetconfigs`.
+See [Configuration File](@ref) for more details.
+
 !!! note
-    This function will enable the toplevel logger (see [`JETLogger`](@ref) for details) by default with the default logging level.
+    This function will enable the toplevel logger by default with the default logging level
+    (see [`JETLogger`](@ref) for more details).
 """
 function report_and_watch_file(args...; kwargs...)
     if @isdefined(Revise)
@@ -75,7 +80,7 @@ _report_and_watch_file(args...; kwargs...) = _report_and_watch_file(stdout::IO, 
 function _report_and_watch_file(io::IO,
                                 filename::AbstractString,
                                 args...;
-                                # enable info logger by default for watch mode
+                                # enable info top-level logger by default for watch mode
                                 toplevel_logger::Union{Nothing,IO} = IOContext(io, LOGGER_LEVEL_KEY => INFO_LOGGER_LEVEL),
                                 jetconfigs...)
     config = WatchConfig(; jetconfigs...)

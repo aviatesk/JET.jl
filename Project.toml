@@ -9,6 +9,7 @@ InteractiveUtils = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
 JuliaInterpreter = "aa1ae85d-cabe-5617-a682-6adf51b2e16a"
 LoweredCodeUtils = "6f1432cf-f94c-5a45-995e-cdbf5db27b0b"
 MacroTools = "1914dd2f-81c6-5fcd-8719-6d5c9610ff09"
+Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 
 [compat]

@@ -54,3 +54,10 @@ JET.WatchConfig
 ```@docs
 JET.JETLogger
 ```
+
+
+## Configuration File
+
+```@docs
+JET.parse_config
+```
