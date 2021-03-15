@@ -269,7 +269,10 @@ end
         end
 
         @test is_concrete(vmod, Symbol("@foo"))
-        @test_broken isempty(res.toplevel_error_reports)
+        @test length(res.toplevel_error_reports) == 1
+        let r = first(res.toplevel_error_reports)
+            @test isa(r, MissingConcretization) # this error should be considered as missing concretization
+        end
         @test isempty(res.inference_error_reports)
     end
 
@@ -1087,5 +1090,25 @@ end
             sin′
         end;
         @test !isempty(res.inference_error_reports)
+    end
+end
+
+@testset "custom concretization pattern" begin
+    # the analysis on `test/fixtures/concretization_patterns.jl` will produce inappropriate
+    # top-level error report because of missing concretization
+    let
+        res = analyze_file("fixtures/concretization_patterns.jl")
+        @test length(res.toplevel_error_reports) == 1
+        let r = first(res.toplevel_error_reports)
+            @test isa(r, MissingConcretization)
+        end
+    end
+
+    # we can circumvent the issue by using the `concretization_patterns` configuration !
+    let
+        res = analyze_file("fixtures/concretization_patterns.jl";
+                           concretization_patterns = [:(GLOBAL_CODE_STORE = x_)],
+                           )
+        @test isempty(res.toplevel_error_reports)
     end
 end
