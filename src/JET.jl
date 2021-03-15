@@ -140,8 +140,12 @@ import MacroTools: @capture
 
 using InteractiveUtils
 
+using Pkg.TOML
+
 # common
 # ======
+
+const CONFIG_FILE_NAME = ".JET.toml"
 
 # hooks
 # -----
@@ -437,18 +441,115 @@ include("watch.jl")
     report_file([io::IO = stdout],
                 filename::AbstractString,
                 mod::Module = Main;
+                toplevel_logger::Union{Nothing,IO} = IOContext(io, $(repr(LOGGER_LEVEL_KEY)) => $INFO_LOGGER_LEVEL),
                 jetconfigs...) -> included_files::Set{String}, any_reported::Bool
 
 Reads a text of `filename` and then calls [`report_text`](@ref) on it.
+
+This function will look for `$CONFIG_FILE_NAME` in the directory of `filename`, and search
+  _up_ the file tree until a JET configuration file is (or isn't) found.
+When found, the configurations specified in the file will overwrite the given `jetconfigs`.
+See [Configuration File](@ref) for more details.
+
+!!! note
+    This function will enable the toplevel logger by default with the default logging level
+    (see [`JETLogger`](@ref) for more details).
 """
 function report_file(io::IO,
                      filename::AbstractString,
                      mod::Module = Main;
+                     # enable top-level info logger by default for entry from file
+                     toplevel_logger::Union{Nothing,IO} = IOContext(io, LOGGER_LEVEL_KEY => INFO_LOGGER_LEVEL),
                      jetconfigs...)
+    configfile = find_config_file(dirname(abspath(filename)))
+    if !isnothing(configfile)
+        config = parse_config(configfile)
+        jetconfigs = overwrite_options(jetconfigs, config)
+        with_logger(get(jetconfigs, :toplevel_logger, nothing), ≥(INFO_LOGGER_LEVEL), "toplevel") do io
+            println(io, "applied JET configurations in $configfile")
+        end
+    end
+
     text = read(filename, String)
-    return report_text(io, text, filename, mod; jetconfigs...)
+    # NOTE `toplevel_logger` will be overwrote if there is another `toplevel_logger` in `jetconfigs` obatained from a configuration file
+    return report_text(io, text, filename, mod; toplevel_logger, jetconfigs...)
 end
 report_file(args...; jetconfigs...) = report_file(stdout::IO, args...; jetconfigs...)
+
+function find_config_file(dir)
+    next_dir = dirname(dir)
+    if (next_dir == dir || # ensure to escape infinite recursion
+        isempty(dir))      # reached to the system root
+        return nothing
+    end
+    path = normpath(dir, CONFIG_FILE_NAME)
+    return isfile(path) ? path : find_config_file(next_dir)
+end
+
+"""
+JET.jl offers [`.prettierrc` style](https://prettier.io/docs/en/configuration.html)
+  configuration file support.
+This means you can use `$CONFIG_FILE_NAME` configuration file to specify any of configurations
+  explained above and share that with others.
+
+When [`$report_file`](@ref) or [`$report_and_watch_file`](@ref) is called, it will look for
+  `$CONFIG_FILE_NAME` in the directory of the given file, and search _up_ the file tree until
+  a JET configuration file is (or isn't) found.
+When found, the configurations specified in the file will be applied.
+
+A configuration file can specify any of JET configurations like:
+```
+aggressive_constant_propagation = false # turn off aggressive constant propagation
+... # other configurations
+```
+
+Note that the following configurations should be string(s) of valid Julia code:
+- `concretization_patterns`: vector of string of Julia expression, which should be `parse`d into `Vector{Expr}`
+- `toplevel_logger`: string of Julia code, which should be `parse`d and `eval`uated into `Union{IO,Nothing}`
+- `inference_logger`: string of Julia code, which should be `parse`d and `eval`uated into `Union{IO,Nothing}`
+
+E.g. the configurations below are equivalent:
+- configurations via keyword arguments
+  ```julia
+  report_file(somefile;
+              concretization_patterns = [:(GLOBAL_CODE_STORE = x_)],
+              toplevel_logger = IOContext(open("toplevel.txt", "w"), :JET_LOGGER_LEVEL => 1))
+  ```
+- configurations via a configuration file
+  $(let
+      text = read(normpath(@__DIR__, "..", "test", "fixtures", "..JET.toml"), String)
+      lines = split(text, '\n')
+      pushfirst!(lines, "```toml"); push!(lines, "```")
+      join(lines, "\n  ")
+  end)
+"""
+function parse_config(tomlfile)
+    config_dict = TOML.parsefile(tomlfile)
+    concretization_patterns = get(config_dict, "concretization_patterns", nothing)
+    if !isnothing(concretization_patterns)
+        @assert isa(concretization_patterns, Vector{String}) "`concretization_patterns` should be array of string of Julia expression"
+        config_dict["concretization_patterns"] = Meta.parse.(concretization_patterns)
+    end
+    toplevel_logger = get(config_dict, "toplevel_logger", nothing)
+    if !isnothing(toplevel_logger)
+        @assert isa(toplevel_logger, String) "`toplevel_logger` should be string of Julia code"
+        config_dict["toplevel_logger"] = Core.eval(@__MODULE__, Meta.parse(toplevel_logger))
+    end
+    inference_logger = get(config_dict, "inference_logger", nothing)
+    if !isnothing(inference_logger)
+        @assert isa(inference_logger, String) "`inference_logger` should be string of Julia code"
+        config_dict["inference_logger"] = Core.eval(@__MODULE__, Meta.parse(inference_logger))
+    end
+    return kwargs(config_dict)
+end
+
+function kwargs(dict)
+    ns = (Symbol.(keys(dict))...,)
+    vs = (collect(values(dict))...,)
+    return pairs(NamedTuple{ns}(vs))
+end
+
+overwrite_options(old, new) = kwargs(merge(old, new))
 
 """
     report_text([io::IO = stdout],

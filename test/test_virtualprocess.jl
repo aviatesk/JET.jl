@@ -1093,11 +1093,15 @@ end
     end
 end
 
+# will be used in the following two testsets
+const CONCRETIZATION_PATTERNS_FILE   = normpath(@__DIR__, "fixtures", "concretization_patterns.jl")
+const CONCRETIZATION_PATTERNS_CONFIG = normpath(@__DIR__, "fixtures", "..JET.toml")
+
 @testset "custom concretization pattern" begin
     # the analysis on `test/fixtures/concretization_patterns.jl` will produce inappropriate
     # top-level error report because of missing concretization
     let
-        res = analyze_file("fixtures/concretization_patterns.jl")
+        res = analyze_file(CONCRETIZATION_PATTERNS_FILE)
         @test length(res.toplevel_error_reports) == 1
         let r = first(res.toplevel_error_reports)
             @test isa(r, MissingConcretization)
@@ -1106,9 +1110,52 @@ end
 
     # we can circumvent the issue by using the `concretization_patterns` configuration !
     let
-        res = analyze_file("fixtures/concretization_patterns.jl";
+        res = analyze_file(CONCRETIZATION_PATTERNS_FILE;
                            concretization_patterns = [:(GLOBAL_CODE_STORE = x_)],
                            )
         @test isempty(res.toplevel_error_reports)
+    end
+end
+
+# NOTE this test is only valid when the testset above passes, better to be in a separate file though
+@testset "configuration file" begin
+    dir = mktempdir()
+    analysis_target = normpath(dir, "concretization_patterns.jl")
+    config_target   = normpath(dir, JET.CONFIG_FILE_NAME)
+
+    back = pwd()
+    try
+        # in order to check the functionality, fixtures/..JET.toml logs toplevel analysis
+        # into toplevel.txt (relative to the current working directory)
+        # and so let's cd into the temporary directory to not pollute this directory
+        old = cd(dir)
+
+        open(CONCRETIZATION_PATTERNS_FILE) do f
+            write(analysis_target, f)
+        end
+
+        # no configuration, thus top-level analysis should fail
+        let
+            io = IOBuffer()
+            _, res = report_file(io, analysis_target)
+            @test res # error reported
+        end
+
+        # setup a configuration file
+        open(CONCRETIZATION_PATTERNS_CONFIG) do f
+            write(config_target, f)
+        end
+
+        # now any top-level analysis failure shouldn't happen
+        let
+            io = IOBuffer()
+            _, res = report_file(io, analysis_target)
+            @test !res # no error happened
+            @test isfile("toplevel.txt") # not closed yet
+        end
+    catch err
+        rethrow(err)
+    finally
+        cd(back)
     end
 end
