@@ -252,7 +252,13 @@ function CC.abstract_call_method(interp::JETInterpreter, method::Method, @nospec
 
     ret = @invoke abstract_call_method(interp::AbstractInterpreter, method::Method, sig, sparams::SimpleVector, hardlimit::Bool, sv::InferenceState)
 
-    @static IS_LATEST_CALL_INTERFACE && (interp.anyerror = (length(interp.reports) - nreports) > 0)
+    @static if IS_LATEST_CALL_INTERFACE
+        # make sure that `interp.anyreport` is modified only when there is succeeding
+        # immediate call of `abstract_call_method_with_const_args`
+        if !method.is_for_opaque_closure || !ret[2] # edgecycle
+            interp.anyerror = (length(interp.reports) - nreports) > 0
+        end
+    end
 
     update_reports!(interp, sv)
 
