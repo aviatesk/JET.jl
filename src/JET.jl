@@ -453,7 +453,7 @@ See [Configuration File](@ref) for more details.
 
 !!! note
     This function will enable the toplevel logger by default with the default logging level
-    (see [`JETLogger`](@ref) for more details).
+    (see [Logging Configurations](@ref) for more details).
 """
 function report_file(io::IO,
                      filename::AbstractString,
@@ -644,10 +644,10 @@ function transform_abstract_global_symbols!(interp::JETInterpreter, src::CodeInf
 
     # linear scan, and find assignments of abstract global variables
     for (i, stmt) in enumerate(src.code::Vector{Any})
-        if @isexpr(stmt, :(=))
-            lhs = first(stmt.args)
-            if isa(lhs, Symbol)
-                if !(concretized[i])
+        if !(concretized[i])
+            if @isexpr(stmt, :(=))
+                lhs = first(stmt.args)
+                if isa(lhs, Symbol)
                     if !haskey(abstrct_global_variables, lhs)
                         nslots += 1
                         push!(abstrct_global_variables, lhs => nslots)

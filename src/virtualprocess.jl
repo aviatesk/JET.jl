@@ -43,6 +43,8 @@ These configurations will be active for all the top-level entries explained in [
   julia> report_file("test/fixtures/concretization_patterns.jl";
                      concretization_patterns = [:(GLOBAL_CODE_STORE = x_)],
                      toplevel_logger = IOContext(stdout, :JET_LOGGER_LEVEL => 1))
+  ```
+  ```
   [toplevel-debug] entered into test/fixtures/concretization_patterns.jl
   [toplevel-debug] concretization plan:
   1 f 1 ─      const GLOBAL_CODE_STORE
@@ -90,7 +92,7 @@ These configurations will be active for all the top-level entries explained in [
   [toplevel-debug]  exited from test/fixtures/concretization_patterns.jl (took 0.018 sec)
   ```
 
-  Also see: [`JETLogger`](@ref), [`virtual_process!`](@ref).
+  Also see: [Logging Configurations](@ref), [`virtual_process!`](@ref).
 ---
 """
 struct ToplevelConfig

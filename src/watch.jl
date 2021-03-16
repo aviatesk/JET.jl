@@ -50,7 +50,7 @@ JET will try to analyze all the `include`d files reachable from `filename`, and 
 
 This function internally uses [Revise.jl](https://timholy.github.io/Revise.jl/stable/) to
   track code updates. Revise also offers possibilities to track changes in files that are
-  not directly analyzed by JET, or even changes in `Base` files. See [`WatchConfig`](@ref)
+  not directly analyzed by JET, or even changes in `Base` files. See [Watch Configurations](@ref)
   for more details.
 
 Like [`report_file`](@ref), this function will look for `$CONFIG_FILE_NAME` configuration file in the directory of `filename`,
@@ -60,7 +60,7 @@ See [Configuration File](@ref) for more details.
 
 !!! note
     This function will enable the toplevel logger by default with the default logging level
-    (see [`JETLogger`](@ref) for more details).
+    (see [Logging Configurations](@ref) for more details).
 """
 function report_and_watch_file(args...; kwargs...)
     if @isdefined(Revise)
