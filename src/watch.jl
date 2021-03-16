@@ -51,10 +51,10 @@ JET will try to analyze all the `include`d files reachable from `filename`, and 
 This function internally uses [Revise.jl](https://timholy.github.io/Revise.jl/stable/) to
   track code updates. Revise also offers possibilities to track changes in files that are
   not directly analyzed by JET, or even changes in `Base` files. See [`WatchConfig`](@ref)
-  in the [JET configurations](@ref) documentation for more details.
+  for more details.
 
-Note that [`report_file`](@ref) will look for `$CONFIG_FILE_NAME` in the directory of `filename`,
-  and search _up_ the file tree until a JET configuration file is (or isn't) found.
+Like [`report_file`](@ref), this function will look for `$CONFIG_FILE_NAME` configuration file in the directory of `filename`,
+  and search _up_ the file tree until any `$CONFIG_FILE_NAME` is (or isn't) found.
 When found, the configurations specified in the file will overwrite the given `jetconfigs`.
 See [Configuration File](@ref) for more details.
 

@@ -446,8 +446,8 @@ include("watch.jl")
 
 Reads a text of `filename` and then calls [`report_text`](@ref) on it.
 
-This function will look for `$CONFIG_FILE_NAME` in the directory of `filename`, and search
-  _up_ the file tree until a JET configuration file is (or isn't) found.
+This function will look for `$CONFIG_FILE_NAME` configuration file in the directory of `filename`,
+  and search _up_ the file tree until any `$CONFIG_FILE_NAME` is (or isn't) found.
 When found, the configurations specified in the file will overwrite the given `jetconfigs`.
 See [Configuration File](@ref) for more details.
 
@@ -631,12 +631,12 @@ function analyze_toplevel!(interp::JETInterpreter, src::CodeInfo)
 end
 
 # HACK this is an native hack to re-use `AbstractInterpreter`'s approximated slot types for
-# assignment of abstract global variable, which are represented as toplevel symbols at this point;
-# the idea is just transform them into slots and use their approximated type for their
-# abstract global assignment.
-# NOTE that transformations by `transform_abstract_global_symbols!` will produce really
-# invalid code for interpreting transformed statments, but all the statements won't be
-# actually executed nor interpreted by `ConcreteInterpreter`
+# assignments of abstract global variables, which are represented as toplevel symbols at this point;
+# the idea is just to transform them into slots from symbols and use their approximated type
+# on their assignment.
+# NOTE that `transform_abstract_global_symbols!` will produce really invalid code for
+# actual interpretation or execution, but all the statements won't be interpreted anymore
+# by `ConcreteInterpreter` nor executed anyway since toplevel frames aren't cached
 function transform_abstract_global_symbols!(interp::JETInterpreter, src::CodeInfo)
     nslots = length(src.slotnames)
     abstrct_global_variables = Dict{Symbol,Int}()
