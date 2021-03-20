@@ -150,7 +150,7 @@ index d2b188a..1d1b3da 100644
 +foo('1') # `Char` will be converted to `UInt32`
 ```
 
-If you apply the diff (i.e. update and save the demo.jl), JET will automatically re-trigger profiling, and this time, won't complain anything:
+If you apply the diff (i.e. update and save the demo.jl), JET will automatically re-trigger analysis, and this time, won't complain anything:
 
 > `git apply fix-demo.jl.diff`
 
@@ -165,7 +165,7 @@ No errors !
 
 - release v0.1.0: see <https://github.com/aviatesk/JET.jl/issues/121>
 - provide editor/IDE integrations for "watch" mode (<https://github.com/aviatesk/JET.jl/pull/85> will be a starting point)
-- support package profiling (issue <https://github.com/aviatesk/JET.jl/issues/76>, something like PR <https://github.com/aviatesk/JET.jl/pull/101> can be a starting point)
+- support package analysis (issue <https://github.com/aviatesk/JET.jl/issues/76>, something like PR <https://github.com/aviatesk/JET.jl/pull/101> can be a starting point)
 - implement a "global" abstract interpretation routine (issue <https://github.com/aviatesk/JET.jl/issues/113>)
 - performance linting (report performance pitfalls, i.e. report an error when there're too many methods matched)
 - ideally, I want to extend JET.jl to provide some of LSPs other than diagnostics, e.g. providers of completions, rename refactor, etc.

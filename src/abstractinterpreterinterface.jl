@@ -132,7 +132,7 @@ JETOptimizationParams(; # inlining::Bool                = inlining_enabled(),
     # NOTE we always disable inlining, because our current strategy to find undefined
     # local variable assumes un-inlined frames
     # TODO enable inlining to get better JET analysis performance ?
-    # XXX but the self-profiling with `inlining = true` shows performance regression ...
+    # XXX but the self-profiling with `inlining = true` showed performance regression ...
     return OptimizationParams(; inlining = false,
                                 # inline_cost_threshold,
                                 # inline_nonleaf_penalty,
@@ -269,7 +269,7 @@ mutable struct JETInterpreter <: AbstractInterpreter
     # for sequential assignment of abstract global variables
     id::Symbol
 
-    # toplevel profiling (skip inference on actually interpreted statements)
+    # will be used in toplevel analysis (skip inference on actually interpreted statements)
     concretized::BitVector
 
     # virtual toplevel module

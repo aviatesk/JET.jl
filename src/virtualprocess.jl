@@ -402,7 +402,7 @@ _walk_and_transform!(pre, f, @nospecialize(_), scope) = return
 
 The trait to inject code into JuliaInterpreter's interpretation process; JET.jl overloads:
 - `JuliaInterpreter.step_expr!` to add error report pass for module usage expressions and
-    support package profiling
+    support package analysis
 - `JuliaInterpreter.evaluate_call_recurse!` to special case `include` calls
 - `JuliaInterpreter.handle_err` to wrap an error happened during interpretation into
     `ActualErrorWrapped`
@@ -514,7 +514,7 @@ end
 
 function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node), istoplevel::Bool)
     # TODO:
-    # - support package profiling
+    # - support package analysis
     # - add report pass (report usage of undefined name, etc.)
     if ismoduleusage(node)
         for ex in to_single_usages(node::Expr)
@@ -609,7 +609,7 @@ function handle_include(interp, fargs)
 
     virtual_process!(include_text::String, include_file, interp.virtualmod, interp.actualmodsym, interp.interp, interp.config, interp.res)
 
-    # TODO: actually, here we need to try to get the last profiling result of the `virtual_process!` call above
+    # TODO: actually, here we need to try to get the lastly analyzed result of the `virtual_process!` call above
     return nothing
 end
 
