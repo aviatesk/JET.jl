@@ -27,3 +27,5 @@ end
 test_sum_over_string(res::JET.VirtualProcessResult) =
     test_sum_over_string(res.inference_error_reports)
 test_sum_over_string(interp::JETInterpreter) = test_sum_over_string(interp.reports)
+
+return

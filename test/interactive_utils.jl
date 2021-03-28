@@ -91,6 +91,12 @@ is_concrete(mod, sym) = isdefined(mod, sym) && !isa(getfield(mod, sym), Abstract
 is_abstract(mod, sym) = isdefined(mod, sym) && isa(getfield(mod, sym), AbstractGlobal)
 isa_abstract(x, @nospecialize(typ)) = isa(x, AbstractGlobal) && x.t ⊑ typ
 
+# JET will try to concretize global variable when its type is a constant at analysis time,
+# but the starategy is a bit complicated right now and may change in the future
+# these utilities allow robust testing to check if a object is successfully analyzed by JET whichever it's concretized or abstracted
+is_analyzed(mod, sym) = isdefined(mod, sym) # essentially, `is_concrete(mod, sym) || is_abstract(mod, sym)`
+isa_analyzed(x, @nospecialize(typ)) = isa_abstract(x, typ) || isa(x, typ)
+
 # fresh execution/benchmark tools
 include(normpath(@__DIR__, "..", "benchmark", "JETBenchmarkUtils.jl"))
 using .JETBenchmarkUtils

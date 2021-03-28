@@ -49,12 +49,34 @@ end
 end
 
 @testset "getfield with abstract global variable" begin
-    # nested module access may not be resolved as `GlobalRef` and can be propagated into `getfield`
+    # nested module access will be resolved as a direct call of `getfield`
     let
         res = @analyze_toplevel begin
             module foo
 
             const bar = sum
+
+            module baz
+
+            using ..foo
+
+            foo.bar("julia") # -> NoMethodErrorReports
+
+            end # module bar
+
+            end # module foo
+        end
+
+        @test isempty(res.toplevel_error_reports)
+        test_sum_over_string(res)
+    end
+
+    # this should work even if the accessed variable is not constant
+    let
+        res = @analyze_toplevel begin
+            module foo
+
+            bar = sum
 
             module baz
 

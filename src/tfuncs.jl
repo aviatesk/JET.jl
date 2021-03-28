@@ -30,7 +30,14 @@ function CC.builtin_tfunction(interp::JETInterpreter, @nospecialize(f), argtypes
                 if isa(name, Symbol)
                     if isa(obj, Const) && (mod = obj.val; isa(mod, Module))
                         if isdefined(mod, name)
-                            # TODO: add report pass here (for performance linting)
+                            if istoplevel_globalref(interp, sv)
+                                # when accessing to a global variable in a module concretized by `interp`,
+                                # take a risk and eagerly propagate its type
+                                # NOTE logic here should be synced with that of `abstract_eval_special_value(::JETInterpreter, ::Any, ::VarTable, ::InferenceState)`
+                                val = getfield(mod, name)
+                                return isa(val, AbstractGlobal) ? val.t : Const(val)
+                            end
+                            # TODO; `ret` should be `Any` here, add report pass here (for performance linting)
                         else
                             # report access to undefined global variable
                             report!(interp, GlobalUndefVarErrorReport(interp, sv, mod, name))
@@ -74,14 +81,7 @@ function CC.builtin_tfunction(interp::JETInterpreter, @nospecialize(f), argtypes
         end
     end
 
-    if isa(ret, AbstractGlobal)
-        # propagate abstract global variable
-
-        add_backedge!(ret.li, sv)
-        # this might be `Bottom`, but hopefully the error on this variable is already reported,
-        # so we don't check `InvalidBuiltinCallErrorReport` for this pass
-        return ret.t
-    elseif ret === Bottom
+    if ret === Bottom
         # XXX: for general case, JET just relies on the (maybe too persmissive) return type
         # from native tfuncs to report invalid builtin calls and probably there're lots of
         # false negatives
@@ -89,6 +89,15 @@ function CC.builtin_tfunction(interp::JETInterpreter, @nospecialize(f), argtypes
     end
 
     return ret
+end
+
+# check if this frame is for `getproperty(::Module, ::Symbol)`, which accesses to a global
+# variable traced by `interp`
+function istoplevel_globalref(interp::JETInterpreter, sv::InferenceState)
+    def = sv.linfo.def
+    def.name === :getproperty || return false
+    def.sig === Tuple{typeof(getproperty), Module, Symbol} || return false
+    return istoplevel(interp, sv.parent)
 end
 
 # `return_type_tfunc` internally uses `abstract_call` to model `return_type` function and

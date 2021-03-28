@@ -105,7 +105,7 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
             sym, _ = stmt.args
 
             # slots in toplevel frame may be a abstract global slot
-            istoplevel(frame) && is_global_slot(interp, sym) && continue
+            istoplevel(interp, frame) && is_global_slot(interp, sym) && continue
 
             next_idx = idx + 1
             if checkbounds(Bool, stmts, next_idx) && is_unreachable(@inbounds stmts[next_idx])
@@ -255,7 +255,7 @@ function is_throw_call_expr(interp::JETInterpreter, frame::InferenceState, @nosp
     if isa(e, Expr)
         if e.head === :call
             f = e.args[1]
-            if istoplevel(frame) && isa(f, Symbol)
+            if istoplevel(interp, frame) && isa(f, Symbol)
                 f = GlobalRef(interp.toplevelmod, f)
             end
             if isa(f, GlobalRef)

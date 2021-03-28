@@ -235,8 +235,7 @@ end
             sum(s)
         end
 
-        @test is_abstract(vmod, :s)
-        @test isa_abstract(vmod.s, String)
+        @test is_concrete(vmod, :s)
         test_sum_over_string(res)
     end
 
@@ -294,8 +293,9 @@ end
                 foo(globalvar) # no method matching error should be reported
             end
 
-            @test is_abstract(vmod, :globalvar)
-            @test isa_abstract(vmod.globalvar, Int)
+            @test is_concrete(vmod, :globalvar)
+            @test is_analyzed(vmod, :globalvar)
+            @test isa_analyzed(vmod.globalvar, Int)
             @test length(res.inference_error_reports) === 2
             let er = first(res.inference_error_reports)
                 @test er isa NoMethodErrorReport &&
@@ -305,30 +305,6 @@ end
                 @test er isa NoMethodErrorReport &&
                 !er.unionsplit
             end
-        end
-    end
-
-    @testset "invalidate code cache" begin
-        let
-            res = @analyze_toplevel begin
-                foo(::Integer) = "good call, pal"
-                bar() = a
-
-                a = 1
-                foo(bar()) # no method error should NOT be reported
-
-                a = '1'
-                foo(bar()) # no method error should be reported
-
-                a = 1
-                foo(bar()) # no method error should NOT be reported
-            end
-            @test length(res.inference_error_reports) === 1
-            er = first(res.inference_error_reports)
-            @test er isa NoMethodErrorReport &&
-                first(er.st).file === Symbol(@__FILE__) &&
-                first(er.st).line === (@__LINE__) - 9 &&
-                er.atype <: Tuple{Any,Char}
         end
     end
 end
