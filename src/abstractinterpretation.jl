@@ -185,7 +185,7 @@ end
 """
     analyze_task_parallel_code!(interp::JETInterpreter, @nospecialize(f), argtypes::Vector{Any}, sv::InferenceState)
 
-Adds special cased analysis pass for task parallelism (xref: https://github.com/aviatesk/JET.jl/issues/114).
+Adds special cased analysis pass for task parallelism (xref: <https://github.com/aviatesk/JET.jl/issues/114>).
 In Julia's task parallelism implementation, parallel code is represented as closure and it's
   wrapped in a `Task` object. `NativeInterpreter` doesn't run type inference nor optimization
   on the body of those closures when compiling code that creates parallel tasks, but JET will

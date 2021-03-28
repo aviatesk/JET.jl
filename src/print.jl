@@ -210,7 +210,7 @@ print_report(io, report::ActualErrorWrapped) = showerror(io, report.err, report.
 function print_report(io, report::MissingConcretization)
     printstyled(io, "HINT: "; bold = true, color = HINT_COLOR)
     printlnstyled(io, """
-    the following error happened mostly because of the missing JET analysis configurations,
+    the following error happened mostly because of the missing concretization of global variables,
     and this could be fixed with the `concretization_patterns` configuration.
     Check https://aviatesk.github.io/JET.jl/dev/config/#JET.ToplevelConfig for the details.
     ---"""; color = HINT_COLOR)
