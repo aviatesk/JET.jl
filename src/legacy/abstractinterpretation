@@ -129,7 +129,7 @@ function abstract_call_gf_by_type(interp::$JETInterpreter, @nospecialize(f), arg
         method = match.method
         sig = match.spec_types
         #=== abstract_call_gf_by_type patch point 2 start ===#
-        if istoplevel && !isdispatchtuple(sig) && !$istoplevel(sv) # keep going for "our" toplevel frame
+        if istoplevel && !isdispatchtuple(sig) && !$istoplevel(interp, sv) # keep going for "our" toplevel frame
         #=== abstract_call_gf_by_type patch point 2 end ===#
             # only infer concrete call sites in top-level expressions
             add_remark!(interp, sv, "Refusing to infer non-concrete call site in top-level expression")

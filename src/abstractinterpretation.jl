@@ -1,42 +1,29 @@
 """
     mutable struct AbstractGlobal
-        # analyzed type
-        t::Any
-        # `id` of `JETInterpreter` that defined this
-        id::Symbol
-        # `Symbol` of a dummy generic function that generates dummy backedge (i.e. `li`)
-        edge_sym::Symbol
-        # dummy backedge, which will be invalidated on update of `t`
-        li::MethodInstance
-        # whether this abstract global variable is declarared as constant or not
-        iscd::Bool
+        t::Any     # analyzed type
+        iscd::Bool # whether this abstract global variable is declarared as constant or not
     end
 
 Wraps a global variable whose type is analyzed by abtract interpretation.
 `AbstractGlobal` object will be actually evaluated into the context module, and a later
   analysis may refer to its type or alter it on another assignment.
-On the refinement of the abstract global variable, the dummy backedge associated with it
-  will be invalidated, and inference depending on that will be re-run on the next analysis.
+
+!!! note
+    The type of the wrapped global variable will be propagated only when in a toplevel frame,
+      and thus we don't care about the analysis cache invalidation on a refinement of the
+      wrapped global variable, since JET doesn't cache the toplevel frame.
 """
 mutable struct AbstractGlobal
     # analyzed type
     t::Any
-    # `id` of `JETInterpreter` that lastly assigned this global variable
-    id::Symbol
-    # the name of a dummy generic function that generates dummy backedge `li`
-    edge_sym::Symbol
-    # dummy backedge associated to this global variable, which will be invalidated on update of `t`
-    li::MethodInstance
-    # whether this abstract global variable is declarared as constant or not
     iscd::Bool
 
     function AbstractGlobal(@nospecialize(t),
-                            id::Symbol,
-                            edge_sym::Symbol,
-                            li::MethodInstance,
                             iscd::Bool,
                             )
-        return new(t, id, edge_sym, li, iscd)
+        return new(t,
+                   iscd,
+                   )
     end
 end
 
@@ -93,7 +80,7 @@ An overload for `abstract_call_gf_by_type(interp::JETInterpreter, ...)`, which k
   [`virtual_process!`](@ref).
 """
 function CC.bail_out_toplevel_call(interp::JETInterpreter, @nospecialize(sig), sv)
-    return isa(sv.linfo.def, Module) && !isdispatchtuple(sig) && !istoplevel(sv)
+    return isa(sv.linfo.def, Module) && !isdispatchtuple(sig) && !istoplevel(interp, sv)
 end
 
 @doc """
@@ -324,7 +311,8 @@ end
 end # @static if isdefined(CC, :abstract_invoke)
 
 function CC.abstract_eval_special_value(interp::JETInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    if istoplevel(sv)
+    toplevel = istoplevel(interp, sv)
+    if toplevel
         if isa(e, Slot) && is_global_slot(interp, e)
             if get_slottype(sv, e) === Bottom
                 # if this abstract global variable is not initialized, form the global
@@ -341,33 +329,30 @@ function CC.abstract_eval_special_value(interp::JETInterpreter, @nospecialize(e)
 
     ret = @invoke abstract_eval_special_value(interp::AbstractInterpreter, e, vtypes::VarTable, sv::InferenceState)
 
-    if isa(ret, Const)
-        # unwrap abstract global variable to actual type
-        val = ret.val
-        if isa(val, AbstractGlobal)
-            # add dummy backedge, which will be invalidated on update of this vitual global variable
-            add_backedge!(val.li, sv)
-
-            ret = val.t
-        end
-    elseif isa(e, GlobalRef)
+    if isa(e, GlobalRef)
         mod, name = e.mod, e.name
         if isdefined(mod, name)
-            # we don't track types of global variables except when we're in toplevel frame,
-            # and here we just annotate this as `Any`; NOTE: this is becasue:
-            # - we can't track side-effects of assignments of global variables that happen in
-            #   (possibly deeply nested) callees, and it might be possible if we just ignore
-            #   assignments happens in callees that aren't reached by type inference by
-            #   the widening heuristics
-            # - consistency with Julia's native type inference
-            # - it's hard to track side effects for cached frames
-
-            # TODO: add report pass here (for performance linting)
-
-            # special case and propagate `Main` module as constant
-            # XXX this was somewhat critical for accuracy and performance, but I'm not sure this still holds
             if name === :Main
+                # special case and propagate `Main` module as constant
+                # XXX this was somewhat critical for accuracy and performance, but I'm not sure this still holds
                 ret = Const(Main)
+            elseif toplevel
+                # here we will eagerly propagate the type of this global variable
+                # of course the traced type might be difference from its type in actual execution
+                # e.g. we don't track a global variable assignment wrapped in a function,
+                # but it's highly possible this is a toplevel callsite and we need to take a
+                # risk here, otherwise we can't enter the analysis !
+                val = getfield(mod, name)
+                ret = isa(val, AbstractGlobal) ? val.t : Const(val)
+            else
+                # we don't track types of global variables except when we're in toplevel frame,
+                # and here `ret` should be just annotated as `Any`
+                # NOTE: this is becasue:
+                # - it's hard (or even impossible) to correctly track side-effects of global
+                #   variable assignments that happen in (possibly deeply nested) frames
+                # - to be consistent with Julia's native type inference
+                # - it's hard to track side effects for cached frames
+                # TODO: add report pass here (for performance linting)
             end
         else
             # report access to undefined global variable
@@ -422,7 +407,7 @@ function CC.abstract_eval_value(interp::JETInterpreter, @nospecialize(e), vtypes
 end
 
 function CC.abstract_eval_statement(interp::JETInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    if istoplevel(sv)
+    if istoplevel(interp, sv)
         if interp.concretized[get_currpc(sv)]
             return Any # bail out if it has been interpreted by `ConcreteInterpreter`
         end
@@ -434,7 +419,7 @@ end
 function CC.finish(me::InferenceState, interp::JETInterpreter)
     @invoke finish(me::InferenceState, interp::AbstractInterpreter)
 
-    if istoplevel(me)
+    if istoplevel(interp, me)
         # find assignments of abstract global variables, and assign types to them,
         # so that later analysis can refer to them
 
@@ -518,71 +503,79 @@ function is_nondeterministic(pc, bbs)
 end
 
 function set_abstract_global!(interp, mod, name, @nospecialize(t), isnd, sv)
-    local update::Bool = false
-    id = get_id(interp)
-
+    prev_agv = nothing
+    prev_t = nothing
     iscd = is_constant_declared(name, sv)
 
-    t′, id′, (edge_sym, li) = if isdefined(mod, name)
+    # check if this global variable is already assigned previously
+    if isdefined(mod, name)
         val = getfield(mod, name)
         if isa(val, AbstractGlobal)
-            t′ = val.t
-            if val.iscd && widenconst(t′) !== widenconst(t)
-                report!(interp, InvalidConstantRedefinition(interp, sv, mod, name, widenconst(t′), widenconst(t)))
+            prev_t = val.t
+            if val.iscd && widenconst(prev_t) !== widenconst(t)
+                warn_invalid_const_global!(name)
+                report!(interp, InvalidConstantRedefinition(interp, sv, mod, name, widenconst(prev_t), widenconst(t)))
                 return
             end
-
-            # update previously-defined abstract global variable
-            update = true
-            t′, val.id, (val.edge_sym, val.li)
+            prev_agv = val
         else
+            prev_t = Core.Typeof(val)
             if isconst(mod, name)
-                t′ = typeof(val)
-                if t′ !== widenconst(t)
-                    report!(interp, InvalidConstantRedefinition(interp, sv, mod, name, t′, widenconst(t)))
+                invalid = prev_t !== widenconst(t)
+                if invalid || !isa(t, Const)
+                    warn_invalid_const_global!(name)
+                    invalid && report!(interp, InvalidConstantRedefinition(interp, sv, mod, name, prev_t, widenconst(t)))
                     return
                 end
+                # otherwise, we can just redefine this constant, and Julia will warn it
+                ex = iscd ? :(const $name = $(QuoteNode(t.val))) : :($name = $(QuoteNode(t.val)))
+                return Core.eval(mod, ex)
             end
-
-            # this pass hopefully won't happen within the current design
-            @warn "JET.jl can't trace updates of global variable that already have values" mod name val
-            return
         end
-    else
-        # define new abstract global variable
-        Bottom, id, gen_dummy_backedge(mod)
     end
 
-    # if this is constant declared and it's value is known to be constant, let's concretize
-    # it for good reasons; we will be able to use it in concrete interpretation and so
-    # this allows us to define structs with global type aliases, etc.
-    # XXX maybe check for constant declaration is not necessary
-    if isa(t, Const) && iscd
-        return Core.eval(mod, :(const $(name) = $(QuoteNode(t.val))))
+    isnew = isnothing(prev_t)
+
+    # if this constant declaration is invalid, just report it and bail out
+    if iscd && !isnew
+        warn_invalid_const_global!(name)
+        report!(interp, InvalidConstantDeclaration(interp, sv, mod, name))
+        return
     end
 
-    # if this assignment happens in an non-deterministic way, we need to perform type merge
-    isnd && (t = tmerge(t′, t))
-
-    if id !== id′
-        # invalidate the dummy backedge that is bound to this abstract global variable,
-        # so that depending `MethodInstance` will run fresh type inference on the next hit
-        li = force_invalidate!(mod, edge_sym)
+    # if this global variable is known to be constant statically, let's concretize it for
+    # good reasons; we will be able to use it in concrete interpretation and so this allows
+    # us to define structs with type aliases, etc.
+    if isa(t, Const)
+        if iscd
+            @assert isnew # means, this is a valid constant declaration
+            return Core.eval(mod, :(const $name = $(QuoteNode(t.val))))
+        else
+            # we've checked `mod.name` wasn't declared as constant previously
+            return Core.eval(mod, :($name = $(QuoteNode(t.val))))
+        end
     end
 
-    ex = if update
-        quote let name = $name::$AbstractGlobal
-            name.t = $(t)
-            name.id = $(QuoteNode(id))
-            name.edge_sym = $(QuoteNode(edge_sym))
-            name.li = $(li)
+    # if this assignment happens non-deterministically, we need to perform type merge
+    if !isnew
+        t = tmerge(prev_t, t)
+    end
+
+    # okay, we will define new abstract global variable from here on
+    if isa(prev_agv, AbstractGlobal)
+        return Core.eval(mod, :(let name = $name::$AbstractGlobal
+            name.t = $t
             name
-        end end
+        end))
     else
-        :(const $name = $(AbstractGlobal(t, id, edge_sym, li, iscd)))
+        return Core.eval(mod, :($name = $(AbstractGlobal(t, iscd))))
     end
-    return Core.eval(mod, ex)
 end
+
+warn_invalid_const_global!(name) = @warn """
+JET.jl can't update the definition of this constant declared global variable: `$name`
+This may fail, cause incorrect analysis, or produce unexpected errors.
+"""
 
 function is_constant_declared(name, sv)
     return any(sv.src.code) do @nospecialize(x)
@@ -595,16 +588,4 @@ function is_constant_declared(name, sv)
         end
         return false
     end
-end
-
-function gen_dummy_backedge(mod)
-    edge_sym = gensym(:dummy_edge_sym)
-    return edge_sym, force_invalidate!(mod, edge_sym) # just generate dummy `MethodInstance` to be invalidated
-end
-
-# TODO: find a more fine-grained way to do this ? re-evaluating an entire function seems to be over-kill for this
-function force_invalidate!(mod, edge_sym)
-    λ = Core.eval(mod, :($(edge_sym)() = return))::Function
-    m = first(methods(λ))
-    return specialize_method(m, Tuple{typeof(λ)}, svec())::MethodInstance
 end

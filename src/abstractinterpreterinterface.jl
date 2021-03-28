@@ -266,14 +266,14 @@ mutable struct JETInterpreter <: AbstractInterpreter
 
     ## virtual toplevel execution ##
 
-    # for sequential assignment of abstract global variables
-    id::Symbol
-
     # will be used in toplevel analysis (skip inference on actually interpreted statements)
     concretized::BitVector
 
     # virtual toplevel module
     toplevelmod::Module
+
+    # toplevel modules concretized by JET (only active within sequential toplevel analysis)
+    toplevelmods::Set{Module}
 
     # slots to represent toplevel global variables
     global_slots::Dict{Int,Symbol}
@@ -298,10 +298,10 @@ end
                                          analysis_params = nothing,
                                          inf_params      = nothing,
                                          opt_params      = nothing,
-                                         id              = gensym(:JETInterpreterID),
-                                         concretized     = _CONCRETIZED,
-                                         toplevelmod     = _TOPLEVELMOD,
-                                         global_slots    = _GLOBAL_SLOTS,
+                                         concretized     = BitVector(),
+                                         toplevelmod     = __toplevelmod__,
+                                         toplevelmods    = Set{Module}(),
+                                         global_slots    = Dict{Int,Symbol}(),
                                          logger          = nothing,
                                          depth           = 0,
                                          jetconfigs...)
@@ -317,18 +317,17 @@ end
                           cache,
                           analysis_params,
                           false,
-                          id,
                           concretized,
                           toplevelmod,
+                          toplevelmods,
                           global_slots,
                           logger,
                           depth,
                           )
 end
-# dummies to interpret non-toplevel frames
-const _CONCRETIZED  = BitVector()
-const _TOPLEVELMOD  = @__MODULE__
-const _GLOBAL_SLOTS = Dict{Int,Symbol}()
+
+# dummies for non-toplevel analysis
+module __toplevelmod__ end
 
 # constructor for sequential toplevel JET analysis
 function JETInterpreter(interp::JETInterpreter, concretized, toplevelmod)
@@ -340,6 +339,7 @@ function JETInterpreter(interp::JETInterpreter, concretized, toplevelmod)
                           opt_params      = OptimizationParams(interp),
                           concretized     = concretized, # or construct partial `CodeInfo` from remaining abstract statements ?
                           toplevelmod     = toplevelmod,
+                          toplevelmods    = push!(interp.toplevelmods, toplevelmod),
                           logger          = JETLogger(interp),
                           )
 end
@@ -410,8 +410,6 @@ JETAnalysisParams(interp::JETInterpreter) = interp.analysis_params
 
 JETLogger(interp::JETInterpreter) = interp.logger
 
-get_id(interp::JETInterpreter) = interp.id
-
 # TODO do report filtering or something configured by `JETAnalysisParams(interp)`
 function report!(interp::JETInterpreter, report::InferenceErrorReport)
     push!(interp.reports, report)
@@ -420,6 +418,12 @@ end
 function stash_uncaught_exception!(interp::JETInterpreter, report::UncaughtExceptionReport)
     push!(interp.uncaught_exceptions, report)
 end
+
+# check if we're in a toplevel module
+@inline istoplevel(interp::JETInterpreter, sv::InferenceState)    = istoplevel(interp, sv.linfo)
+@inline istoplevel(interp::JETInterpreter, linfo::MethodInstance) = interp.toplevelmod === linfo.def
+
+@inline istoplevelmod(interp::JETInterpreter, mod::Module) = mod in interp.toplevelmods
 
 is_global_slot(interp::JETInterpreter, slot::Int)   = slot in keys(interp.global_slots)
 is_global_slot(interp::JETInterpreter, slot::Slot)  = is_global_slot(interp, slot_id(slot))

@@ -251,7 +251,11 @@ extract_type_decls(x) = @isexpr(x, :(::)) ? last(x.args) : Any
 
 @reportdef DivideErrorReport(interp, sv)
 
+# TODO we may want to hoist `InvalidConstXXX` errors into top-level errors
+
 @reportdef InvalidConstantRedefinition(interp, sv, mod::Module, name::Symbol, @nospecialize(t′), @nospecialize(t))
+
+@reportdef InvalidConstantDeclaration(interp, sv, mod::Module, name::Symbol)
 
 """
     ExceptionReport <: InferenceErrorReport
@@ -424,7 +428,7 @@ function _get_sig_type(interp#=::JETInterpreter=#, sv::InferenceState, slot::Slo
     if isempty(sig)
         sig = string(slot) # fallback if no explicit slotname
     end
-    if istoplevel(sv)
+    if istoplevel(interp, sv)
         # this is a abstract global variable, form the global reference
         return _get_sig_type(interp, sv, GlobalRef(interp.toplevelmod, name))
     else
@@ -434,7 +438,7 @@ function _get_sig_type(interp#=::JETInterpreter=#, sv::InferenceState, slot::Slo
 end
 _get_sig_type(interp#=::JETInterpreter=#, ::InferenceState, gr::GlobalRef) = Any[string(gr.mod, '.', gr.name)], nothing
 function _get_sig_type(interp#=::JETInterpreter=#, sv::InferenceState, s::Symbol)
-    if istoplevel(sv)
+    if istoplevel(interp, sv)
         # this is concrete global variable, form the global reference
         return _get_sig_type(interp, sv, GlobalRef(interp.toplevelmod, s))
     else
@@ -478,6 +482,8 @@ get_msg(::Type{NonBooleanCondErrorReport}, interp, sv, ts::Vector{Type}) =
 end)
 get_msg(::Type{InvalidConstantRedefinition}, interp, sv, mod, name, @nospecialize(t′), @nospecialize(t)) =
     "invalid redefinition of constant $(mod).$(name) (from $(t′) to $(t))"
+get_msg(::Type{InvalidConstantDeclaration}, interp, sv, mod, name) =
+    "cannot declare a constant $(mod).$(name); it already has a value"
 get_msg(::Type{UndefKeywordErrorReport}, interp, sv, err, lin) = sprint(showerror, err)
 get_msg(::Type{UncaughtExceptionReport}, interp, sv, throw_blocks) = isone(length(throw_blocks)) ?
     "may throw" :

@@ -387,9 +387,6 @@ function is_constant_propagated(frame::InferenceState)
     return !frame.cached && CC.any(frame.result.overridden_by_const)
 end
 
-@inline istoplevel(linfo::MethodInstance) = linfo.def === __virtual_toplevel__
-@inline istoplevel(sv::InferenceState)    = istoplevel(sv.linfo)
-
 prewalk_inf_frame(@nospecialize(f), ::Nothing) = return
 function prewalk_inf_frame(@nospecialize(f), frame::InferenceState)
     ret = f(frame)
@@ -621,7 +618,7 @@ function analyze_toplevel!(interp::JETInterpreter, src::CodeInfo)
     mi.specTypes = Tuple{}
 
     transform_abstract_global_symbols!(interp, src)
-    mi.def = __virtual_toplevel__ # set to the dummy module
+    mi.def = interp.toplevelmod
 
     result = InferenceResult(mi);
     # toplevel frame doesn't need to be cached (and so it won't be optimized)

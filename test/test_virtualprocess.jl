@@ -174,7 +174,8 @@ end
             end
         end
         @test is_concrete(vmod, :Foo)
-        @test isa_abstract(vmod.foo, vmod.Foo)
+        @test is_analyzed(vmod, :foo)
+        @test isa_analyzed(vmod.foo, vmod.Foo)
     end
 
     # toplevel definitions within a block
@@ -194,7 +195,8 @@ end
             end
         end
         @test isempty(res.toplevel_error_reports)
-        @test is_abstract(vmod, :foo)
+        @test is_analyzed(vmod, :foo)
+        @test isa_analyzed(vmod.foo, vmod.Foo1)
     end
 
     @testset "toplevel definitions by `eval` calls" begin
@@ -885,6 +887,69 @@ end
             @test isa_abstract(vmod.g, Float64)
         end
     end
+
+    @testset "concretize statically constant variables" begin
+        let
+            m = gen_virtual_module()
+            @analyze_toplevel m begin
+                const a = 0
+            end
+            @test is_concrete(m, :a) && m.a == 0
+        end
+
+        # try to concretize even if it's not declared as constant
+        let
+            m = gen_virtual_module()
+            @analyze_toplevel m begin
+                a = 0
+            end
+            @test is_concrete(m, :a) && m.a == 0
+        end
+
+        let
+            m = gen_virtual_module()
+            @analyze_toplevel m begin
+                const a = :jetzero # should be quoted, otherwise undef var error
+            end
+            @test is_concrete(m, :a) && m.a === :jetzero
+        end
+
+        # sequential
+        let
+            m = gen_virtual_module()
+            @analyze_toplevel m begin
+                a = rand(Int)
+                a = 0
+            end
+            @test is_concrete(m, :a)
+            @test m.a == 0
+        end
+        let
+            m = gen_virtual_module()
+            @analyze_toplevel m begin
+                a = 0
+                a = rand(Int)
+            end
+            @test is_abstract(m, :a)
+            @test isa_abstract(m.a, Int)
+        end
+    end
+
+    @testset "https://github.com/aviatesk/JET.jl/issues/142" begin
+        res = @analyze_toplevel begin
+            Circle = @NamedTuple begin
+                radius::Float64
+            end
+
+            function area(c::Circle)
+                pi * c.radius^2
+            end
+
+            area(Circle(2))
+        end
+
+        @test isempty(res.toplevel_error_reports)
+    end
 end
 
 @testset "toplevel throw" begin
@@ -966,15 +1031,13 @@ end
     end
 end
 
-@testset "invalid constant redefinition" begin
+@testset "invalid constant redefinition/declaration" begin
     # for abstract global assignment
     let
         vmod = gen_virtual_module()
-        res = @analyze_toplevel vmod begin
+        res = @test_logs (:warn,) @analyze_toplevel vmod begin
             fib(n) = n≤2 ? n : fib(n-1)+fib(n-1)
-
             const foo = fib(1000000000000) # ::Int
-
             foo = fib(1000000000000.) # ::Float64
         end
 
@@ -984,14 +1047,27 @@ end
         @test er isa InvalidConstantRedefinition
         @test er.name === :foo
     end
+    let
+        vmod = gen_virtual_module()
+        res = @test_logs (:warn,) @analyze_toplevel vmod begin
+            fib(n) = n≤2 ? n : fib(n-1)+fib(n-1)
+            foo = fib(1000000000000.) # ::Float64
+            const foo = fib(1000000000000) # ::Int
+        end
+
+        @test is_abstract(vmod, :foo)
+        @test length(res.inference_error_reports) == 1
+        er = first(res.inference_error_reports)
+        @test er isa InvalidConstantDeclaration
+        @test er.name === :foo
+    end
 
     # for concretized constants
     let
         vmod = gen_virtual_module()
-        res = @analyze_toplevel vmod begin
+        res = @test_logs (:warn,) @analyze_toplevel vmod begin
             fib(n) = n≤2 ? n : fib(n-1)+fib(n-1)
-            const T = typeof(fib(1000000000000)) # never terminates, yes
-
+            const T = typeof(fib(1000000000000)) # never terminates
             T = Nothing
         end
 
@@ -1000,6 +1076,33 @@ end
         er = first(res.inference_error_reports)
         @test er isa InvalidConstantRedefinition
         @test er.name === :T
+    end
+    let
+        vmod = gen_virtual_module()
+        res = @test_logs (:warn,) @analyze_toplevel vmod begin
+            fib(n) = n≤2 ? n : fib(n-1)+fib(n-1)
+            T = Nothing
+            const T = typeof(fib(1000000000000)) # never terminates
+        end
+
+        @test is_concrete(vmod, :T) # wao, this is concretized
+        @test length(res.inference_error_reports) == 1
+        er = first(res.inference_error_reports)
+        @test er isa InvalidConstantDeclaration
+        @test er.name === :T
+    end
+
+    let
+        vmod = gen_virtual_module()
+        res = @test_logs (:warn,) @analyze_toplevel vmod begin
+            a = 0
+            const a = 1
+        end
+        @test length(res.inference_error_reports) == 1
+        let er = first(res.inference_error_reports)
+            @test er isa InvalidConstantDeclaration
+            @test er.name === :a
+        end
     end
 end
 
@@ -1060,20 +1163,6 @@ end
         @test_warn "foo" println(stderr, "foo")
     end
     @test isempty(res.toplevel_error_reports)
-end
-
-@testset "constant abstract global" begin
-    m = gen_virtual_module()
-    @analyze_toplevel m begin
-        const a = 0
-    end
-    @test is_concrete(m, :a) && m.a == 0
-
-    m = gen_virtual_module()
-    @analyze_toplevel m begin
-        const a = :jetzero # should be quoted, otherwise undef var error
-    end
-    @test is_concrete(m, :a) && m.a === :jetzero
 end
 
 @testset "avoid too much bail out from `virtual_process!`" begin
