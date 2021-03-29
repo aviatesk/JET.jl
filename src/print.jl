@@ -9,7 +9,7 @@ If the entry renders the collected error points, the configurations below will b
 - `print_toplevel_success::Bool = false` \\
   If `true`, prints a message when there is no toplevel errors found.
 ---
-- `print_inference_sucess::Bool = true` \\
+- `print_inference_success::Bool = true` \\
   If `true`, print a message when there is no errors found in abstract interpretation based analysis pass.
 ---
 - `annotate_types::Bool = false` \\
@@ -86,16 +86,16 @@ If the entry renders the collected error points, the configurations below will b
 """
 struct PrintConfig
     print_toplevel_success::Bool
-    print_inference_sucess::Bool
+    print_inference_success::Bool
     annotate_types::Bool
     fullpath::Bool
     @jetconfigurable PrintConfig(; print_toplevel_success::Bool = false,
-                                   print_inference_sucess::Bool = true,
+                                   print_inference_success::Bool = true,
                                    annotate_types::Bool         = false,
                                    fullpath::Bool               = false,
                                    ) =
         return new(print_toplevel_success,
-                   print_inference_sucess,
+                   print_inference_success,
                    annotate_types,
                    fullpath,
                    )
@@ -163,7 +163,7 @@ function print_reports(io::IO,
     config = PrintConfig(; jetconfigs...)
 
     if isempty(reports)
-        if config.print_toplevel_sucess
+        if config.print_toplevel_success
             printlnstyled(io, "No toplevel errors !"; color = NOERROR_COLOR)
         end
         return false
@@ -231,7 +231,7 @@ function print_reports(io::IO,
     reports = unique(get_identity_key, reports)
 
     if isempty(reports)
-        if config.print_inference_sucess
+        if config.print_inference_success
             printlnstyled(io, "No errors !"; color = NOERROR_COLOR)
         end
         return false

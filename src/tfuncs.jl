@@ -97,7 +97,8 @@ function istoplevel_globalref(interp::JETInterpreter, sv::InferenceState)
     def = sv.linfo.def
     def.name === :getproperty || return false
     def.sig === Tuple{typeof(getproperty), Module, Symbol} || return false
-    return istoplevel(interp, sv.parent)
+    parent = sv.parent
+    return !isnothing(parent) && istoplevel(interp, parent)
 end
 
 # `return_type_tfunc` internally uses `abstract_call` to model `return_type` function and
