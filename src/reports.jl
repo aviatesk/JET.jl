@@ -80,7 +80,7 @@ end
 function Base.show(io::IO, report::T) where {T<:InferenceErrorReport}
     print(io, T.name.name, '(')
     for a in report.sig
-        _print_signature(io, a; annotate_types = true, bold = true)
+        _print_signature(io, a, (; annotate_types = true); bold = true)
     end
     print(io, ')')
 end

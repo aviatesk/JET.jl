@@ -354,13 +354,14 @@ macro jetconfigurable(funcdef)
     @assert @isexpr(funcdef, :(=)) || @isexpr(funcdef, :function) "function definition should be given"
 
     defsig = funcdef.args[1]
-    thisname = first(defsig.args)
-    i = findfirst(a->@isexpr(a, :parameters), defsig.args)
+    args = defsig.args::Vector{Any}
+    thisname = first(args)
+    i = findfirst(a->@isexpr(a, :parameters), args)
     if isnothing(i)
         @warn "no JET configurations are defined for `$thisname`"
-        insert!(defsig.args, 2, Expr(:parameters, :(jetconfigs...)))
+        insert!(args, 2, Expr(:parameters, :(jetconfigs...)))
     else
-        kwargs = defsig.args[i]
+        kwargs = args[i]
         found = false
         for kwarg in kwargs.args
             if @isexpr(kwarg, :...)
