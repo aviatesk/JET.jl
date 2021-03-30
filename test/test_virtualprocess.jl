@@ -1204,6 +1204,18 @@ const CONCRETIZATION_PATTERNS_CONFIG = normpath(@__DIR__, "fixtures", "..JET.tom
                            )
         @test isempty(res.toplevel_error_reports)
     end
+
+    # we can specify whatever pattern `@capture` can accept
+    let
+        vmod = gen_virtual_module()
+        res = @analyze_toplevel vmod begin
+            foo(a) = a
+            foo(10)
+            bar(a) = a
+        end concretization_patterns = [:x_]
+        @test is_concrete(vmod, :foo)
+        @test is_concrete(vmod, :bar)
+    end
 end
 
 # NOTE this test is only valid when the testset above passes, better to be in a separate file though
