@@ -502,9 +502,10 @@ aggressive_constant_propagation = false # turn off aggressive constant propagati
 ```
 
 Note that the following configurations should be string(s) of valid Julia code:
-- `concretization_patterns`: vector of string of Julia expression, which should be `parse`d into `Vector{Expr}`
-- `toplevel_logger`: string of Julia code, which should be `parse`d and `eval`uated into `Union{IO,Nothing}`
-- `inference_logger`: string of Julia code, which should be `parse`d and `eval`uated into `Union{IO,Nothing}`
+- `concretization_patterns`: vector of string of Julia code, which can be `parse`d into a
+  Julia expression pattern expected by [`MacroTools.@capture` macro](https://fluxml.ai/MacroTools.jl/stable/pattern-matching/).
+- `toplevel_logger`: string of Julia code, which can be `parse`d and `eval`uated into `Union{IO,Nothing}`
+- `inference_logger`: string of Julia code, which can be `parse`d and `eval`uated into `Union{IO,Nothing}`
 
 E.g. the configurations below are equivalent:
 - configurations via keyword arguments

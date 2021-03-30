@@ -62,28 +62,33 @@ function analyze_text(s,
                             ToplevelConfig(; jetconfigs...))
 end
 
-# enters analysis from toplevel expression
-macro analyze_toplevel(virtualmod, ex)
-    return analyze_toplevel(virtualmod, ex, __source__)
+"""
+    @analyze_toplevel ex jetconfigs...
+    @analyze_toplevel vmod ex jetconfigs...
+
+Enters JET analysis from toplevel expression.
+"""
+macro analyze_toplevel(x, xs...)
+    jetconfigs = filter(iskwarg, xs)
+    xs′ = filter(!iskwarg, xs)
+    virtualmod, ex = isempty(xs′) ? (gen_virtual_module(__module__), x) : (x, first(xs′))
+    return analyze_toplevel(virtualmod, ex, __source__, jetconfigs)
 end
 
-macro analyze_toplevel(ex)
-    virtualmod = gen_virtual_module(__module__)
-    return analyze_toplevel(virtualmod, ex, __source__)
-end
+iskwarg(@nospecialize(x)) = isexpr(x, :(=))
 
-function analyze_toplevel(virtualmod, ex, lnn; jetconfigs...)
+function analyze_toplevel(virtualmod, ex, lnn, jetconfigs)
     toplevelex = (isexpr(ex, :block) ?
                   Expr(:toplevel, lnn, ex.args...) : # flatten here
                   Expr(:toplevel, lnn, ex)
                   ) |> QuoteNode
-    interp = JETInterpreter(; jetconfigs...)
-    config = ToplevelConfig(; jetconfigs...)
     return quote let
         ret = $(JET.gen_virtual_process_result)()
         virtualmod = $(esc(virtualmod))
         actualmodsym = Symbol(parentmodule(virtualmod))
-        $(virtual_process!)($(toplevelex), $(string(lnn.file)), virtualmod, actualmodsym, $interp, $config, ret)
+        interp = JETInterpreter(; $(map(esc, jetconfigs)...))
+        config = ToplevelConfig(; $(map(esc, jetconfigs)...))
+        $virtual_process!($toplevelex, $(string(lnn.file)), virtualmod, actualmodsym, interp, config, ret)
     end end
 end
 

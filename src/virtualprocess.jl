@@ -3,7 +3,7 @@ Configurations for top-level analysis.
 These configurations will be active for all the top-level entries explained in [Analysis entry points](@ref).
 
 ---
-- `concretization_patterns::Vector{Expr} = Expr[]` \\
+- `concretization_patterns::Vector{<:Any} = Expr[]` \\
   Specifies a customized top-level code concretization strategy.
 
   When analyzing a top-level code, JET first splits the entire code and then iterate a virtual
@@ -23,11 +23,11 @@ These configurations will be active for all the top-level entries explained in [
       join(lines, "\n  ")
   end)
 
-  To circumvent this issue, JET offers the `concretization_patterns::Vector{Expr}` configuration,
+  To circumvent this issue, JET offers the `concretization_patterns::Vector{<:Any}` configuration,
     which allows us to customize JET's top-level code concretization strategy.
   `concretization_patterns` specifies the _patterns of code_ that should be concretized.
   JET internally uses [MacroTools.jl's expression pattern match](https://fluxml.ai/MacroTools.jl/stable/pattern-matching/),
-    and thus we can specify any expression pattern that is expected by the `MacroTools.@capture` macro.
+    and we can specify any expression pattern that is expected by `MacroTools.@capture` macro.
   For example, in order to solve the issue explained above, we can have:
   ```julia
   concretization_patterns = [:(GLOBAL_CODE_STORE = x_)]
@@ -96,8 +96,8 @@ These configurations will be active for all the top-level entries explained in [
 ---
 """
 struct ToplevelConfig
-    concretization_patterns::Vector{Expr}
-    @jetconfigurable ToplevelConfig(; concretization_patterns::Vector{Expr} = Expr[],
+    concretization_patterns::Vector{<:Any}
+    @jetconfigurable ToplevelConfig(; concretization_patterns = Expr[],
                                       ) =
         return new(concretization_patterns,
                    )
