@@ -1209,12 +1209,12 @@ const CONCRETIZATION_PATTERNS_CONFIG = normpath(@__DIR__, "fixtures", "..JET.tom
     let
         vmod = gen_virtual_module()
         res = @analyze_toplevel vmod begin
-            foo(a) = a
-            foo(10)
-            bar(a) = a
-        end concretization_patterns = [:x_]
-        @test is_concrete(vmod, :foo)
-        @test is_concrete(vmod, :bar)
+            foo() = rand((1,2,3))
+            a = foo()
+            b = foo()
+        end concretization_patterns = [:x_] # means "concretize everything"
+        @test is_concrete(vmod, :a)
+        @test is_concrete(vmod, :b)
     end
 end
 

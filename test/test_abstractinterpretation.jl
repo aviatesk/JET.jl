@@ -5,7 +5,7 @@
         m = gen_virtual_module()
         interp, frame = Core.eval(m, quote
             foo(a::Integer) = :Integer
-            $(analyze_call)((AbstractString,)) do a
+            $analyze_call((AbstractString,)) do a
                 foo(a)
             end
         end)
@@ -29,7 +29,7 @@
             foo(a::Integer) = :Integer
             foo(a::AbstractString) = "AbstractString"
 
-            $(analyze_call)(a->foo(a), (Union{Nothing,Int},))
+            $analyze_call(a->foo(a), (Union{Nothing,Int},))
         end)
 
         @test length(interp.reports) === 1
@@ -65,13 +65,13 @@ end
             baz(a) = foo(a)
         end
 
-        interp, frame = Core.eval(m, :($(analyze_call)(baz, (Bool,))))
+        interp, frame = Core.eval(m, :($analyze_call(baz, (Bool,))))
         @test length(interp.reports) === 1
         @test first(interp.reports) isa LocalUndefVarErrorReport
         @test first(interp.reports).name === :bar
 
         # works when cached
-        interp, frame = Core.eval(m, :($(analyze_call)(baz, (Bool,))))
+        interp, frame = Core.eval(m, :($analyze_call(baz, (Bool,))))
         @test length(interp.reports) === 1
         @test first(interp.reports) isa LocalUndefVarErrorReport
         @test first(interp.reports).name === :bar
@@ -156,13 +156,13 @@ end
             qux(a) = foo(a)
         end
 
-        interp, frame = Core.eval(m, :($(analyze_call)(qux, (Int,))))
+        interp, frame = Core.eval(m, :($analyze_call(qux, (Int,))))
         @test length(interp.reports) === 1
         @test first(interp.reports) isa GlobalUndefVarErrorReport
         @test first(interp.reports).name === :baz
 
         # works when cached
-        interp, frame = Core.eval(m, :($(analyze_call)(qux, (Int,))))
+        interp, frame = Core.eval(m, :($analyze_call(qux, (Int,))))
         @test length(interp.reports) === 1
         @test first(interp.reports) isa GlobalUndefVarErrorReport
         @test first(interp.reports).name === :baz
@@ -314,7 +314,7 @@ end
         m = gen_virtual_module()
         interp, frame = Core.eval(m, quote
             foo(a; #= can be undef =# kw) =  a, kw
-            $(analyze_call)(foo, (Any,))
+            $analyze_call(foo, (Any,))
         end)
         @test !isempty(interp.reports)
         @test any(interp.reports) do r
@@ -387,7 +387,7 @@ end
         interp, frame = Core.eval(m, quote
             foo(a) = sum(a) # should be reported
             bar(a) = throw(a) # shouldn't be reported first
-            $(analyze_call)((Bool, String)) do b, s
+            $analyze_call((Bool, String)) do b, s
                 b && foo(s)
                 bar(s)
             end
@@ -426,11 +426,11 @@ end
         end
 
         # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)" should be threw away
-        interp, frame = Core.eval(m, :($(analyze_call)(foo, (P, Int))))
+        interp, frame = Core.eval(m, :($analyze_call(foo, (P, Int))))
         @test isempty(interp.reports)
 
         # works for cache
-        interp, frame = Core.eval(m, :($(analyze_call)(foo, (P, Int))))
+        interp, frame = Core.eval(m, :($analyze_call(foo, (P, Int))))
         @test isempty(interp.reports)
     end
 
@@ -446,11 +446,11 @@ end
         end
 
         # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)" should be threw away
-        interp, frame = Core.eval(m, :($(analyze_call)(bar, (P, Int))))
+        interp, frame = Core.eval(m, :($analyze_call(bar, (P, Int))))
         @test isempty(interp.reports)
 
         # works for cache
-        interp, frame = Core.eval(m, :($(analyze_call)(bar, (P, Int))))
+        interp, frame = Core.eval(m, :($analyze_call(bar, (P, Int))))
         @test isempty(interp.reports)
     end
 
@@ -467,7 +467,7 @@ end
                 p.s = s
             end
 
-            $(analyze_call)(foo, (P, Int, #= invalid =# Int))
+            $analyze_call(foo, (P, Int, #= invalid =# Int))
         end)
 
         # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)" should be threw away, while
@@ -491,7 +491,7 @@ end
                 p.s = s
             end
 
-            $(analyze_call)(foo, (P, String, Int))
+            $analyze_call(foo, (P, String, Int))
         end)
 
         # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::String)" should be narrowed down to "no matching method found for call signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{Int}, v::String)"
@@ -511,7 +511,7 @@ end
         interp, frame = Core.eval(m, quote
             foo(a) = a<0 ? a+string(a) : a
             bar() = foo(-1), foo(1) # constant analysis on `foo(1)` shouldn't throw away reports from `foo(-1)`
-            $(analyze_call)(bar)
+            $analyze_call(bar)
         end)
         @test !isempty(interp.reports)
         @test any(r->isa(r,NoMethodErrorReport), interp.reports)
@@ -526,10 +526,11 @@ end
                 b = foo(-1)
                 return a, b
             end
-            $(analyze_call)(bar, (Bool,))
+            $analyze_call(bar, (Bool,))
         end)
         @test !isempty(interp.reports)
-        @test_broken count(isa(report, NoMethodErrorReport) for report in interp.reports) == 2 # FIXME
+        # FIXME our report uniquify logic might be wrong and it wrongly singlifies the different reports here
+        @test_broken count(isa(report, NoMethodErrorReport) for report in interp.reports) == 2
     end
 
     @testset "constant analysis throws away false positive reports" begin
@@ -540,11 +541,11 @@ end
             end
 
             # constant propagation can reveal the error pass can't happen
-            interp, frame = Core.eval(m, :($(analyze_call)(()->bar(10))))
+            interp, frame = Core.eval(m, :($analyze_call(()->bar(10))))
             @test isempty(interp.reports)
 
             # for this case, no constant prop' doesn't happen, we can't throw away error pass
-            interp, frame = Core.eval(m, :($(analyze_call)(bar, (Int,))))
+            interp, frame = Core.eval(m, :($analyze_call(bar, (Int,))))
             @test length(interp.reports) === 1
             er = first(interp.reports)
             @test er isa NoMethodErrorReport &&
@@ -552,7 +553,7 @@ end
                 er.atype ⊑ Tuple{Any,Union{Int,String},Int}
 
             # if we run constant prop' that leads to the error pass, we should get the reports
-            interp, frame = Core.eval(m, :($(analyze_call)(()->bar(0))))
+            interp, frame = Core.eval(m, :($analyze_call(()->bar(0))))
             @test length(interp.reports) === 1
             er = first(interp.reports)
             @test er isa NoMethodErrorReport &&
@@ -577,7 +578,7 @@ end
             end
 
             # no constant prop, just report everything
-            interp, frame = Core.eval(m, :($(analyze_call)(foo, (Int,))))
+            interp, frame = Core.eval(m, :($analyze_call(foo, (Int,))))
             @test length(interp.reports) === 1
             er = first(interp.reports)
             @test er isa NonBooleanCondErrorReport &&
@@ -585,7 +586,7 @@ end
 
             # constant prop should throw away the non-boolean condition report from `baz1`
             interp, frame = Core.eval(m, quote
-                $(analyze_call)() do
+                $analyze_call() do
                     foo(1)
                 end
             end)
@@ -593,7 +594,7 @@ end
 
             # constant prop'ed, still we want to have the non-boolean condition report from `baz1`
             interp, frame = Core.eval(m, quote
-                $(analyze_call)() do
+                $analyze_call() do
                     foo(0)
                 end
             end)
@@ -603,7 +604,7 @@ end
                 er.t === Int
 
             # so `Bool` is good for `foo` after all
-            interp, frame = Core.eval(m, :($(analyze_call)(foo, (Bool,))))
+            interp, frame = Core.eval(m, :($analyze_call(foo, (Bool,))))
             @test isempty(interp.reports)
         end
 
@@ -638,7 +639,7 @@ end
 @testset "keyword argument methods" begin
     interp, frame = Core.eval(gen_virtual_module(), quote
         f(a; b = nothing, c = nothing) = return
-        $(analyze_call)((Any,)) do b
+        $analyze_call((Any,)) do b
             f(1; b)
         end
     end)

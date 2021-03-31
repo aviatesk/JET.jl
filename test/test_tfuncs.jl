@@ -17,12 +17,12 @@
         end)
 
         interp, frame = Core.eval(m, quote
-            $(analyze_call)(t->access_field(t,:v), (T,))
+            $analyze_call(t->access_field(t,:v), (T,))
         end)
         @test isempty(interp.reports)
 
         interp, frame = Core.eval(m, quote
-            $(analyze_call)(t->access_field(t,:w), (T,))
+            $analyze_call(t->access_field(t,:w), (T,))
         end)
         @test length(interp.reports) === 1
         er = first(interp.reports)
@@ -31,7 +31,7 @@
         @test er.name === :w
 
         interp, frame = Core.eval(m, quote
-            $(analyze_call)(t->access_field(t,:v), (T,))
+            $analyze_call(t->access_field(t,:v), (T,))
         end)
         @test isempty(interp.reports)
     end

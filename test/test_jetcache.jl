@@ -83,7 +83,7 @@ end
         interp, frame = Core.eval(m, quote
             sum′(s) = sum(s)
             sum′′(s) = sum′(s)
-            $(analyze_call)() do
+            $analyze_call() do
                 sum′′("julia")
             end
         end)
@@ -95,7 +95,7 @@ end
         m = gen_virtual_module()
 
         interp, frame = Core.eval(m, quote
-            $(analyze_call)() do
+            $analyze_call() do
                 sum("julia")
             end
         end)
@@ -103,7 +103,7 @@ end
 
         interp, frame = Core.eval(m, quote
             sum′(s) = sum(s)
-            $(analyze_call)() do
+            $analyze_call() do
                 sum′("julia")
             end
         end)
@@ -111,7 +111,7 @@ end
 
         interp, frame = Core.eval(m, quote
             sum′′(s) = sum′(s)
-            $(analyze_call)() do
+            $analyze_call() do
                 sum′′("julia")
             end
         end)
@@ -136,7 +136,7 @@ end
             struct Foo{T}
                 bar::T
             end
-            $(analyze_call)((Foo{Int},)) do foo
+            $analyze_call((Foo{Int},)) do foo
                 foo.baz # typo
             end
         end)
@@ -155,7 +155,7 @@ end
                 bar::T
             end
             getter(foo, prop) = getproperty(foo, prop)
-            $(analyze_call)((Foo{Int}, Bool)) do foo, cond
+            $analyze_call((Foo{Int}, Bool)) do foo, cond
                 getter(foo, :bar)
                 cond ? getter(foo, :baz) : getter(foo, :qux) # non-deterministic typos
             end
