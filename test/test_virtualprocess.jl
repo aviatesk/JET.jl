@@ -351,8 +351,9 @@ end
         f1 = normpath(FIXTURE_DIR, "include1.jl")
         f2 = normpath(FIXTURE_DIR, "include1.jl")
 
-        vmod = gen_virtual_module()
-        res = analyze_file(f1, vmod)
+        amod = @__MODULE__
+        vmod = gen_virtual_module(amod)
+        res = analyze_file(f1, amod, vmod)
 
         @test f1 in res.included_files
         @test f2 in res.included_files
@@ -1228,8 +1229,8 @@ end
     try
         # in order to check the functionality, fixtures/..JET.toml logs toplevel analysis
         # into toplevel.txt (relative to the current working directory)
-        # and so let's cd into the temporary directory to not pollute this directory
-        old = cd(dir)
+        # and so let's `cd` into the temporary directory to not pollute this directory
+        cd(dir)
 
         open(CONCRETIZATION_PATTERNS_FILE) do f
             write(analysis_target, f)

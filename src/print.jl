@@ -89,16 +89,42 @@ struct PrintConfig
     print_inference_success::Bool
     annotate_types::Bool
     fullpath::Bool
-    @jetconfigurable PrintConfig(; print_toplevel_success::Bool = false,
+    @jetconfigurable PrintConfig(; print_toplevel_success::Bool  = false,
                                    print_inference_success::Bool = true,
-                                   annotate_types::Bool         = false,
-                                   fullpath::Bool               = false,
+                                   annotate_types::Bool          = false,
+                                   fullpath::Bool                = false,
                                    ) =
         return new(print_toplevel_success,
                    print_inference_success,
                    annotate_types,
                    fullpath,
                    )
+end
+
+# entry
+function print_reports(io::IO, res::VirtualProcessResult; jetconfigs...)
+    # non-empty `ret.toplevel_error_reports` means critical errors happened during
+    # the AST transformation, so they always have precedence over `ret.inference_error_reports`
+    reports = !isempty(res.toplevel_error_reports) ?
+              res.toplevel_error_reports :
+              res.inference_error_reports
+
+    postprocess = gen_postprocess(res.actual2virtual...)
+
+    return print_reports(io, reports, postprocess; jetconfigs...)
+end
+
+# maybe test entry
+print_reports(args...; jetconfigs...) = print_reports(stdout::IO, args...; jetconfigs...)
+
+# fix virtual module printing based on string manipulation; the "actual" modules may not be
+# loaded into this process
+function gen_postprocess(actualmod, virtualmod)
+    virtual = string(virtualmod)
+    actual  = string(actualmod)
+    return actualmod == Main ?
+           Fix2(replace, "Main." => "") ∘ Fix2(replace, virtual => actual) :
+           Fix2(replace, virtual => actual)
 end
 
 # utility
