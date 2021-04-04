@@ -32,11 +32,15 @@ import Base:
 import Base.Meta:
     isexpr
 
-# define virtual module and setup fixtures
-macro def(ex)
+"""
+    @fixturedef
+
+Creates a virtual module and defines fixtures from toplevel expression `ex`
+"""
+macro fixturedef(ex)
     @assert isexpr(ex, :block)
     return quote let
-        vmod = $(gen_virtual_module)()
+        vmod = $gen_virtual_module($__module__)
         for x in $(ex.args)
             Core.eval(vmod, x)
         end
@@ -44,11 +48,23 @@ macro def(ex)
     end end
 end
 
-# enters analysis from file name
+"""
+    analyze_file(filename, args...; jetconfigs...)
+
+Enters analysis from toplevel Juila file `filename`, and returns the analysis result.
+"""
 analyze_file(filename, args...; jetconfigs...) =
     return analyze_text(read(filename, String), filename, args...; jetconfigs...)
 
-# enters analysis from string
+"""
+    analyze_text(s,
+                 filename = "top-level",
+                 virtualmod = gen_virtual_module(@__MODULE__),
+                 actualmodsym = Symbol(parentmodule(virtualmod));
+                 jetconfigs...)
+
+Enters analysis from toplevel Juila code `s`, and returns the analysis result.
+"""
 function analyze_text(s,
                       filename = "top-level",
                       virtualmod = gen_virtual_module(@__MODULE__),
@@ -63,15 +79,17 @@ function analyze_text(s,
 end
 
 """
-    @analyze_toplevel ex jetconfigs...
-    @analyze_toplevel vmod ex jetconfigs...
+    @analyze_toplevel [jetconfigs...] ex
+    @analyze_toplevel [jetconfigs...] vmod ex
 
-Enters JET analysis from toplevel expression.
+Enters JET analysis from toplevel expression `ex`, and returns the analysis result.
 """
-macro analyze_toplevel(x, xs...)
+macro analyze_toplevel(xs...)
     jetconfigs = filter(iskwarg, xs)
     xs′ = filter(!iskwarg, xs)
-    virtualmod, ex = isempty(xs′) ? (gen_virtual_module(__module__), x) : (x, first(xs′))
+    n = length(xs′)
+    @assert 1 ≤ n ≤ 2
+    virtualmod, ex = n == 1 ? (gen_virtual_module(__module__), first(xs′)) : (xs′...,)
     return analyze_toplevel(virtualmod, ex, __source__, jetconfigs)
 end
 

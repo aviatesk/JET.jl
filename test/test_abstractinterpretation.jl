@@ -54,7 +54,7 @@ end
 
     # deeper level
     let
-        m = @def begin
+        m = @fixturedef begin
             function foo(b)
                 if b
                     bar = rand(Int)
@@ -151,7 +151,7 @@ end
 
     # deeper level
     let
-        m = @def begin
+        m = @fixturedef begin
             foo(bar) = bar + baz
             qux(a) = foo(a)
         end
@@ -417,7 +417,7 @@ end
 @testset "constant analysis" begin
     # constant prop should limit false positive union-split no method reports
     let
-        m = @def begin
+        m = @fixturedef begin
             mutable struct P
                 i::Int
                 s::String
@@ -436,7 +436,7 @@ end
 
     # more cache test, constant prop should re-run in deeper level
     let
-        m = @def begin
+        m = @fixturedef begin
             mutable struct P
                 i::Int
                 s::String
@@ -535,7 +535,7 @@ end
 
     @testset "constant analysis throws away false positive reports" begin
         let
-            m = @def begin
+            m = @fixturedef begin
                 foo(a) = a > 0 ? a : "minus"
                 bar(a) = foo(a) + 1
             end
@@ -564,7 +564,7 @@ end
         # we should throw-away reports collected from frames that are revealed as "unreachable"
         # by constant prop'
         let
-            m = @def begin
+            m = @fixturedef begin
                 foo(a) = bar(a)
                 function bar(a)
                     return if a < 1
@@ -797,7 +797,7 @@ end
     @test isa(first(interp.reports), UncaughtExceptionReport)
 
     # don't fail into infinite loop (rather, don't spoil inference termination)
-    m = @def begin
+    m = @fixturedef begin
         # adapated from https://julialang.org/blog/2019/07/multithreading/
         import Base.Threads.@spawn
 
