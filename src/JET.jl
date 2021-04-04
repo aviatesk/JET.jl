@@ -428,9 +428,9 @@ include("tfuncs.jl")
 include("abstractinterpretation.jl")
 include("typeinfer.jl")
 include("optimize.jl")
-include("print.jl")
 include("virtualprocess.jl")
 include("watch.jl")
+include("print.jl")
 
 # entry
 # =====
@@ -459,6 +459,12 @@ function report_file(io::IO,
                      # enable top-level info logger by default for entry from file
                      toplevel_logger::Union{Nothing,IO} = IOContext(io, LOGGER_LEVEL_KEY => INFO_LOGGER_LEVEL),
                      jetconfigs...)
+    res = analyze_file(filename, mod; toplevel_logger, jetconfigs...)
+    return res.included_files, print_reports(io, res; jetconfigs...)
+end
+report_file(args...; jetconfigs...) = report_file(stdout::IO, args...; jetconfigs...)
+
+function analyze_file(filename, args...; jetconfigs...)
     configfile = find_config_file(dirname(abspath(filename)))
     if !isnothing(configfile)
         config = parse_config(configfile)
@@ -469,10 +475,8 @@ function report_file(io::IO,
     end
 
     text = read(filename, String)
-    # NOTE `toplevel_logger` will be overwrote if there is another `toplevel_logger` in `jetconfigs` obatained from a configuration file
-    return report_text(io, text, filename, mod; toplevel_logger, jetconfigs...)
+    return analyze_text(text, filename, args...; jetconfigs...)
 end
-report_file(args...; jetconfigs...) = report_file(stdout::IO, args...; jetconfigs...)
 
 function find_config_file(dir)
     next_dir = dirname(dir)
@@ -569,49 +573,26 @@ function report_text(io::IO,
                      filename::AbstractString = "top-level",
                      mod::Module = Main;
                      jetconfigs...)
-    included_files, reports, postprocess = collect_reports(mod,
-                                                           text,
-                                                           filename;
-                                                           jetconfigs...)
-    return included_files, print_reports(io, reports, postprocess; jetconfigs...)
+    res = analyze_text(text, filename, mod; jetconfigs...)
+    return res.included_files, print_reports(io, res; jetconfigs...)
 end
 report_text(args...; jetconfigs...) = report_text(stdout::IO, args...; jetconfigs...)
 
-function collect_reports(actualmod, text, filename; jetconfigs...)
+function analyze_text(text::AbstractString,
+                      filename::AbstractString = "top-level",
+                      actualmod::Module = Main,
+                      virtualmod::Module = gen_virtual_module(actualmod);
+                      jetconfigs...)
     interp = JETInterpreter(; jetconfigs...)
-
-    virtualmod = gen_virtual_module(actualmod)
-    res = virtual_process!(text,
-                           filename,
-                           virtualmod,
-                           Symbol(actualmod),
-                           interp,
-                           ToplevelConfig(; jetconfigs...),
-                           )
-
-    return res.included_files,
-           # non-empty `ret.toplevel_error_reports` means critical errors happened during
-           # the AST transformation, so they always have precedence over `ret.inference_error_reports`
-           !isempty(res.toplevel_error_reports) ? res.toplevel_error_reports : res.inference_error_reports,
-           gen_postprocess(virtualmod, actualmod)
+    config = ToplevelConfig(; jetconfigs...)
+    return virtual_process!(text,
+                            filename,
+                            actualmod,
+                            interp,
+                            config,
+                            virtualmod,
+                            )
 end
-
-gen_virtual_module(actualmod = Main) =
-    return Core.eval(actualmod, :(module $(gensym(:JETVirtualModule)) end))::Module
-
-# fix virtual module printing based on string manipulation; the "actual" modules may not be
-# loaded into this process
-function gen_postprocess(virtualmod, actualmod)
-    virtual = string(virtualmod)
-    actual  = string(actualmod)
-    return actualmod == Main ?
-           Fix2(replace, "Main." => "") ∘ Fix2(replace, virtual => actual) :
-           Fix2(replace, virtual => actual)
-end
-
-# this dummy module will be used by `istoplevel` to check if the current inference frame is
-# created by `analyze_toplevel!` or not (i.e. `@generated` function)
-module __virtual_toplevel__ end
 
 function analyze_toplevel!(interp::JETInterpreter, src::CodeInfo)
     # construct toplevel `MethodInstance`
@@ -804,8 +785,6 @@ function report_call(@nospecialize(f), @nospecialize(types = Tuple{}); jetconfig
     print_reports(interp.reports; jetconfigs...)
     return get_result(frame)
 end
-
-print_reports(args...; jetconfigs...) = print_reports(stdout::IO, args...; jetconfigs...)
 
 # for inspection
 macro lwr(ex) QuoteNode(lower(__module__, ex)) end

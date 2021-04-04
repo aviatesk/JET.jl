@@ -8,7 +8,8 @@ import .CC:
 import JET:
     JETInterpreter,
     AbstractGlobal,
-    analyze_call,
+    analyze_file,
+    analyze_text,
     get_result,
     ToplevelConfig,
     virtual_process!,
@@ -40,42 +41,12 @@ Creates a virtual module and defines fixtures from toplevel expression `ex`
 macro fixturedef(ex)
     @assert isexpr(ex, :block)
     return quote let
-        vmod = $gen_virtual_module($__module__)
+        vmod = $gen_virtual_module()
         for x in $(ex.args)
             Core.eval(vmod, x)
         end
         vmod # return virtual module
     end end
-end
-
-"""
-    analyze_file(filename, args...; jetconfigs...)
-
-Enters analysis from toplevel Juila file `filename`, and returns the analysis result.
-"""
-analyze_file(filename, args...; jetconfigs...) =
-    return analyze_text(read(filename, String), filename, args...; jetconfigs...)
-
-"""
-    analyze_text(s,
-                 filename = "top-level",
-                 virtualmod = gen_virtual_module(@__MODULE__),
-                 actualmodsym = Symbol(parentmodule(virtualmod));
-                 jetconfigs...)
-
-Enters analysis from toplevel Juila code `s`, and returns the analysis result.
-"""
-function analyze_text(s,
-                      filename = "top-level",
-                      virtualmod = gen_virtual_module(@__MODULE__),
-                      actualmodsym = Symbol(parentmodule(virtualmod));
-                      jetconfigs...)
-    return virtual_process!(s,
-                            filename,
-                            virtualmod,
-                            actualmodsym,
-                            JETInterpreter(; jetconfigs...),
-                            ToplevelConfig(; jetconfigs...))
 end
 
 """
@@ -89,24 +60,25 @@ macro analyze_toplevel(xs...)
     xs′ = filter(!iskwarg, xs)
     n = length(xs′)
     @assert 1 ≤ n ≤ 2
-    virtualmod, ex = n == 1 ? (gen_virtual_module(__module__), first(xs′)) : (xs′...,)
-    return analyze_toplevel(virtualmod, ex, __source__, jetconfigs)
+    actualmod = __module__
+    virtualmod, ex = n == 1 ? (gen_virtual_module(actualmod), first(xs′)) : (xs′...,)
+    return analyze_toplevel(ex, __source__, actualmod, virtualmod, jetconfigs)
 end
 
 iskwarg(@nospecialize(x)) = isexpr(x, :(=))
 
-function analyze_toplevel(virtualmod, ex, lnn, jetconfigs)
+function analyze_toplevel(ex, lnn, actualmod, virtualmod, jetconfigs)
     toplevelex = (isexpr(ex, :block) ?
                   Expr(:toplevel, lnn, ex.args...) : # flatten here
                   Expr(:toplevel, lnn, ex)
                   ) |> QuoteNode
     return quote let
-        ret = $(JET.gen_virtual_process_result)()
+        actualmod = $(esc(actualmod))
         virtualmod = $(esc(virtualmod))
-        actualmodsym = Symbol(parentmodule(virtualmod))
         interp = JETInterpreter(; $(map(esc, jetconfigs)...))
         config = ToplevelConfig(; $(map(esc, jetconfigs)...))
-        $virtual_process!($toplevelex, $(string(lnn.file)), virtualmod, actualmodsym, interp, config, ret)
+        res = $(JET.gen_virtual_process_result)(actualmod, virtualmod)
+        $virtual_process!($toplevelex, $(string(lnn.file)), actualmod, interp, config, virtualmod, res)
     end end
 end
 

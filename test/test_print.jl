@@ -53,7 +53,7 @@ end
             end
 
             io = IOBuffer()
-            postprocess = JET.gen_postprocess(vmod, Main)
+            postprocess = JET.gen_postprocess(res.actual2virtual...)
             @test print_reports(io, res.inference_error_reports, postprocess)
             let s = String(take!(io))
                 @test occursin("1 possible error found", s)

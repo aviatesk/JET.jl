@@ -103,31 +103,42 @@ struct ToplevelConfig
                    )
 end
 
+const Actual2Virtual = Pair{Module,Module}
+
 const VirtualProcessResult = @NamedTuple begin
     included_files::Set{String}
     toplevel_error_reports::Vector{ToplevelErrorReport}
     inference_error_reports::Vector{InferenceErrorReport}
+    actual2virtual::Actual2Virtual
 end
 
-gen_virtual_process_result() = (; included_files = Set{String}(),
-                                  toplevel_error_reports = ToplevelErrorReport[],
-                                  inference_error_reports = InferenceErrorReport[],
-                                  )::VirtualProcessResult
+function gen_virtual_process_result(actualmod, virtualmod)
+    return (; included_files          = Set{String}(),
+              toplevel_error_reports  = ToplevelErrorReport[],
+              inference_error_reports = InferenceErrorReport[],
+              actual2virtual          = Actual2Virtual(actualmod, virtualmod),
+              )::VirtualProcessResult
+end
+
+gen_virtual_module(actualmod = Main) =
+    Core.eval(actualmod, :(module $(gensym(:JETVirtualModule)) end))::Module
 
 """
     virtual_process!(s::AbstractString,
                      filename::AbstractString,
-                     virtualmod::Module,
-                     actualmodsym::Symbol,
+                     actualmod::Module,
                      interp::JETInterpreter,
                      config::ToplevelConfig,
+                     virtualmod::Module = gen_virtual_module(actualmod)
+                     res::VirtualProcessResult = gen_virtual_process_result(actualmod, virtualmod),
                      ) -> VirtualProcessResult
     virtual_process!(toplevelex::Expr,
                      filename::AbstractString,
-                     virtualmod::Module,
-                     actualmodsym::Symbol,
+                     actualmod::Module,
                      interp::JETInterpreter,
                      config::ToplevelConfig,
+                     virtualmod::Module,
+                     res::VirtualProcessResult,
                      ) -> VirtualProcessResult
 
 Simulates Julia's toplevel execution and collects error points, and finally returns
@@ -138,13 +149,14 @@ Simulates Julia's toplevel execution and collects error points, and finally retu
     have precedence over `inference_error_reports`
 - `res.inference_error_reports::Vector{InferenceErrorReport}`: possible error reports found
     by `JETInterpreter`
+- `res.actual2virtual::$Actual2Virtual`: keeps actual and virtual module
 
 This function first parses `s::AbstractString` into `toplevelex::Expr` and then iterate the
   following steps on each code block (`blk`) of `toplevelex`:
 1. if `blk` is a `:module` expression, recusively call `virtual_process!` with an newly defined
      virtual module
 2. `lower`s `blk` into `:thunk` expression `lwr` (macros are also expanded in this step)
-3. replaces self-references of the original root module (that is represented as `actualmodsym`)
+3. replaces self-references of the original root module (i.e. `actualmod`)
      with that of `virtualmod`: see `fix_self_references`
 3. `ConcreteInterpreter` partially interprets some statements in `lwr` that should not be
      abstracted away (e.g. a `:method` definition); see also [`partially_interpret!`](@ref)
@@ -160,15 +172,13 @@ This function first parses `s::AbstractString` into `toplevelex::Expr` and then 
       allows us to customize JET's concretization strategy.
     See [`ToplevelConfig`](@ref) for more details.
 """
-function virtual_process! end
-
 function virtual_process!(s::AbstractString,
                           filename::AbstractString,
-                          virtualmod::Module,
-                          actualmodsym::Symbol,
+                          actualmod::Module,
                           interp::JETInterpreter,
                           config::ToplevelConfig,
-                          res::VirtualProcessResult = gen_virtual_process_result(),
+                          virtualmod::Module = gen_virtual_module(actualmod),
+                          res::VirtualProcessResult = gen_virtual_process_result(actualmod, virtualmod),
                           )::VirtualProcessResult
     start = time()
 
@@ -186,7 +196,7 @@ function virtual_process!(s::AbstractString,
     elseif isnothing(toplevelex)
         # just return if there is nothing to analyze
     else
-        res = virtual_process!(toplevelex, filename, virtualmod, actualmodsym, interp, config, res)
+        res = virtual_process!(toplevelex, filename, actualmod, interp, config, virtualmod, res)
     end
 
     with_toplevel_logger(interp) do io
@@ -199,11 +209,11 @@ end
 
 function virtual_process!(toplevelex::Expr,
                           filename::AbstractString,
-                          virtualmod::Module,
-                          actualmodsym::Symbol,
+                          actualmod::Module,
                           interp::JETInterpreter,
                           config::ToplevelConfig,
-                          res::VirtualProcessResult = gen_virtual_process_result(),
+                          virtualmod::Module,
+                          res::VirtualProcessResult,
                           )::VirtualProcessResult
     @assert @isexpr(toplevelex, :toplevel)
 
@@ -301,7 +311,7 @@ function virtual_process!(toplevelex::Expr,
 
             isnothing(newvirtualmod) && continue # error happened, e.g. duplicated naming
 
-            virtual_process!(newtoplevelex, filename, newvirtualmod::Module, actualmodsym, interp, config, res)
+            virtual_process!(newtoplevelex, filename, actualmod, interp, config, newvirtualmod::Module, res)
 
             continue
         end
@@ -314,13 +324,13 @@ function virtual_process!(toplevelex::Expr,
 
         src = first((lwr::Expr).args)::CodeInfo
 
-        fix_self_references!(src, actualmodsym, virtualmod)
+        fix_self_references!(src, actualmod, virtualmod)
 
         interp′ = ConcreteInterpreter(filename,
                                       lnn,
                                       eval_with_err_handling,
                                       virtualmod,
-                                      actualmodsym,
+                                      actualmod,
                                       interp,
                                       config,
                                       res,
@@ -341,7 +351,8 @@ function virtual_process!(toplevelex::Expr,
 end
 
 # replace self references of `actualmodsym` with `virtualmod` (as is)
-function fix_self_references!(ex, actualmodsym, virtualmod)
+function fix_self_references!(ex, actualmod, virtualmod)
+    actualmodsym = Symbol(actualmod)
     function _fix_self_reference(x, scope)
         if isa(x, Symbol)
             if x === actualmodsym
@@ -412,7 +423,7 @@ struct ConcreteInterpreter
     lnn::LineNumberNode
     eval_with_err_handling::Function
     virtualmod::Module
-    actualmodsym::Symbol
+    actualmod::Module
     interp::JETInterpreter
     config::ToplevelConfig
     res::VirtualProcessResult
@@ -607,7 +618,7 @@ function handle_include(interp, fargs)
 
     isnothing(include_text) && return nothing # typically no file error
 
-    virtual_process!(include_text::String, include_file, interp.virtualmod, interp.actualmodsym, interp.interp, interp.config, interp.res)
+    virtual_process!(include_text::String, include_file, interp.actualmod, interp.interp, interp.config, interp.virtualmod, interp.res)
 
     # TODO: actually, here we need to try to get the lastly analyzed result of the `virtual_process!` call above
     return nothing
