@@ -1,7 +1,7 @@
 name = "JET"
 uuid = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
 authors = ["Shuhei Kadowaki <aviatesk@gmail.com>"]
-version = "0.0.0"
+version = "0.1.0"
 
 [deps]
 InteractiveUtils = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
@@ -12,6 +12,7 @@ Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 
 [compat]
+JuliaInterpreter = "0.8.8"
 LoweredCodeUtils = "1.2.4"
 MacroTools = "0.5.6"
 Revise = "3.1.14"
