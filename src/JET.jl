@@ -134,7 +134,8 @@ import JuliaInterpreter:
     maybe_evaluate_builtin,
     collect_args,
     is_return,
-    is_quotenode_egal
+    is_quotenode_egal,
+    @lookup
 
 import MacroTools: @capture
 
@@ -449,6 +450,16 @@ This function will look for `$CONFIG_FILE_NAME` configuration file in the direct
 When found, the configurations specified in the file will overwrite the given `jetconfigs`.
 See [Configuration File](@ref) for more details.
 
+!!! tip
+    When you want to analyze your package, but any file using it isn't available, the
+      `analyze_from_definitions` option can be useful (see [`ToplevelConfig`](@ref)'s `analyze_from_definitions` option). \\
+    For example, JET can analyze JET itself like below:
+    ```julia
+    # from the root directory of JET.jl
+    julia> report_file("src/JET";
+                       analyze_from_definitions = true)
+    ```
+
 !!! note
     This function will enable the toplevel logger by default with the default logging level
     (see [Logging Configurations](@ref) for more details).
@@ -585,13 +596,13 @@ function analyze_text(text::AbstractString,
                       jetconfigs...)
     interp = JETInterpreter(; jetconfigs...)
     config = ToplevelConfig(; jetconfigs...)
-    return virtual_process!(text,
-                            filename,
-                            actualmod,
-                            interp,
-                            config,
-                            virtualmod,
-                            )
+    return virtual_process(text,
+                           filename,
+                           actualmod,
+                           interp,
+                           config,
+                           virtualmod,
+                           )
 end
 
 function analyze_toplevel!(interp::JETInterpreter, src::CodeInfo)

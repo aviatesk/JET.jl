@@ -6,7 +6,7 @@
 
 the aims of this overload are:
 1. report `NoMethodErrorReport` on empty method signature matching
-2. keep inference on non-concrete call sites in a toplevel frame created by [`virtual_process!`](@ref)
+2. keep inference on non-concrete call sites in a toplevel frame created by [`virtual_process`](@ref)
 3. don't bail out even after the current return type grows up to `Any` and collects as much
    error points as possible; of course it slows down inference performance, but hopefully it
    stays to be "practical" speed (because the number of matching methods is limited beforehand)

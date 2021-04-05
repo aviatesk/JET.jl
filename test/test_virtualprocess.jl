@@ -1166,7 +1166,7 @@ end
     @test isempty(res.toplevel_error_reports)
 end
 
-@testset "avoid too much bail out from `virtual_process!`" begin
+@testset "avoid too much bail out from `_virtual_process!`" begin
     let
         res = @analyze_toplevel begin
             sin′
@@ -1259,5 +1259,91 @@ end
         rethrow(err)
     finally
         cd(back)
+    end
+end
+
+@testset "`collect_toplevel_signature!`" begin
+    res = @analyze_toplevel begin
+        foo() = return
+        bar(a) = return a
+        baz(a) = return a
+        baz(a::Int) = return a
+        qux(a::T) where T<:Integer = return a
+    end
+    @test isempty(res.toplevel_signatures)
+
+    vmod = gen_virtual_module()
+    res = @analyze_toplevel analyze_from_definitions=true vmod begin
+        foo() = return
+        bar(a) = return a
+        baz(a) = return a
+        baz(a::Int) = return a
+        qux(a::T) where T<:Integer = return a
+    end
+    @test !isempty(res.toplevel_signatures)
+    @test any(res.toplevel_signatures) do sig
+        sig === Tuple{typeof(vmod.foo)}
+    end
+    @test any(res.toplevel_signatures) do sig
+        sig === Tuple{typeof(vmod.bar),Any}
+    end
+    @test any(res.toplevel_signatures) do sig
+        sig === Tuple{typeof(vmod.baz),Any}
+    end
+    @test any(res.toplevel_signatures) do sig
+        sig === Tuple{typeof(vmod.baz),Int}
+    end
+    @test any(res.toplevel_signatures) do sig
+        sig <: Tuple{typeof(vmod.qux),Integer} # `Tuple{typeof(vmod.qux),TypeVar}`
+    end
+end
+
+@testset "analyze from definitions" begin
+    let
+        s = quote
+            foo() = return undefvar
+        end |> string
+
+        res = analyze_text(s; analyze_from_definitions = false)
+        @test isempty(res.inference_error_reports)
+
+        res = analyze_text(s; analyze_from_definitions = true)
+        @test !isempty(res.inference_error_reports)
+        @test any(res.inference_error_reports) do err
+            isa(err, GlobalUndefVarErrorReport) &&
+            err.name === :undefvar
+        end
+    end
+
+    let
+        s = quote
+            foo(a) = b # typo
+            bar() = foo("julia")
+        end |> string
+
+        res = analyze_text(s; analyze_from_definitions = true)
+        @test length(res.inference_error_reports) == 2
+        # report analyzed from `foo`
+        @test any(res.inference_error_reports) do err
+            isa(err, GlobalUndefVarErrorReport) &&
+            err.name === :b &&
+            length(err.st) == 1
+        end
+        # report analyzed from `bar`
+        @test any(res.inference_error_reports) do err
+            isa(err, GlobalUndefVarErrorReport) &&
+            err.name === :b &&
+            length(err.st) == 2
+        end
+    end
+
+    let
+        s = quote
+            foo(a) = sum(a)
+            bar() = foo("julia")
+        end |> string
+
+        res = analyze_text(s; analyze_from_definitions = true)
+        test_sum_over_string(res)
     end
 end

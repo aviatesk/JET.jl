@@ -253,8 +253,9 @@ function print_reports(io::IO,
                        jetconfigs...)
     config = PrintConfig(; jetconfigs...)
 
-    # XXX the same hack is already imposed in `_typeinf`, so we may not need this
-    reports = unique(get_identity_key, reports)
+    # here we more aggressively uniqify reports, ignoring the difference between different `MethodInstance`s
+    # as far as the report location and its signature are the same
+    reports = unique(print_identity_key, reports)
 
     if isempty(reports)
         if config.print_inference_success
@@ -282,6 +283,24 @@ function print_reports(io::IO,
 
     return true
 end
+
+@withmixedhash struct VirtualFrameNoLinfo
+    file::Symbol
+    line::Int
+    sig::Vector{Any}
+    # linfo::MethodInstance
+end
+VirtualFrameNoLinfo(vf::VirtualFrame) = VirtualFrameNoLinfo(vf.file, vf.line, vf.sig)
+
+@withmixedhash struct PrintIdentityKey
+    T::Type{<:InferenceErrorReport}
+    sig::Vector{Any}
+    # entry_frame::VirtualFrame
+    error_frame::VirtualFrameNoLinfo
+end
+
+print_identity_key(report::T) where {T<:InferenceErrorReport} =
+    PrintIdentityKey(T, report.sig, #=VirtualFrameNoLinfo(first(report.st)),=# VirtualFrameNoLinfo(last(report.st)))
 
 # traverse abstract call stack, print frames
 function print_report(io, report::InferenceErrorReport, config, wrote_linfos, depth = 1)
