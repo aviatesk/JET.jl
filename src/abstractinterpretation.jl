@@ -77,7 +77,7 @@ end
 
 An overload for `abstract_call_gf_by_type(interp::JETInterpreter, ...)`, which keeps
   inference on non-concrete call sites in a toplevel frame created by
-  [`virtual_process!`](@ref).
+  [`virtual_process`](@ref).
 """
 function CC.bail_out_toplevel_call(interp::JETInterpreter, @nospecialize(sig), sv)
     return isa(sv.linfo.def, Module) && !isdispatchtuple(sig) && !istoplevel(interp, sv)

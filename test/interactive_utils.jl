@@ -12,7 +12,7 @@ import JET:
     analyze_text,
     get_result,
     ToplevelConfig,
-    virtual_process!,
+    _virtual_process!,
     gen_virtual_module,
     ToplevelErrorReport,
     InferenceErrorReport,
@@ -78,7 +78,7 @@ function analyze_toplevel(ex, lnn, actualmod, virtualmod, jetconfigs)
         interp = JETInterpreter(; $(map(esc, jetconfigs)...))
         config = ToplevelConfig(; $(map(esc, jetconfigs)...))
         res = $(JET.gen_virtual_process_result)(actualmod, virtualmod)
-        $virtual_process!($toplevelex, $(string(lnn.file)), actualmod, interp, config, virtualmod, res)
+        $_virtual_process!($toplevelex, $(string(lnn.file)), actualmod, interp, config, virtualmod, res)
     end end
 end
 

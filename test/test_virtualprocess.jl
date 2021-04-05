@@ -1166,7 +1166,7 @@ end
     @test isempty(res.toplevel_error_reports)
 end
 
-@testset "avoid too much bail out from `virtual_process!`" begin
+@testset "avoid too much bail out from `_virtual_process!`" begin
     let
         res = @analyze_toplevel begin
             sin′

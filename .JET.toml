@@ -1,1 +1,2 @@
+analyze_from_definitions = true
 concretization_patterns = ["EGAL_TYPES = x_", "_JET_CONFIGURATIONS = x_"]

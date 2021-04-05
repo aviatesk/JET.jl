@@ -23,7 +23,7 @@ JET.AbstractGlobal
 ## Top-level Analysis
 
 ```@docs
-JET.virtual_process!
+JET.virtual_process
 JET.ConcreteInterpreter
 JET.partially_interpret!
 ```
