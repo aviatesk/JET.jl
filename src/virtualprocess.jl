@@ -209,34 +209,38 @@ function virtual_process(x::Union{AbstractString,Expr},
 
     # analyze collected signatures unless critical error happened
     if config.analyze_from_definitions && isempty(res.toplevel_error_reports)
-        n = length(res.toplevel_signatures)
-        succeeded = 0
-        clearline!(io) = print(io, '\r')
-        for (i, tt) in enumerate(res.toplevel_signatures)
-            mms = _methods_by_ftype(tt, -1, get_world_counter())
-            isa(mms, Bool) && @goto failed
-
-            filter!(mm::MethodMatch->mm.spec_types===tt, mms)
-            if length(mms) == 1
-                succeeded += 1
-                with_toplevel_logger(interp; pre=clearline!) do io
-                    (i == n ? println : print)(io, "analyzing from top-level definitions ... $succeeded/$n")
-                end
-                interp = JETInterpreter(interp, _CONCRETIZED, _TOPLEVELMOD)
-                mm = first(mms)
-                analyze_method_signature!(interp, mm.method, mm.spec_types, mm.sparams)
-                append!(res.inference_error_reports, interp.reports)
-                continue
-            end
-
-            @label failed
-            with_toplevel_logger(interp, ≥(DEBUG_LOGGER_LEVEL); pre=clearline!) do io
-                println(io, "couldn't find a single method matching the signature `$tt`")
-            end
-        end
+        analyze_from_definitions!(interp, res)
     end
 
     return res
+end
+
+function analyze_from_definitions!(interp::JETInterpreter, res::VirtualProcessResult)
+    n = length(res.toplevel_signatures)
+    succeeded = 0
+    clearline!(io) = print(io, '\r')
+    for (i, tt) in enumerate(res.toplevel_signatures)
+        mms = _methods_by_ftype(tt, -1, get_world_counter())
+        isa(mms, Bool) && @goto failed
+
+        filter!(mm::MethodMatch->mm.spec_types===tt, mms)
+        if length(mms) == 1
+            succeeded += 1
+            with_toplevel_logger(interp; pre=clearline!) do io
+                (i == n ? println : print)(io, "analyzing from top-level definitions ... $succeeded/$n")
+            end
+            interp = JETInterpreter(interp, _CONCRETIZED, _TOPLEVELMOD)
+            mm = first(mms)
+            analyze_method_signature!(interp, mm.method, mm.spec_types, mm.sparams)
+            append!(res.inference_error_reports, interp.reports)
+            continue
+        end
+
+        @label failed
+        with_toplevel_logger(interp, ≥(DEBUG_LOGGER_LEVEL); pre=clearline!) do io
+            println(io, "couldn't find a single method matching the signature `$tt`")
+        end
+    end
 end
 
 function _virtual_process!(s::AbstractString,
