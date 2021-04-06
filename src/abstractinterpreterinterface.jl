@@ -433,17 +433,19 @@ is_global_slot(interp::JETInterpreter, slot::Int)   = slot in keys(interp.global
 is_global_slot(interp::JETInterpreter, slot::Slot)  = is_global_slot(interp, slot_id(slot))
 is_global_slot(interp::JETInterpreter, sym::Symbol) = sym in values(interp.global_slots)
 
-@inline with_toplevel_logger(@nospecialize(f), interp::JETInterpreter, @nospecialize(filter = ≥(DEFAULT_LOGGER_LEVEL))) =
-    with_logger(f, JETLogger(interp).toplevel_logger, filter, "toplevel")
+@inline with_toplevel_logger(@nospecialize(f), interp::JETInterpreter, @nospecialize(filter = ≥(DEFAULT_LOGGER_LEVEL)); kwargs...) =
+    with_logger(f, JETLogger(interp).toplevel_logger, filter, "toplevel"; kwargs...)
 
-@inline with_inference_logger(@nospecialize(f), interp::JETInterpreter, @nospecialize(filter = ≥(DEFAULT_LOGGER_LEVEL))) =
-    with_logger(f, JETLogger(interp).inference_logger, filter, "inference")
+@inline with_inference_logger(@nospecialize(f), interp::JETInterpreter, @nospecialize(filter = ≥(DEFAULT_LOGGER_LEVEL)); kwargs...) =
+    with_logger(f, JETLogger(interp).inference_logger, filter, "inference"; kwargs...)
 
 @inline function with_logger(
-    @nospecialize(f), io::Union{Nothing,IO}, @nospecialize(filter), logger_name)
+    @nospecialize(f), io::Union{Nothing,IO}, @nospecialize(filter), logger_name;
+    @nospecialize(pre = identity))
     isnothing(io) && return
     level = get_logger_level(io)
     filter(level) || return
+    pre(io)
     print(io, "[$logger_name-$(LOGGER_LEVELS[level])] ")
     f(io)
 end
