@@ -59,8 +59,8 @@ When found, the configurations specified in the file will overwrite the given `j
 See [Configuration File](@ref) for more details.
 
 !!! note
-    This function will enable the toplevel logger by default with the default logging level
-    (see [Logging Configurations](@ref) for more details).
+    Like [`report_file`](@ref), this function will enable the toplevel logger by default
+      with the default logging level (see [Logging Configurations](@ref) for more details).
 """
 function report_and_watch_file(args...; kwargs...)
     if @isdefined(Revise)

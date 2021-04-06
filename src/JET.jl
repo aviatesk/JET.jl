@@ -437,13 +437,33 @@ include("print.jl")
 # =====
 
 """
+    res::ReportResult
+
+- `res.included_files::Set{String}`: files analyzed by JET
+- `res.any_reported::Bool`: indicates if there was any error point reported
+"""
+const ReportResult = @NamedTuple begin
+    included_files::Set{String}
+    any_reported::Bool
+end
+
+function report_result(io::IO, res::VirtualProcessResult; jetconfigs...)
+    print_result = print_reports(io, res; jetconfigs...)
+    return (; included_files = res.included_files,
+              any_reported   = print_result)::ReportResult
+end
+
+"""
     report_file([io::IO = stdout],
                 filename::AbstractString,
                 mod::Module = Main;
                 toplevel_logger::Union{Nothing,IO} = IOContext(io, $(repr(LOGGER_LEVEL_KEY)) => $INFO_LOGGER_LEVEL),
-                jetconfigs...) -> included_files::Set{String}, any_reported::Bool
+                jetconfigs...) -> res::ReportResult
 
-Reads a text of `filename` and then calls [`report_text`](@ref) on it.
+Analyzes `filename`, prints the collected error reports to the `io` stream, and finally returns $(@doc ReportResult)
+
+The following optional positional arguments can be specified:
+- `mod::Module`: the module context in which the top-level execution will be simulated
 
 This function will look for `$CONFIG_FILE_NAME` configuration file in the directory of `filename`,
   and search _up_ the file tree until any `$CONFIG_FILE_NAME` is (or isn't) found.
@@ -471,7 +491,7 @@ function report_file(io::IO,
                      toplevel_logger::Union{Nothing,IO} = IOContext(io, LOGGER_LEVEL_KEY => INFO_LOGGER_LEVEL),
                      jetconfigs...)
     res = analyze_file(filename, mod; toplevel_logger, jetconfigs...)
-    return res.included_files, print_reports(io, res; jetconfigs...)
+    return report_result(io, res; jetconfigs...)
 end
 report_file(args...; jetconfigs...) = report_file(stdout::IO, args...; jetconfigs...)
 
@@ -570,14 +590,13 @@ overwrite_options(old, new) = kwargs(merge(old, new))
                 text::AbstractString,
                 filename::AbstractString = "top-level",
                 mod::Module = Main;
-                jetconfigs...) -> included_files::Set{String}, any_reported::Bool
+                jetconfigs...) -> res::ReportResult
 
-Analyzes `text`, prints the collected error reports to the `io` stream, and finally returns:
-- `included_files::Set{String}`: files analyzed by JET
-- `any_reported`: indicates if there was any error point reported
+Analyzes `text`, prints the collected error reports to the `io` stream, and finally returns $(@doc ReportResult)
 
-`filename` is supposed to be the name of file, whose content is `text`, and `mod` will
-  specify the module context of toplevel execution simulation.
+The following optional positional arguments can be specified:
+- `filename`: the file containing `text` (if exists)
+- `mod::Module`: the module context in which the top-level execution will be simulated
 """
 function report_text(io::IO,
                      text::AbstractString,
@@ -585,7 +604,7 @@ function report_text(io::IO,
                      mod::Module = Main;
                      jetconfigs...)
     res = analyze_text(text, filename, mod; jetconfigs...)
-    return res.included_files, print_reports(io, res; jetconfigs...)
+    return report_result(io, res; jetconfigs...)
 end
 report_text(args...; jetconfigs...) = report_text(stdout::IO, args...; jetconfigs...)
 

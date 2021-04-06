@@ -127,6 +127,18 @@ end
 
 const Actual2Virtual = Pair{Module,Module}
 
+"""
+    res::VirtualProcessResult
+
+- `res.included_files::Set{String}`: files that have been analyzed
+- `res.toplevel_error_reports::Vector{ToplevelErrorReport}`: toplevel errors found during the
+    text parsing or partial (actual) interpretation; these reports are "critical" and should
+    have precedence over `inference_error_reports`
+- `res.inference_error_reports::Vector{InferenceErrorReport}`: possible error reports found
+    by `JETInterpreter`
+- `res.toplevel_signatures`: signatures of methods defined within the analyzed files
+- `res.actual2virtual::$Actual2Virtual`: keeps actual and virtual module
+"""
 const VirtualProcessResult = @NamedTuple begin
     included_files::Set{String}
     toplevel_error_reports::Vector{ToplevelErrorReport}
@@ -154,18 +166,9 @@ gen_virtual_module(actualmod = Main) =
                     interp::JETInterpreter,
                     config::ToplevelConfig,
                     virtualmod::Module,
-                    ) -> VirtualProcessResult
+                    ) -> res::VirtualProcessResult
 
-Simulates Julia's toplevel execution and collects error points, and finally returns
-`res::VirtualProcessResult`, which keeps the following information:
-- `res.included_files::Set{String}`: files that have been analyzed
-- `res.toplevel_error_reports::Vector{ToplevelErrorReport}`: toplevel errors found during the
-    text parsing or partial (actual) interpretation; these reports are "critical" and should
-    have precedence over `inference_error_reports`
-- `res.inference_error_reports::Vector{InferenceErrorReport}`: possible error reports found
-    by `JETInterpreter`
-- `res.toplevel_signatures`: signatures of methods defined within the analyzed files
-- `res.actual2virtual::$Actual2Virtual`: keeps actual and virtual module
+Simulates Julia's toplevel execution and collects error points, and finally returns $(@doc VirtualProcessResult)
 
 This function first parses `s::AbstractString` into `toplevelex::Expr` and then iterate the
   following steps on each code block (`blk`) of `toplevelex`:
