@@ -12,7 +12,7 @@ import JET:
     analyze_text,
     get_result,
     ToplevelConfig,
-    _virtual_process!,
+    virtual_process,
     gen_virtual_module,
     ToplevelErrorReport,
     InferenceErrorReport,
@@ -62,24 +62,29 @@ macro analyze_toplevel(xs...)
     @assert 1 ≤ n ≤ 2
     actualmod = __module__
     virtualmod, ex = n == 1 ? (gen_virtual_module(actualmod), first(xs′)) : (xs′...,)
-    return analyze_toplevel(ex, __source__, actualmod, virtualmod, jetconfigs)
+    return _analyze_toplevel(ex, __source__, actualmod, virtualmod, jetconfigs)
 end
 
 iskwarg(@nospecialize(x)) = isexpr(x, :(=))
 
-function analyze_toplevel(ex, lnn, actualmod, virtualmod, jetconfigs)
+function _analyze_toplevel(ex, lnn, actualmod, virtualmod, jetconfigs)
     toplevelex = (isexpr(ex, :block) ?
                   Expr(:toplevel, lnn, ex.args...) : # flatten here
                   Expr(:toplevel, lnn, ex)
                   ) |> QuoteNode
-    return quote let
+    return :(let
         actualmod = $(esc(actualmod))
         virtualmod = $(esc(virtualmod))
         interp = JETInterpreter(; $(map(esc, jetconfigs)...))
         config = ToplevelConfig(; $(map(esc, jetconfigs)...))
-        res = $(JET.gen_virtual_process_result)(actualmod, virtualmod)
-        $_virtual_process!($toplevelex, $(string(lnn.file)), actualmod, interp, config, virtualmod, res)
-    end end
+        $virtual_process($toplevelex,
+                         $(string(lnn.file)),
+                         actualmod,
+                         interp,
+                         config,
+                         virtualmod,
+                         )
+    end)
 end
 
 is_concrete(mod, sym) = isdefined(mod, sym) && !isa(getfield(mod, sym), AbstractGlobal)

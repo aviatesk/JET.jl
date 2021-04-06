@@ -188,14 +188,14 @@ This function first parses `s::AbstractString` into `toplevelex::Expr` and then 
       allows us to customize JET's concretization strategy.
     See [`ToplevelConfig`](@ref) for more details.
 """
-function virtual_process(s::AbstractString,
+function virtual_process(x::Union{AbstractString,Expr},
                          filename::AbstractString,
                          actualmod::Module,
                          interp::JETInterpreter,
                          config::ToplevelConfig,
                          virtualmod::Module,
                          )
-    res = _virtual_process!(s,
+    res = _virtual_process!(x,
                             filename,
                             actualmod,
                             interp,

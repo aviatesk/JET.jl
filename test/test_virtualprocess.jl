@@ -1263,7 +1263,7 @@ end
 end
 
 @testset "`collect_toplevel_signature!`" begin
-    res = @analyze_toplevel begin
+    res = @analyze_toplevel analyze_from_definitions=false begin
         foo() = return
         bar(a) = return a
         baz(a) = return a
@@ -1300,14 +1300,14 @@ end
 
 @testset "analyze from definitions" begin
     let
-        s = quote
+        res = @analyze_toplevel analyze_from_definitions=false begin
             foo() = return undefvar
-        end |> string
-
-        res = analyze_text(s; analyze_from_definitions = false)
+        end
         @test isempty(res.inference_error_reports)
 
-        res = analyze_text(s; analyze_from_definitions = true)
+        res = @analyze_toplevel analyze_from_definitions=true begin
+            foo() = return undefvar
+        end
         @test !isempty(res.inference_error_reports)
         @test any(res.inference_error_reports) do err
             isa(err, GlobalUndefVarErrorReport) &&
@@ -1316,12 +1316,10 @@ end
     end
 
     let
-        s = quote
+        res = @analyze_toplevel analyze_from_definitions=true begin
             foo(a) = b # typo
             bar() = foo("julia")
-        end |> string
-
-        res = analyze_text(s; analyze_from_definitions = true)
+        end
         @test length(res.inference_error_reports) == 2
         # report analyzed from `foo`
         @test any(res.inference_error_reports) do err
@@ -1338,12 +1336,10 @@ end
     end
 
     let
-        s = quote
+        res = @analyze_toplevel analyze_from_definitions=true begin
             foo(a) = sum(a)
             bar() = foo("julia")
-        end |> string
-
-        res = analyze_text(s; analyze_from_definitions = true)
+        end
         test_sum_over_string(res)
     end
 end
