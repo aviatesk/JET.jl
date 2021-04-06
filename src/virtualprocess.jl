@@ -210,17 +210,17 @@ function virtual_process(x::Union{AbstractString,Expr},
     # analyze collected signatures unless critical error happened
     if config.analyze_from_definitions && isempty(res.toplevel_error_reports)
         n = length(res.toplevel_signatures)
-        i = 0
+        succeeded = 0
         clearline!(io) = print(io, '\r')
-        for tt in res.toplevel_signatures
+        for (i, tt) in enumerate(res.toplevel_signatures)
             mms = _methods_by_ftype(tt, -1, get_world_counter())
             isa(mms, Bool) && @goto failed
 
             filter!(mm::MethodMatch->mm.spec_types===tt, mms)
             if length(mms) == 1
-                i += 1
+                succeeded += 1
                 with_toplevel_logger(interp; pre=clearline!) do io
-                    print(io, "analyzing from top-level definitions ... $i/$n")
+                    (i == n ? println : print)(io, "analyzing from top-level definitions ... $succeeded/$n")
                 end
                 interp = JETInterpreter(interp, _CONCRETIZED, _TOPLEVELMOD)
                 mm = first(mms)
@@ -246,7 +246,7 @@ function _virtual_process!(s::AbstractString,
                            config::ToplevelConfig,
                            virtualmod::Module,
                            res::VirtualProcessResult,
-                           )::VirtualProcessResult
+                           )
     start = time()
 
     with_toplevel_logger(interp) do io
@@ -281,7 +281,7 @@ function _virtual_process!(toplevelex::Expr,
                            config::ToplevelConfig,
                            virtualmod::Module,
                            res::VirtualProcessResult,
-                           )::VirtualProcessResult
+                           )
     @assert @isexpr(toplevelex, :toplevel)
 
     local lnn::LineNumberNode = LineNumberNode(0, filename)
