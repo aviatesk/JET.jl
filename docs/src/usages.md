@@ -1,4 +1,4 @@
-# [How to use JET.jl](@id Usages)
+# [How to Use JET.jl](@id Usages)
 
 !!! note
     JET's analysis entry points follow the naming conventions below:
