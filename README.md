@@ -163,9 +163,8 @@ No errors !
 
 ### TODOs
 
-- release v0.1.0: see <https://github.com/aviatesk/JET.jl/issues/121>
+- release v0.1.0: see <https://github.com/aviatesk/JET.jl/issues/121>, <https://github.com/JuliaRegistries/General/pull/33580>
 - provide editor/IDE integrations for "watch" mode (<https://github.com/aviatesk/JET.jl/pull/85> will be a starting point)
-- support package analysis (issue <https://github.com/aviatesk/JET.jl/issues/76>, something like PR <https://github.com/aviatesk/JET.jl/pull/101> can be a starting point)
 - implement a "global" abstract interpretation routine (issue <https://github.com/aviatesk/JET.jl/issues/113>)
 - performance linting (report performance pitfalls, i.e. report an error when there're too many methods matched)
 - ideally, I want to extend JET.jl to provide some of LSPs other than diagnostics, e.g. providers of completions, rename refactor, etc.
