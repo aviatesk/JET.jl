@@ -8,12 +8,11 @@ JET.jl employs Julia's type inference for bug reports.
 
 !!! note
     JET.jl needs Julia versions 1.6 and higher;
-    as such I recommend you give a try on this package with [using nightly version](https://julialang.org/downloads/nightlies/)
-    or [building Julia from source](https://github.com/JuliaLang/julia). \
+    JET is tested against [the current stable release](https://julialang.org/downloads/#current_stable_release) and [an nightly version](https://julialang.org/downloads/nightlies/). \
     Also note that JET deeply relies on the type inference routine implemented in [Julia's compiler](https://github.com/JuliaLang/julia/tree/master/base/compiler),
     and so JET analysis result can vary depending on your Julia version.
-    In general, the newer your Julia version is, your can expect JET to analyze your code more accurately and quickly,
-    because Julia's compiler is rapidly-advancing, literally day by day.
+    In general, the newer your Julia version is, more accurately and quickly your can expect JET to analyze your code,
+    assuming Julia's compiler keeps evolving all the time from now on.
 
 
 ### documentation
@@ -161,13 +160,15 @@ No errors !
 ```
 
 
-### TODOs
+### Roadmap
 
-- release v0.1.0: see <https://github.com/aviatesk/JET.jl/issues/121>, <https://github.com/JuliaRegistries/General/pull/33580>
-- provide editor/IDE integrations for "watch" mode (<https://github.com/aviatesk/JET.jl/pull/85> will be a starting point)
-- implement a "global" abstract interpretation routine (issue <https://github.com/aviatesk/JET.jl/issues/113>)
-- performance linting (report performance pitfalls, i.e. report an error when there're too many methods matched)
-- ideally, I want to extend JET.jl to provide some of LSPs other than diagnostics, e.g. providers of completions, rename refactor, etc.
+- **editor/IDE integration**: GUI would definitely be more appropriate for showing JET's analysis result
+  * **smarter code dependency tracking**: the watch mode currently re-analyzes the whole code on each update, which is the most robust and least efficient option. When integrated with an IDE, fancier incremental analysis based on smarter code dependency tracking like what [Revise.jl](https://github.com/timholy/Revise.jl) does would be needed
+  * **LSP support**: ideally I hope to extend JET to provide some of LSP features other than diagnostics, e.g. auto-completions, rename refactor, taking type-level information into account
+- **more documentation**: especially JET needs a specification of its error reports
+- **more accurate and faster analysis**: abstract interpretation can be improved yet more, e.g. with alias analysis
+- **configurable strictness**: there're cases where more strict check is appropriate, and vice versa
+- **performance linting**: JET can be used to report performance pitfalls, e.g. report a dynamic dispatch found inside a heavy loop
 
 
 ### acknowledgement
