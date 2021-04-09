@@ -2,7 +2,7 @@
 ![CI](https://github.com/aviatesk/JET.jl/workflows/CI/badge.svg)
 [![codecov](https://codecov.io/gh/aviatesk/JET.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/aviatesk/JET.jl)
 
-## behind the moar for performance ...
+### behind the moar for performance ...
 
 JET.jl employs Julia's type inference for bug reports.
 
@@ -15,13 +15,13 @@ JET.jl employs Julia's type inference for bug reports.
     assuming Julia's compiler keeps evolving all the time from now on.
 
 
-### documentation
+## Documentation
 
 JET's documentation is now available at [here](https://aviatesk.github.io/JET.jl/dev/) !
 Any kind of feedback or help will be very appreciated.
 
 
-### demo
+## Demo
 
 Say you have this strange and buggy file and want to know where to fix:
 
@@ -160,7 +160,7 @@ No errors !
 ```
 
 
-### Roadmap
+## Roadmap
 
 - **editor/IDE integration**: GUI would definitely be more appropriate for showing JET's analysis result
   * **smarter code dependency tracking**: the watch mode currently re-analyzes the whole code on each update, which is the most robust and least efficient option. When integrated with an IDE, fancier incremental analysis based on smarter code dependency tracking like what [Revise.jl](https://github.com/timholy/Revise.jl) does would be needed
@@ -171,7 +171,7 @@ No errors !
 - **performance linting**: JET can be used to report performance pitfalls, e.g. report a dynamic dispatch found inside a heavy loop
 
 
-### acknowledgement
+## Acknowledgement
 
 This project started as my grad thesis project at Kyoto University, supervised by Prof. Takashi Sakuragawa.
 We were heavily inspired by [ruby/typeprof](https://github.com/ruby/typeprof), an experimental type understanding/checking tool for Ruby.
