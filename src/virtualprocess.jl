@@ -554,7 +554,7 @@ function partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::Cod
 
     with_toplevel_logger(interp.interp, ≥(DEBUG_LOGGER_LEVEL)) do io
         println(io, "concretization plan:")
-        LoweredCodeUtils.print_with_code(io, src, concretize)
+        print_with_code(io, src, concretize)
     end
 
     selective_eval_fromstart!(interp, Frame(mod, src), concretize, #= istoplevel =# true)
@@ -626,9 +626,65 @@ function select_statements(src, config)
         end
     end
 
-    lines_required!(concretize, src, edges)
+    norequire = BitSet()
+
+    # exclude blocks without any definitions
+    dependencies = BitSet()
+    blocks = compute_basic_blocks(stmts).blocks
+    has_definition(r) = any(view(concretize, r))
+    changed::Bool = true
+    while changed
+        changed = false
+        for (ibb, bb) in enumerate(blocks)
+            if has_definition(rng(bb))
+                for i in bb.preds
+                    if i ∉ dependencies
+                        push!(dependencies, i)
+                        changed = true
+                    end
+                end
+            end
+        end
+    end
+    for (ibb, bb) in enumerate(blocks)
+        r = rng(bb)
+        if !has_definition(r) && ibb ∉ dependencies
+            pushall!(norequire, r)
+        end
+
+        # here we try to ignore try/catch control flow
+        # LoweredCodeUtils's control flow traversal starts from last statement of each basic block,
+        # and so we mark `norequire` it unless it's involved with a loop
+        i = Core.Compiler.last(bb.stmts)
+        if !(is_goto(stmts[i]) || concretize[i])
+            push!(norequire, i)
+        end
+    end
+
+    # exclude ignore try/catch statements
+    for (i,x) in enumerate(stmts)
+        if is_trycatch(x)
+            push!(norequire, i)
+        end
+    end
+
+    lines_required!(concretize, src, edges, norequire)
 
     return concretize
+end
+
+is_goto(@nospecialize(x)) = isa(x, GotoNode) || isa(x, GotoIfNot)
+
+function is_trycatch(@nospecialize(x))
+    if isa(x, Expr)
+        @isexpr(x, :enter) && return true
+        @isexpr(x, :leave) && return true
+        @isexpr(x, :pop_exception) && return true
+        if @isexpr(x, :(=))
+            @isexpr(x.args[2], :the_exception) && return true
+        end
+    end
+    return false
 end
 
 function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node), istoplevel::Bool)

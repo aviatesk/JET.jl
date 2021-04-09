@@ -64,6 +64,8 @@ import Core:
     MethodMatch,
     LineInfoNode,
     NewvarNode,
+    GotoNode,
+    GotoIfNot,
     SimpleVector,
     svec
 
@@ -91,7 +93,6 @@ import .CC:
     Slot,
     slot_id,
     GlobalRef,
-    GotoIfNot,
     ReturnNode,
     widenconst,
     ⊑,
@@ -127,7 +128,10 @@ using LoweredCodeUtils, JuliaInterpreter
 import LoweredCodeUtils:
     istypedef,
     ismethod,
-    callee_matches
+    callee_matches,
+    rng,
+    print_with_code,
+    pushall!
 
 import JuliaInterpreter:
     bypass_builtins,

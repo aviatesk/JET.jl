@@ -240,31 +240,6 @@ end
         @test is_analyzed(vmod, :foo)
         @test isa_analyzed(vmod.foo, vmod.Foo1)
     end
-
-    @testset "toplevel definitions by `eval` calls" begin
-        let
-            vmod = gen_virtual_module()
-            res = @analyze_toplevel vmod begin
-                # these definitions shouldn't be abstracted away
-                for fname in (:foo, :bar, :baz)
-                    @eval begin
-                        @inline ($(Symbol("is", fname)))(a) = a === $(QuoteNode(fname))
-                    end
-                end
-
-                # these should be abstracted away (i.e. shouldn't throw)
-                isfoo(:foo) && throw("foo")                   # should be reported
-                isbar(:foo) && isbaz(:baz) && throw("foobaz") # shouldn't be reported
-                isbar(:bar) && isbaz(:baz) && throw("barbaz") # should be reported
-            end
-
-            @test is_concrete(vmod, :isfoo)
-            @test is_concrete(vmod, :isbar)
-            @test is_concrete(vmod, :isbaz)
-            @test length(res.inference_error_reports) == 2
-            @test all(er->isa(er, UncaughtExceptionReport), res.inference_error_reports)
-        end
-    end
 end
 
 @testset "macro expansions" begin
@@ -1383,5 +1358,85 @@ end
             bar() = foo("julia")
         end
         test_sum_over_string(res)
+    end
+end
+
+@testset "top-level statement selection" begin
+    @testset "toplevel definitions by `eval` calls" begin
+        let
+            vmod = gen_virtual_module()
+            res = @analyze_toplevel vmod begin
+                # these definitions shouldn't be abstracted away
+                for fname in (:foo, :bar, :baz)
+                    @eval begin
+                        @inline ($(Symbol("is", fname)))(a) = a === $(QuoteNode(fname))
+                    end
+                end
+
+                # these should be abstracted away (i.e. shouldn't throw)
+                isfoo(:foo) && throw("foo")                   # should be reported
+                isbar(:foo) && isbaz(:baz) && throw("foobaz") # shouldn't be reported
+                isbar(:bar) && isbaz(:baz) && throw("barbaz") # should be reported
+            end
+
+            @test is_concrete(vmod, :isfoo)
+            @test is_concrete(vmod, :isbar)
+            @test is_concrete(vmod, :isbaz)
+            @test length(res.inference_error_reports) == 2
+            @test all(er->isa(er, UncaughtExceptionReport), res.inference_error_reports)
+        end
+    end
+
+    @testset "try/catch block" begin
+        # https://github.com/aviatesk/JET.jl/issues/150
+        let
+            res = @analyze_toplevel try
+                foo(a) = sum(a)
+
+                foo("julia") # shouldn't be concretized
+            catch err
+                err
+            end
+
+            @test isempty(res.toplevel_error_reports)
+            test_sum_over_string(res)
+        end
+
+        # closure within a try clause
+        let
+            res = @analyze_toplevel try
+                s = "julia"
+                foo(f) = f(s)
+
+                foo(sum) # shouldn't be concretized
+            catch err
+                err
+            end
+
+            @test isempty(res.toplevel_error_reports)
+            test_sum_over_string(res)
+        end
+
+        # closure within a catch clause
+        let
+            res = @analyze_toplevel begin
+                try
+                    s = "julia"
+                    foo(f) = f(s)
+
+                    foo(sum) # shouldn't be concretized
+                catch err
+                    function shows()
+                        io = stderr::IO
+                        showerror(io, err)
+                        showerror(io, err2)
+                    end
+                    shows() # shouldn't be concretized
+                end
+            end
+
+            @test isempty(res.toplevel_error_reports)
+            test_sum_over_string(res)
+        end
     end
 end
