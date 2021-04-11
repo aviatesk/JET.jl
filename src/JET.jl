@@ -497,10 +497,10 @@ end
 report_file(args...; jetconfigs...) = report_file(stdout::IO, args...; jetconfigs...)
 
 """
-    report_package([io::IO = stdout], package; kwargs...)
+    report_package([io::IO = stdout], package::Union{Module,String}; kwargs...)
 
 Analyzes `package` in the same way as `report_file` with the option
-`analyze_from_definitions=true`. See `report_file` for details.
+`analyze_from_definitions=true`. See [`report_file`](@ref) for details.
 `package` can be either a module or a string. In the latter case it
 must be the name of a package in your current environment.
 
