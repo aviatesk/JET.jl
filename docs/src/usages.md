@@ -10,8 +10,8 @@
 ## [Entry Points into Analysis](@id Analysis entry points)
 
 JET can analyze your "top-level" code.
-This means your can just give your Julia file or code to JET and get error reports.
-[`report_file`](@ref), [`report_and_watch_file`](@ref) and [`report_text`](@ref) are the main entry points for that.
+This means you can just give your Julia file or code to JET and get error reports.
+[`report_file`](@ref), [`report_and_watch_file`](@ref), [`report_package`](@ref) and [`report_text`](@ref) are the main entry points for that.
 
 JET will analyze your code "half-statically" – JET will selectively interpret "top-level definitions" (like a function definition)
 and try to simulate Julia's top-level code execution, while it tries to avoid executing any other parts of code like function calls,
@@ -26,6 +26,7 @@ If you're interested in how JET selects "top-level definitions", please see [`JE
 ```@docs
 report_file
 report_and_watch_file
+report_package
 report_text
 ```
 
@@ -37,7 +38,7 @@ There are utilities for checking JET analysis in a running Julia session like RE
 !!! warning
     They are supposed to be used for testing of JET or some quick check, and you're not expected to use JET in the same
     Julia session where you "seriously" run your code.
-    This is because JET analysis itself will create code cache, which isn't necessarily same as the code that Julia's naitve
+    This is because JET analysis itself will create code cache, which isn't necessarily same as the code that Julia's native
     compiler does. In particular, JET currently disables inlining for reasons and it can have a potent impact on the
     performance of your code in actual execution.
 
