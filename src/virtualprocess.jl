@@ -159,13 +159,15 @@ end
 gen_virtual_module(actualmod = Main) =
     Core.eval(actualmod, :(module $(gensym(:JETVirtualModule)) end))::Module
 
+# TODO maybe we need an entry point where `context` can be directly specified, w/o going through the module virtualization
+
 """
     virtual_process(s::AbstractString,
                     filename::AbstractString,
                     actualmod::Module,
+                    virtualmod::Module,
                     interp::JETInterpreter,
                     config::ToplevelConfig,
-                    virtualmod::Module,
                     ) -> res::VirtualProcessResult
 
 Simulates Julia's toplevel execution and collects error points, and finally returns $(@doc VirtualProcessResult)
@@ -194,9 +196,9 @@ This function first parses `s::AbstractString` into `toplevelex::Expr` and then 
 function virtual_process(x::Union{AbstractString,Expr},
                          filename::AbstractString,
                          actualmod::Module,
+                         virtualmod::Module,
                          interp::JETInterpreter,
                          config::ToplevelConfig,
-                         virtualmod::Module,
                          )
     res = _virtual_process!(x,
                             filename,
@@ -246,7 +248,7 @@ function _virtual_process!(s::AbstractString,
                            filename::AbstractString,
                            interp::JETInterpreter,
                            config::ToplevelConfig,
-                           virtualmod::Module,
+                           context::Module,
                            res::VirtualProcessResult,
                            )
     start = time()
@@ -265,7 +267,7 @@ function _virtual_process!(s::AbstractString,
     elseif isnothing(toplevelex)
         # just return if there is nothing to analyze
     else
-        res = _virtual_process!(toplevelex, filename, interp, config, virtualmod, res)
+        res = _virtual_process!(toplevelex, filename, interp, config, context, res)
     end
 
     with_toplevel_logger(interp) do io
@@ -280,7 +282,7 @@ function _virtual_process!(toplevelex::Expr,
                            filename::AbstractString,
                            interp::JETInterpreter,
                            config::ToplevelConfig,
-                           virtualmod::Module,
+                           context::Module,
                            res::VirtualProcessResult,
                            )
     @assert @isexpr(toplevelex, :toplevel)
@@ -352,7 +354,7 @@ function _virtual_process!(toplevelex::Expr,
         # we will end up lowering `x` later, but special case `macrocall`s and expand it here
         # this is because macros can arbitrarily generate `:toplevel` and `:module` expressions
         if @isexpr(x, :macrocall)
-            newx = macroexpand_with_err_handling(virtualmod, x)
+            newx = macroexpand_with_err_handling(context, x)
             # unless (toplevel) error happened during macro expansion, queue it and continue
             isnothing(newx) || push!(exs, newx)
             continue
@@ -367,7 +369,7 @@ function _virtual_process!(toplevelex::Expr,
         # handle `:module` definition and module usage;
         # should happen here because modules need to be loaded sequentially while
         # "toplevel definitions" inside of the loaded modules shouldn't be evaluated in a
-        # context of `virtualmod`
+        # context of `context` module
 
         if @isexpr(x, :module)
             newblk = x.args[3]
@@ -375,17 +377,17 @@ function _virtual_process!(toplevelex::Expr,
             newtoplevelex = Expr(:toplevel, newblk.args...)
 
             x.args[3] = Expr(:block) # empty module's code body
-            newvirtualmod = eval_with_err_handling(virtualmod, x)
+            newcontext = eval_with_err_handling(context, x)
 
-            isnothing(newvirtualmod) && continue # error happened, e.g. duplicated naming
+            isnothing(newcontext) && continue # error happened, e.g. duplicated naming
 
-            _virtual_process!(newtoplevelex, filename, interp, config, newvirtualmod::Module, res)
+            _virtual_process!(newtoplevelex, filename, interp, config, newcontext::Module, res)
 
             continue
         end
 
         blk = Expr(:block, lnn, x) # attach line number info
-        lwr = lower_with_err_handling(virtualmod, blk)
+        lwr = lower_with_err_handling(context, blk)
 
         isnothing(lwr) && continue # error happened during lowering
         @isexpr(lwr, :thunk) || continue # literal
@@ -397,17 +399,17 @@ function _virtual_process!(toplevelex::Expr,
         interp′ = ConcreteInterpreter(filename,
                                       lnn,
                                       eval_with_err_handling,
-                                      virtualmod,
+                                      context,
                                       interp,
                                       config,
                                       res,
                                       )
-        concretized = partially_interpret!(interp′, virtualmod, src)
+        concretized = partially_interpret!(interp′, context, src)
 
         # bail out if nothing to analyze (just a performance optimization)
         all(concretized) && continue
 
-        interp = JETInterpreter(interp, concretized, virtualmod)
+        interp = JETInterpreter(interp, concretized, context)
 
         analyze_toplevel!(interp, src)
 
@@ -417,9 +419,9 @@ function _virtual_process!(toplevelex::Expr,
     return res
 end
 
-# replace self references of `actualmodsym` with `virtualmod` (as is)
+# replace self references of `actualmod` with `virtualmod` (as is)
 function fix_self_references!(ex, (actualmod, virtualmod))
-    actualmodsym = Symbol(actualmod)
+    actualmodsym  = Symbol(actualmod)
     virtualmodsym = Symbol(module_basename(virtualmod))
     function _fix_self_reference(x, scope)
         if isa(x, Symbol)
@@ -492,7 +494,7 @@ struct ConcreteInterpreter
     filename::String
     lnn::LineNumberNode
     eval_with_err_handling::Function
-    virtualmod::Module
+    context::Module
     interp::JETInterpreter
     config::ToplevelConfig
     res::VirtualProcessResult
@@ -598,10 +600,10 @@ function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, 
     if ismoduleusage(node)
         for ex in to_single_usages(node::Expr)
             # NOTE: usages of abstract global variables also work here, since they are supposed
-            # to be actually evaluated into `interp.virtualmod` (as `AbstractGlobal`
+            # to be actually evaluated into `interp.context` (as `AbstractGlobal`
             # object) at this point
 
-            interp.eval_with_err_handling(interp.virtualmod, ex)
+            interp.eval_with_err_handling(interp.context, ex)
         end
         return nothing
     end
@@ -687,7 +689,7 @@ function handle_include(interp, fargs)
     res = interp.res
     lnn = interp.lnn
     eval_with_err_handling = interp.eval_with_err_handling
-    virtualmod = interp.virtualmod
+    context = interp.context
 
     # TODO: maybe find a way to handle two args `include` calls
     include_file = normpath(dirname(filename), first(fargs))
@@ -700,11 +702,11 @@ function handle_include(interp, fargs)
     end
 
     read_ex      = :(read($(include_file), String))
-    include_text = eval_with_err_handling(virtualmod, read_ex)
+    include_text = eval_with_err_handling(context, read_ex)
 
     isnothing(include_text) && return nothing # typically no file error
 
-    _virtual_process!(include_text::String, include_file, interp.interp, interp.config, interp.virtualmod, interp.res)
+    _virtual_process!(include_text::String, include_file, interp.interp, interp.config, context, interp.res)
 
     # TODO: actually, here we need to try to get the lastly analyzed result of the `_virtual_process!` call above
     return nothing
