@@ -668,7 +668,7 @@ function select_statements(src, config)
         end
     end
 
-    lines_required!(concretize, src, edges, norequire)
+    lines_required!(concretize, src, edges; norequire)
 
     return concretize
 end
