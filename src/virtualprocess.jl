@@ -200,7 +200,6 @@ function virtual_process(x::Union{AbstractString,Expr},
                          )
     res = _virtual_process!(x,
                             filename,
-                            actualmod,
                             interp,
                             config,
                             virtualmod,
@@ -245,7 +244,6 @@ end
 
 function _virtual_process!(s::AbstractString,
                            filename::AbstractString,
-                           actualmod::Module,
                            interp::JETInterpreter,
                            config::ToplevelConfig,
                            virtualmod::Module,
@@ -267,7 +265,7 @@ function _virtual_process!(s::AbstractString,
     elseif isnothing(toplevelex)
         # just return if there is nothing to analyze
     else
-        res = _virtual_process!(toplevelex, filename, actualmod, interp, config, virtualmod, res)
+        res = _virtual_process!(toplevelex, filename, interp, config, virtualmod, res)
     end
 
     with_toplevel_logger(interp) do io
@@ -280,7 +278,6 @@ end
 
 function _virtual_process!(toplevelex::Expr,
                            filename::AbstractString,
-                           actualmod::Module,
                            interp::JETInterpreter,
                            config::ToplevelConfig,
                            virtualmod::Module,
@@ -382,7 +379,7 @@ function _virtual_process!(toplevelex::Expr,
 
             isnothing(newvirtualmod) && continue # error happened, e.g. duplicated naming
 
-            _virtual_process!(newtoplevelex, filename, actualmod, interp, config, newvirtualmod::Module, res)
+            _virtual_process!(newtoplevelex, filename, interp, config, newvirtualmod::Module, res)
 
             continue
         end
@@ -395,13 +392,12 @@ function _virtual_process!(toplevelex::Expr,
 
         src = first((lwr::Expr).args)::CodeInfo
 
-        fix_self_references!(src, actualmod, virtualmod)
+        fix_self_references!(src, res.actual2virtual)
 
         interp′ = ConcreteInterpreter(filename,
                                       lnn,
                                       eval_with_err_handling,
                                       virtualmod,
-                                      actualmod,
                                       interp,
                                       config,
                                       res,
@@ -422,12 +418,13 @@ function _virtual_process!(toplevelex::Expr,
 end
 
 # replace self references of `actualmodsym` with `virtualmod` (as is)
-function fix_self_references!(ex, actualmod, virtualmod)
+function fix_self_references!(ex, (actualmod, virtualmod))
     actualmodsym = Symbol(actualmod)
+    virtualmodsym = Symbol(module_basename(virtualmod))
     function _fix_self_reference(x, scope)
         if isa(x, Symbol)
             if x === actualmodsym
-                return virtualmod
+                return virtualmodsym
             end
         elseif isa(x, GotoIfNot)
             newcond = _fix_self_reference(x.cond, scope)
@@ -439,6 +436,8 @@ function fix_self_references!(ex, actualmod, virtualmod)
 
     prewalk_and_transform!(_fix_self_reference, ex)
 end
+
+module_basename(m) = last(split(string(m), '.')) # this is non-canonical
 
 prewalk_and_transform!(args...) = walk_and_transform!(true, args...)
 postwalk_and_transform!(args...) = walk_and_transform!(false, args...)
@@ -494,7 +493,6 @@ struct ConcreteInterpreter
     lnn::LineNumberNode
     eval_with_err_handling::Function
     virtualmod::Module
-    actualmod::Module
     interp::JETInterpreter
     config::ToplevelConfig
     res::VirtualProcessResult
@@ -706,7 +704,7 @@ function handle_include(interp, fargs)
 
     isnothing(include_text) && return nothing # typically no file error
 
-    _virtual_process!(include_text::String, include_file, interp.actualmod, interp.interp, interp.config, interp.virtualmod, interp.res)
+    _virtual_process!(include_text::String, include_file, interp.interp, interp.config, interp.virtualmod, interp.res)
 
     # TODO: actually, here we need to try to get the lastly analyzed result of the `_virtual_process!` call above
     return nothing

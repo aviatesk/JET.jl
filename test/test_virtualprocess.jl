@@ -33,6 +33,18 @@ end
         end
         test_sum_over_string(res)
     end
+
+    # https://github.com/aviatesk/JET.jl/issues/151
+    let
+        res = @analyze_toplevel begin
+            struct X end
+
+            module A
+            using ..Main: X
+            end
+        end
+        @test isempty(res.toplevel_error_reports)
+    end
 end
 
 @testset "fix toplevel global `Symbol`" begin
