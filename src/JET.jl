@@ -658,9 +658,9 @@ function analyze_text(text::AbstractString,
     return virtual_process(text,
                            filename,
                            actualmod,
+                           virtualmod,
                            interp,
                            config,
-                           virtualmod,
                            )
 end
 

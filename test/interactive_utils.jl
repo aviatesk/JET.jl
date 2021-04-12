@@ -80,9 +80,9 @@ function _analyze_toplevel(ex, lnn, actualmod, virtualmod, jetconfigs)
         $virtual_process($toplevelex,
                          $(string(lnn.file)),
                          actualmod,
+                         virtualmod,
                          interp,
                          config,
-                         virtualmod,
                          )
     end)
 end
