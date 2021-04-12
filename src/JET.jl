@@ -141,8 +141,7 @@ import MacroTools: @capture
 
 using InteractiveUtils
 
-using Pkg.TOML
-import Pkg
+using Pkg, Pkg.TOML
 
 # common
 # ======
@@ -458,7 +457,6 @@ end
     report_file([io::IO = stdout],
                 filename::AbstractString,
                 mod::Module = Main;
-                toplevel_logger::Union{Nothing,IO} = IOContext(io, $(repr(LOGGER_LEVEL_KEY)) => $INFO_LOGGER_LEVEL),
                 jetconfigs...) -> res::ReportResult
 
 Analyzes `filename`, prints the collected error reports to the `io` stream, and finally returns $(@doc ReportResult)
@@ -481,9 +479,17 @@ See [Configuration File](@ref) for more details.
                        analyze_from_definitions = true)
     ```
 
+    See also: [`report_package`](@ref)
+
 !!! note
-    This function will enable the toplevel logger by default with the default logging level
-    (see [Logging Configurations](@ref) for more details).
+    This function will enable the `toplevel_logger` configuration by default with the default logging level.
+    You can still explicitly specify and configure it:
+    ```julia
+    report_file(args...;
+                toplevel_logger = nothing, # suppress toplevel logger
+                jetconfigs...) # other configurations
+    ```
+    See [Logging Configurations](@ref) for more details.
 """
 function report_file(io::IO,
                      filename::AbstractString,
@@ -495,45 +501,6 @@ function report_file(io::IO,
     return report_result(io, res; jetconfigs...)
 end
 report_file(args...; jetconfigs...) = report_file(stdout::IO, args...; jetconfigs...)
-
-"""
-    report_package([io::IO = stdout], package::Union{Module,String}; kwargs...)
-
-Analyzes `package` in the same way as `report_file` with the option
-`analyze_from_definitions=true`. See [`report_file`](@ref) for details.
-`package` can be either a module or a string. In the latter case it
-must be the name of a package in your current environment.
-
-    report_package([io::IO = stdout]; kwargs...)
-
-Like above but analyzes the package in the current project.
-"""
-function report_package(io::IO,
-                        package::Union{String, Module, Nothing} = nothing;
-                        kwargs...)
-    filename = get_package_file(package)
-    report_file(io, filename; analyze_from_definitions = true, kwargs...)
-end
-
-report_package(args...; kwargs...) = report_package(stdout::IO, args...; kwargs...)
-
-function get_package_file(package::String)
-    filename = Base.find_package(package)
-    isnothing(filename) && throw(ErrorException("Unknown package $(package)."))
-    return filename
-end
-
-function get_package_file(package::Module)
-    filename = pathof(package)
-    isnothing(filename) && throw(ErrorException("Cannot analyze a module defined in the REPL."))
-    return filename
-end
-
-function get_package_file(::Nothing)
-    project = Pkg.project()
-    project.ispackage || throw(ErrorException("Active project is not a package."))
-    return joinpath(dirname(project.path), "src", project.name * ".jl")
-end
 
 function analyze_file(filename, args...; jetconfigs...)
     configfile = find_config_file(dirname(abspath(filename)))
@@ -624,6 +591,56 @@ function kwargs(dict)
 end
 
 overwrite_options(old, new) = kwargs(merge(old, new))
+
+"""
+    report_package([io::IO = stdout],
+                   package::Union{AbstractString,Module};
+                   jetconfigs...) -> res::ReportResult
+
+Analyzes `package` in the same way as `report_file` with the option
+`analyze_from_definitions=true`. See [`report_file`](@ref) for details.
+`package` can be either a module or a string. In the latter case it
+must be the name of a package in your current environment.
+
+    report_package([io::IO = stdout];
+                   jetconfigs...) -> res::ReportResult
+
+Like above but analyzes the package in the current project.
+
+See also: [`report_file`](@ref)
+"""
+function report_package(io::IO,
+                        package::Union{AbstractString,Module,Nothing} = nothing;
+                        analyze_from_definitions::Bool = true,
+                        toplevel_logger::Union{Nothing,IO} = IOContext(io, LOGGER_LEVEL_KEY => INFO_LOGGER_LEVEL),
+                        jetconfigs...)
+    res = analyze_package(package; jetconfigs...)
+    return report_result(io, res; analyze_from_definitions, toplevel_logger, jetconfigs...)
+end
+report_package(args...; jetconfigs...) = report_package(stdout::IO, args...; jetconfigs...)
+
+function analyze_package(package, args...; jetconfigs...)
+    filename = get_package_file(package)
+    return analyze_file(filename; jetconfigs...)
+end
+
+function get_package_file(package::AbstractString)
+    filename = Base.find_package(package)
+    isnothing(filename) && throw(ErrorException("unknown package $package."))
+    return filename
+end
+
+function get_package_file(package::Module)
+    filename = pathof(package)
+    isnothing(filename) && throw(ErrorException("cannot analyze a module defined in the REPL."))
+    return filename
+end
+
+function get_package_file(::Nothing)
+    project = Pkg.project()
+    project.ispackage || throw(ErrorException("active project at $(project.path) is not a package."))
+    return normpath(dirname(project.path), "src", project.name * ".jl")
+end
 
 """
     report_text([io::IO = stdout],

@@ -22,6 +22,10 @@ include("setup.jl")
         include("test_print.jl")
     end
 
+    @testset "misc" begin
+        include("test_misc.jl")
+    end
+
     @testset "performance" begin
         include("test_performance.jl")
     end

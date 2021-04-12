@@ -41,7 +41,6 @@ end
     report_and_watch_file([io::IO = stdout],
                           filename::AbstractString,
                           mod::Module = Main;
-                          toplevel_logger::Union{Nothing,IO} = IOContext(io, $(repr(LOGGER_LEVEL_KEY)) => $INFO_LOGGER_LEVEL),
                           jetconfigs...)
 
 Watches `filename` and keeps re-triggering analysis with [`report_file`](@ref) on code update.
@@ -53,14 +52,7 @@ This function internally uses [Revise.jl](https://timholy.github.io/Revise.jl/st
   not directly analyzed by JET, or even changes in `Base` files. See [Watch Configurations](@ref)
   for more details.
 
-Like [`report_file`](@ref), this function will look for `$CONFIG_FILE_NAME` configuration file in the directory of `filename`,
-  and search _up_ the file tree until any `$CONFIG_FILE_NAME` is (or isn't) found.
-When found, the configurations specified in the file will overwrite the given `jetconfigs`.
-See [Configuration File](@ref) for more details.
-
-!!! note
-    Like [`report_file`](@ref), this function will enable the toplevel logger by default
-      with the default logging level (see [Logging Configurations](@ref) for more details).
+See also: [`report_file`](@ref)
 """
 function report_and_watch_file(args...; kwargs...)
     if @isdefined(Revise)
