@@ -142,6 +142,7 @@ import MacroTools: @capture
 using InteractiveUtils
 
 using Pkg.TOML
+import Pkg
 
 # common
 # ======
@@ -495,6 +496,45 @@ function report_file(io::IO,
 end
 report_file(args...; jetconfigs...) = report_file(stdout::IO, args...; jetconfigs...)
 
+"""
+    report_package([io::IO = stdout], package::Union{Module,String}; kwargs...)
+
+Analyzes `package` in the same way as `report_file` with the option
+`analyze_from_definitions=true`. See [`report_file`](@ref) for details.
+`package` can be either a module or a string. In the latter case it
+must be the name of a package in your current environment.
+
+    report_package([io::IO = stdout]; kwargs...)
+
+Like above but analyzes the package in the current project.
+"""
+function report_package(io::IO,
+                        package::Union{String, Module, Nothing} = nothing;
+                        kwargs...)
+    filename = get_package_file(package)
+    report_file(io, filename; analyze_from_definitions = true, kwargs...)
+end
+
+report_package(args...; kwargs...) = report_package(stdout::IO, args...; kwargs...)
+
+function get_package_file(package::String)
+    filename = Base.find_package(package)
+    isnothing(filename) && throw(ErrorException("Unknown package $(package)."))
+    return filename
+end
+
+function get_package_file(package::Module)
+    filename = pathof(package)
+    isnothing(filename) && throw(ErrorException("Cannot analyze a module defined in the REPL."))
+    return filename
+end
+
+function get_package_file(::Nothing)
+    project = Pkg.project()
+    project.ispackage || throw(ErrorException("Active project is not a package."))
+    return joinpath(dirname(project.path), "src", project.name * ".jl")
+end
+
 function analyze_file(filename, args...; jetconfigs...)
     configfile = find_config_file(dirname(abspath(filename)))
     if !isnothing(configfile)
@@ -826,6 +866,7 @@ macro src(ex) QuoteNode(first(lower(__module__, ex).args)) end
 export
     report_file,
     report_and_watch_file,
+    report_package,
     report_text,
     @analyze_call,
     analyze_call,
