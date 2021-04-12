@@ -16,7 +16,11 @@
         Pkg.activate(pkgdir(JET); io)
         @test get_package_file(nothing) == target
 
-        Pkg.activate(; temp = true, io)
+        @static if VERSION ≥ v"1.7-DEV"
+            Pkg.activate(; temp = true, io)
+        else
+            Pkg.activate(; temp = true)
+        end
         @test_throws ErrorException get_package_file(nothing)
     catch err
         rethrow(err)
