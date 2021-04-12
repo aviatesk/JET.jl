@@ -10,21 +10,25 @@
     @test get_package_file(JET) == target
     @test_throws ErrorException get_package_file(Module())
 
+    # suppress logs from Pkg.jl if possible
+    function pkg_activate(args...; io = IOBuffer(), kwargs...)
+        @static if VERSION ≥ v"1.7-DEV"
+            Pkg.activate(args...; io, kwargs...)
+        else
+            Pkg.activate(args...; kwargs...)
+        end
+    end
     io = IOBuffer()
     old = Pkg.project().path
     try
-        Pkg.activate(pkgdir(JET); io)
+        pkg_activate(pkgdir(JET))
         @test get_package_file(nothing) == target
 
-        @static if VERSION ≥ v"1.7-DEV"
-            Pkg.activate(; temp = true, io)
-        else
-            Pkg.activate(; temp = true)
-        end
+        pkg_activate(; temp = true)
         @test_throws ErrorException get_package_file(nothing)
     catch err
         rethrow(err)
     finally
-        Pkg.activate(old; io)
+        pkg_activate(old; io)
     end
 end
