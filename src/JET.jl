@@ -639,7 +639,7 @@ end
 function get_package_file(::Nothing)
     project = Pkg.project()
     project.ispackage || throw(ErrorException("active project at $(project.path) is not a package."))
-    return normpath(dirname(project.path), "src", project.name * ".jl")
+    return normpath(dirname(project.path), "src", project.name::String * ".jl")
 end
 
 """
