@@ -45,6 +45,36 @@ end
         end
         @test isempty(res.toplevel_error_reports)
     end
+
+    let
+        res = @analyze_toplevel begin
+            module A
+            struct X end
+            export X
+            end
+
+            module B
+            import ..Main.A
+            println(A.X)
+            end
+
+            module C
+            import ..Main.A: X
+            println(X)
+            end
+
+            module D
+            using ..Main.A
+            println(X)
+            end
+
+            module E
+            using ..Main.A: X
+            println(X)
+            end
+        end
+        @test isempty(res.toplevel_error_reports)
+    end
 end
 
 @testset "fix toplevel global `Symbol`" begin
