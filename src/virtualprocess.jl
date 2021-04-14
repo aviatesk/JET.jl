@@ -219,7 +219,7 @@ end
 function analyze_from_definitions!(interp::JETInterpreter, res::VirtualProcessResult)
     n = length(res.toplevel_signatures)
     succeeded = 0
-    clearline!(io) = print(io, '\r')
+    clearline(io) = print(io, '\r')
     for (i, tt) in enumerate(res.toplevel_signatures)
         mms = _methods_by_ftype(tt, -1, get_world_counter())
         isa(mms, Bool) && @goto failed
@@ -227,7 +227,7 @@ function analyze_from_definitions!(interp::JETInterpreter, res::VirtualProcessRe
         filter!(mm::MethodMatch->mm.spec_types===tt, mms)
         if length(mms) == 1
             succeeded += 1
-            with_toplevel_logger(interp; pre=clearline!) do io
+            with_toplevel_logger(interp; pre=clearline) do io
                 (i == n ? println : print)(io, "analyzing from top-level definitions ... $succeeded/$n")
             end
             interp = JETInterpreter(interp, _CONCRETIZED, _TOPLEVELMOD)
@@ -238,7 +238,7 @@ function analyze_from_definitions!(interp::JETInterpreter, res::VirtualProcessRe
         end
 
         @label failed
-        with_toplevel_logger(interp, ≥(DEBUG_LOGGER_LEVEL); pre=clearline!) do io
+        with_toplevel_logger(interp, ≥(DEBUG_LOGGER_LEVEL); pre=clearline) do io
             println(io, "couldn't find a single method matching the signature `$tt`")
         end
     end
@@ -420,47 +420,85 @@ function _virtual_process!(toplevelex::Expr,
 end
 
 # replace self references of `actualmod` with `virtualmod` (as is)
-function fix_self_references!(ex, (actualmod, virtualmod))
-    actualmodsym  = Symbol(actualmod)
-    virtualmodsym = Symbol(module_basename(virtualmod))
-    function _fix_self_reference(x, scope)
-        if isa(x, Symbol)
-            if x === actualmodsym
-                return virtualmodsym
-            end
-        elseif isa(x, GotoIfNot)
-            newcond = _fix_self_reference(x.cond, scope)
-            return GotoIfNot(newcond, x.dest)
-        end
+function fix_self_references!(src, (actualmod, virtualmod))
+    actualmodsym   = Symbol(actualmod)
+    virtualmodsyms = Symbol.(split(string(virtualmod), '.'))
 
+    # we can't use `Module` object in module usage expression, so we need to replace it with
+    # its symbolic representation
+    function fix_modpath(modpath)
+        ret = Symbol[]
+        for s in modpath
+            if s === virtualmod # postwalk, so we compare to `virtualmod`
+                push!(ret, virtualmodsyms...)
+            else
+                push!(ret, s)
+            end
+        end
+        return ret
+    end
+
+    fix_module_usage(head, modpath) =
+        Expr(head, Expr(:., fix_modpath(modpath)...))
+    fix_module_usage_specific(head, modpath, names) =
+        Expr(head, Expr(:(:), Expr(:., fix_modpath(modpath)...), Expr(:., names...)))
+
+    function fix_simple_module_usage(usage)
+        return @capture(usage, import modpath__) ? fix_module_usage(:import, modpath) :
+               @capture(usage, using modpath__) ? fix_module_usage(:using, modpath) :
+               @capture(usage, import modpath__: names__) ? fix_module_usage_specific(:import, modpath, names) :
+               @capture(usage, using modpath__: names__) ? fix_module_usage_specific(:using, modpath, names) :
+               usage # :export
+    end
+
+    function fix_module_usage(usage)
+        head = usage.head
+        ret = Expr(head)
+        for simple in to_simple_module_usages(usage)
+            fixed = fix_simple_module_usage(simple)
+            @assert fixed.head === head && length(fixed.args) == 1
+            push!(ret.args, first(fixed.args))
+        end
+        return ret
+    end
+
+    return postwalk_and_transform!(src) do x, scope
+        if ismoduleusage(x)
+            return fix_module_usage(x)
+        elseif x === actualmodsym
+            return virtualmod
+        end
         return x
     end
-
-    prewalk_and_transform!(_fix_self_reference, ex)
 end
 
-module_basename(m) = last(split(string(m), '.')) # this is non-canonical
+postwalk_and_transform!(f, x, scope = Symbol[]) =
+    walk_and_transform!(x, x->postwalk_and_transform!(f, x, scope), f, scope)
+prewalk_and_transform!(f, x, scope = Symbol[]) =
+    walk_and_transform!(f(x, scope), x->prewalk_and_transform!(f, x, scope), (x,scope)->x, scope)
 
-prewalk_and_transform!(args...) = walk_and_transform!(true, args...)
-postwalk_and_transform!(args...) = walk_and_transform!(false, args...)
-function walk_and_transform!(pre, f, @nospecialize(x), scope = Symbol[])
-    x = pre ? f(x, scope) : x
-    _walk_and_transform!(pre, f, x, scope)
-    return pre ? x : f(x, scope)
+walk_and_transform!(@nospecialize(x), inner, outer, scope) = outer(x, scope)
+function walk_and_transform!(node::GotoIfNot, inner, outer, scope)
+    push!(scope, :gotoifnot)
+    cond = inner(walk_and_transform!(node.cond, inner, outer, scope))
+    dest = inner(walk_and_transform!(node.dest, inner, outer, scope))
+    pop!(scope)
+    return outer(GotoIfNot(cond, dest), scope)
 end
-function _walk_and_transform!(pre, f, ex::Expr, scope)
+function walk_and_transform!(ex::Expr, inner, outer, scope)
     push!(scope, ex.head)
     for (i, x) in enumerate(ex.args)
-        ex.args[i] = walk_and_transform!(pre, f, x, scope)
+        ex.args[i] = inner(walk_and_transform!(x, inner, outer, scope))
     end
     pop!(scope)
+    return outer(ex, scope)
 end
-function _walk_and_transform!(pre, f, src::CodeInfo, scope)
+function walk_and_transform!(src::CodeInfo, inner, outer, scope)
     for (i, x) in enumerate(src.code)
-        src.code[i] = walk_and_transform!(pre, f, x, scope)
+        src.code[i] = inner(walk_and_transform!(x, inner, outer, scope))
     end
+    return outer(src, scope)
 end
-_walk_and_transform!(pre, f, @nospecialize(_), scope) = return
 
 # # configure user-specified concretization strategy with pattern matching on surface level AST
 # # `select_statements` will use and actually apply configuration using :force_concretize_(start|end) annotations
@@ -598,7 +636,7 @@ function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, 
     # - support package analysis
     # - add report pass (report usage of undefined name, etc.)
     if ismoduleusage(node)
-        for ex in to_single_usages(node::Expr)
+        for ex in to_simple_module_usages(node::Expr)
             # NOTE: usages of abstract global variables also work here, since they are supposed
             # to be actually evaluated into `interp.context` (as `AbstractGlobal`
             # object) at this point
@@ -632,7 +670,7 @@ end
 ismoduleusage(@nospecialize(x)) = @isexpr(x, (:import, :using, :export))
 
 # assuming `ismoduleusage(x)` holds
-function to_single_usages(x::Expr)
+function to_simple_module_usages(x::Expr)
     if length(x.args) != 1
         # using A, B, export a, b
         return Expr.(x.head, x.args)

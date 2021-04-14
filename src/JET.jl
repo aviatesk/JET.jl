@@ -724,20 +724,13 @@ function transform_abstract_global_symbols!(interp::JETInterpreter, src::CodeInf
         end
     end
 
-    function _transform_abstract_global_symbols!(x, scope)
+    prewalk_and_transform!(src) do x, scope
         if isa(x, Symbol)
             slot = get(abstrct_global_variables, x, nothing)
-            if !isnothing(slot)
-                return SlotNumber(slot)
-            end
-        elseif isa(x, GotoIfNot)
-            newcond = _transform_abstract_global_symbols!(x.cond, scope)
-            return GotoIfNot(newcond, x.dest)
+            isnothing(slot) || return SlotNumber(slot)
         end
-
         return x
     end
-    prewalk_and_transform!(_transform_abstract_global_symbols!, src)
 
     resize!(src.slotnames, nslots)
     resize!(src.slotflags, nslots)
