@@ -308,8 +308,8 @@ function analyze_from_definitions!(interp::JETInterpreter, res::VirtualProcessRe
                 (i == n ? println : print)(io, "analyzing from top-level definitions ... $succeeded/$n")
             end
             interp = JETInterpreter(interp, _CONCRETIZED, _TOPLEVELMOD)
-            mm = first(mms)
-            analyze_method_signature!(interp, mm.method, mm.spec_types, mm.sparams)
+            mm = first(mms)::MethodMatch
+            analyze_method!(interp, mm.method)
             append!(res.inference_error_reports, interp.reports)
             continue
         end
