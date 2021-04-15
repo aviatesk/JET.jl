@@ -240,31 +240,6 @@ end
         @test is_analyzed(vmod, :foo)
         @test isa_analyzed(vmod.foo, vmod.Foo1)
     end
-
-    @testset "toplevel definitions by `eval` calls" begin
-        let
-            vmod = gen_virtual_module()
-            res = @analyze_toplevel vmod begin
-                # these definitions shouldn't be abstracted away
-                for fname in (:foo, :bar, :baz)
-                    @eval begin
-                        @inline ($(Symbol("is", fname)))(a) = a === $(QuoteNode(fname))
-                    end
-                end
-
-                # these should be abstracted away (i.e. shouldn't throw)
-                isfoo(:foo) && throw("foo")                   # should be reported
-                isbar(:foo) && isbaz(:baz) && throw("foobaz") # shouldn't be reported
-                isbar(:bar) && isbaz(:baz) && throw("barbaz") # should be reported
-            end
-
-            @test is_concrete(vmod, :isfoo)
-            @test is_concrete(vmod, :isbar)
-            @test is_concrete(vmod, :isbaz)
-            @test length(res.inference_error_reports) == 2
-            @test all(er->isa(er, UncaughtExceptionReport), res.inference_error_reports)
-        end
-    end
 end
 
 @testset "macro expansions" begin
@@ -1382,6 +1357,199 @@ end
             foo(a) = sum(a)
             bar() = foo("julia")
         end
+        test_sum_over_string(res)
+    end
+end
+
+@testset "top-level statement selection" begin
+    @testset "toplevel definitions by `eval` calls" begin
+        let
+            vmod = gen_virtual_module()
+            res = @analyze_toplevel vmod begin
+                # these definitions shouldn't be abstracted away
+                for fname in (:foo, :bar, :baz)
+                    @eval begin
+                        @inline ($(Symbol("is", fname)))(a) = a === $(QuoteNode(fname))
+                    end
+                end
+
+                # these should be abstracted away (i.e. shouldn't throw)
+                isfoo(:foo) && throw("foo")                   # should be reported
+                isbar(:foo) && isbaz(:baz) && throw("foobaz") # shouldn't be reported
+                isbar(:bar) && isbaz(:baz) && throw("barbaz") # should be reported
+            end
+
+            @test is_concrete(vmod, :isfoo)
+            @test is_concrete(vmod, :isbar)
+            @test is_concrete(vmod, :isbaz)
+            @test length(res.inference_error_reports) == 2
+            @test all(er->isa(er, UncaughtExceptionReport), res.inference_error_reports)
+        end
+    end
+
+    @testset "try/catch block" begin
+        # https://github.com/aviatesk/JET.jl/issues/150
+        let
+            res = @analyze_toplevel try
+                foo(a) = sum(a)
+
+                foo("julia") # shouldn't be concretized
+            catch err
+                err
+            end
+
+            @test isempty(res.toplevel_error_reports)
+            test_sum_over_string(res)
+        end
+
+        # closure within a try clause
+        let
+            res = @analyze_toplevel try
+                s = "julia"
+                foo(f) = f(s)
+
+                foo(sum) # shouldn't be concretized
+            catch err
+                err
+            end
+
+            @test isempty(res.toplevel_error_reports)
+            test_sum_over_string(res)
+        end
+
+        # closure within a catch clause
+        let
+            res = @analyze_toplevel begin
+                try
+                    s = "julia"
+                    foo(f) = f(s)
+
+                    foo(sum) # shouldn't be concretized
+                catch err
+                    function shows()
+                        io = stderr::IO
+                        showerror(io, err)
+                        showerror(io, err2)
+                    end
+                    shows() # shouldn't be concretized
+                end
+            end
+
+            @test isempty(res.toplevel_error_reports)
+            test_sum_over_string(res)
+        end
+    end
+end
+
+# in this test suite, we just check usage of test macros doesn't lead to (false positive)
+# top-level errors (e.g. world age, etc.)
+@testset "@test macros" begin
+    vmod = Module()
+    Core.eval(vmod, :(using Test))
+
+    let # @test
+        res = @analyze_toplevel vmod begin
+            @test true
+            @test [1, 2] + [2, 1] == [3, 3]
+            @test π ≈ 3.14 atol=0.01
+            @static if VERSION ≥ v"1.7.0-DEV"
+                @test 2 + 2 ≈ 6 atol=1 broken=true
+                @test 2 + 2 ≈ 5 atol=1 broken=false
+                @test 2 + 2 == 5 skip=true
+                @test 2 + 2 == 4 skip=false
+            end
+        end
+        @test isempty(res.toplevel_error_reports)
+    end
+
+    let # @test_skip
+        res = @analyze_toplevel vmod begin
+            @test_skip 1 == 2
+            @test_skip 1 == 2 atol=0.1
+        end
+        @test isempty(res.toplevel_error_reports)
+    end
+
+    let # @test_broken
+        res = @analyze_toplevel vmod begin
+            @test_broken 1 == 2
+            @test_broken 1 == 2 atol=0.1
+        end
+        @test isempty(res.toplevel_error_reports)
+    end
+
+    let # @test_throws
+        res = @analyze_toplevel vmod begin
+            @test_throws BoundsError [1, 2, 3][4]
+            @test_throws DimensionMismatch [1, 2, 3] + [1, 2]
+        end
+        @test isempty(res.toplevel_error_reports)
+    end
+
+    let # @test_logs
+        res = @analyze_toplevel vmod begin
+            using Logging: Warn, Debug
+
+            function foo(n)
+                @info "Doing foo with n=$n"
+                for i=1:n
+                    @debug "Iteration $i"
+                end
+                42
+            end
+            @test_logs (:info, "Doing foo with n=2") foo(2)
+            @test_logs (:info,"Doing foo with n=2") (:debug,"Iteration 1") (:debug,"Iteration 2") min_level=Debug foo(2)
+            @test_logs (:info,) (:debug,"Iteration 42") min_level=Debug match_mode=:any foo(100)
+            @test (@test_logs (:info,"Doing foo with n=2") foo(2)) == 42
+
+            f() = return
+            @test_logs min_level=Warn f()  # test `f` logs no messages when the logger level is warn.
+        end
+        @test isempty(res.toplevel_error_reports)
+    end
+
+    let # @test_warn, @test_nowarn
+        res = @analyze_toplevel vmod begin
+            @test 1234 === @test_nowarn(1234)
+            @test 5678 === @test_warn("WARNING: foo", begin println(stderr, "WARNING: foo"); 5678; end)
+            let a
+                @test_throws UndefVarError(:a) a
+                @test_nowarn a = 1
+                @test a === 1
+            end
+        end
+        @test isempty(res.toplevel_error_reports)
+    end
+
+    let # @test_deprecated
+        res = @analyze_toplevel vmod begin
+            a() = 1
+            b() = 2
+            @test_deprecated a()
+        end
+        @test isempty(res.toplevel_error_reports)
+    end
+
+    let # @testset
+        res = @analyze_toplevel vmod begin
+            @testset "trigonometric identities" begin
+                θ = 2/3*π
+                @test sin(-θ) ≈ -sin(θ)
+                @test cos(-θ) ≈ cos(θ)
+                @test sin(2θ) ≈ 2*sin(θ)*cos(θ)
+                @test cos(2θ) ≈ cos(θ)^2 - sin(θ)^2
+            end
+        end
+        @test isempty(res.toplevel_error_reports)
+    end
+
+    let # @testset with actual type-level errors
+        res = @analyze_toplevel vmod begin
+            @testset "JET example" begin
+                @test sum("julia") == "julia" # actual errors
+            end
+        end
+        @test isempty(res.toplevel_error_reports)
         test_sum_over_string(res)
     end
 end
