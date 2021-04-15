@@ -13,6 +13,7 @@ import JET:
     get_result,
     ToplevelConfig,
     virtual_process,
+    virtualize_module_context,
     gen_virtual_module,
     ToplevelErrorReport,
     InferenceErrorReport,
@@ -51,36 +52,45 @@ end
 
 """
     @analyze_toplevel [jetconfigs...] ex
-    @analyze_toplevel [jetconfigs...] vmod ex
+    @analyze_toplevel [jetconfigs...] [context::Module] ex
 
 Enters JET analysis from toplevel expression `ex`, and returns the analysis result.
+If `context` module is given, the `virtualize` configuration will be turned off.
 """
 macro analyze_toplevel(xs...)
     jetconfigs = filter(iskwarg, xs)
     xs′ = filter(!iskwarg, xs)
     n = length(xs′)
-    @assert 1 ≤ n ≤ 2
-    actualmod = __module__
-    virtualmod, ex = n == 1 ? (gen_virtual_module(actualmod), first(xs′)) : (xs′...,)
-    return _analyze_toplevel(ex, __source__, actualmod, virtualmod, jetconfigs)
+    if n == 1
+        ex = first(xs′)
+        if any(iscontext, jetconfigs)
+            return _analyze_toplevel(ex, __source__, jetconfigs...)
+        else
+            return _analyze_toplevel(ex, __source__,
+                :(context = $__module__), jetconfigs...)
+        end
+    else
+        @assert n == 2
+        context, ex = xs′
+        return _analyze_toplevel(ex, __source__,
+            :(context = $context), :(virtualize = false), jetconfigs...)
+    end
 end
 
 iskwarg(@nospecialize(x)) = isexpr(x, :(=))
+iscontext(@nospecialize(x)) = iskwarg(x) && first(x.args) === :context
+isvirtualize(@nospecialize(x)) = iskwarg(x) && first(x.args) === :virtualize
 
-function _analyze_toplevel(ex, lnn, actualmod, virtualmod, jetconfigs)
+function _analyze_toplevel(ex, lnn, jetconfigs...)
     toplevelex = (isexpr(ex, :block) ?
                   Expr(:toplevel, lnn, ex.args...) : # flatten here
                   Expr(:toplevel, lnn, ex)
                   ) |> QuoteNode
     return :(let
-        actualmod = $(esc(actualmod))
-        virtualmod = $(esc(virtualmod))
         interp = JETInterpreter(; $(map(esc, jetconfigs)...))
         config = ToplevelConfig(; $(map(esc, jetconfigs)...))
         $virtual_process($toplevelex,
                          $(string(lnn.file)),
-                         actualmod,
-                         virtualmod,
                          interp,
                          config,
                          )

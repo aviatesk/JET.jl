@@ -459,14 +459,10 @@ end
 
 """
     report_file([io::IO = stdout],
-                filename::AbstractString,
-                mod::Module = Main;
+                filename::AbstractString;
                 jetconfigs...) -> res::ReportResult
 
 Analyzes `filename`, prints the collected error reports to the `io` stream, and finally returns $(@doc ReportResult)
-
-The following optional positional arguments can be specified:
-- `mod::Module`: the module context in which the top-level execution will be simulated
 
 This function will look for `$CONFIG_FILE_NAME` configuration file in the directory of `filename`,
   and search _up_ the file tree until any `$CONFIG_FILE_NAME` is (or isn't) found.
@@ -496,12 +492,11 @@ See [Configuration File](@ref) for more details.
     See [Logging Configurations](@ref) for more details.
 """
 function report_file(io::IO,
-                     filename::AbstractString,
-                     mod::Module = Main;
+                     filename::AbstractString;
                      # enable top-level info logger by default for entry from file
                      toplevel_logger::Union{Nothing,IO} = IOContext(io, LOGGER_LEVEL_KEY => INFO_LOGGER_LEVEL),
                      jetconfigs...)
-    res = analyze_file(filename, mod; toplevel_logger, jetconfigs...)
+    res = analyze_file(filename; toplevel_logger, jetconfigs...)
     return report_result(io, res; jetconfigs...)
 end
 report_file(args...; jetconfigs...) = report_file(stdout::IO, args...; jetconfigs...)
@@ -649,37 +644,27 @@ end
 """
     report_text([io::IO = stdout],
                 text::AbstractString,
-                filename::AbstractString = "top-level",
-                mod::Module = Main;
+                filename::AbstractString = "top-level";
                 jetconfigs...) -> res::ReportResult
 
 Analyzes `text`, prints the collected error reports to the `io` stream, and finally returns $(@doc ReportResult)
-
-The following optional positional arguments can be specified:
-- `filename`: the file containing `text` (if exists)
-- `mod::Module`: the module context in which the top-level execution will be simulated
 """
 function report_text(io::IO,
                      text::AbstractString,
-                     filename::AbstractString = "top-level",
-                     mod::Module = Main;
+                     filename::AbstractString = "top-level";
                      jetconfigs...)
-    res = analyze_text(text, filename, mod; jetconfigs...)
+    res = analyze_text(text, filename; jetconfigs...)
     return report_result(io, res; jetconfigs...)
 end
 report_text(args...; jetconfigs...) = report_text(stdout::IO, args...; jetconfigs...)
 
 function analyze_text(text::AbstractString,
-                      filename::AbstractString = "top-level",
-                      actualmod::Module = Main,
-                      virtualmod::Module = gen_virtual_module(actualmod);
+                      filename::AbstractString = "top-level";
                       jetconfigs...)
     interp = JETInterpreter(; jetconfigs...)
     config = ToplevelConfig(; jetconfigs...)
     return virtual_process(text,
                            filename,
-                           actualmod,
-                           virtualmod,
                            interp,
                            config,
                            )

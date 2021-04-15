@@ -130,8 +130,6 @@ end
 SUITE["self profiling"] = @jetbenchmarkable(
     analyze_call(JET.virtual_process, (AbstractString,
                                        AbstractString,
-                                       Module,
-                                       Module,
                                        JET.JETInterpreter,
                                        JET.ToplevelConfig,
                                        )),

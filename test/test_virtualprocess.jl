@@ -15,6 +15,60 @@
     end
 end
 
+@testset "virtualize module context" begin
+    # the context of the original module should be virtualized
+    let
+        actual = gen_virtual_module(@__MODULE__)
+        Core.eval(actual, quote
+            struct X end
+            const Y = nothing
+            Z() = return
+        end)
+
+        virtual = virtualize_module_context(actual)
+        @test isdefined(virtual, :X)
+        @test isdefined(virtual, :Y)
+        @test isdefined(virtual, :Z)
+    end
+
+    # in the virtualized context, we can define a name that is already defined in the original module
+    let
+        actual = gen_virtual_module(@__MODULE__)
+        Core.eval(actual, quote
+            struct X end
+            const Y = nothing
+            Z() = return
+        end)
+
+        virtual = virtualize_module_context(actual)
+        @test (Core.eval(virtual, quote
+            struct X end
+            const Y = nothing
+            Z() = return
+        end); true)
+    end
+
+    # end to end
+    let
+        orig = gen_virtual_module(@__MODULE__)
+        Core.eval(orig, Expr(:toplevel, (quote
+            module Foo
+            bar() = return :baz
+            export bar
+            end
+        end).args...))
+
+        res = @analyze_toplevel context = orig begin
+            module Foo
+            bar() = return :baz
+            export bar
+            end
+        end
+        # "cannot assign a value to variable orig.Foo from module orig" shouldn't be reported
+        @test isempty(res.toplevel_error_reports)
+    end
+end
+
 @testset "fix self-reference of virtual module" begin
     let
         res = @analyze_toplevel begin
@@ -368,13 +422,12 @@ end
         f1 = normpath(FIXTURE_DIR, "include1.jl")
         f2 = normpath(FIXTURE_DIR, "include1.jl")
 
-        amod = @__MODULE__
-        vmod = gen_virtual_module(amod)
-        res = analyze_file(f1, amod, vmod)
+        context = gen_virtual_module(@__MODULE__)
+        res = analyze_file(f1; context, virtualize = false)
 
         @test f1 in res.included_files
         @test f2 in res.included_files
-        @test is_concrete(vmod, :foo)
+        @test is_concrete(context, :foo)
         @test isempty(res.toplevel_error_reports)
         @test isempty(res.inference_error_reports)
     end

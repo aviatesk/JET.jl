@@ -40,7 +40,6 @@ end
 """
     report_and_watch_file([io::IO = stdout],
                           filename::AbstractString,
-                          mod::Module = Main;
                           jetconfigs...)
 
 Watches `filename` and keeps re-triggering analysis with [`report_file`](@ref) on code update.
