@@ -15,6 +15,60 @@
     end
 end
 
+@testset "virtualize module context" begin
+    # the context of the original module should be virtualized
+    let
+        actual = gen_virtual_module(@__MODULE__)
+        Core.eval(actual, quote
+            struct X end
+            const Y = nothing
+            Z() = return
+        end)
+
+        virtual = virtualize_module_context(actual)
+        @test isdefined(virtual, :X)
+        @test isdefined(virtual, :Y)
+        @test isdefined(virtual, :Z)
+    end
+
+    # in the virtualized context, we can define a name that is already defined in the original module
+    let
+        actual = gen_virtual_module(@__MODULE__)
+        Core.eval(actual, quote
+            struct X end
+            const Y = nothing
+            Z() = return
+        end)
+
+        virtual = virtualize_module_context(actual)
+        @test (Core.eval(virtual, quote
+            struct X end
+            const Y = nothing
+            Z() = return
+        end); true)
+    end
+
+    # end to end
+    let
+        orig = gen_virtual_module(@__MODULE__)
+        Core.eval(orig, Expr(:toplevel, (quote
+            module Foo
+            bar() = return :baz
+            export bar
+            end
+        end).args...))
+
+        res = @analyze_toplevel context = orig begin
+            module Foo
+            bar() = return :baz
+            export bar
+            end
+        end
+        # "cannot assign a value to variable orig.Foo from module orig" shouldn't be reported
+        @test isempty(res.toplevel_error_reports)
+    end
+end
+
 @testset "fix self-reference of virtual module" begin
     let
         res = @analyze_toplevel begin

@@ -13,6 +13,7 @@ import JET:
     get_result,
     ToplevelConfig,
     virtual_process,
+    virtualize_module_context,
     gen_virtual_module,
     ToplevelErrorReport,
     InferenceErrorReport,
@@ -62,8 +63,12 @@ macro analyze_toplevel(xs...)
     n = length(xs′)
     if n == 1
         ex = first(xs′)
-        return _analyze_toplevel(ex, __source__,
-            :(context = $__module__), jetconfigs...)
+        if any(iscontext, jetconfigs)
+            return _analyze_toplevel(ex, __source__, jetconfigs...)
+        else
+            return _analyze_toplevel(ex, __source__,
+                :(context = $__module__), jetconfigs...)
+        end
     else
         @assert n == 2
         context, ex = xs′
@@ -73,6 +78,8 @@ macro analyze_toplevel(xs...)
 end
 
 iskwarg(@nospecialize(x)) = isexpr(x, :(=))
+iscontext(@nospecialize(x)) = iskwarg(x) && first(x.args) === :context
+isvirtualize(@nospecialize(x)) = iskwarg(x) && first(x.args) === :virtualize
 
 function _analyze_toplevel(ex, lnn, jetconfigs...)
     toplevelex = (isexpr(ex, :block) ?
