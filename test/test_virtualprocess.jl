@@ -368,13 +368,12 @@ end
         f1 = normpath(FIXTURE_DIR, "include1.jl")
         f2 = normpath(FIXTURE_DIR, "include1.jl")
 
-        amod = @__MODULE__
-        vmod = gen_virtual_module(amod)
-        res = analyze_file(f1, amod, vmod)
+        context = gen_virtual_module(@__MODULE__)
+        res = analyze_file(f1; context, virtualize = false)
 
         @test f1 in res.included_files
         @test f2 in res.included_files
-        @test is_concrete(vmod, :foo)
+        @test is_concrete(context, :foo)
         @test isempty(res.toplevel_error_reports)
         @test isempty(res.inference_error_reports)
     end

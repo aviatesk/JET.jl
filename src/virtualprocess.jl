@@ -3,6 +3,23 @@ Configurations for top-level analysis.
 These configurations will be active for all the top-level entries explained in [Analysis entry points](@ref).
 
 ---
+- `context::Bool = Main` \\
+  The module context in which the top-level execution will be simulated.
+
+  This module context will be virtualized by default so that JET can repeat analysis in the
+    same session by avoiding "invalid redefinition of constant ..." error etc., without
+    polluting the original context module.
+
+  This configuration can be useful when you just want to analyze a submodule, without
+    analyzing from the root module.
+  For example, we can analyze `Base.Math` like below:
+  ```julia
+  julia> report_file(JET.fullbasepath("math.jl");
+                     context = Base,                  # `Base.Math`'s root module
+                     analyze_from_definitions = true, # there're only definitions in `Base`
+                     )
+  ```
+---
 - `analyze_from_definitions::Bool = false` \\
   If `true`, JET will start analysis using signatures of top-level definitions (e.g. method signatures),
     after the top-level interpretation has been done (unless no serious top-level error has
@@ -18,7 +35,7 @@ These configurations will be active for all the top-level entries explained in [
         errors, especially when trying to analyze a big package with lots of dependencies.
       If a file that contains top-level callsites (e.g. `test/runtests.jl`) is available,
         JET analysis entered from there will produce more accurate analysis results than
-          using with this configuration.
+        with this configuration.
 
   Also see: [`report_file`](@ref), [`report_and_watch_file`](@ref)
 ---
@@ -113,15 +130,27 @@ These configurations will be active for all the top-level entries explained in [
 
   Also see: [Logging Configurations](@ref), [`virtual_process`](@ref).
 ---
+- `virtualize::Bool = true` \\
+  When `true`, JET will virtualize the given root module context.
+
+  This configuration is supposed to be used only for testing or debugging.
+  See [`virtualize_module_context`](@ref) for the internal.
+---
 """
 struct ToplevelConfig
+    context::Module
     analyze_from_definitions::Bool
     concretization_patterns::Vector{<:Any}
-    @jetconfigurable ToplevelConfig(; analyze_from_definitions::Bool         = false,
+    virtualize::Bool
+    @jetconfigurable ToplevelConfig(; context::Module                        = Main,
+                                      analyze_from_definitions::Bool         = false,
                                       concretization_patterns::Vector{<:Any} = Expr[],
+                                      virtualize::Bool                       = true,
                                       ) =
-        return new(analyze_from_definitions,
+        return new(context,
+                   analyze_from_definitions,
                    concretization_patterns,
+                   virtualize,
                    )
 end
 
@@ -139,33 +168,26 @@ const Actual2Virtual = Pair{Module,Module}
 - `res.toplevel_signatures`: signatures of methods defined within the analyzed files
 - `res.actual2virtual::$Actual2Virtual`: keeps actual and virtual module
 """
-const VirtualProcessResult = @NamedTuple begin
+struct VirtualProcessResult
     included_files::Set{String}
     toplevel_error_reports::Vector{ToplevelErrorReport}
     inference_error_reports::Vector{InferenceErrorReport}
     toplevel_signatures::Vector{Type}
-    actual2virtual::Actual2Virtual
+    actual2virtual::Union{Actual2Virtual,Nothing}
 end
 
-function gen_virtual_process_result(actualmod, virtualmod)
-    return (; included_files          = Set{String}(),
-              toplevel_error_reports  = ToplevelErrorReport[],
-              inference_error_reports = InferenceErrorReport[],
-              toplevel_signatures     = Type[],
-              actual2virtual          = Actual2Virtual(actualmod, virtualmod),
-              )::VirtualProcessResult
+function VirtualProcessResult(actual2virtual)
+    return VirtualProcessResult(Set{String}(),
+                                ToplevelErrorReport[],
+                                InferenceErrorReport[],
+                                Type[],
+                                actual2virtual,
+                                )
 end
-
-gen_virtual_module(actualmod = Main) =
-    Core.eval(actualmod, :(module $(gensym(:JETVirtualModule)) end))::Module
-
-# TODO maybe we need an entry point where `context` can be directly specified, w/o going through the module virtualization
 
 """
     virtual_process(s::AbstractString,
                     filename::AbstractString,
-                    actualmod::Module,
-                    virtualmod::Module,
                     interp::JETInterpreter,
                     config::ToplevelConfig,
                     ) -> res::VirtualProcessResult
@@ -177,11 +199,11 @@ This function first parses `s::AbstractString` into `toplevelex::Expr` and then 
 1. if `blk` is a `:module` expression, recusively enters analysis into an newly defined
      virtual module
 2. `lower`s `blk` into `:thunk` expression `lwr` (macros are also expanded in this step)
-3. replaces self-references of the original root module (i.e. `actualmod`)
-     with that of `virtualmod`: see `fix_self_references`
-3. `ConcreteInterpreter` partially interprets some statements in `lwr` that should not be
+3. if the context module is virtualized, replaces self-references of the original context
+     module with virtualized one: see `fix_self_references`
+4. `ConcreteInterpreter` partially interprets some statements in `lwr` that should not be
      abstracted away (e.g. a `:method` definition); see also [`partially_interpret!`](@ref)
-4. finally, `JETInterpreter` analyzes the remaining statements by abstract interpretation
+5. finally, `JETInterpreter` analyzes the remaining statements by abstract interpretation
 
 !!! warning
     In order to process the toplevel code sequentially as Julia runtime does, `virtual_process`
@@ -195,17 +217,32 @@ This function first parses `s::AbstractString` into `toplevelex::Expr` and then 
 """
 function virtual_process(x::Union{AbstractString,Expr},
                          filename::AbstractString,
-                         actualmod::Module,
-                         virtualmod::Module,
                          interp::JETInterpreter,
                          config::ToplevelConfig,
                          )
+    if config.virtualize
+        actual  = config.context
+
+        start = time()
+        virtual = virtualize_module_context(actual)
+        with_toplevel_logger(interp) do io
+            sec = round(time() - start; digits = 3)
+            println(io, "virtualized the context of $actual (took $sec sec)")
+        end
+
+        actual2virtual = Actual2Virtual(actual, virtual)
+        context = virtual
+    else
+        actual2virtual = nothing
+        context = config.context
+    end
+
     res = _virtual_process!(x,
                             filename,
                             interp,
                             config,
-                            virtualmod,
-                            gen_virtual_process_result(actualmod, virtualmod),
+                            context,
+                            VirtualProcessResult(actual2virtual),
                             )
 
     # analyze collected signatures unless critical error happened
@@ -215,6 +252,46 @@ function virtual_process(x::Union{AbstractString,Expr},
 
     return res
 end
+
+"""
+    virtualize_module_context(actual::Module)
+
+HACK: Returns a module where the context of `actual` is virtualized.
+
+The virtualization will be done by 2 steps below:
+1. loads the module context of `actual` into a sandbox module, and export the whole context from there
+2. then uses names exported from the sandbox
+
+This way, JET's runtime simulation in the virtual module context will be able to define a name
+  that is already defined in `actual` without causing
+  "cannot assign a value to variable ... from module ..." error, etc.
+It allows JET to virtualize the context of already-existing module other than `Main`.
+"""
+function virtualize_module_context(actual::Module)
+    virtual = gen_virtual_module(actual)
+    sandbox = gen_virtual_module(actual; name = :JETSandboxModule)
+
+    uex = Expr(:(:), Expr(:., :., :., split_module_path(actual)...))
+    usage = Expr(:using, uex)
+    exprt = Expr(:export)
+    unames = uex.args
+    enames = exprt.args
+    for n in names(actual; all = true, imported = true)
+        isdefined(sandbox, n) && continue
+        push!(unames, Expr(:., n))
+        push!(enames, n)
+    end
+    Core.eval(sandbox, usage)
+    Core.eval(sandbox, exprt)
+
+    usage = Expr(:using, Expr(:., :., :., split_module_path(sandbox)...))
+    Core.eval(virtual, usage)
+
+    return virtual
+end
+
+gen_virtual_module(root = Main; name = :JETVirtualModule) =
+    Core.eval(root, :(module $(gensym(name)) end))::Module
 
 function analyze_from_definitions!(interp::JETInterpreter, res::VirtualProcessResult)
     n = length(res.toplevel_signatures)
@@ -394,7 +471,7 @@ function _virtual_process!(toplevelex::Expr,
 
         src = first((lwr::Expr).args)::CodeInfo
 
-        fix_self_references!(src, res.actual2virtual)
+        fix_self_references!(res.actual2virtual, src)
 
         interp′ = ConcreteInterpreter(filename,
                                       lnn,
@@ -419,10 +496,13 @@ function _virtual_process!(toplevelex::Expr,
     return res
 end
 
-# replace self references of `actualmod` with `virtualmod` (as is)
-function fix_self_references!(src, (actualmod, virtualmod))
+split_module_path(m) = Symbol.(split(string(m), '.'))
+
+# if virtualized, replace self references of `actualmod` with `virtualmod` (as is)
+fix_self_references!(::Nothing, x) = return
+function fix_self_references!((actualmod, virtualmod)::Actual2Virtual, x)
     actualmodsym   = Symbol(actualmod)
-    virtualmodsyms = Symbol.(split(string(virtualmod), '.'))
+    virtualmodsyms = split_module_path(virtualmod)
 
     # we can't use `Module` object in module usage expression, so we need to replace it with
     # its symbolic representation
@@ -462,7 +542,7 @@ function fix_self_references!(src, (actualmod, virtualmod))
         return ret
     end
 
-    return postwalk_and_transform!(src) do x, scope
+    return postwalk_and_transform!(x) do x, scope
         if ismoduleusage(x)
             return fix_module_usage(x)
         elseif x === actualmodsym

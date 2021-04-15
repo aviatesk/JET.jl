@@ -109,20 +109,19 @@ function print_reports(io::IO, res::VirtualProcessResult; jetconfigs...)
               res.toplevel_error_reports :
               res.inference_error_reports
 
-    postprocess = gen_postprocess(res.actual2virtual...)
-
-    return print_reports(io, reports, postprocess; jetconfigs...)
+    return print_reports(io, reports, gen_postprocess(res.actual2virtual); jetconfigs...)
 end
 
 # maybe test entry
 print_reports(args...; jetconfigs...) = print_reports(stdout::IO, args...; jetconfigs...)
 
-# fix virtual module printing based on string manipulation; the "actual" modules may not be
-# loaded into this process
-function gen_postprocess(actualmod, virtualmod)
+# when virtualized, fix virtual module printing based on string manipulation;
+# the "actual" modules may not be loaded into this process
+gen_postprocess(::Nothing) = return identity
+function gen_postprocess((actualmod, virtualmod)::Actual2Virtual)
     virtual = string(virtualmod)
     actual  = string(actualmod)
-    return actualmod == Main ?
+    return actualmod === Main ?
            Fix2(replace, "Main." => "") ∘ Fix2(replace, virtual => actual) :
            Fix2(replace, virtual => actual)
 end

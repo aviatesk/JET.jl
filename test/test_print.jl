@@ -46,15 +46,13 @@ end
 
     @testset "special case splat call signature" begin
         let
-            vmod = gen_virtual_module()
-            res = @analyze_toplevel vmod begin
+            res = @analyze_toplevel begin
                 foo(args...) = sum(args)
                 foo(rand(Char, 1000000000)...)
             end
 
             io = IOBuffer()
-            postprocess = JET.gen_postprocess(res.actual2virtual...)
-            @test print_reports(io, res.inference_error_reports, postprocess)
+            @test print_reports(io, res.inference_error_reports, JET.gen_postprocess(res.actual2virtual))
             let s = String(take!(io))
                 @test occursin("1 possible error found", s)
                 @test occursin(Regex("@ $(escape_string(@__FILE__)):$((@__LINE__)-8)"), s) # toplevel call signature

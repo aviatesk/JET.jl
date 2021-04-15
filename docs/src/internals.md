@@ -24,6 +24,7 @@ JET.AbstractGlobal
 
 ```@docs
 JET.virtual_process
+JET.virtualize_module_context
 JET.ConcreteInterpreter
 JET.partially_interpret!
 ```
