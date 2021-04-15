@@ -230,7 +230,7 @@ end
 @testset "inference with abstract global variable" begin
     let
         vmod = gen_virtual_module()
-        res = @analyze_toplevel vmod begin
+        res = @analyze_toplevel context = vmod virtualize = false begin
             s = "julia"
             sum(s)
         end
@@ -242,7 +242,7 @@ end
     @testset "union assignment" begin
         let
             vmod = gen_virtual_module()
-            res = @analyze_toplevel vmod  begin
+            res = @analyze_toplevel context = vmod virtualize = false begin
                 global globalvar
                 if rand(Bool)
                     globalvar = "String"
@@ -257,7 +257,7 @@ end
 
         let
             vmod = gen_virtual_module()
-            res = @analyze_toplevel vmod begin
+            res = @analyze_toplevel context = vmod virtualize = false begin
                 if rand(Bool)
                     globalvar = "String"
                 else
@@ -279,7 +279,7 @@ end
         # sequential
         let
             vmod = gen_virtual_module()
-            res = @analyze_toplevel vmod begin
+            res = @analyze_toplevel context = vmod virtualize = false begin
                 if rand(Bool)
                     globalvar = "String"
                 else
@@ -648,7 +648,7 @@ end
 
 @testset "don't early escape if type grows up to `Any`" begin
     vmod = gen_virtual_module()
-    res = @analyze_toplevel vmod begin
+    res = @analyze_toplevel context = vmod virtualize = false begin
         abstract type Foo end
         struct Foo1 <: Foo
             bar

@@ -52,34 +52,18 @@ end
 
 """
     @analyze_toplevel [jetconfigs...] ex
-    @analyze_toplevel [jetconfigs...] [context::Module] ex
 
 Enters JET analysis from toplevel expression `ex`, and returns the analysis result.
-If `context` module is given, the `virtualize` configuration will be turned off.
 """
 macro analyze_toplevel(xs...)
     jetconfigs = filter(iskwarg, xs)
     xs′ = filter(!iskwarg, xs)
-    n = length(xs′)
-    if n == 1
-        ex = first(xs′)
-        if any(iscontext, jetconfigs)
-            return _analyze_toplevel(ex, __source__, jetconfigs...)
-        else
-            return _analyze_toplevel(ex, __source__,
-                :(context = $__module__), jetconfigs...)
-        end
-    else
-        @assert n == 2
-        context, ex = xs′
-        return _analyze_toplevel(ex, __source__,
-            :(context = $context), :(virtualize = false), jetconfigs...)
-    end
+    @assert length(xs′) == 1
+    ex = first(xs′)
+    return _analyze_toplevel(ex, __source__, jetconfigs...)
 end
 
 iskwarg(@nospecialize(x)) = isexpr(x, :(=))
-iscontext(@nospecialize(x)) = iskwarg(x) && first(x.args) === :context
-isvirtualize(@nospecialize(x)) = iskwarg(x) && first(x.args) === :virtualize
 
 function _analyze_toplevel(ex, lnn, jetconfigs...)
     toplevelex = (isexpr(ex, :block) ?
