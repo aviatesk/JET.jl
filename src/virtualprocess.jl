@@ -290,7 +290,8 @@ function virtualize_module_context(actual::Module)
     enames = exprt.args
     for n in names(actual; all = true, imported = true)
         isdefined(sandbox, n) && continue
-        push!(unames, Expr(:., n))
+        isdefined(actual, n) && push!(unames, Expr(:., n)) # an exported name can be undefined, and `using` of it will throw otherwise
+
         push!(enames, n)
     end
     Core.eval(sandbox, usage)

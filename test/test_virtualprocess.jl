@@ -67,6 +67,23 @@ end
         # "cannot assign a value to variable orig.Foo from module orig" shouldn't be reported
         @test isempty(res.toplevel_error_reports)
     end
+
+    # don't error if there is undefined export
+    let
+        actual = gen_virtual_module(@__MODULE__)
+        Core.eval(actual, :(export undefined))
+
+        @test (virtualize_module_context(actual); true)
+
+        res = @analyze_toplevel context = actual begin
+            println(undefined)
+        end
+        @test isempty(res.toplevel_error_reports)
+        @test any(res.inference_error_reports) do err
+            isa(err, GlobalUndefVarErrorReport) &&
+            err.name === :undefined
+        end
+    end
 end
 
 @testset "fix self-reference of virtual module" begin
