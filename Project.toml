@@ -15,7 +15,7 @@ Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 JuliaInterpreter = "0.8.8"
 LoweredCodeUtils = "2"
 MacroTools = "0.5.6"
-Revise = "3.1.14"
+Revise = "3.1.15"
 julia = "1.6"
 
 [extras]
