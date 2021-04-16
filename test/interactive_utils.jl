@@ -60,12 +60,12 @@ macro analyze_toplevel(xs...)
     xs′ = filter(!iskwarg, xs)
     @assert length(xs′) == 1
     ex = first(xs′)
-    return _analyze_toplevel(ex, __source__, jetconfigs...)
+    return _analyze_toplevel(ex, __source__, jetconfigs)
 end
 
 iskwarg(@nospecialize(x)) = isexpr(x, :(=))
 
-function _analyze_toplevel(ex, lnn, jetconfigs...)
+function _analyze_toplevel(ex, lnn, jetconfigs)
     toplevelex = (isexpr(ex, :block) ?
                   Expr(:toplevel, lnn, ex.args...) : # flatten here
                   Expr(:toplevel, lnn, ex)

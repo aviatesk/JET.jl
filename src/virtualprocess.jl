@@ -266,12 +266,24 @@ This way, JET's runtime simulation in the virtual module context will be able to
   that is already defined in `actual` without causing
   "cannot assign a value to variable ... from module ..." error, etc.
 It allows JET to virtualize the context of already-existing module other than `Main`.
+
+!!! warning "TODO"
+    Currently this function relies on `Base.names`, and thus it can't restore the `using`ed
+      names.
 """
 function virtualize_module_context(actual::Module)
+    modpath = split_module_path(actual)
+
+    if length(modpath) ≥ 2
+        if modpath[1] === :Main && modpath[2] === :anonymous
+            error(ArgumentError("can't virtualize an anonymous module"))
+        end
+    end
+
     virtual = gen_virtual_module(actual)
     sandbox = gen_virtual_module(actual; name = :JETSandboxModule)
 
-    uex = Expr(:(:), Expr(:., :., :., split_module_path(actual)...))
+    uex = Expr(:(:), Expr(:., :., :., modpath...))
     usage = Expr(:using, uex)
     exprt = Expr(:export)
     unames = uex.args
