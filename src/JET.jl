@@ -496,12 +496,6 @@ function report_file(io::IO,
                      # enable top-level info logger by default for entry from file
                      toplevel_logger::Union{Nothing,IO} = IOContext(io, LOGGER_LEVEL_KEY => INFO_LOGGER_LEVEL),
                      jetconfigs...)
-    res = analyze_file(filename; toplevel_logger, jetconfigs...)
-    return report_result(io, res; jetconfigs...)
-end
-report_file(args...; jetconfigs...) = report_file(stdout::IO, args...; jetconfigs...)
-
-function analyze_file(filename, args...; jetconfigs...)
     configfile = find_config_file(dirname(abspath(filename)))
     if !isnothing(configfile)
         config = parse_config_file(configfile)
@@ -511,9 +505,13 @@ function analyze_file(filename, args...; jetconfigs...)
         end
     end
 
-    text = read(filename, String)
-    return analyze_text(text, filename, args...; jetconfigs...)
+    res = analyze_file(filename; toplevel_logger, jetconfigs...)
+    return report_result(io, res; jetconfigs...)
 end
+report_file(args...; jetconfigs...) = report_file(stdout::IO, args...; jetconfigs...)
+
+analyze_file(filename, args...; jetconfigs...) =
+    analyze_text(read(filename, String), filename, args...; jetconfigs...)
 
 function find_config_file(dir)
     next_dir = dirname(dir)
@@ -620,15 +618,10 @@ function report_package(io::IO,
                         analyze_from_definitions::Bool = true,
                         toplevel_logger::Union{Nothing,IO} = IOContext(io, LOGGER_LEVEL_KEY => INFO_LOGGER_LEVEL),
                         jetconfigs...)
-    res = analyze_package(package; jetconfigs...)
-    return report_result(io, res; analyze_from_definitions, toplevel_logger, jetconfigs...)
+    filename = get_package_file(package)
+    return report_file(io, filename; analyze_from_definitions, toplevel_logger, jetconfigs...)
 end
 report_package(args...; jetconfigs...) = report_package(stdout::IO, args...; jetconfigs...)
-
-function analyze_package(package, args...; jetconfigs...)
-    filename = get_package_file(package)
-    return analyze_file(filename; jetconfigs...)
-end
 
 function get_package_file(package::AbstractString)
     filename = Base.find_package(package)
