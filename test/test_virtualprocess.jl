@@ -1270,6 +1270,29 @@ end
     end
 end
 
+using Base.TOML
+using JET: process_config_dict!
+macro toml_str(s); TOML.parse(TOML.Parser(s)); end
+
+@testset "process_config_dict" begin
+    config_dict = toml"""
+    # usual
+    analyze_from_definitions = true
+
+    # will be `parse`d or `eval`ed
+    context = "Base"
+    concretization_patterns = ["GLOBAL_CODE_STORE = x_"]
+    toplevel_logger = "stdout"
+    inference_logger = "stdout"
+    """
+
+    config = process_config_dict!(config_dict)
+    @test (:context => Base) in config
+    @test (:concretization_patterns => [:(GLOBAL_CODE_STORE = x_)]) in config
+    @test (:toplevel_logger => stdout) in config
+    @test (:inference_logger => stdout) in config
+end
+
 # will be used in the following two testsets
 const CONCRETIZATION_PATTERNS_FILE   = normpath(@__DIR__, "fixtures", "concretization_patterns.jl")
 const CONCRETIZATION_PATTERNS_CONFIG = normpath(@__DIR__, "fixtures", "..JET.toml")

@@ -504,7 +504,7 @@ report_file(args...; jetconfigs...) = report_file(stdout::IO, args...; jetconfig
 function analyze_file(filename, args...; jetconfigs...)
     configfile = find_config_file(dirname(abspath(filename)))
     if !isnothing(configfile)
-        config = parse_config(configfile)
+        config = parse_config_file(configfile)
         jetconfigs = overwrite_options(jetconfigs, config)
         with_logger(get(jetconfigs, :toplevel_logger, nothing), ≥(INFO_LOGGER_LEVEL), "toplevel") do io
             println(io, "applied JET configurations in $configfile")
@@ -543,6 +543,7 @@ aggressive_constant_propagation = false # turn off aggressive constant propagati
 ```
 
 Note that the following configurations should be string(s) of valid Julia code:
+- `context`: string of Julia code, which can be `parse`d and `eval`uated into `Module`
 - `concretization_patterns`: vector of string of Julia code, which can be `parse`d into a
   Julia expression pattern expected by [`MacroTools.@capture` macro](https://fluxml.ai/MacroTools.jl/stable/pattern-matching/).
 - `toplevel_logger`: string of Julia code, which can be `parse`d and `eval`uated into `Union{IO,Nothing}`
@@ -563,8 +564,14 @@ E.g. the configurations below are equivalent:
       join(lines, "\n  ")
   end)
 """
-function parse_config(tomlfile)
-    config_dict = TOML.parsefile(tomlfile)
+parse_config_file(path) = process_config_dict!(TOML.parsefile(path))
+
+function process_config_dict!(config_dict)
+    context = get(config_dict, "context", nothing)
+    if !isnothing(context)
+        @assert isa(context, String) "`context` should be string of Julia code"
+            config_dict["context"] = Core.eval(Main, Meta.parse(context))
+    end
     concretization_patterns = get(config_dict, "concretization_patterns", nothing)
     if !isnothing(concretization_patterns)
         @assert isa(concretization_patterns, Vector{String}) "`concretization_patterns` should be array of string of Julia expression"
@@ -573,12 +580,12 @@ function parse_config(tomlfile)
     toplevel_logger = get(config_dict, "toplevel_logger", nothing)
     if !isnothing(toplevel_logger)
         @assert isa(toplevel_logger, String) "`toplevel_logger` should be string of Julia code"
-        config_dict["toplevel_logger"] = Core.eval(@__MODULE__, Meta.parse(toplevel_logger))
+        config_dict["toplevel_logger"] = Core.eval(Main, Meta.parse(toplevel_logger))
     end
     inference_logger = get(config_dict, "inference_logger", nothing)
     if !isnothing(inference_logger)
         @assert isa(inference_logger, String) "`inference_logger` should be string of Julia code"
-        config_dict["inference_logger"] = Core.eval(@__MODULE__, Meta.parse(inference_logger))
+        config_dict["inference_logger"] = Core.eval(Main, Meta.parse(inference_logger))
     end
     return kwargs(config_dict)
 end

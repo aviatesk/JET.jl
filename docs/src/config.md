@@ -59,5 +59,5 @@ JET.JETLogger
 ## Configuration File
 
 ```@docs
-JET.parse_config
+JET.parse_config_file
 ```
