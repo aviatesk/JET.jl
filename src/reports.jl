@@ -362,7 +362,7 @@ _get_sig(args...) = first(_get_sig_type(args...))::Vector{Any}
 
 function _get_sig_type(interp#=::JETInterpreter=#, sv::InferenceState, expr::Expr)
     head = expr.head
-    return if head === :call
+    if head === :call
         f = first(expr.args)
         args = expr.args[2:end]
 
@@ -396,14 +396,14 @@ function _get_sig_type(interp#=::JETInterpreter=#, sv::InferenceState, expr::Exp
             push!(sig, ')')
         end
 
-        sig, nothing
+        return sig, nothing
     elseif head === :(=)
-        _get_sig_type(interp, sv, last(expr.args))
+        return _get_sig_type(interp, sv, last(expr.args))
     elseif head === :static_parameter
         typ = widenconst(sv.sptypes[first(expr.args)])
-        Any['_', typ], typ
+        return Any['_', typ], typ
     else
-        Any[string(expr)], nothing
+        return Any[string(expr)], nothing
     end
 end
 function _get_sig_type(interp#=::JETInterpreter=#, sv::InferenceState, ssa::SSAValue)
@@ -432,7 +432,7 @@ function _get_sig_type(interp#=::JETInterpreter=#, sv::InferenceState, s::Symbol
         # this is concrete global variable, form the global reference
         return _get_sig_type(interp, sv, GlobalRef(interp.toplevelmod, s))
     else
-        return Any[repr(s; context = :compact => true)]
+        return Any[repr(s; context = :compact => true)], nothing
     end
 end
 function _get_sig_type(interp, sv::InferenceState, gotoifnot::GotoIfNot)
