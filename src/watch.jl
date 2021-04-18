@@ -72,7 +72,7 @@ function _report_and_watch_file(io::IO,
                                 filename::AbstractString,
                                 args...;
                                 # enable info top-level logger by default for watch mode
-                                toplevel_logger::Union{Nothing,IO} = IOContext(io, LOGGER_LEVEL_KEY => INFO_LOGGER_LEVEL),
+                                toplevel_logger::Union{Nothing,IO} = IOContext(stdout::IO, LOGGER_LEVEL_KEY => INFO_LOGGER_LEVEL),
                                 jetconfigs...)
     config = WatchConfig(; jetconfigs...)
 

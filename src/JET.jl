@@ -494,7 +494,7 @@ See [Configuration File](@ref) for more details.
 function report_file(io::IO,
                      filename::AbstractString;
                      # enable top-level info logger by default for entry from file
-                     toplevel_logger::Union{Nothing,IO} = IOContext(io, LOGGER_LEVEL_KEY => INFO_LOGGER_LEVEL),
+                     toplevel_logger::Union{Nothing,IO} = IOContext(stdout::IO, LOGGER_LEVEL_KEY => INFO_LOGGER_LEVEL),
                      jetconfigs...)
     configfile = find_config_file(dirname(abspath(filename)))
     if !isnothing(configfile)
@@ -616,10 +616,9 @@ See also: [`report_file`](@ref)
 function report_package(io::IO,
                         package::Union{AbstractString,Module,Nothing} = nothing;
                         analyze_from_definitions::Bool = true,
-                        toplevel_logger::Union{Nothing,IO} = IOContext(io, LOGGER_LEVEL_KEY => INFO_LOGGER_LEVEL),
                         jetconfigs...)
     filename = get_package_file(package)
-    return report_file(io, filename; analyze_from_definitions, toplevel_logger, jetconfigs...)
+    return report_file(io, filename; analyze_from_definitions, jetconfigs...)
 end
 report_package(args...; jetconfigs...) = report_package(stdout::IO, args...; jetconfigs...)
 
