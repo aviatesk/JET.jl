@@ -1,3 +1,80 @@
+@testset "cache per configuration" begin
+    # cache key should be same for the same configurations
+    let
+        interp1 = JETInterpreter()
+        k1 = JET.gen_cache_key(JET.JETAnalysisParams(interp1), CC.InferenceParams(interp1))
+
+        interp2 = JETInterpreter()
+        k2 = JET.gen_cache_key(JET.JETAnalysisParams(interp2), CC.InferenceParams(interp2))
+
+        @test k1 == k2
+    end
+
+    # cache key should be different for different configurations
+    let
+        interp1 = JETInterpreter(; max_methods=3)
+        k1 = JET.gen_cache_key(JET.JETAnalysisParams(interp1), CC.InferenceParams(interp1))
+
+        interp2 = JETInterpreter(; max_methods=4)
+        k2 = JET.gen_cache_key(JET.JETAnalysisParams(interp2), CC.InferenceParams(interp2))
+
+        @test k1 ≠ k2
+    end
+
+    # configurations other than `JETAnalysisParams` and `InferenceParams` shouldn't affect
+    # the cache key identity
+    let
+        interp1 = JETInterpreter(; toplevel_logger=nothing)
+        k1 = JET.gen_cache_key(JET.JETAnalysisParams(interp1), CC.InferenceParams(interp1))
+
+        interp2 = JETInterpreter(; toplevel_logger=IOBuffer())
+        k2 = JET.gen_cache_key(JET.JETAnalysisParams(interp2), CC.InferenceParams(interp2))
+
+        @test k1 == k2
+    end
+
+    # end to end test
+    let
+        m = Module()
+        @eval m begin
+            foo(a::Val{1}) = 1
+            foo(a::Val{2}) = 2
+            foo(a::Val{3}) = 3
+            foo(a::Val{4}) = undefvar
+        end
+
+        # run first analysis and cache
+        interp, frame = @eval m $analyze_call((Int,); max_methods=3) do a
+            foo(Val(a))
+        end
+        @test isempty(interp.reports)
+
+        # should use the cached result
+        interp, frame = @eval m $analyze_call((Int,); max_methods=3) do a
+            foo(Val(a))
+        end
+        @test isempty(interp.reports)
+
+        # should re-run analysis, and should get a report
+        interp, frame = @eval m $analyze_call((Int,); max_methods=4) do a
+            foo(Val(a))
+        end
+        @test any(interp.reports) do r
+            isa(r, GlobalUndefVarErrorReport) &&
+            r.name === :undefvar
+        end
+
+        # should run the cached previous result
+        interp, frame = @eval m $analyze_call((Int,); max_methods=4) do a
+            foo(Val(a))
+        end
+        @test any(interp.reports) do r
+            isa(r, GlobalUndefVarErrorReport) &&
+            r.name === :undefvar
+        end
+    end
+end
+
 @testset "invalidate native code cache" begin
     # invalidate native code cache in a system image if it has not been analyzed by JET
     # yes this slows down anlaysis for sure, but otherwise JET will miss obvious errors like below

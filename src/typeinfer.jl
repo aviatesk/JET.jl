@@ -187,14 +187,15 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
             end
             push!(cache, AnalysisResult(linfo, given_argtypes, overridden_by_const, local_cache))
         elseif frame.cached # only cache when `NativeInterpreter` does
-            @assert !haskey(JET_REPORT_CACHE, linfo) || isentry "invalid global caching $linfo"
+            cache = jet_report_cache(interp)
+            @assert !haskey(cache, linfo) || isentry "invalid global caching $linfo"
             global_cache = InferenceErrorReportCache[]
             for report in this_caches
                 # # TODO make this hold
                 # @assert first(report.st).linfo === linfo "invalid global caching"
                 cache_report!(global_cache, report)
             end
-            JET_REPORT_CACHE[linfo] = global_cache
+            cache[linfo] = global_cache
         end
     end
 

@@ -239,6 +239,9 @@ mutable struct JETInterpreter <: AbstractInterpreter
 
     ## general ##
 
+    # key for the JET's global cache
+    cache_key::UInt
+
     # reports found so far
     reports::Vector{InferenceErrorReport}
 
@@ -309,7 +312,13 @@ end
     isnothing(inf_params)      && (inf_params = JETInferenceParams(; jetconfigs...))
     isnothing(opt_params)      && (opt_params = JETOptimizationParams(; jetconfigs...))
     isnothing(logger)          && (logger = JETLogger(; jetconfigs...))
+
+    cache_key = gen_cache_key(analysis_params, inf_params)
+    haskey(JET_REPORT_CACHE, cache_key) || (JET_REPORT_CACHE[cache_key] = IdDict())
+    haskey(JET_CODE_CACHE, cache_key) || (JET_CODE_CACHE[cache_key] = IdDict())
+
     return JETInterpreter(NativeInterpreter(world; inf_params, opt_params),
+                          cache_key,
                           InferenceErrorReport[],
                           UncaughtExceptionReport[],
                           Set{InferenceErrorReport}(),
@@ -384,6 +393,14 @@ function Base.show(io::IO, frame::InferenceState)
 end
 Base.show(io::IO, ::MIME"application/prs.juno.inline", frame::InferenceState) =
     return frame
+
+cache_key(interp::JETInterpreter) = interp.cache_key
+function gen_cache_key(analysis_params::JETAnalysisParams, inf_params::InferenceParams)
+    h = @static UInt === UInt64 ? 0xa49bd446c0a5d90e : 0xe45361ac
+    h = hash(analysis_params, h)
+    h = hash(inf_params, h)
+    return h
+end
 
 # AbstractInterpreter API
 # -----------------------

@@ -9,7 +9,7 @@
 Keeps JET report cache for a `MethodInstance`.
 Reports are cached when `JETInterpreter` exits from `_typeinf`.
 """
-const JET_REPORT_CACHE = IdDict{MethodInstance,Vector{InferenceErrorReportCache}}()
+const JET_REPORT_CACHE = IdDict{UInt, IdDict{MethodInstance,Vector{InferenceErrorReportCache}}}()
 
 """
     JET_CODE_CACHE::$(typeof(JET_CODE_CACHE))
@@ -19,7 +19,7 @@ Keeps `CodeInstance` cache associated with `mi::MethodInstace` that represent th
 This cache is completely separated from the `NativeInterpreter`'s global cache, so that
   JET analysis never interacts with actual code execution.
 """
-const JET_CODE_CACHE = IdDict{MethodInstance,CodeInstance}()
+const JET_CODE_CACHE = IdDict{UInt, IdDict{MethodInstance,CodeInstance}}()
 
 function CC.code_cache(interp::JETInterpreter)
     cache  = JETGlobalCache(interp)
@@ -31,14 +31,20 @@ struct JETGlobalCache
     interp::JETInterpreter
 end
 
-CC.haskey(wvc::WorldView{JETGlobalCache}, mi::MethodInstance) = haskey(JET_CODE_CACHE, mi)
+# cache existence for this `interp` is ensured on its construction
+jet_report_cache(interp::JETInterpreter)         = JET_REPORT_CACHE[cache_key(interp)]
+jet_report_cache(wvc::WorldView{JETGlobalCache}) = jet_report_cache(wvc.cache.interp)
+jet_code_cache(interp::JETInterpreter)           = JET_CODE_CACHE[cache_key(interp)]
+jet_code_cache(wvc::WorldView{JETGlobalCache})   = jet_code_cache(wvc.cache.interp)
+
+CC.haskey(wvc::WorldView{JETGlobalCache}, mi::MethodInstance) = haskey(jet_code_cache(wvc), mi)
 
 function CC.get(wvc::WorldView{JETGlobalCache}, mi::MethodInstance, default)
     # ignore code cache for a `MethodInstance` that is not yet analyzed by JET;
-    ret = get(JET_CODE_CACHE, mi, default)
+    ret = get(jet_code_cache(wvc), mi, default)
     if isa(ret, CodeInstance)
         # cache hit, now we need to append cached reports associated with this `MethodInstance`
-        global_cache = get(JET_REPORT_CACHE, mi, nothing)
+        global_cache = get(jet_report_cache(wvc), mi, nothing)
         if isa(global_cache, Vector{InferenceErrorReportCache})
             interp = wvc.cache.interp
             for cached in global_cache
@@ -59,7 +65,7 @@ function CC.getindex(wvc::WorldView{JETGlobalCache}, mi::MethodInstance)
 end
 
 function CC.setindex!(wvc::WorldView{JETGlobalCache}, ci::CodeInstance, mi::MethodInstance)
-    setindex!(JET_CODE_CACHE, ci, mi)
+    setindex!(jet_code_cache(wvc), ci, mi)
     add_jet_callback!(mi) # register the callback on invalidation
     return nothing
 end
@@ -78,13 +84,15 @@ function add_jet_callback!(linfo)
 end
 
 function invalidate_jet_cache!(replaced, max_world, depth = 0)
-    delete!(JET_REPORT_CACHE, replaced)
-    delete!(JET_CODE_CACHE, replaced)
+    for cache in values(JET_REPORT_CACHE); delete!(cache, replaced); end
+    for cache in values(JET_CODE_CACHE); delete!(cache, replaced); end
 
     if isdefined(replaced, :backedges)
         for mi in replaced.backedges
             mi = mi::MethodInstance
-            (haskey(JET_REPORT_CACHE, mi) || haskey(JET_CODE_CACHE, mi)) || continue # otherwise infinite loop)
+            if !any(cache->haskey(cache, mi), values(JET_REPORT_CACHE)) && !any(cache->haskey(cache, mi), values(JET_CODE_CACHE))
+                continue # otherwise infinite loop)
+            end
             invalidate_jet_cache!(mi, max_world, depth+1)
         end
     end

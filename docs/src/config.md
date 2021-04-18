@@ -24,11 +24,6 @@ JET.ToplevelConfig
 
 ## Configurations for Abstract Interpretation
 
-!!! warning
-    Currently JET doesn't invalidate the previous analysis results cached with the different analysis configurations
-    (see <https://github.com/aviatesk/JET.jl/issues/130> for an example).
-    So you need to refresh Julia session to get updated analysis results with different inference configurations.
-
 ```@docs
 JET.JETAnalysisParams
 JET.JETInferenceParams
