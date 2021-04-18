@@ -494,24 +494,30 @@ See [Configuration File](@ref) for more details.
     ```
     See [Logging Configurations](@ref) for more details.
 """
-function report_file(io::IO,
-                     filename::AbstractString;
-                     # enable top-level info logger by default for entry from file
-                     toplevel_logger::Union{Nothing,IO} = IOContext(stdout::IO, LOGGER_LEVEL_KEY => INFO_LOGGER_LEVEL),
-                     jetconfigs...)
+function report_file(io::IO, filename::AbstractString; jetconfigs...)
     configfile = find_config_file(dirname(abspath(filename)))
-    if !isnothing(configfile)
+    if isnothing(configfile)
+        jetconfigs = set_toplevel_logger_if_missing(jetconfigs)
+    else
         config = parse_config_file(configfile)
-        jetconfigs = overwrite_options(jetconfigs, config)
+        jetconfigs = overwrite_options(config, jetconfigs)
+        jetconfigs = set_toplevel_logger_if_missing(jetconfigs)
         with_logger(get(jetconfigs, :toplevel_logger, nothing), ≥(INFO_LOGGER_LEVEL), "toplevel") do io
             println(io, "applied JET configurations in $configfile")
         end
     end
 
-    res = analyze_file(filename; toplevel_logger, jetconfigs...)
+    res = analyze_file(filename; jetconfigs...)
     return report_result(io, res; jetconfigs...)
 end
 report_file(args...; jetconfigs...) = report_file(stdout::IO, args...; jetconfigs...)
+
+function set_toplevel_logger_if_missing(@nospecialize(jetconfigs))
+    haskey(jetconfigs, :toplevel_logger) && return jetconfigs
+    default_toplevel_logger_config =
+        kwargs((; toplevel_logger = IOContext(stdout::IO, LOGGER_LEVEL_KEY => DEFAULT_LOGGER_LEVEL)))
+    return overwrite_options(jetconfigs, default_toplevel_logger_config)
+end
 
 analyze_file(filename, args...; jetconfigs...) =
     analyze_text(read(filename, String), filename, args...; jetconfigs...)
@@ -538,7 +544,7 @@ When [`$report_file`](@ref) or [`$report_and_watch_file`](@ref) is called, it wi
 When found, the configurations specified in the file will be applied.
 
 A configuration file can specify any of JET configurations like:
-```
+```toml
 aggressive_constant_propagation = false # turn off aggressive constant propagation
 ... # other configurations
 ```
@@ -564,6 +570,10 @@ E.g. the configurations below are equivalent:
       pushfirst!(lines, "```toml"); push!(lines, "```")
       join(lines, "\n  ")
   end)
+
+!!! note
+    JET configurations specified as keyword arguments have precedence over those specified
+      via a configuration file.
 """
 parse_config_file(path) = process_config_dict!(TOML.parsefile(path))
 
