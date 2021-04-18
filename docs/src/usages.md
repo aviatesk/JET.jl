@@ -35,17 +35,6 @@ report_text
 
 There are utilities for checking JET analysis in a running Julia session like REPL or such.
 
-!!! warning
-    They are supposed to be used for testing of JET or some quick check, and you're not expected to use JET in the same
-    Julia session where you "seriously" run your code.
-    This is because JET analysis itself will create code cache, which isn't necessarily same as the code that Julia's native
-    compiler does. In particular, JET currently disables inlining for reasons and it can have a potent impact on the
-    performance of your code in actual execution.
-
-    JET in the future will offer a more "proper" UI to render analysis result to users, whose process isn't supposed to
-    interact with actual user's runtime in any way (I'm thinking of IDE/CI integration or such).
-    Then these utilities will only be used for testing of JET itself, and not be really user-facing.
-
 ```@docs
 report_call
 @report_call
