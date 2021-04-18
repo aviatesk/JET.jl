@@ -1326,7 +1326,7 @@ end
         # no configuration, thus top-level analysis should fail
         let
             io = IOBuffer()
-            _, res = report_file(io, analysis_target)
+            _, res = report_file(io, analysis_target; toplevel_logger=nothing)
             @test res # error reported
         end
 
@@ -1338,7 +1338,7 @@ end
         # now any top-level analysis failure shouldn't happen
         let
             io = IOBuffer()
-            _, res = report_file(io, analysis_target)
+            _, res = report_file(io, analysis_target; toplevel_logger=nothing)
             @test !res # no error happened
             @test isfile("toplevel.txt") # not closed yet
         end
