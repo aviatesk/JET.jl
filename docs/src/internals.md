@@ -17,6 +17,8 @@ JET.const_prop_entry_heuristic
 JET.analyze_task_parallel_code!
 JET.is_from_same_frame
 JET.AbstractGlobal
+JET.JET_REPORT_CACHE
+JET.JET_CODE_CACHE
 ```
 
 
