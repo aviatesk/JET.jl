@@ -1,6 +1,9 @@
 @doc read(normpath(dirname(@__DIR__), "README.md"), String)
 module JET
 
+# not sure why, but a benchmark showed this is faster
+Base.Experimental.@optlevel 1
+
 const CC = Core.Compiler
 
 @static isdefined(CC, :AbstractInterpreter) || throw(ErrorException("JET.jl only works with Julia versions 1.6 and higher"))
