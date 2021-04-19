@@ -7,7 +7,7 @@ let
 end
 
 # not sure why, but a benchmark showed this is faster
-Base.Experimental.@optlevel 1
+Base.Experimental.@optlevel 0
 
 const CC = Core.Compiler
 
