@@ -114,12 +114,12 @@ function CC.cache_lookup(linfo::MethodInstance, given_argtypes::Vector{Any}, cac
 
     isa(inf_result, InferenceResult) || return nothing
 
+    # constant prop' hits a cycle (recur into same non-constant analysis), we just bail out
+    isa(inf_result.result, InferenceState) && return inf_result
+
     # cache hit, try to restore local report caches
     interp = cache.interp
     sv = interp.current_frame::InferenceState
-
-    # constant prop' hits a cycle (recur into same non-constant analysis), we just bail out
-    isa(inf_result.result, InferenceState) && return inf_result
 
     analysis_result = jet_cache_lookup(linfo, given_argtypes, interp.cache)
 

@@ -39,7 +39,7 @@ end
 
 """
     report_and_watch_file([io::IO = stdout],
-                          filename::AbstractString,
+                          filename::AbstractString;
                           jetconfigs...)
 
 Watches `filename` and keeps re-triggering analysis with [`report_file`](@ref) on code update.
@@ -68,26 +68,17 @@ function init_revise!()
 end
 
 _report_and_watch_file(args...; kwargs...) = _report_and_watch_file(stdout::IO, args...; kwargs...)
-function _report_and_watch_file(io::IO,
-                                filename::AbstractString,
-                                args...;
-                                # enable info top-level logger by default for watch mode
-                                toplevel_logger::Union{Nothing,IO} = IOContext(stdout::IO, LOGGER_LEVEL_KEY => INFO_LOGGER_LEVEL),
-                                jetconfigs...)
+function _report_and_watch_file(io::IO, filename::AbstractString; jetconfigs...)
     config = WatchConfig(; jetconfigs...)
 
-    included_files, _ = report_file(io, filename, args...;
-                                    toplevel_logger,
-                                    jetconfigs...)
+    included_files, _ = report_file(io, filename; jetconfigs...)
 
     interrupted = false
     while !interrupted
         try
             Revise.entr(collect(included_files), config.revise_modules; all = config.revise_all) do
                 println(io)
-                included_files′, _ = report_file(io, filename, args...;
-                                                 toplevel_logger,
-                                                 jetconfigs...)
+                included_files′, _ = report_file(io, filename; jetconfigs...)
                 if any(∉(included_files), included_files′)
                     # refresh watch files
                     throw(InsufficientWatches(included_files′))
