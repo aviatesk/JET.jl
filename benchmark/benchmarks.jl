@@ -32,16 +32,28 @@ macro jetbenchmarkable(ex, benchmark_params...)
     isevals(x) = isexpr(x, :(=)) && first(x.args) === :evals
     any(isevals, benchmark_params) && throw(ArgumentError("@jetbenchmarkable doesn't accept `evals` option"))
 
+    filename = string(__source__.file)
+    runner_code = :(while true
+        s = readuntil(stdin, "JET_BENCHMARK_INPUT_EOL")
+        try
+            include_string(Main, s, $filename)
+        catch err
+            showerror(stderr, err, stacktrace(catch_backtrace()))
+        finally
+            println(stdout, "JET_BENCHMARK_OUTPUT_EOL")
+        end
+    end) |> string
+
     # we need to flatten block expression into a toplevel expression to correctly handle
     # e.g. macro expansions
     setup_exs = isexpr(setup_ex, :block) ? setup_ex.args : [setup_ex]
-    setup_script = join(string.(setup_exs), '\n')
+    setup_code = join(string.(setup_exs), '\n')
     exs = isexpr(ex, :block) ? ex.args : [ex]
-    script = join(string.(exs), '\n')
+    benchmark_code = join(string.(exs), '\n')
 
     return quote
         @benchmarkable begin
-            write(stdin, $(script), "JET_BENCHMARK_INPUT_EOL")
+            write(stdin, $benchmark_code, "JET_BENCHMARK_INPUT_EOL")
             readuntil(stdout, "JET_BENCHMARK_OUTPUT_EOL")
 
             err = String(take!(stderr))
@@ -55,21 +67,14 @@ macro jetbenchmarkable(ex, benchmark_params...)
             stdout = Base.BufferStream()
             stderr = IOBuffer()
 
-            pipe = pipeline(`$(normpath(Sys.BINDIR, "julia")) --project=@. -e '
-                while true
-                    s = readuntil(stdin, "JET_BENCHMARK_INPUT_EOL")
-                    try
-                        include_string(Main, s, "benchmarks.jl")
-                    catch err
-                        showerror(stderr, err, stacktrace(catch_backtrace()))
-                    finally
-                        println(stdout, "JET_BENCHMARK_OUTPUT_EOL")
-                    end
-                end
-            '`; stdin, stdout, stderr)
+            cmd = String[normpath(Sys.BINDIR, "julia"),
+                         "--project=@.",
+                         "-e",
+                         $runner_code]
+            pipe = pipeline(Cmd(cmd); stdin, stdout, stderr)
             proc = run(pipe; wait = false)
 
-            write(stdin, $(setup_script), "JET_BENCHMARK_INPUT_EOL")
+            write(stdin, $setup_code, "JET_BENCHMARK_INPUT_EOL")
             readuntil(stdout, "JET_BENCHMARK_OUTPUT_EOL")
 
             err = String(take!(stderr))
