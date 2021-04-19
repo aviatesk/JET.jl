@@ -76,7 +76,8 @@ function _report_and_watch_file(io::IO, filename::AbstractString; jetconfigs...)
     interrupted = false
     while !interrupted
         try
-            Revise.entr(collect(included_files), config.revise_modules; all = config.revise_all) do
+            Revise.entr(collect(included_files), config.revise_modules;
+                        postpone = true, all = config.revise_all) do
                 println(io)
                 included_files′, _ = report_file(io, filename; jetconfigs...)
                 if any(∉(included_files), included_files′)
