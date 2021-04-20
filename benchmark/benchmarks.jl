@@ -103,6 +103,7 @@ BenchmarkTools.DEFAULT_PARAMETERS.seconds = 100.0
 
 const SUITE = BenchmarkGroup()
 
+SUITE["package loading"] = @jetbenchmarkable using JET
 SUITE["first time"] = @jetbenchmarkable (@analyze_call identity(nothing)) setup = (using JET)
 SUITE["easy"] = @jetbenchmarkable (@analyze_call sum("julia")) setup = begin
     using JET
