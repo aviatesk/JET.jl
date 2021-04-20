@@ -99,7 +99,7 @@ end
 
 using BenchmarkTools, .JETBenchmarkTools
 
-BenchmarkTools.DEFAULT_PARAMETERS.seconds = 60
+BenchmarkTools.DEFAULT_PARAMETERS.seconds = 100.0
 
 const SUITE = BenchmarkGroup()
 
@@ -132,7 +132,7 @@ SUITE["invalidation"] = @jetbenchmarkable (@analyze_call println(QuoteNode(nothi
         end
     end
 end
-SUITE["self profiling"] = @jetbenchmarkable(
+SUITE["self analysis"] = @jetbenchmarkable(
     begin
         interp = JET.JETInterpreter()
         m = methods(JET.virtual_process).ms[1]
@@ -142,7 +142,7 @@ SUITE["self profiling"] = @jetbenchmarkable(
         using JET
         @analyze_call identity(nothing)
     end)
-SUITE["toplevel"] = @jetbenchmarkable(
+SUITE["top-level"] = @jetbenchmarkable(
     (@analyze_toplevel begin
         foo(args...) = sum(args)
         foo(rand(Char, 1000000000)...)
@@ -154,9 +154,10 @@ SUITE["toplevel"] = @jetbenchmarkable(
             myidentity(nothing)
         end
     end)
-SUITE["toplevel first time"] = @jetbenchmarkable(
+SUITE["top-level first time"] = @jetbenchmarkable(
     (@analyze_toplevel begin
         const myidentity = identity
         myidentity(nothing)
     end),
     setup = include("test/interactive_utils.jl"))
+SUITE["end to end"] = @jetbenchmarkable report_file(IOBuffer(), "demo.jl") setup = using JET
