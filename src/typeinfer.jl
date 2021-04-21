@@ -239,11 +239,11 @@ entry
 function is_from_same_frame(parent_linfo::MethodInstance,
                             current_linfo::MethodInstance,
                             )
-    return @inbounds function (report::InferenceErrorReport)
+    function (report::InferenceErrorReport)
         st = report.st
         length(st) > 1 || return false
-        st[1].linfo === parent_linfo || return false
-        return st[2].linfo === current_linfo
+        (@inbounds st[1].linfo === parent_linfo) || return false
+        return @inbounds st[2].linfo === current_linfo
     end
 end
 
