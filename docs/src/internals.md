@@ -32,6 +32,17 @@ JET.partially_interpret!
 ```
 
 
+## Error Report Interface
+
+```@docs
+JET.VirtualFrame
+JET.VirtualStackTrace
+JET.InferenceErrorReport
+JET.@reportdef
+JET.ToplevelErrorReport
+```
+
+
 ## Utilities
 
 ```@docs

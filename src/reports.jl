@@ -1,6 +1,16 @@
 # toplevel
 # --------
 
+"""
+    ToplevelErrorReport
+
+An interface type of error reports that JET collects while top-level concrete interpration.
+All `ToplevelErrorReport` should have the following fields:
+- `file::String`: the path to the file containing the interpretation context
+- `line::Int`: the line number in the file containing the interpretation context
+
+See also: [`virtual_process`](@ref), [`ConcreteInterpreter`](@ref)
+"""
 abstract type ToplevelErrorReport end
 
 # `ToplevelErrorReport` interface
@@ -59,7 +69,53 @@ end
 # inference
 # ---------
 
+"""
+    VirtualFrame
+
+Stack information representing virtual execution context:
+- `file::Symbol`: the path to the file containing the virtual execution context
+- `line::Int`: the line number in the file containing the virtual execution context
+- `sig::Vector{Any}`: a signature of this frame
+- `linfo::MethodInstance`: The `MethodInstance` containing the execution context
+
+This type is very similar to `Base.StackTraces.StackFrame`, but its execution context is
+collected during abstract interpration, not collected from actual execution.
+"""
+:(VirtualFrame)
+@withmixedhash struct VirtualFrame
+    file::Symbol
+    line::Int
+    sig::Vector{Any}
+    linfo::MethodInstance
+end
+
+"""
+    VirtualStackTrace
+
+Represents a virtual stack trace in the form of a vector of `VirtualFrame`.
+The vector holds `VirtualFrame`s in order of "from entry call site to error point", i.e.
+the first element is the `VirtualFrame` of the entry call site, and the last element is that
+contains the error.
+"""
+const VirtualStackTrace = Vector{VirtualFrame}
+
 # TODO: maybe we want to use https://github.com/aviatesk/Mixin.jl
+"""
+    InferenceErrorReport
+
+An interface type of error reports that JET collects by abstract interpration.
+All `InferenceErrorReport` should have the following fields:
+- `st::VirtualStackTrace`: a virtual stack trace of the error
+- `msg::String`: explains why this error is reported
+- `sig::Vector{Any}`: a signature of the error
+
+Note that
+- [`@reportdef`](@ref) is the utility macro to define a subtype of `InferenceErrorReport`
+- each subtype type of `InferenceErrorReport` may have other arbitrary fields other than
+  those mandatory explained above
+
+See also: [`VirtualStackTrace`](@ref), [`VirtualFrame`](@ref), [`@reportdef`](@ref)
+"""
 abstract type InferenceErrorReport end
 
 # to help inference
@@ -86,17 +142,6 @@ function Base.show(io::IO, report::T) where {T<:InferenceErrorReport}
 end
 Base.show(io::IO, ::MIME"application/prs.juno.inline", report::T) where {T<:InferenceErrorReport} =
     return report
-
-@withmixedhash struct VirtualFrame
-    file::Symbol
-    line::Int
-    sig::Vector{Any}
-    linfo::MethodInstance
-end
-
-# `InferenceErrorReport` is supposed to keep its virtual stack trace in order of
-# "from entry call site to error point"
-const VirtualStackTrace = Vector{VirtualFrame}
 
 struct InferenceErrorReportCache
     T::Type{<:InferenceErrorReport}
@@ -130,6 +175,19 @@ function restore_cached_report(cache::InferenceErrorReportCache)
     return T(st, cache.msg, cache.sig, cache.spec_args)::InferenceErrorReport
 end
 
+"""
+    @reportdef SomeErrorReport(interp, sv, args...) [track_from_frame = false] [supertype = InferenceErrorReport]
+
+The utility macro to define `InferenceErrorReport`.
+Given a constructor call signature `SomeErrorReport(interp, sv, args...)`, this macro will define:
+- `struct` definition for `SomeErrorReport`
+- constructor to create `SomeErrorReport` during type inference
+- constuctor to restore `SomeErrorReport` from JET's report cache
+- getter method to retrieve fields specific to `SomeErrorReport` (which are specified by the `args...` part)
+
+Then `SomeErrorReport` can be created by calling the constructor `SomeErrorReport(interp::JETInterpreter, sv::InferenceState, args...)`
+from abstract interpration routine.
+"""
 macro reportdef(ex, kwargs...)
     T = esc(first(ex.args))
     args = map(ex.args) do x
