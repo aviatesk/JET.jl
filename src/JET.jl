@@ -325,7 +325,7 @@ macro withmixedhash(typedef)
     eq_func = :(function Base.:(==)(x1::$name, x2::$name); $(eq_body); end)
 
     return quote
-        $(typedef)
+        Base.@__doc__ $(typedef)
         $(hash_func)
         $(eq_func)
     end

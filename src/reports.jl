@@ -81,7 +81,6 @@ Stack information representing virtual execution context:
 This type is very similar to `Base.StackTraces.StackFrame`, but its execution context is
 collected during abstract interpration, not collected from actual execution.
 """
-:(VirtualFrame)
 @withmixedhash struct VirtualFrame
     file::Symbol
     line::Int
@@ -260,7 +259,7 @@ macro reportdef(ex, kwargs...)
     ))
 
     return Expr(:block, __source__, quote
-        struct $(T) <: $(supertype)
+        Base.@__doc__ struct $(T) <: $(supertype)
             st::VirtualStackTrace
             msg::String
             sig::Vector{Any}
@@ -331,7 +330,6 @@ abstract type ExceptionReport <: InferenceErrorReport end
 Represents general `throw` calls traced during inference.
 They are reported only when they're not caught by any control flow.
 """
-:(UncaughtExceptionReport)
 @reportdef UncaughtExceptionReport(interp, sv, throw_calls::Vector{Expr}) track_from_frame = true
 
 """
@@ -342,7 +340,6 @@ This special `InferenceErrorReport` is just for wrapping remarks from `NativeInt
 !!! note
     Currently JET.jl doesn't make any use of `NativeRemark`.
 """
-:(NativeRemark)
 @reportdef NativeRemark(interp, sv, s::String)
 
 function get_virtual_frame(interp#=::JETInterpreter=#, loc::Union{InferenceState,MethodInstance})
