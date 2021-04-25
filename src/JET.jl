@@ -153,6 +153,8 @@ using Pkg, Pkg.TOML
 # common
 # ======
 
+const JET_DEV_MODE = parse(Bool, get(ENV, "JET_DEV_MODE", "false"))
+
 const CONFIG_FILE_NAME = ".JET.toml"
 
 # hooks

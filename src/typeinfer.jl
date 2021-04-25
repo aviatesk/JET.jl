@@ -170,7 +170,7 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
             result = frame.result
             argtypes = result.argtypes
             cache = interp.cache
-            @assert jet_cache_lookup(linfo, argtypes, cache) === nothing "invalid local caching $linfo, $argtypes"
+            @static JET_DEV_MODE && @assert jet_cache_lookup(linfo, argtypes, cache) === nothing "invalid local caching $linfo, $argtypes"
             local_cache = InferenceErrorReportCache[]
             for report in this_caches
                 # # TODO make this hold
@@ -188,7 +188,7 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
             push!(cache, AnalysisResult(linfo, given_argtypes, overridden_by_const, local_cache))
         elseif frame.cached # only cache when `NativeInterpreter` does
             cache = jet_report_cache(interp)
-            @assert !haskey(cache, linfo) || isentry "invalid global caching $linfo"
+            @static JET_DEV_MODE && @assert !haskey(cache, linfo) || isentry "invalid global caching $linfo"
             global_cache = InferenceErrorReportCache[]
             for report in this_caches
                 # # TODO make this hold
@@ -217,7 +217,7 @@ end
 Returns a function that checks if a given `InferenceErrorReport` is generated from `current_linfo`.
 It also checks `current_linfo` is a "lineage" of `parent_linfo` (i.e. entered from it).
 
-This function is supposed to be used to filter out reports from analysis on `current_linfo`
+This function is supposed to be used to filter out reports collected from analysis on `current_linfo`
   without using constants when entering into the constant analysis. As such, this function
   assumes that when a report should be filtered out, the first elment of its virtual stack
   frame `st` is for `parent_linfo` and the second element of that is for `current_linfo`.
