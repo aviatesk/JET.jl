@@ -58,7 +58,7 @@ function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
     return ret
 end
 
-# TODO: disable optimization for performance, only do necessary analysis work by ourselves
+# TODO: disable optimization for better performance, only do necessary analysis work by ourselves
 
 # in this overload we can work on `frame.src::CodeInfo` (and also `frame::InferenceState`)
 # where type inference (and also optimization if applied) already ran on
@@ -71,22 +71,15 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
 
     # some methods like `getproperty` can't propagate accurate types without actual values,
     # and constant prop' plays a somewhat critical role in those cases by overwriteing the
-    # previously-inferred lousy result; JET.jl also needs that to reduce false positive reports,
-    # and so here we will throw-away previously-collected error reports that are "lineage" of
-    # this frame, when it is being re-inferred with constant-prop'ed inputs
-    # - constant prop' only happens after inference with non-constant abstract values (i.e. types)
-    # - NOTE track the change in the native abstract interpretation logic, like
-    #   * https://github.com/JuliaLang/julia/pull/39305
-    # - IDEA: we may want to keep some "serious" error reports like `GlobalUndefVarErrorReport`
-    #   even when constant prop' reveals it never happens given the current constant arguments
-    if iscp
-        # use `frame.linfo` instead of `frame` for lineage check since the program counter
-        # for this frame is not initialized yet; note that `frame.linfo` is the exactly same
-        # object as that of the previous only-type inference
-        if !isentry
-            filter!(!is_from_same_frame(parent.linfo, linfo), reports)
-        end
-    end
+    # previous non-constant inference result (under the current design constant prop' always
+    # happens after inference with non-constant abstract elements)
+    # JET also needs that in order to reduce false positive reports, and here we will
+    # throw-away previously-collected error reports that are "lineage" of this frame,
+    # when it is being re-inferred with constants
+    # NOTE `frame.linfo` is the exactly same object as that of the previous non-constant inference
+    # IDEA we may still want to keep some "serious" error reports like `GlobalUndefVarErrorReport`
+    # even when constant prop' reveals it never happens given the current constant arguments
+    iscp && !isentry && filter!(!is_from_same_frame(parent.linfo, linfo), reports)
 
     reports_before             = Set(reports)
     uncaught_exceptions_before = Set(interp.uncaught_exceptions)
