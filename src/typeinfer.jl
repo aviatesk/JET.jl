@@ -222,28 +222,31 @@ This function is supposed to be used to filter out reports collected from analys
   assumes that when a report should be filtered out, the first elment of its virtual stack
   frame `st` is for `parent_linfo` and the second element of that is for `current_linfo`.
 
-Example:
-Assume `linfo2` will produce a report for some reason.
-In the example analysis below, `report2` will be filtered out on re-entering into `linfo3`
-  with constants (i.e. `linfo3′`). Note that `report1` is still kept there because of the
-  lineage check.
+Example: Assume `linfo2` will produce a report for some reason.
 ```
 entry
 └─ linfo1
    ├─ linfo2 (report1: linfo2)
    ├─ linfo3 (report1: linfo1->linfo2, report2: linfo3->linfo2)
-   │  └─ linfo2 (report1: linfo2, report2: linfo2)
+   │  └─ linfo2 (report1: linfo1->linfo2, report2: linfo2)
    └─ linfo3′ (report1: linfo1->linfo2, ~~report2: linfo1->linfo3->linfo2~~)
 ```
+In the example analysis above, `report2` will be filtered out on re-entering into `linfo3′`
+  (i.e. we're analyzing `linfo3` with constants argument), because
+  `is_from_same_frame(linfo1, linfo3)(report2)` returns `true`.
+Note that `report1` is still kept there because of the lineage check, i.e.
+  `is_from_same_frame(linfo1, linfo3)(report1)` returns `false`.
 """
 function is_from_same_frame(parent_linfo::MethodInstance,
                             current_linfo::MethodInstance,
                             )
     function (report::InferenceErrorReport)
-        st = report.st
-        length(st) > 1 || return false
-        (@inbounds st[1].linfo === parent_linfo) || return false
-        return @inbounds st[2].linfo === current_linfo
+        @inbounds begin
+            st = report.st
+            length(st) > 1 || return false
+            st[1].linfo === parent_linfo || return false
+            return st[2].linfo === current_linfo
+        end
     end
 end
 
