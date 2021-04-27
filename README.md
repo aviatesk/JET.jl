@@ -14,6 +14,10 @@ JET.jl employs Julia's type inference for bug reports.
     In general, the newer your Julia version is, more accurately and quickly your can expect JET to analyze your code,
     assuming Julia's compiler keeps evolving all the time from now on.
 
+!!! warning
+    Hold on tight and fasten your seatbelt while JET is analyzing your code for the first time.
+    Once the cache got stored, subsequent analysis will run at ✈ speed.
+
 
 ## Documentation
 
