@@ -24,7 +24,6 @@ jobs:
         arch:
           - x64
           - x86
-        allow-failure: [true]
         exclude:
           - os: macOS-latest
             arch: x86
