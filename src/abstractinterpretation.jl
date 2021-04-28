@@ -247,6 +247,17 @@ function CC.abstract_call_method(interp::JETInterpreter, method::Method, @nospec
         end
     end
 
+    if method.name === :iterate
+        v, _, _ = ret
+        ret_type = (isa(v, Const) ? Core.Typeof(v.val) :
+                    isa(v, Core.PartialStruct) ? v.typ :
+                    isa(v, DataType) || isa(v, Union) ? v :
+                    return)::Type
+        if ret_type !== Union{Nothing, Tuple{Int64, Int64}}
+            report!(interp, InfiniteIterationErrorReport(interp, sv, ret_type))
+        end
+    end
+
     update_reports!(interp, sv)
 
     return ret
