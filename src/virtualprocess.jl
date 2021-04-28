@@ -730,6 +730,19 @@ function select_statements(src, config)
         changed = false
         for (ibb, bb) in enumerate(blocks)
             if has_definition(rng(bb))
+                # find dependencies of a block with method definitions
+                for i in bb.preds
+                    if i ∉ dependencies
+                        push!(dependencies, i)
+                        changed = true
+                    end
+                end
+                if ibb ∉ dependencies
+                    push!(dependencies, ibb)
+                    changed = true
+                end
+            elseif ibb in dependencies
+                # find dependencies of dependencies
                 for i in bb.preds
                     if i ∉ dependencies
                         push!(dependencies, i)
@@ -739,18 +752,11 @@ function select_statements(src, config)
             end
         end
     end
-    for (ibb, bb) in enumerate(blocks)
-        r = rng(bb)
-        if !has_definition(r) && ibb ∉ dependencies
-            pushall!(norequire, r)
-        end
 
-        # here we try to ignore try/catch control flow
-        # LoweredCodeUtils's control flow traversal starts from last statement of each basic block,
-        # and so we mark `norequire` it unless it's involved with a loop
-        i = Core.Compiler.last(bb.stmts)
-        if !(is_goto(stmts[i]) || concretize[i])
-            push!(norequire, i)
+    # don't require everything in an non-dependency block
+    for (ibb, bb) in enumerate(blocks)
+        if ibb ∉ dependencies
+            pushall!(norequire, rng(bb))
         end
     end
 

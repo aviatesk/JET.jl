@@ -1623,3 +1623,10 @@ end
         test_sum_over_string(res)
     end
 end
+
+@testset "https://github.com/aviatesk/JET.jl/issues/175" begin
+    res = @analyze_toplevel begin
+        @enum Fruit apple orange
+    end
+    @test isempty(res.toplevel_error_reports)
+end
