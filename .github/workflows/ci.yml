@@ -10,7 +10,6 @@ jobs:
   test:
     name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }}
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.allow-failure }}
     strategy:
       fail-fast: false # don't stop CI even when one of them fails
       matrix:
@@ -24,7 +23,6 @@ jobs:
         arch:
           - x64
           - x86
-        allow-failure: [true]
         exclude:
           - os: macOS-latest
             arch: x86
