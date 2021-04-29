@@ -55,13 +55,13 @@ jobs:
 
       # create/update comment
       - name: create comment
-        if: ${{ steps.fc.outputs.comment-id == 0 }}
+        if: steps.fc.outputs.comment-id == 0 && github.event_name == 'pull_request' && github.repository == github.event.pull_request.head.repo.full_name
         uses: peter-evans/create-or-update-comment@v1
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body: ${{ steps.generate-result-markdown.outputs.body }}
       - name: update comment
-        if: ${{ steps.fc.outputs.comment-id != 0 }}
+        if: steps.fc.outputs.comment-id != 0 && github.event_name == 'pull_request' && github.repository == github.event.pull_request.head.repo.full_name
         uses: peter-evans/create-or-update-comment@v1
         with:
           comment-id: ${{ steps.fc.outputs.comment-id }}
