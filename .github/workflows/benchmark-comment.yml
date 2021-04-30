@@ -10,7 +10,8 @@ name: performance tracking (comment)
 
 on:
   workflow_run:
-    workflows: ["performance tracking"]
+    workflows:
+      - performance tracking
     types:
       - completed
 
@@ -19,16 +20,16 @@ jobs:
     runs-on: ubuntu-latest
     if: >
       ${{ github.event.workflow_run.event == 'pull_request' &&
-      github.event.workflow_run.conclusion == 'success' }}
+          github.event.workflow_run.conclusion == 'success' }}
     steps:
       - uses: actions/checkout@v2
 
       # restore records from the artifacts
       - uses: dawidd6/action-download-artifact@v2
         with:
-          pr: ${{github.event.pull_request.number}}
           workflow: benchmark.yml
           name: perforamance-tracking
+          workflow_conclusion: success
       - name: output benchmark result
         id: output-result-markdown
         run: |
