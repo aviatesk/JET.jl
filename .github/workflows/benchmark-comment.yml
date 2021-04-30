@@ -1,0 +1,62 @@
+# To workaroud https://github.com/actions/first-interaction/issues/10 in a secure way,
+# we take the following steps to generate and comment a performance benchmark result:
+# 1. first "performance tracking" workflow will generate the benchmark results in an unprivileged environment triggered on `pull_request` event
+# 2. then this "performance tracking (comment)" workflow will show the result to us as a PR comment in a privileged environment
+# Note that this workflow can only be modifed by getting checked-in to the default branch
+# and thus is secure even though this workflow is granted with write permissions, etc.
+# xref: https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
+
+name: performance tracking (comment)
+
+on:
+  workflow_run:
+    workflows: ["performance tracking"]
+    types:
+      - completed
+
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+    if: >
+      ${{ github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - uses: actions/checkout@v2
+
+      # restore records from the artifacts
+      - uses: dawidd6/action-download-artifact@v2
+        with:
+          pr: ${{github.event.pull_request.number}}
+          workflow: benchmark.yml
+          name: perforamance-tracking
+      - name: output benchmark result
+        id: output-result-markdown
+        run: |
+          echo ::set-output name=body::$(cat ./benchmark-result.artifact)
+      - name: output pull request number
+        id: output-pull-request-number
+        run: |
+          echo ::set-output name=body::$(cat ./pull-request-number.artifact)
+
+      # check if the previous comment exists
+      - name: find comment
+        uses: peter-evans/find-comment@v1
+        id: fc
+        with:
+          issue-number: ${{ steps.output-pull-request-number.outputs.body }}
+          comment-author: 'github-actions[bot]'
+          body-includes: JET Benchmark Result
+
+      # create/update comment
+      - name: create comment
+        if: ${{ steps.fc.outputs.comment-id == 0 }}
+        uses: peter-evans/create-or-update-comment@v1
+        with:
+          issue-number: ${{ steps.output-pull-request-number.outputs.body }}
+          body: ${{ steps.output-result-markdown.outputs.body }}
+      - name: update comment
+        if: ${{ steps.fc.outputs.comment-id != 0 }}
+        uses: peter-evans/create-or-update-comment@v1
+        with:
+          comment-id: ${{ steps.fc.outputs.comment-id }}
+          body: ${{ steps.output-result-markdown.outputs.body }}
