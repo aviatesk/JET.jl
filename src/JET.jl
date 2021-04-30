@@ -708,8 +708,9 @@ function analyze_toplevel!(interp::JETInterpreter, src::CodeInfo)
     mi.def = interp.toplevelmod
 
     result = InferenceResult(mi);
-    # toplevel frame doesn't need to be cached (and so it won't be optimized)
-    frame = InferenceState(result, src, #=cached=# false, interp)::InferenceState;
+    # toplevel frame doesn't need to be cached (and so it won't be optimized), nor should
+    # go through JET's code generation error check
+    frame = InferenceState(result, src, #=cached=# false, interp);
 
     return analyze_frame!(interp, frame)
 end

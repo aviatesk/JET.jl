@@ -123,17 +123,17 @@ If `T` implements this interface, the following requirements should be satisfied
   Note that `T` can still have additional fields specific to it.
 ---
 - **A constructor interface to create `T` from abstraction interpretation** \\
-  `T<:InferenceErrorReport` can be created anywhere from `JETInterpreter`'s abstract interpretation
-  routine using the constructor `T(::JETInterpreter, ::InferenceState, spec_args...)`.
-  `T` can optionally overload any of the following interfaces to customize how it's created:
-  * `T(::JETInterpreter, ::InferenceState, spec_args...) -> T`
-    + `get_vst(::Type{T}, ::JETInterpreter, ::InferenceState, spec_args...) -> vst::VirtualStackTrace`:
-    + `get_msg(::Type{T}, ::JETInterpreter, ::InferenceState, spec_args...) -> msg::String`:
-    + `get_sig(::Type{T}, ::JETInterpreter, ::InferenceState, spec_args...) -> sig::Vector{Any}`
+  `T<:InferenceErrorReport` has the default constructor `T(::JETInterpreter, sv::InferenceState, spec_args...)`,
+  which works when `T` is reported when `sv`'s program counter (`sv.currpc`) points to that
+  of statement where the error may happen. If so `T` just needs to overload
 
-  !!! note
-      `get_msg(::Type{T}, ::JETInterpreter, ::InferenceState, spec_args...)`
-      should be overloaded, otherwise the senseless default message will be rendered.
+      get_msg(::Type{T}, ::JETInterpreter, ::InferenceState, spec_args...) -> msg::String
+
+  to provide the message that describes why this error is reported (otherwise the senseless
+  default message will be used).
+
+  If `T` is reported when `sv`'s program counter (`sv.currpc`) may not point to the error
+  location or even `sv::InferenceState` isn't available, `T` can implement its own constructor method.
 ---
 - **A contructor interface to create `T` from the global report cache** \\
   In order to be cached and restored from [`JET_REPORT_CACHE`](@ref), `T` _**must**_ implement
@@ -179,15 +179,11 @@ Base.show(io::IO, ::MIME"application/prs.juno.inline", report::T) where {T<:Infe
 
 # default constructor to create a report from abstract interpretation routine
 function (T::Type{<:InferenceErrorReport})(interp, sv::InferenceState, @nospecialize(spec_args...))
-    vst = get_vst(T, interp, sv, spec_args...)
+    vf = get_virtual_frame(interp, sv)
     msg = get_msg(T, interp, sv, spec_args...)
-    sig = get_sig(T, interp, sv, spec_args...)
-    return T(vst, msg, sig, spec_args...)
+    return T([vf], msg, vf.sig, spec_args...)
 end
-
-get_vst(::Type{<:InferenceErrorReport}, interp, sv::InferenceState, @nospecialize(spec_args...)) = VirtualFrame[get_virtual_frame(interp, sv)]
 get_msg(::Type{<:InferenceErrorReport}, interp, sv::InferenceState, @nospecialize(spec_args...)) = "FIXME (report message isn't implemented)"
-get_sig(::Type{<:InferenceErrorReport}, interp, sv::InferenceState, @nospecialize(spec_args...)) = get_sig(interp, sv)
 
 # virtual frame
 # -------------
@@ -232,13 +228,7 @@ function get_sig(interp, l::MethodInstance)
             sprint(show, def)
         else
             # print(io, "MethodInstance for ")
-            @static if hasmethod(Base.show_tuple_as_call, (IO, Symbol, Type), (:demangle, :kwargs, :argnames, :qualified))
-                # show_tuple_as_call(io, def.name, l.specTypes; qualified=true)
-                sprint((args...)->Base.show_tuple_as_call(args...; qualified=true), def.name, l.specTypes)
-            else
-                # show_tuple_as_call(io, def.name, l.specTypes, false, nothing, nothing, true)
-                sprint(Base.show_tuple_as_call, def.name, l.specTypes, false, nothing, nothing, true)
-            end
+            sprint(show_tuple_as_call, def.name, l.specTypes)
         end
     else
         # print(io, "Toplevel MethodInstance thunk")
@@ -254,6 +244,14 @@ function get_sig(interp, l::MethodInstance)
         "toplevel"
     end
     return Any[ret]
+end
+
+@inline function show_tuple_as_call(io::IO, name::Symbol, @nospecialize(sig::Type))
+    @static if hasmethod(Base.show_tuple_as_call, (IO, Symbol, Type), (:demangle, :kwargs, :argnames, :qualified))
+        Base.show_tuple_as_call(io, name, sig; qualified = true)
+    else
+        Base.show_tuple_as_call(io, def.name, l.specTypes, false, nothing, nothing, true)
+    end
 end
 
 get_sig(interp, sv::InferenceState, @nospecialize(x = get_stmt(sv))) = _get_sig(interp, sv, x)
@@ -478,10 +476,9 @@ get_msg(::Type{GlobalUndefVarErrorReport}, interp, sv::InferenceState, mod::Modu
 end
 # use program counter where local undefined variable is found
 function LocalUndefVarErrorReport(interp, sv::InferenceState, name::Symbol, pc::Int)
-    vst = VirtualFrame[get_virtual_frame(interp, sv, pc)]
+    vf = get_virtual_frame(interp, sv, pc)
     msg = "local variable $(name) is not defined"
-    sig = get_sig(interp, sv, get_stmt(sv, pc))
-    return LocalUndefVarErrorReport(vst, msg, sig, name)
+    return LocalUndefVarErrorReport([vf], msg, vf.sig, name)
 end
 
 @reportdef struct NonBooleanCondErrorReport <: InferenceErrorReport
@@ -558,12 +555,9 @@ They are reported only when they're not caught by any control flow.
 @reportdef struct UncaughtExceptionReport <: InferenceErrorReport
     throw_calls::Vector{Expr}
 end
-get_vst(::Type{UncaughtExceptionReport}, interp, sv::InferenceState, @nospecialize(args...)) =
-    VirtualFrame[get_virtual_frame(interp, sv.linfo)]
-get_msg(::Type{UncaughtExceptionReport}, interp, sv::InferenceState, throw_blocks::Vector{Expr}) = isone(length(throw_blocks)) ?
-    "may throw" :
-    "may throw either of"
-function get_sig(::Type{UncaughtExceptionReport}, interp, sv::InferenceState, throw_calls::Vector{Expr})
+function UncaughtExceptionReport(interp, sv::InferenceState, throw_calls::Vector{Expr})
+    vf = get_virtual_frame(interp, sv.linfo)
+    msg = length(throw_calls) == 1 ? "may throw" : "may throw either of"
     sig = Any[]
     ncalls = length(throw_calls)
     for (i, call) in enumerate(throw_calls)
@@ -571,7 +565,7 @@ function get_sig(::Type{UncaughtExceptionReport}, interp, sv::InferenceState, th
         append!(sig, call_sig)
         i ≠ ncalls && push!(sig, ", ")
     end
-    return sig
+    return UncaughtExceptionReport([vf], msg, sig, throw_calls)
 end
 
 """
