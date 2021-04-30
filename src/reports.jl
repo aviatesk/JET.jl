@@ -41,7 +41,7 @@ end
 # wraps general errors from actual execution
 struct ActualErrorWrapped <: ToplevelErrorReport
     err
-    st::Vector{Base.StackTraces.StackFrame}
+    st::Base.StackTraces.StackTrace
     file::String
     line::Int
 
@@ -61,7 +61,7 @@ end
 # wraps an error that might happen because of inappropriate top-level code abstraction
 struct MissingConcretization <: ToplevelErrorReport
     err
-    st::Vector{Base.StackTraces.StackFrame}
+    st::Base.StackTraces.StackTrace
     file::String
     line::Int
 end
