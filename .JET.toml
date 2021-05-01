@@ -1,2 +1,6 @@
 analyze_from_definitions = true
-concretization_patterns = ["EGAL_TYPES = x_", "_JET_CONFIGURATIONS = x_"]
+concretization_patterns = [
+  "JET_DEV_MODE = x_",
+  "EGAL_TYPES = x_",
+  "_JET_CONFIGURATIONS = x_"
+]
