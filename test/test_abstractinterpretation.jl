@@ -784,7 +784,7 @@ end
     test_sum_over_string(interp)
     let r = first(interp.reports)
         # we want report to come from `run_task`, but currently we invoke JET analysis on `Task` construction
-        @test_broken any(r.st) do vf
+        @test_broken any(r.vst) do vf
             vf.linfo.def.name === :run_task
         end
     end

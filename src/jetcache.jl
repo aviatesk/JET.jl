@@ -51,7 +51,7 @@ function CC.get(wvc::WorldView{JETGlobalCache}, mi::MethodInstance, default)
                 restored = restore_cached_report!(cached, interp)
                 push!(interp.to_be_updated, restored) # should be updated in `abstract_call` (after exiting `typeinf_edge`)
                 # # TODO make this hold
-                # @assert first(cached.st).linfo === mi "invalid global restoring"
+                # @assert first(cached.vst).linfo === mi "invalid global restoring"
             end
         end
     end
@@ -131,7 +131,7 @@ function CC.cache_lookup(linfo::MethodInstance, given_argtypes::Vector{Any}, cac
             restored = restore_cached_report!(cached, interp)
             push!(interp.to_be_updated, restored) # should be updated in `abstract_call_method_with_const_args`
             # # TODO make this hold
-            # @assert first(cached.st).linfo === linfo "invalid local restoring"
+            # @assert first(cached.vst).linfo === linfo "invalid local restoring"
         end
     end
 

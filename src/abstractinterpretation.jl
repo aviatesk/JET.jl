@@ -257,7 +257,7 @@ function update_reports!(interp::JETInterpreter, sv::InferenceState)
     if !isempty(rs)
         vf = get_virtual_frame(interp, sv)
         for r in rs
-            pushfirst!(r.st, vf)
+            pushfirst!(r.vst, vf)
         end
         empty!(rs)
     end

@@ -104,7 +104,7 @@ const VirtualStackTrace = Vector{VirtualFrame}
 
 An interface type of error reports that JET collects by abstract interpration.
 All `InferenceErrorReport` should have the following fields:
-- `st::VirtualStackTrace`: a virtual stack trace of the error
+- `vst::VirtualStackTrace`: a virtual stack trace of the error
 - `msg::String`: explains why this error is reported
 - `sig::Vector{Any}`: a signature of the error
 
@@ -119,7 +119,7 @@ abstract type InferenceErrorReport end
 
 # to help inference
 function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
-    return if sym === :st
+    return if sym === :vst
         getfield(er, sym)::VirtualStackTrace
     elseif sym === :msg
         getfield(er, sym)::String
@@ -144,15 +144,15 @@ Base.show(io::IO, ::MIME"application/prs.juno.inline", report::T) where {T<:Infe
 
 struct InferenceErrorReportCache
     T::Type{<:InferenceErrorReport}
-    st::VirtualStackTrace
+    vst::VirtualStackTrace
     msg::String
     sig::Vector{Any}
     spec_args::NTuple{N,Any} where N
 end
 
 function cache_report!(cache, report::T) where {T<:InferenceErrorReport}
-    st = copy(report.st)
-    new = InferenceErrorReportCache(T, st, report.msg, report.sig, spec_args(report))
+    vst = copy(report.vst)
+    new = InferenceErrorReportCache(T, vst, report.msg, report.sig, spec_args(report))
     return push!(cache, new)
 end
 
@@ -170,8 +170,8 @@ end
 
 function restore_cached_report(cache::InferenceErrorReportCache)
     T = cache.T
-    st = copy(cache.st)
-    return T(st, cache.msg, cache.sig, cache.spec_args)::InferenceErrorReport
+    vst = copy(cache.vst)
+    return T(vst, cache.msg, cache.sig, cache.spec_args)::InferenceErrorReport
 end
 
 """
@@ -222,12 +222,12 @@ macro reportdef(ex, kwargs...)
         $(if track_from_frame quote
             # when report is constructed _after_ the inference on `sv` has been done,
             # collect location information from `sv.linfo`
-            st = VirtualFrame[get_virtual_frame(interp, sv.linfo)]
+            vst = VirtualFrame[get_virtual_frame(interp, sv.linfo)]
         end else quote
-            st = VirtualFrame[get_virtual_frame(interp, sv)]
+            vst = VirtualFrame[get_virtual_frame(interp, sv)]
         end end)
 
-        return new(st, msg, sig, $(spec_args′...))
+        return new(vst, msg, sig, $(spec_args′...))
     end))
 
     spec_types = extract_type_decls.(spec_args)
@@ -260,7 +260,7 @@ macro reportdef(ex, kwargs...)
 
     return Expr(:block, __source__, quote
         Base.@__doc__ struct $(T) <: $(supertype)
-            st::VirtualStackTrace
+            vst::VirtualStackTrace
             msg::String
             sig::Vector{Any}
             $(spec_args...)
