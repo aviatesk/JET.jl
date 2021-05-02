@@ -131,7 +131,7 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
         throw_locs  = LineInfoNode[]
         throw_calls = Expr[]
         for r in reports
-            if isa(r, ExceptionReport) && last(r.st).linfo === linfo
+            if isa(r, ExceptionReport) && last(r.vst).linfo === linfo
                 push!(throw_locs, r.lin)
             end
         end
@@ -167,7 +167,7 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
             local_cache = InferenceErrorReportCache[]
             for report in this_caches
                 # # TODO make this hold
-                # @assert first(report.st).linfo === linfo "invalid local caching"
+                # @assert first(report.vst).linfo === linfo "invalid local caching"
                 cache_report!(local_cache, report)
             end
             # branching on https://github.com/JuliaLang/julia/pull/39972
@@ -185,7 +185,7 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
             global_cache = InferenceErrorReportCache[]
             for report in this_caches
                 # # TODO make this hold
-                # @assert first(report.st).linfo === linfo "invalid global caching"
+                # @assert first(report.vst).linfo === linfo "invalid global caching"
                 cache_report!(global_cache, report)
             end
             cache[linfo] = global_cache
@@ -235,10 +235,10 @@ function is_from_same_frame(parent_linfo::MethodInstance,
                             )
     function (report::InferenceErrorReport)
         @inbounds begin
-            st = report.st
-            length(st) > 1 || return false
-            st[1].linfo === parent_linfo || return false
-            return st[2].linfo === current_linfo
+            vst = report.vst
+            length(vst) > 1 || return false
+            vst[1].linfo === parent_linfo || return false
+            return vst[2].linfo === current_linfo
         end
     end
 end
@@ -253,7 +253,7 @@ is_unreachable(@nospecialize(x)) = isa(x, ReturnNode) && !isdefined(x, :val)
 end
 
 report_identity_key(report::T) where {T<:InferenceErrorReport} =
-    ReportIdentityKey(T, report.sig, #=first(report.st),=# last(report.st))
+    ReportIdentityKey(T, report.sig, #=first(report.vst),=# last(report.vst))
 
 # basically same as `is_throw_call`, but also toplevel module handling added
 function is_throw_call_expr(interp::JETInterpreter, frame::InferenceState, @nospecialize(e))

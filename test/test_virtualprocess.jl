@@ -1412,13 +1412,13 @@ end
         @test any(res.inference_error_reports) do err
             isa(err, GlobalUndefVarErrorReport) &&
             err.name === :b &&
-            length(err.st) == 1
+            length(err.vst) == 1
         end
         # report analyzed from `bar`
         @test any(res.inference_error_reports) do err
             isa(err, GlobalUndefVarErrorReport) &&
             err.name === :b &&
-            length(err.st) == 2
+            length(err.vst) == 2
         end
     end
 

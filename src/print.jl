@@ -271,7 +271,7 @@ function print_reports(io::IO,
         toplevel_linfo_hash = hash(:dummy)
         wrote_linfos = Set{UInt64}()
         for report in reports
-            new_toplevel_linfo_hash = hash(first(report.st))
+            new_toplevel_linfo_hash = hash(first(report.vst))
             if toplevel_linfo_hash != new_toplevel_linfo_hash
                 toplevel_linfo_hash = new_toplevel_linfo_hash
                 wrote_linfos = Set{UInt64}()
@@ -299,15 +299,15 @@ VirtualFrameNoLinfo(vf::VirtualFrame) = VirtualFrameNoLinfo(vf.file, vf.line, vf
 end
 
 print_identity_key(report::T) where {T<:InferenceErrorReport} =
-    PrintIdentityKey(T, report.sig, #=VirtualFrameNoLinfo(first(report.st)),=# VirtualFrameNoLinfo(last(report.st)))
+    PrintIdentityKey(T, report.sig, #=VirtualFrameNoLinfo(first(report.vst)),=# VirtualFrameNoLinfo(last(report.vst)))
 
 # traverse abstract call stack, print frames
 function print_report(io, report::InferenceErrorReport, config, wrote_linfos, depth = 1)
-    if length(report.st) == depth # error here
+    if length(report.vst) == depth # error here
         return print_error_frame(io, report, config, depth)
     end
 
-    frame = report.st[depth]
+    frame = report.vst[depth]
 
     # cache current frame info
     linfo_hash = hash(frame)
@@ -320,7 +320,7 @@ function print_report(io, report::InferenceErrorReport, config, wrote_linfos, de
 end
 
 function print_error_frame(io, report, config, depth)
-    frame = report.st[depth]
+    frame = report.vst[depth]
 
     len = print_frame(io, frame, config, depth, true)
     print_rails(io, depth-1)
