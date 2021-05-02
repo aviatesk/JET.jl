@@ -588,24 +588,30 @@ function process_config_dict!(config_dict)
     context = get(config_dict, "context", nothing)
     if !isnothing(context)
         @assert isa(context, String) "`context` should be string of Julia code"
-            config_dict["context"] = Core.eval(Main, Meta.parse(context))
+            config_dict["context"] = Core.eval(Main, trymetaparse(context))
     end
     concretization_patterns = get(config_dict, "concretization_patterns", nothing)
     if !isnothing(concretization_patterns)
         @assert isa(concretization_patterns, Vector{String}) "`concretization_patterns` should be array of string of Julia expression"
-        config_dict["concretization_patterns"] = Meta.parse.(concretization_patterns)
+        config_dict["concretization_patterns"] = trymetaparse.(concretization_patterns)
     end
     toplevel_logger = get(config_dict, "toplevel_logger", nothing)
     if !isnothing(toplevel_logger)
         @assert isa(toplevel_logger, String) "`toplevel_logger` should be string of Julia code"
-        config_dict["toplevel_logger"] = Core.eval(Main, Meta.parse(toplevel_logger))
+        config_dict["toplevel_logger"] = Core.eval(Main, trymetaparse(toplevel_logger))
     end
     inference_logger = get(config_dict, "inference_logger", nothing)
     if !isnothing(inference_logger)
         @assert isa(inference_logger, String) "`inference_logger` should be string of Julia code"
-        config_dict["inference_logger"] = Core.eval(Main, Meta.parse(inference_logger))
+        config_dict["inference_logger"] = Core.eval(Main, trymetaparse(inference_logger))
     end
     return kwargs(config_dict)
+end
+
+function trymetaparse(s)
+    ret = Meta.parse(s; raise = true)
+    @isexpr(ret, :incomplete) && error(first(ret.args))
+    return ret
 end
 
 function kwargs(dict)
