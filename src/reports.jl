@@ -298,7 +298,7 @@ extract_type_decls(x) = @isexpr(x, :(::)) ? last(x.args) : Any
 
 @reportdef DivideErrorReport(interp, sv)
 
-@reportdef InfiniteIterationErrorReport(interp, sv, ret_type::Type)
+@reportdef InfiniteIterationErrorReport(interp, sv)
 
 # TODO we may want to hoist `InvalidConstXXX` errors into top-level errors
 
@@ -536,5 +536,5 @@ get_msg(::Type{UncaughtExceptionReport}, interp, sv, throw_blocks) = isone(lengt
     "may throw" :
     "may throw either of"
 get_msg(::Type{NativeRemark}, interp, sv, s) = s
-get_msg(::Type{InfiniteIterationErrorReport}, interp, sv, ret_type::Type) =
-    "invalid return type $ret_type for `iterate` method; should be Union{Nothing, Tuple{Any, Any}}"
+get_msg(::Type{InfiniteIterationErrorReport}, interp, sv) =
+    "invalid return type for `iterate` method; should be Union{Nothing, Tuple{Any, Any}}"
