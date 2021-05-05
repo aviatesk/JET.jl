@@ -38,7 +38,6 @@ JET.partially_interpret!
 JET.VirtualFrame
 JET.VirtualStackTrace
 JET.InferenceErrorReport
-JET.@reportdef
 JET.ToplevelErrorReport
 ```
 

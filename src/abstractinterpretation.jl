@@ -285,9 +285,12 @@ function CC.abstract_invoke(interp::JETInterpreter, argtypes::Vector{Any}, sv::I
     return ret
 end
 
-@reportdef InvalidInvokeErrorReport(interp, sv, argtypes::Vector{Any})
+@eval struct InvalidInvokeErrorReport <: InferenceErrorReport
+    $(INFERENCE_ERROR_REPORT_FIELD_DECLS...)
+    argtypes::Vector{Any}
+end
 
-function get_msg(::Type{InvalidInvokeErrorReport}, interp, sv, argtypes::Vector{Any})
+function get_msg(::Type{InvalidInvokeErrorReport}, interp, sv::InferenceState, argtypes::Vector{Any})
     fallback_msg = "invalid invoke" # mostly because of runtime unreachable
 
     ft = widenconst(argtype_by_index(argtypes, 2))

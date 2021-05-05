@@ -202,6 +202,9 @@ _isexpr_check(ex::Expr, heads)                = in(ex.head, heads)
 _isexpr_check(ex::Expr, head::Symbol, n::Int) = ex.head === head && length(ex.args) == n
 _isexpr_check(ex::Expr, heads, n::Int)        = in(ex.head, heads) && length(ex.args) == n
 
+islnn(@nospecialize(_)) = false
+islnn(::LineNumberNode) = true
+
 """
     @invoke f(arg::T, ...; kwargs...)
 
@@ -338,9 +341,6 @@ macro withmixedhash(typedef)
     end
 end
 
-islnn(@nospecialize(_)) = false
-islnn(::LineNumberNode) = true
-
 """
     const EGAL_TYPES = $(EGAL_TYPES)
 
@@ -446,6 +446,19 @@ include("optimize.jl")
 include("virtualprocess.jl")
 include("watch.jl")
 include("print.jl")
+
+let
+    function implement_cache_interfaces(t0)
+        for t in subtypes(t0)
+            if isabstracttype(t)
+                implement_cache_interfaces(t)
+                continue
+            end
+            implement_cache_interface(t, @__MODULE__)
+        end
+    end
+    implement_cache_interfaces(InferenceErrorReport)
+end
 
 # entry
 # =====
