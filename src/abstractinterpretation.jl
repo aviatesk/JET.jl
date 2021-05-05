@@ -285,8 +285,7 @@ function CC.abstract_invoke(interp::JETInterpreter, argtypes::Vector{Any}, sv::I
     return ret
 end
 
-@eval struct InvalidInvokeErrorReport <: InferenceErrorReport
-    $(INFERENCE_ERROR_REPORT_FIELD_DECLS...)
+@reportdef struct InvalidInvokeErrorReport <: InferenceErrorReport
     argtypes::Vector{Any}
 end
 

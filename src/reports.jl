@@ -357,45 +357,59 @@ _get_sig_type(interp, ::InferenceState, @nospecialize(x)) = Any[repr(x; context 
 # report, message
 # ---------------
 
-@eval struct NoMethodErrorReport <: InferenceErrorReport
-    $(INFERENCE_ERROR_REPORT_FIELD_DECLS...)
+# a simple utitlity macro to define `InferenceErrorReport` w/o code duplication
+macro reportdef(ex)
+    @assert @capture(ex, struct T_ <: S_; sigs__; end)
+    @assert Core.eval(__module__, S) <: InferenceErrorReport
+    fields = map(sigs) do x
+        if @isexpr(x, :macrocall) && x.args[1] === Symbol("@nospecialize")
+            return x.args[3]
+        end
+        return x
+    end
+    names = map(fields) do x
+        (@isexpr(x, :(::)) ? first(x.args) : x)::Symbol
+    end
+    return :(Base.@__doc__ struct $T <: $S
+        $(INFERENCE_ERROR_REPORT_FIELD_DECLS...)
+        $(fields...)
+        # esc is needed here since signanture might be `@nospecialize`d
+        function $T($(INFERENCE_ERROR_REPORT_FIELD_DECLS...), $(map(esc, sigs)...))
+            new($(INFERENCE_ERROR_REPORT_FIELD_NAMES...), $(map(esc, names)...))
+        end
+    end)
+end
+
+@reportdef struct NoMethodErrorReport <: InferenceErrorReport
     unionsplit::Bool
-    atype::Type
-    NoMethodErrorReport($(INFERENCE_ERROR_REPORT_FIELD_DECLS...), unionsplit::Bool, @nospecialize(atype::Type)) =
-        new($(INFERENCE_ERROR_REPORT_FIELD_NAMES...), unionsplit, atype)
+    @nospecialize(atype::Type)
 end
 # TODO count invalid unon split case
 get_msg(::Type{NoMethodErrorReport}, interp, sv::InferenceState, unionsplit::Bool, @nospecialize(args...)) = unionsplit ?
     "for any of the union split cases, no matching method found for call signature" :
     "no matching method found for call signature"
 
-@eval struct InvalidBuiltinCallErrorReport <: InferenceErrorReport
-    $(INFERENCE_ERROR_REPORT_FIELD_DECLS...)
+@reportdef struct InvalidBuiltinCallErrorReport <: InferenceErrorReport
     argtypes::Vector{Any}
 end
 get_msg(::Type{InvalidBuiltinCallErrorReport}, interp, sv::InferenceState, @nospecialize(args...)) =
     "invalid builtin function call"
 
-@eval struct NoFieldErrorReport <: InferenceErrorReport
-    $(INFERENCE_ERROR_REPORT_FIELD_DECLS...)
-    typ::Type
+@reportdef struct NoFieldErrorReport <: InferenceErrorReport
+    @nospecialize(typ::Type)
     name::Symbol
-    NoFieldErrorReport($(INFERENCE_ERROR_REPORT_FIELD_DECLS...), @nospecialize(typ::Type), name::Symbol) =
-        new($(INFERENCE_ERROR_REPORT_FIELD_NAMES...), typ, name)
 end
 get_msg(::Type{NoFieldErrorReport}, interp, sv::InferenceState, @nospecialize(typ::Type), name::Symbol) =
     "type $(typ) has no field $(name)"
 
-@eval struct GlobalUndefVarErrorReport <: InferenceErrorReport
-    $(INFERENCE_ERROR_REPORT_FIELD_DECLS...)
+@reportdef struct GlobalUndefVarErrorReport <: InferenceErrorReport
     mod::Module
     name::Symbol
 end
 get_msg(::Type{GlobalUndefVarErrorReport}, interp, sv::InferenceState, mod::Module, name::Symbol) =
     "variable $(mod).$(name) is not defined"
 
-@eval struct LocalUndefVarErrorReport <: InferenceErrorReport
-    $(INFERENCE_ERROR_REPORT_FIELD_DECLS...)
+@reportdef struct LocalUndefVarErrorReport <: InferenceErrorReport
     name::Symbol
 end
 # use program counter where local undefined variable is found
@@ -406,20 +420,15 @@ function LocalUndefVarErrorReport(interp, sv::InferenceState, name::Symbol, pc::
     return LocalUndefVarErrorReport(vst, msg, sig, name)
 end
 
-@eval struct NonBooleanCondErrorReport <: InferenceErrorReport
-    $(INFERENCE_ERROR_REPORT_FIELD_DECLS...)
-    t::Union{Type,Vector{Type}}
-    NonBooleanCondErrorReport($(INFERENCE_ERROR_REPORT_FIELD_DECLS...), @nospecialize(t::Union{Type,Vector{Type}})) =
-        new($(INFERENCE_ERROR_REPORT_FIELD_NAMES...), t)
+@reportdef struct NonBooleanCondErrorReport <: InferenceErrorReport
+    @nospecialize(t::Union{Type,Vector{Type}})
 end
 get_msg(::Type{NonBooleanCondErrorReport}, interp, sv::InferenceState, @nospecialize(t::Type)) =
     "non-boolean ($t) used in boolean context"
 get_msg(::Type{NonBooleanCondErrorReport}, interp, sv::InferenceState, ts::Vector{Type}) =
     "for $(length(ts)) of union split cases, non-boolean ($(join(ts, ','))) used in boolean context"
 
-@eval struct DivideErrorReport <: InferenceErrorReport
-    $(INFERENCE_ERROR_REPORT_FIELD_DECLS...)
-end
+@reportdef struct DivideErrorReport <: InferenceErrorReport end
 let
     io = IOBuffer()
     showerror(io, DivideError())
@@ -429,20 +438,16 @@ end
 
 # TODO we may want to hoist `InvalidConstXXX` errors into top-level errors
 
-@eval struct InvalidConstantRedefinition <: InferenceErrorReport
-    $(INFERENCE_ERROR_REPORT_FIELD_DECLS...)
+@reportdef struct InvalidConstantRedefinition <: InferenceErrorReport
     mod::Module
     name::Symbol
-    t′::Any
-    t::Any
-    InvalidConstantRedefinition($(INFERENCE_ERROR_REPORT_FIELD_DECLS...), mod::Module, name::Symbol, @nospecialize(t′::Any), @nospecialize(t::Any)) =
-        new($(INFERENCE_ERROR_REPORT_FIELD_NAMES...), mod, name, t′, t)
+    @nospecialize(t′::Any)
+    @nospecialize(t::Any)
 end
 get_msg(::Type{InvalidConstantRedefinition}, interp, sv::InferenceState, mod::Module, name::Symbol, @nospecialize(t′::Any), @nospecialize(t::Any)) =
     "invalid redefinition of constant $(mod).$(name) (from $(t′) to $(t))"
 
-@eval struct InvalidConstantDeclaration <: InferenceErrorReport
-    $(INFERENCE_ERROR_REPORT_FIELD_DECLS...)
+@reportdef struct InvalidConstantDeclaration <: InferenceErrorReport
     mod::Module
     name::Symbol
 end
@@ -467,8 +472,7 @@ abstract type ExceptionReport <: InferenceErrorReport end
 #     return @invoke getproperty(er::InferenceErrorReport, sym::Symbol)
 # end
 
-@eval struct UndefKeywordErrorReport <: ExceptionReport
-    $(INFERENCE_ERROR_REPORT_FIELD_DECLS...)
+@reportdef struct UndefKeywordErrorReport <: ExceptionReport
     err::UndefKeywordError
     lin::LineInfoNode
 end
@@ -480,9 +484,7 @@ get_msg(::Type{UndefKeywordErrorReport}, interp, sv::InferenceState, err::UndefK
 Represents general `throw` calls traced during inference.
 They are reported only when they're not caught by any control flow.
 """
-:(UncaughtExceptionReport)
-@eval struct UncaughtExceptionReport <: InferenceErrorReport
-    $(INFERENCE_ERROR_REPORT_FIELD_DECLS...)
+@reportdef struct UncaughtExceptionReport <: InferenceErrorReport
     throw_calls::Vector{Expr}
 end
 get_vst(::Type{UncaughtExceptionReport}, interp, sv::InferenceState, @nospecialize(args...)) =
@@ -509,9 +511,7 @@ This special `InferenceErrorReport` is just for wrapping remarks from `NativeInt
 !!! note
     Currently JET.jl doesn't make any use of `NativeRemark`.
 """
-:(NativeRemark)
-@eval struct NativeRemark <: InferenceErrorReport
-    $(INFERENCE_ERROR_REPORT_FIELD_DECLS...)
+@reportdef struct NativeRemark <: InferenceErrorReport
     s::String
 end
 get_msg(::Type{NativeRemark}, interp, sv::InferenceState, s::String) = s
