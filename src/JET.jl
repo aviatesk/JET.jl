@@ -884,6 +884,24 @@ end
 macro lwr(ex) QuoteNode(lower(__module__, ex)) end
 macro src(ex) QuoteNode(first(lower(__module__, ex).args)) end
 
+let
+    function recur_subtype(f, t0)
+        for t in subtypes(t0)
+            if isabstracttype(t)
+                recur_subtype(f, t)
+                continue
+            end
+            f(t)
+        end
+    end
+
+    recur_subtype(InferenceErrorReport) do t
+        precompile(spec_args, (t,))
+        tt = Base.return_types(spec_args, (t,))[1]
+        precompile(t, (VirtualStackTrace,String,Vector{Any},tt))
+    end
+end
+
 # exports
 # =======
 
