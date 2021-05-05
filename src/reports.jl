@@ -138,20 +138,6 @@ routine using the constructor `T(interp::JETInterpreter, ::InferenceState, spec_
     _**must**_ be overloaded, otherwise the senseless default message will be rendered.
 
 ---
-## A contructor interface to create `T` from the global report cache
-
-In order to be cached and restored from [`JET_REPORT_CACHE`](@ref), `T` _**must**_ implement
-the following interfaces:
-- `spec_args(::T) -> Tuple{...}`: returns fields that are specific to `T`, which is internally used by the caching logic
-- `(::Type{T})(vst::VirtualStackTrace, msg::String, sig::Vector{Any} spec_args::Tuple{...}) -> T`:
-  constructor to create `T` from the cache, which should restore `T`'s specific fields from `spec_args`
-
-Manually writing these interfaces will be tedious.
-`JET.implement_cache_interface(T::Type{<:InferenceErrorReport}, m::Module)` will automatically
-define them given `T` and the context module.
-JET will define the constructor interfaces at once using it in JET.jl.
-
----
 
 See also: [`VirtualStackTrace`](@ref), [`VirtualFrame`](@ref)
 """
@@ -544,40 +530,25 @@ end
 restore_cached_report(cache::InferenceErrorReportCache) =
     cache.T(copy(cache.vst), cache.msg, cache.sig, cache.spec_args)::InferenceErrorReport
 
-# supposed to be called at top-level, and will define the report cache interface at pre-compile time
-# IDEA feels very dangerous, but `@generated` functions could nicely replace the following logic
-function implement_cache_interface(T::Type{<:InferenceErrorReport}, m::Module)
-    spec_name2types = filter(
-        ∉(INFERENCE_ERROR_REPORT_FIELD_NAMES)∘first, collect(zip(fieldnames(T), fieldtypes(T))))
+spec_name2type(::Type{T}) where T<:InferenceErrorReport =
+    filter(∉(INFERENCE_ERROR_REPORT_FIELD_NAMES)∘first, collect(zip(fieldnames(T), fieldtypes(T))))
 
-    function cache_constructor(T)
-        T = T.name.name
-        cache_constructor_sig = :($T(vst::VirtualStackTrace,
-                                     msg::String,
-                                     sig::Vector{Any},
-                                     @nospecialize(spec_args),
-                                     ))
-        cache_constructor_call = :($T(vst, msg, sig))
-        for (i, (_, spec_type)) in enumerate(spec_name2types)
-            push!(cache_constructor_call.args,
-                  :(spec_args[$i]::$spec_type), # `esc` is needed because `@nospecialize` escapes its argument anyway
-                  )
-        end
-        return Expr(:function, cache_constructor_sig, Expr(:block, :(return @inbounds $cache_constructor_call)))
+@generated function (::Type{T})(vst::VirtualStackTrace, msg::String, sig::Vector{Any}, @nospecialize(spec_args::Tuple)) where T<:InferenceErrorReport
+    name2type = spec_name2type(T)
+    cache_constructor_call = :(T(vst, msg, sig))
+    for (i, (_, spec_type)) in enumerate(name2type)
+        push!(cache_constructor_call.args, :(spec_args[$i]::$spec_type))
     end
+    return :(@inbounds $cache_constructor_call)
+end
 
-    function spec_args_getter(T)
-        T = T.name.name
-        spec_getter_sig = :(spec_args(report::$T))
-        spec_getter_tuple = Expr(:tuple)
-        spec_types = []
-        for (spec_name, spec_type) in spec_name2types
-            push!(spec_getter_tuple.args, Expr(:call, GlobalRef(Base, :getproperty), :report, QuoteNode(spec_name)))
-            push!(spec_types, spec_type)
-        end
-        return Expr(:function, spec_getter_sig, Expr(:block, :(return $spec_getter_tuple::Tuple{$(spec_types...)})))
+@generated function spec_args(report::InferenceErrorReport)
+    name2type = spec_name2type(report)
+    spec_getter_tuple = Expr(:tuple)
+    spec_types = []
+    for (spec_name, spec_type) in name2type
+        push!(spec_getter_tuple.args, Expr(:call, GlobalRef(Base, :getproperty), :report, QuoteNode(spec_name)))
+        push!(spec_types, spec_type)
     end
-
-    Core.eval(m, cache_constructor(T))
-    Core.eval(m, spec_args_getter(T))
+    return :($spec_getter_tuple::Tuple{$(spec_types...)})
 end
