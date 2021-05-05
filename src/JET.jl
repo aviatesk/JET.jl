@@ -447,18 +447,16 @@ include("virtualprocess.jl")
 include("watch.jl")
 include("print.jl")
 
-let
-    function implement_cache_interfaces(t0)
-        for t in subtypes(t0)
-            if isabstracttype(t)
-                implement_cache_interfaces(t)
-                continue
-            end
-            implement_cache_interface(t, @__MODULE__)
+function implement_cache_interfaces(t0, m)
+    for t in subtypes(t0)
+        if isabstracttype(t)
+            implement_cache_interfaces(t, m)
+            continue
         end
+        implement_cache_interface(t, m)
     end
-    implement_cache_interfaces(InferenceErrorReport)
 end
+implement_cache_interfaces(InferenceErrorReport, @__MODULE__)
 
 # entry
 # =====

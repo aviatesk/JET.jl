@@ -545,7 +545,7 @@ restore_cached_report(cache::InferenceErrorReportCache) =
     cache.T(copy(cache.vst), cache.msg, cache.sig, cache.spec_args)::InferenceErrorReport
 
 # supposed to be called at top-level, and will define the report cache interface at pre-compile time
-# IDEA feels very dangerous, but `@generated` functions can replace the following logic
+# IDEA feels very dangerous, but `@generated` functions could nicely replace the following logic
 function implement_cache_interface(T::Type{<:InferenceErrorReport}, m::Module)
     spec_name2types = filter(
         ∉(INFERENCE_ERROR_REPORT_FIELD_NAMES)∘first, collect(zip(fieldnames(T), fieldtypes(T))))
