@@ -48,8 +48,10 @@ end
             return bar # undefined in this pass
         end
         @test length(interp.reports) === 1
-        @test first(interp.reports) isa LocalUndefVarErrorReport
-        @test first(interp.reports).name === :bar
+        r = first(interp.reports)
+        @test r isa LocalUndefVarErrorReport
+        @test r.name === :bar
+        @test last(r.vst).line == (@__LINE__)-6
     end
 
     # deeper level
@@ -67,14 +69,18 @@ end
 
         interp, frame = Core.eval(m, :($analyze_call(baz, (Bool,))))
         @test length(interp.reports) === 1
-        @test first(interp.reports) isa LocalUndefVarErrorReport
-        @test first(interp.reports).name === :bar
+        r = first(interp.reports)
+        @test r isa LocalUndefVarErrorReport
+        @test r.name === :bar
+        @test last(r.vst).line == (@__LINE__)-10
 
         # works when cached
         interp, frame = Core.eval(m, :($analyze_call(baz, (Bool,))))
         @test length(interp.reports) === 1
-        @test first(interp.reports) isa LocalUndefVarErrorReport
-        @test first(interp.reports).name === :bar
+        r = first(interp.reports)
+        @test r isa LocalUndefVarErrorReport
+        @test r.name === :bar
+        @test last(r.vst).line == (@__LINE__)-18
     end
 
     # try to exclude false negatives as possible (by collecting reports in after-optimization pass)

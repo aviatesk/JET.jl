@@ -204,6 +204,13 @@ function get_virtual_frame(interp, loc::Union{InferenceState,MethodInstance})
     return VirtualFrame(file, line, sig, linfo)
 end
 
+function get_virtual_frame(interp, sv::InferenceState, pc::Int)
+    sig = get_sig(interp, sv, get_stmt(sv, pc))
+    file, line = get_file_line(get_lin(sv, get_codeloc(sv, pc)))
+    linfo = sv.linfo
+    return VirtualFrame(file, line, sig, linfo)
+end
+
 get_file_line(frame::InferenceState) = get_file_line(get_lin(frame))
 get_file_line(linfo::LineInfoNode)   = linfo.file, linfo.line
 # this location is not exact, but this is whay we know at best
@@ -254,7 +261,7 @@ function get_sig(interp, l::MethodInstance)
     return Any[ret]
 end
 
-get_sig(interp, sv::InferenceState) = _get_sig(interp, sv, get_stmt(sv))
+get_sig(interp, sv::InferenceState, @nospecialize(x = get_stmt(sv))) = _get_sig(interp, sv, x)
 
 _get_sig(args...) = first(_get_sig_type(args...))::Vector{Any}
 
@@ -391,11 +398,13 @@ get_msg(::Type{GlobalUndefVarErrorReport}, interp, sv::InferenceState, mod::Modu
     $(INFERENCE_ERROR_REPORT_FIELD_DECLS...)
     name::Symbol
 end
-get_vst(::Type{LocalUndefVarErrorReport}, interp, sv::InferenceState, @nospecialize(args...)) =
-    VirtualFrame[get_virtual_frame(interp, sv.linfo)]
-get_msg(::Type{LocalUndefVarErrorReport}, interp, sv::InferenceState, name::Symbol) =
-    "local variable $(name) is not defined"
-get_sig(::Type{LocalUndefVarErrorReport}, interp, sv::InferenceState, name::Symbol) = Any[""] # TODO
+# use program counter where local undefined variable is found
+function LocalUndefVarErrorReport(interp, sv::InferenceState, name::Symbol, pc::Int)
+    vst = VirtualFrame[get_virtual_frame(interp, sv, pc)]
+    msg = "local variable $(name) is not defined"
+    sig = get_sig(interp, sv, get_stmt(sv, pc))
+    return LocalUndefVarErrorReport(vst, msg, sig, name)
+end
 
 @eval struct NonBooleanCondErrorReport <: InferenceErrorReport
     $(INFERENCE_ERROR_REPORT_FIELD_DECLS...)
