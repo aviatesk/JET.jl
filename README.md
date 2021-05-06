@@ -44,7 +44,7 @@ fib("1000") # obvious type error
 # language features
 # -----------------
 
-# user-defined types
+# user-defined types, macros
 struct Ty{T}
     fld::T
 end
@@ -61,6 +61,15 @@ end
 
 foo(1.2)
 foo("1") # `String` can't be converted to `Number`
+
+# even staged programming
+# adapted from https://github.com/JuliaLang/julia/blob/9f665c19e076ab37cbca2d0cc99283b82e99c26f/base/namedtuple.jl#L253-L264
+@generated function badmerge(a::NamedTuple{an}, b::NamedTuple{bn}) where {an, bn}
+    names = Base.merge_names(an, bn)
+    types = Base.merge_types(names, a, b)
+    vals = Any[ :(getfield($(Base.sym_in(names[n], bn) ? :b : :a), $(names[n]))) for n in 1:length(names) ] # missing quote, just ends up with under vars
+    :( NamedTuple{$names,$types}(($(vals...),)) )
+end
 ```
 
 You can have JET.jl detect possible errors:
@@ -69,16 +78,17 @@ You can have JET.jl detect possible errors:
 julia> using JET
 
 julia> report_and_watch_file("demo.jl"; annotate_types = true)
-[toplevel-info] analysis entered into demo.jl
-[toplevel-info] analysis from demo.jl finished in 3.455 sec
-═════ 4 possible errors found ═════
+[toplevel-info] virtualized the context of Main (took 0.013 sec)
+[toplevel-info] entered into demo.jl
+[toplevel-info]  exited from demo.jl (took 3.254 sec)
+═════ 7 possible errors found ═════
 ┌ @ demo.jl:10 fib(m)
 │ variable m is not defined: fib(m)
 └──────────────
 ┌ @ demo.jl:11 fib("1000")
 │┌ @ demo.jl:7 ≤(n::String, 2)
-││┌ @ operators.jl:385 Base.<(x::String, y::Int64)
-│││┌ @ operators.jl:336 Base.isless(x::String, y::Int64)
+││┌ @ operators.jl:401 Base.<(x::String, y::Int64)
+│││┌ @ operators.jl:352 Base.isless(x::String, y::Int64)
 ││││ no matching method found for call signature: Base.isless(x::String, y::Int64)
 │││└────────────────────
 ┌ @ demo.jl:32 foo(1.2)
@@ -92,6 +102,16 @@ julia> report_and_watch_file("demo.jl"; annotate_types = true)
 ││┌ @ demo.jl:30 convert(Number, Base.getproperty(v::Ty{String}, :fld::Symbol)::String)
 │││ no matching method found for call signature: convert(Number, Base.getproperty(v::Ty{String}, :fld::Symbol)::String)
 ││└──────────────
+┌ @ demo.jl:44 badmerge(Core.apply_type(Core.NamedTuple, Core.tuple(:x::Symbol, :y::Symbol)::Tuple{Symbol, Symbol})::Type{NamedTuple{(:x, :y)}}(Core.tuple(1, 2)::Tuple{Int64, Int64})::NamedTuple{(:x, :y), Tuple{Int64, Int64}}, Core.apply_type(Core.NamedTuple, Core.tuple(:y::Symbol, :z::Symbol)::Tuple{Symbol, Symbol})::Type{NamedTuple{(:y, :z)}}(Core.tuple(3, 1)::Tuple{Int64, Int64})::NamedTuple{(:y, :z), Tuple{Int64, Int64}})
+│┌ @ demo.jl:37 getfield(a::NamedTuple{(:x, :y), Tuple{Int64, Int64}}, x)
+││ variable x is not defined: getfield(a::NamedTuple{(:x, :y), Tuple{Int64, Int64}}, x)
+│└──────────────
+│┌ @ demo.jl:37 getfield(b::NamedTuple{(:y, :z), Tuple{Int64, Int64}}, y)
+││ variable y is not defined: getfield(b::NamedTuple{(:y, :z), Tuple{Int64, Int64}}, y)
+│└──────────────
+│┌ @ demo.jl:37 getfield(b::NamedTuple{(:y, :z), Tuple{Int64, Int64}}, z)
+││ variable z is not defined: getfield(b::NamedTuple{(:y, :z), Tuple{Int64, Int64}}, z)
+│└──────────────
 ```
 
 Hooray !
@@ -106,11 +126,11 @@ Lastly let's apply the following diff to demo.jl so that it works nicely:
 > fix-demo.jl.diff
 
 ```diff
-diff --git a/demo.jl b/demo-fixed.jl
-index d2b188a..1d1b3da 100644
+diff --git a/demo.jl b/demo.jl
+index f868d2f..634e130 100644
 --- a/demo.jl
 +++ b/demo.jl
-@@ -5,11 +5,21 @@
+@@ -4,11 +4,21 @@
  # fibonacci
  # ---------
 
@@ -136,7 +156,7 @@ index d2b188a..1d1b3da 100644
 
 
  # language features
-@@ -27,8 +37,8 @@ end
+@@ -26,19 +36,19 @@ end
 
  # macros will be expanded
  @inline bar(n::T)     where {T<:Number} = n < 0 ? zero(T) : one(T)
@@ -147,6 +167,20 @@ index d2b188a..1d1b3da 100644
  foo(1.2)
 -foo("1") # `String` can't be converted to `Number`
 +foo('1') # `Char` will be converted to `UInt32`
+
+ # even staged programming
+ # adapted from https://github.com/JuliaLang/julia/blob/9f665c19e076ab37cbca2d0cc99283b82e99c26f/base/namedtuple.jl#L253-L264
+-@generated function badmerge(a::NamedTuple{an}, b::NamedTuple{bn}) where {an, bn}
++@generated function goodmerge(a::NamedTuple{an}, b::NamedTuple{bn}) where {an, bn}
+     names = Base.merge_names(an, bn)
+     types = Base.merge_types(names, a, b)
+-    vals = Any[ :(getfield($(Base.sym_in(names[n], bn) ? :b : :a), $(names[n]))) for n in 1:length(names) ] # missing quote, just ends up with under vars
++    vals = Any[ :(getfield($(Base.sym_in(names[n], bn) ? :b : :a), $(QuoteNode(names[n])))) for n in 1:length(names) ] # names quoted, should work as expected
+     :( NamedTuple{$names,$types}(($(vals...),)) )
+ end
+
+-badmerge((x=1,y=2), (y=3,z=1))
++goodmerge((x=1,y=2), (y=3,z=1))
 ```
 
 If you apply the diff (i.e. update and save the demo.jl), JET will automatically re-trigger analysis, and this time, won't complain anything:
@@ -154,8 +188,9 @@ If you apply the diff (i.e. update and save the demo.jl), JET will automatically
 > `git apply fix-demo.jl.diff`
 
 ```julia
+[toplevel-info] virtualized the context of Main (took 0.004 sec)
 [toplevel-info] entered into demo.jl
-[toplevel-info]  exited from demo.jl (took 3.423 sec)
+[toplevel-info]  exited from demo.jl (took 3.061 sec)
 No errors !
 ```
 

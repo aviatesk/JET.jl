@@ -401,7 +401,7 @@ macro reportdef(ex)
     cache_constructor_sig = :($T(vst::VirtualStackTrace,
                                  msg::String,
                                  sig::Vector{Any},
-                                 @nospecialize(spec_args),
+                                 @nospecialize(spec_args::Tuple),
                                  ))
     cache_constructor_call = :($T(vst, msg, sig))
     for (i, spec_type) in enumerate(spec_types)
@@ -493,10 +493,7 @@ get_msg(::Type{NonBooleanCondErrorReport}, interp, sv::InferenceState, ts::Vecto
     "for $(length(ts)) of union split cases, non-boolean ($(join(ts, ','))) used in boolean context"
 
 @reportdef struct DivideErrorReport <: InferenceErrorReport end
-let
-    io = IOBuffer()
-    showerror(io, DivideError())
-    s = String(take!(io))
+let s = sprint(showerror, DivideError())
     global get_msg(::Type{DivideErrorReport}, interp, sv::InferenceState) = s
 end
 
@@ -517,6 +514,16 @@ get_msg(::Type{InvalidConstantRedefinition}, interp, sv::InferenceState, mod::Mo
 end
 get_msg(::Type{InvalidConstantDeclaration}, interp, sv::InferenceState, mod::Module, name::Symbol) =
     "cannot declare a constant $(mod).$(name); it already has a value"
+
+@reportdef struct GeneratorErrorReport <: InferenceErrorReport
+    err # actual error wrapped
+end
+function GeneratorErrorReport(interp, linfo::MethodInstance, err)
+    vst = VirtualFrame[get_virtual_frame(interp, linfo)]
+    msg = sprint(showerror, err)
+    sig = get_sig(interp, linfo)
+    return GeneratorErrorReport(vst, msg, sig, err)
+end
 
 """
     ExceptionReport <: InferenceErrorReport

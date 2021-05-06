@@ -870,3 +870,42 @@ end # @static if VERSION ≥ v"1.7.0-DEV.705"
     end
     @test isempty(res.inference_error_reports)
 end
+
+@testset "staged programming" begin
+    m = @fixturedef begin
+        @generated function foo(a)
+            if a <: Integer
+                return :(a)
+            elseif a <: Number
+                return :(undefvar) # report me this case
+            end
+            throw("invalid argument")
+        end
+    end
+
+    # successful code generation, valid code
+    let
+        interp, frame = analyze_call(m.foo, (Int,))
+        @test !isnothing(frame) # code generation should be successful
+        @test isempty(interp.reports)
+    end
+
+    # successful code generation, invalid code
+    let
+        interp, frame = analyze_call(m.foo, (Float64,))
+        @test !isnothing(frame) # code generation should be successful
+        @test length(interp.reports) == 1
+        r = first(interp.reports)
+        @test isa(r, GlobalUndefVarErrorReport)
+        @test r.name === :undefvar
+    end
+
+    # unsuccessful code generation
+    let
+        interp, frame = analyze_call(m.foo, (String,))
+        @test isnothing(frame) # code generation should be unsuccessful
+        @test length(interp.reports) == 1
+        r = first(interp.reports)
+        @test isa(r, GeneratorErrorReport) && r.err == "invalid argument"
+    end
+end
