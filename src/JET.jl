@@ -108,6 +108,7 @@ import .CC:
     CallMeta,
     is_throw_call,
     tmerge,
+    switchtupleunion,
     argtypes_to_type,
     argtype_by_index,
     argtype_tail,

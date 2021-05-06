@@ -1211,7 +1211,7 @@ end
         @test length(res.inference_error_reports) === 1
         er = first(res.inference_error_reports)
         @test er isa NoMethodErrorReport
-        @test er.unionsplit
+        @test isa(er.t, Vector)
     end
 end
 

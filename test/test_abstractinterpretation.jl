@@ -11,8 +11,8 @@
         end)
         @test length(interp.reports) === 1
         report = first(interp.reports)
-        @test report isa NoMethodErrorReport &&
-            report.atype === Tuple{typeof(m.foo), AbstractString}
+        @test report isa NoMethodErrorReport
+        @test report.t === Tuple{typeof(m.foo), AbstractString}
     end
 
     # we want to get report on `zero(Any)` for this case, but `Any`-typed statement can't
@@ -34,7 +34,8 @@
 
         @test length(interp.reports) === 1
         report = first(interp.reports)
-        @test report isa NoMethodErrorReport && report.atype === Tuple{typeof(m.foo), Union{Nothing,Int}}
+        @test report isa NoMethodErrorReport
+        @test report.t == [Tuple{typeof(m.foo), Nothing}]
     end
 end
 
@@ -278,8 +279,8 @@ end
             @test vmod.globalvar.t === Union{String,Symbol}
             @test length(res.inference_error_reports) === 1
             er = first(res.inference_error_reports)
-            @test er isa NoMethodErrorReport &&
-                er.unionsplit # should be true
+            @test er isa NoMethodErrorReport
+            @test isa(er.t, Vector) # should be true
         end
 
         # sequential
@@ -304,12 +305,12 @@ end
             @test isa_analyzed(vmod.globalvar, Int)
             @test length(res.inference_error_reports) === 2
             let er = first(res.inference_error_reports)
-                @test er isa NoMethodErrorReport &&
-                er.unionsplit
+                @test er isa NoMethodErrorReport
+                @test isa(er.t, Vector)
             end
             let er = last(res.inference_error_reports)
-                @test er isa NoMethodErrorReport &&
-                !er.unionsplit
+                @test er isa NoMethodErrorReport
+                @test !isa(er.t, Vector)
             end
         end
     end
@@ -480,8 +481,8 @@ end
         # "no matching method found for call signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{String}, v::Int64)" should be kept
         @test length(interp.reports) === 1
         er = first(interp.reports)
-        @test er isa NoMethodErrorReport &&
-            er.atype === Tuple{typeof(convert), Type{String}, Int}
+        @test er isa NoMethodErrorReport
+        @test er.t === Tuple{typeof(convert), Type{String}, Int}
     end
 
     # constant prop should narrow down union-split no method error to single no method matching error
@@ -503,8 +504,8 @@ end
         # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::String)" should be narrowed down to "no matching method found for call signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{Int}, v::String)"
         @test !isempty(interp.reports)
         @test any(interp.reports) do report
-            return report isa NoMethodErrorReport &&
-                report.atype === Tuple{typeof(convert), Type{Int}, String}
+            report isa NoMethodErrorReport &&
+            report.t === Tuple{typeof(convert), Type{Int}, String}
         end
         # "no matching method found for call signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{String}, v::Int)"
         # won't be reported since `typeinf` early escapes on `Bottom`-annotated statement
@@ -554,17 +555,15 @@ end
             interp, frame = Core.eval(m, :($analyze_call(bar, (Int,))))
             @test length(interp.reports) === 1
             er = first(interp.reports)
-            @test er isa NoMethodErrorReport &&
-                er.unionsplit &&
-                er.atype ⊑ Tuple{Any,Union{Int,String},Int}
+            @test er isa NoMethodErrorReport
+            @test er.t == [Tuple{typeof(+),String,Int}]
 
             # if we run constant prop' that leads to the error pass, we should get the reports
             interp, frame = Core.eval(m, :($analyze_call(()->bar(0))))
             @test length(interp.reports) === 1
             er = first(interp.reports)
-            @test er isa NoMethodErrorReport &&
-                !er.unionsplit &&
-                er.atype ⊑ Tuple{Any,String,Int}
+            @test er isa NoMethodErrorReport
+            @test er.t === Tuple{typeof(+),String,Int}
         end
 
         # we should throw-away reports collected from frames that are revealed as "unreachable"
@@ -730,7 +729,7 @@ end
     @test length(interp.reports) == 1
     let r = first(interp.reports)
         @test isa(r, NoMethodErrorReport)
-        @test r.atype === Tuple{typeof(+), Int, String}
+        @test r.t === Tuple{typeof(+), Int, String}
     end
 
     # handle `Threads.@threads`
@@ -744,7 +743,7 @@ end
     @test !isempty(interp.reports)
     @test any(interp.reports) do r
         isa(r, NoMethodErrorReport) &&
-        r.atype === Tuple{typeof(convert), Type{String}, Int}
+        r.t === Tuple{typeof(convert), Type{String}, Int}
     end
 
     # multiple tasks in the same frame
@@ -756,11 +755,11 @@ end
     @test length(interp.reports) == 2
     let r = interp.reports[1]
         @test isa(r, NoMethodErrorReport)
-        @test r.atype === Tuple{typeof(+), Int, String}
+        @test r.t === Tuple{typeof(+), Int, String}
     end
     let r = interp.reports[2]
         @test isa(r, NoMethodErrorReport)
-        @test r.atype === Tuple{typeof(+), String, Int}
+        @test r.t === Tuple{typeof(+), String, Int}
     end
 
     # nested tasks

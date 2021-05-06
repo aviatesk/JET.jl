@@ -56,14 +56,24 @@ function CC.abstract_call_gf_by_type(interp::JETInterpreter, @nospecialize(f),
     end
     if isa(info, MethodMatchInfo)
         if is_empty_match(info)
-            report!(interp, NoMethodErrorReport(interp, sv, false, atype))
+            report!(interp, NoMethodErrorReport(interp, sv, atype))
         end
     elseif isa(info, UnionSplitInfo)
         # check each match for union-split signature
-        for matchinfo in info.matches
+        split_argtypes = nothing
+        ts = nothing
+
+        for (i, matchinfo) in enumerate(info.matches)
             if is_empty_match(matchinfo)
-                report!(interp, NoMethodErrorReport(interp, sv, true, atype))
+                isnothing(split_argtypes) && (split_argtypes = switchtupleunion(argtypes))
+                isnothing(ts) && (ts = Type[])
+                sig_n = argtypes_to_type(split_argtypes[i])
+                push!(ts, sig_n)
             end
+        end
+
+        if !isnothing(ts)
+            report!(interp, NoMethodErrorReport(interp, sv, ts))
         end
     end
 

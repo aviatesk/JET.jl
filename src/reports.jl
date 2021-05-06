@@ -445,13 +445,13 @@ extract_decl_type(@nospecialize(x)) = @isexpr(x, :(::)) ? last(x.args) : GlobalR
 # ---------------
 
 @reportdef struct NoMethodErrorReport <: InferenceErrorReport
-    unionsplit::Bool
-    @nospecialize(atype::Type)
+    @nospecialize(t::Union{Type,Vector{Type}})
 end
 # TODO count invalid unon split case
-get_msg(::Type{NoMethodErrorReport}, interp, sv::InferenceState, unionsplit::Bool, @nospecialize(args...)) = unionsplit ?
-    "for any of the union split cases, no matching method found for call signature" :
-    "no matching method found for call signature"
+get_msg(::Type{NoMethodErrorReport}, interp, sv::InferenceState, @nospecialize(t::Type)) =
+    "no matching method found for call signature ($t)"
+get_msg(::Type{NoMethodErrorReport}, interp, sv::InferenceState, ts::Vector{Type}) =
+    "for $(length(ts)) of union split cases, no matching method found for call signatures ($(join(ts, ", "))))"
 
 @reportdef struct InvalidBuiltinCallErrorReport <: InferenceErrorReport
     argtypes::Vector{Any}
@@ -490,7 +490,7 @@ end
 get_msg(::Type{NonBooleanCondErrorReport}, interp, sv::InferenceState, @nospecialize(t::Type)) =
     "non-boolean ($t) used in boolean context"
 get_msg(::Type{NonBooleanCondErrorReport}, interp, sv::InferenceState, ts::Vector{Type}) =
-    "for $(length(ts)) of union split cases, non-boolean ($(join(ts, ','))) used in boolean context"
+    "for $(length(ts)) of union split cases, non-boolean ($(join(ts, ", "))) used in boolean context"
 
 @reportdef struct DivideErrorReport <: InferenceErrorReport end
 let s = sprint(showerror, DivideError())
