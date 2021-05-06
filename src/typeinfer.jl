@@ -103,7 +103,7 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
                 # the optimization so far has found this statement is never "reachable";
                 # JET reports it since it will invoke undef var error at runtime, or will just
                 # be dead code otherwise
-                report!(interp, LocalUndefVarErrorReport(interp, frame, sym))
+                report!(interp, LocalUndefVarErrorReport(interp, frame, sym, idx))
             # else
                 # by excluding this pass, JET accepts some false negatives (i.e. don't report
                 # those that may actually happen on actual execution)

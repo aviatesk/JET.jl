@@ -202,6 +202,9 @@ _isexpr_check(ex::Expr, heads)                = in(ex.head, heads)
 _isexpr_check(ex::Expr, head::Symbol, n::Int) = ex.head === head && length(ex.args) == n
 _isexpr_check(ex::Expr, heads, n::Int)        = in(ex.head, heads) && length(ex.args) == n
 
+islnn(@nospecialize(_)) = false
+islnn(::LineNumberNode) = true
+
 """
     @invoke f(arg::T, ...; kwargs...)
 
@@ -337,9 +340,6 @@ macro withmixedhash(typedef)
         $(eq_func)
     end
 end
-
-islnn(@nospecialize(_)) = false
-islnn(::LineNumberNode) = true
 
 """
     const EGAL_TYPES = $(EGAL_TYPES)
