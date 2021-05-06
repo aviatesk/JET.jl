@@ -3,8 +3,5 @@ concretization_patterns = [
   "JET_DEV_MODE = x_",
   "EGAL_TYPES = x_",
   "_JET_CONFIGURATIONS = x_",
-  "INFERENCE_ERROR_REPORT_DECL2DOCS = x_",
-  "INFERENCE_ERROR_REPORT_FIELD_DECLS = x_",
-  "INFERENCE_ERROR_REPORT_FIELD_NAMES = x_",
-  "implement_cache_interfaces(x__)"
+  "INFERENCE_ERROR_REPORT_FIELD_DECLS = x_"
 ]
