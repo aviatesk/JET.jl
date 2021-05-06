@@ -38,6 +38,7 @@ function abstract_call_gf_by_type(interp::$JETInterpreter, @nospecialize(f), arg
         splitsigs = switchtupleunion(atype)
         applicable = Any[]
         infos = MethodMatchInfo[]
+        ts = nothing
         for sig_n in splitsigs
             mt = ccall(:jl_method_table_for, Any, (Any,), sig_n)
             if mt === nothing
@@ -53,8 +54,10 @@ function abstract_call_gf_by_type(interp::$JETInterpreter, @nospecialize(f), arg
             #=== abstract_call_gf_by_type patch point 1-1 start ===#
             info = MethodMatchInfo(matches)
             if $is_empty_match(info)
-                # report `NoMethodErrorReport` for union-split signatures
-                $report!(interp, $NoMethodErrorReport(interp, sv, true, atype))
+                if ts === nothing
+                    ts = Type[]
+                end
+                push!(ts, sig_n)
             end
             push!(infos, info)
             #=== abstract_call_gf_by_type patch point 1-1 end ===#
@@ -74,6 +77,12 @@ function abstract_call_gf_by_type(interp::$JETInterpreter, @nospecialize(f), arg
                 push!(fullmatch, thisfullmatch)
             end
         end
+        #=== abstract_call_gf_by_type patch point 1-1 start ===#
+        if ts !== nothing
+            # report `NoMethodErrorReport` for each union-split signature
+            $report!(interp, $NoMethodErrorReport(interp, sv, ts))
+        end
+        #=== abstract_call_gf_by_type patch point 1-1 end ===#
         info = UnionSplitInfo(infos)
     else
         mt = ccall(:jl_method_table_for, Any, (Any,), atype)
@@ -95,7 +104,7 @@ function abstract_call_gf_by_type(interp::$JETInterpreter, @nospecialize(f), arg
         #=== abstract_call_gf_by_type patch point 1-2 start ===#
         if $is_empty_match(info)
             # report `NoMethodErrorReport` for this call signature
-            $report!(interp, $NoMethodErrorReport(interp, sv, false, atype))
+            $report!(interp, $NoMethodErrorReport(interp, sv, atype))
         end
         #=== abstract_call_gf_by_type patch point 1-2 end ===#
         applicable = matches.matches

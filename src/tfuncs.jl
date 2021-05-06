@@ -110,7 +110,6 @@ function CC.return_type_tfunc(interp::JETInterpreter, argtypes::Vector{Any}, sv:
         # invalid argument number, let's report and return error result (i.e. `Bottom`)
         report!(interp, NoMethodErrorReport(interp,
                                             sv,
-                                            false,
                                             # this is not necessary to be computed correctly, though
                                             argtypes_to_type(argtypes),
                                             ))
