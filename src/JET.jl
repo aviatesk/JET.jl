@@ -917,6 +917,13 @@ end
 macro lwr(ex) QuoteNode(lower(__module__, ex)) end
 macro src(ex) QuoteNode(first(lower(__module__, ex).args)) end
 
+# precompiles
+# ===========
+
+precompile(virtual_process, (String,String,JETInterpreter,ToplevelConfig))
+precompile(abstract_call_gf_by_type, (JETInterpreter,Any,Vector{Any},Vector{Any},Any,InferenceState))
+precompile(builtin_tfunction, (JETInterpreter,Any,Vector{Any},InferenceState))
+
 # exports
 # =======
 
