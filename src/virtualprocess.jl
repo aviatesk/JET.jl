@@ -322,6 +322,11 @@ function analyze_from_definitions!(interp::JETInterpreter, res::VirtualProcessRe
             end
             interp = JETInterpreter(interp, _CONCRETIZED, _TOPLEVELMOD)
             mm = first(mms)::MethodMatch
+            # when `@generated` function has been defined, signatures of both its entry and
+            # its generator should have been collected, and we will just analyze them separately
+            # if code generation from the entry has failed given the method signature (it's higly possible),
+            # the overload of `InferenceState(..., ::JETInterpreter)` should have reported errors
+            # and so here we just ignore that
             analyze_method!(interp, mm.method)
             append!(res.inference_error_reports, interp.reports)
             continue

@@ -53,7 +53,9 @@ import .CC:
     finish,
     # optimize.jl
     OptimizationState,
-    optimize
+    optimize,
+    # JET.jl
+    InferenceState
 
 # `ConcreteInterpreter`
 import JuliaInterpreter:
@@ -89,7 +91,6 @@ import Core:
 import .CC:
     AbstractInterpreter,
     NativeInterpreter,
-    InferenceState,
     InferenceResult,
     InternalCodeCache,
     WorldRange,
@@ -117,7 +118,8 @@ import .CC:
     compute_basic_blocks,
     matching_cache_argtypes,
     is_argtype_match,
-    tuple_tfunc
+    tuple_tfunc,
+    may_invoke_generator
 
 import Base:
     parse_input_line,
@@ -784,18 +786,39 @@ function method_sparams(m::Method)
     return svec(s...)
 end
 
-function analyze_method_signature!(interp::JETInterpreter,
-                                   m::Method,
-                                   @nospecialize(atype),
-                                   sparams::SimpleVector,
-                                   )
-    mi = specialize_method(m, atype, sparams)
+analyze_method_signature!(interp::JETInterpreter, m::Method, @nospecialize(atype), sparams::SimpleVector) =
+    analyze_method_instance!(interp, specialize_method(m, atype, sparams))
 
+function analyze_method_instance!(interp::JETInterpreter, mi::MethodInstance)
     result = InferenceResult(mi)
 
-    frame = InferenceState(result, #=cached=# true, interp)::InferenceState
+    frame = InferenceState(result, #=cached=# true, interp)
+    isnothing(frame) && return interp, nothing
 
     return analyze_frame!(interp, frame)
+end
+
+function InferenceState(result::InferenceResult, cached::Bool, interp::JETInterpreter)
+    may_report_retrieve_code_info!(interp, result.linfo)
+    return @invoke InferenceState(result::InferenceResult, cached::Bool, interp::AbstractInterpreter)
+end
+
+# adapated from https://github.com/JuliaLang/julia/blob/f806df603489cfca558f6284d52a38f523b81881/base/compiler/utilities.jl#L107-L137
+function may_report_retrieve_code_info!(interp::JETInterpreter, linfo::MethodInstance)
+    m = linfo.def::Method
+    if isdefined(m, :generator)
+        may_report_get_staged!(interp, linfo)
+    end
+end
+function may_report_get_staged!(interp::JETInterpreter, mi::MethodInstance)
+    # analyze_method_instance!(interp, mi) XXX doesn't work
+    may_invoke_generator(mi) || return
+    try
+        ccall(:jl_code_for_staged, Any, (Any,), mi)
+    catch err
+        # if user code throws error, wrap and report it
+        report!(interp, GeneratorErrorReport(interp, mi, err))
+    end
 end
 
 function analyze_frame!(interp::JETInterpreter, frame::InferenceState)
@@ -833,11 +856,12 @@ macro analyze_call(ex0...)
 end
 
 """
-    analyze_call(f, types = Tuple{}; jetconfigs...) -> (interp::JETInterpreter, frame::InferenceFrame)
+    analyze_call(f, types = Tuple{}; jetconfigs...) -> (interp::JETInterpreter, frame::Union{InferenceFrame,Nothing})
 
 Analyzes the generic function call with the given type signature, and returns:
-- `interp::JETInterpreter`, which contains analyzed error reports and such
-- `frame::InferenceFrame`, which is the final state of the abstract interpretation
+- `interp::JETInterpreter`: contains analyzed error reports and such
+- `frame::Union{InferenceFrame,Nothing}`: the final state of the abstract interpretation,
+  or `nothing` if `f` is a generator and the code generation failed
 """
 function analyze_call(@nospecialize(f), @nospecialize(types = Tuple{}); jetconfigs...)
     ft = Core.Typeof(f)
@@ -877,6 +901,10 @@ Analyzes the generic function call with the given type signature, and then print
 function report_call(@nospecialize(f), @nospecialize(types = Tuple{}); jetconfigs...)
     interp, frame = analyze_call(f, types; jetconfigs...)
     print_reports(interp.reports; jetconfigs...)
+    if isnothing(frame)
+        # if there is `GeneratorErrorReport`, it means the code generation happened and failed
+        return any(r->isa(r, GeneratorErrorReport), interp.reports) ? Bottom : Any
+    end
     return get_result(frame)
 end
 

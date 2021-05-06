@@ -1630,3 +1630,72 @@ end
     end
     @test isempty(res.toplevel_error_reports)
 end
+
+@testset "@generated function" begin
+    genex = :(@generated function foo(a)
+        if a <: Integer
+            return :(a)
+        elseif a <: Number
+            return :(undefvar) # report me this case
+        end
+        throw("invalid argument")
+    end)
+
+    let
+        res = @eval @analyze_toplevel begin
+            $genex
+
+            foo(100) # generate valid code
+        end
+        @test isempty(res.inference_error_reports)
+    end
+
+    let
+        res = @eval @analyze_toplevel begin
+            $genex
+
+            foo(100.0) # generate invalid code
+        end
+        @test length(res.inference_error_reports) == 1
+        r = first(res.inference_error_reports)
+        @test isa(r, GlobalUndefVarErrorReport)
+    end
+
+    let
+        res = @eval @analyze_toplevel begin
+            $genex
+
+            foo("julia") # unsuccessful code generation
+        end
+        @test length(res.inference_error_reports) == 1
+        r = first(res.inference_error_reports)
+        @test isa(r, GeneratorErrorReport) && r.err == "invalid argument"
+    end
+
+    # when `analyze_from_definitions = true`, code generation will likely fail
+    # (because we can't expect method signatures to be concrete for `@generated` function),
+    # but we just ignore that
+    let
+        res = @eval @analyze_toplevel analyze_from_definitions=true begin
+            $genex
+        end
+        @test isempty(res.inference_error_reports)
+    end
+
+    # when `analyze_from_definitions = true`, we can analyze generator itself
+    let
+        res = @analyze_toplevel analyze_from_definitions = true begin
+            @generated function foo(a)
+                if a <: Integer
+                    return :(a)
+                elseif t <: Number # `t` is undefined
+                    return :(2a)
+                end
+                throw("invalid argument")
+            end
+        end
+        @test length(res.inference_error_reports) == 1
+        r = first(res.inference_error_reports)
+        @test isa(r, GlobalUndefVarErrorReport) && r.name === :t
+    end
+end
