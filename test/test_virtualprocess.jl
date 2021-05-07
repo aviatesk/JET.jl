@@ -1509,6 +1509,19 @@ end
             test_sum_over_string(res)
         end
     end
+
+    # ignore last statement of a definition block if possible
+    let
+        res = @analyze_toplevel begin
+            let
+                if true # force multiple blocks
+                    foo() = return
+                    throw("foo")
+                end
+            end
+        end
+        @test isempty(res.toplevel_signatures)
+    end
 end
 
 # in this test suite, we just check usage of test macros doesn't lead to (false positive)

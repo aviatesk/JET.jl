@@ -726,7 +726,7 @@ function select_statements(src, config)
 
     norequire = BitSet()
 
-    # exclude blocks without any definitions
+    # find blocks without any definitions
     dependencies = BitSet()
     blocks = compute_basic_blocks(stmts).blocks
     has_definition(r) = any(view(concretize, r))
@@ -758,10 +758,21 @@ function select_statements(src, config)
         end
     end
 
-    # don't require everything in an non-dependency block
     for (ibb, bb) in enumerate(blocks)
         if ibb ∉ dependencies
+            # don't require everything in an non-dependency (totally irrelevant) block
             pushall!(norequire, rng(bb))
+        else
+            # we also don't require the last statement of a dependency block and force
+            # `lines_required!` to not start traversal of control flow from there if we've
+            # already marked statements directly involved with definitions
+            # since `lines_required!` will respect control flow from there anyway,
+            # unless the last statement is a goto, since then it might be involved with a loop of definitions
+            r = rng(bb)
+            if any(view(concretize, r))
+                idx = last(r)
+                is_goto(stmts[idx]) || push!(norequire, idx)
+            end
         end
     end
 
