@@ -108,22 +108,22 @@ const INFERENCE_ERROR_REPORT_FIELD_DECLS = [
     InferenceErrorReport
 
 An interface type of error reports that JET collects by abstract interpration.
-
-All `InferenceErrorReport` types will have the following fields, which explains _where_
-and _why_ this error is reported:
-- `vst::VirtualStackTrace`: a virtual stack trace of the error
-- `msg::String`: explains why this error is reported
-- `sig::Vector{Any}`: a signature of the error point
-
 If `T` implements this interface, the following requirements should be satisfied:
 
 ---
 - **Required fields** \\
-  `T` should have the mandatory fields explained above.
+  `T` should have the following fields, which explains _where_ and _why_ this error is reported:
+  * `vst::VirtualStackTrace`: a virtual stack trace of the error
+  * `msg::String`: explains why this error is reported
+  * `sig::Vector{Any}`: a signature of the error point
+
   Note that `T` can still have additional fields specific to it.
 ---
 - **A constructor interface to create `T` from abstraction interpretation** \\
-  `T<:InferenceErrorReport` has the default constructor `T(::JETInterpreter, sv::InferenceState, spec_args...)`,
+  `T<:InferenceErrorReport` has the default constructor
+
+      T(::JETInterpreter, sv::InferenceState, spec_args...)
+
   which works when `T` is reported when `sv`'s program counter (`sv.currpc`) points to that
   of statement where the error may happen. If so `T` just needs to overload
 
@@ -131,6 +131,8 @@ If `T` implements this interface, the following requirements should be satisfied
 
   to provide the message that describes why this error is reported (otherwise the senseless
   default message will be used).
+
+  ---
 
   If `T` is reported when `sv`'s program counter (`sv.currpc`) may not point to the error
   location or even `sv::InferenceState` isn't available, `T` can implement its own constructor method.
