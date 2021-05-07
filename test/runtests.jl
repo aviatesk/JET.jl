@@ -17,6 +17,10 @@ include("setup.jl")
         include("test_jetcache.jl")
     end
 
+    @testset "reports.jl" begin
+        include("test_reports.jl")
+    end
+
     # tests with Windows-paths is just an hell
     @static Sys.iswindows() || @testset "print.jl" begin
         include("test_print.jl")

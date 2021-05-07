@@ -260,6 +260,26 @@ get_sig(interp, sv::InferenceState, @nospecialize(x = get_stmt(sv))) = _get_sig(
 
 _get_sig(args...) = first(_get_sig_type(args...))::Vector{Any}
 
+function _get_callsig(interp, sv::InferenceState, @nospecialize(f), args::Vector{Any};
+                      splat::Bool = false)
+    sig = _get_sig(interp, sv, f)
+    push!(sig, '(')
+
+    nargs = length(args)
+    for (i, arg) in enumerate(args)
+        arg_sig = _get_sig(interp, sv, arg)
+        append!(sig, arg_sig)
+        if i ≠ nargs
+            push!(sig, ", ")
+        else
+            splat && push!(sig, "...")
+        end
+    end
+    push!(sig, ')')
+
+    return sig
+end
+
 function _get_sig_type(interp, sv::InferenceState, expr::Expr)
     head = expr.head
     if head === :call
@@ -273,30 +293,14 @@ function _get_sig_type(interp, sv::InferenceState, expr::Expr)
             end
             f = args[2]
             args = args[3:end]
-
-            sig = _get_sig(interp, sv, f)
-            push!(sig, '(')
-
-            nargs = length(args)
-            for (i, arg) in enumerate(args)
-                arg_sig = _get_sig(interp, sv, arg)
-                append!(sig, arg_sig)
-                i ≠ nargs ? push!(sig, ", ") : push!(sig, "...)")
-            end
+            return _get_callsig(interp, sv, f, args; splat = true), nothing
         else
-            sig = _get_sig(interp, sv, f)
-            push!(sig, '(')
-
-            nargs = length(args)
-            for (i, arg) in enumerate(args)
-                arg_sig = _get_sig(interp, sv, arg)
-                append!(sig, arg_sig)
-                i ≠ nargs && push!(sig, ", ")
-            end
-            push!(sig, ')')
+            return _get_callsig(interp, sv, f, args), nothing
         end
-
-        return sig, nothing
+    elseif head === :invoke
+        f = expr.args[2]
+        args = expr.args[3:end]
+        return _get_callsig(interp, sv, f, args), nothing
     elseif head === :(=)
         return _get_sig_type(interp, sv, last(expr.args))
     elseif head === :static_parameter
@@ -325,6 +329,13 @@ function _get_sig_type(interp, sv::InferenceState, slot::SlotNumber)
         typ = widenconst(ignorelimited(get_slottype(sv, slot)))
         return Any[sig, typ], typ
     end
+end
+function _get_sig_type(interp, sv::InferenceState, arg::Argument)
+    name = get_slotname(sv, arg.n)
+    sig = string(name)
+    # NOTE top-level frame isn't optimized and so we don't need to handle abstract global variable here
+    typ = widenconst(ignorelimited(get_slottype(sv, arg.n)))
+    return Any[sig, typ], typ
 end
 _get_sig_type(interp, ::InferenceState, gr::GlobalRef) = Any[string(gr.mod, '.', gr.name)], nothing
 function _get_sig_type(interp, sv::InferenceState, s::Symbol)

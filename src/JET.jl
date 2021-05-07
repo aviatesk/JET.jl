@@ -83,6 +83,7 @@ import Core:
     Const,
     SSAValue,
     SlotNumber,
+    Argument,
     Slot,
     ReturnNode,
     SimpleVector,
