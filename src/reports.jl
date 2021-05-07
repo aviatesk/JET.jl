@@ -252,7 +252,7 @@ end
     @static if hasmethod(Base.show_tuple_as_call, (IO, Symbol, Type), (:demangle, :kwargs, :argnames, :qualified))
         Base.show_tuple_as_call(io, name, sig; qualified = true)
     else
-        Base.show_tuple_as_call(io, def.name, l.specTypes, false, nothing, nothing, true)
+        Base.show_tuple_as_call(io, name, sig, false, nothing, nothing, true)
     end
 end
 
