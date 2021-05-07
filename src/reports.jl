@@ -330,11 +330,12 @@ function _get_sig_type(interp, sv::InferenceState, slot::SlotNumber)
         return Any[sig, typ], typ
     end
 end
+# NOTE `Argument` only appears after optimization
+# and so we don't need to handle abstract global variable here, etc.
 function _get_sig_type(interp, sv::InferenceState, arg::Argument)
     name = get_slotname(sv, arg.n)
     sig = string(name)
-    # NOTE top-level frame isn't optimized and so we don't need to handle abstract global variable here
-    typ = widenconst(ignorelimited(get_slottype(sv, arg.n)))
+    typ = widenconst(ignorelimited(sv.slottypes[arg.n])) # NOTE after optimization, and so we can't use `get_slottype` here
     return Any[sig, typ], typ
 end
 _get_sig_type(interp, ::InferenceState, gr::GlobalRef) = Any[string(gr.mod, '.', gr.name)], nothing
