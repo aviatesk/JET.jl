@@ -70,6 +70,8 @@ foo("1") # `String` can't be converted to `Number`
     vals = Any[ :(getfield($(Base.sym_in(names[n], bn) ? :b : :a), $(names[n]))) for n in 1:length(names) ] # missing quote, just ends up with under vars
     :( NamedTuple{$names,$types}(($(vals...),)) )
 end
+
+badmerge((x=1,y=2), (y=3,z=1))
 ```
 
 You can have JET.jl detect possible errors:
