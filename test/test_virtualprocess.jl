@@ -1522,6 +1522,12 @@ end
         end
         @test isempty(res.toplevel_signatures)
     end
+
+    # end to end (might be very fragile ...)
+    let
+        res = analyze_file(normpath(FIXTURE_DIR, "error.jl"))
+        @test isempty(res.toplevel_error_reports)
+    end
 end
 
 # in this test suite, we just check usage of test macros doesn't lead to (false positive)

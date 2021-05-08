@@ -764,14 +764,15 @@ function select_statements(src, config)
             pushall!(norequire, rng(bb))
         else
             # we also don't require the last statement of a dependency block and force
-            # `lines_required!` to not start traversal of control flow from there if we've
-            # already marked statements directly involved with definitions
-            # since `lines_required!` will respect control flow from there anyway,
-            # unless the last statement is a goto, since then it might be involved with a loop of definitions
+            # `lines_required!` to not start control flow traversal from there if we've
+            # already marked any statements directly involved with definitions, because
+            # `lines_required!` will respect control flows reachable from there anyway
             r = rng(bb)
             if any(view(concretize, r))
                 idx = last(r)
-                is_goto(stmts[idx]) || push!(norequire, idx)
+                # don't require unless the last statement is an non-deterministic goto,
+                # since then it might be involved with a loop of definitions
+                is_nondeterministic(stmts[idx]) || push!(norequire, idx)
             end
         end
     end
@@ -788,7 +789,11 @@ function select_statements(src, config)
     return concretize
 end
 
-is_goto(@nospecialize(x)) = isa(x, GotoNode) || isa(x, GotoIfNot)
+function is_nondeterministic(@nospecialize(stmt))
+    isa(stmt, GotoIfNot) || return false
+    isa(stmt.cond, Bool) && return false
+    return true
+end
 
 function is_trycatch(@nospecialize(x))
     if isa(x, Expr)
