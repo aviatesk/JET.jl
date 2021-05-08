@@ -436,7 +436,7 @@ function CC.finish(me::InferenceState, interp::JETInterpreter)
         # so that later analysis can refer to them
 
         stmts = me.src.code
-        bbs = compute_basic_blocks(stmts)
+        cfg = compute_basic_blocks(stmts)
         assigns = Dict{Int,Bool}() # slot id => is this deterministic
         for (pc, stmt) in enumerate(stmts)
             if @isexpr(stmt, :(=))
@@ -444,7 +444,7 @@ function CC.finish(me::InferenceState, interp::JETInterpreter)
                 if isa(lhs, Slot)
                     slot = slot_id(lhs)
                     if is_global_slot(interp, slot)
-                        isnd = is_nondeterministic(pc, bbs)
+                        isnd = is_nondeterministic(cfg, pc)
 
                         # COMBAK this approach is really not true when there're multiple
                         # assignments in different basic blocks
@@ -498,12 +498,12 @@ function collect_slottypes(sv::InferenceState)
     return slottypes
 end
 
-function is_nondeterministic(pc, bbs)
+function is_nondeterministic(cfg::CFG, pc::Int)
     isnd = false
 
-    for (idx, bb) in enumerate(bbs.blocks)
+    for (idx, bb) in enumerate(cfg.blocks)
         if pc in bb.stmts
-            for bb′ in bbs.blocks
+            for bb′ in cfg.blocks
                 if idx in bb′.succs
                     isnd |= length(bb′.succs) > 1
                 end

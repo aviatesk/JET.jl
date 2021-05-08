@@ -726,7 +726,7 @@ function select_statements(src, config)
 
     norequire = BitSet()
 
-    # exclude blocks without any definitions
+    # find blocks without any definitions
     dependencies = BitSet()
     blocks = compute_basic_blocks(stmts).blocks
     has_definition(r) = any(view(concretize, r))
@@ -758,10 +758,22 @@ function select_statements(src, config)
         end
     end
 
-    # don't require everything in an non-dependency block
     for (ibb, bb) in enumerate(blocks)
         if ibb ∉ dependencies
+            # don't require everything in an non-dependency (totally irrelevant) block
             pushall!(norequire, rng(bb))
+        else
+            # we also don't require the last statement of a dependency block and force
+            # `lines_required!` to not start control flow traversal from there if we've
+            # already marked any statements directly involved with definitions, because
+            # `lines_required!` will respect control flows reachable from there anyway
+            r = rng(bb)
+            if any(view(concretize, r))
+                idx = last(r)
+                # don't require unless the last statement is an non-deterministic goto,
+                # since then it might be involved with a loop of definitions
+                is_nondeterministic(stmts[idx]) || push!(norequire, idx)
+            end
         end
     end
 
@@ -777,7 +789,11 @@ function select_statements(src, config)
     return concretize
 end
 
-is_goto(@nospecialize(x)) = isa(x, GotoNode) || isa(x, GotoIfNot)
+function is_nondeterministic(@nospecialize(stmt))
+    isa(stmt, GotoIfNot) || return false
+    isa(stmt.cond, Bool) && return false
+    return true
+end
 
 function is_trycatch(@nospecialize(x))
     if isa(x, Expr)
