@@ -1396,13 +1396,180 @@ end
 end
 
 @testset "top-level statement selection" begin
-    @testset "toplevel definitions by `eval` calls" begin
+    # simplest example
+    let
+        # global function
+        vmod, res = @analyze_toplevel2 begin
+            foo() = return # should be concretized
+        end
+        @test is_concrete(vmod, :foo)
+
+        # inner function
+        vmod, res = @analyze_toplevel2 analyze_from_definitions=true let
+            foo(a) = a # should be concretized, and its signature should have been collected
+        end
+        @test length(res.toplevel_signatures) == 1
+    end
+
+    @testset "captured variables" begin
         let
             vmod, res = @analyze_toplevel2 begin
-                # these definitions shouldn't be abstracted away
+                begin
+                    s = join(rand(Char, 100))
+                    foo() = return s
+                end
+            end
+            @test is_concrete(vmod, :foo)
+            # FIXME ideally we don't want to concretize `s`, but `LoweredCodeUtils.lines_required!`
+            # requires it by named dependency traversal
+            @test_broken is_abstract(vmod, :s)
+        end
+
+        # captured variables for global functions
+        let
+            # XXX `s` below aren't necessarily concretized, but concretization of `foo` requires
+            # it (since `s` will be embedded into `foo`'s body wrapped in `QuoteNode`)
+            # and thus we can't abstract it away as far as we depend on JuliaInterpreter ...
+            vmod, res = @analyze_toplevel2 let
+                s = "julia"
+                global foo() = return s
+            end
+            @test is_concrete(vmod, :foo)
+
+            vmod, res = @analyze_toplevel2 let
+                s = undefvar # actual top-level error will happen here
+                global foo() = return s
+            end
+            @test_broken isempty(res.toplevel_error_reports)
+        end
+    end
+
+    @testset "conditional control flow" begin
+        # ignore last statement of a definition block if possible
+        let
+            vmod, res = @analyze_toplevel2 if true # force multiple blocks
+                foo() = return
+                throw("foo")
+            end
+            @test is_concrete(vmod, :foo)
+            @test isempty(res.toplevel_signatures)
+        end
+    end
+
+    # NOTE here we test "try/catch"-involved control flow in a fine-grained level
+    # we want to enrich this test suite as much as possible since this control flow often
+    # appears in test files with the test macros, while we will do the e2e level tests
+    # with those macros
+    @testset "try/catch control flow" begin
+        # https://github.com/aviatesk/JET.jl/issues/150
+        let
+            res = @analyze_toplevel analyze_from_definitions=true try
+                foo(a) = sum(a) # essentially same as inner function, should be concretized
+
+                foo("julia") # shouldn't be concretized
+            catch err
+                err
+            end
+
+            @test isempty(res.toplevel_error_reports)
+            @test length(res.toplevel_signatures) == 1
+            test_sum_over_string(res)
+        end
+
+        # captured variables within a try clause
+        let
+            res = @analyze_toplevel analyze_from_definitions=true try
+                s = "julia"
+                foo(f) = f(s) # should be concretized
+
+                foo(sum) # shouldn't be concretized
+            catch err
+                err
+            end
+
+            @test isempty(res.toplevel_error_reports)
+            @test length(res.toplevel_signatures) == 1
+            test_sum_over_string(res)
+        end
+
+        # captured variables within a catch clause
+        let
+            res = @analyze_toplevel analyze_from_definitions=true try
+                s = "julia"
+                foo(f) = f(s) # should be concretized
+
+                foo(sum) # shouldn't be concretized
+            catch err
+                function shows() # should be concretized
+                    io = stderr::IO
+                    showerror(io, err)
+                    showerror(io, err2)
+                end
+                shows() # shouldn't be concretized
+            end
+
+            @test isempty(res.toplevel_error_reports)
+            @test length(res.toplevel_signatures) == 2
+            test_sum_over_string(res)
+        end
+
+        # same as "captured variables for global functions",
+        # capture variables within a catch clause for global function will just be an hell
+        let
+            vmod, res = @analyze_toplevel2 try
+                s = "julia"
+                foo(f) = f(s) # should be concretized
+                foo(sum) # shouldn't be concretized
+            catch err
+                global function shows() # should be concretized
+                    io = stderr::IO
+                    showerror(io, err)
+                    showerror(io, err2)
+                end
+                shows() # shouldn't be concretized
+            end
+
+            @test_broken isempty(res.toplevel_error_reports)
+            @test_broken is_concrete(vmod, :shows) && length(methods(vmod.shows)) == 1
+        end
+    end
+
+    @testset "top-level `eval` statement" begin
+        let
+            vmod, res = @analyze_toplevel2 let
+                sym = :foo
+                @eval $sym() = :foo # should be concretized
+            end
+            @test is_concrete(vmod, :foo)
+        end
+    end
+
+    @testset "toplevel definitions involved within a loop" begin
+        let
+            vmod, res = @analyze_toplevel2 begin
+                # these definitions should be concretized
                 for fname in (:foo, :bar, :baz)
                     @eval begin
                         @inline ($(Symbol("is", fname)))(a) = a === $(QuoteNode(fname))
+                    end
+                end
+            end
+
+            @test is_concrete(vmod, :isfoo)
+            @test is_concrete(vmod, :isbar)
+            @test is_concrete(vmod, :isbaz)
+        end
+
+        let
+            vmod, res = @analyze_toplevel2 begin
+                let
+                    # these definitions should be concretized
+                    stack = [:foo, :bar, :baz]
+                    while !isempty(stack)
+                        fname = popfirst!(stack)
+                        @eval begin
+                            @inline ($(Symbol("is", fname)))(a) = a === $(QuoteNode(fname))
+                        end
                     end
                 end
 
@@ -1412,88 +1579,15 @@ end
                 isbar(:bar) && isbaz(:baz) && throw("barbaz") # should be reported
             end
 
+            # FIXME control flow traversal fails for iteration
             @test is_concrete(vmod, :isfoo)
-            @test is_concrete(vmod, :isbar)
-            @test is_concrete(vmod, :isbaz)
-            @test length(res.inference_error_reports) == 2
-            @test all(er->isa(er, UncaughtExceptionReport), res.inference_error_reports)
+            @test_broken is_concrete(vmod, :isbar)
+            @test_broken is_concrete(vmod, :isbaz)
         end
-    end
-
-    @testset "try/catch block" begin
-        # https://github.com/aviatesk/JET.jl/issues/150
-        let
-            res = @analyze_toplevel try
-                foo(a) = sum(a)
-
-                foo("julia") # shouldn't be concretized
-            catch err
-                err
-            end
-
-            @test isempty(res.toplevel_error_reports)
-            test_sum_over_string(res)
-        end
-
-        # closure within a try clause
-        let
-            res = @analyze_toplevel try
-                s = "julia"
-                foo(f) = f(s)
-
-                foo(sum) # shouldn't be concretized
-            catch err
-                err
-            end
-
-            @test isempty(res.toplevel_error_reports)
-            test_sum_over_string(res)
-        end
-
-        # closure within a catch clause
-        let
-            res = @analyze_toplevel begin
-                try
-                    s = "julia"
-                    foo(f) = f(s)
-
-                    foo(sum) # shouldn't be concretized
-                catch err
-                    function shows()
-                        io = stderr::IO
-                        showerror(io, err)
-                        showerror(io, err2)
-                    end
-                    shows() # shouldn't be concretized
-                end
-            end
-
-            @test isempty(res.toplevel_error_reports)
-            test_sum_over_string(res)
-        end
-    end
-
-    # ignore last statement of a definition block if possible
-    let
-        res = @analyze_toplevel begin
-            let
-                if true # force multiple blocks
-                    foo() = return
-                    throw("foo")
-                end
-            end
-        end
-        @test isempty(res.toplevel_signatures)
-    end
-
-    # end to end (might be very fragile ...)
-    let
-        res = analyze_file(normpath(FIXTURE_DIR, "error.jl"))
-        @test isempty(res.toplevel_error_reports)
     end
 end
 
-# in this test suite, we just check usage of test macros doesn't lead to (false positive)
+# in this e2e test suite, we just check usage of test macros doesn't lead to (false positive)
 # top-level errors (e.g. world age, etc.)
 @testset "@test macros" begin
     vmod = Module()
@@ -1604,6 +1698,36 @@ end
         @test isempty(res.toplevel_error_reports)
         test_sum_over_string(res)
     end
+
+    @static VERSION ≥ v"1.7-DEV" && let
+        # adapted from https://github.com/JuliaLang/julia/blob/ddeba0ba8aa452cb2064eb2d03bea47fe6b0ebbe/test/dict.jl#L469-L478
+        res = @analyze_toplevel begin
+            using Test
+            @testset "IdDict{Any,Any} and partial inference" begin
+                d = Dict('a'=>1, 'b'=>1, 'c'=> 3)
+                @test a != d
+                @test !isequal(a, d)
+
+                d = @inferred IdDict{Any,Any}(i=>i for i=1:3)
+                @test isa(d, IdDict{Any,Any})
+                @test d == IdDict{Any,Any}(1=>1, 2=>2, 3=>3)
+            end
+        end
+        @test_broken isempty(res.toplevel_error_reports)
+    end
+end
+
+# in this e2e test suite, we run JET against a selection of Julia's base test suite
+# (i.e. from https://github.com/JuliaLang/julia/tree/master/test) and check that it won't
+# produce (false positive) top-level errors (e.g., by actually running test code, etc.)
+# NOTE this could be very fragile ...
+@testset "test file targets" begin
+    let
+        res = analyze_file(normpath(FIXTURE_DIR, "error.jl"))
+        @test isempty(res.toplevel_error_reports)
+    end
+
+    # TODO pass this test against https://github.com/JuliaLang/julia/blob/ddeba0ba8aa452cb2064eb2d03bea47fe6b0ebbe/test/dict.jl
 end
 
 @testset "https://github.com/aviatesk/JET.jl/issues/175" begin
