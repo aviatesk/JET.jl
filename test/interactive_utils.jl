@@ -51,7 +51,7 @@ macro fixturedef(ex)
 end
 
 """
-    @analyze_toplevel [jetconfigs...] ex
+    @analyze_toplevel [jetconfigs...] ex -> JET.VirtualProcessResult
 
 Enters JET analysis from toplevel expression `ex`, and returns the analysis result.
 """
@@ -61,6 +61,29 @@ macro analyze_toplevel(xs...)
     @assert length(xs′) == 1
     ex = first(xs′)
     return _analyze_toplevel(ex, __source__, jetconfigs)
+end
+
+"""
+    @analyze_toplevel2 [jetconfigs...] ex -> (Module, JET.VirtualProcessResult)
+
+Works similarly to `@analyze_toplevel`, but also creates a virtual module beforehand and
+returns that as well after the whole analysis for the later inspection.
+"""
+macro analyze_toplevel2(xs...)
+    jetconfigs = filter(iskwarg, xs)
+    xs′ = filter(!iskwarg, xs)
+    @assert length(xs′) == 1
+    ex = first(xs′)
+
+    vmod = gensym(:vmod)
+    jetconfigs = (:(context = $vmod), jetconfigs...,)
+    jetconfigs = (:(virtualize = false), jetconfigs...,)
+    ex2 = _analyze_toplevel(ex, __source__, jetconfigs)
+    return :(let
+        $(esc(vmod)) = $gen_virtual_module()
+        ret2 = $ex2
+        $(esc(vmod)), ret2
+    end)
 end
 
 iskwarg(@nospecialize(x)) = isexpr(x, :(=))
