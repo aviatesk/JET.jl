@@ -178,8 +178,7 @@ end
 
 @testset "\"toplevel definitions\"" begin
     let
-        vmod = gen_virtual_module()
-        @analyze_toplevel context = vmod virtualize = false begin
+        vmod, = @analyze_toplevel2 begin
             # function
             foo() = nothing
 
@@ -232,8 +231,7 @@ end
 
     # basic profiling with user-defined types
     let
-        vmod = gen_virtual_module()
-        res = @analyze_toplevel context = vmod virtualize = false begin
+        vmod, res = @analyze_toplevel2 begin
             gb = rand(Bool)
 
             struct Foo
@@ -256,8 +254,7 @@ end
 
     # definitions using type aliases
     let
-        vmod = gen_virtual_module()
-        @analyze_toplevel context = vmod virtualize = false begin
+        vmod, = @analyze_toplevel2 begin
             const BT = Bool
 
             struct Foo
@@ -275,8 +272,7 @@ end
 
     # a toplevel definition within a block
     let
-        vmod = gen_virtual_module()
-        res = @analyze_toplevel context = vmod virtualize = false begin
+        vmod, res = @analyze_toplevel2 begin
             begin
                 struct Foo
                     bar
@@ -295,8 +291,7 @@ end
     # somewhat related upstream issue: https://github.com/JuliaDebug/LoweredCodeUtils.jl/issues/47
     # well, the actual error here is world age error ...
     let
-        vmod = gen_virtual_module()
-        res = @analyze_toplevel context = vmod virtualize = false begin
+        vmod, res = @analyze_toplevel2 begin
             begin
                 abstract type Foo end
                 struct Foo1 <: Foo
@@ -315,8 +310,7 @@ end
 
 @testset "macro expansions" begin
     let
-        vmod = gen_virtual_module()
-        res = @analyze_toplevel context = vmod virtualize = false begin
+        vmod, res = @analyze_toplevel2 begin
             @inline foo(a) = identity(a)
             foo(10)
         end
@@ -327,8 +321,7 @@ end
     end
 
     let
-        vmod = gen_virtual_module()
-        res = @analyze_toplevel context = vmod virtualize = false begin
+        vmod, res = @analyze_toplevel2 begin
             macro foo(ex)
                 @assert Meta.isexpr(ex, :call)
                 push!(ex.args, 1)
@@ -345,8 +338,7 @@ end
 
     # macro expansions with access to global variables will fail
     let
-        vmod = gen_virtual_module()
-        res = @analyze_toplevel context = vmod virtualize = false begin
+        vmod, res = @analyze_toplevel2 begin
             const arg = rand(Bool)
 
             macro foo(ex)
@@ -371,8 +363,7 @@ end
         # if we don't expand macros before we check `:toplevel` or `:module` expressions,
         # we may pass `:toplevel` or `:module` expressions to `partially_interpret!` and
         # eventually we will fail to concretize them and their toplevel definitions
-        vmod = gen_virtual_module()
-        res = @analyze_toplevel context = vmod virtualize = false begin
+        vmod, res = @analyze_toplevel2 begin
             macro wrap_in_mod(blk)
                 ex = Expr(:module, true, esc(:foo), esc(blk))
                 return Expr(:toplevel, ex)
@@ -384,8 +375,7 @@ end
         end
         @test isdefined(vmod, :foo) && isdefined(vmod.foo, :bar)
 
-        vmod = gen_virtual_module()
-        res = @analyze_toplevel context = vmod virtualize = false begin
+        vmod, res = @analyze_toplevel2 begin
             """
                 foo
 
@@ -735,8 +725,7 @@ end
 
 @testset "abstract global variables" begin
     let
-        vmod = gen_virtual_module()
-        res = @analyze_toplevel context = vmod virtualize = false begin
+        vmod, res = @analyze_toplevel2 begin
             var = rand(Bool)
             const constvar = rand(Bool)
         end
@@ -752,8 +741,7 @@ end
         # --------
 
         let
-            vmod = gen_virtual_module()
-            res = @analyze_toplevel context = vmod virtualize = false begin
+            vmod, res = @analyze_toplevel2 begin
                 begin
                     local localvar = rand(Bool)
                     global globalvar = rand(Bool)
@@ -769,8 +757,7 @@ end
         # ------
 
         let
-            vmod = gen_virtual_module()
-            res = @analyze_toplevel context = vmod virtualize = false begin
+            vmod, res = @analyze_toplevel2 begin
                 begin
                     globalvar = rand(Bool)
                 end
@@ -781,8 +768,7 @@ end
         end
 
         let
-            vmod = gen_virtual_module()
-            res = @analyze_toplevel context = vmod virtualize = false begin
+            vmod, res = @analyze_toplevel2 begin
                 begin
                     local localvar = rand(Bool)
                     globalvar = localvar
@@ -795,8 +781,7 @@ end
         end
 
         let
-            vmod = gen_virtual_module()
-            res = @analyze_toplevel context = vmod virtualize = false begin
+            vmod, res = @analyze_toplevel2 begin
                 begin
                     local localvar
                     localvar = rand(Bool) # this shouldn't be annotated as `global`
@@ -810,8 +795,7 @@ end
         end
 
         let
-            vmod = gen_virtual_module()
-            res = @analyze_toplevel context = vmod virtualize = false begin
+            vmod, res = @analyze_toplevel2 begin
                 globalvar2 = begin
                     local localvar = rand(Bool)
                     globalvar1 = localvar
@@ -826,8 +810,7 @@ end
         end
 
         let
-            vmod = gen_virtual_module()
-            res = @analyze_toplevel context = vmod virtualize = false begin
+            vmod, res = @analyze_toplevel2 begin
                 let
                     localvar = rand(Bool)
                 end
@@ -837,8 +820,7 @@ end
         end
 
         let
-            vmod = gen_virtual_module()
-            res = @analyze_toplevel context = vmod virtualize = false begin
+            vmod, res = @analyze_toplevel2 begin
                 globalvar = let
                     localvar = rand(Bool)
                     localvar
@@ -854,8 +836,7 @@ end
         # -----
 
         let
-            vmod = gen_virtual_module()
-            res = @analyze_toplevel context = vmod virtualize = false begin
+            vmod, res = @analyze_toplevel2 begin
                 for i = 1:100
                     localvar = i
                 end
@@ -865,8 +846,7 @@ end
         end
 
         let
-            vmod = gen_virtual_module()
-            res = @analyze_toplevel context = vmod virtualize = false begin
+            vmod, res = @analyze_toplevel2 begin
                 for i in 1:10
                     localvar = rand(Bool)
                     global globalvar = localvar
@@ -879,8 +859,7 @@ end
         end
 
         let
-            vmod = gen_virtual_module()
-            res = @analyze_toplevel context = vmod virtualize = false begin
+            vmod, res = @analyze_toplevel2 begin
                 while true
                     localvar = rand(Bool)
                 end
@@ -890,8 +869,7 @@ end
         end
 
         let
-            vmod = gen_virtual_module()
-            res = @analyze_toplevel context = vmod virtualize = false begin
+            vmod, res = @analyze_toplevel2 begin
                 while true
                     localvar = rand(Bool)
                     global globalvar = localvar
@@ -906,8 +884,7 @@ end
 
     @testset "multiple declaration/assignment" begin
         let
-            vmod = gen_virtual_module()
-            res = @analyze_toplevel context = vmod virtualize = false begin
+            vmod, res = @analyze_toplevel2 begin
                 s, c = sincos(1)
             end
 
@@ -918,8 +895,7 @@ end
         end
 
         let
-            vmod = gen_virtual_module()
-            res = @analyze_toplevel context = vmod virtualize = false begin
+            vmod, res = @analyze_toplevel2 begin
                 begin
                     local s, c
                     s, c = sincos(1)
@@ -931,8 +907,7 @@ end
         end
 
         let
-            vmod = gen_virtual_module()
-            res = @analyze_toplevel context = vmod virtualize = false begin
+            vmod, res = @analyze_toplevel2 begin
                 let
                     global s, c
                     s, c = sincos(1)
@@ -946,8 +921,7 @@ end
         end
 
         let
-            vmod = gen_virtual_module()
-            res = @analyze_toplevel context = vmod virtualize = false begin
+            vmod, res = @analyze_toplevel2 begin
                 so, co = let
                     si, ci = sincos(1)
                     si, ci
@@ -963,8 +937,7 @@ end
         end
 
         let
-            vmod = gen_virtual_module()
-            res = @analyze_toplevel context = vmod virtualize = false begin
+            vmod, res = @analyze_toplevel2 begin
                 begin
                     local l
                     l, g = sincos(1)
@@ -978,8 +951,7 @@ end
 
     @testset "concretize statically constant variables" begin
         let
-            m = gen_virtual_module()
-            @analyze_toplevel context = m virtualize = false begin
+            m, = @analyze_toplevel2 begin
                 const a = 0
             end
             @test is_concrete(m, :a) && m.a == 0
@@ -987,16 +959,14 @@ end
 
         # try to concretize even if it's not declared as constant
         let
-            m = gen_virtual_module()
-            @analyze_toplevel context = m virtualize = false begin
+            m, = @analyze_toplevel2 begin
                 a = 0
             end
             @test is_concrete(m, :a) && m.a == 0
         end
 
         let
-            m = gen_virtual_module()
-            @analyze_toplevel context = m virtualize = false begin
+            m, = @analyze_toplevel2 begin
                 const a = :jetzero # should be quoted, otherwise undef var error
             end
             @test is_concrete(m, :a) && m.a === :jetzero
@@ -1004,8 +974,7 @@ end
 
         # sequential
         let
-            m = gen_virtual_module()
-            @analyze_toplevel context = m virtualize = false begin
+            m, = @analyze_toplevel2 begin
                 a = rand(Int)
                 a = 0
             end
@@ -1013,8 +982,7 @@ end
             @test m.a == 0
         end
         let
-            m = gen_virtual_module()
-            @analyze_toplevel context = m virtualize = false begin
+            m, = @analyze_toplevel2 begin
                 a = 0
                 a = rand(Int)
             end
@@ -1196,8 +1164,7 @@ end
 
 @testset "control flows in toplevel frames" begin
     let
-        vmod = gen_virtual_module()
-        res = @analyze_toplevel context = vmod virtualize = false begin
+        vmod, res = @analyze_toplevel2 begin
             v = rand(Int)
 
             if rand(Bool)
@@ -1218,8 +1185,7 @@ end
 @testset "docstrings" begin
     # can find errors within docstring generation
     let
-        vmod = gen_virtual_module()
-        res = @analyze_toplevel context = vmod virtualize = false begin
+        vmod, res = @analyze_toplevel2 begin
             """
                 foo
 
@@ -1295,8 +1261,7 @@ const CONCRETIZATION_PATTERNS_CONFIG = normpath(@__DIR__, "fixtures", "..JET.tom
 
     # we can specify whatever pattern `@capture` can accept
     let
-        vmod = gen_virtual_module()
-        res = @analyze_toplevel context = vmod virtualize = false begin
+        vmod, res = @analyze_toplevel2 begin
             foo() = rand((1,2,3))
             a = foo()
             b = foo()
@@ -1359,8 +1324,7 @@ end
     end
     @test isempty(res.toplevel_signatures)
 
-    vmod = gen_virtual_module()
-    res = @analyze_toplevel context=vmod virtualize=false analyze_from_definitions=true begin
+    vmod, res = @analyze_toplevel2 analyze_from_definitions=true begin
         foo() = return
         bar(a) = return a
         baz(a) = return a
@@ -1434,8 +1398,7 @@ end
 @testset "top-level statement selection" begin
     @testset "toplevel definitions by `eval` calls" begin
         let
-            vmod = gen_virtual_module()
-            res = @analyze_toplevel context = vmod virtualize = false begin
+            vmod, res = @analyze_toplevel2 begin
                 # these definitions shouldn't be abstracted away
                 for fname in (:foo, :bar, :baz)
                     @eval begin
