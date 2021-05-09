@@ -1699,18 +1699,20 @@ end
         test_sum_over_string(res)
     end
 
-    @static VERSION ≥ v"1.7-DEV" && let
+    let
         # adapted from https://github.com/JuliaLang/julia/blob/ddeba0ba8aa452cb2064eb2d03bea47fe6b0ebbe/test/dict.jl#L469-L478
         res = @analyze_toplevel begin
             using Test
             @testset "IdDict{Any,Any} and partial inference" begin
-                d = Dict('a'=>1, 'b'=>1, 'c'=> 3)
-                @test a != d
-                @test !isequal(a, d)
+                a = IdDict{Any,Any}()
+                a[1] = a
+                a[a] = 2
+
+                ca = copy(a)
+                ca = empty!(ca)
+                @assert length(a) == 2 # FIXME this statement should be abstracted
 
                 d = @inferred IdDict{Any,Any}(i=>i for i=1:3)
-                @test isa(d, IdDict{Any,Any})
-                @test d == IdDict{Any,Any}(1=>1, 2=>2, 3=>3)
             end
         end
         @test_broken isempty(res.toplevel_error_reports)
