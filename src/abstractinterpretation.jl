@@ -471,7 +471,7 @@ Returns true if the iteration may terminate
 function iter_may_terminate(cond::Int64, dest::Int64, code::Vector{Any}, ssavaluetypes::Vector{Any})
     cond_code = code[cond]
     condt = ssavaluetypes[cond]
-    t = widenconditional(condt)
+    t = widenconditional(ignorelimited(condt))
 
     if !(isa(cond_code, Expr) && cond_code.head === :call && cond_code.args[end] === GlobalRef(Base, :nothing) &&
          isa(condt, CC.Conditional))
