@@ -808,6 +808,8 @@ function is_trycatch(@nospecialize(x))
 end
 
 function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node), istoplevel::Bool)
+    @assert istoplevel "JET.ConcreteInterpreter can only work for top-level code"
+
     # TODO:
     # - support package analysis
     # - add report pass (report usage of undefined name, etc.)
@@ -822,7 +824,7 @@ function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, 
         return nothing
     end
 
-    res = @invoke step_expr!(interp, frame, node, istoplevel::Bool)
+    res = @invoke step_expr!(interp, frame, node, true::Bool)
 
     interp.config.analyze_from_definitions && collect_toplevel_signature!(interp, frame, node)
 
@@ -832,7 +834,7 @@ end
 function collect_toplevel_signature!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node))
     if @isexpr(node, :method, 3)
         sigs = node.args[2]
-        atype_params, sparams, _ = @lookup(frame, sigs)::SimpleVector
+        atype_params, sparams, _ = @lookup(moduleof(frame), frame, sigs)::SimpleVector
         # t = atype_params[1]
         # if isdefined(t, :name)
         #     # XXX ignore constructor methods, just because it can lead to false positives ...
