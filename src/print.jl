@@ -172,11 +172,12 @@ function tofullpath(filename::AbstractString)
     path = abspath(filename)
     return isfile(path) ? path : fullbasepath(filename)
 end
-function fullbasepath(filename)
-    return @static occursin("DEV", string(VERSION)) ? # TODO make this configurable
-           normpath(Sys.BINDIR::String, "..", "..", "..", "julia", "base", filename) :
-           normpath(Sys.BINDIR::String, Base.DATAROOTDIR, "julia", "base", filename)
-end
+fullbasepath(filename) = normpath(JULIA_DIR, "base", filename)
+
+# TODO make this configurable ?
+const JULIA_DIR = @static occursin("DEV", string(VERSION)) ?
+                  normpath(Sys.BINDIR, "..", "..", "..", "julia") :
+                  normpath(Sys.BINDIR, Base.DATAROOTDIR)
 
 # toplevel
 # --------
