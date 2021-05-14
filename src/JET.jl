@@ -153,6 +153,7 @@ import JuliaInterpreter:
     collect_args,
     is_return,
     is_quotenode_egal,
+    moduleof,
     @lookup
 
 import MacroTools: @capture
