@@ -468,7 +468,7 @@ end
 """
 Returns true if the iteration may terminate
 """
-function iter_may_terminate(cond::Int64, dest::Int64, code::Vector{Any}, ssavaluetypes::Vector{Any})
+function iter_may_terminate(cond::Int, dest::Int, code::Vector{Any}, ssavaluetypes::Vector{Any})
     cond_code = code[cond]
     condt = ssavaluetypes[cond]
     t = widenconditional(ignorelimited(condt))
