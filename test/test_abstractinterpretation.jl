@@ -981,7 +981,7 @@ end
         interp, frame = @eval m $analyze_call((Int,)) do n
             sum(a for a in NeverTerminate(n))
         end
-        @test_broken any(interp.reports) do r
+        @test any(interp.reports) do r
             isa(r, InfiniteIterationErrorReport) &&
             r.typ === m.NeverTerminate
         end
