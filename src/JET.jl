@@ -148,6 +148,7 @@ import LoweredCodeUtils:
     pushall!
 
 import JuliaInterpreter:
+    _INACTIVE_EXCEPTION,
     bypass_builtins,
     maybe_evaluate_builtin,
     collect_args,
@@ -450,6 +451,7 @@ include("tfuncs.jl")
 include("abstractinterpretation.jl")
 include("typeinfer.jl")
 include("optimize.jl")
+include("graph.jl")
 include("virtualprocess.jl")
 include("watch.jl")
 include("print.jl")

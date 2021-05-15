@@ -660,13 +660,21 @@ function partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::Cod
     return concretize
 end
 
-# select statements that should be not abstracted away, but rather actually interpreted
-function select_statements(src, config)
+# select statements that should be concretized, and actually interpreted rather than abstracted
+function select_statements(src::CodeInfo, config::ToplevelConfig)
     stmts = src.code
     edges = CodeEdges(src)
 
     concretize = fill(false, length(stmts))
 
+    select_direct_requirement!(concretize, stmts, edges, config)
+
+    select_dependencies!(concretize, src, edges)
+
+    return concretize
+end
+
+function select_direct_requirement!(concretize, stmts, edges, config)
     for (i, stmt) in enumerate(stmts)
         if begin
                 ismethod(stmt)      || # don't abstract away method definitions
@@ -723,89 +731,138 @@ function select_statements(src, config)
             end
         end
     end
+end
 
-    norequire = BitSet()
+import LoweredCodeUtils:
+    # NamedVar,
+    # add_requests!,
+    add_ssa_preds!,
+    # add_named_dependencies!,
+    find_typedefs,
+    add_control_flow!,
+    add_typedefs!
 
-    # find blocks without any definitions
-    dependencies = BitSet()
-    blocks = compute_basic_blocks(stmts).blocks
-    has_definition(r) = any(view(concretize, r))
-    changed::Bool = true
+# implementation of https://github.com/aviatesk/JET.jl/issues/196
+function select_dependencies!(concretize, src, edges)
+    debug = false
+    debug && println("initially selected:", findall(concretize))
+
+    # We'll mostly use generic graph traversal to discover all the lines we need,
+    # but structs are in a bit of a different category (especially on Julia 1.5+).
+    # It's easiest to discover these at the beginning.
+    typedefs = find_typedefs(src)
+
+    changed = true
     while changed
         changed = false
-        for (ibb, bb) in enumerate(blocks)
-            if has_definition(rng(bb))
-                # find dependencies of a block with method definitions
-                for i in bb.preds
-                    if i ∉ dependencies
-                        push!(dependencies, i)
-                        changed = true
-                    end
-                end
-                if ibb ∉ dependencies
-                    push!(dependencies, ibb)
-                    changed = true
-                end
-            elseif ibb in dependencies
-                # find dependencies of dependencies
-                for i in bb.preds
-                    if i ∉ dependencies
-                        push!(dependencies, i)
-                        changed = true
+
+        # track SSA predecessors of initial requirements
+        changed |= add_ssa_preds!(concretize, src, edges, ())
+
+        # add some domain-specific information
+        changed |= add_typedefs!(concretize, src, edges, typedefs, ())
+    end
+    debug && (println("after initial requirement discovery:"); print_with_code(stdout::IO, src, concretize))
+
+    # # yet more heuristics – track modifications of critical slots
+    # # since slots are inter-block objects
+    # critical_slots = Set{SlotNumber}()
+    # for (i, stmt) in enumerate(src.code)
+    #     if concretize[i]
+    #         if isa(stmt, SlotNumber)
+    #             push!(critical_slots, stmt)
+    #         end
+    #     end
+    # end
+    # for (i, stmt) in enumerate(src.code)
+    #     if @isexpr(stmt, :call)
+    #         args = stmt.args
+    #         f = first(args)
+    #         if is_fn(f, :setindex!)
+    #             if length(args) ≥ 2
+    #                 x = args[2]
+    #                 if x in critical_slots
+    #                     concretize[i] = true
+    #                 end
+    #             end
+    #         elseif is_fn(f, :push!)
+    #             if length(args) ≥ 2
+    #                 x = args[2]
+    #                 if x in critical_slots
+    #                     concretize[i] = true
+    #                 end
+    #             end
+    #         end
+    #     end
+    # end
+    # changed = true
+    # while changed
+    #     changed = false
+    #
+    #     # track SSA predecessors of initial requirements
+    #     changed |= add_ssa_preds!(concretize, src, edges, ())
+    # end
+
+    # find a loop region and check if any of the requirements discovered so far is involved
+    # with it, and if require everything involved with the loop in order to properly
+    # concretize the requirement — "require everything involved with the loop" means we will
+    # care about "strongly connected components" rather than "cycles" of a directed graph, and
+    # strongly connected components detection runs in linear time ``O(|V|+|E|)`` as opposed to
+    # cycle dection (, whose worst time complexity is exponential with the number of vertices)
+    # and thus the analysis here should terminate in reasonable time even with a fairly
+    # complex control flow graph
+    cfg = compute_basic_blocks(src.code)
+    loops = filter!(>(1)∘length, strongly_connected_components(cfg)) # filter
+    debug && @show loops
+
+    critical_blocks = BitSet()
+    for (i, block) in enumerate(cfg.blocks)
+        if any(view(concretize, block.stmts))
+            for loop in loops
+                if i in loop
+                    push!(critical_blocks, i)
+                    for j in loop
+                        push!(critical_blocks, j)
                     end
                 end
             end
         end
     end
-
-    for (ibb, bb) in enumerate(blocks)
-        if ibb ∉ dependencies
-            # don't require everything in an non-dependency (totally irrelevant) block
-            pushall!(norequire, rng(bb))
-        else
-            # we also don't require the last statement of a dependency block and force
-            # `lines_required!` to not start control flow traversal from there if we've
-            # already marked any statements directly involved with definitions, because
-            # `lines_required!` will respect control flows reachable from there anyway
-            r = rng(bb)
-            if any(view(concretize, r))
-                idx = last(r)
-                # don't require unless the last statement is an non-deterministic goto,
-                # since then it might be involved with a loop of definitions
-                is_nondeterministic(stmts[idx]) || push!(norequire, idx)
+    for loop in loops
+        if any(in(critical_blocks), loop)
+            for j in loop
+                push!(critical_blocks, j)
             end
+            # push!(critical_blocks, minimum(loop) - 1)
         end
     end
+    debug && @show critical_blocks
 
-    # exclude ignore try/catch statements
-    for (i,x) in enumerate(stmts)
-        if is_trycatch(x)
-            push!(norequire, i)
+    norequire = BitSet()
+    for (i, block) in enumerate(cfg.blocks)
+        if i ∉ critical_blocks
+            pushall!(norequire, rng(block))
         end
     end
+    debug && @show norequire
 
-    lines_required!(concretize, src, edges; norequire)
+    changed = true
+    while changed
+        changed = false
 
-    return concretize
-end
-
-function is_nondeterministic(@nospecialize(stmt))
-    isa(stmt, GotoIfNot) || return false
-    isa(stmt.cond, Bool) && return false
-    return true
-end
-
-function is_trycatch(@nospecialize(x))
-    if isa(x, Expr)
-        @isexpr(x, :enter) && return true
-        @isexpr(x, :leave) && return true
-        @isexpr(x, :pop_exception) && return true
-        if @isexpr(x, :(=))
-            @isexpr(x.args[2], :the_exception) && return true
-        end
+        # track SSA predecessors and control flows of the critical blocks
+        changed |= add_ssa_preds!(concretize, src, edges, norequire)
+        changed |= add_control_flow!(concretize, cfg, norequire)
     end
-    return false
+    debug && print_with_code(stdout::IO, src, concretize)
 end
+
+# function is_fn(@nospecialize(x), name::Symbol)
+#     isa(x, Symbol) && return x === name
+#     isa(x, GlobalRef) && return x.name === name
+#     isa(x, QuoteNode) && return x.value === name
+#     return false
+# end
 
 function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node), istoplevel::Bool)
     @assert istoplevel "JET.ConcreteInterpreter can only work for top-level code"

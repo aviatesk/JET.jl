@@ -404,6 +404,17 @@ end
 function CC.abstract_eval_value(interp::JETInterpreter, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
     ret = @invoke abstract_eval_value(interp::AbstractInterpreter, e, vtypes::VarTable, sv::InferenceState)
 
+    # HACK if we encounter `_INACTIVE_EXCEPTION`, it means `ConcreteInterpreter` tried to
+    # concretize an exception which was not actually thrown – yet the actual error hasn't
+    # happened thanks to JuliaInterpreter's implementation detail, i.e. JuliaInterpreter
+    # could retrieve `FrameData.last_exception`, which is initialized with
+    # `_INACTIVE_EXCEPTION.instance` – but it's obviously not a sound approximation of an
+    # actual execution and so here we will fix it to `Any`, since we don't analyze types of
+    # exceptions in general
+    if ret ⊑ _INACTIVE_EXCEPTION
+        ret = Any
+    end
+
     # report non-boolean condition error
     stmt = get_stmt(sv)
     if isa(stmt, GotoIfNot)
