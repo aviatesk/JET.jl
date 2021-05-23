@@ -145,7 +145,14 @@ import LoweredCodeUtils:
     callee_matches,
     rng,
     print_with_code,
-    pushall!
+    pushall!,
+    # NamedVar,
+    # add_requests!,
+    add_ssa_preds!,
+    # add_named_dependencies!,
+    find_typedefs,
+    add_control_flow!,
+    add_typedefs!
 
 import JuliaInterpreter:
     _INACTIVE_EXCEPTION,

@@ -733,15 +733,6 @@ function select_direct_requirement!(concretize, stmts, edges, config)
     end
 end
 
-import LoweredCodeUtils:
-    # NamedVar,
-    # add_requests!,
-    add_ssa_preds!,
-    # add_named_dependencies!,
-    find_typedefs,
-    add_control_flow!,
-    add_typedefs!
-
 # implementation of https://github.com/aviatesk/JET.jl/issues/196
 function select_dependencies!(concretize, src, edges)
     debug = false
@@ -763,45 +754,6 @@ function select_dependencies!(concretize, src, edges)
         changed |= add_typedefs!(concretize, src, edges, typedefs, ())
     end
     debug && (println("after initial requirement discovery:"); print_with_code(stdout::IO, src, concretize))
-
-    # # yet more heuristics – track modifications of critical slots
-    # # since slots are inter-block objects
-    # critical_slots = Set{SlotNumber}()
-    # for (i, stmt) in enumerate(src.code)
-    #     if concretize[i]
-    #         if isa(stmt, SlotNumber)
-    #             push!(critical_slots, stmt)
-    #         end
-    #     end
-    # end
-    # for (i, stmt) in enumerate(src.code)
-    #     if @isexpr(stmt, :call)
-    #         args = stmt.args
-    #         f = first(args)
-    #         if is_fn(f, :setindex!)
-    #             if length(args) ≥ 2
-    #                 x = args[2]
-    #                 if x in critical_slots
-    #                     concretize[i] = true
-    #                 end
-    #             end
-    #         elseif is_fn(f, :push!)
-    #             if length(args) ≥ 2
-    #                 x = args[2]
-    #                 if x in critical_slots
-    #                     concretize[i] = true
-    #                 end
-    #             end
-    #         end
-    #     end
-    # end
-    # changed = true
-    # while changed
-    #     changed = false
-    #
-    #     # track SSA predecessors of initial requirements
-    #     changed |= add_ssa_preds!(concretize, src, edges, ())
-    # end
 
     # find a loop region and check if any of the requirements discovered so far is involved
     # with it, and if require everything involved with the loop in order to properly
@@ -856,13 +808,6 @@ function select_dependencies!(concretize, src, edges)
     end
     debug && print_with_code(stdout::IO, src, concretize)
 end
-
-# function is_fn(@nospecialize(x), name::Symbol)
-#     isa(x, Symbol) && return x === name
-#     isa(x, GlobalRef) && return x.name === name
-#     isa(x, QuoteNode) && return x.value === name
-#     return false
-# end
 
 function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node), istoplevel::Bool)
     @assert istoplevel "JET.ConcreteInterpreter can only work for top-level code"
@@ -939,8 +884,7 @@ function JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, fr
     ret = @invokelatest maybe_evaluate_builtin(frame, call_expr, false)
     isa(ret, Some{Any}) && return ret.value
     fargs = collect_args(frame, call_expr)
-    f = fargs[1]
-    popfirst!(fargs)  # now it's really just `args`
+    f = popfirst!(fargs)  # now it's really just `args`
 
     if isinclude(f)
         return handle_include(interp, fargs)

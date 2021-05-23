@@ -1583,7 +1583,6 @@ end
                 end
             end
 
-            # FIXME control flow traversal fails for iteration
             @test is_concrete(vmod, :isfoo)
             @test is_concrete(vmod, :isbar)
             @test is_concrete(vmod, :isbaz)
