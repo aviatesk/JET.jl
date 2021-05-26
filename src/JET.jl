@@ -159,12 +159,13 @@ import JuliaInterpreter:
     bypass_builtins,
     maybe_evaluate_builtin,
     collect_args,
+    finish!,
     is_return,
     is_quotenode_egal,
     moduleof,
     @lookup
 
-import MacroTools: @capture
+import MacroTools: MacroTools, @capture
 
 using InteractiveUtils
 
@@ -384,6 +385,9 @@ macro jetconfigurable(funcdef)
     @assert @isexpr(funcdef, :(=)) || @isexpr(funcdef, :function) "function definition should be given"
 
     defsig = funcdef.args[1]
+    if @isexpr(defsig, :where)
+        defsig = first(defsig.args)
+    end
     args = defsig.args::Vector{Any}
     thisname = first(args)
     i = findfirst(a->@isexpr(a, :parameters), args)

@@ -1241,6 +1241,20 @@ const CONCRETIZATION_PATTERNS_FILE   = normpath(@__DIR__, "fixtures", "concretiz
 const CONCRETIZATION_PATTERNS_CONFIG = normpath(@__DIR__, "fixtures", "..JET.toml")
 
 @testset "custom concretization pattern" begin
+    # custom concretization pattern should work on AST level
+    let
+        vmod, res = @analyze_toplevel2 begin
+            const foo = Dict() # this is a function call, won't be concretized
+        end
+        @test !is_concrete(vmod, :foo)
+    end
+    let
+        vmod, res = @analyze_toplevel2 begin
+            const foo = Dict() # this is a function call, won't be concretized
+        end concretization_patterns = [:(const foo = Dict())]
+        @test is_concrete(vmod, :foo)
+    end
+
     # the analysis on `test/fixtures/concretization_patterns.jl` will produce inappropriate
     # top-level error report because of missing concretization
     let
@@ -1254,7 +1268,7 @@ const CONCRETIZATION_PATTERNS_CONFIG = normpath(@__DIR__, "fixtures", "..JET.tom
     # we can circumvent the issue by using the `concretization_patterns` configuration !
     let
         res = analyze_file(CONCRETIZATION_PATTERNS_FILE;
-                           concretization_patterns = [:(GLOBAL_CODE_STORE = x_)],
+                           concretization_patterns = [:(const GLOBAL_CODE_STORE = Dict())],
                            )
         @test isempty(res.toplevel_error_reports)
     end
@@ -1268,6 +1282,19 @@ const CONCRETIZATION_PATTERNS_CONFIG = normpath(@__DIR__, "fixtures", "..JET.tom
         end concretization_patterns = [:x_] # means "concretize everything"
         @test is_concrete(vmod, :a)
         @test is_concrete(vmod, :b)
+    end
+
+    # `concretization_patterns` should "intuitively" work for code with documentations attached
+    let
+        vmod, res = @analyze_toplevel2 begin
+            """
+                foo
+
+            This is a documentation for `foo`
+            """
+            const foo = Dict()
+        end concretization_patterns = [:(const foo = Dict())]
+        @test is_concrete(vmod, :foo)
     end
 end
 

@@ -62,70 +62,69 @@ These configurations will be active for all the top-level entries explained in [
   To circumvent this issue, JET offers the `concretization_patterns::Vector{<:Any}` configuration,
     which allows us to customize JET's top-level code concretization strategy.
   `concretization_patterns` specifies the _patterns of code_ that should be concretized.
+  To put in other word, when JET sees a code that matches any of code patterns specified by
+    an user, JET will try to interpret and concretize the code.
+
   JET internally uses [MacroTools.jl's expression pattern match](https://fluxml.ai/MacroTools.jl/stable/pattern-matching/),
-    and we can specify any expression pattern that is expected by `MacroTools.@capture` macro.
+    and we can specify whatever expression pattern that is expected by `MacroTools.@capture` macro.
   For example, in order to solve the issue explained above, we can have:
   ```julia
-  concretization_patterns = [:(GLOBAL_CODE_STORE = x_)]
+  concretization_patterns = [:(const GLOBAL_CODE_STORE = Dict())]
   ```
-  Please note that we must use `:(GLOBAL_CODE_STORE = x_)` rather than `:(const GLOBAL_CODE_STORE = x_)`.
-  This is because currently the specified patterns will be matched against [the lowered code representation](https://juliadebug.github.io/JuliaInterpreter.jl/stable/ast/),
-    in which `const x = y` has been lowered to the sequence of 1.) the declaration `const x`,
-    2.) value computation `%2 = Dict()` and 3.) actual assignment part `x = %2`.
-  Although this could be really tricky, we can effectively debug JET's top-level code concretization plan
-    using [`JETLogger`](@ref)'s `toplevel_logger` with the logging level above than `$DEBUG_LOGGER_LEVEL` ("debug") level,
-    where `t`-annotated statements will be concretize while `f`-annotated statements will be analyzed by abstract interpretation.
+
+  Although configuring `concretization_patterns` properly could be really tricky, we can
+    effectively debug JET's top-level code concretization plan using [`JETLogger`](@ref)'s
+    `toplevel_logger` with the logging level above than `$DEBUG_LOGGER_LEVEL` ("debug") level,
+    where `t`-annotated statements will be concretize while `f`-annotated statements will be
+    analyzed by abstract interpretation.
   ```julia
   julia> report_file("test/fixtures/concretization_patterns.jl";
-                     concretization_patterns = [:(GLOBAL_CODE_STORE = x_)],
+                     concretization_patterns = [:(const GLOBAL_CODE_STORE = Dict())],
                      toplevel_logger = IOContext(stdout, :JET_LOGGER_LEVEL => 1))
   ```
   ```
+  [toplevel-debug] virtualized the context of Main (took 0.003 sec)
   [toplevel-debug] entered into test/fixtures/concretization_patterns.jl
+  [toplevel-debug] concretization pattern `const GLOBAL_CODE_STORE = Dict()` matched to `const GLOBAL_CODE_STORE = Dict()`
   [toplevel-debug] concretization plan:
-  1 f 1 ─      const GLOBAL_CODE_STORE
-  2 t │   %2 = Dict()
-  3 t │        GLOBAL_CODE_STORE = %2
-  4 f └──      return %2
-  [toplevel-debug] concretization plan:
-  1 f 1 ─      \$(Expr(:thunk, CodeInfo(
-      @ none within `top-level scope'
+  1 f  1 ─      \$(Expr(:thunk, CodeInfo(
+      @ none within `top-level scope`
   1 ─     return \$(Expr(:method, Symbol("@with_code_record")))
   )))
-  2 t │        \$(Expr(:method, Symbol("@with_code_record")))
-  3 t │   %3 = Core.Typeof(var"@with_code_record")
-  4 t │   %4 = Core.svec(%3, Core.LineNumberNode, Core.Module, Core.Any)
-  5 t │   %5 = Core.svec()
-  6 t │   %6 = Core.svec(%4, %5, \$(QuoteNode(:(#= test/fixtures/concretization_patterns.jl:4 =#))))
-  7 t │        \$(Expr(:method, Symbol("@with_code_record"), :(%6), CodeInfo(
-      @ test/fixtures/concretization_patterns.jl:5 within `none'
+  2 t  │        \$(Expr(:method, Symbol("@with_code_record")))
+  3 t  │   %3 = Core.Typeof(var"@with_code_record")
+  4 t  │   %4 = Core.svec(%3, Core.LineNumberNode, Core.Module, Core.Any)
+  5 t  │   %5 = Core.svec()
+  6 t  │   %6 = Core.svec(%4, %5, \$(QuoteNode(:(#= test/fixtures/concretization_patterns.jl:4 =#))))
+  7 t  │        \$(Expr(:method, Symbol("@with_code_record"), :(%6), CodeInfo(
+      @ test/fixtures/concretization_patterns.jl:5 within `none`
   1 ─      \$(Expr(:meta, :nospecialize, :(a)))
   │        Base.setindex!(GLOBAL_CODE_STORE, a, __source__)
-  │   @ test/fixtures/concretization_patterns.jl:6 within `none'
+  │   @ test/fixtures/concretization_patterns.jl:6 within `none`
   │   %3 = esc(a)
   └──      return %3
   )))
-  8 f └──      return var"@with_code_record"
+  8 f  └──      return var"@with_code_record"
   [toplevel-debug] concretization plan:
-  1 f 1 ─      \$(Expr(:thunk, CodeInfo(
-      @ none within `top-level scope'
+  1 f  1 ─      \$(Expr(:thunk, CodeInfo(
+      @ none within `top-level scope`
   1 ─     return \$(Expr(:method, :foo))
   )))
-  2 t │        \$(Expr(:method, :foo))
-  3 t │   %3 = Core.Typeof(foo)
-  4 t │   %4 = Core.svec(%3, Core.Any)
-  5 t │   %5 = Core.svec()
-  6 t │   %6 = Core.svec(%4, %5, \$(QuoteNode(:(#= test/fixtures/concretization_patterns.jl:11 =#))))
-  7 t │        \$(Expr(:method, :foo, :(%6), CodeInfo(
-      @ test/fixtures/concretization_patterns.jl:11 within `none'
+  2 t  │        \$(Expr(:method, :foo))
+  3 t  │   %3 = Core.Typeof(foo)
+  4 t  │   %4 = Core.svec(%3, Core.Any)
+  5 t  │   %5 = Core.svec()
+  6 t  │   %6 = Core.svec(%4, %5, \$(QuoteNode(:(#= test/fixtures/concretization_patterns.jl:11 =#))))
+  7 t  │        \$(Expr(:method, :foo, :(%6), CodeInfo(
+      @ test/fixtures/concretization_patterns.jl:11 within `none`
   1 ─ %1 = identity(a)
   └──      return %1
   )))
-  8 f └──      return foo
+  8 f  └──      return foo
   [toplevel-debug] concretization plan:
-  1 f 1 ─ %1 = foo(10)
-  2 f └──      return %1
-  [toplevel-debug]  exited from test/fixtures/concretization_patterns.jl (took 0.018 sec)
+  1 f  1 ─ %1 = foo(10)
+  2 f  └──      return %1
+  [toplevel-debug]  exited from test/fixtures/concretization_patterns.jl (took 0.048 sec)
   ```
 
   Also see: [Logging Configurations](@ref), [`virtual_process`](@ref).
@@ -137,21 +136,38 @@ These configurations will be active for all the top-level entries explained in [
   See [`virtualize_module_context`](@ref) for the internal.
 ---
 """
-struct ToplevelConfig
+struct ToplevelConfig{X<:Any}
     context::Module
     analyze_from_definitions::Bool
-    concretization_patterns::Vector{<:Any}
+    concretization_patterns::Vector{X}
     virtualize::Bool
-    @jetconfigurable ToplevelConfig(; context::Module                        = Main,
-                                      analyze_from_definitions::Bool         = false,
-                                      concretization_patterns::Vector{<:Any} = Expr[],
-                                      virtualize::Bool                       = true,
-                                      ) =
-        return new(context,
-                   analyze_from_definitions,
-                   concretization_patterns,
-                   virtualize,
-                   )
+    @jetconfigurable function ToplevelConfig(; context::Module                    = Main,
+                                               analyze_from_definitions::Bool     = false,
+                                               concretization_patterns::Vector{T} = Expr[],
+                                               virtualize::Bool                   = true,
+                                               ) where {T<:Any}
+        if typeintersect(T, Expr) === Bottom
+            X = tmerge(T, Expr)
+            concretization_patterns = convert(Vector{X}, concretization_patterns)
+        else
+            X = T
+        end
+        push!(concretization_patterns,
+              # `@enum` macro is fairly complex and especially the `let insts = (Any[ $(esc(typename))(v) for v in $values ]...,)`
+              # (adapted from https://github.com/JuliaLang/julia/blob/e5d7ef01b06f44cb75c871e54c81eb92eceae738/base/Enums.jl#L198)
+              # part requires the statement selection logic to choose statements that only
+              # pushes elements (`v`) into a slot representing an array (`insts`),
+              # which is very hard to be generalized;
+              # here we add them as pre-defined concretization patterns and make sure
+              # false postive top-level errors won't happen by the macro
+              :(@enum(args__)), :(Base.@enum(args__)),
+              )
+        return new{X}(context,
+                      analyze_from_definitions,
+                      concretization_patterns,
+                      virtualize,
+                      )
+    end
 end
 
 const Actual2Virtual = Pair{Module,Module}
@@ -446,12 +462,63 @@ function _virtual_process!(toplevelex::Expr,
             continue
         end
 
+        # apply user-specified concretization strategy, which is configured as expression
+        # pattern match on surface level AST code representation; if any of the specified
+        # patterns matches `x`, JET just concretizes everything involved with it
+        # since patterns are expected to work on surface level AST, we should configure it
+        # here before macro expansion and lowering
+        local force_concretize = false
+        for pat in config.concretization_patterns
+            if @capture(x, $pat)
+                force_concretize = true
+                with_toplevel_logger(interp, ≥(DEBUG_LOGGER_LEVEL)) do io
+                    println(io, "concretization pattern `$pat` matched to `$x`")
+                end
+
+                blk = Expr(:block, lnn, x) # attach current line number info
+                lwr = lower_with_err_handling(context, blk)
+
+                isnothing(lwr) && break # error happened during lowering
+                @isexpr(lwr, :thunk) || break # literal
+
+                src = first((lwr::Expr).args)::CodeInfo
+
+                fix_self_references!(res.actual2virtual, src)
+
+                interp′ = ConcreteInterpreter(filename,
+                                              lnn,
+                                              eval_with_err_handling,
+                                              context,
+                                              interp,
+                                              config,
+                                              res,
+                                              )
+                finish!(interp′, Frame(context, src), true)
+                break
+            end
+        end
+        force_concretize && continue
+
         # we will end up lowering `x` later, but special case `macrocall`s and expand it here
         # this is because macros can arbitrarily generate `:toplevel` and `:module` expressions
         if @isexpr(x, :macrocall)
             newx = macroexpand_with_err_handling(context, x)
+
             # unless (toplevel) error happened during macro expansion, queue it and continue
-            isnothing(newx) || push!(exs, newx)
+            isnothing(newx) && continue
+
+            # special case and flatten the resulting expression expanded from `@doc` macro
+            # the macro expands to a block expression and so it makes it difficult to specify
+            # concretization pattern correctly since `@doc` macro is attached implicitly
+            if first(x.args) === GlobalRef(Core, Symbol("@doc"))
+                # `@doc` macro usually produces :block expression, but may also produce :toplevel
+                # one when attached to a module expression
+                @assert @isexpr(newx, :block) || @isexpr(newx, :toplevel)
+                append!(exs, reverse!(newx.args))
+            else
+                push!(exs, newx)
+            end
+
             continue
         end
 
@@ -481,7 +548,7 @@ function _virtual_process!(toplevelex::Expr,
             continue
         end
 
-        blk = Expr(:block, lnn, x) # attach line number info
+        blk = Expr(:block, lnn, x) # attach current line number info
         lwr = lower_with_err_handling(context, blk)
 
         isnothing(lwr) && continue # error happened during lowering
@@ -598,24 +665,6 @@ function walk_and_transform!(src::CodeInfo, inner, outer, scope)
     return outer(src, scope)
 end
 
-# # configure user-specified concretization strategy with pattern matching on surface level AST
-# # `select_statements` will use and actually apply configuration using :force_concretize_(start|end) annotations
-# function annotate_force_concretizations(@nospecialize(x), config::ToplevelConfig)
-#     patterns = config.concretization_patterns
-#     return MacroTools.postwalk(x) do @nospecialize(x)
-#         for pat in patterns
-#             if @capture(x, $pat)
-#                 return Expr(:block,
-#                             Expr(:meta, :force_concretize_start),
-#                             Expr(:local, Expr(:(=), :ret, x)),
-#                             Expr(:meta, :force_concretize_end),
-#                             :ret)
-#             end
-#         end
-#         return x
-#     end
-# end
-
 """
     ConcreteInterpreter
 
@@ -648,7 +697,7 @@ Partially interprets statements in `src` using JuliaInterpreter.jl:
 - special-cases `include` calls so that top-level analysis recursively enters the included file
 """
 function partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::CodeInfo)
-    concretize = select_statements(src, interp.config)
+    concretize = select_statements(src)
 
     with_toplevel_logger(interp.interp, ≥(DEBUG_LOGGER_LEVEL)) do io
         println(io, "concretization plan:")
@@ -661,20 +710,20 @@ function partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::Cod
 end
 
 # select statements that should be concretized, and actually interpreted rather than abstracted
-function select_statements(src::CodeInfo, config::ToplevelConfig)
+function select_statements(src::CodeInfo)
     stmts = src.code
     edges = CodeEdges(src)
 
     concretize = fill(false, length(stmts))
 
-    select_direct_requirement!(concretize, stmts, edges, config)
+    select_direct_requirement!(concretize, stmts, edges)
 
     select_dependencies!(concretize, src, edges)
 
     return concretize
 end
 
-function select_direct_requirement!(concretize, stmts, edges, config)
+function select_direct_requirement!(concretize, stmts, edges)
     for (i, stmt) in enumerate(stmts)
         if begin
                 ismethod(stmt)      || # don't abstract away method definitions
@@ -684,22 +733,6 @@ function select_direct_requirement!(concretize, stmts, edges, config)
             concretize[i] = true
             continue
         end
-
-        # apply user-specified concretization strategy
-        # currently our concretization strategy is configured here with expression pattern
-        # matching on lowered representation; while it can be a bit user-unfriendly, but it
-        # has several benefits over the pattern matching with surface level AST,
-        # especially, here in lowered representation a function definition signature
-        # (`f(args...)`) is clearly distinguished from the call expression while within
-        # surface AST level we should care about the scope of the expression, etc.
-        local force_concretize = false
-        for pat in config.concretization_patterns
-            if @capture(stmt, $pat)
-                force_concretize = concretize[i] = true
-                break
-            end
-        end
-        force_concretize && continue
 
         if @isexpr(stmt, :(=))
             lhs, rhs = stmt.args
