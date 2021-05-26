@@ -647,10 +647,17 @@ overwrite_options(old, new) = kwargs(merge(old, new))
                    package::Union{AbstractString,Module};
                    jetconfigs...) -> res::ReportResult
 
-Analyzes `package` in the same way as `report_file` with the option
-`analyze_from_definitions=true`. See [`report_file`](@ref) for details.
+Analyzes `package` in the same way as [`report_file`](@ref) with the default configurations,
+  which are especially tuned for analysis of a package (see [`ToplevelConfig`](@ref) for more details):
+- `analyze_from_definitions = true`: allows JET to entry without top-level call sites
+  (because a package usually just holds definitions, not usages)
+- `concretization_patterns = [:(x_ = y_), :(const x_ = y_)]`: concretize every global variable instantiations
+  (concretizations are generally preferable as far as they're cheap, and global variable instantiations in a package are _usually_ very cheap)
+
 `package` can be either a module or a string. In the latter case it
 must be the name of a package in your current environment.
+
+---
 
     report_package([io::IO = stdout];
                    jetconfigs...) -> res::ReportResult
@@ -662,6 +669,7 @@ See also: [`report_file`](@ref)
 function report_package(io::IO,
                         package::Union{AbstractString,Module,Nothing} = nothing;
                         analyze_from_definitions::Bool = true,
+                        concretization_patterns = [:(x_ = y_), :(const x_ = y_)],
                         jetconfigs...)
     filename = get_package_file(package)
     return report_file(io, filename; analyze_from_definitions, jetconfigs...)
