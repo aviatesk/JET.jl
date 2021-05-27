@@ -1,17 +1,14 @@
 """
 Configurations for top-level analysis.
-These configurations will be active for all the top-level entries explained in [Analysis entry points](@ref).
+These configurations will be active for all the top-level entries explained in the
+  [Analysis entry points](@ref) section.
 
 ---
 - `context::Bool = Main` \\
   The module context in which the top-level execution will be simulated.
 
-  This module context will be virtualized by default so that JET can repeat analysis in the
-    same session by avoiding "invalid redefinition of constant ..." error etc., without
-    polluting the original context module.
-
   This configuration can be useful when you just want to analyze a submodule, without
-    analyzing from the root module.
+    starting entire analysis from the root module.
   For example, we can analyze `Base.Math` like below:
   ```julia
   julia> report_file(JET.fullbasepath("math.jl");
@@ -19,14 +16,19 @@ These configurations will be active for all the top-level entries explained in [
                      analyze_from_definitions = true, # there're only definitions in `Base`
                      )
   ```
+
+  Note that this module context will be virtualized by default so that JET can repeat analysis
+    in the same session without having "invalid redefinition of constant ..." error etc.
+  In other word, JET virtualize the module context of `context` and make sure the original
+    module context isn't polluted by JET.
 ---
 - `analyze_from_definitions::Bool = false` \\
   If `true`, JET will start analysis using signatures of top-level definitions (e.g. method signatures),
     after the top-level interpretation has been done (unless no serious top-level error has
     happened, like errors involved within a macro expansion).
 
-  This is useful when you want to analyze a package, which usually contains only definitions
-    but not top-level callsites.
+  This can be handy when you want to analyze a package, which usually contains only definitions
+    but not their usages (i.e. top-level callsites).
   With this option, JET can enter analysis just with method or type definitions, and we don't
     need to pass a file that uses the target package.
 
@@ -34,21 +36,27 @@ These configurations will be active for all the top-level entries explained in [
       This feature is very experimental at this point, and you may face lots of false positive
         errors, especially when trying to analyze a big package with lots of dependencies.
       If a file that contains top-level callsites (e.g. `test/runtests.jl`) is available,
-        JET analysis entered from there will produce more accurate analysis results than
-        with this configuration.
+        JET analysis using the file is generally preferred, since analysis entered from
+        concrete call sites will produce more accurate results than analysis entered from
+        (maybe not concrete-typed) method signatures.
 
   Also see: [`report_file`](@ref), [`report_and_watch_file`](@ref)
 ---
 - `concretization_patterns::Vector{<:Any} = Expr[]` \\
   Specifies a customized top-level code concretization strategy.
 
-  When analyzing a top-level code, JET first splits the entire code and then iterate a virtual
-    top-level code execution process on each code block, in order to simulate Julia's sequential
-    top-level code execution.
-  However, with this approach, JET can't track the "inter-code-block" level dependencies, and
-    so a partial interpretation of top-level definitions can fail if it needs an access to
-    global variables defined in other code blocks that are not actually interpreted ("concretized")
-    but just abstract-interpreted ("abstracted").
+  When analyzing a top-level code, JET first splits the entire code into appropriate units
+    of code (i.e. code blocks), and then iterate a virtual top-level code execution process
+    on each code block in order to simulate Julia's sequential top-level code execution.
+  In virtual code execution, JET will selectively interpret "top-level definitions" (like a function definition)
+    just like Julia's top-level code execution, while it tries to avoid executing any other
+    parts of code like function calls and leaves them to succeeding static analysis by
+    abstract interpretation.
+
+  However, currently, JET doesn't track the "inter-code-block" level code dependencies, and
+    so the selective interpretation of top-level definitions can fail if it needs an access to
+    global variables defined in other code blocks that are not actually interpreted (i.e. "concretized")
+    but just left for abstract interpreation (i.e. "abstracted").
 
   For example, the issue happens when your macro accesses to a global variable during its expansion, e.g.:
   > test/fixtures/concretization_patterns.jl
@@ -63,20 +71,26 @@ These configurations will be active for all the top-level entries explained in [
     which allows us to customize JET's top-level code concretization strategy.
   `concretization_patterns` specifies the _patterns of code_ that should be concretized.
   To put in other word, when JET sees a code that matches any of code patterns specified by
-    an user, JET will try to interpret and concretize the code.
+    an user, JET will try to interpret and concretize the code, regardless of whether JET's
+    code selection logic decides to concretize it or not.
 
-  JET internally uses [MacroTools.jl's expression pattern match](https://fluxml.ai/MacroTools.jl/stable/pattern-matching/),
-    and we can specify whatever expression pattern that is expected by `MacroTools.@capture` macro.
+  JET uses [MacroTools.jl's expression pattern match](https://fluxml.ai/MacroTools.jl/stable/pattern-matching/),
+    and we can specify whatever code pattern expected by `MacroTools.@capture` macro.
   For example, in order to solve the issue explained above, we can have:
   ```julia
   concretization_patterns = [:(const GLOBAL_CODE_STORE = Dict())]
   ```
+  Then `GLOBAL_CODE_STORE` will just be concretized and so any top-level error won't happen
+    at the macro expansion.
 
   Although configuring `concretization_patterns` properly could be really tricky, we can
-    effectively debug JET's top-level code concretization plan using [`JETLogger`](@ref)'s
-    `toplevel_logger` with the logging level above than `$DEBUG_LOGGER_LEVEL` ("debug") level,
-    where `t`-annotated statements will be concretize while `f`-annotated statements will be
-    analyzed by abstract interpretation.
+    effectively debug JET's top-level code concretization plan using [`toplevel_logger`](@ref JETLogger)
+    configuration with the logging level above than `$DEBUG_LOGGER_LEVEL` ("debug") level.
+  With the `toplevel_logger` configuration, we can see:
+  - which code is matched to `concretization_patterns` and forcibly concretized
+  - which code is selected to be concretized or not by JET's code selection logic:
+    where `t`-annotated statements are concretized while `f`-annotated statements are abstracted
+    and left abstract interpretation
   ```julia
   julia> report_file("test/fixtures/concretization_patterns.jl";
                      concretization_patterns = [:(const GLOBAL_CODE_STORE = Dict())],

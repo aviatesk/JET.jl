@@ -496,11 +496,11 @@ Analyzes `filename`, prints the collected error reports to the `io` stream, and 
 
 This function will look for `$CONFIG_FILE_NAME` configuration file in the directory of `filename`,
   and search _up_ the file tree until any `$CONFIG_FILE_NAME` is (or isn't) found.
-When found, the configurations specified in the file will overwrite the given `jetconfigs`.
+When found, the configurations specified in the file will be applied.
 See [Configuration File](@ref) for more details.
 
 !!! tip
-    When you want to analyze your package, but any file using it isn't available, the
+    When you want to analyze your package, but any file actually using it isn't available, the
       `analyze_from_definitions` option can be useful (see [`ToplevelConfig`](@ref)'s `analyze_from_definitions` option). \\
     For example, JET can analyze JET itself like below:
     ```julia
@@ -648,14 +648,18 @@ overwrite_options(old, new) = kwargs(merge(old, new))
                    jetconfigs...) -> res::ReportResult
 
 Analyzes `package` in the same way as [`report_file`](@ref) with the default configurations,
-  which are especially tuned for analysis of a package (see [`ToplevelConfig`](@ref) for more details):
-- `analyze_from_definitions = true`: allows JET to entry without top-level call sites
-  (because a package usually just holds definitions, not usages)
-- `concretization_patterns = [:(x_ = y_), :(const x_ = y_)]`: concretize every global variable instantiations
-  (concretizations are generally preferable as far as they're cheap, and global variable instantiations in a package are _usually_ very cheap)
+  which are especially tuned for package analysis (see below for details).
+`package` can be either a module or a string. In the latter case it must be the name of a
+  package in your current environment.
 
-`package` can be either a module or a string. In the latter case it
-must be the name of a package in your current environment.
+This function configures analysis with the following configurations:
+- `analyze_from_definitions = true`: allows JET to enter analysis without top-level call sites;
+  this is useful for package analysis since a package itself usually has only definitions
+  but not usages (i.e. call sites)
+- `concretization_patterns = [:(x_ = y_), :(const x_ = y_)]`: concretize every global variable instantiations;
+  concretizations are generally preferred for successful analysis as far as they're cheap,
+  and global variable instantiations that occur in a package definition are _usually_ very cheap
+See [`ToplevelConfig`](@ref) for more details.
 
 ---
 

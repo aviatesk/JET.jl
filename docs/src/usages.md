@@ -14,8 +14,8 @@ This means you can just give your Julia file or code to JET and get error report
 [`report_file`](@ref), [`report_and_watch_file`](@ref), [`report_package`](@ref) and [`report_text`](@ref) are the main entry points for that.
 
 JET will analyze your code "half-statically" – JET will selectively interpret "top-level definitions" (like a function definition)
-and try to simulate Julia's top-level code execution, while it tries to avoid executing any other parts of code like function calls,
-but analyze them using [abstract interpretation](https://en.wikipedia.org/wiki/Abstract_interpretation) (this is a part where JET "statically" analyzes your code).
+and try to simulate Julia's top-level code execution, while it tries to avoid executing any other parts of code like function calls
+but analyzes them by [abstract interpretation](https://en.wikipedia.org/wiki/Abstract_interpretation) instead (and this is a part where JET statically analyzes your code).
 If you're interested in how JET selects "top-level definitions", please see [`JET.virtual_process`](@ref).
 
 !!! warning

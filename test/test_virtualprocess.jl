@@ -1616,9 +1616,10 @@ end
         end
     end
 
-    # code expanded by `@enum` is fairly complex and could be a good measure for testing
-    # our top-level statement selection logic
-    # (originally reported from https://github.com/aviatesk/JET.jl/issues/175)
+    # code expanded by `@enum` is fairly complex and it couldn't be handled well by JET's
+    # general statement selection logic; so currently JET special case it and concretize
+    # the whole macro context by pre-defined `concretization_patterns` configurations
+    # (xref: originally reported from https://github.com/aviatesk/JET.jl/issues/175)
     @testset "test with @enum macro" begin
         res = @analyze_toplevel begin
             @enum Fruit apple orange

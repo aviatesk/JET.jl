@@ -1,10 +1,10 @@
 # [Configurations](@id JET configurations)
 
 JET analysis can be flexibly fine-tuned.
-Any entry point explained in [Usages](@ref) can accept any of the configuration parameter described below as keyword
-arguments (or optional parameters for macros).
+Any entry point explained in the [Usages](@ref) section can accept any of the configuration parameters described below
+as keyword arguments (or optional parameters for the interactive macros).
 For example, if you want to analyze `some/awesome/code.jl` with turning on `strict_condition_check` configuration and
-also logs inference process into `stdout`, your can do:
+also logs inference process into `stdout`, you can do:
 ```julia
 report_file("some/awesome/code.jl";
             strict_condition_check = true,
@@ -12,7 +12,7 @@ report_file("some/awesome/code.jl";
 ```
 
 !!! note
-    Please ignore the names of documented objects below, like "[`JET.ToplevelConfig`](@ref)".
+    Please ignore the names of documented objects appearing below, like "[`JET.ToplevelConfig`](@ref)".
     They are just remnants of documentation internals, and you will never directly interact with them.
 
 ## Configurations for Top-level Analysis
