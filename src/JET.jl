@@ -165,7 +165,7 @@ import JuliaInterpreter:
     moduleof,
     @lookup
 
-import MacroTools: MacroTools, @capture, normalise, rmlines
+import MacroTools: MacroTools, @capture, normalise, striplines
 
 using InteractiveUtils
 

@@ -176,7 +176,7 @@ struct ToplevelConfig{X<:Any}
               # false postive top-level errors won't happen by the macro
               :(@enum(args__)), :(Base.@enum(args__)),
               )
-        concretization_patterns = X[rmlines(normalise(x)) for x in concretization_patterns]
+        concretization_patterns = X[striplines(normalise(x)) for x in concretization_patterns]
         return new{X}(context,
                       analyze_from_definitions,
                       concretization_patterns,
@@ -488,7 +488,7 @@ function _virtual_process!(toplevelex::Expr,
                 force_concretize = true
                 with_toplevel_logger(interp, ≥(DEBUG_LOGGER_LEVEL)) do io
                     line, file = lnn.line, lnn.file
-                    x′ = rmlines(normalise(x))
+                    x′ = striplines(normalise(x))
                     println(io, "concretization pattern `$pat` matched `$x′` at $file:$line")
                 end
 
