@@ -1244,13 +1244,13 @@ const CONCRETIZATION_PATTERNS_CONFIG = normpath(@__DIR__, "fixtures", "..JET.tom
     # custom concretization pattern should work on AST level
     let
         vmod, res = @analyze_toplevel2 begin
-            const foo = Dict() # this is a function call, won't be concretized
+            const foo = Dict() # won't be concretized by default
         end
         @test !is_concrete(vmod, :foo)
     end
     let
         vmod, res = @analyze_toplevel2 begin
-            const foo = Dict() # this is a function call, won't be concretized
+            const foo = Dict() # now this will be forcibly concretized
         end concretization_patterns = [:(const foo = Dict())]
         @test is_concrete(vmod, :foo)
     end
