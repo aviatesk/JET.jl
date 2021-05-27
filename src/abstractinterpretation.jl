@@ -134,6 +134,7 @@ function CC.add_call_backedges!(interp::JETInterpreter,
     end
 end
 
+# now https://github.com/JuliaLang/julia/pull/40561 is merged, remove me once v1.7 is tagged
 function CC.abstract_call_method_with_const_args(interp::JETInterpreter, @nospecialize(rettype),
                                                  @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch,
                                                  sv::InferenceState, edgecycle::Bool,
@@ -141,6 +142,23 @@ function CC.abstract_call_method_with_const_args(interp::JETInterpreter, @nospec
     result, inf_result = @invoke abstract_call_method_with_const_args(interp::AbstractInterpreter, @nospecialize(rettype),
                                                                       @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch,
                                                                       sv::InferenceState, edgecycle::Bool,
+                                                                      va_override::Bool)
+
+    if isa(inf_result, InferenceResult)
+        # successful constant prop', we also need to update reports
+        update_reports!(interp, sv)
+    end
+
+    return result, inf_result
+end
+
+function CC.abstract_call_method_with_const_args(interp::JETInterpreter, @nospecialize(rettype),
+                                                 @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch,
+                                                 sv::InferenceState, edgecycle::Bool, edgelimited::Bool,
+                                                 va_override::Bool)
+    result, inf_result = @invoke abstract_call_method_with_const_args(interp::AbstractInterpreter, @nospecialize(rettype),
+                                                                      @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch,
+                                                                      sv::InferenceState, edgecycle::Bool, edgelimited::Bool,
                                                                       va_override::Bool)
 
     if isa(inf_result, InferenceResult)
