@@ -87,7 +87,7 @@ These configurations will be active for all the top-level entries explained in t
     effectively debug JET's top-level code concretization plan using [`toplevel_logger`](@ref JETLogger)
     configuration with the logging level above than `$DEBUG_LOGGER_LEVEL` ("debug") level.
   With the `toplevel_logger` configuration, we can see:
-  - which code is matched to `concretization_patterns` and forcibly concretized
+  - which code is matched with `concretization_patterns` and forcibly concretized
   - which code is selected to be concretized or not by JET's code selection logic:
     where `t`-annotated statements are concretized while `f`-annotated statements are abstracted
     and left abstract interpretation
@@ -99,18 +99,18 @@ These configurations will be active for all the top-level entries explained in t
   ```
   [toplevel-debug] virtualized the context of Main (took 0.003 sec)
   [toplevel-debug] entered into test/fixtures/concretization_patterns.jl
-  [toplevel-debug] concretization pattern `const GLOBAL_CODE_STORE = Dict()` matched to `const GLOBAL_CODE_STORE = Dict()`
-  [toplevel-debug] concretization plan:
-  1 f  1 ─      \$(Expr(:thunk, CodeInfo(
+  [toplevel-debug] concretization pattern `const GLOBAL_CODE_STORE = Dict()` matched `const GLOBAL_CODE_STORE = Dict()` at test/fixtures/concretization_patterns.jl:2
+  [toplevel-debug] concretization plan at test/fixtures/concretization_patterns.jl:4:
+  1 f 1 ─      \$(Expr(:thunk, CodeInfo(
       @ none within `top-level scope`
   1 ─     return \$(Expr(:method, Symbol("@with_code_record")))
   )))
-  2 t  │        \$(Expr(:method, Symbol("@with_code_record")))
-  3 t  │   %3 = Core.Typeof(var"@with_code_record")
-  4 t  │   %4 = Core.svec(%3, Core.LineNumberNode, Core.Module, Core.Any)
-  5 t  │   %5 = Core.svec()
-  6 t  │   %6 = Core.svec(%4, %5, \$(QuoteNode(:(#= test/fixtures/concretization_patterns.jl:4 =#))))
-  7 t  │        \$(Expr(:method, Symbol("@with_code_record"), :(%6), CodeInfo(
+  2 t │        \$(Expr(:method, Symbol("@with_code_record")))
+  3 t │   %3 = Core.Typeof(var"@with_code_record")
+  4 t │   %4 = Core.svec(%3, Core.LineNumberNode, Core.Module, Core.Any)
+  5 t │   %5 = Core.svec()
+  6 t │   %6 = Core.svec(%4, %5, \$(QuoteNode(:(#= test/fixtures/concretization_patterns.jl:4 =#))))
+  7 t │        \$(Expr(:method, Symbol("@with_code_record"), :(%6), CodeInfo(
       @ test/fixtures/concretization_patterns.jl:5 within `none`
   1 ─      \$(Expr(:meta, :nospecialize, :(a)))
   │        Base.setindex!(GLOBAL_CODE_STORE, a, __source__)
@@ -118,27 +118,27 @@ These configurations will be active for all the top-level entries explained in t
   │   %3 = esc(a)
   └──      return %3
   )))
-  8 f  └──      return var"@with_code_record"
-  [toplevel-debug] concretization plan:
-  1 f  1 ─      \$(Expr(:thunk, CodeInfo(
+  8 f └──      return var"@with_code_record"
+  [toplevel-debug] concretization plan at test/fixtures/concretization_patterns.jl:11:
+  1 f 1 ─      \$(Expr(:thunk, CodeInfo(
       @ none within `top-level scope`
   1 ─     return \$(Expr(:method, :foo))
   )))
-  2 t  │        \$(Expr(:method, :foo))
-  3 t  │   %3 = Core.Typeof(foo)
-  4 t  │   %4 = Core.svec(%3, Core.Any)
-  5 t  │   %5 = Core.svec()
-  6 t  │   %6 = Core.svec(%4, %5, \$(QuoteNode(:(#= test/fixtures/concretization_patterns.jl:11 =#))))
-  7 t  │        \$(Expr(:method, :foo, :(%6), CodeInfo(
+  2 t │        \$(Expr(:method, :foo))
+  3 t │   %3 = Core.Typeof(foo)
+  4 t │   %4 = Core.svec(%3, Core.Any)
+  5 t │   %5 = Core.svec()
+  6 t │   %6 = Core.svec(%4, %5, \$(QuoteNode(:(#= test/fixtures/concretization_patterns.jl:11 =#))))
+  7 t │        \$(Expr(:method, :foo, :(%6), CodeInfo(
       @ test/fixtures/concretization_patterns.jl:11 within `none`
   1 ─ %1 = identity(a)
   └──      return %1
   )))
-  8 f  └──      return foo
-  [toplevel-debug] concretization plan:
-  1 f  1 ─ %1 = foo(10)
-  2 f  └──      return %1
-  [toplevel-debug]  exited from test/fixtures/concretization_patterns.jl (took 0.048 sec)
+  8 f └──      return foo
+  [toplevel-debug] concretization plan at test/fixtures/concretization_patterns.jl:13:
+  1 f 1 ─ %1 = foo(10)
+  2 f └──      return %1
+  [toplevel-debug]  exited from test/fixtures/concretization_patterns.jl (took 0.032 sec)
   ```
 
   Also see: [Logging Configurations](@ref), [`virtual_process`](@ref).
@@ -176,6 +176,7 @@ struct ToplevelConfig{X<:Any}
               # false postive top-level errors won't happen by the macro
               :(@enum(args__)), :(Base.@enum(args__)),
               )
+        concretization_patterns = X[rmlines(normalise(x)) for x in concretization_patterns]
         return new{X}(context,
                       analyze_from_definitions,
                       concretization_patterns,
@@ -486,7 +487,9 @@ function _virtual_process!(toplevelex::Expr,
             if @capture(x, $pat)
                 force_concretize = true
                 with_toplevel_logger(interp, ≥(DEBUG_LOGGER_LEVEL)) do io
-                    println(io, "concretization pattern `$pat` matched to `$x`")
+                    (; line, file) = lnn
+                    x′ = rmlines(normalise(x))
+                    println(io, "concretization pattern `$pat` matched `$x′` at $file:$line")
                 end
 
                 blk = Expr(:block, lnn, x) # attach current line number info
@@ -714,7 +717,8 @@ function partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::Cod
     concretize = select_statements(src)
 
     with_toplevel_logger(interp.interp, ≥(DEBUG_LOGGER_LEVEL)) do io
-        println(io, "concretization plan:")
+        (; line, file) = interp.lnn
+        println(io, "concretization plan at $file:$line:")
         print_with_code(io, src, concretize)
     end
 

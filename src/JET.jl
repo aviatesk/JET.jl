@@ -165,7 +165,7 @@ import JuliaInterpreter:
     moduleof,
     @lookup
 
-import MacroTools: MacroTools, @capture
+import MacroTools: MacroTools, @capture, normalise, rmlines
 
 using InteractiveUtils
 
@@ -587,7 +587,7 @@ E.g. the configurations below are equivalent:
 - configurations via keyword arguments
   ```julia
   report_file(somefile;
-              concretization_patterns = [:(GLOBAL_CODE_STORE = x_)],
+              concretization_patterns = [:(const GLOBAL_CODE_STORE = x_)],
               toplevel_logger = IOContext(open("toplevel.txt", "w"), :JET_LOGGER_LEVEL => 1))
   ```
 - configurations via a configuration file
