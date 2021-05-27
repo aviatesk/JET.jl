@@ -487,7 +487,7 @@ function _virtual_process!(toplevelex::Expr,
             if @capture(x, $pat)
                 force_concretize = true
                 with_toplevel_logger(interp, ≥(DEBUG_LOGGER_LEVEL)) do io
-                    (; line, file) = lnn
+                    line, file = lnn.line, lnn.file
                     x′ = rmlines(normalise(x))
                     println(io, "concretization pattern `$pat` matched `$x′` at $file:$line")
                 end
@@ -717,7 +717,7 @@ function partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::Cod
     concretize = select_statements(src)
 
     with_toplevel_logger(interp.interp, ≥(DEBUG_LOGGER_LEVEL)) do io
-        (; line, file) = interp.lnn
+        line, file = interp.lnn.line, interp.lnn.file
         println(io, "concretization plan at $file:$line:")
         print_with_code(io, src, concretize)
     end
