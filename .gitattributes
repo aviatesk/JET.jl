@@ -1,2 +1,3 @@
 src/legacy/* linguist-language=Julia
 src/legacy/*.md linguist-language=Markdown
+test/fixtures/targets/*.jl linguist-vendored

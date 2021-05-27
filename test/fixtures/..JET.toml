@@ -1,5 +1,5 @@
 # supposed to concretize `const GLOBAL_CODE_STORE = Dict()` in test/fixtures/concretization_patterns.jl
-concretization_patterns = ["GLOBAL_CODE_STORE = x_"]
+concretization_patterns = ["const GLOBAL_CODE_STORE = Dict()"]
 
 # logs toplevel analysis into toplevel.txt with debug logging level
 toplevel_logger = """IOContext(open("toplevel.txt", "w"), :JET_LOGGER_LEVEL => 1)"""

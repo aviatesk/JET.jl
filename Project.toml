@@ -12,15 +12,16 @@ Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 
 [compat]
-JuliaInterpreter = "0.8.8"
-LoweredCodeUtils = "2"
+JuliaInterpreter = "0.8.16"
+LoweredCodeUtils = "~2.1.0"
 MacroTools = "0.5.6"
 Revise = "3.1.15"
 julia = "1.6"
 
 [extras]
 Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Logging", "Test"]
+test = ["Logging", "Random", "Test"]

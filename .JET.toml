@@ -1,7 +1,2 @@
 analyze_from_definitions = true
-concretization_patterns = [
-  "JET_DEV_MODE = x_",
-  "EGAL_TYPES = x_",
-  "_JET_CONFIGURATIONS = x_",
-  "INFERENCE_ERROR_REPORT_FIELD_DECLS = x_"
-]
+concretization_patterns = ["const x_ = y_"]

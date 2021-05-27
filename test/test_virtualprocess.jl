@@ -1241,6 +1241,20 @@ const CONCRETIZATION_PATTERNS_FILE   = normpath(@__DIR__, "fixtures", "concretiz
 const CONCRETIZATION_PATTERNS_CONFIG = normpath(@__DIR__, "fixtures", "..JET.toml")
 
 @testset "custom concretization pattern" begin
+    # custom concretization pattern should work on AST level
+    let
+        vmod, res = @analyze_toplevel2 begin
+            const foo = Dict() # this is a function call, won't be concretized
+        end
+        @test !is_concrete(vmod, :foo)
+    end
+    let
+        vmod, res = @analyze_toplevel2 begin
+            const foo = Dict() # this is a function call, won't be concretized
+        end concretization_patterns = [:(const foo = Dict())]
+        @test is_concrete(vmod, :foo)
+    end
+
     # the analysis on `test/fixtures/concretization_patterns.jl` will produce inappropriate
     # top-level error report because of missing concretization
     let
@@ -1254,7 +1268,7 @@ const CONCRETIZATION_PATTERNS_CONFIG = normpath(@__DIR__, "fixtures", "..JET.tom
     # we can circumvent the issue by using the `concretization_patterns` configuration !
     let
         res = analyze_file(CONCRETIZATION_PATTERNS_FILE;
-                           concretization_patterns = [:(GLOBAL_CODE_STORE = x_)],
+                           concretization_patterns = [:(const GLOBAL_CODE_STORE = Dict())],
                            )
         @test isempty(res.toplevel_error_reports)
     end
@@ -1268,6 +1282,19 @@ const CONCRETIZATION_PATTERNS_CONFIG = normpath(@__DIR__, "fixtures", "..JET.tom
         end concretization_patterns = [:x_] # means "concretize everything"
         @test is_concrete(vmod, :a)
         @test is_concrete(vmod, :b)
+    end
+
+    # `concretization_patterns` should "intuitively" work for code with documentations attached
+    let
+        vmod, res = @analyze_toplevel2 begin
+            """
+                foo
+
+            This is a documentation for `foo`
+            """
+            const foo = Dict()
+        end concretization_patterns = [:(const foo = Dict())]
+        @test is_concrete(vmod, :foo)
     end
 end
 
@@ -1420,9 +1447,7 @@ end
                 end
             end
             @test is_concrete(vmod, :foo)
-            # FIXME ideally we don't want to concretize `s`, but `LoweredCodeUtils.lines_required!`
-            # requires it by named dependency traversal
-            @test_broken is_abstract(vmod, :s)
+            @test is_abstract(vmod, :s)
         end
 
         # captured variables for global functions
@@ -1437,10 +1462,17 @@ end
             @test is_concrete(vmod, :foo)
 
             vmod, res = @analyze_toplevel2 let
-                s = undefvar # actual top-level error will happen here
+                s = undefvar # actual top-level error is better not to happen here
                 global foo() = return s
             end
             @test_broken isempty(res.toplevel_error_reports)
+
+            # more realistic example
+            vmod, res = @analyze_toplevel2 let s = sprint(showerror, DivideError())
+                global errmsg(s = s) = string("error: ", s)
+            end
+            @test is_concrete(vmod, :errmsg)
+            @test isempty(res.toplevel_error_reports)
         end
     end
 
@@ -1465,7 +1497,6 @@ end
         let
             res = @analyze_toplevel analyze_from_definitions=true try
                 foo(a) = sum(a) # essentially same as inner function, should be concretized
-
                 foo("julia") # shouldn't be concretized
             catch err
                 err
@@ -1481,7 +1512,6 @@ end
             res = @analyze_toplevel analyze_from_definitions=true try
                 s = "julia"
                 foo(f) = f(s) # should be concretized
-
                 foo(sum) # shouldn't be concretized
             catch err
                 err
@@ -1497,7 +1527,6 @@ end
             res = @analyze_toplevel analyze_from_definitions=true try
                 s = "julia"
                 foo(f) = f(s) # should be concretized
-
                 foo(sum) # shouldn't be concretized
             catch err
                 function shows() # should be concretized
@@ -1511,26 +1540,35 @@ end
             @test isempty(res.toplevel_error_reports)
             @test length(res.toplevel_signatures) == 2
             test_sum_over_string(res)
+            @test any(res.inference_error_reports) do r
+                isa(r, GlobalUndefVarErrorReport) &&
+                r.name === :err2
+            end
         end
 
-        # same as "captured variables for global functions",
-        # capture variables within a catch clause for global function will just be an hell
+        # XXX similar to "captured variables for global functions" cases, but such patterns
+        # can be even worse when used within a catch clause; it will just fail into a hell.
+        # I include this case just for the reference and won't expect this to work robustly
+        # since it heavily depends on Julia's AST lowering and the implementation detail of
+        # JuliaInterpreter.jl
         let
             vmod, res = @analyze_toplevel2 try
                 s = "julia"
                 foo(f) = f(s) # should be concretized
                 foo(sum) # shouldn't be concretized
-            catch err
-                global function shows() # should be concretized
-                    io = stderr::IO
-                    showerror(io, err)
-                    showerror(io, err2)
-                end
-                shows() # shouldn't be concretized
+            catch err # will be `MethodError` in actual execution
+                global geterr() = return err # should be concretized
             end
 
-            @test_broken isempty(res.toplevel_error_reports)
-            @test_broken is_concrete(vmod, :shows) && length(methods(vmod.shows)) == 1
+            # thanks to JuliaInterpreter's implementation detail, the analysis above won't
+            # report top-level errors and can concretize `geterr` even if the actual `err`
+            # is not thrown and thus these first two test cases will pass
+            @test isempty(res.toplevel_error_reports)
+            @test is_concrete(vmod, :geterr) && length(methods(vmod.geterr)) == 1
+            # yet we still need to make `geterr` over-approximate an actual execution soundly;
+            # currently JET's abstract interpretation special-cases `_INACTIVE_EXCEPTION`
+            # and fix it to `Any`, and we test it here in the last test case
+            @test MethodError ⊑ get_result(analyze_call(vmod.geterr)[2])
         end
     end
 
@@ -1561,34 +1599,40 @@ end
         end
 
         let
-            vmod, res = @analyze_toplevel2 begin
-                let
-                    # these definitions should be concretized
-                    stack = [:foo, :bar, :baz]
-                    while !isempty(stack)
-                        fname = popfirst!(stack)
-                        @eval begin
-                            @inline ($(Symbol("is", fname)))(a) = a === $(QuoteNode(fname))
-                        end
+            vmod, res = @analyze_toplevel2 let
+                # these definitions should be concretized
+                stack = [:foo, :bar, :baz]
+                while !isempty(stack)
+                    fname = popfirst!(stack)
+                    @eval begin
+                        @inline ($(Symbol("is", fname)))(a) = a === $(QuoteNode(fname))
                     end
                 end
-
-                # these should be abstracted away (i.e. shouldn't throw)
-                isfoo(:foo) && throw("foo")                   # should be reported
-                isbar(:foo) && isbaz(:baz) && throw("foobaz") # shouldn't be reported
-                isbar(:bar) && isbaz(:baz) && throw("barbaz") # should be reported
             end
 
-            # FIXME control flow traversal fails for iteration
             @test is_concrete(vmod, :isfoo)
-            @test_broken is_concrete(vmod, :isbar)
-            @test_broken is_concrete(vmod, :isbaz)
+            @test is_concrete(vmod, :isbar)
+            @test is_concrete(vmod, :isbaz)
         end
+    end
+
+    # code expanded by `@enum` is fairly complex and it couldn't be handled well by JET's
+    # general statement selection logic; so currently JET special case it and concretize
+    # the whole macro context by pre-defined `concretization_patterns` configurations
+    # (xref: originally reported from https://github.com/aviatesk/JET.jl/issues/175)
+    @testset "test with @enum macro" begin
+        res = @analyze_toplevel begin
+            @enum Fruit apple orange
+        end
+        @test isempty(res.toplevel_error_reports)
     end
 end
 
 # in this e2e test suite, we just check usage of test macros doesn't lead to (false positive)
 # top-level errors (e.g. world age, etc.)
+# TODO
+# - leave where these sample code are extracted from
+# - add test for `@inferred`
 @testset "@test macros" begin
     vmod = Module()
     Core.eval(vmod, :(using Test))
@@ -1715,7 +1759,7 @@ end
                 d = @inferred IdDict{Any,Any}(i=>i for i=1:3)
             end
         end
-        @test_broken isempty(res.toplevel_error_reports)
+        @test isempty(res.toplevel_error_reports)
     end
 end
 
@@ -1724,19 +1768,17 @@ end
 # produce (false positive) top-level errors (e.g., by actually running test code, etc.)
 # NOTE this could be very fragile ...
 @testset "test file targets" begin
+    TARGET_DIR = normpath(FIXTURE_DIR, "targets")
+
     let
-        res = analyze_file(normpath(FIXTURE_DIR, "error.jl"))
+        res = analyze_file(normpath(TARGET_DIR, "error.jl"))
         @test isempty(res.toplevel_error_reports)
     end
 
-    # TODO pass this test against https://github.com/JuliaLang/julia/blob/ddeba0ba8aa452cb2064eb2d03bea47fe6b0ebbe/test/dict.jl
-end
-
-@testset "https://github.com/aviatesk/JET.jl/issues/175" begin
-    res = @analyze_toplevel begin
-        @enum Fruit apple orange
+    let
+        res = analyze_file(normpath(TARGET_DIR, "dict.jl"))
+        @test isempty(res.toplevel_error_reports)
     end
-    @test isempty(res.toplevel_error_reports)
 end
 
 @testset "@generated function" begin
