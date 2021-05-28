@@ -629,7 +629,7 @@ function process_config_dict!(config_dict)
 end
 
 function trymetaparse(s)
-    ret = Meta.parse(s; raise = true)
+    ret = Meta.parse(strip(s); raise = true)
     @isexpr(ret, :incomplete) && error(first(ret.args))
     return ret
 end

@@ -18,7 +18,6 @@
             Pkg.activate(args...; kwargs...)
         end
     end
-    io = IOBuffer()
     old = Pkg.project().path
     try
         pkg_activate(pkgdir(JET))
@@ -29,7 +28,7 @@
     catch err
         rethrow(err)
     finally
-        pkg_activate(old; io)
+        pkg_activate(old)
     end
 end
 
@@ -45,14 +44,14 @@ macro toml_str(s); TOML.parse(TOML.Parser(s)); end
 
         # will be `parse`d or `eval`ed
         context = "Base"
-        concretization_patterns = ["GLOBAL_CODE_STORE = x_"]
+        concretization_patterns = ["const x_ = y_"]
         toplevel_logger = "stdout"
         inference_logger = "stdout"
         """
 
         config = process_config_dict!(config_dict)
         @test (:context => Base) in config
-        @test (:concretization_patterns => [:(GLOBAL_CODE_STORE = x_)]) in config
+        @test (:concretization_patterns => [:(const x_ = y_)]) in config
         @test (:toplevel_logger => stdout) in config
         @test (:inference_logger => stdout) in config
     end
@@ -60,7 +59,7 @@ macro toml_str(s); TOML.parse(TOML.Parser(s)); end
     # error when invalid expression given
     let
         config_dict = toml"""
-        concretization_patterns = ["GLOBAL_CODE_STORE = end"]
+        concretization_patterns = ["const x_ = end"]
         """
         @test_throws Meta.ParseError process_config_dict!(config_dict)
     end
@@ -68,8 +67,22 @@ macro toml_str(s); TOML.parse(TOML.Parser(s)); end
     # error when incomplete expression given
     let
         config_dict = toml"""
-        concretization_patterns = ["GLOBAL_CODE_STORE = "]
+        concretization_patterns = ["const x_ = "]
         """
         @test_throws ErrorException process_config_dict!(config_dict)
+    end
+
+    # should be whitespece/newline insensitive
+    let
+        config_dict = toml"""
+        concretization_patterns = [
+            \"\"\"
+            const x_ = y_
+            \"\"\"
+        ]
+        """
+
+        config = process_config_dict!(config_dict)
+        @test (:concretization_patterns => [:(const x_ = y_)]) in config
     end
 end
