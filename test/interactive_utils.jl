@@ -17,14 +17,31 @@ import JET:
     gen_virtual_module,
     ToplevelErrorReport,
     InferenceErrorReport,
-    ExceptionReport,
     print_reports
 
-for sym in Symbol.(last.(Base.Fix2(split, '.').(string.(vcat(subtypes(JET, ToplevelErrorReport),
-                                                             subtypes(JET, InferenceErrorReport),
-                                                             subtypes(JET, ExceptionReport),
-                                                             )))))
-    Core.eval(@__MODULE__, :(import JET: $(sym)))
+function subtypes_recursive!(t, ts)
+    push!(ts, t)
+    if isabstracttype(t)
+        for ct in subtypes(t)
+            subtypes_recursive!(ct, ts)
+        end
+    end
+    return ts
+end
+
+let
+    ts = Type[]
+    subtypes_recursive!(ToplevelErrorReport, ts)
+    subtypes_recursive!(InferenceErrorReport, ts)
+    for t in ts
+        canonical = split(string(t), '.')
+        if length(canonical) > 1 # not imported yet
+            modpath = Expr(:., Symbol.(canonical[1:end-1])...)
+            symname = Expr(:., Symbol(last(canonical)))
+            ex = Expr(:import, Expr(:(:), modpath, symname))
+            Core.eval(@__MODULE__, ex)
+        end
+    end
 end
 
 import Base:
