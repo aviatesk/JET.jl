@@ -1162,19 +1162,61 @@ end
     end
 end
 
-@testset "control flows in toplevel frames" begin
+@testset "non-deterministic abstract global assignments" begin
     let
         vmod, res = @analyze_toplevel2 begin
-            v = rand(Int)
+            v = '0'
+            v = 0 # deterministic
+        end
+        @test is_analyzed(vmod, :v)
+        @test isa_analyzed(vmod.v, Int)
+    end
+    let
+        vmod, res = @analyze_toplevel2 begin
+            v = '0'
+            v = rand(Int) # deterministic
+        end
+        @test is_analyzed(vmod, :v)
+        @test isa_analyzed(vmod.v, Int)
+    end
+    let
+        vmod, res = @analyze_toplevel2 begin
+            v = '0'
+            rand(Bool) && (v = 0) # non-deterministic
+        end
+        @test is_analyzed(vmod, :v)
+        @test isa_analyzed(vmod.v, Union{Char,Int})
+    end
+    let
+        vmod, res = @analyze_toplevel2 begin
+            v = '0'
+            rand(Bool) && (v = rand(Int)) # non-deterministic
+        end
+        @test is_analyzed(vmod, :v)
+        @test isa_analyzed(vmod.v, Union{Char,Int})
+    end
 
-            if rand(Bool)
-                v = rand(Char)
-            end
+    # end to end
+    let
+        vmod, res = @analyze_toplevel2 begin
+            v = '0'
+            v = rand(Int) # deterministic
 
-            sin(v) # union-split no method error should be reported
+            f(::Number) = :ok
+            f(v) # no method error should NOT happen here
         end
 
-        @test is_abstract(vmod, :v)
+        @test isempty(res.inference_error_reports)
+    end
+    let
+        vmod, res = @analyze_toplevel2 begin
+            v = '0'
+            rand(Bool) && (v = rand(Int)) # non-deterministic
+
+            f(::Number) = :ok
+            f(v) # union-split no method error should happen here
+        end
+
         @test length(res.inference_error_reports) === 1
         er = first(res.inference_error_reports)
         @test er isa NoMethodErrorReport

@@ -473,7 +473,7 @@ function CC.finish(me::InferenceState, interp::JETInterpreter)
                 if isa(lhs, Slot)
                     slot = slot_id(lhs)
                     if is_global_slot(interp, slot)
-                        isnd = is_nondeterministic(cfg, pc)
+                        isnd = is_assignment_nondeterministic(cfg, pc)
 
                         # COMBAK this approach is really not true when there're multiple
                         # assignments in different basic blocks
@@ -496,6 +496,25 @@ function CC.finish(me::InferenceState, interp::JETInterpreter)
             end
         end
     end
+end
+
+# simple cfg analysis to check if the assignment at `pc` will happen non-deterministically
+function is_assignment_nondeterministic(cfg::CFG, pc::Int)
+    isnd = false
+
+    blocks = cfg.blocks
+    for (idx, block) in enumerate(blocks)
+        if pc in rng(block)
+            for block′ in blocks
+                succs = block′.succs
+                if idx in succs
+                    isnd |= length(succs) > 1
+                end
+            end
+        end
+    end
+
+    return isnd
 end
 
 # at this point all the types of SSA values are iterated to maximum fixed point,
@@ -527,23 +546,7 @@ function collect_slottypes(sv::InferenceState)
     return slottypes
 end
 
-function is_nondeterministic(cfg::CFG, pc::Int)
-    isnd = false
-
-    for (idx, bb) in enumerate(cfg.blocks)
-        if pc in bb.stmts
-            for bb′ in cfg.blocks
-                if idx in bb′.succs
-                    isnd |= length(bb′.succs) > 1
-                end
-            end
-        end
-    end
-
-    return isnd
-end
-
-function set_abstract_global!(interp, mod, name, @nospecialize(t), isnd, sv)
+function set_abstract_global!(interp::JETInterpreter, mod::Module, name::Symbol, @nospecialize(t), isnd::Bool, sv::InferenceState)
     prev_agv = nothing
     prev_t = nothing
     iscd = is_constant_declared(name, sv)
@@ -584,22 +587,25 @@ function set_abstract_global!(interp, mod, name, @nospecialize(t), isnd, sv)
         return
     end
 
-    # if this global variable is known to be constant statically, let's concretize it for
-    # good reasons; we will be able to use it in concrete interpretation and so this allows
-    # us to define structs with type aliases, etc.
-    if isa(t, Const)
-        if iscd
-            @assert isnew # means, this is a valid constant declaration
-            return Core.eval(mod, :(const $name = $(QuoteNode(t.val))))
-        else
-            # we've checked `mod.name` wasn't declared as constant previously
-            return Core.eval(mod, :($name = $(QuoteNode(t.val))))
+    # if this assignment happens non-deterministically, we need to take the previous type into account
+    if isnd
+        if !isnew # if this assignment is an initialization, we just need to use `t`
+            t = tmerge(prev_t, t)
         end
-    end
-
-    # if this assignment happens non-deterministically, we need to perform type merge
-    if !isnew
-        t = tmerge(prev_t, t)
+    else
+        # if this assignment happens deterministically, and the assigned value is known to be
+        # constant statically, let's concretize it for good reasons;
+        # we will be able to use it in concrete interpretation and so this allows to define
+        # structs with type aliases, etc.
+        if isa(t, Const)
+            if iscd
+                @assert isnew # means, this is a valid constant declaration
+                return Core.eval(mod, :(const $name = $(QuoteNode(t.val))))
+            else
+                # we've checked `mod.name` wasn't declared as constant previously
+                return Core.eval(mod, :($name = $(QuoteNode(t.val))))
+            end
+        end
     end
 
     # okay, we will define new abstract global variable from here on
@@ -613,12 +619,12 @@ function set_abstract_global!(interp, mod, name, @nospecialize(t), isnd, sv)
     end
 end
 
-warn_invalid_const_global!(name) = @warn """
+warn_invalid_const_global!(name::Symbol) = @warn """
 JET.jl can't update the definition of this constant declared global variable: `$name`
 This may fail, cause incorrect analysis, or produce unexpected errors.
 """
 
-function is_constant_declared(name, sv)
+function is_constant_declared(name::Symbol, sv::InferenceState)
     return any(sv.src.code) do @nospecialize(x)
         if @isexpr(x, :const)
             arg = first(x.args)
