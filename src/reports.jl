@@ -465,6 +465,9 @@ get_msg(::Type{NoMethodErrorReport}, interp, sv::InferenceState, @nospecialize(t
 get_msg(::Type{NoMethodErrorReport}, interp, sv::InferenceState, ts::Vector{Type}) =
     "for $(length(ts)) of union split cases, no matching method found for call signatures ($(join(ts, ", "))))"
 
+@reportdef struct InvalidReturnTypeCall <: InferenceErrorReport end
+get_msg(::Type{InvalidReturnTypeCall}, interp, sv::InferenceState) = "invalid `Core.Compiler.return_type` call"
+
 @reportdef struct InvalidBuiltinCallErrorReport <: InferenceErrorReport
     argtypes::Vector{Any}
 end

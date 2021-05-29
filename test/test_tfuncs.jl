@@ -104,11 +104,8 @@ end
     # report invalid call of `return_type` itself
     let
         interp, frame = analyze_call(()->CC.return_type(sum))
-        @test !isempty(interp.reports)
-        @test any(interp.reports) do report
-            return report isa NoMethodErrorReport &&
-                any(Base.Fix1(occursin, "return_type"), report.sig)
-        end
+        @test length(interp.reports) == 1
+        @test isa(first(interp.reports), InvalidReturnTypeCall)
     end
 
     # end to end

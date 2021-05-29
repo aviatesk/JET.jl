@@ -101,25 +101,23 @@ function istoplevel_globalref(interp::JETInterpreter, sv::InferenceState)
     return !isnothing(parent) && istoplevel(interp, parent)
 end
 
-# `return_type_tfunc` internally uses `abstract_call` to model `return_type` function and
-# here we shouldn't pass `JETInterpreter` to it; otherwise we may get false error reports from
-# the  `abstract_call`, which isn't the abstraction of actual execution, thus here we just
-# check if the call of `return_type` is valid or not
+# `return_type_tfunc` internally uses `abstract_call` to model `Core.Compiler.return_type`
+# and here we shouldn't pass `JETInterpreter` to it; otherwise we may get false error reports
+# from the `abstract_call`, which will simulate the call and isn't any abstraction of actual
+# execution of it
 function CC.return_type_tfunc(interp::JETInterpreter, argtypes::Vector{Any}, sv::InferenceState)
+    # here we just check if the call of `return_type` is valid or not by very simple analysis
+    # we don't take (possible, but very unexpected) overloads into account here, just as
+    # `NativeInterpreter`'s `return_type_tfunc` hard-codes its return type to `Type`
     if length(argtypes) ≠ 3
         # invalid argument number, let's report and return error result (i.e. `Bottom`)
-        report!(interp, NoMethodErrorReport(interp,
-                                            sv,
-                                            # this is not necessary to be computed correctly, though
-                                            argtypes_to_type(argtypes),
-                                            ))
-        @static if isdefined(CC, :ReturnTypeCallInfo)
-            return CallMeta(Bottom, nothing)
-        else
-            return Bottom
-        end
+        report!(interp, InvalidReturnTypeCall(interp, sv))
+        return @static isdefined(CC, :ReturnTypeCallInfo) ?
+               CallMeta(Bottom, false) :
+               Bottom
     else
-        # don't recursively pass on `JETInterpreter` via `@invoke`
+        # don't recursively pass on `JETInterpreter` via `@invoke` here, and make sure
+        # JET's analysis enter into the simulated call
         return return_type_tfunc(interp.native, argtypes, sv)
     end
 end
