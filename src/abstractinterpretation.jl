@@ -388,13 +388,12 @@ function CC.abstract_eval_special_value(interp::JETInterpreter, @nospecialize(e)
             # report access to undefined global variable
             report!(interp, GlobalUndefVarErrorReport(interp, sv, mod, name))
 
-            # `ret` at this point should be annotated as `Any` by `NativeInterpreter`, and
-            # we just pass it as is to collect as much error points as possible within this
-            # frame
-            # IDEA: we can change it to `Bottom` to suppress any further abstract interpretation
-            # with this variable, and the later analysis after the update on this (currently)
-            # undefined variable just works because we will invalidate the cache for this frame
-            # anyway
+            # `ret` at this point should be annotated as `Any` by `NativeInterpreter`, and we
+            # just pass it as is to collect as much error points as possible within this frame
+            # IDEA we can change it to `Bottom` to suppress any further abstract interpretation
+            # with this variable, but at the same time we need to make sure we will invalidate
+            # the cache for this frame on the future definition of this (currently) undefined binding
+            # return Bottom
         end
     end
 
