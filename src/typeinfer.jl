@@ -93,7 +93,7 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
     # `:(unreachable)` are introduced by `optimize`
     for (idx, stmt) in enumerate(stmts)
         if isa(stmt, Expr) && stmt.head === :throw_undef_if_not
-            sym, _ = stmt.args
+            sym::Symbol, _ = stmt.args
 
             # slots in toplevel frame may be a abstract global slot
             istoplevel(interp, frame) && is_global_slot(interp, sym) && continue

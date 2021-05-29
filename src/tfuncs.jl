@@ -1,4 +1,5 @@
-# TODO: set up our own tfuncs
+# TODO tfunc implementations in Core.Compiler are really not enough to catch invalid calls
+# set up our own checks and enable sound analysis
 
 function CC.builtin_tfunction(interp::JETInterpreter, @nospecialize(f), argtypes::Array{Any,1},
                               sv::InferenceState) # `JETInterpreter` isn't overloaded on `return_type`
@@ -68,12 +69,16 @@ function CC.builtin_tfunction(interp::JETInterpreter, @nospecialize(f), argtypes
             f === Intrinsics.checked_sdiv_int ||
             f === Intrinsics.checked_srem_int ||
             f === Intrinsics.checked_udiv_int ||
-            f === Intrinsics.checked_urem_int
+            f === Intrinsics.checked_urem_int ||
+            f === Intrinsics.sdiv_int ||
+            f === Intrinsics.srem_int ||
+            f === Intrinsics.udiv_int ||
+            f === Intrinsics.urem_int
         end
         # `DivideError` for these intrinsics are handled in C and should be special cased
         a = argtypes[2]
         t = widenconst(a)
-        if t <: Base.BitSigned64 || t <: Base.BitUnsigned64
+        if isprimitivetype(t) && t <: Number
             if isa(a, Const) && a.val === zero(t)
                 report!(interp, DivideErrorReport(interp, sv))
                 return Bottom
