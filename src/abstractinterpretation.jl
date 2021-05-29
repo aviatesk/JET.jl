@@ -57,7 +57,7 @@ function CC.abstract_call_gf_by_type(interp::JETInterpreter, @nospecialize(f),
     end
     if isa(info, MethodMatchInfo)
         if is_empty_match(info)
-            report!(interp, NoMethodErrorReport(interp, sv, atype))
+            @report!(NoMethodErrorReport(interp, sv, atype))
         end
     elseif isa(info, UnionSplitInfo)
         # check each match for union-split signature
@@ -74,7 +74,7 @@ function CC.abstract_call_gf_by_type(interp::JETInterpreter, @nospecialize(f),
         end
 
         if !isnothing(ts)
-            report!(interp, NoMethodErrorReport(interp, sv, ts))
+            @report!(NoMethodErrorReport(interp, sv, ts))
         end
     end
 
@@ -284,7 +284,7 @@ function CC.abstract_invoke(interp::JETInterpreter, argtypes::Vector{Any}, sv::I
         # if the error type (`Bottom`) is propagated from the `invoke`d call, the error has
         # already been reported within `typeinf_edge`, so ignore that case
         if !isa(ret.info, InvokeCallInfo)
-            report!(interp, InvalidInvokeErrorReport(interp, sv, argtypes))
+            @report!(InvalidInvokeErrorReport(interp, sv, argtypes))
         end
     end
 
@@ -364,7 +364,7 @@ function CC.abstract_eval_special_value(interp::JETInterpreter, @nospecialize(e)
             end
         else
             # report access to undefined global variable
-            report!(interp, GlobalUndefVarErrorReport(interp, sv, mod, name))
+            @report!(GlobalUndefVarErrorReport(interp, sv, mod, name))
 
             # `ret` at this point should be annotated as `Any` by `NativeInterpreter`, and we
             # just pass it as is to collect as much error points as possible within this frame
@@ -410,11 +410,11 @@ function CC.abstract_eval_value(interp::JETInterpreter, @nospecialize(e), vtypes
                     end
                 end
                 if !isempty(ts)
-                    report!(interp, NonBooleanCondErrorReport(interp, sv, ts))
+                    @report!(NonBooleanCondErrorReport(interp, sv, ts))
                 end
             else
                 if typeintersect(Bool, t) !== Bool
-                    report!(interp, NonBooleanCondErrorReport(interp, sv, t))
+                    @report!(NonBooleanCondErrorReport(interp, sv, t))
                     ret = Bottom
                 end
             end
@@ -535,7 +535,7 @@ function set_abstract_global!(interp::JETInterpreter, mod::Module, name::Symbol,
             prev_t = val.t
             if val.iscd && widenconst(prev_t) !== widenconst(t)
                 warn_invalid_const_global!(name)
-                report!(interp, InvalidConstantRedefinition(interp, sv, mod, name, widenconst(prev_t), widenconst(t)))
+                @report!(InvalidConstantRedefinition(interp, sv, mod, name, widenconst(prev_t), widenconst(t)))
                 return
             end
             prev_agv = val
@@ -545,7 +545,7 @@ function set_abstract_global!(interp::JETInterpreter, mod::Module, name::Symbol,
                 invalid = prev_t !== widenconst(t)
                 if invalid || !isa(t, Const)
                     warn_invalid_const_global!(name)
-                    invalid && report!(interp, InvalidConstantRedefinition(interp, sv, mod, name, prev_t, widenconst(t)))
+                    invalid && @report!(InvalidConstantRedefinition(interp, sv, mod, name, prev_t, widenconst(t)))
                     return
                 end
                 # otherwise, we can just redefine this constant, and Julia will warn it
@@ -560,7 +560,7 @@ function set_abstract_global!(interp::JETInterpreter, mod::Module, name::Symbol,
     # if this constant declaration is invalid, just report it and bail out
     if iscd && !isnew
         warn_invalid_const_global!(name)
-        report!(interp, InvalidConstantDeclaration(interp, sv, mod, name))
+        @report!(InvalidConstantDeclaration(interp, sv, mod, name))
         return
     end
 

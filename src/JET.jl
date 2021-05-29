@@ -202,6 +202,12 @@ else
     ignorelimited(@nospecialize(x)) = x
 end
 
+@static if isdefined(Base, Symbol("@aggressive_constprop"))
+    import Base: @aggressive_constprop
+else
+    macro aggressive_constprop(x) esc(x) end # not available
+end
+
 # macros
 # ------
 
@@ -848,7 +854,7 @@ function may_report_get_staged!(interp::JETInterpreter, mi::MethodInstance)
         ccall(:jl_code_for_staged, Any, (Any,), mi)
     catch err
         # if user code throws error, wrap and report it
-        report!(interp, GeneratorErrorReport(interp, mi, err))
+        @report!(GeneratorErrorReport(interp, mi, err))
     end
 end
 

@@ -93,7 +93,7 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
     # `:(unreachable)` are introduced by `optimize`
     for (idx, stmt) in enumerate(stmts)
         if isa(stmt, Expr) && stmt.head === :throw_undef_if_not
-            sym, _ = stmt.args
+            sym::Symbol, _ = stmt.args
 
             # slots in toplevel frame may be a abstract global slot
             istoplevel(interp, frame) && is_global_slot(interp, sym) && continue
@@ -103,7 +103,7 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
                 # the optimization so far has found this statement is never "reachable";
                 # JET reports it since it will invoke undef var error at runtime, or will just
                 # be dead code otherwise
-                report!(interp, LocalUndefVarErrorReport(interp, frame, sym, idx))
+                @report!(LocalUndefVarErrorReport(interp, frame, sym, idx))
             # else
                 # by excluding this pass, JET accepts some false negatives (i.e. don't report
                 # those that may actually happen on actual execution)
@@ -142,7 +142,7 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
             push!(throw_calls, stmt)
         end
         if !isempty(throw_calls)
-            stash_uncaught_exception!(interp, UncaughtExceptionReport(interp, frame, throw_calls))
+            @report!(UncaughtExceptionReport(interp, frame, throw_calls), :uncaught_exceptions)
         end
     else
         # the non-`Bottom` result here may mean `throw` calls from the children frames

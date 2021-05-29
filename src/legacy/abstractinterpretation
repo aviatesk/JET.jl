@@ -80,7 +80,7 @@ function abstract_call_gf_by_type(interp::$JETInterpreter, @nospecialize(f), arg
         #=== abstract_call_gf_by_type patch point 1-1 start ===#
         if ts !== nothing
             # report `NoMethodErrorReport` for each union-split signature
-            $report!(interp, $NoMethodErrorReport(interp, sv, ts))
+            $(macroexpand(JET, :(@report!($NoMethodErrorReport(interp, sv, ts)))))
         end
         #=== abstract_call_gf_by_type patch point 1-1 end ===#
         info = UnionSplitInfo(infos)
@@ -104,7 +104,7 @@ function abstract_call_gf_by_type(interp::$JETInterpreter, @nospecialize(f), arg
         #=== abstract_call_gf_by_type patch point 1-2 start ===#
         if $is_empty_match(info)
             # report `NoMethodErrorReport` for this call signature
-            $report!(interp, $NoMethodErrorReport(interp, sv, atype))
+            $(macroexpand(JET, :(@report!($NoMethodErrorReport(interp, sv, atype)))))
         end
         #=== abstract_call_gf_by_type patch point 1-2 end ===#
         applicable = matches.matches

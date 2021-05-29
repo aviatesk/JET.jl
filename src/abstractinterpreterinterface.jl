@@ -1,7 +1,6 @@
 # configurations
 # --------------
 
-# TODO more configurations, e.g. ignore user-specified modules and such
 """
 Configurations for JET analysis.
 These configurations will be active for all the entries.
@@ -56,22 +55,86 @@ These configurations will be active for all the entries.
     │││││││└───────────────
     Dict{Any, Int64}
     ```
----
+$(""#=---
 - `ignore_native_remarks::Bool = true` \\
   If `true`, JET won't construct nor cache reports of "native remarks", which may speed up analysis time.
   "Native remarks" are information that Julia's native compiler emits about how type inference routine goes,
-  and those remarks are less interesting in term of "error checking", so JET ignores them by default.
+  and those remarks are less interesting in term of "error checking", so JET ignores them by default.=#)
 """
-struct JETAnalysisParams
+struct JETAnalysisParams{X}
+    report_filter::X
     strict_condition_check::Bool
-    ignore_native_remarks::Bool
-    @jetconfigurable JETAnalysisParams(; strict_condition_check::Bool = false,
-                                         ignore_native_remarks::Bool  = true,
-                                         ) =
-        return new(strict_condition_check,
-                   ignore_native_remarks,
-                   )
+    # ignore_native_remarks::Bool
+    # `@aggressive_constprop` here makes sure `mode` to be propagated as constant
+    @aggressive_constprop @jetconfigurable function JETAnalysisParams(;
+        report_filter::T             = nothing,
+        mode::Symbol                 = :default,
+        strict_condition_check::Bool = false,
+        # ignore_native_remarks::Bool           = true,
+        ) where T
+        if isnothing(report_filter)
+            # if `report_filter` isn't configured explicitly, here we configure it according to `mode`
+            report_filter = mode === :default ? default_report_filter :
+                            throw(ArgumentError("`mode` configuration should be either of `:default`"))
+            X = typeof(report_filter)
+        else
+            X = T
+        end
+        return new{X}(report_filter,
+                      strict_condition_check,
+                      # ignore_native_remarks,
+                      )
+    end
 end
+
+macro report!(reportcall, target = QuoteNode(:reports))
+    @assert @isexpr(reportcall, :call)
+    @assert length(reportcall.args) ≥ 3 # (T<:InferenceErrorReport)(interp, sv, specs...)
+    T, interp, sv, specs... = reportcall.args
+    spec_names = [gensym() for _ in 1:length(specs)]
+    destructs = Expr[:(T = $(esc(T))), :(interp = $(esc(interp))), :(sv = $(esc(sv)))]
+    for (spec_name, spec) in zip(spec_names, specs)
+        push!(destructs, Expr(:(=), spec_name, esc(spec)))
+    end
+    let_destruct = Expr(:block, destructs...) # T, interp, sv, spec_names...
+    let_body = quote
+        # apply filter
+        if $JETAnalysisParams(interp).report_filter(T, interp, sv, ($(spec_names...),))
+            push!(getproperty(interp, $target), T(interp, sv, $(spec_names...)))
+        end
+    end
+    return Expr(:let, let_destruct, let_body)
+end
+
+@nospecialize
+
+function default_report_filter(T, interp, sv, spec_args)
+    is_corecompiler_undefglobal(T, interp, sv, spec_args) && return false
+    return true
+end
+
+"""
+    is_corecompiler_undefglobal
+
+Report filter to ignore error points reported at an undefined global binding in `Core.Compiler`,
+  as far as the undefined name is defined in the corresponding `Base` module.
+`Core.Compiler` reuses minimum amount of `Base` code and there're some of missing definitions,
+  but they usually don't matter and `Core.Compiler`'s basic functionality is battle-tested
+  and validated exhausively by its test suite and real-world usages !
+"""
+function is_corecompiler_undefglobal(T, interp, sv, spec_args)
+    T === GlobalUndefVarErrorReport || return false
+    mod, name = spec_args::Tuple{Module,Symbol}
+    if mod === Core.Compiler
+        return isdefined(Base, name)
+    elseif mod === Core.Compiler.Sort
+        return isdefined(Base.Sort, name)
+    else
+        return false
+    end
+end
+
+@specialize
 
 """
 Configurations for Julia's native type inference routine.
@@ -230,7 +293,7 @@ struct AnalysisResult
     cache::Vector{InferenceErrorReportCache}
 end
 
-mutable struct JETInterpreter <: AbstractInterpreter
+mutable struct JETInterpreter{X} <: AbstractInterpreter
     ### native ###
 
     native::NativeInterpreter
@@ -238,6 +301,9 @@ mutable struct JETInterpreter <: AbstractInterpreter
     ### JET.jl specific ###
 
     ## general ##
+
+    # configurations for JET analysis
+    analysis_params::JETAnalysisParams{X}
 
     # key for the JET's global cache
     cache_key::UInt
@@ -256,9 +322,6 @@ mutable struct JETInterpreter <: AbstractInterpreter
 
     # local report cache for constant analysis
     cache::Vector{AnalysisResult}
-
-    # configurations for JET analysis
-    analysis_params::JETAnalysisParams
 
     ## virtual toplevel execution ##
 
@@ -281,17 +344,17 @@ mutable struct JETInterpreter <: AbstractInterpreter
     # records depth of call stack
     depth::Int
 
-    function JETInterpreter(native::NativeInterpreter, args...)
+    function JETInterpreter(native::NativeInterpreter, analysis_params::JETAnalysisParams{X}, args...) where {X}
         @assert !native.opt_params.inlining "inlining should be disabled for JETInterpreter analysis"
-        new(native, args...)
+        new{X}(native, analysis_params, args...)
     end
 end
 
 # constructor for fresh analysis
 @jetconfigurable function JETInterpreter(world::UInt     = get_world_counter();
+                                         analysis_params = nothing,
                                          current_frame   = nothing,
                                          cache           = AnalysisResult[],
-                                         analysis_params = nothing,
                                          inf_params      = nothing,
                                          opt_params      = nothing,
                                          concretized     = _CONCRETIZED,
@@ -311,13 +374,13 @@ end
     haskey(JET_CODE_CACHE, cache_key) || (JET_CODE_CACHE[cache_key] = IdDict())
 
     return JETInterpreter(NativeInterpreter(world; inf_params, opt_params),
+                          analysis_params,
                           cache_key,
                           InferenceErrorReport[],
                           UncaughtExceptionReport[],
                           Set{InferenceErrorReport}(),
                           current_frame,
                           cache,
-                          analysis_params,
                           concretized,
                           toplevelmod,
                           toplevelmods,
@@ -352,9 +415,9 @@ end
 # constructor to do additional JET analysis in the middle of parent (non-toplevel) interpretation
 function JETInterpreter(interp::JETInterpreter)
     return JETInterpreter(get_world_counter(interp);
+                          analysis_params = JETAnalysisParams(interp),
                           current_frame   = interp.current_frame,
                           cache           = interp.cache,
-                          analysis_params = JETAnalysisParams(interp),
                           inf_params      = InferenceParams(interp),
                           opt_params      = OptimizationParams(interp),
                           logger          = JETLogger(interp),
@@ -422,15 +485,6 @@ CC.may_discard_trees(interp::JETInterpreter) = false
 JETAnalysisParams(interp::JETInterpreter) = interp.analysis_params
 
 JETLogger(interp::JETInterpreter) = interp.logger
-
-# TODO do report filtering or something configured by `JETAnalysisParams(interp)`
-function report!(interp::JETInterpreter, report::InferenceErrorReport)
-    push!(interp.reports, report)
-end
-
-function stash_uncaught_exception!(interp::JETInterpreter, report::UncaughtExceptionReport)
-    push!(interp.uncaught_exceptions, report)
-end
 
 # check if we're in a toplevel module
 @inline istoplevel(interp::JETInterpreter, sv::InferenceState)    = istoplevel(interp, sv.linfo)

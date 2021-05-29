@@ -379,9 +379,9 @@ end
 function restore_cached_report!(cache::InferenceErrorReportCache, interp)
     report = restore_cached_report(cache)
     if isa(report, UncaughtExceptionReport)
-        stash_uncaught_exception!(interp, report)
+        push!(interp.uncaught_exceptions, report)
     else
-        report!(interp, report)
+        push!(interp.reports, report)
     end
     return report
 end
