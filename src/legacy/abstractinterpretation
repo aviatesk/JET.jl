@@ -51,16 +51,7 @@ function abstract_call_gf_by_type(interp::$JETInterpreter, @nospecialize(f), arg
                 add_remark!(interp, sv, "For one of the union split cases, too many methods matched")
                 return CallMeta(Any, false)
             end
-            #=== abstract_call_gf_by_type patch point 1-1 start ===#
-            info = MethodMatchInfo(matches)
-            if $is_empty_match(info)
-                if ts === nothing
-                    ts = Type[]
-                end
-                push!(ts, sig_n)
-            end
-            push!(infos, info)
-            #=== abstract_call_gf_by_type patch point 1-1 end ===#
+            push!(infos, MethodMatchInfo(matches))
             append!(applicable, matches)
             valid_worlds = intersect(valid_worlds, matches.valid_worlds)
             thisfullmatch = _any(match->(match::MethodMatch).fully_covers, matches)
@@ -77,13 +68,11 @@ function abstract_call_gf_by_type(interp::$JETInterpreter, @nospecialize(f), arg
                 push!(fullmatch, thisfullmatch)
             end
         end
-        #=== abstract_call_gf_by_type patch point 1-1 start ===#
-        if ts !== nothing
-            # report `NoMethodErrorReport` for each union-split signature
-            $(macroexpand(JET, :(@report!($NoMethodErrorReport(interp, sv, ts)))))
-        end
-        #=== abstract_call_gf_by_type patch point 1-1 end ===#
         info = UnionSplitInfo(infos)
+        #=== abstract_call_gf_by_type patch point 1-1 start ===#
+        # report pass for no matching methods error
+        $report_pass!($NoMethodErrorReport, interp, sv, info, atype, argtypes)
+        #=== abstract_call_gf_by_type patch point 1-1 end ===#
     else
         mt = ccall(:jl_method_table_for, Any, (Any,), atype)
         if mt === nothing
@@ -102,10 +91,8 @@ function abstract_call_gf_by_type(interp::$JETInterpreter, @nospecialize(f), arg
         push!(fullmatch, _any(match->(match::MethodMatch).fully_covers, matches))
         info = MethodMatchInfo(matches)
         #=== abstract_call_gf_by_type patch point 1-2 start ===#
-        if $is_empty_match(info)
-            # report `NoMethodErrorReport` for this call signature
-            $(macroexpand(JET, :(@report!($NoMethodErrorReport(interp, sv, atype)))))
-        end
+        # report pass for no matching methods error
+        $report_pass!($NoMethodErrorReport, interp, sv, info, atype, argtypes)
         #=== abstract_call_gf_by_type patch point 1-2 end ===#
         applicable = matches.matches
         valid_worlds = matches.valid_worlds

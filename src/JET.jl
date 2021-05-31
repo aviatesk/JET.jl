@@ -470,6 +470,7 @@ include("typeinfer.jl")
 include("optimize.jl")
 include("graph.jl")
 include("virtualprocess.jl")
+include("passes.jl")
 include("watch.jl")
 include("print.jl")
 
@@ -836,26 +837,8 @@ function analyze_method_instance!(interp::JETInterpreter, mi::MethodInstance)
 end
 
 function InferenceState(result::InferenceResult, cached::Bool, interp::JETInterpreter)
-    may_report_retrieve_code_info!(interp, result.linfo)
+    report_pass!(GeneratorErrorReport, interp, result.linfo)
     return @invoke InferenceState(result::InferenceResult, cached::Bool, interp::AbstractInterpreter)
-end
-
-# adapated from https://github.com/JuliaLang/julia/blob/f806df603489cfca558f6284d52a38f523b81881/base/compiler/utilities.jl#L107-L137
-function may_report_retrieve_code_info!(interp::JETInterpreter, linfo::MethodInstance)
-    m = linfo.def::Method
-    if isdefined(m, :generator)
-        may_report_get_staged!(interp, linfo)
-    end
-end
-function may_report_get_staged!(interp::JETInterpreter, mi::MethodInstance)
-    # analyze_method_instance!(interp, mi) XXX doesn't work
-    may_invoke_generator(mi) || return
-    try
-        ccall(:jl_code_for_staged, Any, (Any,), mi)
-    catch err
-        # if user code throws error, wrap and report it
-        @report!(GeneratorErrorReport(interp, mi, err))
-    end
 end
 
 function analyze_frame!(interp::JETInterpreter, frame::InferenceState)

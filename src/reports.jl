@@ -162,7 +162,7 @@ function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
         getfield(er, sym)::String
     elseif sym === :sig
         getfield(er, sym)::Vector{Any}
-    elseif sym === :lin # only needed for ExceptionReport
+    elseif sym === :lin # only needed for SeriousExceptionReport
         getfield(er, sym)::LineInfoNode
     else
         getfield(er, sym) # fallback
@@ -540,24 +540,24 @@ function GeneratorErrorReport(interp, linfo::MethodInstance, err)
 end
 
 """
-    ExceptionReport <: InferenceErrorReport
+    SeriousExceptionReport <: InferenceErrorReport
 
 The abstract type for "serious" errors that are invoked by `throw` calls but should be
-    reported even if they may be caught in actual execution.
-In order to avoid duplicated reports for the `throw` call, any subtype of `ExceptionReport`
-    should keep `lin::LineInfoNode` field, which represents where the report gets collected.
+reported even if they may be caught in actual execution.
+In order to avoid duplicated reports for the `throw` call, any subtype of `SeriousExceptionReport`
+should keep `lin::LineInfoNode` field, which represents where the report gets collected.
 """
-abstract type ExceptionReport <: InferenceErrorReport end
+abstract type SeriousExceptionReport <: InferenceErrorReport end
 
 # # NOTE: this mixin implementation is cleaner but doesn't help inference,
-# # because this `getproperty` interface relies on constant prop' and it won't happen when
-# # there're multiple applicable methods.
-# function Base.getproperty(er::ExceptionReport, sym::Symbol)
+# # because inference on the `getproperty` interface relies on constant prop' and currently
+# # constant prop' isn't supported for `invoke`d calls
+# function Base.getproperty(er::SeriousExceptionReport, sym::Symbol)
 #     sym === :lin && return getfield(er, :lin)::LineInfoNode
 #     return @invoke getproperty(er::InferenceErrorReport, sym::Symbol)
 # end
 
-@reportdef struct UndefKeywordErrorReport <: ExceptionReport
+@reportdef struct UndefKeywordErrorReport <: SeriousExceptionReport
     err::UndefKeywordError
     lin::LineInfoNode
 end
@@ -588,10 +588,10 @@ end
 """
     NativeRemark <: InferenceErrorReport
 
-This special `InferenceErrorReport` is just for wrapping remarks from `NativeInterpreter`.
-
-!!! note
-    Currently JET.jl doesn't make any use of `NativeRemark`.
+This special `InferenceErrorReport` wraps remarks by `NativeInterpreter`.
+"remarks" are information that Julia's native compiler emits about how its type inference goes,
+and those remarks are less interesting in term of "error checking", so currently any of JET's
+pre-defined report passes doesn't make any use of `NativeRemark`.
 """
 @reportdef struct NativeRemark <: InferenceErrorReport
     s::String

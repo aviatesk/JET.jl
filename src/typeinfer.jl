@@ -88,28 +88,8 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
 
     stmts = frame.src.code
 
-    # report (local) undef var error
-    # this only works when optimization is enabled, just because `:throw_undef_if_not` and
-    # `:(unreachable)` are introduced by `optimize`
-    for (idx, stmt) in enumerate(stmts)
-        if isa(stmt, Expr) && stmt.head === :throw_undef_if_not
-            sym::Symbol, _ = stmt.args
-
-            # slots in toplevel frame may be a abstract global slot
-            istoplevel(interp, frame) && is_global_slot(interp, sym) && continue
-
-            next_idx = idx + 1
-            if checkbounds(Bool, stmts, next_idx) && is_unreachable(@inbounds stmts[next_idx])
-                # the optimization so far has found this statement is never "reachable";
-                # JET reports it since it will invoke undef var error at runtime, or will just
-                # be dead code otherwise
-                @report!(LocalUndefVarErrorReport(interp, frame, sym, idx))
-            # else
-                # by excluding this pass, JET accepts some false negatives (i.e. don't report
-                # those that may actually happen on actual execution)
-            end
-        end
-    end
+    # report pass for (local) undef var error
+    report_pass!(LocalUndefVarErrorReport, interp, frame, stmts)
 
     # XXX this is a dirty fix for performance problem, we need more "proper" fix
     # https://github.com/aviatesk/JET.jl/issues/75
@@ -131,7 +111,7 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
         throw_locs  = LineInfoNode[]
         throw_calls = Expr[]
         for r in reports
-            if isa(r, ExceptionReport) && last(r.vst).linfo === linfo
+            if isa(r, SeriousExceptionReport) && last(r.vst).linfo === linfo
                 push!(throw_locs, r.lin)
             end
         end

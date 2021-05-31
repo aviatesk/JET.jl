@@ -55,34 +55,27 @@ These configurations will be active for all the entries.
     │││││││└───────────────
     Dict{Any, Int64}
     ```
-$(""#=---
-- `ignore_native_remarks::Bool = true` \\
-  If `true`, JET won't construct nor cache reports of "native remarks", which may speed up analysis time.
-  "Native remarks" are information that Julia's native compiler emits about how type inference routine goes,
-  and those remarks are less interesting in term of "error checking", so JET ignores them by default.=#)
 """
 struct JETAnalysisParams{X}
-    report_filter::X
+    report_pass::X
     strict_condition_check::Bool
-    # ignore_native_remarks::Bool
     # `@aggressive_constprop` here makes sure `mode` to be propagated as constant
     @aggressive_constprop @jetconfigurable function JETAnalysisParams(;
-        report_filter::T             = nothing,
-        mode::Symbol                 = :default,
+        report_pass::T               = nothing,
+        mode::Symbol                 = :basic,
         strict_condition_check::Bool = false,
-        # ignore_native_remarks::Bool           = true,
         ) where T
-        if isnothing(report_filter)
-            # if `report_filter` isn't configured explicitly, here we configure it according to `mode`
-            report_filter = mode === :default ? default_report_filter :
-                            throw(ArgumentError("`mode` configuration should be either of `:default`"))
+        if isnothing(report_pass)
+            # if `report_pass` isn't passed explicitly, here we configure it according to `mode`
+            report_pass = mode === :basic ? BasicPass.instance :
+                          mode === :sound ? SoundPass.instance :
+                          throw(ArgumentError("`mode` configuration should be either of `:basic` or `:sound`"))
             X = typeof(report_filter)
         else
             X = T
         end
-        return new{X}(report_filter,
+        return new{X}(report_pass,
                       strict_condition_check,
-                      # ignore_native_remarks,
                       )
     end
 end
@@ -105,36 +98,6 @@ macro report!(reportcall, target = QuoteNode(:reports))
     end
     return Expr(:let, let_destruct, let_body)
 end
-
-@nospecialize
-
-function default_report_filter(T, interp, sv, spec_args)
-    is_corecompiler_undefglobal(T, interp, sv, spec_args) && return false
-    return true
-end
-
-"""
-    is_corecompiler_undefglobal
-
-Report filter to ignore error points reported at an undefined global binding in `Core.Compiler`,
-  as far as the undefined name is defined in the corresponding `Base` module.
-`Core.Compiler` reuses minimum amount of `Base` code and there're some of missing definitions,
-  but they usually don't matter and `Core.Compiler`'s basic functionality is battle-tested
-  and validated exhausively by its test suite and real-world usages !
-"""
-function is_corecompiler_undefglobal(T, interp, sv, spec_args)
-    T === GlobalUndefVarErrorReport || return false
-    mod, name = spec_args::Tuple{Module,Symbol}
-    if mod === Core.Compiler
-        return isdefined(Base, name)
-    elseif mod === Core.Compiler.Sort
-        return isdefined(Base.Sort, name)
-    else
-        return false
-    end
-end
-
-@specialize
 
 """
 Configurations for Julia's native type inference routine.
@@ -468,12 +431,7 @@ CC.get_world_counter(interp::JETInterpreter)  = get_world_counter(interp.native)
 CC.lock_mi_inference(::JETInterpreter, ::MethodInstance) = nothing
 CC.unlock_mi_inference(::JETInterpreter, ::MethodInstance) = nothing
 
-# function CC.add_remark!(interp::JETInterpreter, sv::InferenceState, s::String)
-#     JETAnalysisParams(interp).ignore_native_remarks && return
-#     push!(interp.native_remarks, NativeRemark(interp, sv, s))
-#     return
-# end
-CC.add_remark!(interp::JETInterpreter, sv::InferenceState, s::String) = return
+CC.add_remark!(interp::JETInterpreter, sv, s) = report_pass!(NativeRemark, interp, sv, s)
 
 CC.may_optimize(interp::JETInterpreter)      = true
 CC.may_compress(interp::JETInterpreter)      = false

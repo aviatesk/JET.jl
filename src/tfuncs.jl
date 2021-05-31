@@ -6,20 +6,13 @@ function CC.builtin_tfunction(interp::JETInterpreter, @nospecialize(f), argtypes
                                     sv::Union{InferenceState,Nothing})
 
     if f === throw
-        # here we only report a selection of "serious" exceptions, i.e. those should be
+        # here we only report a selection of "serious" exceptions, i.e. those that should be
         # reported even if they may be caught in actual execution;
+        report_pass!(SeriousExceptionReport, interp, sv, argtypes)
+        
         # other general `throw` calls will be reported within `_typeinf(interp::JETInterpreter, frame::InferenceState)`
         # only when they are not caught by control flow, which is judged by whether if the
-        # final return type of `sv` is annotated as `Bottom` or not
-        if length(argtypes) ≥ 1
-            a = first(argtypes)
-            if isa(a, Const)
-                v = a.val
-                if isa(v, UndefKeywordError)
-                    @report!(UndefKeywordErrorReport(interp, sv, v, get_lin(sv)))
-                end
-            end
-        end
+        # final return type of `sv` is annotated as `Bottom` or not, thus early return now
         return ret
     elseif f === getfield
         # `getfield` is so common, let's special case it
@@ -39,8 +32,9 @@ function CC.builtin_tfunction(interp::JETInterpreter, @nospecialize(f), argtypes
                             end
                             # TODO; `ret` should be `Any` here, add report pass here (for performance linting)
                         else
-                            # report access to undefined global variable
-                            @report!(GlobalUndefVarErrorReport(interp, sv, mod, name))
+                            # report pass for undefined global reference
+                            report_pass!(GlobalUndefVarErrorReport, interp, sv, mod, name)
+
                             # return Bottom
                         end
                     elseif ret === Bottom
@@ -106,18 +100,10 @@ end
 # from the `abstract_call`, which will simulate the call and isn't any abstraction of actual
 # execution of it
 function CC.return_type_tfunc(interp::JETInterpreter, argtypes::Vector{Any}, sv::InferenceState)
-    # here we just check if the call of `return_type` is valid or not by very simple analysis
-    # we don't take (possible, but very unexpected) overloads into account here, just as
-    # `NativeInterpreter`'s `return_type_tfunc` hard-codes its return type to `Type`
-    if length(argtypes) ≠ 3
-        # invalid argument number, let's report and return error result (i.e. `Bottom`)
-        @report!(InvalidReturnTypeCall(interp, sv))
-        return @static isdefined(CC, :ReturnTypeCallInfo) ?
-               CallMeta(Bottom, false) :
-               Bottom
-    else
-        # don't recursively pass on `JETInterpreter` via `@invoke` here, and make sure
-        # JET's analysis enter into the simulated call
-        return return_type_tfunc(interp.native, argtypes, sv)
-    end
+    # report pass for invalid `Core.Compiler.return_type` call
+    report_pass!(InvalidReturnTypeCall, interp, sv, argtypes)
+
+    # don't recursively pass on `JETInterpreter` via `@invoke` here, and make sure
+    # JET's analysis enter into the simulated call
+    return return_type_tfunc(interp.native, argtypes, sv)
 end
