@@ -230,8 +230,10 @@ function analyze_additional_pass_by_type!(interp::JETInterpreter, @nospecialize(
     mm = get_single_method_match(tt, InferenceParams(newinterp).MAX_METHODS, get_world_counter(newinterp))
     result = abstract_call_method(newinterp, mm.method, mm.spec_types, mm.sparams, false, sv)
 
+    rt = @static @isdefined(MethodCallResult) ? result.rt : first(result)
+
     # corresponding to the same logic in `analyze_frame!`
-    if result.rt === Bottom
+    if rt === Bottom
         if !isempty(newinterp.uncaught_exceptions)
             append!(newinterp.reports, newinterp.uncaught_exceptions)
         end
