@@ -27,14 +27,15 @@ mutable struct AbstractGlobal
     end
 end
 
-# branching on https://github.com/JuliaLang/julia/pull/39305
-const IS_LATEST_CALL_INTERFACE = isdefined(CC, :maybe_get_const_prop_profitable)
-@static if IS_LATEST_CALL_INTERFACE
+# branching on https://github.com/JuliaLang/julia/pull/41020
+const IS_LATEST_INTERFACE = isdefined(CC, :MethodCallResult)
+@static if IS_LATEST_INTERFACE
 
 import .CC:
     bail_out_toplevel_call,
     bail_out_call,
     add_call_backedges!,
+    MethodCallResult,
     ConstCallInfo,
     const_prop_entry_heuristic,
     const_prop_rettype_heuristic
@@ -134,32 +135,12 @@ function CC.add_call_backedges!(interp::JETInterpreter,
     end
 end
 
-# now https://github.com/JuliaLang/julia/pull/40561 is merged, remove me once v1.7 is tagged
-function CC.abstract_call_method_with_const_args(interp::JETInterpreter, @nospecialize(rettype),
+function CC.abstract_call_method_with_const_args(interp::JETInterpreter, result::MethodCallResult,
                                                  @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch,
-                                                 sv::InferenceState, edgecycle::Bool,
-                                                 va_override::Bool)
-    result, inf_result = @invoke abstract_call_method_with_const_args(interp::AbstractInterpreter, @nospecialize(rettype),
+                                                 sv::InferenceState, va_override::Bool)
+    result, inf_result = @invoke abstract_call_method_with_const_args(interp::AbstractInterpreter, result::MethodCallResult,
                                                                       @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch,
-                                                                      sv::InferenceState, edgecycle::Bool,
-                                                                      va_override::Bool)
-
-    if isa(inf_result, InferenceResult)
-        # successful constant prop', we also need to update reports
-        update_reports!(interp, sv)
-    end
-
-    return result, inf_result
-end
-
-function CC.abstract_call_method_with_const_args(interp::JETInterpreter, @nospecialize(rettype),
-                                                 @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch,
-                                                 sv::InferenceState, edgecycle::Bool, edgelimited::Bool,
-                                                 va_override::Bool)
-    result, inf_result = @invoke abstract_call_method_with_const_args(interp::AbstractInterpreter, @nospecialize(rettype),
-                                                                      @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch,
-                                                                      sv::InferenceState, edgecycle::Bool, edgelimited::Bool,
-                                                                      va_override::Bool)
+                                                                      sv::InferenceState, va_override::Bool)
 
     if isa(inf_result, InferenceResult)
         # successful constant prop', we also need to update reports
@@ -170,7 +151,7 @@ function CC.abstract_call_method_with_const_args(interp::JETInterpreter, @nospec
 end
 
 @doc """
-    const_prop_entry_heuristic(interp::JETInterpreter, @nospecialize(rettype), sv::InferenceState, edgecycle::Bool)
+    const_prop_entry_heuristic(interp::JETInterpreter, result::MethodCallResult, sv::InferenceState)
 
 An overload for `abstract_call_method_with_const_args(interp::JETInterpreter, ...)`, which
   forces constant prop' even if the inference result can't be improved anymore, e.g. when
@@ -178,18 +159,18 @@ An overload for `abstract_call_method_with_const_args(interp::JETInterpreter, ..
   analysis by throwing away false positive error reports by cutting off the unreachable
   control flow.
 """
-function CC.const_prop_entry_heuristic(interp::JETInterpreter, @nospecialize(rettype), sv::InferenceState, edgecycle::Bool)
+function CC.const_prop_entry_heuristic(interp::JETInterpreter, result::MethodCallResult, sv::InferenceState)
     anyerror = interp.anyerror
     interp.anyerror = false # reset immediately, this `anyerror` is only valid for this match
-    CC.call_result_unused(sv) && edgecycle && return false
-    return InferenceParams(interp).ipo_constant_propagation && (anyerror || CC.is_improvable(rettype))
+    CC.call_result_unused(sv) && result.edgecycle && return false
+    return InferenceParams(interp).ipo_constant_propagation && (anyerror || CC.is_improvable(result.rt))
 end
 
-else # @static if IS_LATEST_CALL_INTERFACE
+else # @static if IS_LATEST_INTERFACE
 
 include("legacy/abstractinterpretation")
 
-end # @static if IS_LATEST_CALL_INTERFACE
+end # @static if IS_LATEST_INTERFACE
 
 function is_empty_match(info::MethodMatchInfo)
     res = info.results
@@ -247,10 +228,10 @@ function analyze_additional_pass_by_type!(interp::JETInterpreter, @nospecialize(
     # the threaded code block as a usual code block, and thus the side-effects won't (hopefully)
     # confuse the abstract interpretation, which is supposed to terminate on any kind of code
     mm = get_single_method_match(tt, InferenceParams(newinterp).MAX_METHODS, get_world_counter(newinterp))
-    rt, _, _ = abstract_call_method(newinterp, mm.method, mm.spec_types, mm.sparams, false, sv)
+    result = abstract_call_method(newinterp, mm.method, mm.spec_types, mm.sparams, false, sv)
 
     # corresponding to the same logic in `analyze_frame!`
-    if rt === Bottom
+    if result.rt === Bottom
         if !isempty(newinterp.uncaught_exceptions)
             append!(newinterp.reports, newinterp.uncaught_exceptions)
         end
@@ -261,16 +242,16 @@ end
 
 # works within inter-procedural context
 function CC.abstract_call_method(interp::JETInterpreter, method::Method, @nospecialize(sig), sparams::SimpleVector, hardlimit::Bool, sv::InferenceState)
-    @static IS_LATEST_CALL_INTERFACE && @assert !interp.anyerror
+    @static IS_LATEST_INTERFACE && @assert !interp.anyerror
 
-    @static IS_LATEST_CALL_INTERFACE && (nreports = length(interp.reports))
+    @static IS_LATEST_INTERFACE && (nreports = length(interp.reports))
 
     ret = @invoke abstract_call_method(interp::AbstractInterpreter, method::Method, sig, sparams::SimpleVector, hardlimit::Bool, sv::InferenceState)
 
-    @static if IS_LATEST_CALL_INTERFACE
+    @static if IS_LATEST_INTERFACE
         # make sure that `interp.anyreport` is modified only when there is succeeding
         # immediate call of `abstract_call_method_with_const_args`
-        if !method.is_for_opaque_closure || !ret[2] # edgecycle
+        if !method.is_for_opaque_closure || !ret.edgecycle
             interp.anyerror = (length(interp.reports) - nreports) > 0
         end
     end
