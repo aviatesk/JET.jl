@@ -153,17 +153,24 @@ end
 @doc """
     const_prop_entry_heuristic(interp::JETInterpreter, result::MethodCallResult, sv::InferenceState)
 
-An overload for `abstract_call_method_with_const_args(interp::JETInterpreter, ...)`, which
-  forces constant prop' even if the inference result can't be improved anymore, e.g. when
-  `rettype` is already `Const`; this is because constant prop' can still produce more accurate
-  analysis by throwing away false positive error reports by cutting off the unreachable
-  control flow.
+This overload for `abstract_call_method_with_const_args(interp::JETInterpreter, ...)` forces
+constant prop' even if an inference result can't be improved anymore _with respect to the
+return type_, e.g. when `result.rt` is already `Const`.
+Especially, this overload implements an heuristic to force constant prop' when any error points
+have been reported while the previous abstract method call without constant arguments.
+The reason we want much more aggressive constant propagation by that heuristic is that it's
+highly possible constant prop' can produce more accurate analysis result, by throwing away
+false positive error reports by cutting off the unreachable control flow or detecting
+must-reachable `throw` calls.
 """
 function CC.const_prop_entry_heuristic(interp::JETInterpreter, result::MethodCallResult, sv::InferenceState)
-    anyerror = interp.anyerror
-    interp.anyerror = false # reset immediately, this `anyerror` is only valid for this match
-    CC.call_result_unused(sv) && result.edgecycle && return false
-    return InferenceParams(interp).ipo_constant_propagation && (anyerror || CC.is_improvable(result.rt))
+    edge = result.edge # edge associated with the previous non-constant analysis
+    if !isnothing(edge)
+        # if any error has been reported within the previous `abstract_call_method` (associated with `edge`),
+        # force constant prop' and hope it can cut-off false positives
+        any(is_from_same_frame(sv.linfo, edge), interp.reports) && return true
+    end
+    return @invoke const_prop_entry_heuristic(interp::AbstractInterpreter, result::MethodCallResult, sv::InferenceState)
 end
 
 else # @static if IS_LATEST_INTERFACE
@@ -244,19 +251,7 @@ end
 
 # works within inter-procedural context
 function CC.abstract_call_method(interp::JETInterpreter, method::Method, @nospecialize(sig), sparams::SimpleVector, hardlimit::Bool, sv::InferenceState)
-    @static IS_LATEST_INTERFACE && @assert !interp.anyerror
-
-    @static IS_LATEST_INTERFACE && (nreports = length(interp.reports))
-
     ret = @invoke abstract_call_method(interp::AbstractInterpreter, method::Method, sig, sparams::SimpleVector, hardlimit::Bool, sv::InferenceState)
-
-    @static if IS_LATEST_INTERFACE
-        # make sure that `interp.anyreport` is modified only when there is succeeding
-        # immediate call of `abstract_call_method_with_const_args`
-        if !method.is_for_opaque_closure || !ret.edgecycle
-            interp.anyerror = (length(interp.reports) - nreports) > 0
-        end
-    end
 
     update_reports!(interp, sv)
 
