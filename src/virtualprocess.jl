@@ -334,7 +334,9 @@ function virtualize_module_context(actual::Module)
     return virtual
 end
 
-gen_virtual_module(root = Main; name = :JETVirtualModule) =
+const VIRTUAL_MODULE_NAME = :JETVirtualModule
+
+gen_virtual_module(root = Main; name = VIRTUAL_MODULE_NAME) =
     Core.eval(root, :(module $(gensym(name)) end))::Module
 
 function analyze_from_definitions!(interp::JETInterpreter, res::VirtualProcessResult)
@@ -598,7 +600,9 @@ function _virtual_process!(toplevelex::Expr,
     return res
 end
 
-split_module_path(m) = Symbol.(split(string(m), '.'))
+split_module_path(::Type{String}, m::Module) = split(string(m), '.')
+split_module_path(::Type{Symbol}, m::Module) = Symbol.(split_module_path(String, m))
+split_module_path(m::Module)                 = split_module_path(Symbol, m)
 
 # if virtualized, replace self references of `actualmod` with `virtualmod` (as is)
 fix_self_references!(::Nothing, x) = return
@@ -692,13 +696,13 @@ The trait to inject code into JuliaInterpreter's interpretation process; JET.jl 
 - `JuliaInterpreter.handle_err` to wrap an error happened during interpretation into
     `ActualErrorWrapped`
 """
-struct ConcreteInterpreter
+struct ConcreteInterpreter{X}
     filename::String
     lnn::LineNumberNode
     eval_with_err_handling::Function
     context::Module
     interp::JETInterpreter
-    config::ToplevelConfig
+    config::ToplevelConfig{X}
     res::VirtualProcessResult
 end
 

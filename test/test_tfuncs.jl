@@ -4,7 +4,7 @@
     end
     @test length(interp.reports) === 1
     report = first(interp.reports)
-    @test report isa InvalidBuiltinCallErrorReport &&
+    @test report isa UnimplementedBuiltinCallErrorReport &&
         widenconst.(report.argtypes) == [Int, Type{Int}, Any]
 
     @testset "constant propagation" begin
@@ -44,7 +44,7 @@ end
             getfield(a)
         end
         @test length(interp.reports) == 1
-        @test first(interp.reports) isa InvalidBuiltinCallErrorReport
+        @test first(interp.reports) isa UnimplementedBuiltinCallErrorReport
     end
 end
 

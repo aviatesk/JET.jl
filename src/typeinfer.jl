@@ -86,72 +86,17 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
 
     ret = @invoke _typeinf(interp::AbstractInterpreter, frame::InferenceState)
 
-    stmts = frame.src.code
-
-    # report (local) undef var error
-    # this only works when optimization is enabled, just because `:throw_undef_if_not` and
-    # `:(unreachable)` are introduced by `optimize`
-    for (idx, stmt) in enumerate(stmts)
-        if isa(stmt, Expr) && stmt.head === :throw_undef_if_not
-            sym::Symbol, _ = stmt.args
-
-            # slots in toplevel frame may be a abstract global slot
-            istoplevel(interp, frame) && is_global_slot(interp, sym) && continue
-
-            next_idx = idx + 1
-            if checkbounds(Bool, stmts, next_idx) && is_unreachable(@inbounds stmts[next_idx])
-                # the optimization so far has found this statement is never "reachable";
-                # JET reports it since it will invoke undef var error at runtime, or will just
-                # be dead code otherwise
-                report!(interp, LocalUndefVarErrorReport(interp, frame, sym, idx))
-            # else
-                # by excluding this pass, JET accepts some false negatives (i.e. don't report
-                # those that may actually happen on actual execution)
-            end
-        end
-    end
+    # report pass for (local) undef var error
+    report_pass!(LocalUndefVarErrorReport, interp, frame, frame.src.code)
 
     # XXX this is a dirty fix for performance problem, we need more "proper" fix
     # https://github.com/aviatesk/JET.jl/issues/75
     unique!(report_identity_key, reports)
 
+    # report pass for uncaught `throw` calls
+    report_pass!(UncaughtExceptionReport, interp, frame, frame.src.code)
+
     reports_after = Set(reports)
-
-    # report `throw` calls "appropriately"
-    if get_result(frame) === Bottom
-        # if the return type here is `Bottom` annotated, this _may_ mean there're uncaught
-        # `throw` calls
-        # XXX: well, it's possible that the `throw` calls within them are all caught but the
-        # other critical errors make the return type `Bottom`
-        # NOTE: to reduce the false positive `UncaughtExceptionReport`s described above, we count
-        # `throw` calls here after optimization, since it may have eliminated "unreachable"
-        # `throw` calls
-        codelocs    = frame.src.codelocs
-        linetable   = frame.src.linetable::Vector
-        throw_locs  = LineInfoNode[]
-        throw_calls = Expr[]
-        for r in reports
-            if isa(r, ExceptionReport) && last(r.vst).linfo === linfo
-                push!(throw_locs, r.lin)
-            end
-        end
-        for (i, stmt) in enumerate(stmts)
-            is_throw_call_expr(interp, frame, stmt) || continue
-            # if this `throw` is already reported, don't duplciate
-            linetable[codelocs[i]]::LineInfoNode in throw_locs && continue
-            push!(throw_calls, stmt)
-        end
-        if !isempty(throw_calls)
-            stash_uncaught_exception!(interp, UncaughtExceptionReport(interp, frame, throw_calls))
-        end
-    else
-        # the non-`Bottom` result here may mean `throw` calls from the children frames
-        # (if exists) are caught and not propagated here;
-        # we don't want to cache `UncaughtExceptionReport`s for those calls for this frame
-        # and its parents, so just filter them away
-        empty!(interp.uncaught_exceptions)
-    end
-
     uncaught_exceptions_after = Set(interp.uncaught_exceptions)
 
     # compute JET analysis results that should be cached for this linfo

@@ -7,48 +7,38 @@ function CC.builtin_tfunction(interp::JETInterpreter, @nospecialize(f), argtypes
                                     sv::Union{InferenceState,Nothing})
 
     if f === throw
-        # here we only report a selection of "serious" exceptions, i.e. those should be
+        # here we only report a selection of "serious" exceptions, i.e. those that should be
         # reported even if they may be caught in actual execution;
+        report_pass!(SeriousExceptionReport, interp, sv, argtypes)
+
         # other general `throw` calls will be reported within `_typeinf(interp::JETInterpreter, frame::InferenceState)`
         # only when they are not caught by control flow, which is judged by whether if the
-        # final return type of `sv` is annotated as `Bottom` or not
-        if length(argtypes) ≥ 1
-            a = first(argtypes)
-            if isa(a, Const)
-                v = a.val
-                if isa(v, UndefKeywordError)
-                    report!(interp, UndefKeywordErrorReport(interp, sv, v, get_lin(sv)))
-                end
-            end
-        end
+        # final return type of `sv` is annotated as `Bottom` or not, thus early return now
         return ret
-    elseif f === getfield
-        # `getfield` is so common, let's special case it
-        if 2 ≤ length(argtypes) ≤ 3
-            obj, fld = argtypes
-            if isa(fld, Const)
-                name = fld.val
-                if isa(name, Symbol)
-                    if isa(obj, Const) && (mod = obj.val; isa(mod, Module))
+    end
+
+    # report pass for invalid builtin function calls
+    # XXX for the meanwhile, we rely on the implementation of native tfuncs thus pass `ret` here as well
+    # XXX dynamic dispatch, is this okay in terms of performance ?
+    report_pass!(InvalidBuiltinCallErrorReport, interp, sv, f, argtypes, ret)
+
+    if f === getfield && 2 ≤ length(argtypes) ≤ 3
+        obj, fld = argtypes
+        if isa(fld, Const)
+            name = fld.val
+            if isa(name, Symbol)
+                if isa(obj, Const)
+                    mod = obj.val
+                    if isa(mod, Module)
                         if isdefined(mod, name)
                             if istoplevel_globalref(interp, sv)
-                                # when accessing to a global variable in a module concretized by `interp`,
-                                # take a risk and eagerly propagate its type
+                                # when accessing to a global variable in a module
+                                # concretized by `interp`, eagerly propagate its type
                                 # NOTE logic here should be synced with that of `abstract_eval_special_value(::JETInterpreter, ::Any, ::VarTable, ::InferenceState)`
                                 val = getfield(mod, name)
                                 return isa(val, AbstractGlobal) ? val.t : Const(val)
                             end
-                            # TODO; `ret` should be `Any` here, add report pass here (for performance linting)
-                        else
-                            # report access to undefined global variable
-                            report!(interp, GlobalUndefVarErrorReport(interp, sv, mod, name))
-                            # return Bottom
                         end
-                    elseif ret === Bottom
-                        # general case when an error is detected by the native `getfield_tfunc`
-                        typ = widenconst(obj)
-                        report!(interp, NoFieldErrorReport(interp, sv, typ, name))
-                        return ret
                     end
                 end
             end
@@ -65,32 +55,6 @@ function CC.builtin_tfunction(interp::JETInterpreter, @nospecialize(f), argtypes
         if ret === Union{Type, TypeVar}
             return Any
         end
-    elseif length(argtypes) == 2 && begin
-            f === Intrinsics.checked_sdiv_int ||
-            f === Intrinsics.checked_srem_int ||
-            f === Intrinsics.checked_udiv_int ||
-            f === Intrinsics.checked_urem_int ||
-            f === Intrinsics.sdiv_int ||
-            f === Intrinsics.srem_int ||
-            f === Intrinsics.udiv_int ||
-            f === Intrinsics.urem_int
-        end
-        # `DivideError` for these intrinsics are handled in C and should be special cased
-        a = argtypes[2]
-        t = widenconst(a)
-        if isprimitivetype(t) && t <: Number
-            if isa(a, Const) && a.val === zero(t)
-                report!(interp, DivideErrorReport(interp, sv))
-                return Bottom
-            end
-        end
-    end
-
-    if ret === Bottom
-        # XXX: for general case, JET just relies on the (maybe too persmissive) return type
-        # from native tfuncs to report invalid builtin calls and probably there're lots of
-        # false negatives
-        report!(interp, InvalidBuiltinCallErrorReport(interp, sv, argtypes))
     end
 
     return ret
@@ -111,18 +75,10 @@ end
 # from the `abstract_call`, which will simulate the call and isn't any abstraction of actual
 # execution of it
 function CC.return_type_tfunc(interp::JETInterpreter, argtypes::Vector{Any}, sv::InferenceState)
-    # here we just check if the call of `return_type` is valid or not by very simple analysis
-    # we don't take (possible, but very unexpected) overloads into account here, just as
-    # `NativeInterpreter`'s `return_type_tfunc` hard-codes its return type to `Type`
-    if length(argtypes) ≠ 3
-        # invalid argument number, let's report and return error result (i.e. `Bottom`)
-        report!(interp, InvalidReturnTypeCall(interp, sv))
-        return @static isdefined(CC, :ReturnTypeCallInfo) ?
-               CallMeta(Bottom, false) :
-               Bottom
-    else
-        # don't recursively pass on `JETInterpreter` via `@invoke` here, and make sure
-        # JET's analysis enter into the simulated call
-        return return_type_tfunc(interp.native, argtypes, sv)
-    end
+    # report pass for invalid `Core.Compiler.return_type` call
+    report_pass!(InvalidReturnTypeCall, interp, sv, argtypes)
+
+    # don't recursively pass on `JETInterpreter` via `@invoke` here, and make sure
+    # JET's analysis enter into the simulated call
+    return return_type_tfunc(interp.native, argtypes, sv)
 end
