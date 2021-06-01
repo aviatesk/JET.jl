@@ -1,7 +1,6 @@
 # configurations
 # --------------
 
-# TODO more configurations, e.g. ignore user-specified modules and such
 """
 Configurations for JET analysis.
 These configurations will be active for all the entries.
@@ -56,21 +55,28 @@ These configurations will be active for all the entries.
     │││││││└───────────────
     Dict{Any, Int64}
     ```
----
-- `ignore_native_remarks::Bool = true` \\
-  If `true`, JET won't construct nor cache reports of "native remarks", which may speed up analysis time.
-  "Native remarks" are information that Julia's native compiler emits about how type inference routine goes,
-  and those remarks are less interesting in term of "error checking", so JET ignores them by default.
 """
-struct JETAnalysisParams
+struct JETAnalysisParams{X}
+    report_pass::X
     strict_condition_check::Bool
-    ignore_native_remarks::Bool
-    @jetconfigurable JETAnalysisParams(; strict_condition_check::Bool = false,
-                                         ignore_native_remarks::Bool  = true,
-                                         ) =
-        return new(strict_condition_check,
-                   ignore_native_remarks,
-                   )
+    # `@aggressive_constprop` here makes sure `mode` to be propagated as constant
+    @aggressive_constprop @jetconfigurable function JETAnalysisParams(;
+        report_pass::T               = nothing,
+        mode::Symbol                 = :basic,
+        strict_condition_check::Bool = false,
+        ) where T
+        if isnothing(report_pass)
+            # if `report_pass` isn't passed explicitly, here we configure it according to `mode`
+            X, report_pass = mode === :basic ? (BasicPass, BasicPass.instance) :
+                             mode === :sound ? (SoundPass, SoundPass.instance) :
+                             throw(ArgumentError("`mode` configuration should be either of `:basic` or `:sound`"))
+        else
+            X = T
+        end
+        return new{X}(report_pass,
+                      strict_condition_check,
+                      )
+    end
 end
 
 """
@@ -230,7 +236,7 @@ struct AnalysisResult
     cache::Vector{InferenceErrorReportCache}
 end
 
-mutable struct JETInterpreter <: AbstractInterpreter
+mutable struct JETInterpreter{X} <: AbstractInterpreter
     ### native ###
 
     native::NativeInterpreter
@@ -238,6 +244,9 @@ mutable struct JETInterpreter <: AbstractInterpreter
     ### JET.jl specific ###
 
     ## general ##
+
+    # configurations for JET analysis
+    analysis_params::JETAnalysisParams{X}
 
     # key for the JET's global cache
     cache_key::UInt
@@ -256,9 +265,6 @@ mutable struct JETInterpreter <: AbstractInterpreter
 
     # local report cache for constant analysis
     cache::Vector{AnalysisResult}
-
-    # configurations for JET analysis
-    analysis_params::JETAnalysisParams
 
     ## virtual toplevel execution ##
 
@@ -281,17 +287,17 @@ mutable struct JETInterpreter <: AbstractInterpreter
     # records depth of call stack
     depth::Int
 
-    function JETInterpreter(native::NativeInterpreter, args...)
+    function JETInterpreter(native::NativeInterpreter, analysis_params::JETAnalysisParams{X}, args...) where {X}
         @assert !native.opt_params.inlining "inlining should be disabled for JETInterpreter analysis"
-        new(native, args...)
+        new{X}(native, analysis_params, args...)
     end
 end
 
 # constructor for fresh analysis
 @jetconfigurable function JETInterpreter(world::UInt     = get_world_counter();
+                                         analysis_params = nothing,
                                          current_frame   = nothing,
                                          cache           = AnalysisResult[],
-                                         analysis_params = nothing,
                                          inf_params      = nothing,
                                          opt_params      = nothing,
                                          concretized     = _CONCRETIZED,
@@ -311,13 +317,13 @@ end
     haskey(JET_CODE_CACHE, cache_key) || (JET_CODE_CACHE[cache_key] = IdDict())
 
     return JETInterpreter(NativeInterpreter(world; inf_params, opt_params),
+                          analysis_params,
                           cache_key,
                           InferenceErrorReport[],
                           UncaughtExceptionReport[],
                           Set{InferenceErrorReport}(),
                           current_frame,
                           cache,
-                          analysis_params,
                           concretized,
                           toplevelmod,
                           toplevelmods,
@@ -352,9 +358,9 @@ end
 # constructor to do additional JET analysis in the middle of parent (non-toplevel) interpretation
 function JETInterpreter(interp::JETInterpreter)
     return JETInterpreter(get_world_counter(interp);
+                          analysis_params = JETAnalysisParams(interp),
                           current_frame   = interp.current_frame,
                           cache           = interp.cache,
-                          analysis_params = JETAnalysisParams(interp),
                           inf_params      = InferenceParams(interp),
                           opt_params      = OptimizationParams(interp),
                           logger          = JETLogger(interp),
@@ -405,12 +411,7 @@ CC.get_world_counter(interp::JETInterpreter)  = get_world_counter(interp.native)
 CC.lock_mi_inference(::JETInterpreter, ::MethodInstance) = nothing
 CC.unlock_mi_inference(::JETInterpreter, ::MethodInstance) = nothing
 
-# function CC.add_remark!(interp::JETInterpreter, sv::InferenceState, s::String)
-#     JETAnalysisParams(interp).ignore_native_remarks && return
-#     push!(interp.native_remarks, NativeRemark(interp, sv, s))
-#     return
-# end
-CC.add_remark!(interp::JETInterpreter, sv::InferenceState, s::String) = return
+CC.add_remark!(interp::JETInterpreter, sv, s) = report_pass!(NativeRemark, interp, sv, s)
 
 CC.may_optimize(interp::JETInterpreter)      = true
 CC.may_compress(interp::JETInterpreter)      = false
@@ -422,15 +423,6 @@ CC.may_discard_trees(interp::JETInterpreter) = false
 JETAnalysisParams(interp::JETInterpreter) = interp.analysis_params
 
 JETLogger(interp::JETInterpreter) = interp.logger
-
-# TODO do report filtering or something configured by `JETAnalysisParams(interp)`
-function report!(interp::JETInterpreter, report::InferenceErrorReport)
-    push!(interp.reports, report)
-end
-
-function stash_uncaught_exception!(interp::JETInterpreter, report::UncaughtExceptionReport)
-    push!(interp.uncaught_exceptions, report)
-end
 
 # check if we're in a toplevel module
 @inline istoplevel(interp::JETInterpreter, sv::InferenceState)    = istoplevel(interp, sv.linfo)

@@ -162,7 +162,7 @@ function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
         getfield(er, sym)::String
     elseif sym === :sig
         getfield(er, sym)::Vector{Any}
-    elseif sym === :lin # only needed for ExceptionReport
+    elseif sym === :lin # only needed for SeriousExceptionReport
         getfield(er, sym)::LineInfoNode
     else
         getfield(er, sym) # fallback
@@ -381,9 +381,9 @@ end
 function restore_cached_report!(cache::InferenceErrorReportCache, interp)
     report = restore_cached_report(cache)
     if isa(report, UncaughtExceptionReport)
-        stash_uncaught_exception!(interp, report)
+        push!(interp.uncaught_exceptions, report)
     else
-        report!(interp, report)
+        push!(interp.reports, report)
     end
     return report
 end
@@ -466,22 +466,6 @@ get_msg(::Type{NoMethodErrorReport}, interp, sv::InferenceState, @nospecialize(t
 get_msg(::Type{NoMethodErrorReport}, interp, sv::InferenceState, ts::Vector{Type}) =
     "for $(length(ts)) of union split cases, no matching method found for call signatures ($(join(ts, ", "))))"
 
-@reportdef struct InvalidReturnTypeCall <: InferenceErrorReport end
-get_msg(::Type{InvalidReturnTypeCall}, interp, sv::InferenceState) = "invalid `Core.Compiler.return_type` call"
-
-@reportdef struct InvalidBuiltinCallErrorReport <: InferenceErrorReport
-    argtypes::Vector{Any}
-end
-get_msg(::Type{InvalidBuiltinCallErrorReport}, interp, sv::InferenceState, @nospecialize(args...)) =
-    "invalid builtin function call"
-
-@reportdef struct NoFieldErrorReport <: InferenceErrorReport
-    @nospecialize(typ::Type)
-    name::Symbol
-end
-get_msg(::Type{NoFieldErrorReport}, interp, sv::InferenceState, @nospecialize(typ::Type), name::Symbol) =
-    "type $(typ) has no field $(name)"
-
 @reportdef struct GlobalUndefVarErrorReport <: InferenceErrorReport
     mod::Module
     name::Symbol
@@ -506,11 +490,6 @@ get_msg(::Type{NonBooleanCondErrorReport}, interp, sv::InferenceState, @nospecia
     "non-boolean ($t) used in boolean context"
 get_msg(::Type{NonBooleanCondErrorReport}, interp, sv::InferenceState, ts::Vector{Type}) =
     "for $(length(ts)) of union split cases, non-boolean ($(join(ts, ", "))) used in boolean context"
-
-@reportdef struct DivideErrorReport <: InferenceErrorReport end
-let s = sprint(showerror, DivideError())
-    global get_msg(::Type{DivideErrorReport}, interp, sv::InferenceState) = s
-end
 
 # TODO we may want to hoist `InvalidConstXXX` errors into top-level errors
 
@@ -541,24 +520,54 @@ function GeneratorErrorReport(interp, linfo::MethodInstance, err)
 end
 
 """
-    ExceptionReport <: InferenceErrorReport
+    InvalidBuiltinCallErrorReport
+
+Represents errors caused by invalid builtin-function calls.
+Technically they're defined as those error points that should be caught within
+`Core.Compiler.builtin_tfunction`.
+"""
+abstract type InvalidBuiltinCallErrorReport <: InferenceErrorReport end
+
+@reportdef struct NoFieldErrorReport <: InvalidBuiltinCallErrorReport
+    @nospecialize(typ::Type)
+    name::Symbol
+end
+get_msg(::Type{NoFieldErrorReport}, interp, sv::InferenceState, @nospecialize(typ::Type), name::Symbol) =
+    "type $(typ) has no field $(name)"
+
+@reportdef struct DivideErrorReport <: InferenceErrorReport end
+let s = sprint(showerror, DivideError())
+    global get_msg(::Type{DivideErrorReport}, interp, sv::InferenceState) = s
+end
+
+@reportdef struct UnimplementedBuiltinCallErrorReport <: InvalidBuiltinCallErrorReport
+    argtypes::Vector{Any}
+end
+get_msg(::Type{UnimplementedBuiltinCallErrorReport}, interp, sv::InferenceState, @nospecialize(args...)) =
+    "invalid builtin function call"
+
+@reportdef struct InvalidReturnTypeCall <: InferenceErrorReport end
+get_msg(::Type{InvalidReturnTypeCall}, interp, sv::InferenceState) = "invalid `Core.Compiler.return_type` call"
+
+"""
+    SeriousExceptionReport <: InferenceErrorReport
 
 The abstract type for "serious" errors that are invoked by `throw` calls but should be
-    reported even if they may be caught in actual execution.
-In order to avoid duplicated reports for the `throw` call, any subtype of `ExceptionReport`
-    should keep `lin::LineInfoNode` field, which represents where the report gets collected.
+reported even if they may be caught in actual execution.
+In order to avoid duplicated reports for the `throw` call, any subtype of `SeriousExceptionReport`
+should keep `lin::LineInfoNode` field, which represents where the report gets collected.
 """
-abstract type ExceptionReport <: InferenceErrorReport end
+abstract type SeriousExceptionReport <: InferenceErrorReport end
 
 # # NOTE: this mixin implementation is cleaner but doesn't help inference,
-# # because this `getproperty` interface relies on constant prop' and it won't happen when
-# # there're multiple applicable methods.
-# function Base.getproperty(er::ExceptionReport, sym::Symbol)
+# # because inference on the `getproperty` interface relies on constant prop' and currently
+# # constant prop' isn't supported for `invoke`d calls
+# function Base.getproperty(er::SeriousExceptionReport, sym::Symbol)
 #     sym === :lin && return getfield(er, :lin)::LineInfoNode
 #     return @invoke getproperty(er::InferenceErrorReport, sym::Symbol)
 # end
 
-@reportdef struct UndefKeywordErrorReport <: ExceptionReport
+@reportdef struct UndefKeywordErrorReport <: SeriousExceptionReport
     err::UndefKeywordError
     lin::LineInfoNode
 end
@@ -589,10 +598,10 @@ end
 """
     NativeRemark <: InferenceErrorReport
 
-This special `InferenceErrorReport` is just for wrapping remarks from `NativeInterpreter`.
-
-!!! note
-    Currently JET.jl doesn't make any use of `NativeRemark`.
+This special `InferenceErrorReport` wraps remarks by `NativeInterpreter`.
+"remarks" are information that Julia's native compiler emits about how its type inference goes,
+and those remarks are less interesting in term of "error checking", so currently any of JET's
+pre-defined report passes doesn't make any use of `NativeRemark`.
 """
 @reportdef struct NativeRemark <: InferenceErrorReport
     s::String

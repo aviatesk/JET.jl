@@ -55,28 +55,8 @@ function CC.abstract_call_gf_by_type(interp::JETInterpreter, @nospecialize(f),
     if isa(info, ConstCallInfo)
         info = info.call # unwrap to `MethodMatchInfo` or `UnionSplitInfo`
     end
-    if isa(info, MethodMatchInfo)
-        if is_empty_match(info)
-            report!(interp, NoMethodErrorReport(interp, sv, atype))
-        end
-    elseif isa(info, UnionSplitInfo)
-        # check each match for union-split signature
-        split_argtypes = nothing
-        ts = nothing
-
-        for (i, matchinfo) in enumerate(info.matches)
-            if is_empty_match(matchinfo)
-                isnothing(split_argtypes) && (split_argtypes = switchtupleunion(argtypes))
-                isnothing(ts) && (ts = Type[])
-                sig_n = argtypes_to_type(split_argtypes[i])
-                push!(ts, sig_n)
-            end
-        end
-
-        if !isnothing(ts)
-            report!(interp, NoMethodErrorReport(interp, sv, ts))
-        end
-    end
+    # report passes for no matching methods error
+    report_pass!(NoMethodErrorReport, interp, sv, info, atype, argtypes)
 
     analyze_task_parallel_code!(interp, f, argtypes, sv)
 
@@ -179,12 +159,6 @@ include("legacy/abstractinterpretation")
 
 end # @static if IS_LATEST_INTERFACE
 
-function is_empty_match(info::MethodMatchInfo)
-    res = info.results
-    isa(res, MethodLookupResult) || return false # when does this happen ?
-    return isempty(res.matches)
-end
-
 """
     analyze_task_parallel_code!(interp::JETInterpreter, @nospecialize(f), argtypes::Vector{Any}, sv::InferenceState)
 
@@ -276,21 +250,6 @@ import .CC:
     InvokeCallInfo,
     instanceof_tfunc
 
-function CC.abstract_invoke(interp::JETInterpreter, argtypes::Vector{Any}, sv::InferenceState)
-    ret = @invoke abstract_invoke(interp::AbstractInterpreter, argtypes::Vector{Any}, sv::InferenceState)
-
-    if ret.rt === Bottom
-        # here we report error that happens at the call of `invoke` itself.
-        # if the error type (`Bottom`) is propagated from the `invoke`d call, the error has
-        # already been reported within `typeinf_edge`, so ignore that case
-        if !isa(ret.info, InvokeCallInfo)
-            report!(interp, InvalidInvokeErrorReport(interp, sv, argtypes))
-        end
-    end
-
-    return ret
-end
-
 @reportdef struct InvalidInvokeErrorReport <: InferenceErrorReport
     argtypes::Vector{Any}
 end
@@ -314,6 +273,14 @@ function get_msg(::Type{InvalidInvokeErrorReport}, interp, sv::InferenceState, a
     nargtype = typeintersect(types, argtype)
     @assert nargtype === Bottom
     return "actual argument type (`$argtype`) doesn't intersect with specified argument type (`$types`)"
+end
+
+function CC.abstract_invoke(interp::JETInterpreter, argtypes::Vector{Any}, sv::InferenceState)
+    ret = @invoke abstract_invoke(interp::AbstractInterpreter, argtypes::Vector{Any}, sv::InferenceState)
+
+    report_pass!(InvalidInvokeErrorReport, interp, sv, ret, argtypes)
+
+    return ret
 end
 
 end # @static if isdefined(CC, :abstract_invoke)
@@ -353,18 +320,11 @@ function CC.abstract_eval_special_value(interp::JETInterpreter, @nospecialize(e)
                 val = getfield(mod, name)
                 ret = isa(val, AbstractGlobal) ? val.t : Const(val)
             else
-                # we don't track types of global variables except when we're in toplevel frame,
-                # and here `ret` should be just annotated as `Any`
-                # NOTE: this is becasue:
-                # - it's hard (or even impossible) to correctly track side-effects of global
-                #   variable assignments that happen in (possibly deeply nested) frames
-                # - to be consistent with Julia's native type inference
-                # - it's hard to track side effects for cached frames
-                # TODO: add report pass here (for performance linting)
+                # TODO: add report pass to detect non-constant global variable here (for performance linting)
             end
         else
-            # report access to undefined global variable
-            report!(interp, GlobalUndefVarErrorReport(interp, sv, mod, name))
+            # report pass for undefined global reference
+            report_pass!(GlobalUndefVarErrorReport, interp, sv, mod, name)
 
             # `ret` at this point should be annotated as `Any` by `NativeInterpreter`, and we
             # just pass it as is to collect as much error points as possible within this frame
@@ -397,26 +357,12 @@ function CC.abstract_eval_value(interp::JETInterpreter, @nospecialize(e), vtypes
     if isa(stmt, GotoIfNot)
         t = widenconst(ret)
         if t !== Bottom
-            if isa(t, Union)
-                ts = Type[]
-                for t in Base.uniontypes(t)
-                    if typeintersect(Bool, t) !== Bool
-                        if JETAnalysisParams(interp).strict_condition_check ||
-                           !(t <: Function || # !(::Function)
-                             t === Missing || # ==(::Missing, ::Any), ==(::Any, ::Missing), ...
-                             false)
-                            push!(ts, t)
-                        end
-                    end
-                end
-                if !isempty(ts)
-                    report!(interp, NonBooleanCondErrorReport(interp, sv, ts))
-                end
-            else
-                if typeintersect(Bool, t) !== Bool
-                    report!(interp, NonBooleanCondErrorReport(interp, sv, t))
-                    ret = Bottom
-                end
+            report_pass!(NonBooleanCondErrorReport, interp, sv, t)
+            # if this condition leads to an "non-boolean (t) used in boolean context" error,
+            # we can turn it into Bottom and bail out early
+            # TODO upstream this
+            if typeintersect(Bool, t) !== Bool
+                ret = Bottom
             end
         end
     end
@@ -533,19 +479,21 @@ function set_abstract_global!(interp::JETInterpreter, mod::Module, name::Symbol,
         val = getfield(mod, name)
         if isa(val, AbstractGlobal)
             prev_t = val.t
-            if val.iscd && widenconst(prev_t) !== widenconst(t)
+            if val.iscd && (prev_t′ = widenconst(prev_t)) !== (t′ = widenconst(t))
                 warn_invalid_const_global!(name)
-                report!(interp, InvalidConstantRedefinition(interp, sv, mod, name, widenconst(prev_t), widenconst(t)))
+                report_pass!(InvalidConstantRedefinition, interp, sv, mod, name, prev_t′, t′)
                 return
             end
             prev_agv = val
         else
             prev_t = Core.Typeof(val)
             if isconst(mod, name)
-                invalid = prev_t !== widenconst(t)
+                invalid = prev_t !== (t′ = widenconst(t))
                 if invalid || !isa(t, Const)
                     warn_invalid_const_global!(name)
-                    invalid && report!(interp, InvalidConstantRedefinition(interp, sv, mod, name, prev_t, widenconst(t)))
+                    if invalid
+                        report_pass!(InvalidConstantRedefinition, interp, sv, mod, name, prev_t, t′)
+                    end
                     return
                 end
                 # otherwise, we can just redefine this constant, and Julia will warn it
@@ -560,7 +508,7 @@ function set_abstract_global!(interp::JETInterpreter, mod::Module, name::Symbol,
     # if this constant declaration is invalid, just report it and bail out
     if iscd && !isnew
         warn_invalid_const_global!(name)
-        report!(interp, InvalidConstantDeclaration(interp, sv, mod, name))
+        report_pass!(InvalidConstantDeclaration, interp, sv, mod, name)
         return
     end
 
