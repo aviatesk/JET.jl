@@ -127,7 +127,7 @@ If `T` implements this interface, the following requirements should be satisfied
   which works when `T` is reported when `sv`'s program counter (`sv.currpc`) points to that
   of statement where the error may happen. If so `T` just needs to overload
 
-      get_msg(::Type{T}, ::JETInterpreter, ::InferenceState, spec_args...) -> msg::String
+      JET.get_msg(::Type{T}, ::JETInterpreter, ::InferenceState, spec_args...) -> msg::String
 
   to provide the message that describes why this error is reported (otherwise the senseless
   default message will be used).
@@ -140,7 +140,7 @@ If `T` implements this interface, the following requirements should be satisfied
 - **A contructor interface to create `T` from the global report cache** \\
   In order to be cached and restored from [`JET_REPORT_CACHE`](@ref), `T` _**must**_ implement
   the following interfaces:
-  * `spec_args(::T) -> Tuple{...}`:
+  * `JET.get_spec_args(::T) -> Tuple{...}`:
     returns fields that are specific to `T`, which is internally used by the caching logic
   * `T(vst::VirtualStackTrace, msg::String, sig::Vector{Any} spec_args::Tuple{...}) -> T`:
     constructor to create `T` from the cache, which should expand `spec_args` into each specific field
@@ -185,7 +185,9 @@ function (T::Type{<:InferenceErrorReport})(interp, sv::InferenceState, @nospecia
     msg = get_msg(T, interp, sv, spec_args...)
     return T([vf], msg, vf.sig, spec_args...)
 end
-get_msg(::Type{<:InferenceErrorReport}, interp, sv::InferenceState, @nospecialize(spec_args...)) = "FIXME (report message isn't implemented)"
+
+get_msg(T::Type{<:InferenceErrorReport}, interp, sv::InferenceState, @nospecialize(spec_args...)) = throw("`get_msg` isn't implemented for $T")
+get_spec_args(r::InferenceErrorReport) = throw("`get_spec_args` isn't implemented for $T")
 
 # virtual frame
 # -------------
@@ -372,7 +374,7 @@ end
 
 function cache_report!(cache, report::T) where {T<:InferenceErrorReport}
     vst = copy(report.vst)
-    new = InferenceErrorReportCache(T, vst, report.msg, report.sig, spec_args(report))
+    new = InferenceErrorReportCache(T, vst, report.msg, report.sig, get_spec_args(report))
     return push!(cache, new)
 end
 
@@ -404,10 +406,9 @@ macro reportdef(ex)
         return x
     end
     spec_names = extract_decl_name.(spec_decls)
-    spec_types = extract_decl_type.(spec_decls)
+    spec_types = esc.(extract_decl_type.(spec_decls))
 
     T = esc(T)
-    spec_args = esc(:spec_args)
 
     # cache constructor
     cache_constructor_sig = :($T(vst::VirtualStackTrace,
@@ -417,14 +418,14 @@ macro reportdef(ex)
                                  ))
     cache_constructor_call = :($T(vst, msg, sig))
     for (i, spec_type) in enumerate(spec_types)
-        push!(cache_constructor_call.args, :($spec_args[$i]::$spec_type))
+        push!(cache_constructor_call.args, :($(esc(:spec_args))[$i]::$spec_type)) # needs escape since `@nospecialize`d
     end
     cache_constructor = Expr(:function, cache_constructor_sig, Expr(:block, __source__,
         :(return @inbounds $cache_constructor_call),
     ))
 
     # cache helper
-    spec_getter_sig = :($spec_args(report::$T))
+    spec_getter_sig = :($(GlobalRef(JET, :get_spec_args))(report::$T))
     spec_getter_tuple = Expr(:tuple)
     for spec_name in spec_names
         getter = Expr(:call, GlobalRef(Base, :getproperty), :report, QuoteNode(spec_name))
@@ -437,7 +438,7 @@ macro reportdef(ex)
     return quote
         Base.@__doc__ struct $T <: $S
             $(INFERENCE_ERROR_REPORT_FIELD_DECLS...)
-            $(spec_decls...)
+            $(map(esc, spec_decls)...)
             # esc is needed here since signanture might be `@nospecialize`d
             function $T($(INFERENCE_ERROR_REPORT_FIELD_DECLS...), $(map(esc, spec_sigs)...))
                 new($(extract_decl_name.(INFERENCE_ERROR_REPORT_FIELD_DECLS)...), $(map(esc, spec_names)...))

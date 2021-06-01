@@ -338,8 +338,7 @@ See also: [`EGAL_TYPES`](@ref)
 """
 macro withmixedhash(typedef)
     @assert @isexpr(typedef, :struct) "struct definition should be given"
-    name = typedef.args[2]
-    flddef = typedef.args[3]
+    name = esc(typedef.args[2])
     fld2typs = map(filter(!islnn, typedef.args[3].args)) do x
         if @isexpr(x, :(::))
             fld, typex = x.args
@@ -357,7 +356,7 @@ macro withmixedhash(typedef)
         push!(hash_body.args, :(h = $(Base.hash)(x.$fld, h)))
     end
     push!(hash_body.args, :(return h))
-    hash_func = :(function Base.hash(x::$name, h::UInt); $(hash_body); end)
+    hash_func = :(function Base.hash(x::$name, h::$UInt); $(hash_body); end)
     eq_body = foldr(fld2typs; init = true) do (fld, typ), x
         eq_ex = if all(in(EGAL_TYPES), typenames(typ))
             :(x1.$fld === x2.$fld)
