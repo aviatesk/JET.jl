@@ -202,6 +202,24 @@ else
     ignorelimited(@nospecialize(x)) = x
 end
 
+# early take in https://github.com/JuliaLang/julia/pull/41040
+function gen_call_with_extracted_types_and_kwargs(__module__, fcn, ex0)
+    kws = Expr[]
+    arg = ex0[end] # Mandatory argument
+    for i in 1:length(ex0)-1
+        x = ex0[i]
+        if x isa Expr && x.head === :(=) # Keyword given of the form "foo=bar"
+            if length(x.args) != 2
+                return Expr(:call, :error, "Invalid keyword argument: $x")
+            end
+            push!(kws, Expr(:kw, esc(x.args[1]), esc(x.args[2])))
+        else
+            return Expr(:call, :error, "@$fcn expects only one non-keyword argument")
+        end
+    end
+    return InteractiveUtils.gen_call_with_extracted_types(__module__, fcn, arg, kws)
+end
+
 # macros
 # ------
 
@@ -883,7 +901,7 @@ julia> @analyze_call aggressive_constant_propagation=false rand(Bool)
 ```
 """
 macro analyze_call(ex0...)
-    return InteractiveUtils.gen_call_with_extracted_types_and_kwargs(__module__, :analyze_call, ex0)
+    return gen_call_with_extracted_types_and_kwargs(__module__, :analyze_call, ex0)
 end
 
 """
@@ -920,7 +938,7 @@ julia> @report_call aggressive_constant_propagation=false rand(Bool)
 ```
 """
 macro report_call(ex0...)
-    return InteractiveUtils.gen_call_with_extracted_types_and_kwargs(__module__, :report_call, ex0)
+    return gen_call_with_extracted_types_and_kwargs(__module__, :report_call, ex0)
 end
 
 """
