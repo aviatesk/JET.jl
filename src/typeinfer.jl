@@ -1,14 +1,15 @@
 # in this overload we will work on some meta/debug information management
-function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
+function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
+    state = AnalyzerState(analyzer)
     linfo = frame.linfo
 
     #= logging start =#
     local sec, depth
-    logger_activated = !isnothing(JETLogger(interp).inference_logger)
+    logger_activated = !isnothing(JETLogger(analyzer).inference_logger)
     if logger_activated
         sec = time()
-        with_inference_logger(interp, ==(DEBUG_LOGGER_LEVEL)) do io
-            depth = interp.depth
+        with_inference_logger(analyzer, ==(DEBUG_LOGGER_LEVEL)) do io
+            depth = get_depth(analyzer)
 
             print_rails(io, depth)
             printstyled(io, "┌ @ "; color = RAIL_COLORS[(depth+1)%N_RAILS+1])
@@ -19,25 +20,25 @@ function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
             file, line = get_file_line(linfo)
             print(io, ' ', file, ':', line)
             println(io)
-            interp.depth += 1 # manipulate this only in debug mode
+            state.depth += 1 # manipulate this only in debug mode
         end
     end
     #= logging end =#
 
-    prev_frame = interp.current_frame
-    interp.current_frame = frame
+    prev_frame = get_current_frame(analyzer)
+    state.current_frame = frame
 
-    ret = @invoke typeinf(interp::AbstractInterpreter, frame::InferenceState)
+    ret = @invoke typeinf(analyzer::AbstractInterpreter, frame::InferenceState)
 
-    interp.current_frame = prev_frame
+    state.current_frame = prev_frame
 
     #= logging start =#
     if logger_activated
         sec = round(time() - sec; digits = 3)
-        with_inference_logger(interp, ==(INFO_LOGGER_LEVEL)) do io
+        with_inference_logger(analyzer, ==(INFO_LOGGER_LEVEL)) do io
             println(io, "inference on $linfo finished in $sec sec")
         end
-        with_inference_logger(interp, ==(DEBUG_LOGGER_LEVEL)) do io
+        with_inference_logger(analyzer, ==(DEBUG_LOGGER_LEVEL)) do io
             print_rails(io, depth)
             printstyled(io, "└─→ "; color = RAIL_COLORS[(depth+1)%N_RAILS+1])
             result = get_result(frame)
@@ -46,11 +47,11 @@ function CC.typeinf(interp::JETInterpreter, frame::InferenceState)
                         join(filter(!isnothing, (
                              linfo,
                              ret ? nothing : "in cycle",
-                             "$(length(interp.reports)) reports",
+                             "$(length(get_reports(analyzer))) reports",
                              "$sec sec"
                              )), ", "),
                         ')')
-            interp.depth -= 1 # manipulate this only in debug mode
+            state.depth -= 1 # manipulate this only in debug mode
         end
     end
     #= logging end =#
@@ -62,12 +63,11 @@ end
 
 # in this overload we can work on `frame.src::CodeInfo` (and also `frame::InferenceState`)
 # where type inference (and also optimization if applied) already ran on
-function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
+function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
     linfo = frame.linfo
     parent = frame.parent
     isentry = parent === nothing
     iscp = is_constant_propagated(frame)
-    reports = interp.reports
 
     # some methods like `getproperty` can't propagate accurate types without actual values,
     # and constant prop' plays a somewhat critical role in those cases by overwriteing the
@@ -79,25 +79,25 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
     # NOTE `frame.linfo` is the exactly same object as that of the previous non-constant inference
     # IDEA we may still want to keep some "serious" error reports like `GlobalUndefVarErrorReport`
     # even when constant prop' reveals it never happens given the current constant arguments
-    iscp && !isentry && filter!(!is_from_same_frame(parent.linfo, linfo), reports)
+    iscp && !isentry && filter!(!is_from_same_frame(parent.linfo, linfo), get_reports(analyzer))
 
-    reports_before             = Set(reports)
-    uncaught_exceptions_before = Set(interp.uncaught_exceptions)
+    reports_before             = Set(get_reports(analyzer))
+    uncaught_exceptions_before = Set(get_uncaught_exceptions(analyzer))
 
-    ret = @invoke _typeinf(interp::AbstractInterpreter, frame::InferenceState)
+    ret = @invoke _typeinf(analyzer::AbstractInterpreter, frame::InferenceState)
 
     # report pass for (local) undef var error
-    report_pass!(LocalUndefVarErrorReport, interp, frame, frame.src.code)
+    report_pass!(LocalUndefVarErrorReport, analyzer, frame, frame.src.code)
 
     # XXX this is a dirty fix for performance problem, we need more "proper" fix
     # https://github.com/aviatesk/JET.jl/issues/75
-    unique!(report_identity_key, reports)
+    unique!(report_identity_key, get_reports(analyzer))
 
     # report pass for uncaught `throw` calls
-    report_pass!(UncaughtExceptionReport, interp, frame, frame.src.code)
+    report_pass!(UncaughtExceptionReport, analyzer, frame, frame.src.code)
 
-    reports_after = Set(reports)
-    uncaught_exceptions_after = Set(interp.uncaught_exceptions)
+    reports_after = Set(get_reports(analyzer))
+    uncaught_exceptions_after = Set(get_uncaught_exceptions(analyzer))
 
     # compute JET analysis results that should be cached for this linfo
     this_caches = union!(setdiff!(reports_after, reports_before),
@@ -107,7 +107,7 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
         if iscp
             result = frame.result
             argtypes = result.argtypes
-            cache = interp.cache
+            cache = get_cache(analyzer)
             @static JET_DEV_MODE && @assert jet_cache_lookup(linfo, argtypes, cache) === nothing "invalid local caching $linfo, $argtypes"
             local_cache = InferenceErrorReportCache[]
             for report in this_caches
@@ -125,7 +125,7 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
             end
             push!(cache, AnalysisResult(linfo, given_argtypes, overridden_by_const, local_cache))
         elseif frame.cached # only cache when `NativeInterpreter` does
-            cache = jet_report_cache(interp)
+            cache = jet_report_cache(analyzer)
             @static JET_DEV_MODE && @assert !haskey(cache, linfo) || isentry "invalid global caching $linfo"
             global_cache = InferenceErrorReportCache[]
             for report in this_caches
@@ -137,7 +137,7 @@ function CC._typeinf(interp::JETInterpreter, frame::InferenceState)
         end
     end
 
-    interp.to_be_updated = this_caches
+    AnalyzerState(analyzer).to_be_updated = this_caches
 
     if !iscp && !isentry
         # refinement for this `linfo` may change analysis result for parent frame
@@ -190,6 +190,49 @@ end
 
 is_unreachable(@nospecialize(x)) = isa(x, ReturnNode) && !isdefined(x, :val)
 
+@reportdef struct LocalUndefVarErrorReport <: InferenceErrorReport
+    name::Symbol
+end
+# use program counter where local undefined variable is found
+function LocalUndefVarErrorReport(analyzer::AbstractAnalyzer, sv::InferenceState, name::Symbol, pc::Int)
+    vf = get_virtual_frame(analyzer, sv, pc)
+    msg = "local variable $(name) is not defined"
+    return LocalUndefVarErrorReport([vf], msg, vf.sig, name)
+end
+
+# these report passes use `:throw_undef_if_not` and `:(unreachable)` introduced by the native
+# optimization pass, and thus supposed to only work on post-optimization code
+(::SoundPass)(::Type{LocalUndefVarErrorReport}, analyzer::AbstractAnalyzer, frame::InferenceState, stmts::Vector{Any}) =
+    report_undefined_local_slots!(analyzer, frame, stmts, false)
+(::BasicPass)(::Type{LocalUndefVarErrorReport}, analyzer::AbstractAnalyzer, frame::InferenceState, stmts::Vector{Any}) =
+    report_undefined_local_slots!(analyzer, frame, stmts, true)
+
+function report_undefined_local_slots!(analyzer::AbstractAnalyzer, frame::InferenceState, stmts::Vector{Any}, unsound::Bool)
+    for (idx, stmt) in enumerate(stmts)
+        if isa(stmt, Expr) && stmt.head === :throw_undef_if_not
+            sym::Symbol, _ = stmt.args
+
+            # slots in toplevel frame may be a abstract global slot
+            istoplevel(analyzer, frame) && is_global_slot(analyzer, sym) && continue
+
+            if unsound
+                next_idx = idx + 1
+                if checkbounds(Bool, stmts, next_idx) && is_unreachable(@inbounds stmts[next_idx])
+                    # the optimization so far has found this statement is never "reachable";
+                    # JET reports it since it will invoke undef var error at runtime, or will just
+                    # be dead code otherwise
+                    report!(LocalUndefVarErrorReport, analyzer, frame, sym, idx)
+                else
+                    # by excluding this pass, this analysis accepts some false negatives and
+                    # some undefined variable error may happen in actual execution (thus unsound)
+                end
+            else
+                report!(LocalUndefVarErrorReport, analyzer, frame, sym, idx)
+            end
+        end
+    end
+end
+
 @withmixedhash struct ReportIdentityKey
     T::Type{<:InferenceErrorReport}
     sig::Vector{Any}
@@ -200,13 +243,75 @@ end
 report_identity_key(report::T) where {T<:InferenceErrorReport} =
     ReportIdentityKey(T, report.sig, #=first(report.vst),=# last(report.vst))
 
+"""
+    UncaughtExceptionReport <: InferenceErrorReport
+
+Represents general `throw` calls traced during inference.
+They are reported only when they're not caught by any control flow.
+"""
+@reportdef struct UncaughtExceptionReport <: InferenceErrorReport
+    throw_calls::Vector{Expr}
+end
+function UncaughtExceptionReport(analyzer::AbstractAnalyzer, sv::InferenceState, throw_calls::Vector{Expr})
+    vf = get_virtual_frame(analyzer, sv.linfo)
+    msg = length(throw_calls) == 1 ? "may throw" : "may throw either of"
+    sig = Any[]
+    ncalls = length(throw_calls)
+    for (i, call) in enumerate(throw_calls)
+        call_sig = _get_sig(analyzer, sv, call)
+        append!(sig, call_sig)
+        i ≠ ncalls && push!(sig, ", ")
+    end
+    return UncaughtExceptionReport([vf], msg, sig, throw_calls)
+end
+
+# this error report is really special, and might not be eligible for possible overloads since:
+# - this report does not only report error points but also "clean up" caught error points
+# - this pass is tightly bound to that of `SeriousExceptionReport`
+function (::SoundBasicPass)(::Type{UncaughtExceptionReport}, analyzer::AbstractAnalyzer, frame::InferenceState, stmts::Vector{Any})
+    # report `throw` calls "appropriately"
+    if get_result(frame) === Bottom
+        # if the return type here is `Bottom` annotated, this _may_ mean there're uncaught
+        # `throw` calls
+        # XXX: well, it's possible that the `throw` calls within them are all caught but the
+        # other critical errors make the return type `Bottom`
+        # NOTE: to reduce the false positive `UncaughtExceptionReport`s described above, we count
+        # `throw` calls here after optimization, since it may have eliminated "unreachable"
+        # `throw` calls
+        codelocs    = frame.src.codelocs
+        linetable   = frame.src.linetable::Vector
+        throw_locs  = LineInfoNode[]
+        throw_calls = Expr[]
+        for r in get_reports(analyzer)
+            if isa(r, SeriousExceptionReport) && last(r.vst).linfo === frame.linfo
+                push!(throw_locs, r.lin)
+            end
+        end
+        for (i, stmt) in enumerate(stmts)
+            is_throw_call_expr(analyzer, frame, stmt) || continue
+            # if this `throw` is already reported, don't duplciate
+            linetable[codelocs[i]]::LineInfoNode in throw_locs && continue
+            push!(throw_calls, stmt)
+        end
+        if !isempty(throw_calls)
+            report!(UncaughtExceptionReport, analyzer, frame, throw_calls)
+        end
+    else
+        # the non-`Bottom` result here may mean `throw` calls from the children frames
+        # (if exists) are caught and not propagated here;
+        # we don't want to cache `UncaughtExceptionReport`s for those calls for this frame
+        # and its parents, so just filter them away
+        empty!(get_uncaught_exceptions(analyzer))
+    end
+end
+
 # basically same as `is_throw_call`, but also toplevel module handling added
-function is_throw_call_expr(interp::JETInterpreter, frame::InferenceState, @nospecialize(e))
+function is_throw_call_expr(analyzer::AbstractAnalyzer, frame::InferenceState, @nospecialize(e))
     if isa(e, Expr)
         if e.head === :call
             f = e.args[1]
-            if istoplevel(interp, frame) && isa(f, Symbol)
-                f = GlobalRef(interp.toplevelmod, f)
+            if istoplevel(analyzer, frame) && isa(f, Symbol)
+                f = GlobalRef(get_toplevelmod(analyzer), f)
             end
             if isa(f, GlobalRef)
                 ff = CC.abstract_eval_global(f.mod, f.name)

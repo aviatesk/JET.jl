@@ -242,7 +242,7 @@ end
             foo = Foo(gb)
         end
 
-        # global variables aren't evaluated but kept in `interp` instead
+        # global variables aren't evaluated but kept in `analyzer` instead
         @test is_abstract(vmod, :gb)
         @test isa_abstract(vmod.gb, Bool)
         @test is_concrete(vmod, :Foo)
@@ -1068,7 +1068,7 @@ end
         end
 
         # errors from user functions (i.e. those from `@invokelatest f(fargs...)` in the overload
-        # `JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)`)
+        # `JuliaInterpreter.evaluate_call_recurse!(analyzer::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)`)
         let
             res = @analyze_toplevel begin
                 foo() = throw("don't call me, pal")

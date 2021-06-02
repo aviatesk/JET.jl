@@ -7,7 +7,7 @@
     JET_REPORT_CACHE::$(typeof(JET_REPORT_CACHE))
 
 Keeps JET report cache for a `MethodInstance`.
-Reports are cached when `JETInterpreter` exits from `_typeinf`.
+Reports are cached when `AbstractAnalyzer` exits from `_typeinf`.
 """
 const JET_REPORT_CACHE = IdDict{UInt, IdDict{MethodInstance,Vector{InferenceErrorReportCache}}}()
 
@@ -15,27 +15,27 @@ const JET_REPORT_CACHE = IdDict{UInt, IdDict{MethodInstance,Vector{InferenceErro
     JET_CODE_CACHE::$(typeof(JET_CODE_CACHE))
 
 Keeps `CodeInstance` cache associated with `mi::MethodInstace` that represent the result of
-  an inference on `mi` performed by `JETInterpreter`.
+  an inference on `mi` performed by `AbstractAnalyzer`.
 This cache is completely separated from the `NativeInterpreter`'s global cache, so that
   JET analysis never interacts with actual code execution.
 """
 const JET_CODE_CACHE = IdDict{UInt, IdDict{MethodInstance,CodeInstance}}()
 
-function CC.code_cache(interp::JETInterpreter)
-    cache  = JETGlobalCache(interp)
-    worlds = WorldRange(get_world_counter(interp))
+function CC.code_cache(analyzer::AbstractAnalyzer)
+    cache  = JETGlobalCache(analyzer)
+    worlds = WorldRange(get_world_counter(analyzer))
     return WorldView(cache, worlds)
 end
 
 struct JETGlobalCache
-    interp::JETInterpreter
+    analyzer::AbstractAnalyzer
 end
 
-# cache existence for this `interp` is ensured on its construction
-jet_report_cache(interp::JETInterpreter)         = JET_REPORT_CACHE[cache_key(interp)]
-jet_report_cache(wvc::WorldView{JETGlobalCache}) = jet_report_cache(wvc.cache.interp)
-jet_code_cache(interp::JETInterpreter)           = JET_CODE_CACHE[cache_key(interp)]
-jet_code_cache(wvc::WorldView{JETGlobalCache})   = jet_code_cache(wvc.cache.interp)
+# cache existence for this `analyzer` is ensured on its construction
+jet_report_cache(analyzer::AbstractAnalyzer)     = JET_REPORT_CACHE[get_cache_key(analyzer)]
+jet_report_cache(wvc::WorldView{JETGlobalCache}) = jet_report_cache(wvc.cache.analyzer)
+jet_code_cache(analyzer::AbstractAnalyzer)       = JET_CODE_CACHE[get_cache_key(analyzer)]
+jet_code_cache(wvc::WorldView{JETGlobalCache})   = jet_code_cache(wvc.cache.analyzer)
 
 CC.haskey(wvc::WorldView{JETGlobalCache}, mi::MethodInstance) = haskey(jet_code_cache(wvc), mi)
 
@@ -46,10 +46,10 @@ function CC.get(wvc::WorldView{JETGlobalCache}, mi::MethodInstance, default)
         # cache hit, now we need to append cached reports associated with this `MethodInstance`
         global_cache = get(jet_report_cache(wvc), mi, nothing)
         if isa(global_cache, Vector{InferenceErrorReportCache})
-            interp = wvc.cache.interp
+            analyzer = wvc.cache.analyzer
             for cached in global_cache
-                restored = restore_cached_report!(cached, interp)
-                push!(interp.to_be_updated, restored) # should be updated in `abstract_call` (after exiting `typeinf_edge`)
+                restored = restore_cached_report!(cached, analyzer)
+                push!(get_to_be_updated(analyzer), restored) # should be updated in `abstract_call` (after exiting `typeinf_edge`)
                 # # TODO make this hold
                 # @assert first(cached.vst).linfo === mi "invalid global restoring"
             end
@@ -104,11 +104,11 @@ end
 # ===========
 
 struct JETLocalCache
-    interp::JETInterpreter
+    analyzer::AbstractAnalyzer
     cache::Vector{InferenceResult}
 end
 
-CC.get_inference_cache(interp::JETInterpreter) = JETLocalCache(interp, get_inference_cache(interp.native))
+CC.get_inference_cache(analyzer::AbstractAnalyzer) = JETLocalCache(analyzer, get_inference_cache(get_native(analyzer)))
 
 function CC.cache_lookup(linfo::MethodInstance, given_argtypes::Vector{Any}, cache::JETLocalCache)
     inf_result = cache_lookup(linfo, given_argtypes, cache.cache)
@@ -119,18 +119,18 @@ function CC.cache_lookup(linfo::MethodInstance, given_argtypes::Vector{Any}, cac
     isa(inf_result.result, InferenceState) && return inf_result
 
     # cache hit, try to restore local report caches
-    interp = cache.interp
-    sv = interp.current_frame::InferenceState
+    analyzer = cache.analyzer
+    sv = get_current_frame(analyzer)::InferenceState
 
-    analysis_result = jet_cache_lookup(linfo, given_argtypes, interp.cache)
+    analysis_result = jet_cache_lookup(linfo, given_argtypes, get_cache(analyzer))
 
-    # corresponds to report throw away logic in `_typeinf(interp::JETInterpreter, frame::InferenceState)`
-    filter!(!is_from_same_frame(sv.linfo, linfo), interp.reports)
+    # corresponds to report throw away logic in `_typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)`
+    filter!(!is_from_same_frame(sv.linfo, linfo), get_reports(analyzer))
 
     if isa(analysis_result, AnalysisResult)
         for cached in analysis_result.cache
-            restored = restore_cached_report!(cached, interp)
-            push!(interp.to_be_updated, restored) # should be updated in `abstract_call_method_with_const_args`
+            restored = restore_cached_report!(cached, analyzer)
+            push!(get_to_be_updated(analyzer), restored) # should be updated in `abstract_call_method_with_const_args`
             # # TODO make this hold
             # @assert first(cached.vst).linfo === linfo "invalid local restoring"
         end

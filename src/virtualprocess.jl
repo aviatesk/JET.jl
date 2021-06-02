@@ -150,10 +150,10 @@ These configurations will be active for all the top-level entries explained in t
   See [`virtualize_module_context`](@ref) for the internal.
 ---
 """
-struct ToplevelConfig{X<:Any}
+struct ToplevelConfig{CP<:Any}
     context::Module
     analyze_from_definitions::Bool
-    concretization_patterns::Vector{X}
+    concretization_patterns::Vector{CP}
     virtualize::Bool
     @jetconfigurable function ToplevelConfig(; context::Module                    = Main,
                                                analyze_from_definitions::Bool     = false,
@@ -161,10 +161,10 @@ struct ToplevelConfig{X<:Any}
                                                virtualize::Bool                   = true,
                                                ) where {T<:Any}
         if typeintersect(T, Expr) === Bottom
-            X = tmerge(T, Expr)
-            concretization_patterns = convert(Vector{X}, concretization_patterns)
+            CP = tmerge(T, Expr)
+            concretization_patterns = convert(Vector{CP}, concretization_patterns)
         else
-            X = T
+            CP = T
         end
         push!(concretization_patterns,
               # `@enum` macro is fairly complex and especially the `let insts = (Any[ $(esc(typename))(v) for v in $values ]...,)`
@@ -176,12 +176,12 @@ struct ToplevelConfig{X<:Any}
               # false postive top-level errors won't happen by the macro
               :(@enum(args__)), :(Base.@enum(args__)),
               )
-        concretization_patterns = X[striplines(normalise(x)) for x in concretization_patterns]
-        return new{X}(context,
-                      analyze_from_definitions,
-                      concretization_patterns,
-                      virtualize,
-                      )
+        concretization_patterns = CP[striplines(normalise(x)) for x in concretization_patterns]
+        return new{CP}(context,
+                       analyze_from_definitions,
+                       concretization_patterns,
+                       virtualize,
+                       )
     end
 end
 
@@ -195,7 +195,7 @@ const Actual2Virtual = Pair{Module,Module}
     text parsing or partial (actual) interpretation; these reports are "critical" and should
     have precedence over `inference_error_reports`
 - `res.inference_error_reports::Vector{InferenceErrorReport}`: possible error reports found
-    by `JETInterpreter`
+    by `AbstractAnalyzer`
 - `res.toplevel_signatures`: signatures of methods defined within the analyzed files
 - `res.actual2virtual::$Actual2Virtual`: keeps actual and virtual module
 """
@@ -219,7 +219,7 @@ end
 """
     virtual_process(s::AbstractString,
                     filename::AbstractString,
-                    interp::JETInterpreter,
+                    analyzer::AbstractAnalyzer,
                     config::ToplevelConfig,
                     ) -> res::VirtualProcessResult
 
@@ -234,7 +234,7 @@ This function first parses `s::AbstractString` into `toplevelex::Expr` and then 
      module with virtualized one: see `fix_self_references`
 4. `ConcreteInterpreter` partially interprets some statements in `lwr` that should not be
      abstracted away (e.g. a `:method` definition); see also [`partially_interpret!`](@ref)
-5. finally, `JETInterpreter` analyzes the remaining statements by abstract interpretation
+5. finally, `AbstractAnalyzer` analyzes the remaining statements by abstract interpretation
 
 !!! warning
     In order to process the toplevel code sequentially as Julia runtime does, `virtual_process`
@@ -248,7 +248,7 @@ This function first parses `s::AbstractString` into `toplevelex::Expr` and then 
 """
 function virtual_process(x::Union{AbstractString,Expr},
                          filename::AbstractString,
-                         interp::JETInterpreter,
+                         analyzer::AbstractAnalyzer,
                          config::ToplevelConfig,
                          )
     if config.virtualize
@@ -256,7 +256,7 @@ function virtual_process(x::Union{AbstractString,Expr},
 
         start = time()
         virtual = virtualize_module_context(actual)
-        with_toplevel_logger(interp) do io
+        with_toplevel_logger(analyzer) do io
             sec = round(time() - start; digits = 3)
             println(io, "virtualized the context of $actual (took $sec sec)")
         end
@@ -270,7 +270,7 @@ function virtual_process(x::Union{AbstractString,Expr},
 
     res = _virtual_process!(x,
                             filename,
-                            interp,
+                            analyzer,
                             config,
                             context,
                             VirtualProcessResult(actual2virtual),
@@ -278,7 +278,7 @@ function virtual_process(x::Union{AbstractString,Expr},
 
     # analyze collected signatures unless critical error happened
     if config.analyze_from_definitions && isempty(res.toplevel_error_reports)
-        analyze_from_definitions!(interp, res)
+        analyze_from_definitions!(analyzer, res)
     end
 
     return res
@@ -339,7 +339,7 @@ const VIRTUAL_MODULE_NAME = :JETVirtualModule
 gen_virtual_module(root = Main; name = VIRTUAL_MODULE_NAME) =
     Core.eval(root, :(module $(gensym(name)) end))::Module
 
-function analyze_from_definitions!(interp::JETInterpreter, res::VirtualProcessResult)
+function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProcessResult)
     n = length(res.toplevel_signatures)
     succeeded = 0
     clearline(io) = print(io, '\r')
@@ -350,23 +350,23 @@ function analyze_from_definitions!(interp::JETInterpreter, res::VirtualProcessRe
         filter!(mm::MethodMatch->mm.spec_types===tt, mms)
         if length(mms) == 1
             succeeded += 1
-            with_toplevel_logger(interp; pre=clearline) do io
+            with_toplevel_logger(analyzer; pre=clearline) do io
                 (i == n ? println : print)(io, "analyzing from top-level definitions ... $succeeded/$n")
             end
-            interp = JETInterpreter(interp, _CONCRETIZED, _TOPLEVELMOD)
+            analyzer = AbstractAnalyzer(analyzer, _CONCRETIZED, _TOPLEVELMOD)
             mm = first(mms)::MethodMatch
             # when `@generated` function has been defined, signatures of both its entry and
             # its generator should have been collected, and we will just analyze them separately
             # if code generation from the entry has failed given the method signature (it's higly possible),
-            # the overload of `InferenceState(..., ::JETInterpreter)` should have reported errors
+            # the overload of `InferenceState(..., ::AbstractAnalyzer)` should have reported errors
             # and so here we just ignore that
-            analyze_method!(interp, mm.method)
-            append!(res.inference_error_reports, interp.reports)
+            analyze_method!(analyzer, mm.method)
+            append!(res.inference_error_reports, get_reports(analyzer))
             continue
         end
 
         @label failed
-        with_toplevel_logger(interp, ≥(DEBUG_LOGGER_LEVEL); pre=clearline) do io
+        with_toplevel_logger(analyzer, ≥(DEBUG_LOGGER_LEVEL); pre=clearline) do io
             println(io, "couldn't find a single method matching the signature `$tt`")
         end
     end
@@ -374,14 +374,14 @@ end
 
 function _virtual_process!(s::AbstractString,
                            filename::AbstractString,
-                           interp::JETInterpreter,
+                           analyzer::AbstractAnalyzer,
                            config::ToplevelConfig,
                            context::Module,
                            res::VirtualProcessResult,
                            )
     start = time()
 
-    with_toplevel_logger(interp) do io
+    with_toplevel_logger(analyzer) do io
         println(io, "entered into $filename")
     end
 
@@ -395,10 +395,10 @@ function _virtual_process!(s::AbstractString,
     elseif isnothing(toplevelex)
         # just return if there is nothing to analyze
     else
-        res = _virtual_process!(toplevelex, filename, interp, config, context, res)
+        res = _virtual_process!(toplevelex, filename, analyzer, config, context, res)
     end
 
-    with_toplevel_logger(interp) do io
+    with_toplevel_logger(analyzer) do io
         sec = round(time() - start; digits = 3)
         println(io, " exited from $filename (took $sec sec)")
     end
@@ -408,7 +408,7 @@ end
 
 function _virtual_process!(toplevelex::Expr,
                            filename::AbstractString,
-                           interp::JETInterpreter,
+                           analyzer::AbstractAnalyzer,
                            config::ToplevelConfig,
                            context::Module,
                            res::VirtualProcessResult,
@@ -469,7 +469,7 @@ function _virtual_process!(toplevelex::Expr,
     while !isempty(exs)
         x = pop!(exs)
 
-        # with_toplevel_logger(interp, ≥(DEBUG_LOGGER_LEVEL)) do io
+        # with_toplevel_logger(analyzer, ≥(DEBUG_LOGGER_LEVEL)) do io
         #     println(io, "analyzing ", x)
         # end
 
@@ -488,7 +488,7 @@ function _virtual_process!(toplevelex::Expr,
         for pat in config.concretization_patterns
             if @capture(x, $pat)
                 force_concretize = true
-                with_toplevel_logger(interp, ≥(DEBUG_LOGGER_LEVEL)) do io
+                with_toplevel_logger(analyzer, ≥(DEBUG_LOGGER_LEVEL)) do io
                     line, file = lnn.line, lnn.file
                     x′ = striplines(normalise(x))
                     println(io, "concretization pattern `$pat` matched `$x′` at $file:$line")
@@ -504,15 +504,15 @@ function _virtual_process!(toplevelex::Expr,
 
                 fix_self_references!(res.actual2virtual, src)
 
-                interp′ = ConcreteInterpreter(filename,
+                analyzer′ = ConcreteInterpreter(filename,
                                               lnn,
                                               eval_with_err_handling,
                                               context,
-                                              interp,
+                                              analyzer,
                                               config,
                                               res,
                                               )
-                finish!(interp′, Frame(context, src), true)
+                finish!(analyzer′, Frame(context, src), true)
                 break
             end
         end
@@ -562,7 +562,7 @@ function _virtual_process!(toplevelex::Expr,
 
             isnothing(newcontext) && continue # error happened, e.g. duplicated naming
 
-            _virtual_process!(newtoplevelex, filename, interp, config, newcontext::Module, res)
+            _virtual_process!(newtoplevelex, filename, analyzer, config, newcontext::Module, res)
 
             continue
         end
@@ -577,24 +577,24 @@ function _virtual_process!(toplevelex::Expr,
 
         fix_self_references!(res.actual2virtual, src)
 
-        interp′ = ConcreteInterpreter(filename,
+        analyzer′ = ConcreteInterpreter(filename,
                                       lnn,
                                       eval_with_err_handling,
                                       context,
-                                      interp,
+                                      analyzer,
                                       config,
                                       res,
                                       )
-        concretized = partially_interpret!(interp′, context, src)
+        concretized = partially_interpret!(analyzer′, context, src)
 
         # bail out if nothing to analyze (just a performance optimization)
         all(concretized) && continue
 
-        interp = JETInterpreter(interp, concretized, context)
+        analyzer = AbstractAnalyzer(analyzer, concretized, context)
 
-        analyze_toplevel!(interp, src)
+        analyze_toplevel!(analyzer, src)
 
-        append!(res.inference_error_reports, interp.reports) # collect error reports
+        append!(res.inference_error_reports, get_reports(analyzer)) # collect error reports
     end
 
     return res
@@ -686,6 +686,34 @@ function walk_and_transform!(src::CodeInfo, inner, outer, scope)
     return outer(src, scope)
 end
 
+# wraps an error that might happen because of inappropriate top-level code abstraction
+struct MissingConcretization <: ToplevelErrorReport
+    err
+    st::Base.StackTraces.StackTrace
+    file::String
+    line::Int
+end
+
+# wraps general errors from actual execution
+struct ActualErrorWrapped <: ToplevelErrorReport
+    err
+    st::Base.StackTraces.StackTrace
+    file::String
+    line::Int
+
+    # default constructor
+    ActualErrorWrapped(err, st, file, line) = new(err, st, file, line)
+
+    # bypass syntax error
+    function ActualErrorWrapped(err::ErrorException, st, file, line)
+        return if startswith(err.msg, "syntax: ")
+            SyntaxErrorReport(err.msg, file, line)
+        else
+            new(err, st, file, line)
+        end
+    end
+end
+
 """
     ConcreteInterpreter
 
@@ -696,18 +724,18 @@ The trait to inject code into JuliaInterpreter's interpretation process; JET.jl 
 - `JuliaInterpreter.handle_err` to wrap an error happened during interpretation into
     `ActualErrorWrapped`
 """
-struct ConcreteInterpreter{X}
+struct ConcreteInterpreter{Interp<:AbstractAnalyzer,CP}
     filename::String
     lnn::LineNumberNode
     eval_with_err_handling::Function
     context::Module
-    interp::JETInterpreter
-    config::ToplevelConfig{X}
+    analyzer::Interp
+    config::ToplevelConfig{CP}
     res::VirtualProcessResult
 end
 
 """
-    partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::CodeInfo)
+    partially_interpret!(analyzer::ConcreteInterpreter, mod::Module, src::CodeInfo)
 
 Partially interprets statements in `src` using JuliaInterpreter.jl:
 - concretizes "toplevel definitions", i.e. `:method`, `:struct_type`, `:abstract_type` and
@@ -717,16 +745,16 @@ Partially interprets statements in `src` using JuliaInterpreter.jl:
   (TODO: enter into the loaded module and keep JET analysis)
 - special-cases `include` calls so that top-level analysis recursively enters the included file
 """
-function partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::CodeInfo)
+function partially_interpret!(analyzer::ConcreteInterpreter, mod::Module, src::CodeInfo)
     concretize = select_statements(src)
 
-    with_toplevel_logger(interp.interp, ≥(DEBUG_LOGGER_LEVEL)) do io
-        line, file = interp.lnn.line, interp.lnn.file
+    with_toplevel_logger(analyzer.analyzer, ≥(DEBUG_LOGGER_LEVEL)) do io
+        line, file = analyzer.lnn.line, analyzer.lnn.file
         println(io, "concretization plan at $file:$line:")
         print_with_code(io, src, concretize)
     end
 
-    selective_eval_fromstart!(interp, Frame(mod, src), concretize, #= istoplevel =# true)
+    selective_eval_fromstart!(analyzer, Frame(mod, src), concretize, #= istoplevel =# true)
 
     return concretize
 end
@@ -864,7 +892,7 @@ function select_dependencies!(concretize, src, edges)
     debug && print_with_code(stdout::IO, src, concretize)
 end
 
-function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node), istoplevel::Bool)
+function JuliaInterpreter.step_expr!(analyzer::ConcreteInterpreter, frame::Frame, @nospecialize(node), istoplevel::Bool)
     @assert istoplevel "JET.ConcreteInterpreter can only work for top-level code"
 
     # TODO:
@@ -873,22 +901,22 @@ function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, 
     if ismoduleusage(node)
         for ex in to_simple_module_usages(node::Expr)
             # NOTE: usages of abstract global variables also work here, since they are supposed
-            # to be actually evaluated into `interp.context` (as `AbstractGlobal`
+            # to be actually evaluated into `analyzer.context` (as `AbstractGlobal`
             # object) at this point
 
-            interp.eval_with_err_handling(interp.context, ex)
+            analyzer.eval_with_err_handling(analyzer.context, ex)
         end
         return nothing
     end
 
-    res = @invoke step_expr!(interp, frame, node, true::Bool)
+    res = @invoke step_expr!(analyzer, frame, node, true::Bool)
 
-    interp.config.analyze_from_definitions && collect_toplevel_signature!(interp, frame, node)
+    analyzer.config.analyze_from_definitions && collect_toplevel_signature!(analyzer, frame, node)
 
     return res
 end
 
-function collect_toplevel_signature!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node))
+function collect_toplevel_signature!(analyzer::ConcreteInterpreter, frame::Frame, @nospecialize(node))
     if @isexpr(node, :method, 3)
         sigs = node.args[2]
         atype_params, sparams, _ = @lookup(moduleof(frame), frame, sigs)::SimpleVector
@@ -898,7 +926,7 @@ function collect_toplevel_signature!(interp::ConcreteInterpreter, frame::Frame, 
         #     t.name === CC._TYPE_NAME && return
         # end
         atype = Tuple{(atype_params::SimpleVector)...}
-        push!(interp.res.toplevel_signatures, atype)
+        push!(analyzer.res.toplevel_signatures, atype)
     end
 end
 
@@ -931,7 +959,7 @@ end
 # adapted from https://github.com/JuliaDebug/JuliaInterpreter.jl/blob/2f5f80034bc287a60fe77c4e3b5a49a087e38f8b/src/interpret.jl#L188-L199
 # works almost same as `JuliaInterpreter.evaluate_call_compiled!`, but also added special
 # cases for JET analysis
-function JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)
+function JuliaInterpreter.evaluate_call_recurse!(analyzer::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)
     # @assert !enter_generated
     pc = frame.pc
     ret = bypass_builtins(frame, call_expr, pc)
@@ -942,7 +970,7 @@ function JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, fr
     f = popfirst!(fargs)  # now it's really just `args`
 
     if isinclude(f)
-        return handle_include(interp, fargs)
+        return handle_include(analyzer, fargs)
     else
         # `_virtual_process!` iteratively interpret toplevel expressions but it doesn't hit toplevel
         # we may want to make `_virtual_process!` hit the toplevel on each interation rather than
@@ -956,12 +984,12 @@ end
 isinclude(@nospecialize(_))           = false
 isinclude(@nospecialize(f::Function)) = nameof(f) === :include
 
-function handle_include(interp, fargs)
-    filename = interp.filename
-    res = interp.res
-    lnn = interp.lnn
-    eval_with_err_handling = interp.eval_with_err_handling
-    context = interp.context
+function handle_include(analyzer, fargs)
+    filename = analyzer.filename
+    res = analyzer.res
+    lnn = analyzer.lnn
+    eval_with_err_handling = analyzer.eval_with_err_handling
+    context = analyzer.context
 
     # TODO: maybe find a way to handle two args `include` calls
     include_file = normpath(dirname(filename), first(fargs))
@@ -978,10 +1006,17 @@ function handle_include(interp, fargs)
 
     isnothing(include_text) && return nothing # typically no file error
 
-    _virtual_process!(include_text::String, include_file, interp.interp, interp.config, context, interp.res)
+    _virtual_process!(include_text::String, include_file, analyzer.analyzer, analyzer.config, context, analyzer.res)
 
     # TODO: actually, here we need to try to get the lastly analyzed result of the `_virtual_process!` call above
     return nothing
+end
+
+struct RecursiveIncludeErrorReport <: ToplevelErrorReport
+    duplicated_file::String
+    files::Set{String}
+    file::String
+    line::Int
 end
 
 const JET_VIRTUALPROCESS_FILE = Symbol(@__FILE__)
@@ -991,7 +1026,7 @@ const JULIAINTERPRETER_BUILTINS_FILE = let
 end
 
 # handle errors from toplevel user code
-function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame, err)
+function JuliaInterpreter.handle_err(analyzer::ConcreteInterpreter, frame, err)
     # catch stack trace
     bt = catch_backtrace()
     st = stacktrace(bt)
@@ -1006,7 +1041,7 @@ function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame, err)
         end
 
         # find an error frame that happened at `@invokelatest f(fargs...)` in the overload
-        # `JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)`
+        # `JuliaInterpreter.evaluate_call_recurse!(analyzer::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)`
         if frame.file === JET_VIRTUALPROCESS_FILE && frame.func === :evaluate_call_recurse!
             i = j - 4 # offset: `evaluate_call_recurse` -> kwfunc (`evaluate_call_recurse`) -> `invokelatest` -> kwfunc (`invokelatest`)
             break
@@ -1021,9 +1056,9 @@ function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame, err)
     st = st[1:i]
 
     report = is_missing_concretization(err) ?
-             MissingConcretization(err, st, interp.filename, interp.lnn.line) :
-             ActualErrorWrapped(err, st, interp.filename, interp.lnn.line)
-    push!(interp.res.toplevel_error_reports, report)
+             MissingConcretization(err, st, analyzer.filename, analyzer.lnn.line) :
+             ActualErrorWrapped(err, st, analyzer.filename, analyzer.lnn.line)
+    push!(analyzer.res.toplevel_error_reports, report)
 
     return nothing
 end
@@ -1067,4 +1102,11 @@ function collect_syntax_errors(s, filename)
         index = nextindex
     end
     return reports
+end
+
+struct SyntaxErrorReport <: ToplevelErrorReport
+    err::ErrorException
+    file::String
+    line::Int
+    SyntaxErrorReport(msg::AbstractString, file, line) = new(ErrorException(msg), file, line)
 end

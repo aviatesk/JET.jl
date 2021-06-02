@@ -1,36 +1,45 @@
 @testset "cache per configuration" begin
     # cache key should be same for the same configurations
     let
-        interp1 = JETInterpreter()
-        k1 = JET.gen_cache_key(JET.JETAnalysisParams(interp1), CC.InferenceParams(interp1))
+        k1 = JET.get_cache_key(JETAnalyzer())
 
-        interp2 = JETInterpreter()
-        k2 = JET.gen_cache_key(JET.JETAnalysisParams(interp2), CC.InferenceParams(interp2))
+        k2 = JET.get_cache_key(JETAnalyzer())
 
         @test k1 == k2
     end
 
     # cache key should be different for different configurations
     let
-        interp1 = JETInterpreter(; max_methods=3)
-        k1 = JET.gen_cache_key(JET.JETAnalysisParams(interp1), CC.InferenceParams(interp1))
+        interp1 = JETAnalyzer(; max_methods=3)
+        k1 = JET.get_cache_key(interp1)
 
-        interp2 = JETInterpreter(; max_methods=4)
-        k2 = JET.gen_cache_key(JET.JETAnalysisParams(interp2), CC.InferenceParams(interp2))
+        interp2 = JETAnalyzer(; max_methods=4)
+        k2 = JET.get_cache_key(interp2)
 
         @test k1 ≠ k2
     end
 
-    # configurations other than `JETAnalysisParams` and `InferenceParams` shouldn't affect
-    # the cache key identity
+    # configurations other than `JETAnalysisParams`, `InferenceParams` and `ReportPass`
+    # shouldn't affect the cache key identity
     let
-        interp1 = JETInterpreter(; toplevel_logger=nothing)
-        k1 = JET.gen_cache_key(JET.JETAnalysisParams(interp1), CC.InferenceParams(interp1))
+        interp1 = JETAnalyzer(; toplevel_logger=nothing)
+        k1 = JET.get_cache_key(interp1)
 
-        interp2 = JETInterpreter(; toplevel_logger=IOBuffer())
-        k2 = JET.gen_cache_key(JET.JETAnalysisParams(interp2), CC.InferenceParams(interp2))
+        interp2 = JETAnalyzer(; toplevel_logger=IOBuffer())
+        k2 = JET.get_cache_key(interp2)
 
         @test k1 == k2
+    end
+
+    # cache key should be different for different report passes
+    let
+        interp1 = JETAnalyzer(; report_pass=JET.BasicPass())
+        k1 = JET.get_cache_key(interp1)
+
+        interp2 = JETAnalyzer(; report_pass=JET.SoundPass())
+        k2 = JET.get_cache_key(interp2)
+
+        @test k1 ≠ k2
     end
 
     # end to end test
@@ -44,31 +53,31 @@
         end
 
         # run first analysis and cache
-        interp, frame = @eval m $analyze_call((Int,); max_methods=3) do a
+        analyzer, frame = @eval m $analyze_call((Int,); max_methods=3) do a
             foo(Val(a))
         end
-        @test isempty(interp.reports)
+        @test isempty(get_reports(analyzer))
 
         # should use the cached result
-        interp, frame = @eval m $analyze_call((Int,); max_methods=3) do a
+        analyzer, frame = @eval m $analyze_call((Int,); max_methods=3) do a
             foo(Val(a))
         end
-        @test isempty(interp.reports)
+        @test isempty(get_reports(analyzer))
 
         # should re-run analysis, and should get a report
-        interp, frame = @eval m $analyze_call((Int,); max_methods=4) do a
+        analyzer, frame = @eval m $analyze_call((Int,); max_methods=4) do a
             foo(Val(a))
         end
-        @test any(interp.reports) do r
+        @test any(get_reports(analyzer)) do r
             isa(r, GlobalUndefVarErrorReport) &&
             r.name === :undefvar
         end
 
         # should run the cached previous result
-        interp, frame = @eval m $analyze_call((Int,); max_methods=4) do a
+        analyzer, frame = @eval m $analyze_call((Int,); max_methods=4) do a
             foo(Val(a))
         end
-        @test any(interp.reports) do r
+        @test any(get_reports(analyzer)) do r
             isa(r, GlobalUndefVarErrorReport) &&
             r.name === :undefvar
         end
@@ -79,10 +88,10 @@ end
     # invalidate native code cache in a system image if it has not been analyzed by JET
     # yes this slows down anlaysis for sure, but otherwise JET will miss obvious errors like below
     let
-        interp, frame = analyze_call((Nothing,)) do a
+        analyzer, frame = analyze_call((Nothing,)) do a
             a.field
         end
-        @test length(interp.reports) === 1
+        @test length(get_reports(analyzer)) === 1
     end
 
     # invalidation from deeper call site can refresh JET analysis
@@ -144,7 +153,7 @@ end
             # now we should have reports, again
             interp3, = @analyze_call println(QuoteNode(nothing))
 
-            length(interp1.reports), length(interp2.reports), length(interp3.reports) # return
+            (length ∘ JET.get_reports).((interp1, interp2, interp3)) # return
         end
 
         @test l1 > 0
@@ -157,42 +166,42 @@ end
     # analysis for `sum(::String)` is already cached, `sum′` and `sum′′` should use it
     let
         m = gen_virtual_module()
-        interp, frame = Core.eval(m, quote
+        analyzer, frame = Core.eval(m, quote
             sum′(s) = sum(s)
             sum′′(s) = sum′(s)
             $analyze_call() do
                 sum′′("julia")
             end
         end)
-        test_sum_over_string(interp)
+        test_sum_over_string(analyzer)
     end
 
     # incremental setup
     let
         m = gen_virtual_module()
 
-        interp, frame = Core.eval(m, quote
+        analyzer, frame = Core.eval(m, quote
             $analyze_call() do
                 sum("julia")
             end
         end)
-        test_sum_over_string(interp)
+        test_sum_over_string(analyzer)
 
-        interp, frame = Core.eval(m, quote
+        analyzer, frame = Core.eval(m, quote
             sum′(s) = sum(s)
             $analyze_call() do
                 sum′("julia")
             end
         end)
-        test_sum_over_string(interp)
+        test_sum_over_string(analyzer)
 
-        interp, frame = Core.eval(m, quote
+        analyzer, frame = Core.eval(m, quote
             sum′′(s) = sum′(s)
             $analyze_call() do
                 sum′′("julia")
             end
         end)
-        test_sum_over_string(interp)
+        test_sum_over_string(analyzer)
     end
 
     # should not error for virtual stacktrace traversing with a frame for inner constructor
@@ -209,7 +218,7 @@ end
 @testset "integrate with local code cache" begin
     let
         m = gen_virtual_module()
-        interp, frame = Core.eval(m, quote
+        analyzer, frame = Core.eval(m, quote
             struct Foo{T}
                 bar::T
             end
@@ -218,16 +227,16 @@ end
             end
         end)
 
-        @test !isempty(interp.reports)
-        @test !isempty(interp.cache)
-        @test any(interp.cache) do analysis_result
+        @test !isempty(get_reports(analyzer))
+        @test !isempty(get_cache(analyzer))
+        @test any(get_cache(analyzer)) do analysis_result
             analysis_result.argtypes==Any[CC.Const(getproperty),m.Foo{Int},CC.Const(:baz)]
         end
     end
 
     let
         m = gen_virtual_module()
-        interp, frame = Core.eval(m, quote
+        analyzer, frame = Core.eval(m, quote
             struct Foo{T}
                 bar::T
             end
@@ -239,12 +248,12 @@ end
         end)
 
         # there should be local cache for each errorneous constant analysis
-        @test !isempty(interp.reports)
-        @test !isempty(interp.cache)
-        @test any(interp.cache) do analysis_result
+        @test !isempty(get_reports(analyzer))
+        @test !isempty(get_cache(analyzer))
+        @test any(get_cache(analyzer)) do analysis_result
             analysis_result.argtypes==Any[CC.Const(m.getter),m.Foo{Int},CC.Const(:baz)]
         end
-        @test any(interp.cache) do analysis_result
+        @test any(get_cache(analyzer)) do analysis_result
             analysis_result.argtypes==Any[CC.Const(m.getter),m.Foo{Int},CC.Const(:qux)]
         end
     end
