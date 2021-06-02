@@ -24,7 +24,7 @@ function overload_abstract_call_gf_by_type!()
 # %% for easier interactive update of `abstract_call_gf_by_type!`
 Core.eval(CC, quote
 
-function abstract_call_gf_by_type(interp::$JETInterpreter, @nospecialize(f), argtypes::Vector{Any}, @nospecialize(atype), sv::InferenceState,
+function abstract_call_gf_by_type(interp::$AbstractAnalyzer, @nospecialize(f), argtypes::Vector{Any}, @nospecialize(atype), sv::InferenceState,
                                   max_methods::Int = InferenceParams(interp).MAX_METHODS)
     if sv.params.unoptimize_throw_blocks && sv.currpc in sv.throw_blocks
         return CallMeta(Any, false)
@@ -71,7 +71,7 @@ function abstract_call_gf_by_type(interp::$JETInterpreter, @nospecialize(f), arg
         info = UnionSplitInfo(infos)
         #=== abstract_call_gf_by_type patch point 1-1 start ===#
         # report pass for no matching methods error
-        $report_pass!($NoMethodErrorReport, interp, sv, info, atype, argtypes)
+        $report_pass!($NoMethodErrorReport, interp, sv, info, splitsigs)
         #=== abstract_call_gf_by_type patch point 1-1 end ===#
     else
         mt = ccall(:jl_method_table_for, Any, (Any,), atype)
@@ -92,7 +92,7 @@ function abstract_call_gf_by_type(interp::$JETInterpreter, @nospecialize(f), arg
         info = MethodMatchInfo(matches)
         #=== abstract_call_gf_by_type patch point 1-2 start ===#
         # report pass for no matching methods error
-        $report_pass!($NoMethodErrorReport, interp, sv, info, atype, argtypes)
+        $report_pass!($NoMethodErrorReport, interp, sv, info, atype)
         #=== abstract_call_gf_by_type patch point 1-2 end ===#
         applicable = matches.matches
         valid_worlds = matches.valid_worlds
@@ -117,7 +117,7 @@ function abstract_call_gf_by_type(interp::$JETInterpreter, @nospecialize(f), arg
     end
 
     #=== abstract_call_gf_by_type patch point 4-1 start ===#
-    nreports = length(interp.reports)
+    nreports = length($get_reports(interp))
     #=== abstract_call_gf_by_type patch point 4-1 end ===#
 
     for i in 1:napplicable
@@ -173,7 +173,7 @@ function abstract_call_gf_by_type(interp::$JETInterpreter, @nospecialize(f), arg
 
     #=== abstract_call_gf_by_type patch point 4-2 start ===#
     # check if constant propagation can improve analysis by throwing away possibly false positive reports
-    anyreported = (length(interp.reports) - nreports) > 0
+    anyreported = (length($get_reports(interp)) - nreports) > 0
     #=== abstract_call_gf_by_type patch point 4-2 end ===#
 
     # try constant propagation if only 1 method is inferred to non-Bottom
@@ -241,6 +241,28 @@ end) # Core.eval(CC, quote
 end # function overload_abstract_call_gf_by_type!()
 push_inithook!(overload_abstract_call_gf_by_type!)
 
+function (::SoundBasicPass)(::Type{NoMethodErrorReport}, analyzer::AbstractAnalyzer, sv::InferenceState, info::UnionSplitInfo, splitsigs::Vector{Any})
+    # check each match for union-split signature
+    ts = nothing
+
+    for (i, matchinfo) in enumerate(info.matches)
+        if is_empty_match(matchinfo)
+            isnothing(ts) && (ts = Type[])
+            sig_n = splitsigs[i]
+            push!(ts, sig_n)
+        end
+    end
+
+    if !isnothing(ts)
+        report!(NoMethodErrorReport, analyzer, sv, ts)
+    end
+end
+function (::SoundBasicPass)(::Type{NoMethodErrorReport}, analyzer::AbstractAnalyzer, sv::InferenceState, info::MethodMatchInfo, @nospecialize(atype))
+    if is_empty_match(info)
+        report!(NoMethodErrorReport, analyzer, sv, atype)
+    end
+end
+
 """
     function overload_abstract_call_method_with_const_args!()
         ...
@@ -258,7 +280,7 @@ function overload_abstract_call_method_with_const_args!()
 # %% for easier interactive update of `abstract_call_method_with_const_args`
 Core.eval(CC, quote
 
-function abstract_call_method_with_const_args(interp::$JETInterpreter, @nospecialize(rettype), @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch, sv::InferenceState, edgecycle::Bool)
+function abstract_call_method_with_const_args(interp::$AbstractAnalyzer, @nospecialize(rettype), @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch, sv::InferenceState, edgecycle::Bool)
     method = match.method
     nargs::Int = method.nargs
     method.isva && (nargs -= 1)

@@ -6,7 +6,8 @@ import .CC:
     widenconst, ⊑
 
 import JET:
-    JETInterpreter,
+    AbstractAnalyzer,
+    JETAnalyzer,
     AbstractGlobal,
     analyze_file,
     analyze_text,
@@ -17,7 +18,9 @@ import JET:
     gen_virtual_module,
     ToplevelErrorReport,
     InferenceErrorReport,
-    print_reports
+    print_reports,
+    get_reports,
+    get_cache
 
 function subtypes_recursive!(t, ts)
     push!(ts, t)
@@ -111,11 +114,12 @@ function _analyze_toplevel(ex, lnn, jetconfigs)
                   Expr(:toplevel, lnn, ex)
                   ) |> QuoteNode
     return :(let
-        interp = JETInterpreter(; $(map(esc, jetconfigs)...))
+        state =  $(GlobalRef(JET, :AnalyzerState))(; $(map(esc, jetconfigs)...))
+        analyzer = $(GlobalRef(JET, :AbstractAnalyzer))($(GlobalRef(JET, :JETAnalyzer))(), state)
         config = ToplevelConfig(; $(map(esc, jetconfigs)...))
         $virtual_process($toplevelex,
                          $(string(lnn.file)),
-                         interp,
+                         analyzer,
                          config,
                          )
     end)

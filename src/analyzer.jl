@@ -56,26 +56,12 @@ These configurations will be active for all the entries.
     Dict{Any, Int64}
     ```
 """
-struct JETAnalysisParams{X}
-    report_pass::X
+struct JETAnalysisParams
     strict_condition_check::Bool
-    # `@aggressive_constprop` here makes sure `mode` to be propagated as constant
-    @aggressive_constprop @jetconfigurable function JETAnalysisParams(;
-        report_pass::T               = nothing,
-        mode::Symbol                 = :basic,
-        strict_condition_check::Bool = false,
-        ) where T
-        if isnothing(report_pass)
-            # if `report_pass` isn't passed explicitly, here we configure it according to `mode`
-            X, report_pass = mode === :basic ? (BasicPass, BasicPass.instance) :
-                             mode === :sound ? (SoundPass, SoundPass.instance) :
-                             throw(ArgumentError("`mode` configuration should be either of `:basic` or `:sound`"))
-        else
-            X = T
-        end
-        return new{X}(report_pass,
-                      strict_condition_check,
-                      )
+    @jetconfigurable function JETAnalysisParams(; strict_condition_check::Bool  = false,
+                                                  )
+        return new(strict_condition_check,
+                   )
     end
 end
 
@@ -236,7 +222,7 @@ struct AnalysisResult
     cache::Vector{InferenceErrorReportCache}
 end
 
-mutable struct JETInterpreter{X} <: AbstractInterpreter
+mutable struct AnalyzerState
     ### native ###
 
     native::NativeInterpreter
@@ -245,8 +231,8 @@ mutable struct JETInterpreter{X} <: AbstractInterpreter
 
     ## general ##
 
-    # configurations for JET analysis
-    analysis_params::JETAnalysisParams{X}
+    # additional configurations for abstract interpretation
+    analysis_params::JETAnalysisParams
 
     # key for the JET's global cache
     cache_key::UInt
@@ -287,50 +273,54 @@ mutable struct JETInterpreter{X} <: AbstractInterpreter
     # records depth of call stack
     depth::Int
 
-    function JETInterpreter(native::NativeInterpreter, analysis_params::JETAnalysisParams{X}, args...) where {X}
-        @assert !native.opt_params.inlining "inlining should be disabled for JETInterpreter analysis"
-        new{X}(native, analysis_params, args...)
+    function AnalyzerState(native::NativeInterpreter, args...)
+        @assert !native.opt_params.inlining "inlining should be disabled for AbstractAnalyzer"
+        new(native, args...)
     end
 end
 
+# define getter methods
+for fld in fieldnames(AnalyzerState)
+    fld === :cache_key && continue # will be defined later (in order to take in `ReportPass` hash)
+    fn = Symbol("get_", fld)
+    @eval (@__MODULE__) @inline $fn(analyzer::AbstractAnalyzer) =
+        getproperty(AnalyzerState(analyzer), $(QuoteNode(fld)))
+end
+
 # constructor for fresh analysis
-@jetconfigurable function JETInterpreter(world::UInt     = get_world_counter();
-                                         analysis_params = nothing,
-                                         current_frame   = nothing,
-                                         cache           = AnalysisResult[],
-                                         inf_params      = nothing,
-                                         opt_params      = nothing,
-                                         concretized     = _CONCRETIZED,
-                                         toplevelmod     = _TOPLEVELMOD,
-                                         toplevelmods    = _TOPLEVELMODS,
-                                         global_slots    = _GLOBAL_SLOTS,
-                                         logger          = nothing,
-                                         depth           = 0,
-                                         jetconfigs...)
+@jetconfigurable function AnalyzerState(world::UInt     = get_world_counter();
+                                        analysis_params = nothing,
+                                        current_frame   = nothing,
+                                        cache           = AnalysisResult[],
+                                        inf_params      = nothing,
+                                        opt_params      = nothing,
+                                        concretized     = _CONCRETIZED,
+                                        toplevelmod     = _TOPLEVELMOD,
+                                        toplevelmods    = _TOPLEVELMODS,
+                                        global_slots    = _GLOBAL_SLOTS,
+                                        logger          = nothing,
+                                        depth           = 0,
+                                        jetconfigs...)
     isnothing(analysis_params) && (analysis_params = JETAnalysisParams(; jetconfigs...))
-    isnothing(inf_params)      && (inf_params = JETInferenceParams(; jetconfigs...))
-    isnothing(opt_params)      && (opt_params = JETOptimizationParams(; jetconfigs...))
-    isnothing(logger)          && (logger = JETLogger(; jetconfigs...))
+    isnothing(inf_params)      && (inf_params      = JETInferenceParams(; jetconfigs...))
+    isnothing(opt_params)      && (opt_params      = JETOptimizationParams(; jetconfigs...))
+    isnothing(logger)          && (logger          = JETLogger(; jetconfigs...))
 
-    cache_key = gen_cache_key(analysis_params, inf_params)
-    haskey(JET_REPORT_CACHE, cache_key) || (JET_REPORT_CACHE[cache_key] = IdDict())
-    haskey(JET_CODE_CACHE, cache_key) || (JET_CODE_CACHE[cache_key] = IdDict())
-
-    return JETInterpreter(NativeInterpreter(world; inf_params, opt_params),
-                          analysis_params,
-                          cache_key,
-                          InferenceErrorReport[],
-                          UncaughtExceptionReport[],
-                          Set{InferenceErrorReport}(),
-                          current_frame,
-                          cache,
-                          concretized,
-                          toplevelmod,
-                          toplevelmods,
-                          global_slots,
-                          logger,
-                          depth,
-                          )
+    return AnalyzerState(NativeInterpreter(world; inf_params, opt_params),
+                         analysis_params,
+                         get_cache_key_per_config(analysis_params, inf_params),
+                         InferenceErrorReport[],
+                         UncaughtExceptionReport[],
+                         Set{InferenceErrorReport}(),
+                         current_frame,
+                         cache,
+                         concretized,
+                         toplevelmod,
+                         toplevelmods,
+                         global_slots,
+                         logger,
+                         depth,
+                         )
 end
 
 # dummies for non-toplevel analysis
@@ -341,47 +331,53 @@ const _TOPLEVELMODS = Set{Module}()
 const _GLOBAL_SLOTS = Dict{Int,Symbol}()
 
 # constructor for sequential toplevel JET analysis
-function JETInterpreter(interp::JETInterpreter, concretized, toplevelmod)
-    return JETInterpreter(# update world age to take in newly added methods defined
-                          # in a previous toplevel interpretation performed by `ConcreteInterpreter`
-                          get_world_counter();
-                          analysis_params = JETAnalysisParams(interp),
-                          inf_params      = InferenceParams(interp),
-                          opt_params      = OptimizationParams(interp),
-                          concretized     = concretized, # or construct partial `CodeInfo` from remaining abstract statements ?
-                          toplevelmod     = toplevelmod,
-                          toplevelmods    = push!(interp.toplevelmods, toplevelmod),
-                          logger          = JETLogger(interp),
-                          )
+function AbstractAnalyzer(analyzer::T, concretized, toplevelmod) where {T<:AbstractAnalyzer}
+    newstate = AnalyzerState(# update world age to take in newly added methods defined
+                             # in a previous toplevel interpretation performed by `ConcreteInterpreter`
+                             get_world_counter();
+                             analysis_params = JETAnalysisParams(analyzer),
+                             inf_params      = InferenceParams(analyzer),
+                             opt_params      = OptimizationParams(analyzer),
+                             concretized     = concretized, # or construct partial `CodeInfo` from remaining abstract statements ?
+                             toplevelmod     = toplevelmod,
+                             toplevelmods    = push!(get_toplevelmods(analyzer), toplevelmod),
+                             logger          = JETLogger(analyzer),
+                             )
+    newinterp = AbstractAnalyzer(analyzer, newstate)
+    maybe_initialize_caches!(analyzer)
+    return newinterp
 end
 
 # constructor to do additional JET analysis in the middle of parent (non-toplevel) interpretation
-function JETInterpreter(interp::JETInterpreter)
-    return JETInterpreter(get_world_counter(interp);
-                          analysis_params = JETAnalysisParams(interp),
-                          current_frame   = interp.current_frame,
-                          cache           = interp.cache,
-                          inf_params      = InferenceParams(interp),
-                          opt_params      = OptimizationParams(interp),
-                          logger          = JETLogger(interp),
-                          depth           = interp.depth,
-                          )
+function AbstractAnalyzer(analyzer::T) where {T<:AbstractAnalyzer}
+    newstate = AnalyzerState(get_world_counter(analyzer);
+                             analysis_params = JETAnalysisParams(analyzer),
+                             current_frame   = get_current_frame(analyzer),
+                             cache           = get_cache(analyzer),
+                             inf_params      = InferenceParams(analyzer),
+                             opt_params      = OptimizationParams(analyzer),
+                             logger          = JETLogger(analyzer),
+                             depth           = get_depth(analyzer),
+                             )
+    newinterp = AbstractAnalyzer(analyzer, newstate)
+    maybe_initialize_caches!(analyzer)
+    return newinterp
 end
 
-function Base.show(io::IO, interp::JETInterpreter)
-    rn = length(interp.reports)
-    en = length(interp.uncaught_exceptions)
-    print(io, "JETInterpreter with $(rn) reports and $(en) uncaught exceptions")
-    frame = interp.current_frame
+function Base.show(io::IO, analyzer::AbstractAnalyzer)
+    rn = length(get_reports(analyzer))
+    en = length(get_uncaught_exceptions(analyzer))
+    print(io, "AbstractAnalyzer with $(rn) reports and $(en) uncaught exceptions")
+    frame = get_current_frame(analyzer)
     if !isnothing(frame)
         print(io, " at ")
         show(io, frame.linfo)
     end
 end
-Base.show(io::IO, ::MIME"application/prs.juno.inline", interp::JETInterpreter) =
-    return interp
-Base.show(io::IO, ::MIME"application/prs.juno.inline", interp::NativeInterpreter) =
-    return interp
+Base.show(io::IO, ::MIME"application/prs.juno.inline", analyzer::AbstractAnalyzer) =
+    return analyzer
+Base.show(io::IO, ::MIME"application/prs.juno.inline", analyzer::NativeInterpreter) =
+    return analyzer
 
 # XXX: this should be upstreamed
 function Base.show(io::IO, frame::InferenceState)
@@ -392,53 +388,84 @@ end
 Base.show(io::IO, ::MIME"application/prs.juno.inline", frame::InferenceState) =
     return frame
 
-cache_key(interp::JETInterpreter) = interp.cache_key
-function gen_cache_key(analysis_params::JETAnalysisParams, inf_params::InferenceParams)
+# AbstractInterpreter API
+# -----------------------
+
+CC.InferenceParams(analyzer::AbstractAnalyzer)    = InferenceParams(get_native(analyzer))
+CC.OptimizationParams(analyzer::AbstractAnalyzer) = OptimizationParams(get_native(analyzer))
+CC.get_world_counter(analyzer::AbstractAnalyzer)  = get_world_counter(get_native(analyzer))
+
+# JET only works for runtime inference
+CC.lock_mi_inference(::AbstractAnalyzer, ::MethodInstance) = nothing
+CC.unlock_mi_inference(::AbstractAnalyzer, ::MethodInstance) = nothing
+
+CC.add_remark!(analyzer::AbstractAnalyzer, sv, s) = report_pass!(NativeRemark, analyzer, sv, s)
+
+CC.may_optimize(analyzer::AbstractAnalyzer)      = true
+CC.may_compress(analyzer::AbstractAnalyzer)      = false
+CC.may_discard_trees(analyzer::AbstractAnalyzer) = false
+
+# AbstractAnalyzer
+# ----------------
+
+JETAnalysisParams(analyzer::AbstractAnalyzer) = get_analysis_params(analyzer)
+
+@inline report_pass!(T::Type{<:InferenceErrorReport}, analyzer::AbstractAnalyzer, linfo::Union{InferenceState,MethodInstance}, @nospecialize(spec_args...)) =
+    ReportPass(analyzer)(T, analyzer, linfo, spec_args...)
+
+function report!(T::Type{<:InferenceErrorReport}, analyzer::AbstractAnalyzer,  @nospecialize(spec_args...))
+    push!(get_reports(analyzer), T(analyzer, spec_args...))
+end
+function report!(T::Type{UncaughtExceptionReport}, analyzer::AbstractAnalyzer,  @nospecialize(spec_args...))
+    push!(get_uncaught_exceptions(analyzer), T(analyzer, spec_args...))
+end
+
+function restore_cached_report!(cache::InferenceErrorReportCache, analyzer::AbstractAnalyzer)
+    report = restore_cached_report(cache)
+    if isa(report, UncaughtExceptionReport)
+        push!(get_uncaught_exceptions(analyzer), report)
+    else
+        push!(get_reports(analyzer), report)
+    end
+    return report
+end
+
+function get_cache_key_per_config(analysis_params::JETAnalysisParams, inf_params::InferenceParams)
     h = @static UInt === UInt64 ? 0xa49bd446c0a5d90e : 0xe45361ac
     h = hash(analysis_params, h)
     h = hash(inf_params, h)
     return h
 end
 
-# AbstractInterpreter API
-# -----------------------
+function get_cache_key(analyzer::AbstractAnalyzer)
+    h = analyzer.state.cache_key
+    h = hash(ReportPass(analyzer), h)
+    return h
+end
 
-CC.InferenceParams(interp::JETInterpreter)    = InferenceParams(interp.native)
-CC.OptimizationParams(interp::JETInterpreter) = OptimizationParams(interp.native)
-CC.get_world_counter(interp::JETInterpreter)  = get_world_counter(interp.native)
-
-# JET only works for runtime inference
-CC.lock_mi_inference(::JETInterpreter, ::MethodInstance) = nothing
-CC.unlock_mi_inference(::JETInterpreter, ::MethodInstance) = nothing
-
-CC.add_remark!(interp::JETInterpreter, sv, s) = report_pass!(NativeRemark, interp, sv, s)
-
-CC.may_optimize(interp::JETInterpreter)      = true
-CC.may_compress(interp::JETInterpreter)      = false
-CC.may_discard_trees(interp::JETInterpreter) = false
-
-# JETInterpreter specific
-# -----------------------
-
-JETAnalysisParams(interp::JETInterpreter) = interp.analysis_params
-
-JETLogger(interp::JETInterpreter) = interp.logger
+@inline function maybe_initialize_caches!(analyzer::AbstractAnalyzer)
+    cache_key = get_cache_key(analyzer)
+    haskey(JET_REPORT_CACHE, cache_key) || (JET_REPORT_CACHE[cache_key] = IdDict())
+    haskey(JET_CODE_CACHE, cache_key)   || (JET_CODE_CACHE[cache_key]   = IdDict())
+end
 
 # check if we're in a toplevel module
-@inline istoplevel(interp::JETInterpreter, sv::InferenceState)    = istoplevel(interp, sv.linfo)
-@inline istoplevel(interp::JETInterpreter, linfo::MethodInstance) = interp.toplevelmod === linfo.def
+@inline istoplevel(analyzer::AbstractAnalyzer, sv::InferenceState)    = istoplevel(analyzer, sv.linfo)
+@inline istoplevel(analyzer::AbstractAnalyzer, linfo::MethodInstance) = get_toplevelmod(analyzer) === linfo.def
 
-@inline istoplevelmod(interp::JETInterpreter, mod::Module) = mod in interp.toplevelmods
+@inline istoplevelmod(analyzer::AbstractAnalyzer, mod::Module) = mod in get_toplevelmods(analyzer)
 
-is_global_slot(interp::JETInterpreter, slot::Int)   = slot in keys(interp.global_slots)
-is_global_slot(interp::JETInterpreter, slot::Slot)  = is_global_slot(interp, slot_id(slot))
-is_global_slot(interp::JETInterpreter, sym::Symbol) = sym in values(interp.global_slots)
+is_global_slot(analyzer::AbstractAnalyzer, slot::Int)   = slot in keys(get_global_slots(analyzer))
+is_global_slot(analyzer::AbstractAnalyzer, slot::Slot)  = is_global_slot(analyzer, slot_id(slot))
+is_global_slot(analyzer::AbstractAnalyzer, sym::Symbol) = sym in values(get_global_slots(analyzer))
 
-@inline with_toplevel_logger(@nospecialize(f), interp::JETInterpreter, @nospecialize(filter = ≥(DEFAULT_LOGGER_LEVEL)); kwargs...) =
-    with_logger(f, JETLogger(interp).toplevel_logger, filter, "toplevel"; kwargs...)
+JETLogger(analyzer::AbstractAnalyzer) = get_logger(analyzer)
 
-@inline with_inference_logger(@nospecialize(f), interp::JETInterpreter, @nospecialize(filter = ≥(DEFAULT_LOGGER_LEVEL)); kwargs...) =
-    with_logger(f, JETLogger(interp).inference_logger, filter, "inference"; kwargs...)
+@inline with_toplevel_logger(@nospecialize(f), analyzer::AbstractAnalyzer, @nospecialize(filter = ≥(DEFAULT_LOGGER_LEVEL)); kwargs...) =
+    with_logger(f, JETLogger(analyzer).toplevel_logger, filter, "toplevel"; kwargs...)
+
+@inline with_inference_logger(@nospecialize(f), analyzer::AbstractAnalyzer, @nospecialize(filter = ≥(DEFAULT_LOGGER_LEVEL)); kwargs...) =
+    with_logger(f, JETLogger(analyzer).inference_logger, filter, "inference"; kwargs...)
 
 @inline function with_logger(
     @nospecialize(f), io::Union{Nothing,IO}, @nospecialize(filter), logger_name;
@@ -450,3 +477,49 @@ is_global_slot(interp::JETInterpreter, sym::Symbol) = sym in values(interp.globa
     print(io, "[$logger_name-$(LOGGER_LEVELS[level])] ")
     f(io)
 end
+
+"""
+    NativeRemark <: InferenceErrorReport
+
+This special `InferenceErrorReport` wraps remarks by `NativeInterpreter`.
+"remarks" are information that Julia's native compiler emits about how its type inference goes,
+and those remarks are less interesting in term of "error checking", so currently any of JET's
+pre-defined report passes doesn't make any use of `NativeRemark`.
+"""
+@reportdef struct NativeRemark <: InferenceErrorReport
+    s::String
+end
+get_msg(::Type{NativeRemark}, analyzer::AbstractAnalyzer, sv, s) = s
+
+# ignores `NativeRemark`s by default
+(::SoundBasicPass)(::Type{NativeRemark}, analyzer::AbstractAnalyzer, sv::InferenceState, s) = return
+
+# JETAnalyzer
+# -----------
+
+# the default abstract interpreter for JET.jl
+struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
+    report_pass::RP
+    state::AnalyzerState
+end
+
+# AbstractAnalyzer API requirements
+
+# NOTE `@aggressive_constprop` here makes sure `mode` to be propagated as constant
+@aggressive_constprop @jetconfigurable function JETAnalyzer(;
+    report_pass::Union{Nothing,T} = nothing,
+    mode::Symbol                  = :basic,
+    jetconfigs...) where {T<:ReportPass}
+    if isnothing(report_pass)
+        # if `report_pass` isn't passed explicitly, here we configure it according to `mode`
+        report_pass = mode === :basic ? BasicPass() :
+                      mode === :sound ? SoundPass() :
+                      throw(ArgumentError("`mode` configuration should be either of `:basic` or `:sound`"))
+    end
+    return JETAnalyzer(report_pass,
+                       AnalyzerState(; jetconfigs...),
+                       )
+end
+AnalyzerState(analyzer::JETAnalyzer)                          = analyzer.state
+AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerState) = JETAnalyzer(ReportPass(analyzer), state)
+ReportPass(analyzer::JETAnalyzer)                             = analyzer.report_pass

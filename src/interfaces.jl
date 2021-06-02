@@ -1,5 +1,83 @@
-# toplevel
-# ========
+# AbstractAnalyzer
+# ================
+
+"""
+    abstract type AbstractAnalyzer <: AbstractInterpreter end
+
+When `T` implements this interface (i.e. `T <: AbstractAnalyzer`), `T` is expected to implement:
+- `T(; jetconfigs...) -> T`:
+  constructs new analyzer given [JET configurations](@ref JET configurations);
+  `AnalyzerState` for this analyzer should be constructed using these configurations
+- `AnalyzerState(analyzer::T) -> AnalyzerState`:
+  returns `AnalyzerState` instance, usually it's kept within `T` itself
+- `AbstractAnalyzer(analyzer::T, state::AnalyzerState) -> T`:
+  constructs new analyzer given the previous analyzer and analysis state
+- `ReportPass(analyzer::T) -> ReportPass`:
+  returns the [report pass](@ref ReportPass) of `T`
+
+For example, JET.jl defines `JETAnalyzer <: AbstractAnalyzer` as the following (modified a bit for the sake of simplicity):
+```julia
+# the default abstract interpreter for JET.jl
+struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
+    report_pass::RP
+    state::AnalyzerState
+end
+
+# AbstractAnalyzer API requirements
+
+function JETAnalyzer(;
+    report_pass::Union{Nothing,T} = nothing,
+    mode::Symbol                  = :basic,
+    jetconfigs...) where {T<:ReportPass}
+    if isnothing(report_pass)
+        # if `report_pass` isn't passed explicitly, here we configure it according to `mode`
+        report_pass = mode === :basic ? BasicPass() :
+                      mode === :sound ? SoundPass() :
+                      throw(ArgumentError("`mode` configuration should be either of `:basic` or `:sound`"))
+    end
+    return JETAnalyzer(report_pass,
+                       AnalyzerState(; jetconfigs...),
+                       )
+end
+AnalyzerState(analyzer::JETAnalyzer)                          = analyzer.state
+AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerState) = JETAnalyzer(ReportPass(analyzer), state)
+ReportPass(analyzer::JETAnalyzer)                             = analyzer.report_pass
+```
+"""
+abstract type AbstractAnalyzer <: AbstractInterpreter end
+
+# ReportPass
+# ==========
+
+"""
+    ReportPass
+
+An interface type for report passes of JET's analysis.
+"""
+abstract type ReportPass end
+
+# pre-defined passes
+# ------------------
+
+"""
+    SoundPass <: ReportPass
+
+`ReportPass` for the sound JET analysis.
+"""
+struct SoundPass <: ReportPass end
+
+"""
+    BasicPass <: ReportPass
+
+`ReportPass` for the basic (default) JET analysis.
+"""
+struct BasicPass <: ReportPass end
+
+# `SoundPass` is still WIP, we will use it to implement both passes at once for the meantime
+const SoundBasicPass = Union{SoundPass,BasicPass}
+
+# ToplevelErrorReport
+# ===================
 
 """
     ToplevelErrorReport
@@ -24,50 +102,11 @@ function Base.getproperty(er::ToplevelErrorReport, sym::Symbol)
     end
 end
 
-struct SyntaxErrorReport <: ToplevelErrorReport
-    err::ErrorException
-    file::String
-    line::Int
-    SyntaxErrorReport(msg::AbstractString, file, line) = new(ErrorException(msg), file, line)
-end
+# InferenceErrorReport
+# ====================
 
-struct RecursiveIncludeErrorReport <: ToplevelErrorReport
-    duplicated_file::String
-    files::Set{String}
-    file::String
-    line::Int
-end
-
-# wraps general errors from actual execution
-struct ActualErrorWrapped <: ToplevelErrorReport
-    err
-    st::Base.StackTraces.StackTrace
-    file::String
-    line::Int
-
-    # default constructor
-    ActualErrorWrapped(err, st, file, line) = new(err, st, file, line)
-
-    # bypass syntax error
-    function ActualErrorWrapped(err::ErrorException, st, file, line)
-        return if startswith(err.msg, "syntax: ")
-            SyntaxErrorReport(err.msg, file, line)
-        else
-            new(err, st, file, line)
-        end
-    end
-end
-
-# wraps an error that might happen because of inappropriate top-level code abstraction
-struct MissingConcretization <: ToplevelErrorReport
-    err
-    st::Base.StackTraces.StackTrace
-    file::String
-    line::Int
-end
-
-# inference
-# =========
+# fields
+# ------
 
 """
     VirtualFrame
@@ -122,12 +161,12 @@ If `T` implements this interface, the following requirements should be satisfied
 - **A constructor interface to create `T` from abstraction interpretation** \\
   `T<:InferenceErrorReport` has the default constructor
 
-      T(::JETInterpreter, sv::InferenceState, spec_args...)
+      T(::AbstractAnalyzer, sv::InferenceState, spec_args...)
 
   which works when `T` is reported when `sv`'s program counter (`sv.currpc`) points to that
   of statement where the error may happen. If so `T` just needs to overload
 
-      JET.get_msg(::Type{T}, ::JETInterpreter, ::InferenceState, spec_args...) -> msg::String
+      JET.get_msg(::Type{T}, ::AbstractAnalyzer, ::InferenceState, spec_args...) -> msg::String
 
   to provide the message that describes why this error is reported (otherwise the senseless
   default message will be used).
@@ -179,28 +218,27 @@ end
 Base.show(io::IO, ::MIME"application/prs.juno.inline", report::T) where {T<:InferenceErrorReport} =
     return report
 
+get_msg(T::Type{<:InferenceErrorReport}, analyzer, sv::InferenceState, @nospecialize(spec_args...)) = throw("`get_msg` isn't implemented for $T")
+get_spec_args(r::InferenceErrorReport) = throw("`get_spec_args` isn't implemented for $T")
+
 # default constructor to create a report from abstract interpretation routine
-function (T::Type{<:InferenceErrorReport})(interp, sv::InferenceState, @nospecialize(spec_args...))
-    vf = get_virtual_frame(interp, sv)
-    msg = get_msg(T, interp, sv, spec_args...)
+function (T::Type{<:InferenceErrorReport})(analyzer, sv::InferenceState, @nospecialize(spec_args...))
+    vf = get_virtual_frame(analyzer, sv)
+    msg = get_msg(T, analyzer, sv, spec_args...)
     return T([vf], msg, vf.sig, spec_args...)
 end
 
-get_msg(T::Type{<:InferenceErrorReport}, interp, sv::InferenceState, @nospecialize(spec_args...)) = throw("`get_msg` isn't implemented for $T")
-get_spec_args(r::InferenceErrorReport) = throw("`get_spec_args` isn't implemented for $T")
-
 # virtual frame
-# -------------
 
-function get_virtual_frame(interp, loc::Union{InferenceState,MethodInstance})
-    sig = get_sig(interp, loc)
+function get_virtual_frame(analyzer::AbstractAnalyzer, loc::Union{InferenceState,MethodInstance})
+    sig = get_sig(analyzer, loc)
     file, line = get_file_line(loc)
     linfo = isa(loc, InferenceState) ? loc.linfo : loc
     return VirtualFrame(file, line, sig, linfo)
 end
 
-function get_virtual_frame(interp, sv::InferenceState, pc::Int)
-    sig = get_sig(interp, sv, get_stmt(sv, pc))
+function get_virtual_frame(analyzer::AbstractAnalyzer, sv::InferenceState, pc::Int)
+    sig = get_sig(analyzer, sv, get_stmt(sv, pc))
     file, line = get_file_line(get_lin(sv, get_codeloc(sv, pc)))
     linfo = sv.linfo
     return VirtualFrame(file, line, sig, linfo)
@@ -220,10 +258,9 @@ function get_file_line(linfo::MethodInstance)
 end
 
 # signature
-# ---------
 
 # adapted from https://github.com/JuliaLang/julia/blob/0f11a7bb07d2d0d8413da05dadd47441705bf0dd/base/show.jl#L989-L1011
-function get_sig(interp, l::MethodInstance)
+function get_sig(analyzer::AbstractAnalyzer, l::MethodInstance)
     def = l.def
     ret = if isa(def, Method)
         if isdefined(def, :generator) && l === def.generator
@@ -258,18 +295,18 @@ end
     end
 end
 
-get_sig(interp, sv::InferenceState, @nospecialize(x = get_stmt(sv))) = _get_sig(interp, sv, x)
+get_sig(analyzer::AbstractAnalyzer, sv::InferenceState, @nospecialize(x = get_stmt(sv))) = _get_sig(analyzer, sv, x)
 
-_get_sig(args...) = first(_get_sig_type(args...))::Vector{Any}
+@inline _get_sig(@nospecialize(args...)) = first(_get_sig_type(args...))::Vector{Any}
 
-function _get_callsig(interp, sv::InferenceState, @nospecialize(f), args::Vector{Any};
+function _get_callsig(analyzer::AbstractAnalyzer, sv::InferenceState, @nospecialize(f), args::Vector{Any};
                       splat::Bool = false)
-    sig = _get_sig(interp, sv, f)
+    sig = _get_sig(analyzer, sv, f)
     push!(sig, '(')
 
     nargs = length(args)
     for (i, arg) in enumerate(args)
-        arg_sig = _get_sig(interp, sv, arg)
+        arg_sig = _get_sig(analyzer, sv, arg)
         append!(sig, arg_sig)
         if i ≠ nargs
             push!(sig, ", ")
@@ -282,7 +319,7 @@ function _get_callsig(interp, sv::InferenceState, @nospecialize(f), args::Vector
     return sig
 end
 
-function _get_sig_type(interp, sv::InferenceState, expr::Expr)
+function _get_sig_type(analyzer::AbstractAnalyzer, sv::InferenceState, expr::Expr)
     head = expr.head
     if head === :call
         f = first(expr.args)
@@ -295,16 +332,16 @@ function _get_sig_type(interp, sv::InferenceState, expr::Expr)
             end
             f = args[2]
             args = args[3:end]
-            return _get_callsig(interp, sv, f, args; splat = true), nothing
+            return _get_callsig(analyzer, sv, f, args; splat = true), nothing
         else
-            return _get_callsig(interp, sv, f, args), nothing
+            return _get_callsig(analyzer, sv, f, args), nothing
         end
     elseif head === :invoke
         f = expr.args[2]
         args = expr.args[3:end]
-        return _get_callsig(interp, sv, f, args), nothing
+        return _get_callsig(analyzer, sv, f, args), nothing
     elseif head === :(=)
-        return _get_sig_type(interp, sv, last(expr.args))
+        return _get_sig_type(analyzer, sv, last(expr.args))
     elseif head === :static_parameter
         typ = widenconst(sv.sptypes[first(expr.args)])
         return Any['_', typ], typ
@@ -312,21 +349,21 @@ function _get_sig_type(interp, sv::InferenceState, expr::Expr)
         return Any[string(expr)], nothing
     end
 end
-function _get_sig_type(interp, sv::InferenceState, ssa::SSAValue)
-    sig, sig_typ = _get_sig_type(interp, sv, sv.src.code[ssa.id])
+function _get_sig_type(analyzer::AbstractAnalyzer, sv::InferenceState, ssa::SSAValue)
+    sig, sig_typ = _get_sig_type(analyzer, sv, sv.src.code[ssa.id])
     typ = widenconst(ignorelimited(ignorenotfound(sv.src.ssavaluetypes[ssa.id])))
     sig_typ == typ || push!(sig, typ)
     return sig, typ
 end
-function _get_sig_type(interp, sv::InferenceState, slot::SlotNumber)
+function _get_sig_type(analyzer::AbstractAnalyzer, sv::InferenceState, slot::SlotNumber)
     name = get_slotname(sv, slot)
     sig = string(name)
     if isempty(sig)
         sig = string(slot) # fallback if no explicit slotname
     end
-    if istoplevel(interp, sv)
+    if istoplevel(analyzer, sv)
         # this is a abstract global variable, form the global reference
-        return _get_sig_type(interp, sv, GlobalRef(interp.toplevelmod, name))
+        return _get_sig_type(analyzer, sv, GlobalRef(get_toplevelmod(analyzer), name))
     else
         typ = widenconst(ignorelimited(get_slottype(sv, slot)))
         return Any[sig, typ], typ
@@ -334,34 +371,34 @@ function _get_sig_type(interp, sv::InferenceState, slot::SlotNumber)
 end
 # NOTE `Argument` only appears after optimization
 # and so we don't need to handle abstract global variable here, etc.
-function _get_sig_type(interp, sv::InferenceState, arg::Argument)
+function _get_sig_type(analyzer::AbstractAnalyzer, sv::InferenceState, arg::Argument)
     name = get_slotname(sv, arg.n)
     sig = string(name)
     typ = widenconst(ignorelimited(sv.slottypes[arg.n])) # NOTE after optimization, and so we can't use `get_slottype` here
     return Any[sig, typ], typ
 end
-_get_sig_type(interp, ::InferenceState, gr::GlobalRef) = Any[string(gr.mod, '.', gr.name)], nothing
-function _get_sig_type(interp, sv::InferenceState, s::Symbol)
-    if istoplevel(interp, sv)
+_get_sig_type(analyzer::AbstractAnalyzer, ::InferenceState, gr::GlobalRef) = Any[string(gr.mod, '.', gr.name)], nothing
+function _get_sig_type(analyzer::AbstractAnalyzer, sv::InferenceState, s::Symbol)
+    if istoplevel(analyzer, sv)
         # this is concrete global variable, form the global reference
-        return _get_sig_type(interp, sv, GlobalRef(interp.toplevelmod, s))
+        return _get_sig_type(analyzer, sv, GlobalRef(get_toplevelmod(analyzer), s))
     else
         return Any[repr(s; context = :compact => true)], nothing
     end
 end
-function _get_sig_type(interp, sv::InferenceState, gotoifnot::GotoIfNot)
-    sig  = Any[string("goto %", gotoifnot.dest, " if not "), _get_sig(interp, sv, gotoifnot.cond)...]
+function _get_sig_type(analyzer::AbstractAnalyzer, sv::InferenceState, gotoifnot::GotoIfNot)
+    sig  = Any[string("goto %", gotoifnot.dest, " if not "), _get_sig(analyzer, sv, gotoifnot.cond)...]
     return sig, nothing
 end
-function _get_sig_type(interp, sv::InferenceState, rn::ReturnNode)
-    sig = is_unreachable(rn) ? Any["unreachable"] : Any["return ", _get_sig(interp, sv, rn.val)...]
+function _get_sig_type(analyzer::AbstractAnalyzer, sv::InferenceState, rn::ReturnNode)
+    sig = is_unreachable(rn) ? Any["unreachable"] : Any["return ", _get_sig(analyzer, sv, rn.val)...]
     return sig, nothing
 end
-function _get_sig_type(interp, ::InferenceState, qn::QuoteNode)
+function _get_sig_type(analyzer::AbstractAnalyzer, ::InferenceState, qn::QuoteNode)
     typ = typeof(qn.value)
     return Any[string(qn), typ], typ
 end
-_get_sig_type(interp, ::InferenceState, @nospecialize(x)) = Any[repr(x; context = :compact => true)], nothing
+_get_sig_type(analyzer::AbstractAnalyzer, ::InferenceState, @nospecialize(x)) = Any[repr(x; context = :compact => true)], nothing
 
 # cache
 # -----
@@ -376,16 +413,6 @@ function cache_report!(cache, report::T) where {T<:InferenceErrorReport}
     vst = copy(report.vst)
     new = InferenceErrorReportCache(T, vst, report.msg, report.sig, get_spec_args(report))
     return push!(cache, new)
-end
-
-function restore_cached_report!(cache::InferenceErrorReportCache, interp)
-    report = restore_cached_report(cache)
-    if isa(report, UncaughtExceptionReport)
-        push!(interp.uncaught_exceptions, report)
-    else
-        push!(interp.reports, report)
-    end
-    return report
 end
 
 restore_cached_report(cache::InferenceErrorReportCache) =
@@ -453,157 +480,3 @@ end
 
 extract_decl_name(@nospecialize(x)) = (@isexpr(x, :(::)) ? first(x.args) : x)::Symbol
 extract_decl_type(@nospecialize(x)) = @isexpr(x, :(::)) ? last(x.args) : GlobalRef(Core, :Any)
-
-# report, message
-# ---------------
-
-@reportdef struct NoMethodErrorReport <: InferenceErrorReport
-    @nospecialize(t::Union{Type,Vector{Type}})
-end
-# TODO count invalid unon split case
-get_msg(::Type{NoMethodErrorReport}, interp, sv::InferenceState, @nospecialize(t::Type)) =
-    "no matching method found for call signature ($t)"
-get_msg(::Type{NoMethodErrorReport}, interp, sv::InferenceState, ts::Vector{Type}) =
-    "for $(length(ts)) of union split cases, no matching method found for call signatures ($(join(ts, ", "))))"
-
-@reportdef struct GlobalUndefVarErrorReport <: InferenceErrorReport
-    mod::Module
-    name::Symbol
-end
-get_msg(::Type{GlobalUndefVarErrorReport}, interp, sv::InferenceState, mod::Module, name::Symbol) =
-    "variable $(mod).$(name) is not defined"
-
-@reportdef struct LocalUndefVarErrorReport <: InferenceErrorReport
-    name::Symbol
-end
-# use program counter where local undefined variable is found
-function LocalUndefVarErrorReport(interp, sv::InferenceState, name::Symbol, pc::Int)
-    vf = get_virtual_frame(interp, sv, pc)
-    msg = "local variable $(name) is not defined"
-    return LocalUndefVarErrorReport([vf], msg, vf.sig, name)
-end
-
-@reportdef struct NonBooleanCondErrorReport <: InferenceErrorReport
-    @nospecialize(t::Union{Type,Vector{Type}})
-end
-get_msg(::Type{NonBooleanCondErrorReport}, interp, sv::InferenceState, @nospecialize(t::Type)) =
-    "non-boolean ($t) used in boolean context"
-get_msg(::Type{NonBooleanCondErrorReport}, interp, sv::InferenceState, ts::Vector{Type}) =
-    "for $(length(ts)) of union split cases, non-boolean ($(join(ts, ", "))) used in boolean context"
-
-# TODO we may want to hoist `InvalidConstXXX` errors into top-level errors
-
-@reportdef struct InvalidConstantRedefinition <: InferenceErrorReport
-    mod::Module
-    name::Symbol
-    @nospecialize(t′::Any)
-    @nospecialize(t::Any)
-end
-get_msg(::Type{InvalidConstantRedefinition}, interp, sv::InferenceState, mod::Module, name::Symbol, @nospecialize(t′::Any), @nospecialize(t::Any)) =
-    "invalid redefinition of constant $(mod).$(name) (from $(t′) to $(t))"
-
-@reportdef struct InvalidConstantDeclaration <: InferenceErrorReport
-    mod::Module
-    name::Symbol
-end
-get_msg(::Type{InvalidConstantDeclaration}, interp, sv::InferenceState, mod::Module, name::Symbol) =
-    "cannot declare a constant $(mod).$(name); it already has a value"
-
-@reportdef struct GeneratorErrorReport <: InferenceErrorReport
-    err # actual error wrapped
-end
-function GeneratorErrorReport(interp, linfo::MethodInstance, err)
-    vst = VirtualFrame[get_virtual_frame(interp, linfo)]
-    msg = sprint(showerror, err)
-    sig = get_sig(interp, linfo)
-    return GeneratorErrorReport(vst, msg, sig, err)
-end
-
-"""
-    InvalidBuiltinCallErrorReport
-
-Represents errors caused by invalid builtin-function calls.
-Technically they're defined as those error points that should be caught within
-`Core.Compiler.builtin_tfunction`.
-"""
-abstract type InvalidBuiltinCallErrorReport <: InferenceErrorReport end
-
-@reportdef struct NoFieldErrorReport <: InvalidBuiltinCallErrorReport
-    @nospecialize(typ::Type)
-    name::Symbol
-end
-get_msg(::Type{NoFieldErrorReport}, interp, sv::InferenceState, @nospecialize(typ::Type), name::Symbol) =
-    "type $(typ) has no field $(name)"
-
-@reportdef struct DivideErrorReport <: InferenceErrorReport end
-let s = sprint(showerror, DivideError())
-    global get_msg(::Type{DivideErrorReport}, interp, sv::InferenceState) = s
-end
-
-@reportdef struct UnimplementedBuiltinCallErrorReport <: InvalidBuiltinCallErrorReport
-    argtypes::Vector{Any}
-end
-get_msg(::Type{UnimplementedBuiltinCallErrorReport}, interp, sv::InferenceState, @nospecialize(args...)) =
-    "invalid builtin function call"
-
-@reportdef struct InvalidReturnTypeCall <: InferenceErrorReport end
-get_msg(::Type{InvalidReturnTypeCall}, interp, sv::InferenceState) = "invalid `Core.Compiler.return_type` call"
-
-"""
-    SeriousExceptionReport <: InferenceErrorReport
-
-The abstract type for "serious" errors that are invoked by `throw` calls but should be
-reported even if they may be caught in actual execution.
-In order to avoid duplicated reports for the `throw` call, any subtype of `SeriousExceptionReport`
-should keep `lin::LineInfoNode` field, which represents where the report gets collected.
-"""
-abstract type SeriousExceptionReport <: InferenceErrorReport end
-
-# # NOTE: this mixin implementation is cleaner but doesn't help inference,
-# # because inference on the `getproperty` interface relies on constant prop' and currently
-# # constant prop' isn't supported for `invoke`d calls
-# function Base.getproperty(er::SeriousExceptionReport, sym::Symbol)
-#     sym === :lin && return getfield(er, :lin)::LineInfoNode
-#     return @invoke getproperty(er::InferenceErrorReport, sym::Symbol)
-# end
-
-@reportdef struct UndefKeywordErrorReport <: SeriousExceptionReport
-    err::UndefKeywordError
-    lin::LineInfoNode
-end
-get_msg(::Type{UndefKeywordErrorReport}, interp, sv::InferenceState, err::UndefKeywordError, lin::LineInfoNode) = sprint(showerror, err)
-
-"""
-    UncaughtExceptionReport <: InferenceErrorReport
-
-Represents general `throw` calls traced during inference.
-They are reported only when they're not caught by any control flow.
-"""
-@reportdef struct UncaughtExceptionReport <: InferenceErrorReport
-    throw_calls::Vector{Expr}
-end
-function UncaughtExceptionReport(interp, sv::InferenceState, throw_calls::Vector{Expr})
-    vf = get_virtual_frame(interp, sv.linfo)
-    msg = length(throw_calls) == 1 ? "may throw" : "may throw either of"
-    sig = Any[]
-    ncalls = length(throw_calls)
-    for (i, call) in enumerate(throw_calls)
-        call_sig = _get_sig(interp, sv, call)
-        append!(sig, call_sig)
-        i ≠ ncalls && push!(sig, ", ")
-    end
-    return UncaughtExceptionReport([vf], msg, sig, throw_calls)
-end
-
-"""
-    NativeRemark <: InferenceErrorReport
-
-This special `InferenceErrorReport` wraps remarks by `NativeInterpreter`.
-"remarks" are information that Julia's native compiler emits about how its type inference goes,
-and those remarks are less interesting in term of "error checking", so currently any of JET's
-pre-defined report passes doesn't make any use of `NativeRemark`.
-"""
-@reportdef struct NativeRemark <: InferenceErrorReport
-    s::String
-end
-get_msg(::Type{NativeRemark}, interp, sv::InferenceState, s::String) = s
