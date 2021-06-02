@@ -1,3 +1,7 @@
+using JET
+
+@report_call inference_logger=IOContext(stdout, :JET_LOGGER_LEVEL=>1) sum("julia")
+
 # FIXME: temporal patches to improve inferrability of Base methods
 include("patches.jl")
 
