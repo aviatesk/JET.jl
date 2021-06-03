@@ -33,4 +33,8 @@ include("setup.jl")
     @testset "performance" begin
         include("test_performance.jl")
     end
+
+    @testset "interface.jl" begin
+        include("test_interfaces.jl")
+    end
 end

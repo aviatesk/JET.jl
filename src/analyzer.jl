@@ -413,11 +413,11 @@ JETAnalysisParams(analyzer::AbstractAnalyzer) = get_analysis_params(analyzer)
 @inline report_pass!(T::Type{<:InferenceErrorReport}, analyzer::AbstractAnalyzer, linfo::Union{InferenceState,MethodInstance}, @nospecialize(spec_args...)) =
     ReportPass(analyzer)(T, analyzer, linfo, spec_args...)
 
-function report!(T::Type{<:InferenceErrorReport}, analyzer::AbstractAnalyzer,  @nospecialize(spec_args...))
-    push!(get_reports(analyzer), T(analyzer, spec_args...))
+function report!(T::Type{<:InferenceErrorReport}, analyzer::AbstractAnalyzer,  @nospecialize(args...))
+    push!(get_reports(analyzer), T(analyzer, args...))
 end
-function report!(T::Type{UncaughtExceptionReport}, analyzer::AbstractAnalyzer,  @nospecialize(spec_args...))
-    push!(get_uncaught_exceptions(analyzer), T(analyzer, spec_args...))
+function report!(T::Type{UncaughtExceptionReport}, analyzer::AbstractAnalyzer,  @nospecialize(args...))
+    push!(get_uncaught_exceptions(analyzer), T(analyzer, args...))
 end
 
 function restore_cached_report!(cache::InferenceErrorReportCache, analyzer::AbstractAnalyzer)

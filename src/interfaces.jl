@@ -219,7 +219,7 @@ Base.show(io::IO, ::MIME"application/prs.juno.inline", report::T) where {T<:Infe
     return report
 
 get_msg(T::Type{<:InferenceErrorReport}, analyzer, sv::InferenceState, @nospecialize(spec_args...)) = throw("`get_msg` isn't implemented for $T")
-get_spec_args(r::InferenceErrorReport) = throw("`get_spec_args` isn't implemented for $T")
+get_spec_args(T::Type{<:InferenceErrorReport}) = throw("`get_spec_args` isn't implemented for $T")
 
 # default constructor to create a report from abstract interpretation routine
 function (T::Type{<:InferenceErrorReport})(analyzer, sv::InferenceState, @nospecialize(spec_args...))
