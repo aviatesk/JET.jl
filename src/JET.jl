@@ -16,7 +16,7 @@ const CC = Core.Compiler
 # imports
 # =======
 
-# `JETInterpreter`
+# `AbstractAnalyzer`
 import .CC:
     # abstractinterpreterinterface.jl
     InferenceParams,
@@ -69,8 +69,9 @@ import JuliaInterpreter:
 # TODO: really use `using` instead
 
 import Core:
-    Intrinsics,
     Builtin,
+    Intrinsics,
+    IntrinsicFunction,
     MethodMatch,
     LineInfoNode,
     CodeInfo,
@@ -202,6 +203,12 @@ else
     ignorelimited(@nospecialize(x)) = x
 end
 
+@static if isdefined(Base, Symbol("@aggressive_constprop"))
+    import Base: @aggressive_constprop
+else
+    macro aggressive_constprop(x) esc(x) end # not available
+end
+
 # early take in https://github.com/JuliaLang/julia/pull/41040
 function gen_call_with_extracted_types_and_kwargs(__module__, fcn, ex0)
     kws = Expr[]
@@ -248,11 +255,11 @@ When an argument's type annotation is omitted, it's specified as `Any` argument,
 `@invoke f(arg1::T, arg2)` will be expanded into `invoke(f, Tuple{T,Any}, arg1, arg2)`.
 
 This could be used to call down to `NativeInterpreter`'s abstract interpretation method of
-  `f` while passing `JETInterpreter` so that subsequent calls of abstract interpretation
-  functions overloaded against `JETInterpreter` can be called from the native method of `f`;
+  `f` while passing `AbstractAnalyzer` so that subsequent calls of abstract interpretation
+  functions overloaded against `AbstractAnalyzer` can be called from the native method of `f`;
 e.g. calls down to `NativeInterpreter`'s `abstract_call_gf_by_type` method:
 ```julia
-@invoke abstract_call_gf_by_type(interp::AbstractInterpreter, f, argtypes::Vector{Any}, atype, sv::InferenceState,
+@invoke abstract_call_gf_by_type(analyzer::AbstractInterpreter, f, argtypes::Vector{Any}, atype, sv::InferenceState,
                                  max_methods::Int)
 ```
 """
@@ -423,14 +430,14 @@ macro jetconfigurable(funcdef)
             kwargname = (@isexpr(kwargex, :(::)) ? first(kwargex.args) : kwargex)::Symbol
             othername = get!(_JET_CONFIGURATIONS, kwargname, thisname)
             # allows same configurations for same generic function or function refinement
-            @assert thisname === othername "`$thisname` uses `$kwargname` JET configuration name which is already used by `$othername`"
+            @assert thisname == othername "`$thisname` uses `$kwargname` JET configuration name which is already used by `$othername`"
         end
         found || push!(kwargs.args, :(jetconfigs...))
     end
 
     return esc(funcdef)
 end
-const _JET_CONFIGURATIONS = Dict{Symbol,Symbol}()
+const _JET_CONFIGURATIONS = Dict{Symbol,Union{Symbol,Expr}}()
 
 # utils
 # -----
@@ -472,16 +479,21 @@ ignorenotfound(@nospecialize(t)) = t === NOT_FOUND ? Bottom : t
 # includes
 # ========
 
-include("reports.jl")
-include("abstractinterpreterinterface.jl")
-include("jetcache.jl")
+# interface
+include("interfaces.jl")
+# abstract-interpretaion based analysis
 include("tfuncs.jl")
 include("abstractinterpretation.jl")
 include("typeinfer.jl")
 include("optimize.jl")
+include("analyzer.jl")
+include("jetcache.jl")
+# top-level analysis
 include("graph.jl")
 include("virtualprocess.jl")
+# watch mode
 include("watch.jl")
+# UIs
 include("print.jl")
 
 # entry
@@ -734,31 +746,33 @@ report_text(args...; jetconfigs...) = report_text(stdout::IO, args...; jetconfig
 
 function analyze_text(text::AbstractString,
                       filename::AbstractString = "top-level";
-                      jetconfigs...)
-    interp = JETInterpreter(; jetconfigs...)
+                      analyzer::Type{T} = JETAnalyzer,
+                      jetconfigs...) where {T<:AbstractAnalyzer}
+    analyzer = T(; jetconfigs...)
+    maybe_initialize_caches!(analyzer)
     config = ToplevelConfig(; jetconfigs...)
     return virtual_process(text,
                            filename,
-                           interp,
+                           analyzer,
                            config,
                            )
 end
 
-function analyze_toplevel!(interp::JETInterpreter, src::CodeInfo)
+function analyze_toplevel!(analyzer::AbstractAnalyzer, src::CodeInfo)
     # construct toplevel `MethodInstance`
     mi = ccall(:jl_new_method_instance_uninit, Ref{Core.MethodInstance}, ());
     mi.uninferred = src
     mi.specTypes = Tuple{}
 
-    transform_abstract_global_symbols!(interp, src)
-    mi.def = interp.toplevelmod
+    transform_abstract_global_symbols!(analyzer, src)
+    mi.def = get_toplevelmod(analyzer)
 
     result = InferenceResult(mi);
     # toplevel frame doesn't need to be cached (and so it won't be optimized), nor should
     # go through JET's code generation error check
-    frame = InferenceState(result, src, #=cached=# false, interp);
+    frame = InferenceState(result, src, #=cached=# false, analyzer);
 
-    return analyze_frame!(interp, frame)
+    return analyze_frame!(analyzer, frame)
 end
 
 # HACK this is an native hack to re-use `AbstractInterpreter`'s approximated slot types for
@@ -768,10 +782,10 @@ end
 # NOTE that `transform_abstract_global_symbols!` will produce really invalid code for
 # actual interpretation or execution, but all the statements won't be interpreted anymore
 # by `ConcreteInterpreter` nor executed anyway since toplevel frames aren't cached
-function transform_abstract_global_symbols!(interp::JETInterpreter, src::CodeInfo)
+function transform_abstract_global_symbols!(analyzer::AbstractAnalyzer, src::CodeInfo)
     nslots = length(src.slotnames)
     abstrct_global_variables = Dict{Symbol,Int}()
-    concretized = interp.concretized
+    concretized = get_concretized(analyzer)
 
     # linear scan, and find assignments of abstract global variables
     for (i, stmt) in enumerate(src.code::Vector{Any})
@@ -802,13 +816,13 @@ function transform_abstract_global_symbols!(interp::JETInterpreter, src::CodeInf
         src.slotnames[idx] = slotname
     end
 
-    interp.global_slots = Dict(idx => slotname for (slotname, idx) in abstrct_global_variables)
+    AnalyzerState(analyzer).global_slots = Dict(idx => slotname for (slotname, idx) in abstrct_global_variables)
 end
 
 # TODO `analyze_call_builtin!` ?
-function analyze_gf_by_type!(interp::JETInterpreter, @nospecialize(tt::Type{<:Tuple}))
-    mm = get_single_method_match(tt, InferenceParams(interp).MAX_METHODS, get_world_counter(interp))
-    return analyze_method_signature!(interp, mm.method, mm.spec_types, mm.sparams)
+function analyze_gf_by_type!(analyzer::AbstractAnalyzer, @nospecialize(tt::Type{<:Tuple}))
+    mm = get_single_method_match(tt, InferenceParams(analyzer).MAX_METHODS, get_world_counter(analyzer))
+    return analyze_method_signature!(analyzer, mm.method, mm.spec_types, mm.sparams)
 end
 
 function get_single_method_match(@nospecialize(tt), lim, world)
@@ -821,8 +835,8 @@ function get_single_method_match(@nospecialize(tt), lim, world)
     return first(mms)::MethodMatch
 end
 
-analyze_method!(interp::JETInterpreter, m::Method) =
-    analyze_method_signature!(interp, m, m.sig, method_sparams(m))
+analyze_method!(analyzer::AbstractAnalyzer, m::Method) =
+    analyze_method_signature!(analyzer, m, m.sig, method_sparams(m))
 
 function method_sparams(m::Method)
     s = TypeVar[]
@@ -834,54 +848,62 @@ function method_sparams(m::Method)
     return svec(s...)
 end
 
-analyze_method_signature!(interp::JETInterpreter, m::Method, @nospecialize(atype), sparams::SimpleVector) =
-    analyze_method_instance!(interp, specialize_method(m, atype, sparams))
+analyze_method_signature!(analyzer::AbstractAnalyzer, m::Method, @nospecialize(atype), sparams::SimpleVector) =
+    analyze_method_instance!(analyzer, specialize_method(m, atype, sparams))
 
-function analyze_method_instance!(interp::JETInterpreter, mi::MethodInstance)
+function analyze_method_instance!(analyzer::AbstractAnalyzer, mi::MethodInstance)
     result = InferenceResult(mi)
 
-    frame = InferenceState(result, #=cached=# true, interp)
-    isnothing(frame) && return interp, nothing
+    frame = InferenceState(result, #=cached=# true, analyzer)
+    isnothing(frame) && return analyzer, nothing
 
-    return analyze_frame!(interp, frame)
+    return analyze_frame!(analyzer, frame)
 end
 
-function InferenceState(result::InferenceResult, cached::Bool, interp::JETInterpreter)
-    may_report_retrieve_code_info!(interp, result.linfo)
-    return @invoke InferenceState(result::InferenceResult, cached::Bool, interp::AbstractInterpreter)
+function InferenceState(result::InferenceResult, cached::Bool, analyzer::AbstractAnalyzer)
+    report_pass!(GeneratorErrorReport, analyzer, result.linfo)
+    return @invoke InferenceState(result::InferenceResult, cached::Bool, analyzer::AbstractInterpreter)
 end
 
+@reportdef struct GeneratorErrorReport <: InferenceErrorReport
+    @nospecialize(err) # actual error wrapped
+end
+function GeneratorErrorReport(analyzer::AbstractAnalyzer, linfo::MethodInstance, @nospecialize(err))
+    vst = VirtualFrame[get_virtual_frame(analyzer, linfo)]
+    msg = sprint(showerror, err)
+    sig = get_sig(analyzer, linfo)
+    return GeneratorErrorReport(vst, msg, sig, err)
+end
+
+# XXX what's the "soundness" of a `@generated` function ?
 # adapated from https://github.com/JuliaLang/julia/blob/f806df603489cfca558f6284d52a38f523b81881/base/compiler/utilities.jl#L107-L137
-function may_report_retrieve_code_info!(interp::JETInterpreter, linfo::MethodInstance)
-    m = linfo.def::Method
+function (::SoundBasicPass)(::Type{GeneratorErrorReport}, analyzer::AbstractAnalyzer, mi::MethodInstance)
+    m = mi.def::Method
     if isdefined(m, :generator)
-        may_report_get_staged!(interp, linfo)
-    end
-end
-function may_report_get_staged!(interp::JETInterpreter, mi::MethodInstance)
-    # analyze_method_instance!(interp, mi) XXX doesn't work
-    may_invoke_generator(mi) || return
-    try
-        ccall(:jl_code_for_staged, Any, (Any,), mi)
-    catch err
-        # if user code throws error, wrap and report it
-        report!(interp, GeneratorErrorReport(interp, mi, err))
+        # analyze_method_instance!(analyzer, linfo) XXX doesn't work
+        may_invoke_generator(mi) || return
+        try
+            ccall(:jl_code_for_staged, Any, (Any,), mi)
+        catch err
+            # if user code throws error, wrap and report it
+            report!(GeneratorErrorReport, analyzer, mi, err)
+        end
     end
 end
 
-function analyze_frame!(interp::JETInterpreter, frame::InferenceState)
-    typeinf(interp, frame)
+function analyze_frame!(analyzer::AbstractAnalyzer, frame::InferenceState)
+    typeinf(analyzer, frame)
 
     # report `throw` calls "appropriately";
     # if the final return type here is `Bottom`-annotated, it _may_ mean the control flow
-    # didn't catch some of the `UncaughtExceptionReport`s stashed within `interp.uncaught_exceptions`,
+    # didn't catch some of the `UncaughtExceptionReport`s stashed within `uncaught_exceptions(analyzer)`,
     if get_result(frame) === Bottom
-        if !isempty(interp.uncaught_exceptions)
-            append!(interp.reports, interp.uncaught_exceptions)
+        if !isempty(get_uncaught_exceptions(analyzer))
+            append!(get_reports(analyzer), get_uncaught_exceptions(analyzer))
         end
     end
 
-    return interp, frame
+    return analyzer, frame
 end
 
 # test, interactive
@@ -904,14 +926,16 @@ macro analyze_call(ex0...)
 end
 
 """
-    analyze_call(f, types = Tuple{}; jetconfigs...) -> (interp::JETInterpreter, frame::Union{InferenceFrame,Nothing})
+    analyze_call(f, types = Tuple{}; jetconfigs...) -> (analyzer::AbstractAnalyzer, frame::Union{InferenceFrame,Nothing})
 
 Analyzes the generic function call with the given type signature, and returns:
-- `interp::JETInterpreter`: contains analyzed error reports and such
+- `analyzer::AbstractAnalyzer`: contains analyzed error reports and such
 - `frame::Union{InferenceFrame,Nothing}`: the final state of the abstract interpretation,
   or `nothing` if `f` is a generator and the code generation failed
 """
-function analyze_call(@nospecialize(f), @nospecialize(types = Tuple{}); jetconfigs...)
+function analyze_call(@nospecialize(f), @nospecialize(types = Tuple{});
+                      analyzer::Type{T} = JETAnalyzer,
+                      jetconfigs...) where {T<:AbstractAnalyzer}
     ft = Core.Typeof(f)
     if isa(types, Type)
         u = unwrap_unionall(types)
@@ -920,8 +944,9 @@ function analyze_call(@nospecialize(f), @nospecialize(types = Tuple{}); jetconfi
         tt = Tuple{ft, types...}
     end
 
-    interp = JETInterpreter(; jetconfigs...)
-    return analyze_gf_by_type!(interp, tt)
+    analyzer = T(; jetconfigs...)
+    maybe_initialize_caches!(analyzer)
+    return analyze_gf_by_type!(analyzer, tt)
 end
 
 """
@@ -947,11 +972,11 @@ Analyzes the generic function call with the given type signature, and then print
   error points to `stdout`, and finally returns the result type of the call.
 """
 function report_call(@nospecialize(f), @nospecialize(types = Tuple{}); jetconfigs...)
-    interp, frame = analyze_call(f, types; jetconfigs...)
-    print_reports(interp.reports; jetconfigs...)
+    analyzer, frame = analyze_call(f, types; jetconfigs...)
+    print_reports(get_reports(analyzer); jetconfigs...)
     if isnothing(frame)
         # if there is `GeneratorErrorReport`, it means the code generation happened and failed
-        return any(r->isa(r, GeneratorErrorReport), interp.reports) ? Bottom : Any
+        return any(r->isa(r, GeneratorErrorReport), get_reports(analyzer)) ? Bottom : Any
     end
     return get_result(frame)
 end
@@ -963,6 +988,51 @@ macro src(ex) QuoteNode(first(lower(__module__, ex).args)) end
 # exports
 # =======
 
+"""
+    JETInterfaces
+
+This `baremodule` exports names that form the APIs of [JET.jl Pluggable Analysis Framework](@ref).
+If you are going to define a plug-in analysis, `using JET.JETInterfaces` will load most useful
+names described below.
+"""
+baremodule JETInterfaces
+const DOCUMENTED_NAMES = Symbol[] # will be used in docs/make.jl
+end
+
+function reexport_as_api!(xs...; documented = true)
+    for x in xs
+        ex = Expr(:block)
+
+        val = Core.eval(@__MODULE__, x)
+        canonicalname = Symbol(parentmodule(val), '.', nameof(val))
+        canonicalpath = Symbol.(split(string(canonicalname), '.'))
+
+        modpath = Expr(:., canonicalpath[1:end-1]...)
+        symname = last(canonicalpath)
+        sympath = Expr(:., symname)
+        importex = Expr(:import, Expr(:(:), modpath, sympath))
+        exportex = Expr(:export, symname)
+
+        push!(ex.args, importex, exportex)
+        Core.eval(JETInterfaces, ex)
+        documented && push!(JETInterfaces.DOCUMENTED_NAMES, symname)
+    end
+end
+
+reexport_as_api!(AbstractAnalyzer,
+                 AnalyzerState,
+                 InferenceErrorReport,
+                 get_msg,
+                 get_spec_args,
+                 var"@reportdef",
+                 ReportPass,
+                 report_pass!,
+                 report!,
+                 )
+reexport_as_api!(subtypes(InferenceErrorReport)...; documented = false)
+reexport_as_api!(subtypes(ReportPass)...; documented = false)
+
+# export entries
 export
     report_file,
     report_and_watch_file,

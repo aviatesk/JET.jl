@@ -7,7 +7,7 @@
     The `report_xxx` entries are for general users, while `analyze_xxx` is mainly for internal usages or debugging purposes.
 
 
-## [Entry Points into Analysis](@id Analysis entry points)
+## [Entry Points into Analysis](@id entry-points)
 
 JET can analyze your "top-level" code.
 This means you can just give your Julia file or code to JET and get error reports.
@@ -31,7 +31,7 @@ report_text
 ```
 
 
-## Testing, Interactive Usage
+## [Testing, Interactive Usage](@id interactive-entries)
 
 There are utilities for checking JET analysis in a running Julia session like REPL or such.
 

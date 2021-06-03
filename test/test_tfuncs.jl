@@ -1,10 +1,10 @@
 @testset "report invalid builtin call" begin
-    interp, frame = analyze_call((Int, Type{Int}, Any)) do a, b, c
+    analyzer, frame = analyze_call((Int, Type{Int}, Any)) do a, b, c
         isa(a, b, c)
     end
-    @test length(interp.reports) === 1
-    report = first(interp.reports)
-    @test report isa InvalidBuiltinCallErrorReport &&
+    @test length(get_reports(analyzer)) === 1
+    report = first(get_reports(analyzer))
+    @test report isa UnimplementedBuiltinCallErrorReport &&
         widenconst.(report.argtypes) == [Int, Type{Int}, Any]
 
     @testset "constant propagation" begin
@@ -16,35 +16,35 @@
             access_field(t, sym) = getfield(t, sym)
         end)
 
-        interp, frame = Core.eval(m, quote
+        analyzer, frame = Core.eval(m, quote
             $analyze_call(t->access_field(t,:v), (T,))
         end)
-        @test isempty(interp.reports)
+        @test isempty(get_reports(analyzer))
 
-        interp, frame = Core.eval(m, quote
+        analyzer, frame = Core.eval(m, quote
             $analyze_call(t->access_field(t,:w), (T,))
         end)
-        @test length(interp.reports) === 1
-        er = first(interp.reports)
+        @test length(get_reports(analyzer)) === 1
+        er = first(get_reports(analyzer))
         @test er isa NoFieldErrorReport
         @test er.typ === m.T
         @test er.name === :w
 
-        interp, frame = Core.eval(m, quote
+        analyzer, frame = Core.eval(m, quote
             $analyze_call(t->access_field(t,:v), (T,))
         end)
-        @test isempty(interp.reports)
+        @test isempty(get_reports(analyzer))
     end
 end
 
 @testset "malformed getfield" begin
     let
         # shouldn't error
-        interp, frame = analyze_call((Any,)) do a
+        analyzer, frame = analyze_call((Any,)) do a
             getfield(a)
         end
-        @test length(interp.reports) == 1
-        @test first(interp.reports) isa InvalidBuiltinCallErrorReport
+        @test length(get_reports(analyzer)) == 1
+        @test first(get_reports(analyzer)) isa UnimplementedBuiltinCallErrorReport
     end
 end
 
@@ -97,24 +97,24 @@ end
 @testset "special case `return_type`" begin
     # don't report invalid method calls simulated in `return_type_tfunc`
     let
-        interp, frame = analyze_call(()->CC.return_type(sum, Tuple{String}))
-        @test isempty(interp.reports)
+        analyzer, frame = analyze_call(()->CC.return_type(sum, Tuple{String}))
+        @test isempty(get_reports(analyzer))
     end
 
     # report invalid call of `return_type` itself
     let
-        interp, frame = analyze_call(()->CC.return_type(sum))
-        @test length(interp.reports) == 1
-        @test isa(first(interp.reports), InvalidReturnTypeCall)
+        analyzer, frame = analyze_call(()->CC.return_type(sum))
+        @test length(get_reports(analyzer)) == 1
+        @test isa(first(get_reports(analyzer)), InvalidReturnTypeCall)
     end
 
     # end to end
     let
         # this shouldn't report "no matching method found for call signature: Base.iterate(itr::DataType)"
         # , which otherwise will be caught in `abstract_cal` in `return_type_tfunc`
-        interp, frame = analyze_call(()->Dict('a' => 1,
+        analyzer, frame = analyze_call(()->Dict('a' => 1,
                                               :b => 2)
                                      )
-        @test isempty(interp.reports)
+        @test isempty(get_reports(analyzer))
     end
 end

@@ -6,7 +6,8 @@ import .CC:
     widenconst, ⊑
 
 import JET:
-    JETInterpreter,
+    AbstractAnalyzer,
+    JETAnalyzer,
     AbstractGlobal,
     analyze_file,
     analyze_text,
@@ -17,7 +18,9 @@ import JET:
     gen_virtual_module,
     ToplevelErrorReport,
     InferenceErrorReport,
-    print_reports
+    print_reports,
+    get_reports,
+    get_cache
 
 function subtypes_recursive!(t, ts)
     push!(ts, t)
@@ -34,13 +37,13 @@ let
     subtypes_recursive!(ToplevelErrorReport, ts)
     subtypes_recursive!(InferenceErrorReport, ts)
     for t in ts
-        canonical = split(string(t), '.')
-        if length(canonical) > 1 # not imported yet
-            modpath = Expr(:., Symbol.(canonical[1:end-1])...)
-            symname = Expr(:., Symbol(last(canonical)))
-            ex = Expr(:import, Expr(:(:), modpath, symname))
-            Core.eval(@__MODULE__, ex)
-        end
+        canonicalname = Symbol(parentmodule(t), '.', nameof(t))
+        canonicalpath = Symbol.(split(string(canonicalname), '.'))
+
+        modpath = Expr(:., canonicalpath[1:end-1]...)
+        symname = Expr(:., last(canonicalpath))
+        ex = Expr(:import, Expr(:(:), modpath, symname))
+        Core.eval(@__MODULE__, ex)
     end
 end
 
@@ -111,11 +114,12 @@ function _analyze_toplevel(ex, lnn, jetconfigs)
                   Expr(:toplevel, lnn, ex)
                   ) |> QuoteNode
     return :(let
-        interp = JETInterpreter(; $(map(esc, jetconfigs)...))
+        state =  $(GlobalRef(JET, :AnalyzerState))(; $(map(esc, jetconfigs)...))
+        analyzer = $(GlobalRef(JET, :AbstractAnalyzer))($(GlobalRef(JET, :JETAnalyzer))(), state)
         config = ToplevelConfig(; $(map(esc, jetconfigs)...))
         $virtual_process($toplevelex,
                          $(string(lnn.file)),
-                         interp,
+                         analyzer,
                          config,
                          )
     end)

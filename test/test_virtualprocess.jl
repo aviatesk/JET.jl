@@ -242,7 +242,7 @@ end
             foo = Foo(gb)
         end
 
-        # global variables aren't evaluated but kept in `interp` instead
+        # global variables aren't evaluated but kept in `analyzer` instead
         @test is_abstract(vmod, :gb)
         @test isa_abstract(vmod.gb, Bool)
         @test is_concrete(vmod, :Foo)

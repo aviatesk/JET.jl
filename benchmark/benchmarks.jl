@@ -135,9 +135,9 @@ SUITE["invalidation"] = @jetbenchmarkable (@analyze_call println(QuoteNode(nothi
 end
 SUITE["self analysis"] = @jetbenchmarkable(
     begin
-        interp = JET.JETInterpreter()
+        analyzer = JET.JETAnalyzer()
         m = methods(JET.virtual_process).ms[1]
-        JET.analyze_method!(interp, m)
+        JET.analyze_method!(analyzer, m)
     end,
     setup = begin
         using JET
