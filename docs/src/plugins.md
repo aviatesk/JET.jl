@@ -5,8 +5,9 @@ The documentation for the framework is very WIP.
 ## Interfaces
 
 ```@docs
-JET.AbstractAnalyzer
-JET.ReportPass
+JET.JETInterfaces.AbstractAnalyzer
+JET.JETInterfaces.ReportPass
+JET.JETInterfaces
 ```
 
 ## Examples

@@ -37,13 +37,13 @@ let
     subtypes_recursive!(ToplevelErrorReport, ts)
     subtypes_recursive!(InferenceErrorReport, ts)
     for t in ts
-        canonical = split(string(t), '.')
-        if length(canonical) > 1 # not imported yet
-            modpath = Expr(:., Symbol.(canonical[1:end-1])...)
-            symname = Expr(:., Symbol(last(canonical)))
-            ex = Expr(:import, Expr(:(:), modpath, symname))
-            Core.eval(@__MODULE__, ex)
-        end
+        canonicalname = Symbol(parentmodule(t), '.', nameof(t))
+        canonicalpath = Symbol.(split(string(canonicalname), '.'))
+
+        modpath = Expr(:., canonicalpath[1:end-1]...)
+        symname = Expr(:., last(canonicalpath))
+        ex = Expr(:import, Expr(:(:), modpath, symname))
+        Core.eval(@__MODULE__, ex)
     end
 end
 

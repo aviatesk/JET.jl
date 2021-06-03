@@ -988,6 +988,61 @@ macro src(ex) QuoteNode(first(lower(__module__, ex).args)) end
 # exports
 # =======
 
+macro reexport(ex)
+    ret = Expr(:block)
+
+    xs = @isexpr(ex, :tuple) ? ex.args : (ex,)
+    for x in xs
+        val = Core.eval(__module__, x)
+        canonicalname = Symbol(parentmodule(val), '.', nameof(val))
+        canonicalpath = Symbol.(split(string(canonicalname), '.'))
+
+        modpath = Expr(:., canonicalpath[1:end-1]...)
+        symname = last(canonicalpath)
+        sympath = Expr(:., symname)
+        importex = Expr(:import, Expr(:(:), modpath, sympath))
+        exportex = Expr(:export, symname)
+
+        push!(ret.args, importex)
+        push!(ret.args, exportex)
+    end
+
+    return ret
+end
+
+"""
+    JETInterfaces
+
+This `baremodule` exports names that form the APIs of [JET.jl Pluggable Analysis Framework](@ref).
+If you are going to define a plug-in analysis, you can load most useful names just by `using JET.JETInterfaces`.
+"""
+baremodule JETInterfaces
+
+using ..JET: JET
+using ..JET: @reexport
+using Base: @eval
+using Core: QuoteNode
+using InteractiveUtils: subtypes
+
+@reexport JET.AbstractAnalyzer,
+          JET.AnalyzerState,
+          JET.InferenceErrorReport,
+          JET.get_msg,
+          JET.get_spec_args,
+          JET.var"@reportdef",
+          JET.ReportPass,
+          JET.report_pass!,
+          JET.report!
+for t in subtypes(JET.InferenceErrorReport)
+    @eval @reexport $(QuoteNode(t))
+end
+for t in subtypes(JET.ReportPass)
+    @eval @reexport $(QuoteNode(t))
+end
+
+end # baremodule JETInterface
+
+# export entries
 export
     report_file,
     report_and_watch_file,

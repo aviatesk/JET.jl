@@ -28,35 +28,34 @@ This analysis is motivated by [this discussion](https://github.com/JuliaLang/jul
 """
 module find_unstable_api
 
-using JET
-
 # plug-in analysis implementation
 # ===============================
 
-const CC = Core.Compiler
+using JET.JETInterfaces  # to load APIs
+const CC = Core.Compiler # to inject a customized report pass
 
-struct UnstableAPIAnalyzer{T} <: JET.AbstractAnalyzer
-    state::JET.AnalyzerState
+struct UnstableAPIAnalyzer{T} <: AbstractAnalyzer
+    state::AnalyzerState
     is_target_module::T
 end
 function UnstableAPIAnalyzer(;
     is_target_module = ==(@__MODULE__),
     jetconfigs...)
-    return UnstableAPIAnalyzer(JET.AnalyzerState(; jetconfigs...), is_target_module)
+    return UnstableAPIAnalyzer(AnalyzerState(; jetconfigs...), is_target_module)
 end
-JET.AnalyzerState(analyzer::UnstableAPIAnalyzer) = analyzer.state
-JET.AbstractAnalyzer(analyzer::UnstableAPIAnalyzer, state::JET.AnalyzerState) =
+JETInterfaces.AnalyzerState(analyzer::UnstableAPIAnalyzer) = analyzer.state
+JETInterfaces.AbstractAnalyzer(analyzer::UnstableAPIAnalyzer, state::AnalyzerState) =
     UnstableAPIAnalyzer(state, analyzer.is_target_module)
-JET.ReportPass(analyzer::UnstableAPIAnalyzer) = UnstableAPIAnalysisPass()
+JETInterfaces.ReportPass(analyzer::UnstableAPIAnalyzer) = UnstableAPIAnalysisPass()
 
-struct UnstableAPIAnalysisPass <: JET.ReportPass end
+struct UnstableAPIAnalysisPass <: ReportPass end
 
 function CC.abstract_eval_special_value(analyzer::UnstableAPIAnalyzer, @nospecialize(e), vtypes::CC.VarTable, sv::CC.InferenceState)
     if analyzer.is_target_module(sv.mod) # we care only about what we wrote
-        JET.report_pass!(UnstableAPI, analyzer, sv, e)
+        report_pass!(UnstableAPI, analyzer, sv, e)
     end
 
-    return Base.@invoke CC.abstract_eval_special_value(analyzer::JET.AbstractAnalyzer, e, vtypes::CC.VarTable, sv::CC.InferenceState)
+    return Base.@invoke CC.abstract_eval_special_value(analyzer::AbstractAnalyzer, e, vtypes::CC.VarTable, sv::CC.InferenceState)
 end
 
 function CC.builtin_tfunction(analyzer::UnstableAPIAnalyzer, @nospecialize(f), argtypes::Vector{Any}, sv::CC.InferenceState)
@@ -67,28 +66,28 @@ function CC.builtin_tfunction(analyzer::UnstableAPIAnalyzer, @nospecialize(f), a
                 if isa(a2, Core.Const) && (v2 = a2.val; isa(v2, Symbol))
                     if analyzer.is_target_module(sv.mod) || # we care only about what we wrote, but with relaxed filter
                        (parent = sv.parent; isa(parent, CC.InferenceState) && analyzer.is_target_module(parent.mod))
-                        JET.report_pass!(UnstableAPI, analyzer, sv, GlobalRef(v1, v2))
+                        report_pass!(UnstableAPI, analyzer, sv, GlobalRef(v1, v2))
                     end
                 end
             end
         end
     end
 
-    return Base.@invoke CC.builtin_tfunction(analyzer::JET.AbstractAnalyzer, f, argtypes::Vector{Any}, sv::CC.InferenceState)
+    return Base.@invoke CC.builtin_tfunction(analyzer::AbstractAnalyzer, f, argtypes::Vector{Any}, sv::CC.InferenceState)
 end
 
-# ignore report passes implemented within JET.jl
-(::UnstableAPIAnalysisPass)(T::Type{<:JET.InferenceErrorReport}, analyzer, linfo, @nospecialize(spec_args...)) = return
+# ignore default report passes
+(::UnstableAPIAnalysisPass)(T::Type{<:InferenceErrorReport}, analyzer, linfo, @nospecialize(spec_args...)) = return
 
-# except undefined global references
-function (::UnstableAPIAnalysisPass)(T::Type{JET.GlobalUndefVarErrorReport}, analyzer, linfo, @nospecialize(spec_args...))
-    JET.BasicPass()(T, analyzer, linfo, spec_args...)
+# except the report of undefined global references
+function (::UnstableAPIAnalysisPass)(T::Type{GlobalUndefVarErrorReport}, analyzer, linfo, @nospecialize(spec_args...))
+    BasicPass()(T, analyzer, linfo, spec_args...)
 end
 
-JET.@reportdef struct UnstableAPI <: JET.InferenceErrorReport
+@reportdef struct UnstableAPI <: InferenceErrorReport
     g::GlobalRef
 end
-function JET.get_msg(::Type{UnstableAPI}, analyzer::UnstableAPIAnalyzer, sv::CC.InferenceState, g::GlobalRef)
+function JETInterfaces.get_msg(::Type{UnstableAPI}, analyzer::UnstableAPIAnalyzer, sv::CC.InferenceState, g::GlobalRef)
     (; mod, name) = Base.resolve(g) # resolve to original name
     return "$mod.$name is unstable !"
 end
@@ -101,7 +100,7 @@ function (::UnstableAPIAnalysisPass)(::Type{UnstableAPI}, analyzer::UnstableAPIA
         analyzer.is_target_module(mod) && return # we don't care about what we defined ourselves
 
         if isunstable(mod, name)
-            JET.report!(UnstableAPI, analyzer, sv, e)
+            report!(UnstableAPI, analyzer, sv, e)
         end
     end
 end
@@ -141,8 +140,13 @@ function hasdoc(mod, name)
     return false
 end
 
-# test simple cases
-# =================
+# usages
+# ======
+
+using JET # to use analysis entry points
+
+# simple cases
+# ------------
 
 # a function
 function some_reflection_code(@nospecialize(f))
@@ -151,9 +155,7 @@ end
 @report_call analyzer=UnstableAPIAnalyzer some_reflection_code(sin)
 
 # global variable
-module foo
-bar = 1
-end
+module foo; bar = 1 end
 report_call((Any,); analyzer=UnstableAPIAnalyzer) do a
     foo.bar + a # foo.bar is unstable
 end
@@ -165,12 +167,11 @@ report_call((Any,); analyzer=UnstableAPIAnalyzer) do mi
     ci = hasgenerator(mi) ? Core.Compiler.get_staged(mi) : Base.uncompressed_ast(mi)
 end
 
-# test real-world package
-# =======================
-
+# analyze real-world package
+# --------------------------
 # IRTools uses `Base.isgenerator`, which invoked the discussion at https://github.com/JuliaLang/julia/pull/40745#issuecomment-850876150
 
 is_irtools(mod) = occursin("IRTools", string(Symbol(mod))) # module context will be virtualized, thus use string match
 report_package("IRTools"; analyzer=UnstableAPIAnalyzer, is_target_module=is_irtools)
 
-end # module find_unstable_api
+end # find_unstable_api

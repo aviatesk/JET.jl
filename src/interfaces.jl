@@ -6,7 +6,7 @@
 
 When `T` implements this interface (i.e. `T <: AbstractAnalyzer`), `T` is expected to implement:
 - `T(; jetconfigs...) -> T`:
-  constructs new analyzer given [JET configurations](@ref JET configurations);
+  constructs new analyzer given [JET configurations](@ref);
   `AnalyzerState` for this analyzer should be constructed using these configurations
 - `AnalyzerState(analyzer::T) -> AnalyzerState`:
   returns `AnalyzerState` instance, usually it's kept within `T` itself
