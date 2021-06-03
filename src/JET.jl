@@ -988,12 +988,22 @@ macro src(ex) QuoteNode(first(lower(__module__, ex).args)) end
 # exports
 # =======
 
-macro reexport(ex)
-    ret = Expr(:block)
+"""
+    JETInterfaces
 
-    xs = @isexpr(ex, :tuple) ? ex.args : (ex,)
+This `baremodule` exports names that form the APIs of [JET.jl Pluggable Analysis Framework](@ref).
+If you are going to define a plug-in analysis, `using JET.JETInterfaces` will load most useful
+names described below.
+"""
+baremodule JETInterfaces
+const DOCUMENTED_NAMES = Symbol[] # will be used in docs/make.jl
+end
+
+function reexport_as_api!(xs...; documented = true)
     for x in xs
-        val = Core.eval(__module__, x)
+        ex = Expr(:block)
+
+        val = Core.eval(@__MODULE__, x)
         canonicalname = Symbol(parentmodule(val), '.', nameof(val))
         canonicalpath = Symbol.(split(string(canonicalname), '.'))
 
@@ -1003,44 +1013,24 @@ macro reexport(ex)
         importex = Expr(:import, Expr(:(:), modpath, sympath))
         exportex = Expr(:export, symname)
 
-        push!(ret.args, importex)
-        push!(ret.args, exportex)
+        push!(ex.args, importex, exportex)
+        Core.eval(JETInterfaces, ex)
+        documented && push!(JETInterfaces.DOCUMENTED_NAMES, symname)
     end
-
-    return ret
 end
 
-"""
-    JETInterfaces
-
-This `baremodule` exports names that form the APIs of [JET.jl Pluggable Analysis Framework](@ref).
-If you are going to define a plug-in analysis, you can load most useful names just by `using JET.JETInterfaces`.
-"""
-baremodule JETInterfaces
-
-using ..JET: JET
-using ..JET: @reexport
-using Base: @eval
-using Core: QuoteNode
-using InteractiveUtils: subtypes
-
-@reexport JET.AbstractAnalyzer,
-          JET.AnalyzerState,
-          JET.InferenceErrorReport,
-          JET.get_msg,
-          JET.get_spec_args,
-          JET.var"@reportdef",
-          JET.ReportPass,
-          JET.report_pass!,
-          JET.report!
-for t in subtypes(JET.InferenceErrorReport)
-    @eval @reexport $(QuoteNode(t))
-end
-for t in subtypes(JET.ReportPass)
-    @eval @reexport $(QuoteNode(t))
-end
-
-end # baremodule JETInterface
+reexport_as_api!(AbstractAnalyzer,
+                 AnalyzerState,
+                 InferenceErrorReport,
+                 get_msg,
+                 get_spec_args,
+                 var"@reportdef",
+                 ReportPass,
+                 report_pass!,
+                 report!,
+                 )
+reexport_as_api!(subtypes(InferenceErrorReport)...; documented = false)
+reexport_as_api!(subtypes(ReportPass)...; documented = false)
 
 # export entries
 export

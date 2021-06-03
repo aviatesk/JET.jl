@@ -1,38 +1,42 @@
-"""
-"Unstable API" Analysis
-=======================
+# # "Unstable API" Analysis
+#
+# ```@meta
+# CurrentModule = JET
+# ```
 
-Julia doesn't have any facilities to truly hide module internals.
-This means, we can always access to whatever defined within a module and use it freely,
-but some of them may be considered as the module's "internal"s and subject to changes.
-When possible, we want to avoid using those "unstable API" s for better maintainability in the future.
-But the problem is, how can we find them already used in an existing code ?
+# ## Motivation
+#
+# Julia doesn't have any facilities to truly hide module internals.
+# This means, we can always access to whatever defined within a module and use it freely,
+# but some of them may be considered as the module's "internal"s and subject to changes.
+# When possible, we want to avoid their usages for better maintainability in the future.
+# But the problem is, how can we automatically find them already used in an existing code ?
+#
+# This analysis is motivated by [this discussion](https://github.com/JuliaLang/julia/pull/40745#issuecomment-850876150).
 
-The following code implements such an analysis as a plug-in analysis under JET.jl framework.
-Let's define "unstable API" s such that, they're
-- not `export`ed
-- nor documented
+# ## Implementation
 
-Then we can just check each binding discovered during abstract interpretation meets the criteria.
-Technically, we will overload `Core.Compiler.abstract_eval_special_value` and check `GlobalRef`s appeared there.
+# Let's define "unstable API" s such that, they're
+# - undefined binding, or
+# - not `export`ed nor documented, if defined
+# and now we can implement such analyzer that detects code that falls into the definition
+# above using JET.jl's pluggable-analysis framework.
+#
+# The implementation below is _almost sound_, under the assumption that the bindings are
+# resolved statically.
+# One thing to note is that, the analysis implements an heuristic to avoid false positives
+# from "language intrinsics", for example, `Base.indexed_iterate` and `Base.Broadcast.broadcasted`.
+# They're _usually_ introduced into your code implicitly by Julia's iteration protocols and such,
+# and we're not responsible for their details (thus not interested in their usages).
+# But the problem is that the analyzer below doesn't distinguish those introduced by the
+# language and those written by ourselves, and in the latter case we're certainly uses
+# "unstable API" under the definition above.
 
-The implementation below is _almost sound_, under the assumption that the bindings are resolved statically.
-One thing to note is that, the analysis implements an heuristic to avoid false positives from "language intrinsics",
-for example, `Base.indexed_iterate` and `Base.Broadcast.broadcasted`.
-They're _usually_ automatically introduced into your code by Julia's iteration protocols and such,
-and in such cases we're not responsible for those details.
-But the problem is the analysis doesn't distinguish those introduced by the language and those written by ourselves,
-and in the latter case we're certainly uses "unstable API" under the definition above.
-
-This analysis is motivated by [this discussion](https://github.com/JuliaLang/julia/pull/40745#issuecomment-850876150).
-"""
-module find_unstable_api
-
-# plug-in analysis implementation
-# ===============================
-
-using JET.JETInterfaces  # to load APIs
+using JET.JETInterfaces  # to load APIs of the pluggable analysis framework
 const CC = Core.Compiler # to inject a customized report pass
+
+# First off, we define `UnstableAPIAnalyzer`, which is a new [`AbstractAnalyzer`](@ref) and will
+# implement the customized report pass
 
 struct UnstableAPIAnalyzer{T} <: AbstractAnalyzer
     state::AnalyzerState
@@ -48,6 +52,15 @@ JETInterfaces.AbstractAnalyzer(analyzer::UnstableAPIAnalyzer, state::AnalyzerSta
     UnstableAPIAnalyzer(state, analyzer.is_target_module)
 JETInterfaces.ReportPass(analyzer::UnstableAPIAnalyzer) = UnstableAPIAnalysisPass()
 
+# Nest, we overload some of `Core.Compiler`'s [abstract interpretation](@ref abstract-interpretaion) methods,
+# and inject a customized analysis pass (`UnstableAPIAnalysisPass`).
+# In this analysis, we are interested in whether a binding that appears in a target code is
+# an "unstable API" or not, and so we can simply check if each abstract element appeared during
+# abstract interpretation meets our criteria of "unstable API".
+# For that purpose, it's suffice to overload `Core.Compiler.abstract_eval_special_value`
+# and `Core.Compiler.builtin_tfunction`.
+# To inject a report pass, we use [`report_pass!`](@ref) interface.
+
 struct UnstableAPIAnalysisPass <: ReportPass end
 
 function CC.abstract_eval_special_value(analyzer::UnstableAPIAnalyzer, @nospecialize(e), vtypes::CC.VarTable, sv::CC.InferenceState)
@@ -55,6 +68,7 @@ function CC.abstract_eval_special_value(analyzer::UnstableAPIAnalyzer, @nospecia
         report_pass!(UnstableAPI, analyzer, sv, e)
     end
 
+    ## recurse into JET's default abstract interpretation routine
     return Base.@invoke CC.abstract_eval_special_value(analyzer::AbstractAnalyzer, e, vtypes::CC.VarTable, sv::CC.InferenceState)
 end
 
@@ -73,16 +87,27 @@ function CC.builtin_tfunction(analyzer::UnstableAPIAnalyzer, @nospecialize(f), a
         end
     end
 
+    ## recurse into JET's default abstract interpretation routine
     return Base.@invoke CC.builtin_tfunction(analyzer::AbstractAnalyzer, f, argtypes::Vector{Any}, sv::CC.InferenceState)
 end
 
-# ignore default report passes
+# Now we implement the body of our analysis.
+# We define "unstable API"s such that they're:
+# 1. undefined binding, or
+# 2. not `export`ed nor documented, if defined
+# and we're not interested in any other program properties other than whether our code contains "unstable API"s or not.
+
+# So in our report pass, we would like to ignore all the reports implemented by JET.jl by default
 (::UnstableAPIAnalysisPass)(T::Type{<:InferenceErrorReport}, analyzer, linfo, @nospecialize(spec_args...)) = return
 
-# except the report of undefined global references
+# but except the report of undefined global references (i.e. `GlobalUndefVarErrorReport`).
+# This overload allow us to find code that falls into the category 1.
 function (::UnstableAPIAnalysisPass)(T::Type{GlobalUndefVarErrorReport}, analyzer, linfo, @nospecialize(spec_args...))
-    BasicPass()(T, analyzer, linfo, spec_args...)
+    BasicPass()(T, analyzer, linfo, spec_args...) # bypass to JET's default report pass
 end
+
+# And now we will define new [`InferenceErrorReport`](@ref) report type `UnstableAPI`,
+# which represents the category 2, and implement a report pass to detect it.
 
 @reportdef struct UnstableAPI <: InferenceErrorReport
     g::GlobalRef
@@ -94,9 +119,9 @@ end
 
 function (::UnstableAPIAnalysisPass)(::Type{UnstableAPI}, analyzer::UnstableAPIAnalyzer, sv::CC.InferenceState, @nospecialize(e))
     if isa(e, GlobalRef)
-        isdefined(e.mod, e.name) || return false # will be caught by GlobalUndefVarErrorReport
+        isdefined(e.mod, e.name) || return false # this global reference falls into the category 1, should be caught by `GlobalUndefVarErrorReport` instead
 
-        (; mod, name) = Base.resolve(e) # safely resolve this reference
+        (; mod, name) = Base.resolve(e) # this reference will be safely resolved
         analyzer.is_target_module(mod) && return # we don't care about what we defined ourselves
 
         if isunstable(mod, name)
@@ -105,11 +130,13 @@ function (::UnstableAPIAnalysisPass)(::Type{UnstableAPI}, analyzer::UnstableAPIA
     end
 end
 
-# we define "unstable API" such that, it's
-# - not `export`ed
-# - nor documented
+# In the report pass above, `isunstable` will take the heavy lifting to find "unstable API"s.
+# Here we will implement `isunstable` according to the definition above but with some heuristics
+# to exclude language intrinsics, which can automatically be included into our code and aren't
+# usually of our interest.
+
 function isunstable(mod, name)
-    # exclude language intrinsics
+    ## exclude language intrinsics
     mod === Core && return false
     x = getfield(mod, name)
     x isa Core.Builtin && return false
@@ -126,7 +153,7 @@ function isexported(mod, name)
     return Base.isexported(mod, name)
 end
 
-# adapted from https://github.com/JunoLab/CodeTools.jl/blob/56e7f0b514a7476864c27523bcf9d4bc04699ce1/src/summaries.jl#L24-L34
+## adapted from https://github.com/JunoLab/CodeTools.jl/blob/56e7f0b514a7476864c27523bcf9d4bc04699ce1/src/summaries.jl#L24-L34
 
 using Base.Docs
 function hasdoc(mod, name)
@@ -140,38 +167,72 @@ function hasdoc(mod, name)
     return false
 end
 
-# usages
-# ======
+# ## Usages
+
+# Now we find "unstable API"s in your code using [JET's analysis entry points](@ref Usages)
+# with passing `UnstableAPIAnalyzer` as the `analyzer` configuration.
 
 using JET # to use analysis entry points
 
-# simple cases
-# ------------
+# ### Simple cases
 
-# a function
+# Let's first use the [interactive analysis entries](@ref interactive-entries) and
+# try simple test cases.
+
+# `UnstableAPIAnalyzer` can find an "unstable" function:
 function some_reflection_code(@nospecialize(f))
     return any(Base.hasgenerator, methods(f)) # Base.hasgenerator is unstable
 end
-@report_call analyzer=UnstableAPIAnalyzer some_reflection_code(sin)
+@report_call analyzer=UnstableAPIAnalyzer some_reflection_code(sin);
 
-# global variable
+# `UnstableAPIAnalyzer` can find an "unstable" global variable:
 module foo; bar = 1 end
 report_call((Any,); analyzer=UnstableAPIAnalyzer) do a
     foo.bar + a # foo.bar is unstable
-end
+end;
 
-# supports imported binding, also nested reference (, which will be resolve to `getproperty`)
+# `UnstableAPIAnalyzer` can detect "unstable API"s even if they're imported binding or
+# nested reference (, which will be resolve to `getproperty`)
 import Base: hasgenerator
 report_call((Any,); analyzer=UnstableAPIAnalyzer) do mi
-    # every function call appearing here is unstable
+    ## NOTE every function call appearing here is unstable
     ci = hasgenerator(mi) ? Core.Compiler.get_staged(mi) : Base.uncompressed_ast(mi)
-end
+end;
 
-# analyze real-world package
-# --------------------------
-# IRTools uses `Base.isgenerator`, which invoked the discussion at https://github.com/JuliaLang/julia/pull/40745#issuecomment-850876150
+# ### Analyze a real-world package
 
-is_irtools(mod) = occursin("IRTools", string(Symbol(mod))) # module context will be virtualized, thus use string match
+# Finally we can use [JET's top-level analysis entry points](@ref entry-points) to analyze
+# a whole script or package.
+#
+# Here we will run `UnstableAPIAnalyzer` on [IRTools](https://github.com/FluxML/IRTools.jl),
+# which uses `Base.isgenerated`, which is renamed to `Base.hasgenerator` in Julia v1.7 and
+# invoked the discussion at <https://github.com/JuliaLang/julia/pull/40745#issuecomment-850876150>.
+# Especially, it uses `Base.isgenerator` [here](https://github.com/FluxML/IRTools.jl/blob/1f3f43be654a41d0db154fd16b31fdf40f30748c/src/reflection/reflection.jl#L49),
+# and you can see the analyzer correctly detects it if you run the following code with IRTools@v0.4.2 installed.
+
+using Pkg #src
+if "IRTools" in keys(Pkg.project().dependencies) #src
+is_irtools(mod) = occursin("IRTools", string(Symbol(mod))) # module context will be virtualized by `report_package`, thus use string match
 report_package("IRTools"; analyzer=UnstableAPIAnalyzer, is_target_module=is_irtools)
+else #src
+@warn "IRTools isn't installed in the current environment at $(Pkg.project().path)" #src
+end #src
 
-end # find_unstable_api
+# ```
+# ═════ 59 possible errors found ═════
+# ┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:39 Core.kwfunc(IRTools.Inner.invoke_meta)(Core.apply_type(Core.NamedTuple, (:world,))(Core.tuple(world)), IRTools.Inner.invoke_meta, T)
+# │┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:69 IRTools.Inner.#invoke_meta#6(world, _3, T)
+# ││┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:74 Core.kwfunc(IRTools.Inner.meta)(Core.apply_type(Core.NamedTuple, (:types, :world))(Core.tuple(S, world)), IRTools.Inner.meta, T)
+# │││┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:38 IRTools.Inner.#meta#1(types, world, _3, T)
+# ││││┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:43 Base._methods_by_ftype
+# │││││ Base._methods_by_ftype is unstable !: Base._methods_by_ftype
+# ││││└─────────────────────────────────────────────────────────────────────────────────
+# ││││┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:49 Base.isgenerated
+# │││││ variable Base.isgenerated is not defined: Base.isgenerated
+# ││││└─────────────────────────────────────────────────────────────────────────────────
+# ││││┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:49 Base.uncompressed_ast
+# │││││ Base.uncompressed_ast is unstable !: Base.uncompressed_ast
+# ││││└─────────────────────────────────────────────────────────────────────────────────
+# ││││┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:54
+# ... # many other "unstable API"s detected
+# ```
