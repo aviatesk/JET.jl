@@ -23,37 +23,36 @@ function JETAnalyzer(;
 end
 AnalyzerState(analyzer::JETAnalyzer)                          = analyzer.state
 AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerState) = JETAnalyzer(ReportPass(analyzer), state)
-ReportPass(analyzer::JETAnalyzer)                             = analyzer.report_pass</code></pre></div><a class="docs-sourcelink" target="_blank" href="https://github.com/aviatesk/JET.jl/blob/6861d96bed593289aba4a71d3374f7330af11275/src/interfaces.jl#L4-L46">source</a></section></article><article class="docstring"><header><a class="docstring-binding" id="JET.ReportPass" href="#JET.ReportPass"><code>JET.ReportPass</code></a> — <span class="docstring-category">Type</span></header><section><div><pre><code class="language-julia">ReportPass</code></pre><p>An interface type for report passes of JET&#39;s analysis.</p></div><a class="docs-sourcelink" target="_blank" href="https://github.com/aviatesk/JET.jl/blob/6861d96bed593289aba4a71d3374f7330af11275/src/interfaces.jl#L52-L56">source</a></section></article><h2 id="Examples"><a class="docs-heading-anchor" href="#Examples">Examples</a><a id="Examples-1"></a><a class="docs-heading-anchor-permalink" href="#Examples" title="Permalink"></a></h2><article class="docstring"><header><a class="docstring-binding" id="JET.PluginExamples" href="#JET.PluginExamples"><code>JET.PluginExamples</code></a> — <span class="docstring-category">Module</span></header><section><div><p><strong>&quot;Unstable API&quot; Analysis</strong></p><p>Julia doesn&#39;t have any facilities to truly hide module internals. This means, we can always access to whatever defined within a module and use it freely, but some of them may be considered as the module&#39;s &quot;internal&quot;s and subject to changes. When possible, we want to avoid using those &quot;unstable API&quot; s for better maintainability in the future. But the problem is, how can we find them already used in an existing code ?</p><p>The following code implements such an analysis as a plug-in analysis under JET.jl framework. Let&#39;s define &quot;unstable API&quot; s such that, they&#39;re</p><ul><li>not <code>export</code>ed</li><li>nor documented</li></ul><p>Then we can just check each binding discovered during abstract interpretation meets the criteria. Technically, we will overload <code>Core.Compiler.abstract_eval_special_value</code> and check <code>GlobalRef</code>s appeared there.</p><p>The implementation below is <em>almost sound</em>, under the assumption that the bindings are resolved statically. One thing to note is that, the analysis implements an heuristic to avoid false positives from &quot;language intrinsics&quot;, for example, <code>Base.indexed_iterate</code> and <code>Base.Broadcast.broadcasted</code>. They&#39;re <em>usually</em> automatically introduced into your code by Julia&#39;s iteration protocols and such, and in such cases we&#39;re not responsible for those details. But the problem is the analysis doesn&#39;t distinguish those introduced by the language and those written by ourselves, and in the latter case we&#39;re certainly uses &quot;unstable API&quot; under the definition above.</p><p>This analysis is motivated by <a href="https://github.com/JuliaLang/julia/pull/40745#issuecomment-850876150">this discussion</a>.</p><pre><code class="language-julia">module find_unstable_api
-
-using JET
+ReportPass(analyzer::JETAnalyzer)                             = analyzer.report_pass</code></pre></div><a class="docs-sourcelink" target="_blank" href="https://github.com/aviatesk/JET.jl/blob/fbc98db751d9503253af48eecb6addf9ec5058b2/src/interfaces.jl#L4-L46">source</a></section></article><article class="docstring"><header><a class="docstring-binding" id="JET.ReportPass" href="#JET.ReportPass"><code>JET.ReportPass</code></a> — <span class="docstring-category">Type</span></header><section><div><pre><code class="language-julia">ReportPass</code></pre><p>An interface type for report passes of JET&#39;s analysis.</p></div><a class="docs-sourcelink" target="_blank" href="https://github.com/aviatesk/JET.jl/blob/fbc98db751d9503253af48eecb6addf9ec5058b2/src/interfaces.jl#L52-L56">source</a></section></article><article class="docstring"><header><a class="docstring-binding" id="JET.JETInterfaces" href="#JET.JETInterfaces"><code>JET.JETInterfaces</code></a> — <span class="docstring-category">Module</span></header><section><div><pre><code class="language-julia">JETInterfaces</code></pre><p>This <code>baremodule</code> exports names that form the APIs of <a href="#JET.jl-Pluggable-Analysis-Framework">JET.jl Pluggable Analysis Framework</a>. If you are going to define a plug-in analysis, you can load most useful names just by <code>using JET.JETInterfaces</code>.</p></div><a class="docs-sourcelink" target="_blank" href="https://github.com/aviatesk/JET.jl/blob/fbc98db751d9503253af48eecb6addf9ec5058b2/src/JET.jl#L1013-L1018">source</a></section></article><h2 id="Examples"><a class="docs-heading-anchor" href="#Examples">Examples</a><a id="Examples-1"></a><a class="docs-heading-anchor-permalink" href="#Examples" title="Permalink"></a></h2><article class="docstring"><header><a class="docstring-binding" id="JET.PluginExamples" href="#JET.PluginExamples"><code>JET.PluginExamples</code></a> — <span class="docstring-category">Module</span></header><section><div><p><strong>&quot;Unstable API&quot; Analysis</strong></p><p>Julia doesn&#39;t have any facilities to truly hide module internals. This means, we can always access to whatever defined within a module and use it freely, but some of them may be considered as the module&#39;s &quot;internal&quot;s and subject to changes. When possible, we want to avoid using those &quot;unstable API&quot; s for better maintainability in the future. But the problem is, how can we find them already used in an existing code ?</p><p>The following code implements such an analysis as a plug-in analysis under JET.jl framework. Let&#39;s define &quot;unstable API&quot; s such that, they&#39;re</p><ul><li>not <code>export</code>ed</li><li>nor documented</li></ul><p>Then we can just check each binding discovered during abstract interpretation meets the criteria. Technically, we will overload <code>Core.Compiler.abstract_eval_special_value</code> and check <code>GlobalRef</code>s appeared there.</p><p>The implementation below is <em>almost sound</em>, under the assumption that the bindings are resolved statically. One thing to note is that, the analysis implements an heuristic to avoid false positives from &quot;language intrinsics&quot;, for example, <code>Base.indexed_iterate</code> and <code>Base.Broadcast.broadcasted</code>. They&#39;re <em>usually</em> automatically introduced into your code by Julia&#39;s iteration protocols and such, and in such cases we&#39;re not responsible for those details. But the problem is the analysis doesn&#39;t distinguish those introduced by the language and those written by ourselves, and in the latter case we&#39;re certainly uses &quot;unstable API&quot; under the definition above.</p><p>This analysis is motivated by <a href="https://github.com/JuliaLang/julia/pull/40745#issuecomment-850876150">this discussion</a>.</p><pre><code class="language-julia">module find_unstable_api
 
 # plug-in analysis implementation
 # ===============================
 
-const CC = Core.Compiler
+using JET.JETInterfaces  # to load APIs
+const CC = Core.Compiler # to inject a customized report pass
 
-struct UnstableAPIAnalyzer{T} &lt;: JET.AbstractAnalyzer
-    state::JET.AnalyzerState
+struct UnstableAPIAnalyzer{T} &lt;: AbstractAnalyzer
+    state::AnalyzerState
     is_target_module::T
 end
 function UnstableAPIAnalyzer(;
     is_target_module = ==(@__MODULE__),
     jetconfigs...)
-    return UnstableAPIAnalyzer(JET.AnalyzerState(; jetconfigs...), is_target_module)
+    return UnstableAPIAnalyzer(AnalyzerState(; jetconfigs...), is_target_module)
 end
-JET.AnalyzerState(analyzer::UnstableAPIAnalyzer) = analyzer.state
-JET.AbstractAnalyzer(analyzer::UnstableAPIAnalyzer, state::JET.AnalyzerState) =
+JETInterfaces.AnalyzerState(analyzer::UnstableAPIAnalyzer) = analyzer.state
+JETInterfaces.AbstractAnalyzer(analyzer::UnstableAPIAnalyzer, state::AnalyzerState) =
     UnstableAPIAnalyzer(state, analyzer.is_target_module)
-JET.ReportPass(analyzer::UnstableAPIAnalyzer) = UnstableAPIAnalysisPass()
+JETInterfaces.ReportPass(analyzer::UnstableAPIAnalyzer) = UnstableAPIAnalysisPass()
 
-struct UnstableAPIAnalysisPass &lt;: JET.ReportPass end
+struct UnstableAPIAnalysisPass &lt;: ReportPass end
 
 function CC.abstract_eval_special_value(analyzer::UnstableAPIAnalyzer, @nospecialize(e), vtypes::CC.VarTable, sv::CC.InferenceState)
     if analyzer.is_target_module(sv.mod) # we care only about what we wrote
-        JET.report_pass!(UnstableAPI, analyzer, sv, e)
+        report_pass!(UnstableAPI, analyzer, sv, e)
     end
 
-    return Base.@invoke CC.abstract_eval_special_value(analyzer::JET.AbstractAnalyzer, e, vtypes::CC.VarTable, sv::CC.InferenceState)
+    return Base.@invoke CC.abstract_eval_special_value(analyzer::AbstractAnalyzer, e, vtypes::CC.VarTable, sv::CC.InferenceState)
 end
 
 function CC.builtin_tfunction(analyzer::UnstableAPIAnalyzer, @nospecialize(f), argtypes::Vector{Any}, sv::CC.InferenceState)
@@ -64,28 +63,28 @@ function CC.builtin_tfunction(analyzer::UnstableAPIAnalyzer, @nospecialize(f), a
                 if isa(a2, Core.Const) &amp;&amp; (v2 = a2.val; isa(v2, Symbol))
                     if analyzer.is_target_module(sv.mod) || # we care only about what we wrote, but with relaxed filter
                        (parent = sv.parent; isa(parent, CC.InferenceState) &amp;&amp; analyzer.is_target_module(parent.mod))
-                        JET.report_pass!(UnstableAPI, analyzer, sv, GlobalRef(v1, v2))
+                        report_pass!(UnstableAPI, analyzer, sv, GlobalRef(v1, v2))
                     end
                 end
             end
         end
     end
 
-    return Base.@invoke CC.builtin_tfunction(analyzer::JET.AbstractAnalyzer, f, argtypes::Vector{Any}, sv::CC.InferenceState)
+    return Base.@invoke CC.builtin_tfunction(analyzer::AbstractAnalyzer, f, argtypes::Vector{Any}, sv::CC.InferenceState)
 end
 
-# ignore report passes implemented within JET.jl
-(::UnstableAPIAnalysisPass)(T::Type{&lt;:JET.InferenceErrorReport}, analyzer, linfo, @nospecialize(spec_args...)) = return
+# ignore default report passes
+(::UnstableAPIAnalysisPass)(T::Type{&lt;:InferenceErrorReport}, analyzer, linfo, @nospecialize(spec_args...)) = return
 
-# except undefined global references
-function (::UnstableAPIAnalysisPass)(T::Type{JET.GlobalUndefVarErrorReport}, analyzer, linfo, @nospecialize(spec_args...))
-    JET.BasicPass()(T, analyzer, linfo, spec_args...)
+# except the report of undefined global references
+function (::UnstableAPIAnalysisPass)(T::Type{GlobalUndefVarErrorReport}, analyzer, linfo, @nospecialize(spec_args...))
+    BasicPass()(T, analyzer, linfo, spec_args...)
 end
 
-JET.@reportdef struct UnstableAPI &lt;: JET.InferenceErrorReport
+@reportdef struct UnstableAPI &lt;: InferenceErrorReport
     g::GlobalRef
 end
-function JET.get_msg(::Type{UnstableAPI}, analyzer::UnstableAPIAnalyzer, sv::CC.InferenceState, g::GlobalRef)
+function JETInterfaces.get_msg(::Type{UnstableAPI}, analyzer::UnstableAPIAnalyzer, sv::CC.InferenceState, g::GlobalRef)
     (; mod, name) = Base.resolve(g) # resolve to original name
     return &quot;$mod.$name is unstable !&quot;
 end
@@ -98,7 +97,7 @@ function (::UnstableAPIAnalysisPass)(::Type{UnstableAPI}, analyzer::UnstableAPIA
         analyzer.is_target_module(mod) &amp;&amp; return # we don&#39;t care about what we defined ourselves
 
         if isunstable(mod, name)
-            JET.report!(UnstableAPI, analyzer, sv, e)
+            report!(UnstableAPI, analyzer, sv, e)
         end
     end
 end
@@ -138,8 +137,13 @@ function hasdoc(mod, name)
     return false
 end
 
-# test simple cases
-# =================
+# usages
+# ======
+
+using JET # to use analysis entry points
+
+# simple cases
+# ------------
 
 # a function
 function some_reflection_code(@nospecialize(f))
@@ -148,9 +152,7 @@ end
 @report_call analyzer=UnstableAPIAnalyzer some_reflection_code(sin)
 
 # global variable
-module foo
-bar = 1
-end
+module foo; bar = 1 end
 report_call((Any,); analyzer=UnstableAPIAnalyzer) do a
     foo.bar + a # foo.bar is unstable
 end
@@ -162,12 +164,11 @@ report_call((Any,); analyzer=UnstableAPIAnalyzer) do mi
     ci = hasgenerator(mi) ? Core.Compiler.get_staged(mi) : Base.uncompressed_ast(mi)
 end
 
-# test real-world package
-# =======================
-
+# analyze real-world package
+# --------------------------
 # IRTools uses `Base.isgenerator`, which invoked the discussion at https://github.com/JuliaLang/julia/pull/40745#issuecomment-850876150
 
 is_irtools(mod) = occursin(&quot;IRTools&quot;, string(Symbol(mod))) # module context will be virtualized, thus use string match
 report_package(&quot;IRTools&quot;; analyzer=UnstableAPIAnalyzer, is_target_module=is_irtools)
 
-end # module find_unstable_api</code></pre></div><a class="docs-sourcelink" target="_blank" href="https://github.com/aviatesk/JET.jl/blob/6861d96bed593289aba4a71d3374f7330af11275/docs/make.jl#L47-L223">source</a></section></article></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../internals/">« Internals</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> on <span class="colophon-date" title="Thursday 3 June 2021 05:52">Thursday 3 June 2021</span>. Using Julia version 1.7.0-DEV.1223.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+end # find_unstable_api</code></pre></div><a class="docs-sourcelink" target="_blank" href="https://github.com/aviatesk/JET.jl/blob/fbc98db751d9503253af48eecb6addf9ec5058b2/docs/make.jl#L47-L224">source</a></section></article></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../internals/">« Internals</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> on <span class="colophon-date" title="Thursday 3 June 2021 07:56">Thursday 3 June 2021</span>. Using Julia version 1.7.0-DEV.1223.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
