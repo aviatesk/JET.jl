@@ -1480,6 +1480,38 @@ end
         @test length(res.toplevel_signatures) == 1
     end
 
+    # simple negative case test, which checks we do NOT select statements not involved with any definition
+    # this particular example is adapted from https://en.wikipedia.org/wiki/Program_slicing
+    let
+        src = JET.@src let
+            sum = 0
+            product = 1 # should NOT be selected
+            w = 7
+            for i in 1:N
+                sum += i + w
+                product *= i # should NOT be selected
+            end
+            @eval global getsum() = $sum # concretization is forced
+            write(product) # should NOT be selected
+        end
+        slice = JET.select_statements(src)
+
+        for (i, stmt) in enumerate(src.code)
+            if JET.@isexpr(stmt, :(=))
+                lhs, rhs = stmt.args
+                if isa(lhs, Core.SlotNumber)
+                    if src.slotnames[lhs.id] === :w || src.slotnames[lhs.id] === :sum
+                        @test slice[i]
+                    elseif src.slotnames[lhs.id] === :product
+                        @test !slice[i]
+                    end
+                end
+            elseif JET.@capture(stmt, write(x_))
+                @test !slice[i]
+            end
+        end
+    end
+
     @testset "captured variables" begin
         let
             vmod, res = @analyze_toplevel2 begin

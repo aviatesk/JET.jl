@@ -784,10 +784,21 @@ function select_direct_requirement!(concretize, stmts, edges)
     end
 end
 
+# TODO implement these prototypes and support a following pattern:
+# N = 10
+# let tpl = ([i for i in 1:N]...,)
+#     @eval gettpl() = $tpl # `tpl` here should be fully concretized
+# end
+function find_iterblocks(src) end
+function add_iterblocks!(cocretize, src, edges, iterblocks) end
+
 # implementation of https://github.com/aviatesk/JET.jl/issues/196
-function select_dependencies!(concretize, src, edges)
+function select_dependencies!(concretize::AbstractVector{Bool}, src::CodeInfo, edges::CodeEdges)
     debug = false
     debug && println("initially selected:", findall(concretize))
+
+    # find statement sets that come from iteration/iterator protocol
+    # TODO iterblocks = find_iterblocks(src)
 
     # We'll mostly use generic graph traversal to discover all the lines we need,
     # but structs are in a bit of a different category (especially on Julia 1.5+).
@@ -802,9 +813,10 @@ function select_dependencies!(concretize, src, edges)
         changed |= add_ssa_preds!(concretize, src, edges, ())
 
         # add some domain-specific information
+        # TODO changed |= add_iterblocks!(concretized, src, edges, iterblocks)
         changed |= add_typedefs!(concretize, src, edges, typedefs, ())
     end
-    debug && (println("after initial requirement discovery:"); print_with_code(stdout::IO, src, concretize))
+    debug && (println("after initial requirements discovery:"); print_with_code(stdout::IO, src, concretize))
 
     # find a loop region and check if any of the requirements discovered so far is involved
     # with it, and if require everything involved with the loop in order to properly
@@ -857,7 +869,7 @@ function select_dependencies!(concretize, src, edges)
         changed |= add_ssa_preds!(concretize, src, edges, norequire)
         changed |= add_control_flow!(concretize, cfg, norequire)
     end
-    debug && print_with_code(stdout::IO, src, concretize)
+    debug && (println("after all requirements discovery:"); print_with_code(stdout::IO, src, concretize))
 end
 
 function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node), istoplevel::Bool)
