@@ -111,25 +111,21 @@ Listed here are selections of those parameters that can have a potent influence 
 
 # here we just try to sync `OptimizationParams` with  `InferenceParams`
 # (the same JET configurations will be passed on here)
-JETOptimizationParams(; # inlining::Bool                = inlining_enabled(),
-                        # inline_cost_threshold::Int    = 100,
-                        # inline_nonleaf_penalty::Int   = 1000,
-                        # inline_tupleret_bonus::Int    = 250,
-                        # inline_error_path_cost::Int   = 20,
+JETOptimizationParams(; inlining::Bool                = inlining_enabled(),
+                        inline_cost_threshold::Int    = 100,
+                        inline_nonleaf_penalty::Int   = 1000,
+                        inline_tupleret_bonus::Int    = 250,
+                        inline_error_path_cost::Int   = 20,
                         max_methods::Int              = 3,
                         tuple_splat::Int              = 32,
                         union_splitting::Int          = 4,
                         unoptimize_throw_blocks::Bool = false,
                         _jetconfigs...) =
-    # NOTE we always disable inlining, because our current strategy to find undefined
-    # local variable assumes un-inlined frames
-    # TODO enable inlining to get better JET analysis performance ?
-    # XXX but the self-profiling with `inlining = true` showed performance regression ...
-    return OptimizationParams(; inlining = false,
-                                # inline_cost_threshold,
-                                # inline_nonleaf_penalty,
-                                # inline_tupleret_bonus,
-                                # inline_error_path_cost,
+    return OptimizationParams(; inlining,
+                                inline_cost_threshold,
+                                inline_nonleaf_penalty,
+                                inline_tupleret_bonus,
+                                inline_error_path_cost,
                                 max_methods,
                                 tuple_splat,
                                 union_splitting,
@@ -272,11 +268,6 @@ mutable struct AnalyzerState
 
     # records depth of call stack
     depth::Int
-
-    function AnalyzerState(native::NativeInterpreter, args...)
-        @assert !native.opt_params.inlining "inlining should be disabled for AbstractAnalyzer"
-        new(native, args...)
-    end
 end
 
 # define getter methods
@@ -509,6 +500,7 @@ end
 @aggressive_constprop @jetconfigurable function JETAnalyzer(;
     report_pass::Union{Nothing,T} = nothing,
     mode::Symbol                  = :basic,
+    inlining::Bool                = false,
     jetconfigs...) where {T<:ReportPass}
     if isnothing(report_pass)
         # if `report_pass` isn't passed explicitly, here we configure it according to `mode`
@@ -516,8 +508,12 @@ end
                       mode === :sound ? SoundPass() :
                       throw(ArgumentError("`mode` configuration should be either of `:basic` or `:sound`"))
     end
+    # NOTE we always disable inlining, because:
+    # - our current strategy to find undefined local variables and uncaught `throw` calls assumes un-inlined frames
+    # - the cost for inlining isn't necessary for JETAnalyzer
+    @assert !inlining "inlining should be disabled for JETAnalyzer"
     return JETAnalyzer(report_pass,
-                       AnalyzerState(; jetconfigs...),
+                       AnalyzerState(; inlining, jetconfigs...),
                        )
 end
 AnalyzerState(analyzer::JETAnalyzer)                          = analyzer.state
