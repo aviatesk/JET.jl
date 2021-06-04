@@ -124,7 +124,8 @@ import .CC:
     matching_cache_argtypes,
     is_argtype_match,
     tuple_tfunc,
-    may_invoke_generator
+    may_invoke_generator,
+    inlining_enabled
 
 import Base:
     parse_input_line,
