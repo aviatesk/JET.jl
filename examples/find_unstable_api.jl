@@ -19,7 +19,7 @@
 # Let's define "unstable API" s such that, they're
 # - undefined binding, or
 # - not `export`ed nor documented, if defined
-# and now we can implement such analyzer that detects code that falls into the definition
+# and now we can implement such analyzer that detects code that matches the definition
 # above using JET.jl's pluggable-analysis framework.
 #
 # The implementation below is _almost sound_, under the assumption that the bindings are
@@ -55,7 +55,7 @@ JETInterfaces.ReportPass(analyzer::UnstableAPIAnalyzer) = UnstableAPIAnalysisPas
 # Nest, we overload some of `Core.Compiler`'s [abstract interpretation](@ref abstract-interpretaion) methods,
 # and inject a customized analysis pass (`UnstableAPIAnalysisPass`).
 # In this analysis, we are interested in whether a binding that appears in a target code is
-# an "unstable API" or not, and so we can simply check if each abstract element appeared during
+# an "unstable API" or not, and we can simply check if each abstract element appeared during
 # abstract interpretation meets our criteria of "unstable API".
 # For that purpose, it's suffice to overload `Core.Compiler.abstract_eval_special_value`
 # and `Core.Compiler.builtin_tfunction`.
@@ -204,7 +204,7 @@ end;
 # Finally we can use [JET's top-level analysis entry points](@ref entry-points) to analyze
 # a whole script or package.
 #
-# Here we will run `UnstableAPIAnalyzer` on [IRTools](https://github.com/FluxML/IRTools.jl),
+# Here we will run `UnstableAPIAnalyzer` on [IRTools.jl](https://github.com/FluxML/IRTools.jl),
 # which uses `Base.isgenerated`, which is renamed to `Base.hasgenerator` in Julia v1.7 and
 # invoked the discussion at <https://github.com/JuliaLang/julia/pull/40745#issuecomment-850876150>.
 # Especially, it uses `Base.isgenerator` [here](https://github.com/FluxML/IRTools.jl/blob/1f3f43be654a41d0db154fd16b31fdf40f30748c/src/reflection/reflection.jl#L49),
