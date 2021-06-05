@@ -834,7 +834,7 @@ function transform_abstract_global_symbols!(analyzer::AbstractAnalyzer, src::Cod
         src.slotnames[idx] = slotname
     end
 
-    AnalyzerState(analyzer).global_slots = Dict(idx => slotname for (slotname, idx) in abstrct_global_variables)
+    set_global_slots!(analyzer, Dict(idx => slotname for (slotname, idx) in abstrct_global_variables))
 end
 
 # TODO `analyze_call_builtin!` ?

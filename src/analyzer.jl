@@ -271,12 +271,13 @@ mutable struct AnalyzerState
     depth::Int
 end
 
-# define getter methods
+# define getter/setter methods
 for fld in fieldnames(AnalyzerState)
     fld === :cache_key && continue # will be defined later (in order to take in `ReportPass` hash)
-    fn = Symbol("get_", fld)
-    @eval (@__MODULE__) @inline $fn(analyzer::AbstractAnalyzer) =
-        getproperty(AnalyzerState(analyzer), $(QuoteNode(fld)))
+    getter = Symbol("get_", fld)
+    setter = Symbol("set_", fld, '!')
+    @eval (@__MODULE__) @inline $getter(analyzer::AbstractAnalyzer)    = getfield(AnalyzerState(analyzer), $(QuoteNode(fld)))
+    @eval (@__MODULE__) @inline $setter(analyzer::AbstractAnalyzer, v) = setfield!(AnalyzerState(analyzer), $(QuoteNode(fld)), v)
 end
 
 # constructor for fresh analysis

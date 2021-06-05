@@ -1,6 +1,5 @@
 # in this overload we will work on some meta/debug information management
 function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
-    state = AnalyzerState(analyzer)
     linfo = frame.linfo
 
     #= logging start =#
@@ -20,17 +19,17 @@ function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
             file, line = get_file_line(linfo)
             print(io, ' ', file, ':', line)
             println(io)
-            state.depth += 1 # manipulate this only in debug mode
+            set_depth!(analyzer, get_depth(analyzer) + 1) # manipulate this only in debug mode
         end
     end
     #= logging end =#
 
     prev_frame = get_current_frame(analyzer)
-    state.current_frame = frame
+    set_current_frame!(analyzer, frame)
 
     ret = @invoke typeinf(analyzer::AbstractInterpreter, frame::InferenceState)
 
-    state.current_frame = prev_frame
+    set_current_frame!(analyzer, prev_frame)
 
     #= logging start =#
     if logger_activated
@@ -51,7 +50,7 @@ function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
                              "$sec sec"
                              )), ", "),
                         ')')
-            state.depth -= 1 # manipulate this only in debug mode
+            set_depth!(analyzer, get_depth(analyzer) - 1) # manipulate this only in debug mode
         end
     end
     #= logging end =#
@@ -137,7 +136,7 @@ function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
         end
     end
 
-    AnalyzerState(analyzer).to_be_updated = this_caches
+    set_to_be_updated!(analyzer, this_caches)
 
     if !iscp && !isentry
         # refinement for this `linfo` may change analysis result for parent frame
