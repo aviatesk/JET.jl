@@ -24,6 +24,7 @@ The configurations will only be active when used with [`report_and_watch_file`](
       # re-performe analysis when you make a change to `Base`
       julia> report_and_watch_file(yourfile; revise_modules = [Base])
       ```
+---
 """
 struct WatchConfig
     # Revise configurations

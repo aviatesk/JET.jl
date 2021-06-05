@@ -83,6 +83,7 @@ If the entry renders the collected error points, the configurations below will b
 - `fullpath::Bool = false` \\
   Controls whether or not expand a file path to full path when printing analyzed call stack.
   Note that paths of Julia's `Base` files will also be expanded when set to `true`.
+---
 """
 struct PrintConfig
     print_toplevel_success::Bool

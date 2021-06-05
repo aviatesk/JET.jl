@@ -2,7 +2,7 @@
 # --------------
 
 """
-Configurations for JET analysis.
+Configurations for abstract interpretation performed by JET.
 These configurations will be active for all the entries.
 
 ---
@@ -55,50 +55,51 @@ These configurations will be active for all the entries.
     │││││││└───────────────
     Dict{Any, Int64}
     ```
+
+---
+---
+
+You can also configure any of the keyword parameters that `$InferenceParams` or `$OptimizationParams` can take,
+e.g. `max_methods::Int = 3`, `union_splitting::Int = 4`.
+Listed below are selections of those parameters that can have a potent influence on JET analysis.
+
+---
+- `ipo_constant_propagation::Bool = true` \\
+  Enables constant propagation in abstract interpretation.
+  It is _**highly**_ recommended that you keep this configuration `true` to get reasonable analysis result,
+  because constant propagation can cut off lots of false positive errorenous code paths and
+  thus produce more accurate and useful analysis results.
+---
+- `aggressive_constant_propagation::Bool = true` \\
+  If `true`, JET will try to do constant propagation more "aggressively".
+  It can lead to more accurate analysis as explained above, but also it may incur a performance cost.
+  JET by default enables this configuration to get more accurate analysis result.
+---
+- `unoptimize_throw_blocks::Bool = false` \\
+  Turn this on to skip analysis on code blocks that will eventually lead to a `throw` call.
+  This configuration improves the analysis performance, but it's better to be turned off
+  to get a "proper" analysis result, just because there may be other errors even in those "throw blocks".
+---
 """
 struct JETAnalysisParams
     strict_condition_check::Bool
-    @jetconfigurable function JETAnalysisParams(; strict_condition_check::Bool  = false,
+    @jetconfigurable function JETAnalysisParams(; strict_condition_check::Bool = false,
                                                   )
         return new(strict_condition_check,
                    )
     end
 end
 
-"""
-Configurations for Julia's native type inference routine.
-These configurations will be active for all the entries.
-
-You can specify all the keyword parameters of `Core.Compiler.InferenceParams`, e.g.
-  `max_methods::Int = 3`, `union_splitting::Int = 4`.
-Listed here are selections of those parameters that can have a potent influence on JET analysis.
-
----
-- `ipo_constant_propagation::Bool = true` \\
-  Enables constant propagation in abstract interpretation.
-  It is _**highly**_ recommended that you keep this configuration `true` to get reasonable analysis,
-  because constant propagation can cut off lots of false positive errorenous code paths and
-  thus lead to more accurate and useful analysis results.
----
-- `aggressive_constant_propagation::Bool = true` \\
-  If `true`, JET will try to do constant propagation more "aggressively".
-  As explained above, it can lead to more accurate analysis, but also lead to worse analysis
-  performance at the cost of that.
----
-- `unoptimize_throw_blocks::Bool = false` \\
-  Turn this on to skip analysis on code blocks that will eventually lead to a `throw` call.
-  This configuration may improve the analysis performance, but it's better to be turned off
-    for JET analysis, because there may be other errors even in those code blocks.
-"""
-@jetconfigurable JETInferenceParams(; ipo_constant_propagation::Bool        = true,
-                                      aggressive_constant_propagation::Bool = true,
-                                      unoptimize_throw_blocks::Bool         = false,
-                                      max_methods::Int                      = 3,
-                                      union_splitting::Int                  = 4,
-                                      apply_union_enum::Int                 = 8,
-                                      tupletype_depth::Int                  = 3,
-                                      tuple_splat::Int                      = 32,
-                                      ) =
+# define these functions just to make them able to accept other JET configrations
+JETInferenceParams(; ipo_constant_propagation::Bool        = true,
+                     aggressive_constant_propagation::Bool = false,
+                     unoptimize_throw_blocks::Bool         = true,
+                     max_methods::Int                      = 3,
+                     union_splitting::Int                  = 4,
+                     apply_union_enum::Int                 = 8,
+                     tupletype_depth::Int                  = 3,
+                     tuple_splat::Int                      = 32,
+                     __jetconfigs...) =
     return InferenceParams(; ipo_constant_propagation,
                              aggressive_constant_propagation,
                              unoptimize_throw_blocks,
@@ -108,9 +109,6 @@ Listed here are selections of those parameters that can have a potent influence 
                              tupletype_depth,
                              tuple_splat,
                              )
-
-# here we just try to sync `OptimizationParams` with  `InferenceParams`
-# (the same JET configurations will be passed on here)
 JETOptimizationParams(; inlining::Bool                = inlining_enabled(),
                         inline_cost_threshold::Int    = 100,
                         inline_nonleaf_penalty::Int   = 1000,
@@ -119,8 +117,8 @@ JETOptimizationParams(; inlining::Bool                = inlining_enabled(),
                         max_methods::Int              = 3,
                         tuple_splat::Int              = 32,
                         union_splitting::Int          = 4,
-                        unoptimize_throw_blocks::Bool = false,
-                        _jetconfigs...) =
+                        unoptimize_throw_blocks::Bool = true,
+                        __jetconfigs...) =
     return OptimizationParams(; inlining,
                                 inline_cost_threshold,
                                 inline_nonleaf_penalty,
@@ -131,6 +129,9 @@ JETOptimizationParams(; inlining::Bool                = inlining_enabled(),
                                 union_splitting,
                                 unoptimize_throw_blocks,
                                 )
+# # assert here that they create same objects as the original constructors
+@assert JETInferenceParams() == InferenceParams()
+@assert JETOptimizationParams() == OptimizationParams()
 
 const LOGGER_LEVEL_KEY     = :JET_LOGGER_LEVEL
 const INFO_LOGGER_LEVEL    = 0
@@ -334,9 +335,9 @@ function AbstractAnalyzer(analyzer::T, concretized, toplevelmod) where {T<:Abstr
                              toplevelmods    = push!(get_toplevelmods(analyzer), toplevelmod),
                              logger          = JETLogger(analyzer),
                              )
-    newinterp = AbstractAnalyzer(analyzer, newstate)
-    maybe_initialize_caches!(analyzer)
-    return newinterp
+    newanalyzer = AbstractAnalyzer(analyzer, newstate)
+    maybe_initialize_caches!(newanalyzer)
+    return newanalyzer
 end
 
 # constructor to do additional JET analysis in the middle of parent (non-toplevel) interpretation
@@ -350,9 +351,9 @@ function AbstractAnalyzer(analyzer::T) where {T<:AbstractAnalyzer}
                              logger          = JETLogger(analyzer),
                              depth           = get_depth(analyzer),
                              )
-    newinterp = AbstractAnalyzer(analyzer, newstate)
-    maybe_initialize_caches!(analyzer)
-    return newinterp
+    newanalyzer = AbstractAnalyzer(analyzer, newstate)
+    maybe_initialize_caches!(newanalyzer)
+    return newanalyzer
 end
 
 function Base.show(io::IO, analyzer::AbstractAnalyzer)
@@ -501,7 +502,11 @@ end
 @aggressive_constprop @jetconfigurable function JETAnalyzer(;
     report_pass::Union{Nothing,T} = nothing,
     mode::Symbol                  = :basic,
-    inlining::Bool                = false,
+    # default `InferenceParams` tuning
+    aggressive_constant_propagation::Bool = true,
+    unoptimize_throw_blocks::Bool         = false,
+    # default `OptimizationParams` tuning
+    inlining::Bool = false,
     jetconfigs...) where {T<:ReportPass}
     if isnothing(report_pass)
         # if `report_pass` isn't passed explicitly, here we configure it according to `mode`
@@ -513,9 +518,11 @@ end
     # - our current strategy to find undefined local variables and uncaught `throw` calls assumes un-inlined frames
     # - the cost for inlining isn't necessary for JETAnalyzer
     @assert !inlining "inlining should be disabled for JETAnalyzer"
-    return JETAnalyzer(report_pass,
-                       AnalyzerState(; inlining, jetconfigs...),
-                       )
+    state = AnalyzerState(; aggressive_constant_propagation,
+                            unoptimize_throw_blocks,
+                            inlining,
+                            jetconfigs...)
+    return JETAnalyzer(report_pass, state)
 end
 AnalyzerState(analyzer::JETAnalyzer)                          = analyzer.state
 AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerState) = JETAnalyzer(ReportPass(analyzer), state)

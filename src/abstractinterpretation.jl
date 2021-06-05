@@ -243,7 +243,7 @@ end
 # run additional interpretation with a new interpreter,
 # and then append the reports to the original interpreter
 function analyze_additional_pass_by_type!(analyzer::AbstractAnalyzer, @nospecialize(tt::Type{<:Tuple}), sv::InferenceState)
-    newinterp = AbstractAnalyzer(analyzer)
+    newanalyzer = AbstractAnalyzer(analyzer)
 
     # in order to preserve the inference termination, we keep to use the current frame
     # and borrow the `AbstractInterpreter`'s cycle detection logic
@@ -251,19 +251,19 @@ function analyze_additional_pass_by_type!(analyzer::AbstractAnalyzer, @nospecial
     # but what we're doing here is essentially equivalent to modifying the user code and inlining
     # the threaded code block as a usual code block, and thus the side-effects won't (hopefully)
     # confuse the abstract interpretation, which is supposed to terminate on any kind of code
-    mm = get_single_method_match(tt, InferenceParams(newinterp).MAX_METHODS, get_world_counter(newinterp))
-    result = abstract_call_method(newinterp, mm.method, mm.spec_types, mm.sparams, false, sv)
+    mm = get_single_method_match(tt, InferenceParams(newanalyzer).MAX_METHODS, get_world_counter(newanalyzer))
+    result = abstract_call_method(newanalyzer, mm.method, mm.spec_types, mm.sparams, false, sv)
 
     rt = @static @isdefined(MethodCallResult) ? result.rt : first(result)
 
     # corresponding to the same logic in `analyze_frame!`
     if rt === Bottom
-        if !isempty(get_uncaught_exceptions(newinterp))
-            append!(get_reports(newinterp), get_uncaught_exceptions(newinterp))
+        if !isempty(get_uncaught_exceptions(newanalyzer))
+            append!(get_reports(newanalyzer), get_uncaught_exceptions(newanalyzer))
         end
     end
 
-    append!(get_reports(analyzer), get_reports(newinterp))
+    append!(get_reports(analyzer), get_reports(newanalyzer))
 end
 
 # works within inter-procedural context
