@@ -5,10 +5,14 @@ const PLUGIN_API_FILENAME  = normpath(DOC_SRC_DIR, "generated-plugin-api.md")
 const PLUGIN_EXAMPLES_DIRS = (normpath(@__DIR__, "..", "examples"), normpath(DOC_SRC_DIR, "generated-plugin-examples"))
 
 function generate_example_docs!(dir = PLUGIN_EXAMPLES_DIRS[1], outs = String[])
+    # clean up first
+    outdir = PLUGIN_EXAMPLES_DIRS[2]
+    isdir(outdir) && rm(outdir; recursive = true)
+
     for (root, dirs, files) in walkdir(dir)
         for file in files
             endswith(file, ".jl") || continue
-            push!(outs, Literate.markdown(normpath(root, file), PLUGIN_EXAMPLES_DIRS[2]; documenter=true))
+            push!(outs, Literate.markdown(normpath(root, file), outdir; documenter=true))
         end
         for dir in dirs
             gen_example_doc!(normpath(root, dir), outs)
@@ -29,6 +33,7 @@ end
 function generate_api_doc(examples_pages)
     out = relpath(PLUGIN_API_FILENAME, DOC_SRC_DIR)
 
+    isfile(PLUGIN_API_FILENAME) && rm(PLUGIN_API_FILENAME)
     open(PLUGIN_API_FILENAME, write=true) do io
         contents = codeblock("Pages = $(repr([out]))", "@contents")
         interface_docs = codeblock(join(JET.JETInterfaces.DOCUMENTED_NAMES, '\n'))
