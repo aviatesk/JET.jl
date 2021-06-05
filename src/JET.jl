@@ -466,7 +466,7 @@ end
 @inline get_stmt(frame::InferenceState, pc = get_currpc(frame))    = @inbounds frame.src.code[pc]
 @inline get_states(frame::InferenceState, pc = get_currpc(frame))  = @inbounds frame.stmt_types[pc]::VarTable
 @inline get_codeloc(frame::InferenceState, pc = get_currpc(frame)) = @inbounds frame.src.codelocs[pc]
-@inline get_lin(frame::InferenceState, loc = get_codeloc(frame))   = @inbounds (frame.src.linetable::Vector)[loc]::LineInfoNode
+@inline get_lin(frame::InferenceState, pc = get_currpc(frame))     = @inbounds (frame.src.linetable::Vector)[get_codeloc(frame, pc)]::LineInfoNode
 
 @inline get_slotname(frame::InferenceState, slot::Int)             = @inbounds frame.src.slotnames[slot]
 @inline get_slotname(frame::InferenceState, slot::Slot)            = get_slotname(frame, slot_id(slot))
@@ -869,12 +869,8 @@ end
 @reportdef struct GeneratorErrorReport <: InferenceErrorReport
     @nospecialize(err) # actual error wrapped
 end
-function GeneratorErrorReport(analyzer::AbstractAnalyzer, linfo::MethodInstance, @nospecialize(err))
-    vst = VirtualFrame[get_virtual_frame(analyzer, linfo)]
-    msg = sprint(showerror, err)
-    sig = get_sig(analyzer, linfo)
-    return GeneratorErrorReport(vst, msg, sig, err)
-end
+get_msg(::Type{GeneratorErrorReport}, analyzer::AbstractAnalyzer, linfo::MethodInstance, @nospecialize(err)) =
+    return sprint(showerror, err)
 
 # XXX what's the "soundness" of a `@generated` function ?
 # adapated from https://github.com/JuliaLang/julia/blob/f806df603489cfca558f6284d52a38f523b81881/base/compiler/utilities.jl#L107-L137

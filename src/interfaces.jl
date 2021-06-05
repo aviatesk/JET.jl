@@ -218,36 +218,35 @@ end
 Base.show(io::IO, ::MIME"application/prs.juno.inline", report::T) where {T<:InferenceErrorReport} =
     return report
 
-const Linfo = Union{InferenceState,MethodInstance}
-
 get_msg(T::Type{<:InferenceErrorReport}, @nospecialize(_...)) = throw("`get_msg` is not implemented for $T")
 get_spec_args(T::Type{<:InferenceErrorReport}) =                throw("`get_spec_args` is not implemented for $T")
 
 # default constructor to create a report from abstract interpretation routine
-function (T::Type{<:InferenceErrorReport})(analyzer::AbstractAnalyzer, linfo::Linfo, @nospecialize(spec_args...))
-    vf = get_virtual_frame(analyzer, linfo)
-    msg = get_msg(T, analyzer, linfo, spec_args...)
+function (T::Type{<:InferenceErrorReport})(analyzer::AbstractAnalyzer, state, @nospecialize(spec_args...))
+    vf = get_virtual_frame(analyzer, state)
+    msg = get_msg(T, analyzer, state, spec_args...)
     return T([vf], msg, vf.sig, spec_args...)
 end
 
 # virtual frame
 
-function get_virtual_frame(analyzer::AbstractAnalyzer, loc::Linfo)
+function get_virtual_frame(analyzer::AbstractAnalyzer, loc::Union{InferenceState,MethodInstance})
     sig = get_sig(analyzer, loc)
     file, line = get_file_line(loc)
     linfo = isa(loc, InferenceState) ? loc.linfo : loc
     return VirtualFrame(file, line, sig, linfo)
 end
 
-function get_virtual_frame(analyzer::AbstractAnalyzer, sv::InferenceState, pc::Int)
+# get location information at the given program counter
+function get_virtual_frame(analyzer::AbstractAnalyzer, (sv, pc)::Tuple{InferenceState,Int})
     sig = get_sig(analyzer, sv, get_stmt(sv, pc))
-    file, line = get_file_line(get_lin(sv, get_codeloc(sv, pc)))
+    file, line = get_file_line(sv, pc)
     linfo = sv.linfo
     return VirtualFrame(file, line, sig, linfo)
 end
 
-get_file_line(frame::InferenceState) = get_file_line(get_lin(frame))
-get_file_line(linfo::LineInfoNode)   = linfo.file, linfo.line
+get_file_line(frame::InferenceState, pc = get_currpc(frame)) = get_file_line(get_lin(frame, pc))
+
 # this location is not exact, but this is whay we know at best
 function get_file_line(linfo::MethodInstance)
     def = linfo.def
@@ -258,6 +257,8 @@ function get_file_line(linfo::MethodInstance)
     src = linfo.uninferred::CodeInfo
     return get_file_line(first(src.linetable::Vector)::LineInfoNode)
 end
+
+get_file_line(lin::LineInfoNode) = lin.file, lin.line
 
 # signature
 

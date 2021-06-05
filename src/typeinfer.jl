@@ -193,12 +193,8 @@ is_unreachable(@nospecialize(x)) = isa(x, ReturnNode) && !isdefined(x, :val)
 @reportdef struct LocalUndefVarErrorReport <: InferenceErrorReport
     name::Symbol
 end
-# use program counter where local undefined variable is found
-function LocalUndefVarErrorReport(analyzer::AbstractAnalyzer, sv::InferenceState, name::Symbol, pc::Int)
-    vf = get_virtual_frame(analyzer, sv, pc)
-    msg = "local variable $(name) is not defined"
-    return LocalUndefVarErrorReport([vf], msg, vf.sig, name)
-end
+get_msg(T::Type{LocalUndefVarErrorReport}, analyzer::AbstractAnalyzer, state, name::Symbol) =
+    return "local variable $(name) is not defined"
 
 # these report passes use `:throw_undef_if_not` and `:(unreachable)` introduced by the native
 # optimization pass, and thus supposed to only work on post-optimization code
@@ -221,13 +217,13 @@ function report_undefined_local_slots!(analyzer::AbstractAnalyzer, frame::Infere
                     # the optimization so far has found this statement is never "reachable";
                     # JET reports it since it will invoke undef var error at runtime, or will just
                     # be dead code otherwise
-                    report!(LocalUndefVarErrorReport, analyzer, frame, sym, idx)
+                    report!(LocalUndefVarErrorReport, analyzer, (frame, idx), sym)
                 else
                     # by excluding this pass, this analysis accepts some false negatives and
                     # some undefined variable error may happen in actual execution (thus unsound)
                 end
             else
-                report!(LocalUndefVarErrorReport, analyzer, frame, sym, idx)
+                report!(LocalUndefVarErrorReport, analyzer, (frame, idx), sym)
             end
         end
     end
