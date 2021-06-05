@@ -246,15 +246,15 @@ Represents general `throw` calls traced during inference.
 They are reported only when they're not caught by any control flow.
 """
 @reportdef struct UncaughtExceptionReport <: InferenceErrorReport
-    throw_calls::Vector{Expr}
+    throw_calls::Vector{Tuple{Int,Expr}} # (pc, call)
 end
-function UncaughtExceptionReport(analyzer::AbstractAnalyzer, sv::InferenceState, throw_calls::Vector{Expr})
+function UncaughtExceptionReport(analyzer::AbstractAnalyzer, sv::InferenceState, throw_calls::Vector{Tuple{Int,Expr}})
     vf = get_virtual_frame(analyzer, sv.linfo)
     msg = length(throw_calls) == 1 ? "may throw" : "may throw either of"
     sig = Any[]
     ncalls = length(throw_calls)
-    for (i, call) in enumerate(throw_calls)
-        call_sig = _get_sig(analyzer, sv, call)
+    for (i, (pc, call)) in enumerate(throw_calls)
+        call_sig = _get_sig(analyzer, (sv, pc), call)
         append!(sig, call_sig)
         i ≠ ncalls && push!(sig, ", ")
     end
@@ -277,17 +277,17 @@ function (::SoundBasicPass)(::Type{UncaughtExceptionReport}, analyzer::AbstractA
         codelocs    = frame.src.codelocs
         linetable   = frame.src.linetable::Vector
         throw_locs  = LineInfoNode[]
-        throw_calls = Expr[]
+        throw_calls = Tuple{Int,Expr}[]
         for r in get_reports(analyzer)
             if isa(r, SeriousExceptionReport) && last(r.vst).linfo === frame.linfo
                 push!(throw_locs, r.lin)
             end
         end
-        for (i, stmt) in enumerate(stmts)
+        for (pc, stmt) in enumerate(stmts)
             is_throw_call_expr(analyzer, frame, stmt) || continue
             # if this `throw` is already reported, don't duplciate
-            linetable[codelocs[i]]::LineInfoNode in throw_locs && continue
-            push!(throw_calls, stmt)
+            linetable[codelocs[pc]]::LineInfoNode in throw_locs && continue
+            push!(throw_calls, (pc, stmt))
         end
         if !isempty(throw_calls)
             report!(UncaughtExceptionReport, analyzer, frame, throw_calls)

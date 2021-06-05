@@ -342,7 +342,7 @@ function CC.abstract_eval_special_value(analyzer::AbstractAnalyzer, @nospecializ
     toplevel = istoplevel(analyzer, sv)
     if toplevel
         if isa(e, Slot) && is_global_slot(analyzer, e)
-            if get_slottype(sv, e) === Bottom
+            if get_slottype((sv, get_currpc(sv)), e) === Bottom
                 # if this abstract global variable is not initialized, form the global
                 # reference and abstract intepret it; we may have abstract interpreted this
                 # variable and it may have a type
@@ -437,7 +437,7 @@ function CC.abstract_eval_value(analyzer::AbstractAnalyzer, @nospecialize(e), vt
     end
 
     # report non-boolean condition error
-    stmt = get_stmt(sv)
+    stmt = get_stmt((sv, get_currpc(sv)))
     if isa(stmt, GotoIfNot)
         t = widenconst(ret)
         if t !== Bottom

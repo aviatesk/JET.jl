@@ -131,6 +131,7 @@ import Base:
     parse_input_line,
     unwrap_unionall,
     rewrap_unionall,
+    uniontypes,
     Fix1,
     Fix2,
     IdSet
@@ -179,6 +180,9 @@ using Pkg, Pkg.TOML
 const JET_DEV_MODE = parse(Bool, get(ENV, "JET_DEV_MODE", "false"))
 
 const CONFIG_FILE_NAME = ".JET.toml"
+
+const State     = Union{InferenceState,OptimizationState}
+const StateAtPC = Tuple{State,Int}
 
 # hooks
 # -----
@@ -443,6 +447,31 @@ const _JET_CONFIGURATIONS = Dict{Symbol,Union{Symbol,Expr}}()
 # utils
 # -----
 
+# common
+
+@inline get_stmt((sv, pc)::StateAtPC)         = @inbounds sv.src.code[pc]
+@inline get_lin((sv, pc)::StateAtPC)          = @inbounds (sv.src.linetable::Vector)[sv.src.codelocs[pc]]::LineInfoNode
+@inline get_ssavaluetype((sv, pc)::StateAtPC) = @inbounds sv.src.ssavaluetypes[pc]
+
+@inline get_slottype(s, slot)              = get_slottype(s, slot_id(slot))
+@inline get_slottype(sv::State, slot::Int) = @inbounds sv.slottypes[slot]
+@inline get_slotname(sv::State, slot)      = get_slotname(sv, slot_id(slot))
+@inline get_slotname(sv::State, slot::Int) = @inbounds sv.src.slotnames[slot]
+
+# InfernceState
+
+# we can retrieve program-counter-level slottype during inference
+@inline get_slottype(s::StateAtPC, slot::Int) = @inbounds (get_states(s)[slot]::VarState).typ
+@inline get_states((sv, pc)::StateAtPC)       = @inbounds sv.stmt_types[pc]::VarTable
+
+@inline get_currpc(sv::InferenceState)  = min(sv.currpc, length(sv.src.code))
+@inline get_result(sv::InferenceState)  = sv.bestguess
+
+# OptimizationState
+
+# we can't retrieve program-counter-level slottype during optimization
+@inline get_slottype(s::Tuple{OptimizationState,Int}, slot::Int) = get_slottype(first(s), slot)
+
 function is_constant_propagated(frame::InferenceState)
     return !frame.cached && CC.any(frame.result.overridden_by_const)
 end
@@ -460,20 +489,7 @@ function postwalk_inf_frame(@nospecialize(f), frame::InferenceState)
     return f(frame)
 end
 
-# NOTE: these methods are supposed to be called while abstract interpretaion
-# and as such aren't valid after finishing it (i.e. optimization, etc.)
-@inline get_currpc(frame::InferenceState)                          = min(frame.currpc, length(frame.src.code))
-@inline get_stmt(frame::InferenceState, pc = get_currpc(frame))    = @inbounds frame.src.code[pc]
-@inline get_states(frame::InferenceState, pc = get_currpc(frame))  = @inbounds frame.stmt_types[pc]::VarTable
-@inline get_codeloc(frame::InferenceState, pc = get_currpc(frame)) = @inbounds frame.src.codelocs[pc]
-@inline get_lin(frame::InferenceState, pc = get_currpc(frame))     = @inbounds (frame.src.linetable::Vector)[get_codeloc(frame, pc)]::LineInfoNode
-
-@inline get_slotname(frame::InferenceState, slot::Int)             = @inbounds frame.src.slotnames[slot]
-@inline get_slotname(frame::InferenceState, slot::Slot)            = get_slotname(frame, slot_id(slot))
-@inline get_slottype(frame::InferenceState, slot::Int)             = @inbounds (get_states(frame)[slot]::VarState).typ
-@inline get_slottype(frame::InferenceState, slot::Slot)            = get_slottype(frame, slot_id(slot))
-
-@inline get_result(frame::InferenceState)                          = frame.bestguess
+# lattice
 
 ignorenotfound(@nospecialize(t)) = t === NOT_FOUND ? Bottom : t
 

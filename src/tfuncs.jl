@@ -90,7 +90,7 @@ function (::SoundBasicPass)(::Type{SeriousExceptionReport}, analyzer::AbstractAn
         if isa(a, Const)
             v = a.val
             if isa(v, UndefKeywordError)
-                report!(UndefKeywordErrorReport, analyzer, sv, v, get_lin(sv))
+                report!(UndefKeywordErrorReport, analyzer, sv, v, get_lin((sv, get_currpc(sv))))
             end
         end
     end

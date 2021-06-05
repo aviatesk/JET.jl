@@ -442,6 +442,7 @@ end
 
 # check if we're in a toplevel module
 @inline istoplevel(analyzer::AbstractAnalyzer, sv::InferenceState)    = istoplevel(analyzer, sv.linfo)
+@inline istoplevel(::AbstractAnalyzer, ::OptimizationState)           = false # optimization never happen for top-level code
 @inline istoplevel(analyzer::AbstractAnalyzer, linfo::MethodInstance) = get_toplevelmod(analyzer) === linfo.def
 
 @inline istoplevelmod(analyzer::AbstractAnalyzer, mod::Module) = mod in get_toplevelmods(analyzer)
