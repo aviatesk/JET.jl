@@ -401,15 +401,13 @@ CC.may_discard_trees(analyzer::AbstractAnalyzer) = false
 
 JETAnalysisParams(analyzer::AbstractAnalyzer) = get_analysis_params(analyzer)
 
-@inline report_pass!(T::Type{<:InferenceErrorReport}, analyzer::AbstractAnalyzer, linfo::Union{InferenceState,MethodInstance}, @nospecialize(spec_args...)) =
-    ReportPass(analyzer)(T, analyzer, linfo, spec_args...)
+@inline report_pass!(T::Type{<:InferenceErrorReport}, analyzer::AbstractAnalyzer, @nospecialize(args...)) =
+    ReportPass(analyzer)(T, analyzer, args...)
 
-function report!(T::Type{<:InferenceErrorReport}, analyzer::AbstractAnalyzer,  @nospecialize(args...))
+report!(T::Type{<:InferenceErrorReport}, analyzer::AbstractAnalyzer,  @nospecialize(args...)) =
     push!(get_reports(analyzer), T(analyzer, args...))
-end
-function report!(T::Type{UncaughtExceptionReport}, analyzer::AbstractAnalyzer,  @nospecialize(args...))
+report!(T::Type{UncaughtExceptionReport}, analyzer::AbstractAnalyzer,  @nospecialize(args...)) =
     push!(get_uncaught_exceptions(analyzer), T(analyzer, args...))
-end
 
 function restore_cached_report!(cache::InferenceErrorReportCache, analyzer::AbstractAnalyzer)
     report = restore_cached_report(cache)

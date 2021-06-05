@@ -30,7 +30,7 @@ end
 @reportdef struct NoMethodErrorReport <: InferenceErrorReport
     @nospecialize(t::Union{Type,Vector{Type}})
 end
-# TODO count invalid unon split case
+# TODO count invalid union split case
 get_msg(::Type{NoMethodErrorReport}, analyzer::AbstractAnalyzer, sv::InferenceState, @nospecialize(t::Type)) =
     "no matching method found for call signature ($t)"
 get_msg(::Type{NoMethodErrorReport}, analyzer::AbstractAnalyzer, sv::InferenceState, ts::Vector{Type}) =
@@ -304,7 +304,7 @@ end
 @reportdef struct InvalidInvokeErrorReport <: InferenceErrorReport
     argtypes::Vector{Any}
 end
-function get_msg(::Type{InvalidInvokeErrorReport}, analyzer, sv::InferenceState, argtypes::Vector{Any})
+function get_msg(::Type{InvalidInvokeErrorReport}, analyzer::AbstractAnalyzer, sv::InferenceState, argtypes::Vector{Any})
     fallback_msg = "invalid invoke" # mostly because of runtime unreachable
 
     ft = widenconst(argtype_by_index(argtypes, 2))

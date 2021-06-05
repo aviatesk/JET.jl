@@ -156,7 +156,7 @@ If `T` implements this interface, the following requirements should be satisfied
   * `msg::String`: explains why this error is reported
   * `sig::Vector{Any}`: a signature of the error point
 
-  Note that `T` can still have additional fields specific to it.
+  Note that `T` can still have additional, specific fields.
 ---
 - **A constructor interface to create `T` from abstraction interpretation** \\
   `T<:InferenceErrorReport` has the default constructor
@@ -218,19 +218,21 @@ end
 Base.show(io::IO, ::MIME"application/prs.juno.inline", report::T) where {T<:InferenceErrorReport} =
     return report
 
-get_msg(T::Type{<:InferenceErrorReport}, analyzer, sv::InferenceState, @nospecialize(spec_args...)) = throw("`get_msg` isn't implemented for $T")
-get_spec_args(T::Type{<:InferenceErrorReport}) = throw("`get_spec_args` isn't implemented for $T")
+const Linfo = Union{InferenceState,MethodInstance}
+
+get_msg(T::Type{<:InferenceErrorReport}, @nospecialize(_...)) = throw("`get_msg` is not implemented for $T")
+get_spec_args(T::Type{<:InferenceErrorReport}) =                throw("`get_spec_args` is not implemented for $T")
 
 # default constructor to create a report from abstract interpretation routine
-function (T::Type{<:InferenceErrorReport})(analyzer, sv::InferenceState, @nospecialize(spec_args...))
-    vf = get_virtual_frame(analyzer, sv)
-    msg = get_msg(T, analyzer, sv, spec_args...)
+function (T::Type{<:InferenceErrorReport})(analyzer::AbstractAnalyzer, linfo::Linfo, @nospecialize(spec_args...))
+    vf = get_virtual_frame(analyzer, linfo)
+    msg = get_msg(T, analyzer, linfo, spec_args...)
     return T([vf], msg, vf.sig, spec_args...)
 end
 
 # virtual frame
 
-function get_virtual_frame(analyzer::AbstractAnalyzer, loc::Union{InferenceState,MethodInstance})
+function get_virtual_frame(analyzer::AbstractAnalyzer, loc::Linfo)
     sig = get_sig(analyzer, loc)
     file, line = get_file_line(loc)
     linfo = isa(loc, InferenceState) ? loc.linfo : loc

@@ -21,6 +21,9 @@ This cache is completely separated from the `NativeInterpreter`'s global cache, 
 """
 const JET_CODE_CACHE = IdDict{UInt, IdDict{MethodInstance,CodeInstance}}()
 
+# just used for interactive developments
+__clear_caches!() = (empty!(JET_REPORT_CACHE); empty!(JET_CODE_CACHE))
+
 function CC.code_cache(analyzer::AbstractAnalyzer)
     cache  = JETGlobalCache(analyzer)
     worlds = WorldRange(get_world_counter(analyzer))
