@@ -505,6 +505,7 @@ include("typeinfer.jl")
 include("optimize.jl")
 include("analyzer.jl")
 include("jetcache.jl")
+include("locinfo.jl")
 # top-level analysis
 include("graph.jl")
 include("virtualprocess.jl")
