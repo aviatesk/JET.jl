@@ -98,12 +98,12 @@ end
 # and we're not interested in any other program properties other than whether our code contains "unstable API"s or not.
 
 # So in our report pass, we would like to ignore all the reports implemented by JET.jl by default
-(::UnstableAPIAnalysisPass)(T::Type{<:InferenceErrorReport}, analyzer, linfo, @nospecialize(spec_args...)) = return
+(::UnstableAPIAnalysisPass)(T::Type{<:InferenceErrorReport}, analyzer, state, @nospecialize(spec_args...)) = return
 
 # but except the report of undefined global references (i.e. `GlobalUndefVarErrorReport`).
 # This overload allow us to find code that falls into the category 1.
-function (::UnstableAPIAnalysisPass)(T::Type{GlobalUndefVarErrorReport}, analyzer, linfo, @nospecialize(spec_args...))
-    BasicPass()(T, analyzer, linfo, spec_args...) # bypass to JET's default report pass
+function (::UnstableAPIAnalysisPass)(T::Type{GlobalUndefVarErrorReport}, analyzer, state, @nospecialize(spec_args...))
+    BasicPass()(T, analyzer, state, spec_args...) # bypass to JET's default report pass
 end
 
 # And now we will define new [`InferenceErrorReport`](@ref) report type `UnstableAPI`,
@@ -112,12 +112,12 @@ end
 @reportdef struct UnstableAPI <: InferenceErrorReport
     g::GlobalRef
 end
-function JETInterfaces.get_msg(::Type{UnstableAPI}, analyzer::UnstableAPIAnalyzer, sv::CC.InferenceState, g::GlobalRef)
+function JETInterfaces.get_msg(::Type{UnstableAPI}, analyzer::UnstableAPIAnalyzer, sv, g::GlobalRef)
     (; mod, name) = Base.resolve(g) # resolve to original name
     return "$mod.$name is unstable !"
 end
 
-function (::UnstableAPIAnalysisPass)(::Type{UnstableAPI}, analyzer::UnstableAPIAnalyzer, sv::CC.InferenceState, @nospecialize(e))
+function (::UnstableAPIAnalysisPass)(::Type{UnstableAPI}, analyzer::UnstableAPIAnalyzer, sv, @nospecialize(e))
     if isa(e, GlobalRef)
         isdefined(e.mod, e.name) || return false # this global reference falls into the category 1, should be caught by `GlobalUndefVarErrorReport` instead
 

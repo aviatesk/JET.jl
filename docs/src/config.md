@@ -26,7 +26,6 @@ JET.ToplevelConfig
 
 ```@docs
 JET.JETAnalysisParams
-JET.JETInferenceParams
 ```
 
 

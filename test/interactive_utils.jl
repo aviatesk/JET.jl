@@ -114,8 +114,7 @@ function _analyze_toplevel(ex, lnn, jetconfigs)
                   Expr(:toplevel, lnn, ex)
                   ) |> QuoteNode
     return :(let
-        state =  $(GlobalRef(JET, :AnalyzerState))(; $(map(esc, jetconfigs)...))
-        analyzer = $(GlobalRef(JET, :AbstractAnalyzer))($(GlobalRef(JET, :JETAnalyzer))(), state)
+        analyzer = $(GlobalRef(JET, :JETAnalyzer))(; $(map(esc, jetconfigs)...))
         config = ToplevelConfig(; $(map(esc, jetconfigs)...))
         $virtual_process($toplevelex,
                          $(string(lnn.file)),

@@ -193,12 +193,8 @@ is_unreachable(@nospecialize(x)) = isa(x, ReturnNode) && !isdefined(x, :val)
 @reportdef struct LocalUndefVarErrorReport <: InferenceErrorReport
     name::Symbol
 end
-# use program counter where local undefined variable is found
-function LocalUndefVarErrorReport(analyzer::AbstractAnalyzer, sv::InferenceState, name::Symbol, pc::Int)
-    vf = get_virtual_frame(analyzer, sv, pc)
-    msg = "local variable $(name) is not defined"
-    return LocalUndefVarErrorReport([vf], msg, vf.sig, name)
-end
+get_msg(T::Type{LocalUndefVarErrorReport}, analyzer::AbstractAnalyzer, state, name::Symbol) =
+    return "local variable $(name) is not defined"
 
 # these report passes use `:throw_undef_if_not` and `:(unreachable)` introduced by the native
 # optimization pass, and thus supposed to only work on post-optimization code
@@ -221,13 +217,13 @@ function report_undefined_local_slots!(analyzer::AbstractAnalyzer, frame::Infere
                     # the optimization so far has found this statement is never "reachable";
                     # JET reports it since it will invoke undef var error at runtime, or will just
                     # be dead code otherwise
-                    report!(LocalUndefVarErrorReport, analyzer, frame, sym, idx)
+                    report!(LocalUndefVarErrorReport, analyzer, (frame, idx), sym)
                 else
                     # by excluding this pass, this analysis accepts some false negatives and
                     # some undefined variable error may happen in actual execution (thus unsound)
                 end
             else
-                report!(LocalUndefVarErrorReport, analyzer, frame, sym, idx)
+                report!(LocalUndefVarErrorReport, analyzer, (frame, idx), sym)
             end
         end
     end
@@ -250,15 +246,15 @@ Represents general `throw` calls traced during inference.
 They are reported only when they're not caught by any control flow.
 """
 @reportdef struct UncaughtExceptionReport <: InferenceErrorReport
-    throw_calls::Vector{Expr}
+    throw_calls::Vector{Tuple{Int,Expr}} # (pc, call)
 end
-function UncaughtExceptionReport(analyzer::AbstractAnalyzer, sv::InferenceState, throw_calls::Vector{Expr})
+function UncaughtExceptionReport(analyzer::AbstractAnalyzer, sv::InferenceState, throw_calls::Vector{Tuple{Int,Expr}})
     vf = get_virtual_frame(analyzer, sv.linfo)
     msg = length(throw_calls) == 1 ? "may throw" : "may throw either of"
     sig = Any[]
     ncalls = length(throw_calls)
-    for (i, call) in enumerate(throw_calls)
-        call_sig = _get_sig(analyzer, sv, call)
+    for (i, (pc, call)) in enumerate(throw_calls)
+        call_sig = _get_sig(analyzer, (sv, pc), call)
         append!(sig, call_sig)
         i ≠ ncalls && push!(sig, ", ")
     end
@@ -281,17 +277,17 @@ function (::SoundBasicPass)(::Type{UncaughtExceptionReport}, analyzer::AbstractA
         codelocs    = frame.src.codelocs
         linetable   = frame.src.linetable::Vector
         throw_locs  = LineInfoNode[]
-        throw_calls = Expr[]
+        throw_calls = Tuple{Int,Expr}[]
         for r in get_reports(analyzer)
             if isa(r, SeriousExceptionReport) && last(r.vst).linfo === frame.linfo
                 push!(throw_locs, r.lin)
             end
         end
-        for (i, stmt) in enumerate(stmts)
+        for (pc, stmt) in enumerate(stmts)
             is_throw_call_expr(analyzer, frame, stmt) || continue
             # if this `throw` is already reported, don't duplciate
-            linetable[codelocs[i]]::LineInfoNode in throw_locs && continue
-            push!(throw_calls, stmt)
+            linetable[codelocs[pc]]::LineInfoNode in throw_locs && continue
+            push!(throw_calls, (pc, stmt))
         end
         if !isempty(throw_calls)
             report!(UncaughtExceptionReport, analyzer, frame, throw_calls)
