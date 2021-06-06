@@ -7,18 +7,18 @@
 # ## Motivation
 #
 # When Julia compiles your code and type inference on it was not so successful, the compiler
-# is likely to be unable to determine which method should be be called at each generic
-# function callsite, and then it will be looked up at runtime.
+# is likely to be unable to determine which method should be called at each generic function
+# callsite, and then it will be looked up at runtime.
 # That is called "runtime dispatch", which is known as a common source of performance problem
 # – the compiler can't do various kinds of optimizations including inlining when it can't
-# determine a single matching method, and method lookup also can be a bottleneck if the call
-# happens many times.
+# determine a single matching method, and method lookup itself can also be a bottleneck if
+# the call happens many times.
 #
 # In order to avoid this problem, we usually use `code_typed`, inspect its output, and check
 # if there is anywhere type is not well inferred (i.e. where is "type-instable") and
 # optimization was not successful.
 # But the problem is that `code_typed` can only present the "final" output of inference or
-# optimization, and we can't inspect an entire call tree and _may_ not be able to find where
+# optimization, and we can't inspect an entire call graph and _may_ not be able to find where
 # a problem happened and how the "type instability" has been propagated.
 #
 # There is a nice package called [Cthulhu.jl](https://github.com/JuliaDebug/Cthulhu.jl),
@@ -26,7 +26,7 @@
 # recursively and interactively.
 # The workflow with Cthulhu is much more powerful, but still, it's tedious.
 #
-# So, why not automate the workflow ?
+# So, why not automate it ?
 # We can use JET's pluggable analysis framework and create such an analyzer that automatically
 # analyzes your code and alarms you when it detects anywhere Julia can't determine matching
 # method statically and thus runtime dispatch will happen at runtime.
