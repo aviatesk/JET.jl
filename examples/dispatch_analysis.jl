@@ -23,7 +23,8 @@
 #
 # There is a nice package called [Cthulhu.jl](https://github.com/JuliaDebug/Cthulhu.jl),
 # which allows us to inspect the output of `code_typed` by _descending_ into a call tree,
-# recursively. The workflow with Cthulhu is much more powerful, but still, it's tedious.
+# recursively and interactively.
+# The workflow with Cthulhu is much more powerful, but still, it's tedious.
 #
 # So, why not automate the workflow ?
 # We can use JET's pluggable analysis framework and create such an analyzer that automatically
@@ -64,7 +65,7 @@ struct DispatchAnalyzer{T} <: AbstractAnalyzer
 end
 function DispatchAnalyzer(;
     ## a predicate, which takes `CC.InfernceState` and returns whether we want to analyze the call or not
-    target_filter = x->true,
+    target_filter = x::CC.InferenceState->true,
     jetconfigs...)
     return DispatchAnalyzer(AnalyzerState(; jetconfigs...), BitVector(), target_filter)
 end
@@ -197,13 +198,13 @@ report_dispatch((Any,)) do a
     f(a) # runtime dispatch !
 end;
 
-# Even if a call is not "well-typed", i.e. it's not a concrete call, runtime dispatch won't
-# happen as far as a single method can be resovled statically:
+# Note that even if a call is not "well-typed", i.e. it's not a concrete call, runtime
+# dispatch won't happen as far as a single method can be resovled statically:
 report_dispatch((Integer,)) do a
     f(a) # this isn't so good, but ok
 end;
 
-# Ok, working nicely so far. Let's move on to a bit more complicated example.
+# Ok, working nicely so far. Let's move on to a bit more complicated examples.
 # If we annotate `@noinline` to a function, then its call won't be inlined and will be
 # dispatched runtime. We will confirm this:
 

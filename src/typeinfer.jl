@@ -111,7 +111,9 @@ function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
             local_cache = InferenceErrorReportCache[]
             for report in this_caches
                 cache_report!(local_cache, report)
-                @static JET_DEV_MODE && let
+                # TODO make this holds when the `analyzer` hooks into `finish` or `optimize`
+                # more generally, handle cycles correctly
+                @static JET_DEV_MODE && if isa(analyzer, JETAnalyzer)
                     actual, expected = first(report.vst).linfo, linfo
                     @assert actual === expected "invalid local caching detected, expected $expected but got $actual"
                 end
@@ -131,7 +133,9 @@ function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
             global_cache = InferenceErrorReportCache[]
             for report in this_caches
                 cache_report!(global_cache, report)
-                @static JET_DEV_MODE && let
+                # TODO make this holds when the `analyzer` hooks into `finish` or `optimize`
+                # more generally, handle cycles correctly
+                @static JET_DEV_MODE && if isa(analyzer, JETAnalyzer)
                     actual, expected = first(report.vst).linfo, linfo
                     @assert actual === expected "invalid global caching detected, expected $expected but got $actual"
                 end

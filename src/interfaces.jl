@@ -263,7 +263,7 @@ macro reportdef(ex)
     spec_names = extract_decl_name.(spec_decls)
     spec_types = esc.(extract_decl_type.(spec_decls))
 
-    T = esc(T)
+    T, S = esc(T), esc(S)
 
     # cache constructor
     cache_constructor_sig = :($T(vst::VirtualStackTrace,

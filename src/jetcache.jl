@@ -67,7 +67,9 @@ function CC.get(wvc::WorldView{JETGlobalCache}, mi::MethodInstance, default)
                 for cached in global_cache
                     restored = restore_cached_report!(cached, analyzer)
                     push!(get_to_be_updated(analyzer), restored) # should be updated in `abstract_call` (after exiting `typeinf_edge`)
-                    @static JET_DEV_MODE && let
+                    # TODO make this holds when the `analyzer` hooks into `finish` or `optimize`
+                    # more generally, handle cycles correctly
+                    @static JET_DEV_MODE && if isa(analyzer, JETAnalyzer)
                         actual, expected = first(restored.vst).linfo, mi
                         @assert actual === expected "invalid global cache restoration, expected $expected but got $actual"
                     end
@@ -153,7 +155,9 @@ function CC.cache_lookup(linfo::MethodInstance, given_argtypes::Vector{Any}, cac
         for cached in analysis_result.cache
             restored = restore_cached_report!(cached, analyzer)
             push!(get_to_be_updated(analyzer), restored) # should be updated in `abstract_call_method_with_const_args`
-            @static JET_DEV_MODE && let
+            # TODO make this holds when the `analyzer` hooks into `finish` or `optimize`
+            # more generally, handle cycles correctly
+            @static JET_DEV_MODE && if isa(analyzer, JETAnalyzer)
                 actual, expected = first(restored.vst).linfo, linfo
                 @assert actual === expected "invalid local cache restoration, expected $expected but got $actual"
             end
