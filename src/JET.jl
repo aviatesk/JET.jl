@@ -453,24 +453,22 @@ const _JET_CONFIGURATIONS = Dict{Symbol,Union{Symbol,Expr}}()
 @inline get_lin((sv, pc)::StateAtPC)          = @inbounds (sv.src.linetable::Vector)[sv.src.codelocs[pc]]::LineInfoNode
 @inline get_ssavaluetype((sv, pc)::StateAtPC) = @inbounds sv.src.ssavaluetypes[pc]
 
-@inline get_slottype(s, slot)              = get_slottype(s, slot_id(slot))
-@inline get_slottype(sv::State, slot::Int) = @inbounds sv.slottypes[slot]
-@inline get_slotname(sv::State, slot)      = get_slotname(sv, slot_id(slot))
-@inline get_slotname(sv::State, slot::Int) = @inbounds sv.src.slotnames[slot]
+@inline get_slottype(s::Union{StateAtPC,State}, slot)      = get_slottype(s, slot_id(slot))
+@inline get_slottype((sv, pc)::StateAtPC,       slot::Int) = get_slottype(sv, slot)
+@inline get_slottype(sv::State,                 slot::Int) = @inbounds sv.slottypes[slot]
+
+@inline get_slotname(s::Union{StateAtPC,State}, slot)      = get_slotname(s, slot_id(slot))
+@inline get_slotname((sv, pc)::StateAtPC,       slot::Int) = @inbounds sv.src.slotnames[slot]
+@inline get_slotname(sv::State,                 slot::Int) = @inbounds sv.src.slotnames[slot]
 
 # InfernceState
 
 # we can retrieve program-counter-level slottype during inference
-@inline get_slottype(s::StateAtPC, slot::Int) = @inbounds (get_states(s)[slot]::VarState).typ
-@inline get_states((sv, pc)::StateAtPC)       = @inbounds sv.stmt_types[pc]::VarTable
+@inline get_slottype(s::Tuple{InferenceState,Int}, slot::Int) = @inbounds (get_states(s)[slot]::VarState).typ
+@inline get_states((sv, pc)::Tuple{InferenceState,Int})       = @inbounds sv.stmt_types[pc]::VarTable
 
 @inline get_currpc(sv::InferenceState)  = min(sv.currpc, length(sv.src.code))
 @inline get_result(sv::InferenceState)  = sv.bestguess
-
-# OptimizationState
-
-# we can't retrieve program-counter-level slottype during optimization
-@inline get_slottype(s::Tuple{OptimizationState,Int}, slot::Int) = get_slottype(first(s), slot)
 
 function is_constant_propagated(frame::InferenceState)
     return !frame.cached && CC.any(frame.result.overridden_by_const)
