@@ -42,22 +42,41 @@ jet_code_cache(wvc::WorldView{JETGlobalCache})   = jet_code_cache(wvc.cache.anal
 
 CC.haskey(wvc::WorldView{JETGlobalCache}, mi::MethodInstance) = haskey(jet_code_cache(wvc), mi)
 
+function CC.typeinf_edge(analyzer::AbstractAnalyzer, method::Method, @nospecialize(atypes), sparams::SimpleVector, caller::InferenceState)
+    # NOTE enable the report cache restoration at `code = get(code_cache(interp), mi, nothing)`
+    set_cache_enabled!(analyzer, true)
+    return @invoke typeinf_edge(analyzer::AbstractInterpreter, method::Method, @nospecialize(atypes), sparams::SimpleVector, caller::InferenceState)
+end
+
 function CC.get(wvc::WorldView{JETGlobalCache}, mi::MethodInstance, default)
-    # ignore code cache for a `MethodInstance` that is not yet analyzed by JET;
-    ret = get(jet_code_cache(wvc), mi, default)
-    if isa(ret, CodeInstance)
-        # cache hit, now we need to append cached reports associated with this `MethodInstance`
-        global_cache = get(jet_report_cache(wvc), mi, nothing)
-        if isa(global_cache, Vector{InferenceErrorReportCache})
-            analyzer = wvc.cache.analyzer
-            for cached in global_cache
-                restored = restore_cached_report!(cached, analyzer)
-                push!(get_to_be_updated(analyzer), restored) # should be updated in `abstract_call` (after exiting `typeinf_edge`)
-                # # TODO make this hold
-                # @assert first(cached.vst).linfo === mi "invalid global restoring"
+    ret = get(jet_code_cache(wvc), mi, default) # will ignore native code cache for a `MethodInstance` that is not analyzed by JET yet
+
+    analyzer = wvc.cache.analyzer
+
+    # XXX this relies on a very dirty analyzer state manipulation, the reason for this is
+    # that this method (and `code_cache(::AbstractAnalyzer)`) can be called from multiple
+    # contexts including edge inference, constant prop' heuristics and inlining, where we
+    # want to use report cache only in edge inference, but we can't tell which context is
+    # the caller of this specific method call here and thus can't tell whether we should
+    # enable report cache reconstruction without the information
+    if get_cache_enabled(analyzer)
+        if isa(ret, CodeInstance)
+            # cache hit, now we need to append cached reports associated with this `MethodInstance`
+            global_cache = get(jet_report_cache(wvc), mi, nothing)
+            if isa(global_cache, Vector{InferenceErrorReportCache})
+                for cached in global_cache
+                    restored = restore_cached_report!(cached, analyzer)
+                    push!(get_to_be_updated(analyzer), restored) # should be updated in `abstract_call` (after exiting `typeinf_edge`)
+                    @static JET_DEV_MODE && let
+                        actual, expected = first(restored.vst).linfo, mi
+                        @assert actual === expected "invalid global cache restoration, expected $expected but got $actual"
+                    end
+                end
             end
         end
     end
+
+    set_cache_enabled!(analyzer, false)
     return ret
 end
 
@@ -134,8 +153,10 @@ function CC.cache_lookup(linfo::MethodInstance, given_argtypes::Vector{Any}, cac
         for cached in analysis_result.cache
             restored = restore_cached_report!(cached, analyzer)
             push!(get_to_be_updated(analyzer), restored) # should be updated in `abstract_call_method_with_const_args`
-            # # TODO make this hold
-            # @assert first(cached.vst).linfo === linfo "invalid local restoring"
+            @static JET_DEV_MODE && let
+                actual, expected = first(restored.vst).linfo, linfo
+                @assert actual === expected "invalid local cache restoration, expected $expected but got $actual"
+            end
         end
     end
 
