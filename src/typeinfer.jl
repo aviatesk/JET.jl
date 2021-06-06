@@ -110,9 +110,11 @@ function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
             @static JET_DEV_MODE && @assert jet_cache_lookup(linfo, argtypes, cache) === nothing "invalid local caching $linfo, $argtypes"
             local_cache = InferenceErrorReportCache[]
             for report in this_caches
-                # # TODO make this hold
-                # @assert first(report.vst).linfo === linfo "invalid local caching"
                 cache_report!(local_cache, report)
+                @static JET_DEV_MODE && let
+                    actual, expected = first(report.vst).linfo, linfo
+                    @assert actual === expected "invalid local caching detected, expected $expected but got $actual"
+                end
             end
             # branching on https://github.com/JuliaLang/julia/pull/39972
             given_argtypes, overridden_by_const = @static if VERSION ≥ v"1.7.0-DEV.705"
@@ -128,9 +130,11 @@ function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
             @static JET_DEV_MODE && @assert !haskey(cache, linfo) || isentry "invalid global caching $linfo"
             global_cache = InferenceErrorReportCache[]
             for report in this_caches
-                # # TODO make this hold
-                # @assert first(report.vst).linfo === linfo "invalid global caching"
                 cache_report!(global_cache, report)
+                @static JET_DEV_MODE && let
+                    actual, expected = first(report.vst).linfo, linfo
+                    @assert actual === expected "invalid global caching detected, expected $expected but got $actual"
+                end
             end
             cache[linfo] = global_cache
         end

@@ -709,6 +709,32 @@ end
     end
     @test !isempty(get_reports(analyzer))
     @test !any(r->isa(r, InvalidInvokeErrorReport), get_reports(analyzer))
+
+    bar(a) = return a + undefvar
+    function baz(a)
+        a += 1
+        Base.@invoke bar(a::Int) # `invoke` is valid, but error should happne within `bar`
+    end
+    analyzer, frame = analyze_call(baz, (Any,))
+    @test !isempty(get_reports(analyzer))
+    @test !any(r->isa(r, InvalidInvokeErrorReport), get_reports(analyzer))
+    # virtual stack trace should include frames of both `bar` and `baz`
+    # we already `@assert` it within `typeinf` when `JET_DEV_MODE` is enabled, but test it
+    # here just to make sure it's working
+    # WARNING the code block below is really line sensitive, in a relative way to the definitions of `bar` and `baz`
+    @test all(get_reports(analyzer)) do r
+        any(r.vst) do vf
+            vf.file === Symbol(@__FILE__) &&
+            vf.line == (@__LINE__) - 15 && # `bar`
+            vf.linfo.def.name === :bar
+        end || return false
+        any(r.vst) do vf
+            vf.file === Symbol(@__FILE__) &&
+            vf.line == (@__LINE__) - 17 && # `baz`
+            vf.linfo.def.name === :baz
+        end || return false
+        return true
+    end
 end
 
 @testset "additional analysis pass for task parallelism code" begin

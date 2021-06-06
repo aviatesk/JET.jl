@@ -32,6 +32,8 @@ jobs:
         with:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
+      - name: set `JET_DEV_MODE` # enable development assertions (needs to happen before precompile)
+        run: echo "JET_DEV_MODE=true" >> $GITHUB_ENV
       - uses: julia-actions/julia-buildpkg@latest
       - uses: julia-actions/julia-runtest@latest
       - uses: julia-actions/julia-processcoverage@v1
