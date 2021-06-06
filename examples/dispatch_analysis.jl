@@ -81,6 +81,7 @@ JETInterfaces.AnalyzerState(analyzer::DispatchAnalyzer)                         
 JETInterfaces.AbstractAnalyzer(analyzer::DispatchAnalyzer, state::AnalyzerState) = DispatchAnalyzer(state, analyzer.target_filter)
 JETInterfaces.ReportPass(analyzer::DispatchAnalyzer)                             = DispatchAnalysisPass()
 
+## we want to run different analysis with a different filter, so include its hash into the cache key
 function JET.get_cache_key(analyzer::DispatchAnalyzer)
     h = @invoke JET.get_cache_key(analyzer::AbstractAnalyzer)
     h = hash(analyzer.target_filter, h)
@@ -264,24 +265,22 @@ end |> first
 # For example, we can check type-stabilities of anything in the current module like this:
 
 ## problem: when ∑1/n exceeds 30 ?
-function compute(k)
-    n = 1
+function compute(x)
+    r = 1
     s = 0.0
-    i = 1
-    @time while true
-        s += 1/i
-        if s ≥ n
-            println("round $n/$k has been finished") # we're not interested type-instabilities within this call
-            n += 1
-            if n == k
-                break
-            end
+    n = 1
+    @time while r < x
+        s += 1/n
+        if s ≥ r
+            println("round $r/$x has been finished") # we're not interested type-instabilities within this call
+            r += 1
         end
-        i += 1
+        n += 1
     end
+    return n, s
 end
 
 ## NOTE:
-## `compute(30)` will take more than hours in actual execution, according to https://twitter.com/dannchu/status/1400929766522310657,
+## `compute(30)` will take more than hours in actual execution, according to https://twitter.com/genkuroki/status/1401332946707963909,
 ## but `@report_dispatch` will just do abstract interpretation of the call, so will finish instantly
-@report_dispatch target_filter=module_filter(@__MODULE__) compute(30); ## but by abs
+@report_dispatch target_filter=module_filter(@__MODULE__) compute(30);
