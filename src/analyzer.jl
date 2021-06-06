@@ -246,6 +246,9 @@ mutable struct AnalyzerState
     # keeps track of the current inference frame (needed for report cache reconstruction)
     current_frame::Union{Nothing,InferenceState}
 
+    # whether to enable global report cache restoration at the next call of `CC.get(wvc::WorldView{JETGlobalCache}, mi::MethodInstance, default)`
+    cache_enabled::Bool
+
     # local report cache for constant analysis
     cache::Vector{AnalysisResult}
 
@@ -306,6 +309,7 @@ end
                          UncaughtExceptionReport[],
                          Set{InferenceErrorReport}(),
                          current_frame,
+                         false,
                          cache,
                          concretized,
                          toplevelmod,

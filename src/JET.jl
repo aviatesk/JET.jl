@@ -51,9 +51,7 @@ import .CC:
     typeinf,
     _typeinf,
     finish,
-    # optimize.jl
-    OptimizationState,
-    optimize,
+    typeinf_edge,
     # JET.jl
     InferenceState
 
@@ -95,6 +93,7 @@ import .CC:
     NativeInterpreter,
     InferenceResult,
     InternalCodeCache,
+    OptimizationState,
     WorldRange,
     WorldView,
     Bottom,
@@ -502,7 +501,6 @@ include("interfaces.jl")
 include("tfuncs.jl")
 include("abstractinterpretation.jl")
 include("typeinfer.jl")
-include("optimize.jl")
 include("analyzer.jl")
 include("jetcache.jl")
 include("locinfo.jl")
