@@ -296,6 +296,13 @@ import .CC:
 function CC.abstract_invoke(analyzer::AbstractAnalyzer, argtypes::Vector{Any}, sv::InferenceState)
     ret = @invoke abstract_invoke(analyzer::AbstractInterpreter, argtypes::Vector{Any}, sv::InferenceState)
 
+    # if the `abstract_invoke(::AbstractInterpreter)` was successful, we need to update reports
+    # since it's an inter-procedural inference that internally uses `typeinf_edge`
+    info = ret.info
+    if isa(info, InvokeCallInfo)
+        update_reports!(analyzer, sv)
+    end
+
     report_pass!(InvalidInvokeErrorReport, analyzer, sv, ret, argtypes)
 
     return ret
