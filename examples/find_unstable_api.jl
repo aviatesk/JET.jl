@@ -91,6 +91,9 @@ function CC.builtin_tfunction(analyzer::UnstableAPIAnalyzer, @nospecialize(f), a
     return Base.@invoke CC.builtin_tfunction(analyzer::AbstractAnalyzer, f, argtypes::Vector{Any}, sv::CC.InferenceState)
 end
 
+# Additionally, we can cut off the performance cost involved with Julia's native compiler's optimizations passes:
+CC.may_optimize(analyzer::UnstableAPIAnalyzer) = return false
+
 # Now we implement the body of our analysis.
 # We define "unstable API"s such that they're:
 # 1. undefined binding, or
