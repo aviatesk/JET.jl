@@ -1,7 +1,7 @@
 name = "JET"
 uuid = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
 authors = ["Shuhei Kadowaki <aviatesk@gmail.com>"]
-version = "0.4.2"
+version = "0.4.3"
 
 [deps]
 InteractiveUtils = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
