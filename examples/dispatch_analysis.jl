@@ -61,13 +61,13 @@ import JET:
 struct DispatchAnalyzer{T} <: AbstractAnalyzer
     state::AnalyzerState
     opts::BitVector
-    target_filter::T
+    frame_filter::T
 end
 function DispatchAnalyzer(;
     ## a predicate, which takes `CC.InfernceState` and returns whether we want to analyze the call or not
-    target_filter = x::CC.InferenceState->true,
+    frame_filter = x::CC.InferenceState->true,
     jetconfigs...)
-    return DispatchAnalyzer(AnalyzerState(; jetconfigs...), BitVector(), target_filter)
+    return DispatchAnalyzer(AnalyzerState(; jetconfigs...), BitVector(), frame_filter)
 end
 
 ## maybe filtering by module would be most useful
@@ -79,13 +79,13 @@ end
 
 ## AbstractAnalyzer API requirements
 JETInterfaces.AnalyzerState(analyzer::DispatchAnalyzer)                          = analyzer.state
-JETInterfaces.AbstractAnalyzer(analyzer::DispatchAnalyzer, state::AnalyzerState) = DispatchAnalyzer(state, analyzer.target_filter)
+JETInterfaces.AbstractAnalyzer(analyzer::DispatchAnalyzer, state::AnalyzerState) = DispatchAnalyzer(state, analyzer.opts, analyzer.frame_filter)
 JETInterfaces.ReportPass(analyzer::DispatchAnalyzer)                             = DispatchAnalysisPass()
 
 ## we want to run different analysis with a different filter, so include its hash into the cache key
 function JET.get_cache_key(analyzer::DispatchAnalyzer)
     h = @invoke JET.get_cache_key(analyzer::AbstractAnalyzer)
-    h = hash(analyzer.target_filter, h)
+    h = hash(analyzer.frame_filter, h)
     return h
 end
 
@@ -104,7 +104,7 @@ end
 function CC.finish(frame::CC.InferenceState, analyzer::DispatchAnalyzer)
     ret = @invoke CC.finish(frame::CC.InferenceState, analyzer::AbstractAnalyzer)
 
-    if !analyzer.target_filter(frame)
+    if !analyzer.frame_filter(frame)
         push!(analyzer.opts, false)
     else
         if isa(frame.result.src, CC.OptimizationState)
@@ -189,7 +189,7 @@ end
 f(a) = a
 f(a::Number) = a
 
-# `f(::Int)` a concrete call and just type stable and anthing shouldn't be reported:
+# `f(::Int)` a concrete call and just type stable and anything shouldn't be reported:
 @report_dispatch f(10); # should be ok
 
 # But if the argument type isn't well typed, compiler can't determine which method to call,
@@ -261,7 +261,7 @@ end |> first
 # But what if your code contains a single `println` call, which you're absolutely okay with
 # the type instabilities involved with it (e.g. it's only called once or only in debug mode,
 # or such), but still you want to assert that any other part of code is type-stable and dispatch-free ?
-# `DispatchAnalyzer`'s `target_filter` option can be useful for this, by allowing us to
+# `DispatchAnalyzer`'s `frame_filter` option can be useful for this, by allowing us to
 # specificy where it should and shouldn't run analysis.
 # For example, we can check type-stabilities of anything in the current module like this:
 
@@ -284,4 +284,4 @@ end
 ## NOTE:
 ## `compute(30)` will take more than hours in actual execution, according to https://twitter.com/genkuroki/status/1401332946707963909,
 ## but `@report_dispatch` will just do abstract interpretation of the call, so will finish instantly
-@report_dispatch target_filter=module_filter(@__MODULE__) compute(30);
+@report_dispatch frame_filter=module_filter(@__MODULE__) compute(30);

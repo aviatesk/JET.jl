@@ -122,9 +122,17 @@ function _get_sig_type(analyzer::AbstractAnalyzer, s::StateAtPC, expr::Expr)
 end
 function _get_sig_type(analyzer::AbstractAnalyzer, (sv, _)::StateAtPC, ssa::SSAValue)
     news = (sv, ssa.id)
-    sig, sig_typ = _get_sig_type(analyzer, news, get_stmt(news))
-    typ = widenconst(ignorelimited(ignorenotfound(get_ssavaluetype(news))))
-    sig_typ == typ || push!(sig, typ)
+    if isa(sv, OptimizationState)
+        # when working on `OptimizationState`, the SSA traverse could be really long because
+        # of inlining, so just give up for such a case
+        typ = widenconst(ignorelimited(ignorenotfound(get_ssavaluetype(news))))
+        sig = Any["%$(ssa.id)", typ]
+    else
+        # XXX the same problem _may_ happen for `InferenceState` too ?
+        sig, sig_typ = _get_sig_type(analyzer, news, get_stmt(news))
+        typ = widenconst(ignorelimited(ignorenotfound(get_ssavaluetype(news))))
+        sig_typ == typ || push!(sig, typ) # XXX I forgot why I added this line ...
+    end    
     return sig, typ
 end
 function _get_sig_type(analyzer::AbstractAnalyzer, s::StateAtPC, slot::SlotNumber)
