@@ -1,10 +1,31 @@
-"""
-    function overload_abstract_call_gf_by_type!()
-        ...
-    end
-    push_inithook!(overload_abstract_call_gf_by_type!)
+import .CC:
+    unionsplitcost,
+    method_table,
+    InternalMethodTable,
+    CachedMethodTable,
+    _any,
+    update_valid_age!,
+    is_method_pure,
+    pure_eval_call,
+    MethodResultPure,
+    call_result_unused,
+    is_improvable,
+    widenconditional,
+    isconstType,
+    PartialStruct,
+    has_nontrivial_const_info,
+    const_prop_profitable,
+    improvable_via_constant_propagation,
+    issingletontype,
+    istopfunction,
+    const_prop_heuristic
 
-the aims of this overload are:
+@static if isdefined(CC, :LimitedAccuracy)
+    import .CC: LimitedAccuracy
+end
+
+"""
+The aims of this overload are:
 1. report `NoMethodErrorReport` on empty method signature matching
 2. keep inference on non-concrete call sites in a toplevel frame created by [`virtual_process`](@ref)
 3. don't bail out even after the current return type grows up to `Any` and collects as much
@@ -20,13 +41,9 @@ the aims of this overload are:
     This is a legacy definition of the overload for `abstract_call_gf_by_type`.
     Just kept for the compatbility with Julia v1.6.
 """
-function overload_abstract_call_gf_by_type!()
-# %% for easier interactive update of `abstract_call_gf_by_type!`
-Core.eval(CC, quote
-
-function abstract_call_gf_by_type(interp::$AbstractAnalyzer, @nospecialize(f), argtypes::Vector{Any}, @nospecialize(atype), sv::InferenceState,
+function abstract_call_gf_by_type(interp::AbstractAnalyzer, @nospecialize(f), argtypes::Vector{Any}, @nospecialize(atype), sv::InferenceState,
                                   max_methods::Int = InferenceParams(interp).MAX_METHODS)
-    if sv.params.unoptimize_throw_blocks && sv.currpc in sv.throw_blocks
+    if sv.params.unoptimize_throw_blocks && CC.in(sv.currpc, sv.throw_blocks)
         return CallMeta(Any, false)
     end
     valid_worlds = WorldRange()
@@ -46,14 +63,14 @@ function abstract_call_gf_by_type(interp::$AbstractAnalyzer, @nospecialize(f), a
                 return CallMeta(Any, false)
             end
             mt = mt::Core.MethodTable
-            matches = findall(sig_n, method_table(interp); limit=max_methods)
-            if matches === missing
+            matches = CC.findall(sig_n, method_table(interp); limit=max_methods)
+            if matches === CC.missing
                 add_remark!(interp, sv, "For one of the union split cases, too many methods matched")
                 return CallMeta(Any, false)
             end
-            push!(infos, MethodMatchInfo(matches))
-            append!(applicable, matches)
-            valid_worlds = intersect(valid_worlds, matches.valid_worlds)
+            CC.push!(infos, MethodMatchInfo(matches))
+            CC.append!(applicable, matches)
+            valid_worlds = CC.intersect(valid_worlds, matches.valid_worlds)
             thisfullmatch = _any(match->(match::MethodMatch).fully_covers, matches)
             found = false
             for (i, mt′) in enumerate(mts)
@@ -64,14 +81,14 @@ function abstract_call_gf_by_type(interp::$AbstractAnalyzer, @nospecialize(f), a
                 end
             end
             if !found
-                push!(mts, mt)
-                push!(fullmatch, thisfullmatch)
+                CC.push!(mts, mt)
+                CC.push!(fullmatch, thisfullmatch)
             end
         end
         info = UnionSplitInfo(infos)
         #=== abstract_call_gf_by_type patch point 1-1 start ===#
         # report pass for no matching methods error
-        $report_pass!($NoMethodErrorReport, interp, sv, info, splitsigs)
+        report_pass!(NoMethodErrorReport, interp, sv, info, splitsigs)
         #=== abstract_call_gf_by_type patch point 1-1 end ===#
     else
         mt = ccall(:jl_method_table_for, Any, (Any,), atype)
@@ -80,26 +97,26 @@ function abstract_call_gf_by_type(interp::$AbstractAnalyzer, @nospecialize(f), a
             return CallMeta(Any, false)
         end
         mt = mt::Core.MethodTable
-        matches = findall(atype, method_table(interp, sv); limit=max_methods)
-        if matches === missing
+        matches = CC.findall(atype, method_table(interp, sv); limit=max_methods)
+        if matches === CC.missing
             # this means too many methods matched
             # (assume this will always be true, so we don't compute / update valid age in this case)
             add_remark!(interp, sv, "Too many methods matched")
             return CallMeta(Any, false)
         end
-        push!(mts, mt)
-        push!(fullmatch, _any(match->(match::MethodMatch).fully_covers, matches))
+        CC.push!(mts, mt)
+        CC.push!(fullmatch, _any(match->(match::MethodMatch).fully_covers, matches))
         info = MethodMatchInfo(matches)
         #=== abstract_call_gf_by_type patch point 1-2 start ===#
         # report pass for no matching methods error
-        $report_pass!($NoMethodErrorReport, interp, sv, info, atype)
+        report_pass!(NoMethodErrorReport, interp, sv, info, atype)
         #=== abstract_call_gf_by_type patch point 1-2 end ===#
         applicable = matches.matches
         valid_worlds = matches.valid_worlds
     end
     update_valid_age!(sv, valid_worlds)
     applicable = applicable::Array{Any,1}
-    napplicable = length(applicable)
+    napplicable = CC.length(applicable)
     rettype = Bottom
     edgecycle = false
     edges = MethodInstance[]
@@ -117,7 +134,7 @@ function abstract_call_gf_by_type(interp::$AbstractAnalyzer, @nospecialize(f), a
     end
 
     #=== abstract_call_gf_by_type patch point 4-1 start ===#
-    nreports = length($get_reports(interp))
+    nreports = length(get_reports(interp))
     #=== abstract_call_gf_by_type patch point 4-1 end ===#
 
     for i in 1:napplicable
@@ -125,7 +142,7 @@ function abstract_call_gf_by_type(interp::$AbstractAnalyzer, @nospecialize(f), a
         method = match.method
         sig = match.spec_types
         #=== abstract_call_gf_by_type patch point 2 start ===#
-        if istoplevel && !isdispatchtuple(sig) && !$istoplevel(interp, sv) # keep going for "our" toplevel frame
+        if istoplevel && !isdispatchtuple(sig) && !JET.istoplevel(interp, sv) # keep going for "our" toplevel frame
         #=== abstract_call_gf_by_type patch point 2 end ===#
             # only infer concrete call sites in top-level expressions
             add_remark!(interp, sv, "Refusing to infer non-concrete call site in top-level expression")
@@ -142,7 +159,7 @@ function abstract_call_gf_by_type(interp::$AbstractAnalyzer, @nospecialize(f), a
             for sig_n in splitsigs
                 rt, edgecycle1, edge = abstract_call_method(interp, method, sig_n, svec(), multiple_matches, sv)
                 if edge !== nothing
-                    push!(edges, edge)
+                    CC.push!(edges, edge)
                 end
                 edgecycle |= edgecycle1::Bool
                 this_rt = tmerge(this_rt, rt)
@@ -154,7 +171,7 @@ function abstract_call_gf_by_type(interp::$AbstractAnalyzer, @nospecialize(f), a
             this_rt, edgecycle1, edge = abstract_call_method(interp, method, sig, match.sparams, multiple_matches, sv)
             edgecycle |= edgecycle1::Bool
             if edge !== nothing
-                push!(edges, edge)
+                CC.push!(edges, edge)
             end
         end
         if this_rt !== Bottom
@@ -173,7 +190,7 @@ function abstract_call_gf_by_type(interp::$AbstractAnalyzer, @nospecialize(f), a
 
     #=== abstract_call_gf_by_type patch point 4-2 start ===#
     # check if constant propagation can improve analysis by throwing away possibly false positive reports
-    anyreported = (length($get_reports(interp)) - nreports) > 0
+    anyreported = (length(get_reports(interp)) - nreports) > 0
     #=== abstract_call_gf_by_type patch point 4-2 end ===#
 
     # try constant propagation if only 1 method is inferred to non-Bottom
@@ -218,28 +235,23 @@ function abstract_call_gf_by_type(interp::$AbstractAnalyzer, @nospecialize(f), a
         end
     end
     #print("=> ", rettype, "\n")
-    $(isdefined(CC, :LimitedAccuracy) && quote
+    @static if @isdefined(LimitedAccuracy)
     if rettype isa LimitedAccuracy
-        union!(sv.pclimitations, rettype.causes)
+        CC.union!(sv.pclimitations, rettype.causes)
         rettype = rettype.typ
     end
-    if !isempty(sv.pclimitations) # remove self, if present
-        delete!(sv.pclimitations, sv)
+    if !CC.isempty(sv.pclimitations) # remove self, if present
+        CC.delete!(sv.pclimitations, sv)
         for caller in sv.callers_in_cycle
-            delete!(sv.pclimitations, caller)
+            CC.delete!(sv.pclimitations, caller)
         end
     end
-    end)
+    end
 
-    $analyze_task_parallel_code!(interp, f, argtypes, sv)
+    analyze_task_parallel_code!(interp, f, argtypes, sv)
 
     return CallMeta(rettype, info)
 end
-
-end) # Core.eval(CC, quote
-# %% for easier interactive update of `abstract_call_gf_by_type!`
-end # function overload_abstract_call_gf_by_type!()
-push_inithook!(overload_abstract_call_gf_by_type!)
 
 function (::SoundBasicPass)(::Type{NoMethodErrorReport}, analyzer::AbstractAnalyzer, sv::InferenceState, info::UnionSplitInfo, splitsigs::Vector{Any})
     # check each match for union-split signature
@@ -264,11 +276,6 @@ function (::SoundBasicPass)(::Type{NoMethodErrorReport}, analyzer::AbstractAnaly
 end
 
 """
-    function overload_abstract_call_method_with_const_args!()
-        ...
-    end
-    push_inithook!(overload_abstract_call_method_with_const_args!)
-
 The only aim of this overloads is to update reports with `update_reports!` after successful
   constant prop'.
 
@@ -276,15 +283,11 @@ The only aim of this overloads is to update reports with `update_reports!` after
     This is a legacy definition of the overload for `abstract_call_method_with_const_args`.
     Just kept for the compatbility with Julia v1.6.
 """
-function overload_abstract_call_method_with_const_args!()
-# %% for easier interactive update of `abstract_call_method_with_const_args`
-Core.eval(CC, quote
-
-function abstract_call_method_with_const_args(interp::$AbstractAnalyzer, @nospecialize(rettype), @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch, sv::InferenceState, edgecycle::Bool)
+function abstract_call_method_with_const_args(interp::AbstractAnalyzer, @nospecialize(rettype), @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch, sv::InferenceState, edgecycle::Bool)
     method = match.method
     nargs::Int = method.nargs
     method.isva && (nargs -= 1)
-    length(argtypes) >= nargs || return Any
+    CC.length(argtypes) >= nargs || return Any
     haveconst = false
     allconst = true
     # see if any or all of the arguments are constant and propagating constants may be worthwhile
@@ -301,7 +304,7 @@ function abstract_call_method_with_const_args(interp::$AbstractAnalyzer, @nospec
         end
     end
     haveconst || improvable_via_constant_propagation(rettype) || return Any
-    force_inference = $(hasfield(Method, :aggressive_constprop) ? :(method.aggressive_constprop) : false) || InferenceParams(interp).aggressive_constant_propagation
+    force_inference = (@static hasfield(Method, :aggressive_constprop) ? method.aggressive_constprop : false) || InferenceParams(interp).aggressive_constant_propagation
     if !force_inference && nargs > 1
         if istopfunction(f, :getindex) || istopfunction(f, :setindex!)
             arrty = argtypes[2]
@@ -325,10 +328,10 @@ function abstract_call_method_with_const_args(interp::$AbstractAnalyzer, @nospec
          istopfunction(f, :<<) || istopfunction(f, :>>))
          # it is almost useless to inline the op of when all the same type,
          # but highly worthwhile to inline promote of a constant
-         length(argtypes) > 2 || return Any
+         CC.length(argtypes) > 2 || return Any
          t1 = widenconst(argtypes[2])
          all_same = true
-         for i in 3:length(argtypes)
+         for i in 3:CC.length(argtypes)
              if widenconst(argtypes[i]) !== t1
                  all_same = false
                  break
@@ -356,10 +359,10 @@ function abstract_call_method_with_const_args(interp::$AbstractAnalyzer, @nospec
             infstate = sv
             cyclei = 0
             while !(infstate === nothing)
-                if method === infstate.linfo.def && any(infstate.result.overridden_by_const)
+                if method === infstate.linfo.def && CC.any(infstate.result.overridden_by_const)
                     return Any
                 end
-                if cyclei < length(infstate.callers_in_cycle)
+                if cyclei < CC.length(infstate.callers_in_cycle)
                     cyclei += 1
                     infstate = infstate.callers_in_cycle[cyclei]
                 else
@@ -371,9 +374,9 @@ function abstract_call_method_with_const_args(interp::$AbstractAnalyzer, @nospec
         inf_result = InferenceResult(mi, argtypes)
         frame = InferenceState(inf_result, #=cache=#false, interp)
         frame === nothing && return Any # this is probably a bad generated function (unsound), but just ignore it
-        $(isdefined(CC, :LimitedAccuracy) || :(frame.limited = true))
+        @static @isdefined(LimitedAccuracy) || (frame.limited = true)
         frame.parent = sv
-        push!(inf_cache, inf_result)
+        CC.push!(inf_cache, inf_result)
         typeinf(interp, frame) || return Any
     end
     result = inf_result.result
@@ -381,12 +384,7 @@ function abstract_call_method_with_const_args(interp::$AbstractAnalyzer, @nospec
     isa(result, InferenceState) && return Any
     #=== abstract_call_method_with_const_args patch point 3 start ===#
     add_backedge!(mi, sv)
-    $update_reports!(interp, sv)
+    update_reports!(interp, sv)
     #=== abstract_call_method_with_const_args patch point 3 end ===#
     return result
 end
-
-end) # Core.eval(CC, quote
-# %% for easier interactive update of `abstract_call_method_with_const_args`
-end # function overload_abstract_call_method_with_const_args!()
-push_inithook!(overload_abstract_call_method_with_const_args!)
