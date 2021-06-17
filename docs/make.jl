@@ -1,8 +1,19 @@
 using JET, Documenter, Literate, Markdown
 
 const DOC_SRC_DIR          = normpath(@__DIR__, "src")
+const INDEX_FILENAME       = normpath(DOC_SRC_DIR, "generated-index.md")
 const PLUGIN_API_FILENAME  = normpath(DOC_SRC_DIR, "generated-plugin-api.md")
 const PLUGIN_EXAMPLES_DIRS = (normpath(@__DIR__, "..", "examples"), normpath(DOC_SRC_DIR, "generated-plugin-examples"))
+
+function generate_index!()
+    isfile(INDEX_FILENAME) && rm(INDEX_FILENAME)
+    open(INDEX_FILENAME, write=true) do io
+        s = string(@doc JET)
+        write(io, s)
+    end
+
+    return relpath(INDEX_FILENAME, DOC_SRC_DIR)
+end
 
 function generate_example_docs!(dir = PLUGIN_EXAMPLES_DIRS[1], outs = String[])
     # clean up first
@@ -74,7 +85,7 @@ let
     makedocs(; modules = [JET],
                sitename="JET.jl",
                pages = [
-                    "README" => "index.md",
+                    "README" => generate_index!(),
                     "Usages" => "usages.md",
                     "Configurations" => "config.md",
                     "Internals" => "internals.md",
