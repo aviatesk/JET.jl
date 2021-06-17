@@ -4,6 +4,7 @@
 Manifest.toml
 !/benchmark/Manifest.toml
 !/docs/Manifest.toml
+/docs/src/index.md
 /docs/src/generated-*.md
 /docs/src/generated-*/
 !/examples/Manifest.toml

@@ -1,7 +1,7 @@
 using JET, Documenter, Literate, Markdown
 
 const DOC_SRC_DIR          = normpath(@__DIR__, "src")
-const INDEX_FILENAME       = normpath(DOC_SRC_DIR, "generated-index.md")
+const INDEX_FILENAME       = normpath(DOC_SRC_DIR, "index.md")
 const PLUGIN_API_FILENAME  = normpath(DOC_SRC_DIR, "generated-plugin-api.md")
 const PLUGIN_EXAMPLES_DIRS = (normpath(@__DIR__, "..", "examples"), normpath(DOC_SRC_DIR, "generated-plugin-examples"))
 
