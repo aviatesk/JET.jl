@@ -885,62 +885,61 @@ end
     @testset "multiple declaration/assignment" begin
         let
             vmod, res = @analyze_toplevel2 begin
-                s, c = sincos(1)
+                r1, r2 = rand(2)
             end
 
-            @test is_abstract(vmod, :s)
-            @test isa_abstract(vmod.s, Float64)
-            @test is_abstract(vmod, :c)
-            @test isa_abstract(vmod.c, Float64)
+            @test is_abstract(vmod, :r1)
+            @test isa_abstract(vmod.r1, Float64)
+            @test is_abstract(vmod, :r2)
+            @test isa_abstract(vmod.r2, Float64)
         end
 
         let
             vmod, res = @analyze_toplevel2 begin
                 begin
-                    local s, c
-                    s, c = sincos(1)
+                    local r1, r2
+                    r1, r2 = rand(2)
                 end
             end
 
-            @test !isdefined(vmod, :s)
-            @test !isdefined(vmod, :c)
+            @test !isdefined(vmod, :r1)
+            @test !isdefined(vmod, :r2)
         end
 
         let
             vmod, res = @analyze_toplevel2 begin
                 let
-                    global s, c
-                    s, c = sincos(1)
+                    global r1, r2
+                    r1, r2 = rand(2)
                 end
             end
 
-            @test is_abstract(vmod, :s)
-            @test isa_abstract(vmod.s, Float64)
-            @test is_abstract(vmod, :c)
-            @test isa_abstract(vmod.c, Float64)
+            @test is_abstract(vmod, :r1)
+            @test isa_abstract(vmod.r1, Float64)
+            @test is_abstract(vmod, :r2)
+            @test isa_abstract(vmod.r2, Float64)
         end
 
         let
             vmod, res = @analyze_toplevel2 begin
-                so, co = let
-                    si, ci = sincos(1)
-                    si, ci
+                ro1, ro2 = let
+                    ri1, ri2 = rand(2)
                 end
             end
 
-            @test !isdefined(vmod, :si)
-            @test !isdefined(vmod, :ci)
-            @test is_abstract(vmod, :so)
-            @test isa_abstract(vmod.so, Float64)
-            @test is_abstract(vmod, :co)
-            @test isa_abstract(vmod.co, Float64)
+            @test !isdefined(vmod, :ri1)
+            @test !isdefined(vmod, :ri2)
+            @test is_abstract(vmod, :ro1)
+            @test isa_abstract(vmod.ro1, Float64)
+            @test is_abstract(vmod, :ro2)
+            @test isa_abstract(vmod.ro2, Float64)
         end
 
         let
             vmod, res = @analyze_toplevel2 begin
                 begin
                     local l
-                    l, g = sincos(1)
+                    l, g = rand(2)
                 end
             end
             @test !isdefined(vmod, :l)
