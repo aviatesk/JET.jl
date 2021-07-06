@@ -937,15 +937,14 @@ end
 
 """
     analyze_call(f, types = Tuple{}; jetconfigs...) -> (analyzer::AbstractAnalyzer, frame::Union{InferenceFrame,Nothing})
+    analyze_call(tt::Type{<:Tuple}; jetconfigs...) -> (analyzer::AbstractAnalyzer, frame::Union{InferenceFrame,Nothing})
 
 Analyzes the generic function call with the given type signature, and returns:
 - `analyzer::AbstractAnalyzer`: contains analyzed error reports and such
 - `frame::Union{InferenceFrame,Nothing}`: the final state of the abstract interpretation,
   or `nothing` if `f` is a generator and the code generation failed
 """
-function analyze_call(@nospecialize(f), @nospecialize(types = Tuple{});
-                      analyzer::Type{T} = JETAnalyzer,
-                      jetconfigs...) where {T<:AbstractAnalyzer}
+function analyze_call(@nospecialize(f), @nospecialize(types = Tuple{}); kwargs...)
     ft = Core.Typeof(f)
     if isa(types, Type)
         u = unwrap_unionall(types)
@@ -953,7 +952,11 @@ function analyze_call(@nospecialize(f), @nospecialize(types = Tuple{});
     else
         tt = Tuple{ft, types...}
     end
-
+    return analyze_call(tt; kwargs...)
+end
+function analyze_call(@nospecialize(tt::Type{<:Tuple});
+                      analyzer::Type{T} = JETAnalyzer,
+                      jetconfigs...) where {T<:AbstractAnalyzer}
     analyzer = T(; jetconfigs...)
     maybe_initialize_caches!(analyzer)
     return analyze_gf_by_type!(analyzer, tt)
@@ -977,12 +980,13 @@ end
 
 """
     report_call(f, types = Tuple{}; jetconfigs...) -> result_type::Any
+    report_call(tt::Type{<:Tuple}; jetconfigs...) -> result_type::Any
 
 Analyzes the generic function call with the given type signature, and then prints collected
   error points to `stdout`, and finally returns the result type of the call.
 """
-function report_call(@nospecialize(f), @nospecialize(types = Tuple{}); jetconfigs...)
-    analyzer, frame = analyze_call(f, types; jetconfigs...)
+function report_call(@nospecialize(args...); jetconfigs...)
+    analyzer, frame = analyze_call(args...; jetconfigs...)
     print_reports(get_reports(analyzer); jetconfigs...)
     if isnothing(frame)
         # if there is `GeneratorErrorReport`, it means the code generation happened and failed
