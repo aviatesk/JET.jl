@@ -240,6 +240,10 @@ mutable struct AnalyzerState
     # stashes `UncaughtExceptionReport`s that are not caught so far
     uncaught_exceptions::Vector{UncaughtExceptionReport}
 
+    # keeps locations where `SeriousExceptionReport` are reported, in order to avoid
+    # duplicated `UncaughtExceptionReport`s on same `throw` calls
+    throw_locs::Vector{LineInfoNode}
+
     # keeps reports that should be updated when returning back the parent frame (i.e. the next time we get back to inter-procedural context)
     to_be_updated::Set{InferenceErrorReport}
 
@@ -303,6 +307,7 @@ end
                          get_cache_key_per_config(analysis_params, inf_params),
                          InferenceErrorReport[],
                          UncaughtExceptionReport[],
+                         LineInfoNode[],
                          Set{InferenceErrorReport}(),
                          current_frame,
                          false,

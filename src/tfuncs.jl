@@ -17,9 +17,6 @@ function CC.builtin_tfunction(analyzer::AbstractAnalyzer, @nospecialize(f), argt
         return ret
     end
 
-    # report pass for invalid builtin function calls
-    # XXX for the meanwhile, we rely on the implementation of native tfuncs thus pass `ret` here as well
-    # XXX dynamic dispatch, is this okay in terms of performance ?
     report_pass!(InvalidBuiltinCallErrorReport, analyzer, sv, f, argtypes, ret)
 
     if f === getfield && 2 ≤ length(argtypes) ≤ 3
@@ -63,34 +60,42 @@ end
 """
     SeriousExceptionReport <: InferenceErrorReport
 
-The abstract type for "serious" errors that are invoked by `throw` calls but should be
-reported even if they may be caught in actual execution.
-In order to avoid duplicated reports for the `throw` call, any subtype of `SeriousExceptionReport`
-should keep `lin::LineInfoNode` field, which represents where the report gets collected.
+Represents a "serious" error that is manually thrown by a `throw` call.
+This is reported regardless of whether it's caught by control flow or not, as opposed to
+[`UncaughtExceptionReport`](@ref).
 """
-abstract type SeriousExceptionReport <: InferenceErrorReport end
-
-# # NOTE: this mixin implementation is cleaner but doesn't help inference,
-# # because inference on the `getproperty` interface relies on constant prop' and currently
-# # constant prop' isn't supported for `invoke`d calls
-# function Base.getproperty(er::SeriousExceptionReport, sym::Symbol)
-#     sym === :lin && return getfield(er, :lin)::LineInfoNode
-#     return @invoke getproperty(er::InferenceErrorReport, sym::Symbol)
-# end
-
-@reportdef struct UndefKeywordErrorReport <: SeriousExceptionReport
-    err::UndefKeywordError
-    lin::LineInfoNode
+struct SeriousExceptionReport{T} <: InferenceErrorReport
+    vst::VirtualStackTrace
+    msg::String
+    sig::Vector{Any}
+    err::T
+    SeriousExceptionReport(vst::VirtualStackTrace, msg::String, sig::Vector{Any}, err::T) where T =
+        return new{T}(vst, msg, sig, err)
+    SeriousExceptionReport{T}(vst::VirtualStackTrace, msg::String, sig::Vector{Any}, (err,)::Tuple{T}) where T =
+        return new{T}(vst, msg, sig, err)
 end
-get_msg(::Type{UndefKeywordErrorReport}, analyzer::AbstractAnalyzer, sv::InferenceState, err::UndefKeywordError, lin::LineInfoNode) = sprint(showerror, err)
+get_spec_args(report::SeriousExceptionReport) = (report.err,)
+
+function SeriousExceptionReport(analyzer::AbstractAnalyzer, state::InferenceState, err)
+    vf = get_virtual_frame(analyzer, state)
+    msg = string(first(split(sprint(showerror, err), '\n')))
+    ret = SeriousExceptionReport([vf], msg, vf.sig, err)
+    push!(get_throw_locs(analyzer), get_lin((state, get_currpc(state))))
+    return ret
+end
 
 function (::SoundBasicPass)(::Type{SeriousExceptionReport}, analyzer::AbstractAnalyzer, sv::InferenceState, argtypes::Vector{Any})
     if length(argtypes) ≥ 1
         a = first(argtypes)
         if isa(a, Const)
-            v = a.val
-            if isa(v, UndefKeywordError)
-                report!(UndefKeywordErrorReport, analyzer, sv, v, get_lin((sv, get_currpc(sv))))
+            err = a.val
+            if isa(err, UndefKeywordError)
+                report!(SeriousExceptionReport, analyzer, sv, err)
+            elseif isa(err, MethodError)
+                # ignore https://github.com/JuliaLang/julia/blob/7409a1c007b7773544223f0e0a2d8aaee4a45172/base/boot.jl#L261
+                if err.f !== Bottom
+                    report!(SeriousExceptionReport, analyzer, sv, err)
+                end
             end
         end
     end

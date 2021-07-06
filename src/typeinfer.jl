@@ -29,6 +29,7 @@ function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
 
     ret = @invoke typeinf(analyzer::AbstractInterpreter, frame::InferenceState)
 
+    empty!(get_throw_locs(analyzer))
     set_current_frame!(analyzer, prev_frame)
 
     #= logging start =#
@@ -250,7 +251,7 @@ report_identity_key(report::T) where {T<:InferenceErrorReport} =
     UncaughtExceptionReport <: InferenceErrorReport
 
 Represents general `throw` calls traced during inference.
-They are reported only when they're not caught by any control flow.
+This is reported only when it's not caught by control flow.
 """
 @reportdef struct UncaughtExceptionReport <: InferenceErrorReport
     throw_calls::Vector{Tuple{Int,Expr}} # (pc, call)
@@ -283,13 +284,8 @@ function (::SoundBasicPass)(::Type{UncaughtExceptionReport}, analyzer::AbstractA
         # `throw` calls
         codelocs    = frame.src.codelocs
         linetable   = frame.src.linetable::Vector
-        throw_locs  = LineInfoNode[]
+        throw_locs  = get_throw_locs(analyzer)
         throw_calls = Tuple{Int,Expr}[]
-        for r in get_reports(analyzer)
-            if isa(r, SeriousExceptionReport) && last(r.vst).linfo === frame.linfo
-                push!(throw_locs, r.lin)
-            end
-        end
         for (pc, stmt) in enumerate(stmts)
             is_throw_call_expr(analyzer, frame, stmt) || continue
             # if this `throw` is already reported, don't duplciate
