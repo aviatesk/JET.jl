@@ -260,9 +260,6 @@ mutable struct AnalyzerState
     # virtual toplevel module
     toplevelmod::Module
 
-    # toplevel modules concretized by JET (only active within sequential toplevel analysis)
-    toplevelmods::Set{Module}
-
     # slots to represent toplevel global variables
     global_slots::Dict{Int,Symbol}
 
@@ -292,7 +289,6 @@ end
                                         opt_params      = nothing,
                                         concretized     = _CONCRETIZED,
                                         toplevelmod     = _TOPLEVELMOD,
-                                        toplevelmods    = _TOPLEVELMODS,
                                         global_slots    = _GLOBAL_SLOTS,
                                         logger          = nothing,
                                         depth           = 0,
@@ -313,7 +309,6 @@ end
                          cache,
                          concretized,
                          toplevelmod,
-                         toplevelmods,
                          global_slots,
                          logger,
                          depth,
@@ -324,7 +319,6 @@ end
 module __toplevelmod__ end
 const _CONCRETIZED  = BitVector()
 const _TOPLEVELMOD  = __toplevelmod__
-const _TOPLEVELMODS = Set{Module}()
 const _GLOBAL_SLOTS = Dict{Int,Symbol}()
 
 # constructor for sequential toplevel JET analysis
@@ -337,7 +331,6 @@ function AbstractAnalyzer(analyzer::T, concretized, toplevelmod) where {T<:Abstr
                              opt_params      = OptimizationParams(analyzer),
                              concretized     = concretized, # or construct partial `CodeInfo` from remaining abstract statements ?
                              toplevelmod     = toplevelmod,
-                             toplevelmods    = push!(get_toplevelmods(analyzer), toplevelmod),
                              logger          = JETLogger(analyzer),
                              )
     newanalyzer = AbstractAnalyzer(analyzer, newstate)
@@ -450,8 +443,6 @@ end
 @inline istoplevel(analyzer::AbstractAnalyzer, sv::InferenceState)    = istoplevel(analyzer, sv.linfo)
 @inline istoplevel(::AbstractAnalyzer, ::OptimizationState)           = false # optimization never happen for top-level code
 @inline istoplevel(analyzer::AbstractAnalyzer, linfo::MethodInstance) = get_toplevelmod(analyzer) === linfo.def
-
-@inline istoplevelmod(analyzer::AbstractAnalyzer, mod::Module) = mod in get_toplevelmods(analyzer)
 
 is_global_slot(analyzer::AbstractAnalyzer, slot::Int)   = slot in keys(get_global_slots(analyzer))
 is_global_slot(analyzer::AbstractAnalyzer, slot::Slot)  = is_global_slot(analyzer, slot_id(slot))
