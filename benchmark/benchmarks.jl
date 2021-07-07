@@ -136,7 +136,7 @@ end
 SUITE["self analysis"] = @jetbenchmarkable(
     begin
         analyzer = JET.JETAnalyzer()
-        m = methods(JET.virtual_process).ms[1]
+        m = only(methods(JET.virtual_process))
         JET.analyze_method!(analyzer, m)
     end,
     setup = begin

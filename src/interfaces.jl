@@ -201,8 +201,6 @@ function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
         getfield(er, sym)::String
     elseif sym === :sig
         getfield(er, sym)::Vector{Any}
-    elseif sym === :lin # only needed for SeriousExceptionReport
-        getfield(er, sym)::LineInfoNode
     else
         getfield(er, sym) # fallback
     end
@@ -248,6 +246,8 @@ restore_cached_report(cache::InferenceErrorReportCache) =
 
 # utility
 # -------
+
+# TODO parametric definition
 
 # a simple utility macro to define `InferenceErrorReport` w/o code duplications
 macro reportdef(ex)

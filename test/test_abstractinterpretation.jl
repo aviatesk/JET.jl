@@ -15,11 +15,13 @@
         @test report.t === Tuple{typeof(m.foo), AbstractString}
     end
 
-    # we want to get report on `zero(Any)` for this case, but `Any`-typed statement can't
-    # propagate to the error points ...
     let
         analyzer, report = analyze_call(()->sum([]))
-        @test_broken !isempty(get_reports(analyzer))
+        @test length(get_reports(analyzer)) === 1
+        report = first(get_reports(analyzer))
+        @test report isa SeriousExceptionReport
+        @test report.err isa MethodError
+        @test report.err.f === zero
     end
 
     # if there is no method matching case in union-split, it should be reported
@@ -325,8 +327,9 @@ end
         end)
         @test !isempty(get_reports(analyzer))
         @test any(get_reports(analyzer)) do r
-            r isa UndefKeywordErrorReport
-            r.err.var === :kw
+            r isa SeriousExceptionReport || return false
+            err = r.err
+            err isa UndefKeywordError && err.var === :kw
         end
         # there shouldn't be duplicated report for the `throw` call
         @test !any(Fix2(isa, UncaughtExceptionReport), get_reports(analyzer))
