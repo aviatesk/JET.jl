@@ -407,21 +407,19 @@ JETAnalysisParams(analyzer::AbstractAnalyzer) = get_analysis_params(analyzer)
 
 # maybe we want to strip off `@nospecialize`s below ?
 
-@inline report_pass!(T::Type{<:InferenceErrorReport}, analyzer::AbstractAnalyzer, state, @nospecialize(args...)) =
-    ReportPass(analyzer)(T, analyzer, state, args...)
+@inline function report_pass!(T::Type{<:InferenceErrorReport}, analyzer::AbstractAnalyzer, state, @nospecialize(args...))
+    return ReportPass(analyzer)(T, analyzer, state, args...)
+end
 
-@inline report!(T::Type{<:InferenceErrorReport}, analyzer::AbstractAnalyzer, state, @nospecialize(args...)) =
-    push!(get_reports(analyzer), T(analyzer, state, args...))
-@inline report!(T::Type{UncaughtExceptionReport}, analyzer::AbstractAnalyzer, state, @nospecialize(args...)) =
-    push!(get_uncaught_exceptions(analyzer), T(analyzer, state, args...))
+@inline function report!(T::Type{<:InferenceErrorReport}, analyzer::AbstractAnalyzer, state, @nospecialize(args...))
+    report = T(analyzer, state, args...)
+    push!(isa(report, UncaughtExceptionReport) ? get_uncaught_exceptions(analyzer) : get_reports(analyzer), report)
+    return report
+end
 
-function restore_cached_report!(cache::InferenceErrorReportCache, analyzer::AbstractAnalyzer)
+@inline function restore_cached_report!(cache::InferenceErrorReportCache, analyzer::AbstractAnalyzer)
     report = restore_cached_report(cache)
-    if isa(report, UncaughtExceptionReport)
-        push!(get_uncaught_exceptions(analyzer), report)
-    else
-        push!(get_reports(analyzer), report)
-    end
+    push!(isa(report, UncaughtExceptionReport) ? get_uncaught_exceptions(analyzer) : get_reports(analyzer), report)
     return report
 end
 
@@ -438,7 +436,7 @@ function get_cache_key(analyzer::AbstractAnalyzer)
     return h
 end
 
-@inline function maybe_initialize_caches!(analyzer::AbstractAnalyzer)
+function maybe_initialize_caches!(analyzer::AbstractAnalyzer)
     cache_key = get_cache_key(analyzer)
     haskey(JET_REPORT_CACHE, cache_key) || (JET_REPORT_CACHE[cache_key] = IdDict())
     haskey(JET_CODE_CACHE, cache_key)   || (JET_CODE_CACHE[cache_key]   = IdDict())
