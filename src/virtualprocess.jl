@@ -488,7 +488,7 @@ function _virtual_process!(toplevelex::Expr,
         for pat in config.concretization_patterns
             if @capture(x, $pat)
                 force_concretize = true
-                with_toplevel_logger(analyzer, ≥(DEBUG_LOGGER_LEVEL)) do io
+                with_toplevel_logger(analyzer, ≥(DEFAULT_LOGGER_LEVEL)) do io
                     line, file = lnn.line, lnn.file
                     x′ = striplines(normalise(x))
                     println(io, "concretization pattern `$pat` matched `$x′` at $file:$line")
@@ -523,7 +523,7 @@ function _virtual_process!(toplevelex::Expr,
         if @isexpr(x, :macrocall)
             newx = macroexpand_with_err_handling(context, x)
 
-            # unless (toplevel) error happened during macro expansion, queue it and continue
+            # if any error happened during macro expansion, bail out now and continue
             isnothing(newx) && continue
 
             # special case and flatten the resulting expression expanded from `@doc` macro
