@@ -979,20 +979,22 @@ macro report_call(ex0...)
 end
 
 """
-    report_call(f, types = Tuple{}; jetconfigs...) -> result_type::Any
-    report_call(tt::Type{<:Tuple}; jetconfigs...) -> result_type::Any
+    report_call(f, types = Tuple{}; jetconfigs...) -> (result_type::Any, nreports::Int)
+    report_call(tt::Type{<:Tuple}; jetconfigs...) -> (result_type::Any, nreports::Int)
 
 Analyzes the generic function call with the given type signature, and then prints collected
-  error points to `stdout`, and finally returns the result type of the call.
+error points to `stdout`, and finally returns the result type of the call as well as
+the number of detected reports.
 """
 function report_call(@nospecialize(args...); jetconfigs...)
     analyzer, frame = analyze_call(args...; jetconfigs...)
-    print_reports(get_reports(analyzer); jetconfigs...)
+    reports = get_reports(analyzer)
+    print_reports(reports; jetconfigs...)
     if isnothing(frame)
         # if there is `GeneratorErrorReport`, it means the code generation happened and failed
-        return any(r->isa(r, GeneratorErrorReport), get_reports(analyzer)) ? Bottom : Any
+        return any(r->isa(r, GeneratorErrorReport), reports) ? Bottom : Any
     end
-    return get_result(frame)
+    return get_result(frame), length(reports)
 end
 
 # for inspection
