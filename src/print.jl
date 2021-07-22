@@ -132,13 +132,12 @@ end
 
 const ERROR_COLOR = :light_red
 const NOERROR_COLOR = :light_green
-const RAIL_COLORS = (
-    # preserve yellow for future performance linting
-    45, # light blue
-    123, # light cyan
-    150, # ???
-    215, # orange
-    231, # white
+# TODO other nicer color scheme ?
+const RAIL_COLORS = ( # Julia color + yellow
+    :green,
+    :magenta,
+    :blue,
+    :yellow,
 )
 const N_RAILS = length(RAIL_COLORS)
 const LEFT_ROOF  = "═════ "
