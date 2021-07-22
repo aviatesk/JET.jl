@@ -517,17 +517,17 @@ include("print.jl")
     res::ReportResult
 
 - `res.included_files::Set{String}`: files analyzed by JET
-- `res.any_reported::Bool`: indicates if there was any error point reported
+- `res.nreported::Bool`: the number of the reported errors
 """
 const ReportResult = @NamedTuple begin
     included_files::Set{String}
-    any_reported::Bool
+    nreported::Int
 end
 
 function report_result(io::IO, res::VirtualProcessResult; jetconfigs...)
-    print_result = print_reports(io, res; jetconfigs...)
+    nreported = print_reports(io, res; jetconfigs...)
     return (; included_files = res.included_files,
-              any_reported   = print_result)::ReportResult
+              nreported      = nreported)::ReportResult
 end
 
 """
@@ -989,12 +989,12 @@ the number of detected reports.
 function report_call(@nospecialize(args...); jetconfigs...)
     analyzer, frame = analyze_call(args...; jetconfigs...)
     reports = get_reports(analyzer)
-    print_reports(reports; jetconfigs...)
+    nreported = print_reports(reports; jetconfigs...)
     if isnothing(frame)
         # if there is `GeneratorErrorReport`, it means the code generation happened and failed
         return any(r->isa(r, GeneratorErrorReport), reports) ? Bottom : Any
     end
-    return get_result(frame), length(reports)
+    return get_result(frame), nreported
 end
 
 # for inspection

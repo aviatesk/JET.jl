@@ -31,33 +31,37 @@ end
 
 @testset "print inference errors" begin
     let
+        # LINE SENSITIVITY START
         res = @analyze_toplevel begin
             s = "julia"
             sum(s)
         end
 
         io = IOBuffer()
-        @test print_reports(io, res.inference_error_reports)
+        @test !iszero(print_reports(io, res.inference_error_reports))
         let s = String(take!(io))
             @test occursin("2 possible errors found", s)
             @test occursin(Regex("@ $(escape_string(@__FILE__)):$((@__LINE__)-7)"), s) # toplevel call signature
         end
+        # LINE SENSITIVITY END
     end
 
     @testset "special case splat call signature" begin
         let
+            # LINE SENSITIVITY START
             res = @analyze_toplevel begin
                 foo(args...) = sum(args)
                 foo(rand(Char, 1000000000)...)
             end
 
             io = IOBuffer()
-            @test print_reports(io, res.inference_error_reports, JET.gen_postprocess(res.actual2virtual))
+            @test !iszero(print_reports(io, res.inference_error_reports, JET.gen_postprocess(res.actual2virtual)))
             let s = String(take!(io))
                 @test occursin("1 possible error found", s)
                 @test occursin(Regex("@ $(escape_string(@__FILE__)):$((@__LINE__)-8)"), s) # toplevel call signature
                 @test occursin("foo(rand(Char, 1000000000)...)", s)
             end
+            # LINE SENSITIVITY END
         end
     end
 end

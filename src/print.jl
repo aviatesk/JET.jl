@@ -188,16 +188,17 @@ function print_reports(io::IO,
                        jetconfigs...)
     config = PrintConfig(; jetconfigs...)
 
-    if isempty(reports)
+    n = length(reports)
+    if n == 0
         if config.print_toplevel_success
             printlnstyled(io, "No toplevel errors !"; color = NOERROR_COLOR)
         end
-        return false
+        return 0
     end
 
     arg = :color => get(io, :color, false)
     with_bufferring(arg) do io
-        s = string(pluralize(length(reports), "toplevel error"), " found")
+        s = string(pluralize(n, "toplevel error"), " found")
         printlnstyled(io, LEFT_ROOF, s, RIGHT_ROOF; color = HEADER_COLOR)
 
         color = ERROR_COLOR
@@ -220,7 +221,7 @@ function print_reports(io::IO,
         end
     end |> postprocess |> Fix1(print, io)
 
-    return true
+    return n
 end
 
 # don't show stacktrace for syntax errors
@@ -256,12 +257,13 @@ function print_reports(io::IO,
     # here we more aggressively uniqify reports, ignoring the difference between different `MethodInstance`s
     # as far as the report location and its signature are the same
     reports = unique(print_identity_key, reports)
+    n = length(reports)
 
-    if isempty(reports)
+    if n == 0
         if config.print_inference_success
             printlnstyled(io, "No errors !"; color = NOERROR_COLOR)
         end
-        return false
+        return 0
     end
 
     with_bufferring(:color => get(io, :color, false)) do io
@@ -281,7 +283,7 @@ function print_reports(io::IO,
         end
     end |> postprocess |> Fix1(print, io)
 
-    return true
+    return n
 end
 
 @withmixedhash struct VirtualFrameNoLinfo
