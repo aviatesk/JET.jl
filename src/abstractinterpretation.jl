@@ -43,8 +43,7 @@ function is_empty_match(info::MethodMatchInfo)
 end
 
 # branching on https://github.com/JuliaLang/julia/pull/41020
-const IS_LATEST_INTERFACE = isdefined(CC, :MethodCallResult)
-@static if IS_LATEST_INTERFACE
+@static if isdefined(CC, :MethodCallResult)
 
 import .CC:
     bail_out_toplevel_call,
@@ -128,6 +127,11 @@ Of course this slows down inference performance, but hoopefully it stays to be "
 """
 CC.bail_out_call(analyzer::AbstractAnalyzer, @nospecialize(t), sv) = false
 
+# branch on https://github.com/JuliaLang/julia/pull/41633
+@static if isdefined(CC, :find_matching_methods)
+import .CC:
+    MethodMatches,
+    UnionSplitMethodMatches
 @doc """
     add_call_backedges!(analyzer::AbstractAnalyzer, ...)
 
@@ -135,12 +139,30 @@ An overload for `abstract_call_gf_by_type(analyzer::AbstractAnalyzer, ...)`, whi
   backedges (even if a new method can't refine the return type grew up to `Any`).
 This is because a new method definition always has a potential to change the JET analysis result.
 """
-function CC.add_call_backedges!(analyzer::AbstractAnalyzer,
-                                @nospecialize(rettype),
-                                edges::Vector{MethodInstance},
+function CC.add_call_backedges!(analyzer::AbstractAnalyzer, @nospecialize(rettype), edges::Vector{MethodInstance},
+                                matches::Union{MethodMatches,UnionSplitMethodMatches}, @nospecialize(atype),
+                                sv::InferenceState)
+    # NOTE a new method may refine analysis, so we always add backedges
+    # # for `NativeInterpreter`, we don't add backedges when a new method couldn't refine (widen) this type
+    # rettype === Any && return
+    # for edge in edges
+    #     add_backedge!(edge, sv)
+    # end
+    # also need an edge to the method table in case something gets
+    # added that did not intersect with any existing method
+    if isa(matches, MethodMatches)
+        matches.fullmatch || add_mt_backedge!(matches.mt, atype, sv)
+    else
+        for (thisfullmatch, mt) in zip(matches.fullmatches, matches.mts)
+            thisfullmatch || add_mt_backedge!(mt, atype, sv)
+        end
+    end
+end
+else # @static if isdefined(CC, :MethodMatches)
+function CC.add_call_backedges!(analyzer::AbstractAnalyzer, @nospecialize(rettype), edges::Vector{MethodInstance},
                                 fullmatch::Vector{Bool}, mts::Vector{Core.MethodTable}, @nospecialize(atype),
                                 sv::InferenceState)
-    # a new method may refine analysis, so we always add backedges
+    # NOTE a new method may refine analysis, so we always add backedges
     # if rettype === Any
     #     # for `NativeInterpreter`, we don't add backedges when a new method couldn't refine
     #     # (widen) this type
@@ -157,6 +179,7 @@ function CC.add_call_backedges!(analyzer::AbstractAnalyzer,
         end
     end
 end
+end # @static if isdefined(CC, :MethodMatches)
 
 function CC.abstract_call_method_with_const_args(analyzer::AbstractAnalyzer, result::MethodCallResult,
                                                  @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch,
@@ -196,11 +219,11 @@ function CC.const_prop_entry_heuristic(analyzer::AbstractAnalyzer, result::Metho
     return @invoke const_prop_entry_heuristic(analyzer::AbstractInterpreter, result::MethodCallResult, sv::InferenceState)
 end
 
-else # @static if IS_LATEST_INTERFACE
+else # @static if isdefined(CC, :MethodCallResult)
 
 include("legacy/abstractinterpretation")
 
-end # @static if IS_LATEST_INTERFACE
+end # @static if isdefined(CC, :MethodCallResult)
 
 """
     analyze_task_parallel_code!(analyzer::AbstractAnalyzer, @nospecialize(f), argtypes::Vector{Any}, sv::InferenceState)
