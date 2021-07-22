@@ -699,7 +699,7 @@ This function configures analysis with the following configurations:
 - `analyze_from_definitions = true`: allows JET to enter analysis without top-level call sites;
   this is useful for package analysis since a package itself usually has only definitions
   but not usages (i.e. call sites)
-- `concretization_patterns = [:(x_ = y_), :(const x_ = y_)]`: concretize every global variable instantiations;
+- `concretization_patterns = [:(x_ = y_), :(const x_ = y_)]`: concretizes every global variable instantiations;
   concretizations are generally preferred for successful analysis as far as they're cheap,
   and global variable instantiations that occur in a package definition are _usually_ very cheap
 See [`ToplevelConfig`](@ref) for more details.
