@@ -690,10 +690,10 @@ overwrite_options(old, new) = kwargs(merge(old, new))
                    package::Union{AbstractString,Module};
                    jetconfigs...) -> res::ReportResult
 
-Analyzes `package` in the same way as [`report_file`](@ref) with the default configurations,
-  which are especially tuned for package analysis (see below for details).
+Analyzes `package` in the same way as [`report_file`](@ref) with the special default
+configurations, which are especially tuned for package analysis (see below for details).
 `package` can be either a module or a string. In the latter case it must be the name of a
-  package in your current environment.
+package in your current environment.
 
 This function configures analysis with the following configurations:
 - `analyze_from_definitions = true`: allows JET to enter analysis without top-level call sites;
@@ -709,7 +709,7 @@ See [`ToplevelConfig`](@ref) for more details.
     report_package([io::IO = stdout];
                    jetconfigs...) -> res::ReportResult
 
-Like above but analyzes the package in the current project.
+Like above but analyzes the package of the current project.
 
 See also: [`report_file`](@ref)
 """

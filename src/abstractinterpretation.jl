@@ -127,11 +127,6 @@ Of course this slows down inference performance, but hoopefully it stays to be "
 """
 CC.bail_out_call(analyzer::AbstractAnalyzer, @nospecialize(t), sv) = false
 
-# branch on https://github.com/JuliaLang/julia/pull/41633
-@static if isdefined(CC, :find_matching_methods)
-import .CC:
-    MethodMatches,
-    UnionSplitMethodMatches
 @doc """
     add_call_backedges!(analyzer::AbstractAnalyzer, ...)
 
@@ -139,6 +134,12 @@ An overload for `abstract_call_gf_by_type(analyzer::AbstractAnalyzer, ...)`, whi
   backedges (even if a new method can't refine the return type grew up to `Any`).
 This is because a new method definition always has a potential to change the JET analysis result.
 """
+:(add_call_backedges!)
+# branch on https://github.com/JuliaLang/julia/pull/41633
+@static if isdefined(CC, :find_matching_methods)
+import .CC:
+    MethodMatches,
+    UnionSplitMethodMatches
 function CC.add_call_backedges!(analyzer::AbstractAnalyzer, @nospecialize(rettype), edges::Vector{MethodInstance},
                                 matches::Union{MethodMatches,UnionSplitMethodMatches}, @nospecialize(atype),
                                 sv::InferenceState)
@@ -158,7 +159,7 @@ function CC.add_call_backedges!(analyzer::AbstractAnalyzer, @nospecialize(rettyp
         end
     end
 end
-else # @static if isdefined(CC, :MethodMatches)
+else # @static if isdefined(CC, :find_matching_methods)
 function CC.add_call_backedges!(analyzer::AbstractAnalyzer, @nospecialize(rettype), edges::Vector{MethodInstance},
                                 fullmatch::Vector{Bool}, mts::Vector{Core.MethodTable}, @nospecialize(atype),
                                 sv::InferenceState)
@@ -179,7 +180,7 @@ function CC.add_call_backedges!(analyzer::AbstractAnalyzer, @nospecialize(rettyp
         end
     end
 end
-end # @static if isdefined(CC, :MethodMatches)
+end # @static if isdefined(CC, :find_matching_methods)
 
 function CC.abstract_call_method_with_const_args(analyzer::AbstractAnalyzer, result::MethodCallResult,
                                                  @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch,

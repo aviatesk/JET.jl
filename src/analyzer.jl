@@ -378,7 +378,7 @@ Base.show(io::IO, ::MIME"application/prs.juno.inline", analyzer::NativeInterpret
 function Base.show(io::IO, frame::InferenceState)
     print(io, "InfernceState for ")
     show(io, frame.linfo)
-    print(io, " with currpc ", frame.currpc, '/', length(frame.src.code))
+    print(io, " at pc ", frame.currpc, '/', length(frame.src.code))
 end
 Base.show(io::IO, ::MIME"application/prs.juno.inline", frame::InferenceState) =
     return frame
