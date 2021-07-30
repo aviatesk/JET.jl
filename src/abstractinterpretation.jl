@@ -185,16 +185,24 @@ end # @static if isdefined(CC, :find_matching_methods)
 function CC.abstract_call_method_with_const_args(analyzer::AbstractAnalyzer, result::MethodCallResult,
                                                  @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch,
                                                  sv::InferenceState, va_override::Bool)
-    result, inf_result = @invoke abstract_call_method_with_const_args(analyzer::AbstractInterpreter, result::MethodCallResult,
-                                                                      @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch,
-                                                                      sv::InferenceState, va_override::Bool)
-
-    if isa(inf_result, InferenceResult)
-        # successful constant prop', we also need to update reports
-        update_reports!(analyzer, sv)
+    const_result =
+        @invoke abstract_call_method_with_const_args(analyzer::AbstractInterpreter, result::MethodCallResult,
+                                                     @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch,
+                                                     sv::InferenceState, va_override::Bool)
+    # update reports if constant prop' was successful
+    # branch on https://github.com/JuliaLang/julia/pull/41697/
+    @static if VERSION ≥ v"1.8.0-DEV.282"
+        if const_result !== nothing
+            # successful constant prop', we also need to update reports
+            update_reports!(analyzer, sv)
+        end
+    else
+        if getfield(const_result, 2) !== nothing
+            # successful constant prop', we also need to update reports
+            update_reports!(analyzer, sv)
+        end
     end
-
-    return result, inf_result
+    return const_result
 end
 
 @doc """
