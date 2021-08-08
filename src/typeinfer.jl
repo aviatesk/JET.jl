@@ -87,14 +87,14 @@ function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
     ret = @invoke _typeinf(analyzer::AbstractInterpreter, frame::InferenceState)
 
     # report pass for (local) undef var error
-    ReportPass(analyzer)(LocalUndefVarErrorReport, analyzer, frame, frame.src.code)
+    report_pass!(LocalUndefVarErrorReport, analyzer, frame, frame.src.code)
 
     # XXX this is a dirty fix for performance problem, we need more "proper" fix
     # https://github.com/aviatesk/JET.jl/issues/75
     unique!(report_identity_key, get_reports(analyzer))
 
     # report pass for uncaught `throw` calls
-    ReportPass(analyzer)(UncaughtExceptionReport, analyzer, frame, frame.src.code)
+    report_pass!(UncaughtExceptionReport, analyzer, frame, frame.src.code)
 
     reports_after = Set(get_reports(analyzer))
     uncaught_exceptions_after = Set(get_uncaught_exceptions(analyzer))
@@ -225,13 +225,13 @@ function report_undefined_local_slots!(analyzer::AbstractAnalyzer, frame::Infere
                     # the optimization so far has found this statement is never "reachable";
                     # JET reports it since it will invoke undef var error at runtime, or will just
                     # be dead code otherwise
-                    add_new_report!(LocalUndefVarErrorReport(analyzer, (frame, idx), sym), analyzer)
+                    report!(LocalUndefVarErrorReport, analyzer, (frame, idx), sym)
                 else
                     # by excluding this pass, this analysis accepts some false negatives and
                     # some undefined variable error may happen in actual execution (thus unsound)
                 end
             else
-                add_new_report!(LocalUndefVarErrorReport(analyzer, (frame, idx), sym), analyzer)
+                report!(LocalUndefVarErrorReport, analyzer, (frame, idx), sym)
             end
         end
     end
@@ -293,7 +293,7 @@ function (::SoundBasicPass)(::Type{UncaughtExceptionReport}, analyzer::AbstractA
             push!(throw_calls, (pc, stmt))
         end
         if !isempty(throw_calls)
-            add_new_report!(UncaughtExceptionReport(analyzer, frame, throw_calls), analyzer)
+            report!(UncaughtExceptionReport, analyzer, frame, throw_calls)
         end
     else
         # the non-`Bottom` result here may mean `throw` calls from the children frames

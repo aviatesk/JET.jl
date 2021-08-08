@@ -51,15 +51,9 @@ function generate_api_doc(examples_pages)
         examples_contents = codeblock("Pages = $(repr(examples_pages))", "@contents")
 
         s = md"""
-        # [JET Analyzer Framework](@id JET-Analyzer-Framework)
+        # JET.jl Pluggable Analysis Framework
 
         $contents
-
-        JET offers an infrastructure to implement a "plugin" code analyzer.
-        Actually, JET's default error analyzer that explained [in the usage section](@ref usages)
-        is one specific instance of such a pluggin analyzer built on top of the framework.
-
-        In this documentation we will try to elaborate the framework APIs and showcase example analyzers.
 
         !!! warning
             The APIs described in this page is _very_ experimental and subject to changes.
@@ -95,7 +89,7 @@ let
                     "Usages" => "usages.md",
                     "Configurations" => "config.md",
                     "Internals" => "internals.md",
-                    "JET Analyzer Framework" => Any[
+                    "Pluggable Analysis Framework" => Any[
                         "API"      => generate_api_doc(examples),
                         "Examples" => examples,
                     ]

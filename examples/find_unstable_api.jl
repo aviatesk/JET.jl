@@ -52,20 +52,20 @@ JETInterfaces.AbstractAnalyzer(analyzer::UnstableAPIAnalyzer, state::AnalyzerSta
     UnstableAPIAnalyzer(state, analyzer.is_target_module)
 JETInterfaces.ReportPass(analyzer::UnstableAPIAnalyzer) = UnstableAPIAnalysisPass()
 
-# Next, we overload some of `Core.Compiler`'s [abstract interpretation](@ref abstractinterpret-analysis) methods,
-# and inject a customized analysis pass (here we gonna name it `UnstableAPIAnalysisPass`).
+# Nest, we overload some of `Core.Compiler`'s [abstract interpretation](@ref abstract-interpretaion) methods,
+# and inject a customized analysis pass (`UnstableAPIAnalysisPass`).
 # In this analysis, we are interested in whether a binding that appears in a target code is
 # an "unstable API" or not, and we can simply check if each abstract element appeared during
 # abstract interpretation meets our criteria of "unstable API".
 # For that purpose, it's suffice to overload `Core.Compiler.abstract_eval_special_value`
 # and `Core.Compiler.builtin_tfunction`.
-# To inject a report pass, we use [`ReportPass(::AbstractAnalyzer)`](@ref) interface.
+# To inject a report pass, we use [`report_pass!`](@ref) interface.
 
 struct UnstableAPIAnalysisPass <: ReportPass end
 
 function CC.abstract_eval_special_value(analyzer::UnstableAPIAnalyzer, @nospecialize(e), vtypes::CC.VarTable, sv::CC.InferenceState)
     if analyzer.is_target_module(sv.mod) # we care only about what we wrote
-        ReportPass(analyzer)(UnstableAPI, analyzer, sv, e)
+        report_pass!(UnstableAPI, analyzer, sv, e)
     end
 
     ## recurse into JET's default abstract interpretation routine
@@ -80,7 +80,7 @@ function CC.builtin_tfunction(analyzer::UnstableAPIAnalyzer, @nospecialize(f), a
                 if isa(a2, Core.Const) && (v2 = a2.val; isa(v2, Symbol))
                     if analyzer.is_target_module(sv.mod) || # we care only about what we wrote, but with relaxed filter
                        (parent = sv.parent; isa(parent, CC.InferenceState) && analyzer.is_target_module(parent.mod))
-                        ReportPass(analyzer)(UnstableAPI, analyzer, sv, GlobalRef(v1, v2))
+                        report_pass!(UnstableAPI, analyzer, sv, GlobalRef(v1, v2))
                     end
                 end
             end
@@ -128,7 +128,7 @@ function (::UnstableAPIAnalysisPass)(::Type{UnstableAPI}, analyzer::UnstableAPIA
         analyzer.is_target_module(mod) && return # we don't care about what we defined ourselves
 
         if isunstable(mod, name)
-            add_new_report!(UnstableAPI(analyzer, sv, e), analyzer)
+            report!(UnstableAPI, analyzer, sv, e)
         end
     end
 end
@@ -172,7 +172,7 @@ end
 
 # ## Usages
 
-# Now we find "unstable API"s in your code using [JET's analysis entry points](@ref usages)
+# Now we find "unstable API"s in your code using [JET's analysis entry points](@ref Usages)
 # with passing `UnstableAPIAnalyzer` as the `analyzer` configuration.
 
 using JET # to use analysis entry points

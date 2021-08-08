@@ -4,35 +4,20 @@
 """
     abstract type AbstractAnalyzer <: AbstractInterpreter end
 
-An interface type of analyzers that are built on top of [JET's analyzer framework](@ref JET-Analyzer-Framework).
+When `T` implements this interface (i.e. `T <: AbstractAnalyzer`), `T` is expected to implement:
+- `T(; jetconfigs...) -> T`:
+  constructs new analyzer given [JET configurations](@ref);
+  `AnalyzerState` for this analyzer should be constructed using these configurations
+- `AnalyzerState(analyzer::T) -> AnalyzerState`:
+  returns `AnalyzerState` instance, usually it's kept within `T` itself
+- `AbstractAnalyzer(analyzer::T, state::AnalyzerState) -> T`:
+  constructs new analyzer given the previous analyzer and analysis state
+- `ReportPass(analyzer::T) -> ReportPass`:
+  returns the [report pass](@ref ReportPass) of `T`
 
-When a new type `NewAnalyzer` implements the `AbstractAnalyzer` interface, it should be declared
-as subtype of `AbstractAnalyzer`, and is expected to the following interfaces:
-
----
-- `NewAnalyzer(; jetconfigs...) -> NewAnalyzer`: \\
-  Constructs new analyzer given [JET configurations](@ref) passed as `jetconfigs`.
----
-- `AnalyzerState(analyzer::NewAnalyzer) -> AnalyzerState`: \\
-  Returns the [`AnalyzerState`](@ref) for `analyzer::NewAnalyzer`.
----
-- `AbstractAnalyzer(analyzer::NewAnalyzer, state::AnalyzerState) -> NewAnalyzer`: \\
-  Constructs an new `NewAnalyzer` instance in the middle of JET's [top-level analysis](@ref top-level-analysis)
-  or [abstract interpretation based analysis](@ref abstractinterpret-analysis), given the
-  previous `analyzer::NewAnalyzer` and [`state::AnalyzerState`](@ref AnalyzerState).
----
-- `ReportPass(analyzer::NewAnalyzer) -> ReportPass`: \\
-  Returns [`ReportPass`](@ref) used for `analyzer::NewAnalyzer`.
----
-
-See also [`AnalyzerState`](@ref) and [`ReportPass`](@ref).
-
-# Example
-
-JET.jl defines its default error analyzer `JETAnalyzer <: AbstractAnalyzer` as the following
-(modified a bit for the sake of simplicity):
+For example, JET.jl defines `JETAnalyzer <: AbstractAnalyzer` as the following (modified a bit for the sake of simplicity):
 ```julia
-# the default error analyzer for JET.jl
+# the default abstract interpreter for JET.jl
 struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
     report_pass::RP
     state::AnalyzerState
@@ -41,101 +26,50 @@ end
 # AbstractAnalyzer API requirements
 
 function JETAnalyzer(;
-    report_pass::ReportPass = BasicPass(),
-    jetconfigs...)
+    report_pass::Union{Nothing,T} = nothing,
+    mode::Symbol                  = :basic,
+    jetconfigs...) where {T<:ReportPass}
+    if isnothing(report_pass)
+        # if `report_pass` isn't passed explicitly, here we configure it according to `mode`
+        report_pass = mode === :basic ? BasicPass() :
+                      mode === :sound ? SoundPass() :
+                      throw(ArgumentError("`mode` configuration should be either of `:basic` or `:sound`"))
+    end
     return JETAnalyzer(report_pass,
                        AnalyzerState(; jetconfigs...),
                        )
 end
-AnalyzerState(analyzer::JETAnalyzer) =
-    return analyzer.state
-AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerState) =
-    return JETAnalyzer(ReportPass(analyzer), state)
-ReportPass(analyzer::JETAnalyzer) =
-    return analyzer.report_pass
+AnalyzerState(analyzer::JETAnalyzer)                          = analyzer.state
+AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerState) = JETAnalyzer(ReportPass(analyzer), state)
+ReportPass(analyzer::JETAnalyzer)                             = analyzer.report_pass
 ```
 """
 abstract type AbstractAnalyzer <: AbstractInterpreter end
 
+# ReportPass
+# ==========
+
 """
-    abstract type ReportPass end
+    ReportPass
 
-An interface type that represents `AbstractAnalyzer`'s report pass.
-`analyzer::AbstractAnalyzer` injects report passes using the `(::ReportPass)(::Type{InferenceErrorReport}, ::AbstractAnalyzer, state, ...)`
-interface, which provides a flexible and efficient layer to configure the analysis done by `AbstractAnalyzer`.
-
----
-
-    ReportPass(analyzer::AbstractAnalyzer) -> ReportPass
-
-If `NewAnalyzer` implements the `AbstractAnalyzer` interface, `NewAnalyzer` should implement
-this `ReportPass(analyzer::NewAnalyzer) -> ReportPass` interface.
-
-`ReportPass` allows `NewAnalyzer` to provide a very flexible configuration layer for `NewAnalyzer`'s analysis;
-an user can define their own `ReportPass` to control how `NewAnalyzer` collects report errors
-while still using the analysis routine implemented by `NewAnalyzer`.
-
-# Example
-
-For example, [`JETAnalyzer`](@ref) accepts a custom `ReportPass` passed as [JET configurations](@ref)
-(see the example documentation of [`AbstractAnalyzer`](@ref) for details).
-And we can setup a custom report pass `IgnoreAllExceptGlobalUndefVar`, that ignores all the
-reports that are otherwise collected by `JETAnalyzer` except `GlobalUndefVarErrorReport`:
-```julia
-# custom report pass that ignores all the reports except `GlobalUndefVarErrorReport`
-struct IgnoreAllExceptGlobalUndefVar <: ReportPass end
-
-# ignores all the reports analyzed by `JETAnalyzer`
-(::IgnoreAllExceptGlobalUndefVar)(::Type{<:InferenceErrorReport}, @nospecialize(_...)) = return
-
-# bypass to `BasicPass` to collect `GlobalUndefVarErrorReport`
-function (::IgnoreAllExceptGlobalUndefVar)(::Type{GlobalUndefVarErrorReport}, @nospecialize(args...))
-    BasicPass()(GlobalUndefVarErrorReport, args...)
-end
-
-no_method_error()    = 1 + "1"
-undef_global_error() = undefvar
-report_call(; report_pass=IgnoreAllExceptGlobalUndefVar()) do
-    if rand(Bool)
-        return no_method_error()    # "no matching method found" error report won't be reported here
-    else
-        return undef_global_error() # "variable undefvar is not defined" error report will be reported
-    end
-end
-```
+An interface type for report passes of JET's analysis.
 """
 abstract type ReportPass end
 
-function (::Type{Analyzer})(; jetconfigs...) where Analyzer<:AbstractAnalyzer
-    error("""
-    missing `$AbstractAnalyzer` API:
-    `$Analyzer` is required to implement the `$Analyzer(; jetconfigs...) -> $Analyzer` interface.
-    See the documentation of `$AbstractAnalyzer`.
-    """)
-end
-
-function ReportPass(::Analyzer) where Analyzer<:AbstractAnalyzer
-    error("""
-    missing `$AbstractAnalyzer` API:
-    `$Analyzer` is required to implement the `$ReportPass(analyzer::$Analyzer) -> $ReportPass` interface.
-    See the documentation of `$AbstractAnalyzer` and `$ReportPass`.
-    """)
-end
-
-# pre-defined report passes
-# TODO document the definitions of errors, elaborate the difference of these two passes
+# pre-defined passes
+# ------------------
 
 """
     SoundPass <: ReportPass
 
-`ReportPass` for the sound `JETAnalyzer`'s error analysis.
+`ReportPass` for the sound JET analysis.
 """
 struct SoundPass <: ReportPass end
 
 """
     BasicPass <: ReportPass
 
-`ReportPass` for the basic (default) `JETAnalyzer`'s error analysis.
+`ReportPass` for the basic (default) JET analysis.
 """
 struct BasicPass <: ReportPass end
 
@@ -282,8 +216,8 @@ end
 Base.show(io::IO, ::MIME"application/prs.juno.inline", report::InferenceErrorReport) =
     return report
 
-get_msg(T::Type{<:InferenceErrorReport}, @nospecialize(_...)) = error("`get_msg` is not implemented for $T")
-get_spec_args(T::Type{<:InferenceErrorReport}) =                error("`get_spec_args` is not implemented for $T")
+get_msg(T::Type{<:InferenceErrorReport}, @nospecialize(_...)) = throw("`get_msg` is not implemented for $T")
+get_spec_args(T::Type{<:InferenceErrorReport}) =                throw("`get_spec_args` is not implemented for $T")
 
 # default constructor to create a report from abstract interpretation routine
 function (T::Type{<:InferenceErrorReport})(analyzer::AbstractAnalyzer, state, @nospecialize(spec_args...))

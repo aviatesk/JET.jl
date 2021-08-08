@@ -1,7 +1,7 @@
-# [Configurations](@id JET-configurations)
+# [Configurations](@id JET configurations)
 
 JET analysis can be flexibly fine-tuned.
-Any entry point explained in [the usage section](@ref usages) can accept any of the configuration parameters described below
+Any entry point explained in the [Usages](@ref) section can accept any of the configuration parameters described below
 as keyword arguments (or optional parameters for the interactive macros).
 For example, if you want to analyze `some/awesome/code.jl` with turning on `strict_condition_check` configuration and
 also logs inference process into `stdout`, you can do:
@@ -22,7 +22,7 @@ JET.ToplevelConfig
 ```
 
 
-## [Configurations for Abstract Interpretation](@id abstractinterpret-config)
+## Configurations for Abstract Interpretation
 
 ```@docs
 JET.JETAnalysisParams

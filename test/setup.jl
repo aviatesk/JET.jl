@@ -2,7 +2,7 @@
 include("patches.jl")
 
 # test utilities are extracted into a separate file for easier interactive testing from REPL
-# i.e. julia -i test/interactive_utils.jl
+# i.e. julia-dev -i test/interactive_utils.jl
 include("interactive_utils.jl")
 
 # stuff used across tests
