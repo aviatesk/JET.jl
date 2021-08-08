@@ -88,7 +88,7 @@ function abstract_call_gf_by_type(interp::AbstractAnalyzer, @nospecialize(f), ar
         info = UnionSplitInfo(infos)
         #=== abstract_call_gf_by_type patch point 1-1 start ===#
         # report pass for no matching methods error
-        report_pass!(NoMethodErrorReport, interp, sv, info, splitsigs)
+        ReportPass(interp)(NoMethodErrorReport, interp, sv, info, splitsigs)
         #=== abstract_call_gf_by_type patch point 1-1 end ===#
     else
         mt = ccall(:jl_method_table_for, Any, (Any,), atype)
@@ -109,7 +109,7 @@ function abstract_call_gf_by_type(interp::AbstractAnalyzer, @nospecialize(f), ar
         info = MethodMatchInfo(matches)
         #=== abstract_call_gf_by_type patch point 1-2 start ===#
         # report pass for no matching methods error
-        report_pass!(NoMethodErrorReport, interp, sv, info, atype)
+        ReportPass(interp)(NoMethodErrorReport, interp, sv, info, atype)
         #=== abstract_call_gf_by_type patch point 1-2 end ===#
         applicable = matches.matches
         valid_worlds = matches.valid_worlds
@@ -266,12 +266,12 @@ function (::SoundBasicPass)(::Type{NoMethodErrorReport}, analyzer::AbstractAnaly
     end
 
     if !isnothing(ts)
-        report!(NoMethodErrorReport, analyzer, sv, ts)
+        add_new_report!(NoMethodErrorReport(analyzer, sv, ts), analyzer)
     end
 end
 function (::SoundBasicPass)(::Type{NoMethodErrorReport}, analyzer::AbstractAnalyzer, sv::InferenceState, info::MethodMatchInfo, @nospecialize(atype))
     if is_empty_match(info)
-        report!(NoMethodErrorReport, analyzer, sv, atype)
+        add_new_report!(NoMethodErrorReport(analyzer, sv, atype), analyzer)
     end
 end
 

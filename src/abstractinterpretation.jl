@@ -71,9 +71,9 @@ function CC.abstract_call_gf_by_type(analyzer::AbstractAnalyzer, @nospecialize(f
     end
     # report passes for no matching methods error
     if isa(info, UnionSplitInfo)
-        report_pass!(NoMethodErrorReport, analyzer, sv, info, argtypes)
+        ReportPass(analyzer)(NoMethodErrorReport, analyzer, sv, info, argtypes)
     elseif isa(info, MethodMatchInfo)
-        report_pass!(NoMethodErrorReport, analyzer, sv, info, atype)
+        ReportPass(analyzer)(NoMethodErrorReport, analyzer, sv, info, atype)
     end
 
     analyze_task_parallel_code!(analyzer, f, argtypes, sv)
@@ -96,12 +96,12 @@ function (::SoundBasicPass)(::Type{NoMethodErrorReport}, analyzer::AbstractAnaly
     end
 
     if !isnothing(ts)
-        report!(NoMethodErrorReport, analyzer, sv, ts)
+        add_new_report!(NoMethodErrorReport(analyzer, sv, ts), analyzer)
     end
 end
 function (::SoundBasicPass)(::Type{NoMethodErrorReport}, analyzer::AbstractAnalyzer, sv::InferenceState, info::MethodMatchInfo, @nospecialize(atype))
     if is_empty_match(info)
-        report!(NoMethodErrorReport, analyzer, sv, atype)
+        add_new_report!(NoMethodErrorReport(analyzer, sv, atype), analyzer)
     end
 end
 
@@ -335,7 +335,7 @@ function CC.abstract_invoke(analyzer::AbstractAnalyzer, argtypes::Vector{Any}, s
         update_reports!(analyzer, sv)
     end
 
-    report_pass!(InvalidInvokeErrorReport, analyzer, sv, ret, argtypes)
+    ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret, argtypes)
 
     return ret
 end
@@ -370,7 +370,7 @@ function (::SoundBasicPass)(::Type{InvalidInvokeErrorReport}, analyzer::Abstract
         # if the error type (`Bottom`) is propagated from the `invoke`d call, the error has
         # already been reported within `typeinf_edge`, so ignore that case
         if !isa(ret.info, InvokeCallInfo)
-            report!(InvalidInvokeErrorReport, analyzer, sv, argtypes)
+            add_new_report!(InvalidInvokeErrorReport(analyzer, sv, argtypes), analyzer)
         end
     end
 end
@@ -416,7 +416,7 @@ function CC.abstract_eval_special_value(analyzer::AbstractAnalyzer, @nospecializ
             end
         else
             # report pass for undefined global reference
-            report_pass!(GlobalUndefVarErrorReport, analyzer, sv, mod, name)
+            ReportPass(analyzer)(GlobalUndefVarErrorReport, analyzer, sv, mod, name)
 
             # `ret` at this point should be annotated as `Any` by `NativeInterpreter`, and we
             # just pass it as is to collect as much error points as possible within this frame
@@ -438,12 +438,12 @@ get_msg(::Type{GlobalUndefVarErrorReport}, analyzer::AbstractAnalyzer, sv::Infer
     "variable $(mod).$(name) is not defined"
 
 function (::SoundPass)(::Type{GlobalUndefVarErrorReport}, analyzer::AbstractAnalyzer, sv::InferenceState, mod::Module, name::Symbol)
-    report!(GlobalUndefVarErrorReport, analyzer, sv, mod, name)
+    add_new_report!(GlobalUndefVarErrorReport(analyzer, sv, mod, name), analyzer)
 end
 
 function (::BasicPass)(::Type{GlobalUndefVarErrorReport}, analyzer::AbstractAnalyzer, sv::InferenceState, mod::Module, name::Symbol)
     is_corecompiler_undefglobal(mod, name) && return
-    report!(GlobalUndefVarErrorReport, analyzer, sv, mod, name)
+    add_new_report!(GlobalUndefVarErrorReport(analyzer, sv, mod, name), analyzer)
 end
 
 """
@@ -480,7 +480,7 @@ function CC.abstract_eval_value(analyzer::AbstractAnalyzer, @nospecialize(e), vt
     if isa(stmt, GotoIfNot)
         t = widenconst(ret)
         if t !== Bottom
-            report_pass!(NonBooleanCondErrorReport, analyzer, sv, t)
+            ReportPass(analyzer)(NonBooleanCondErrorReport, analyzer, sv, t)
             # if this condition leads to an "non-boolean (t) used in boolean context" error,
             # we can turn it into Bottom and bail out early
             # TODO upstream this
@@ -510,11 +510,11 @@ function (::SoundPass)(::Type{NonBooleanCondErrorReport}, analyzer::AbstractAnal
             end
         end
         if !isempty(ts)
-            report!(NonBooleanCondErrorReport, analyzer, sv, ts)
+            add_new_report!(NonBooleanCondErrorReport(analyzer, sv, ts), analyzer)
         end
     else
         if !(t ⊑ Bool)
-            report!(NonBooleanCondErrorReport, analyzer, sv, t)
+            add_new_report!(NonBooleanCondErrorReport(analyzer, sv, t), analyzer)
         end
     end
 end
@@ -534,11 +534,11 @@ function (::BasicPass)(::Type{NonBooleanCondErrorReport}, analyzer::AbstractAnal
             end
         end
         if !isempty(ts)
-            report!(NonBooleanCondErrorReport, analyzer, sv, ts)
+            add_new_report!(NonBooleanCondErrorReport(analyzer, sv, ts), analyzer)
         end
     else
         if typeintersect(Bool, t) !== Bool
-            report!(NonBooleanCondErrorReport, analyzer, sv, t)
+            add_new_report!(NonBooleanCondErrorReport(analyzer, sv, t), analyzer)
         end
     end
 end
@@ -654,7 +654,7 @@ function set_abstract_global!(analyzer::AbstractAnalyzer, mod::Module, name::Sym
             prev_t = val.t
             if val.iscd && (prev_t′ = widenconst(prev_t)) !== (t′ = widenconst(t))
                 warn_invalid_const_global!(name)
-                report_pass!(InvalidConstantRedefinition, analyzer, sv, mod, name, prev_t′, t′)
+                ReportPass(analyzer)(InvalidConstantRedefinition, analyzer, sv, mod, name, prev_t′, t′)
                 return
             end
             prev_agv = val
@@ -665,7 +665,7 @@ function set_abstract_global!(analyzer::AbstractAnalyzer, mod::Module, name::Sym
                 if invalid || !isa(t, Const)
                     warn_invalid_const_global!(name)
                     if invalid
-                        report_pass!(InvalidConstantRedefinition, analyzer, sv, mod, name, prev_t, t′)
+                        ReportPass(analyzer)(InvalidConstantRedefinition, analyzer, sv, mod, name, prev_t, t′)
                     end
                     return
                 end
@@ -681,7 +681,7 @@ function set_abstract_global!(analyzer::AbstractAnalyzer, mod::Module, name::Sym
     # if this constant declaration is invalid, just report it and bail out
     if iscd && !isnew
         warn_invalid_const_global!(name)
-        report_pass!(InvalidConstantDeclaration, analyzer, sv, mod, name)
+        ReportPass(analyzer)(InvalidConstantDeclaration, analyzer, sv, mod, name)
         return
     end
 
@@ -734,7 +734,7 @@ get_msg(::Type{InvalidConstantRedefinition}, analyzer::AbstractAnalyzer, sv::Inf
     "invalid redefinition of constant $(mod).$(name) (from $(t′) to $(t))"
 
 function (::SoundBasicPass)(::Type{InvalidConstantRedefinition}, analyzer::AbstractAnalyzer, sv::InferenceState, mod::Module, name::Symbol, @nospecialize(prev_t), @nospecialize(t))
-    report!(InvalidConstantRedefinition, analyzer, sv, mod, name, prev_t, t)
+    add_new_report!(InvalidConstantRedefinition(analyzer, sv, mod, name, prev_t, t), analyzer)
 end
 
 @reportdef struct InvalidConstantDeclaration <: InferenceErrorReport
@@ -745,7 +745,7 @@ get_msg(::Type{InvalidConstantDeclaration}, analyzer::AbstractAnalyzer, sv::Infe
     "cannot declare a constant $(mod).$(name); it already has a value"
 
 function (::SoundBasicPass)(::Type{InvalidConstantDeclaration}, analyzer::AbstractAnalyzer, sv::InferenceState, mod::Module, name::Symbol)
-    report!(InvalidConstantDeclaration, analyzer, sv, mod, name)
+    add_new_report!(InvalidConstantDeclaration(analyzer, sv, mod, name), analyzer)
 end
 
 function is_constant_declared(name::Symbol, sv::InferenceState)

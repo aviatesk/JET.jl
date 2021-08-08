@@ -9,7 +9,7 @@ function CC.builtin_tfunction(analyzer::AbstractAnalyzer, @nospecialize(f), argt
     if f === throw
         # here we only report a selection of "serious" exceptions, i.e. those that should be
         # reported even if they may be caught in actual execution;
-        report_pass!(SeriousExceptionReport, analyzer, sv, argtypes)
+        ReportPass(analyzer)(SeriousExceptionReport, analyzer, sv, argtypes)
 
         # other general `throw` calls will be reported within `_typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)`
         # only when they are not caught by control flow, which is judged by whether if the
@@ -17,7 +17,7 @@ function CC.builtin_tfunction(analyzer::AbstractAnalyzer, @nospecialize(f), argt
         return ret
     end
 
-    report_pass!(InvalidBuiltinCallErrorReport, analyzer, sv, f, argtypes, ret)
+    ReportPass(analyzer)(InvalidBuiltinCallErrorReport, analyzer, sv, f, argtypes, ret)
 
     if f === getfield && 2 ≤ length(argtypes) ≤ 3
         obj, fld = argtypes
@@ -90,11 +90,11 @@ function (::SoundBasicPass)(::Type{SeriousExceptionReport}, analyzer::AbstractAn
         if isa(a, Const)
             err = a.val
             if isa(err, UndefKeywordError)
-                report!(SeriousExceptionReport, analyzer, sv, err)
+                add_new_report!(SeriousExceptionReport(analyzer, sv, err), analyzer)
             elseif isa(err, MethodError)
                 # ignore https://github.com/JuliaLang/julia/blob/7409a1c007b7773544223f0e0a2d8aaee4a45172/base/boot.jl#L261
                 if err.f !== Bottom
-                    report!(SeriousExceptionReport, analyzer, sv, err)
+                    add_new_report!(SeriousExceptionReport(analyzer, sv, err), analyzer)
                 end
             end
         end
@@ -137,7 +137,7 @@ function handle_unimplemented_builtins!(analyzer::AbstractAnalyzer, sv::Inferenc
     if ret === Bottom
         @assert !(f === throw) "`throw` calls shuold be handled by report passes of `SeriousExceptionReport` or `UncaughtExceptionReport`"
 
-        report!(UnimplementedBuiltinCallErrorReport, analyzer, sv, argtypes)
+        add_new_report!(UnimplementedBuiltinCallErrorReport(analyzer, sv, argtypes), analyzer)
     end
 end
 
@@ -155,13 +155,13 @@ function (::SoundBasicPass)(::Type{InvalidBuiltinCallErrorReport}, analyzer::Abs
                 if isa(obj, Const) && (mod = obj.val; isa(mod, Module))
                     if !isdefined(mod, name)
                         # bypass for report pass for undefined global reference
-                        report_pass!(GlobalUndefVarErrorReport, analyzer, sv, mod, name)
+                        ReportPass(analyzer)(GlobalUndefVarErrorReport, analyzer, sv, mod, name)
                         return
                     end
                 elseif ret === Bottom
                     # general case when an error is detected by the native `getfield_tfunc`
                     typ = widenconst(obj)
-                    report!(NoFieldErrorReport, analyzer, sv, typ, name)
+                    add_new_report!(NoFieldErrorReport(analyzer, sv, typ, name), analyzer)
                     return
                 end
             end
@@ -186,7 +186,7 @@ function (::SoundBasicPass)(::Type{InvalidBuiltinCallErrorReport}, analyzer::Abs
             t = widenconst(a)
             if isprimitivetype(t) && t <: Number
                 if isa(a, Const) && a.val === zero(t)
-                    report!(DivideErrorReport, analyzer, sv)
+                    add_new_report!(DivideErrorReport(analyzer, sv), analyzer)
                     return
                 end
             end
@@ -212,7 +212,7 @@ end
 # execution of it
 function CC.return_type_tfunc(analyzer::AbstractAnalyzer, argtypes::Vector{Any}, sv::InferenceState)
     # report pass for invalid `Core.Compiler.return_type` call
-    report_pass!(InvalidReturnTypeCall, analyzer, sv, argtypes)
+    ReportPass(analyzer)(InvalidReturnTypeCall, analyzer, sv, argtypes)
 
     # don't recursively pass on `AbstractAnalyzer` via `@invoke` here, and make sure
     # JET's analysis enter into the simulated call
@@ -228,6 +228,6 @@ function (::SoundBasicPass)(::Type{InvalidReturnTypeCall}, analyzer::AbstractAna
     # `NativeInterpreter`'s `return_type_tfunc` hard-codes its return type to `Type`
     if length(argtypes) ≠ 3
         # invalid argument number, let's report and return error result (i.e. `Bottom`)
-        report!(InvalidReturnTypeCall, analyzer, sv)
+        add_new_report!(InvalidReturnTypeCall(analyzer, sv), analyzer)
     end
 end
