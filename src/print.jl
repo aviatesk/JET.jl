@@ -1,9 +1,31 @@
+# entry
+# =====
+
+Base.show(io::IO, res::JETToplevelResult) = print_reports(io, res)
+function print_reports(io::IO, res::JETToplevelResult)
+    return print_reports(io,
+                         get_critical_reports(res.res),
+                         gen_postprocess(res.res.actual2virtual);
+                         res.jetconfigs...)
+end
+
+Base.show(io::IO, res::JETCallResult) = print_reports(io, res)
+function print_reports(io::IO, res::JETCallResult)
+    return print_reports(io,
+                         get_reports(res.analyzer);
+                         res.jetconfigs...)
+end
+
+# entry for test
+print_reports(args...; jetconfigs...) =
+    return print_reports(stdout::IO, args...; jetconfigs...)
+
 # configuration
-# -------------
+# =============
 
 """
-JET configurations for error printing.
-If the entry renders the collected error points, the configurations below will be active.
+Configurations for error printing.
+If the entry prints the collected error points, the configurations below will be active.
 
 ---
 - `print_toplevel_success::Bool = false` \\
@@ -102,33 +124,8 @@ struct PrintConfig
                    )
 end
 
-# entry
-function print_reports(io::IO, res::VirtualProcessResult; jetconfigs...)
-    # non-empty `ret.toplevel_error_reports` means critical errors happened during
-    # the AST transformation, so they always have precedence over `ret.inference_error_reports`
-    reports = !isempty(res.toplevel_error_reports) ?
-              res.toplevel_error_reports :
-              res.inference_error_reports
-
-    return print_reports(io, reports, gen_postprocess(res.actual2virtual); jetconfigs...)
-end
-
-# maybe test entry
-print_reports(args...; jetconfigs...) = print_reports(stdout::IO, args...; jetconfigs...)
-
-# when virtualized, fix virtual module printing based on string manipulation;
-# the "actual" modules may not be loaded into this process
-gen_postprocess(::Nothing) = return identity
-function gen_postprocess((actualmod, virtualmod)::Actual2Virtual)
-    virtual = string(virtualmod)
-    actual  = string(actualmod)
-    return actualmod === Main ?
-           Fix2(replace, "Main." => "") ∘ Fix2(replace, virtual => actual) :
-           Fix2(replace, virtual => actual)
-end
-
 # utility
-# -------
+# =======
 
 const ERROR_COLOR = :light_red
 const NOERROR_COLOR = :light_green
@@ -166,21 +163,8 @@ function with_bufferring(f, args...)
     return String(take!(buf))
 end
 
-# we may need something like this for stdlibs as well ?
-
-function tofullpath(filename::AbstractString)
-    path = abspath(filename)
-    return isfile(path) ? path : fullbasepath(filename)
-end
-fullbasepath(filename) = normpath(JULIA_DIR, "base", filename)
-
-# TODO make this configurable ?
-const JULIA_DIR = @static occursin("DEV", string(VERSION)) ?
-                  normpath(Sys.BINDIR, "..", "..", "..", "julia") :
-                  normpath(Sys.BINDIR, Base.DATAROOTDIR)
-
 # toplevel
-# --------
+# ========
 
 function print_reports(io::IO,
                        reports::AbstractVector{<:ToplevelErrorReport},
@@ -246,7 +230,7 @@ function print_report(io, report::MissingConcretization)
 end
 
 # inference
-# ---------
+# =========
 
 function print_reports(io::IO,
                        reports::AbstractVector{<:InferenceErrorReport},
@@ -256,7 +240,7 @@ function print_reports(io::IO,
 
     # here we more aggressively uniqify reports, ignoring the difference between different `MethodInstance`s
     # as far as the report location and its signature are the same
-    reports = unique(print_identity_key, reports)
+    # reports = unique(print_identity_key, reports)
     n = length(reports)
 
     if n == 0
@@ -285,24 +269,6 @@ function print_reports(io::IO,
 
     return n
 end
-
-@withmixedhash struct VirtualFrameNoLinfo
-    file::Symbol
-    line::Int
-    sig::Vector{Any}
-    # linfo::MethodInstance
-end
-VirtualFrameNoLinfo(vf::VirtualFrame) = VirtualFrameNoLinfo(vf.file, vf.line, vf.sig)
-
-@withmixedhash struct PrintIdentityKey
-    T::Type{<:InferenceErrorReport}
-    sig::Vector{Any}
-    # entry_frame::VirtualFrame
-    error_frame::VirtualFrameNoLinfo
-end
-
-print_identity_key(report::T) where {T<:InferenceErrorReport} =
-    PrintIdentityKey(T, report.sig, #=VirtualFrameNoLinfo(first(report.vst)),=# VirtualFrameNoLinfo(last(report.vst)))
 
 # traverse abstract call stack, print frames
 function print_report(io, report::InferenceErrorReport, config, wrote_linfos, depth = 1)

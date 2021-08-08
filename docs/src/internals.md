@@ -32,6 +32,14 @@ JET.partially_interpret!
 ```
 
 
+## Analysis Results
+
+```@docs
+JET.JETToplevelResult
+JET.JETCallResult
+```
+
+
 ## Error Report Interface
 
 ```@docs

@@ -3,14 +3,12 @@ using JET, InteractiveUtils
 const CC = JET.CC
 
 import .CC:
-    widenconst, ⊑
+    widenconst, ⊑, Bottom
 
 import JET:
     AbstractAnalyzer,
     JETAnalyzer,
     AbstractGlobal,
-    analyze_file,
-    analyze_text,
     get_result,
     ToplevelConfig,
     virtual_process,
@@ -123,6 +121,10 @@ function _analyze_toplevel(ex, lnn, jetconfigs)
                          )
     end)
 end
+
+# `report_file` with silent top-level logger
+report_file2(args...; kwargs...) =
+    report_file(args...; toplevel_logger = nothing, kwargs...)
 
 is_concrete(mod, sym) = isdefined(mod, sym) && !isa(getfield(mod, sym), AbstractGlobal)
 is_abstract(mod, sym) = isdefined(mod, sym) && isa(getfield(mod, sym), AbstractGlobal)

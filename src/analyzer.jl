@@ -178,11 +178,11 @@ Logging configurations for JET analysis.
   Examples:
   * logs into `stdout`
     ```julia
-    analyze_call(f, args...; inference_logger = stdout)
+    report_call(f, args...; inference_logger = stdout)
     ```
   * logs into `io::IOBuffer` with "debug" logger level
     ```julia
-    julia> analyze_call(f, args...; inference_logger = IOContext(io, $(repr(LOGGER_LEVEL_KEY)) => $DEBUG_LOGGER_LEVEL))
+    julia> report_call(f, args...; inference_logger = IOContext(io, $(repr(LOGGER_LEVEL_KEY)) => $DEBUG_LOGGER_LEVEL))
     ```
 ---
 !!! tip

@@ -39,8 +39,7 @@ struct WatchConfig
 end
 
 """
-    report_and_watch_file([io::IO = stdout],
-                          filename::AbstractString;
+    report_and_watch_file(filename::AbstractString;
                           jetconfigs...)
 
 Watches `filename` and keeps re-triggering analysis with [`report_file`](@ref) on code update.
@@ -68,22 +67,24 @@ function init_revise!()
     @eval (@__MODULE__) using Revise
 end
 
-_report_and_watch_file(args...; kwargs...) = _report_and_watch_file(stdout::IO, args...; kwargs...)
-function _report_and_watch_file(io::IO, filename::AbstractString; jetconfigs...)
+function _report_and_watch_file(filename::AbstractString; jetconfigs...)
     config = WatchConfig(; jetconfigs...)
 
-    included_files, _ = report_file(io, filename; jetconfigs...)
+    res = report_file(filename; jetconfigs...)
+    display(res)
+    included_files = res.res.included_files
 
     interrupted = false
     while !interrupted
         try
             Revise.entr(collect(included_files), config.revise_modules;
                         postpone = true, all = config.revise_all) do
-                println(io)
-                included_files′, _ = report_file(io, filename; jetconfigs...)
-                if any(∉(included_files), included_files′)
+                res = report_file(filename; jetconfigs...)
+                display(res)
+                next_included_files = res.res.included_files
+                if any(∉(included_files), next_included_files)
                     # refresh watch files
-                    throw(InsufficientWatches(included_files′))
+                    throw(InsufficientWatches(next_included_files))
                 end
                 return nothing
             end

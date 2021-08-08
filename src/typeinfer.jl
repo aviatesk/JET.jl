@@ -214,7 +214,7 @@ get_msg(T::Type{LocalUndefVarErrorReport}, analyzer::AbstractAnalyzer, state, na
 function report_undefined_local_slots!(analyzer::AbstractAnalyzer, frame::InferenceState, stmts::Vector{Any}, unsound::Bool)
     for (idx, stmt) in enumerate(stmts)
         if isa(stmt, Expr) && stmt.head === :throw_undef_if_not
-            sym::Symbol, _ = stmt.args
+            sym = stmt.args[1]::Symbol
 
             # slots in toplevel frame may be a abstract global slot
             istoplevel(analyzer, frame) && is_global_slot(analyzer, sym) && continue

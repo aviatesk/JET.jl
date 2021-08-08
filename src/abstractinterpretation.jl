@@ -192,12 +192,12 @@ function CC.abstract_call_method_with_const_args(analyzer::AbstractAnalyzer, res
     # update reports if constant prop' was successful
     # branch on https://github.com/JuliaLang/julia/pull/41697/
     @static if VERSION ≥ v"1.8.0-DEV.282"
-        if const_result !== nothing
+        if !isnothing(const_result)
             # successful constant prop', we also need to update reports
             update_reports!(analyzer, sv)
         end
     else
-        if getfield(const_result, 2) !== nothing
+        if !isnothing(getfield(const_result, 2))
             # successful constant prop', we also need to update reports
             update_reports!(analyzer, sv)
         end

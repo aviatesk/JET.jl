@@ -11,7 +11,7 @@ using Test
 const FIXTURE_DIR = normpath(@__DIR__, "fixtures")
 
 const ERROR_REPORTS_FROM_SUM_OVER_STRING = let
-    analyzer, frame = analyze_call(sum, (String,))
+    analyzer, = report_call(sum, (String,))
     @test !isempty(get_reports(analyzer))
     get_reports(analyzer)
 end

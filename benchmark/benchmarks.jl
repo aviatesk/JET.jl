@@ -104,22 +104,22 @@ BenchmarkTools.DEFAULT_PARAMETERS.seconds = 100.0
 const SUITE = BenchmarkGroup()
 
 SUITE["package loading"] = @jetbenchmarkable using JET
-SUITE["first time"] = @jetbenchmarkable (@analyze_call identity(nothing)) setup = (using JET)
-SUITE["easy"] = @jetbenchmarkable (@analyze_call sum("julia")) setup = begin
+SUITE["first time"] = @jetbenchmarkable (@report_call identity(nothing)) setup = (using JET)
+SUITE["easy"] = @jetbenchmarkable (@report_call sum("julia")) setup = begin
     using JET
-    @analyze_call identity(nothing)
+    @report_call identity(nothing)
 end
-SUITE["cached easy"] = @jetbenchmarkable (@analyze_call sum("julia")) setup = begin
+SUITE["cached easy"] = @jetbenchmarkable (@report_call sum("julia")) setup = begin
     using JET
-    @analyze_call sum("julia")
+    @report_call sum("julia")
 end
-SUITE["a bit complex"] = @jetbenchmarkable (@analyze_call rand(Bool)) setup = begin
+SUITE["a bit complex"] = @jetbenchmarkable (@report_call rand(Bool)) setup = begin
     using JET
-    @analyze_call identity(nothing)
+    @report_call identity(nothing)
 end
-SUITE["invalidation"] = @jetbenchmarkable (@analyze_call println(QuoteNode(nothing))) setup = begin
+SUITE["invalidation"] = @jetbenchmarkable (@report_call println(QuoteNode(nothing))) setup = begin
     using JET
-    @analyze_call println(QuoteNode(nothing))
+    @report_call println(QuoteNode(nothing))
     @eval Base begin
         function show_sym(io::IO, sym::Symbol; allow_macroname=false)
             if is_valid_identifier(sym)
@@ -133,7 +133,7 @@ SUITE["invalidation"] = @jetbenchmarkable (@analyze_call println(QuoteNode(nothi
         end
     end
 end
-# FIXME
+# FIXME debug the error and enable this performance tracking
 # SUITE["self analysis"] = @jetbenchmarkable(
 #     begin
 #         analyzer = JET.JETAnalyzer()
@@ -142,7 +142,7 @@ end
 #     end,
 #     setup = begin
 #         using JET
-#         @analyze_call identity(nothing)
+#         @report_call identity(nothing)
 #     end)
 SUITE["top-level"] = @jetbenchmarkable(
     (@analyze_toplevel begin
@@ -162,4 +162,4 @@ SUITE["top-level first time"] = @jetbenchmarkable(
         myidentity(nothing)
     end),
     setup = include("test/interactive_utils.jl"))
-SUITE["end to end"] = @jetbenchmarkable report_file(IOBuffer(), "demo.jl") setup = using JET
+SUITE["end to end"] = @jetbenchmarkable report_file("demo.jl") setup = using JET
