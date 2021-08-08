@@ -3,7 +3,7 @@ function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
     linfo = frame.linfo
 
     #= logging start =#
-    local sec, depth
+    local sec::Float64, depth::Int
     logger_activated = !isnothing(JETLogger(analyzer).inference_logger)
     if logger_activated
         sec = time()

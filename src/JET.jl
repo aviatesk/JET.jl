@@ -760,9 +760,9 @@ report_text(args...; jetconfigs...) = report_text(stdout::IO, args...; jetconfig
 
 function analyze_text(text::AbstractString,
                       filename::AbstractString = "top-level";
-                      analyzer::Type{T} = JETAnalyzer,
-                      jetconfigs...) where {T<:AbstractAnalyzer}
-    analyzer = T(; jetconfigs...)
+                      analyzer::Type{Analyzer} = JETAnalyzer,
+                      jetconfigs...) where {Analyzer<:AbstractAnalyzer}
+    analyzer = Analyzer(; jetconfigs...)
     maybe_initialize_caches!(analyzer)
     config = ToplevelConfig(; jetconfigs...)
     return virtual_process(text,
@@ -919,6 +919,8 @@ end
 # test, interactive
 # =================
 
+# TODO improve inferrability by making `analyzer` argument positional
+
 """
     @analyze_call [jetconfigs...] f(args...)
 
@@ -944,7 +946,7 @@ Analyzes the generic function call with the given type signature, and returns:
 - `frame::Union{InferenceFrame,Nothing}`: the final state of the abstract interpretation,
   or `nothing` if `f` is a generator and the code generation failed
 """
-function analyze_call(@nospecialize(f), @nospecialize(types = Tuple{}); kwargs...)
+function analyze_call(@nospecialize(f), @nospecialize(types = Tuple{}); jetconfigs...)
     ft = Core.Typeof(f)
     if isa(types, Type)
         u = unwrap_unionall(types)
@@ -952,12 +954,12 @@ function analyze_call(@nospecialize(f), @nospecialize(types = Tuple{}); kwargs..
     else
         tt = Tuple{ft, types...}
     end
-    return analyze_call(tt; kwargs...)
+    return analyze_call(tt; jetconfigs...)
 end
 function analyze_call(@nospecialize(tt::Type{<:Tuple});
-                      analyzer::Type{T} = JETAnalyzer,
-                      jetconfigs...) where {T<:AbstractAnalyzer}
-    analyzer = T(; jetconfigs...)
+                      analyzer::Type{Analyzer} = JETAnalyzer,
+                      jetconfigs...) where {Analyzer<:AbstractAnalyzer}
+    analyzer = Analyzer(; jetconfigs...)
     maybe_initialize_caches!(analyzer)
     return analyze_gf_by_type!(analyzer, tt)
 end
