@@ -37,11 +37,11 @@ end
                             jetconfigs...)
     return JETAnalyzer(report_pass, state)
 end
-AnalyzerState(analyzer::JETAnalyzer) =
+JETInterface.AnalyzerState(analyzer::JETAnalyzer) =
     return analyzer.state
-AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerState) =
+JETInterface.AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerState) =
     return JETAnalyzer(ReportPass(analyzer), state)
-ReportPass(analyzer::JETAnalyzer) =
+JETInterface.ReportPass(analyzer::JETAnalyzer) =
     return analyzer.report_pass
 
 # TODO document the definitions of errors, elaborate the difference of these two passes
@@ -66,8 +66,8 @@ const SoundBasicPass = Union{SoundPass,BasicPass}
 # analysis
 # ========
 
-function InferenceState(result::InferenceResult, cache::CACHE_ARG_TYPE, analyzer::JETAnalyzer)
-    frame = @invoke InferenceState(result::InferenceResult, cache::CACHE_ARG_TYPE, analyzer::AbstractAnalyzer)
+function CC.InferenceState(result::InferenceResult, cache::CACHE_ARG_TYPE, analyzer::JETAnalyzer)
+    frame = @invoke CC.InferenceState(result::InferenceResult, cache::CACHE_ARG_TYPE, analyzer::AbstractAnalyzer)
     if isnothing(frame) # indicates something bad happened within `retrieve_code_info`
         ReportPass(analyzer)(GeneratorErrorReport, analyzer, result)
     end

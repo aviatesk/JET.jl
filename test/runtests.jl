@@ -22,6 +22,10 @@ include("setup.jl")
         @static Sys.iswindows() || @testset "print.jl" begin
             include("ui/test_print.jl")
         end
+
+        @testset "vscode.jl" begin
+            include("ui/test_vscode.jl")
+        end
     end
 
     @testset "misc" begin

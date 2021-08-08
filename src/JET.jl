@@ -605,6 +605,8 @@ const JULIA_DIR = @static occursin("DEV", string(VERSION)) ?
 
 # default UI (console)
 include("ui/print.jl")
+# UI for VSCode
+include("ui/vscode.jl")
 
 # entries
 # =======
@@ -1441,14 +1443,8 @@ function Test.record(ts::DefaultTestSet, t::JETTestFailure)
     return t
 end
 
-# builtin analyzers
-# =================
-
-include("analyzers/jetanalyzer.jl")
-include("analyzers/optanalyzer.jl")
-
-# exports
-# =======
+# interface
+# =========
 
 """
     JETInterface
@@ -1490,9 +1486,18 @@ reexport_as_api!(JETInterface,
                  get_msg,
                  get_spec_args,
                  var"@reportdef",
+                 VSCode.vscode_source,
+                 VSCode.vscode_diagnostics_order,
                  )
-reexport_as_api!(subtypes(InferenceErrorReport)...; documented = false)
-reexport_as_api!(subtypes(ReportPass)...; documented = false)
+
+# builtin analyzers
+# =================
+
+include("analyzers/jetanalyzer.jl")
+include("analyzers/optanalyzer.jl")
+
+# exports
+# =======
 
 export
     # generic entries & default jetanalyzer
@@ -1509,5 +1514,9 @@ export
     report_opt,
     @test_opt,
     test_opt
+
+# TODO maybe move this to `@reportdef`
+reexport_as_api!(subtypes(InferenceErrorReport)...; documented = false)
+reexport_as_api!(subtypes(ReportPass)...; documented = false)
 
 end
