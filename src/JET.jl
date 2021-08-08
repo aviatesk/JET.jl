@@ -495,7 +495,7 @@ ignorenotfound(@nospecialize(t)) = t === NOT_FOUND ? Bottom : t
 
 # interface
 include("interfaces.jl")
-# abstract-interpretaion based analysis
+# abstract interpretaion based analysis
 include("tfuncs.jl")
 include("abstractinterpretation.jl")
 include("typeinfer.jl")
@@ -875,7 +875,7 @@ function analyze_method_instance!(analyzer::AbstractAnalyzer, mi::MethodInstance
 end
 
 function InferenceState(result::InferenceResult, cached::Bool, analyzer::AbstractAnalyzer)
-    report_pass!(GeneratorErrorReport, analyzer, result.linfo)
+    ReportPass(analyzer)(GeneratorErrorReport, analyzer, result.linfo)
     return @invoke InferenceState(result::InferenceResult, cached::Bool, analyzer::AbstractInterpreter)
 end
 
@@ -896,7 +896,7 @@ function (::SoundBasicPass)(::Type{GeneratorErrorReport}, analyzer::AbstractAnal
             ccall(:jl_code_for_staged, Any, (Any,), mi)
         catch err
             # if user code throws error, wrap and report it
-            report!(GeneratorErrorReport, analyzer, mi, err)
+            add_new_report!(GeneratorErrorReport(analyzer, mi, err), analyzer)
         end
     end
 end
@@ -1037,13 +1037,12 @@ end
 
 reexport_as_api!(AbstractAnalyzer,
                  AnalyzerState,
+                 ReportPass,
                  InferenceErrorReport,
                  get_msg,
                  get_spec_args,
                  var"@reportdef",
-                 ReportPass,
-                 report_pass!,
-                 report!,
+                 add_new_report!,
                  )
 reexport_as_api!(subtypes(InferenceErrorReport)...; documented = false)
 reexport_as_api!(subtypes(ReportPass)...; documented = false)

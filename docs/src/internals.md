@@ -1,12 +1,12 @@
 # Internals of JET.jl
 
-## [Abstract Interpretation Based Analysis](@ref abstract-interpretaion)
+## [Abstract Interpretation Based Analysis](@id abstractinterpret-analysis)
 
 JET.jl overloads functions with the [`Core.Compiler.AbstractInterpreter` interface](https://github.com/JuliaLang/julia/blob/master/base/compiler/types.jl), and customizes its abstract interpretation routine.
 The overloads are done on `AbstractAnalyzer <: AbstractInterpreter` so that `typeinf(::AbstractAnalyzer, ::InferenceState)` will do the customized abstract interpretation and collect type errors.
 
 Most overloads use the [`invoke`](https://docs.julialang.org/en/v1/base/base/#Core.invoke) reflection, which allows
-[`AbstractAnalyzer`](@ref) to dispatch to the original `AbstractInterpreter`'s abstract interpretation methods and still keep passing
+[`JET.AbstractAnalyzer`](@ref) to dispatch to the original `AbstractInterpreter`'s abstract interpretation methods and still keep passing
 it to the subsequent (maybe overloaded) callees (see [`JET.@invoke`](@ref) macro).
 
 ```@docs
@@ -22,7 +22,7 @@ JET.JET_CODE_CACHE
 ```
 
 
-## Top-level Analysis
+## [Top-level Analysis](@id top-level-analysis)
 
 ```@docs
 JET.virtual_process

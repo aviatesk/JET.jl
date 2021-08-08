@@ -110,7 +110,7 @@ function CC.finish(frame::CC.InferenceState, analyzer::DispatchAnalyzer)
         if isa(frame.result.src, CC.OptimizationState)
             push!(analyzer.opts, true)
         else # means, compiler decides not to do optimization
-            report_pass!(OptimizationFailureReport, analyzer, frame)
+            ReportPass(analyzer)(OptimizationFailureReport, analyzer, frame)
             push!(analyzer.opts, false)
         end
     end
@@ -123,7 +123,7 @@ JETInterfaces.get_msg(::Type{OptimizationFailureReport}, args...) =
     return "failed to optimize" #: signature of this MethodInstance
 
 function (::DispatchAnalysisPass)(::Type{OptimizationFailureReport}, analyzer::DispatchAnalyzer, frame::CC.InferenceState)
-    report!(OptimizationFailureReport, analyzer, frame.linfo)
+    add_new_report!(OptimizationFailureReport(analyzer, frame.linfo), analyzer)
 end
 
 function CC.finish!(analyzer::DispatchAnalyzer, caller::CC.InferenceResult)
@@ -134,10 +134,10 @@ function CC.finish!(analyzer::DispatchAnalyzer, caller::CC.InferenceResult)
     if popfirst!(analyzer.opts) # optimization happened
         if isa(ret, Core.Const) # the optimization was very successful, nothing to report
         elseif isa(ret, CC.OptimizationState) # compiler cached the optimized IR, just analyze it
-            report_pass!(RuntimeDispatchReport, analyzer, ret)
+            ReportPass(analyzer)(RuntimeDispatchReport, analyzer, ret)
         elseif isa(ret, Core.CodeInfo) # compiler didn't cache the optimized IR, but `finish!(::AbstractInterpreter, ::InferenceResult)` transformed it to `opt.src`, so we can analyze it
             @assert opt.src === ret && isa(opt, CC.OptimizationState)
-            report_pass!(RuntimeDispatchReport, analyzer, opt)
+            ReportPass(analyzer)(RuntimeDispatchReport, analyzer, opt)
         else
             throw("got $ret, unexpected state happened") # this pass should never happen
         end
@@ -156,7 +156,7 @@ function (::DispatchAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::Dispa
         if @isexpr(x, :call)
             ft = CC.widenconst(CC.argextype(first(x.args), opt.src, sptypes, slottypes))
             ft <: Core.Builtin && continue # ignore `:call`s of language intrinsics
-            report!(RuntimeDispatchReport, analyzer, (opt, pc))
+            add_new_report!(RuntimeDispatchReport(analyzer, (opt, pc)), analyzer)
         end
     end
 end
@@ -236,7 +236,7 @@ end |> first
 # heuristic to intentionally disable inference (and so succeeding optimizations too) in
 # order to ease [the latency problem, a.k.a. "first-time-to-plot"](https://julialang.org/blog/2020/08/invalidations/).
 # The report trace certainly suggests a dispatch was detected where `DomainError` can be thrown.
-# We can turn off the heuristic by turning off [the `unoptimize_throw_blocks::Bool` configuration](@ref JETAnalysisParams),
+# We can turn off the heuristic by turning off [the `unoptimize_throw_blocks::Bool` configuration](@ref abstractinterpret-config),
 # and this time any runtime dispatch won't be reported:
 @report_dispatch unoptimize_throw_blocks=false sin(10);
 

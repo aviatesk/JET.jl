@@ -275,6 +275,48 @@ mutable struct AnalyzerState
     depth::Int
 end
 
+"""
+    mutable struct AnalyzerState
+        ...
+    end
+
+The mutable object that holds various states that are consumed by all [`AbstractAnalyzer`](@ref)s.
+
+---
+
+    AnalyzerState(analyzer::AbstractAnalyzer) -> AnalyzerState
+
+If `NewAnalyzer` implements the `AbstractAnalyzer` interface, `NewAnalyzer` should implement
+this `AnalyzerState(analyzer::NewAnalyzer) -> AnalyzerState` interface.
+
+A new `AnalyzerState` is supposed to be constructed using [JET configurations](@ref) passed
+as keyword arguments `jetconfigs` of the [`NewAnalyzer(; jetconfigs...)`](@ref AbstractAnalyzer)
+constructor, and the constructed `AnalyzerState` is usually kept within `NewAnalyzer` itself:
+```julia
+function NewAnalyzer(; jetconfigs...)
+    ...
+    state = AnalyzerState(; jetconfigs...)
+    return NewAnalyzer(..., state)
+end
+AnalyzerState(analyzer::NewAnalyzer) = analyzer.state
+```
+"""
+function AnalyzerState(analyzer::Analyzer) where Analyzer<:AbstractAnalyzer
+    error("""
+    missing `$AbstractAnalyzer` API:
+    `$Analyzer` is required to implement the `$AnalyzerState(analyzer::$Analyzer) -> $AnalyzerState` interface.
+    See the documentation of `$AbstractAnalyzer` and `$AnalyzerState`.
+    """)
+end
+
+function AbstractAnalyzer(analyzer::Analyzer, state::AnalyzerState) where Analyzer<:AbstractAnalyzer
+    error("""
+    missing `$AbstractAnalyzer` API:
+    `$Analyzer` is required to implement the `$AbstractAnalyzer(analyzer::$Analyzer, state::$AnalyzerState) -> $Analyzer` interface.
+    See the documentation of `$AbstractAnalyzer`.
+    """)
+end
+
 # define getter/setter methods
 for fld in fieldnames(AnalyzerState)
     fld === :cache_key && continue # will be defined later (in order to take in `ReportPass` hash)
@@ -394,7 +436,7 @@ CC.get_world_counter(analyzer::AbstractAnalyzer)  = get_world_counter(get_native
 CC.lock_mi_inference(::AbstractAnalyzer, ::MethodInstance) = nothing
 CC.unlock_mi_inference(::AbstractAnalyzer, ::MethodInstance) = nothing
 
-CC.add_remark!(analyzer::AbstractAnalyzer, sv, s) = report_pass!(NativeRemark, analyzer, sv, s)
+CC.add_remark!(analyzer::AbstractAnalyzer, sv, s) = ReportPass(analyzer)(NativeRemark, analyzer, sv, s)
 
 CC.may_optimize(analyzer::AbstractAnalyzer)      = true
 CC.may_compress(analyzer::AbstractAnalyzer)      = false
@@ -407,19 +449,16 @@ JETAnalysisParams(analyzer::AbstractAnalyzer) = get_analysis_params(analyzer)
 
 # maybe we want to strip off `@nospecialize`s below ?
 
-@inline function report_pass!(T::Type{<:InferenceErrorReport}, analyzer::AbstractAnalyzer, state, @nospecialize(args...))
-    return ReportPass(analyzer)(T, analyzer, state, args...)
-end
-
-@inline function report!(T::Type{<:InferenceErrorReport}, analyzer::AbstractAnalyzer, state, @nospecialize(args...))
-    report = T(analyzer, state, args...)
-    push!(isa(report, UncaughtExceptionReport) ? get_uncaught_exceptions(analyzer) : get_reports(analyzer), report)
-    return report
-end
-
-@inline function restore_cached_report!(cache::InferenceErrorReportCache, analyzer::AbstractAnalyzer)
-    report = restore_cached_report(cache)
-    push!(isa(report, UncaughtExceptionReport) ? get_uncaught_exceptions(analyzer) : get_reports(analyzer), report)
+@inline add_new_report!(report::InferenceErrorReport, analyzer::AbstractAnalyzer) =
+    return stash_report!(report, analyzer)
+@inline restore_cached_report!(cache::InferenceErrorReportCache, analyzer::AbstractAnalyzer) =
+    return stash_report!(restore_cached_report(cache), analyzer)
+@inline function stash_report!(report::InferenceErrorReport, analyzer::AbstractAnalyzer)
+    if isa(report, UncaughtExceptionReport)
+        push!(get_uncaught_exceptions(analyzer), report)
+    else
+        push!(get_reports(analyzer), report)
+    end
     return report
 end
 
@@ -431,7 +470,7 @@ function get_cache_key_per_config(analysis_params::JETAnalysisParams, inf_params
 end
 
 function get_cache_key(analyzer::AbstractAnalyzer)
-    h = analyzer.state.cache_key
+    h = AnalyzerState(analyzer).cache_key
     h = hash(ReportPass(analyzer), h)
     return h
 end
@@ -489,7 +528,11 @@ get_msg(::Type{NativeRemark}, analyzer::AbstractAnalyzer, sv, s) = s
 # JETAnalyzer
 # -----------
 
-# the default abstract interpreter for JET.jl
+"""
+    struct JETAnalyzer <: AbstractAnalyzer
+
+JET.jl's default error analyzer.
+"""
 struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
     report_pass::RP
     state::AnalyzerState
@@ -523,6 +566,9 @@ end
                             jetconfigs...)
     return JETAnalyzer(report_pass, state)
 end
-AnalyzerState(analyzer::JETAnalyzer)                          = analyzer.state
-AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerState) = JETAnalyzer(ReportPass(analyzer), state)
-ReportPass(analyzer::JETAnalyzer)                             = analyzer.report_pass
+AnalyzerState(analyzer::JETAnalyzer) =
+    return analyzer.state
+AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerState) =
+    return JETAnalyzer(ReportPass(analyzer), state)
+ReportPass(analyzer::JETAnalyzer) =
+    return analyzer.report_pass
