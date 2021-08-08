@@ -1,5 +1,5 @@
 @testset "report invalid builtin call" begin
-    analyzer, frame = analyze_call((Int, Type{Int}, Any)) do a, b, c
+    analyzer, = report_call((Int, Type{Int}, Any)) do a, b, c
         isa(a, b, c)
     end
     @test length(get_reports(analyzer)) === 1
@@ -16,13 +16,13 @@
             access_field(t, sym) = getfield(t, sym)
         end)
 
-        analyzer, frame = Core.eval(m, quote
-            $analyze_call(t->access_field(t,:v), (T,))
+        analyzer, = Core.eval(m, quote
+            $report_call(t->access_field(t,:v), (T,))
         end)
         @test isempty(get_reports(analyzer))
 
-        analyzer, frame = Core.eval(m, quote
-            $analyze_call(t->access_field(t,:w), (T,))
+        analyzer, = Core.eval(m, quote
+            $report_call(t->access_field(t,:w), (T,))
         end)
         @test length(get_reports(analyzer)) === 1
         er = first(get_reports(analyzer))
@@ -30,8 +30,8 @@
         @test er.typ === m.T
         @test er.name === :w
 
-        analyzer, frame = Core.eval(m, quote
-            $analyze_call(t->access_field(t,:v), (T,))
+        analyzer, = Core.eval(m, quote
+            $report_call(t->access_field(t,:v), (T,))
         end)
         @test isempty(get_reports(analyzer))
     end
@@ -40,7 +40,7 @@ end
 @testset "malformed getfield" begin
     let
         # shouldn't error
-        analyzer, frame = analyze_call((Any,)) do a
+        analyzer, = report_call((Any,)) do a
             getfield(a)
         end
         @test length(get_reports(analyzer)) == 1
@@ -97,13 +97,13 @@ end
 @testset "special case `return_type`" begin
     # don't report invalid method calls simulated in `return_type_tfunc`
     let
-        analyzer, frame = analyze_call(()->CC.return_type(sum, Tuple{String}))
+        analyzer, = report_call(()->CC.return_type(sum, Tuple{String}))
         @test isempty(get_reports(analyzer))
     end
 
     # report invalid call of `return_type` itself
     let
-        analyzer, frame = analyze_call(()->CC.return_type(sum))
+        analyzer, = report_call(()->CC.return_type(sum))
         @test length(get_reports(analyzer)) == 1
         @test isa(first(get_reports(analyzer)), InvalidReturnTypeCall)
     end
@@ -112,7 +112,7 @@ end
     let
         # this shouldn't report "no matching method found for call signature: Base.iterate(itr::DataType)"
         # , which otherwise will be caught in `abstract_cal` in `return_type_tfunc`
-        analyzer, frame = analyze_call(()->Dict('a' => 1,
+        analyzer, = report_call(()->Dict('a' => 1,
                                               :b => 2)
                                      )
         @test isempty(get_reports(analyzer))

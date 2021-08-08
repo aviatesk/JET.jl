@@ -137,7 +137,7 @@ CC.get_inference_cache(analyzer::AbstractAnalyzer) = JETLocalCache(analyzer, get
 function CC.cache_lookup(linfo::MethodInstance, given_argtypes::Vector{Any}, cache::JETLocalCache)
     inf_result = cache_lookup(linfo, given_argtypes, cache.cache)
 
-    isa(inf_result, InferenceResult) || return nothing
+    isa(inf_result, InferenceResult) || return inf_result
 
     # constant prop' hits a cycle (recur into same non-constant analysis), we just bail out
     isa(inf_result.result, InferenceState) && return inf_result

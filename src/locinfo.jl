@@ -132,7 +132,7 @@ function _get_sig_type(analyzer::AbstractAnalyzer, (sv, _)::StateAtPC, ssa::SSAV
         sig, sig_typ = _get_sig_type(analyzer, news, get_stmt(news))
         typ = widenconst(ignorelimited(ignorenotfound(get_ssavaluetype(news))))
         sig_typ == typ || push!(sig, typ) # XXX I forgot why I added this line ...
-    end    
+    end
     return sig, typ
 end
 function _get_sig_type(analyzer::AbstractAnalyzer, s::StateAtPC, slot::SlotNumber)

@@ -8,7 +8,7 @@
         end
         """
 
-        res = analyze_text(s)
+        res = report_text(s).res
 
         @test !isempty(res.toplevel_error_reports)
         @test first(res.toplevel_error_reports) isa SyntaxErrorReport
@@ -430,7 +430,7 @@ end
         f2 = normpath(FIXTURE_DIR, "include1.jl")
 
         context = gen_virtual_module(@__MODULE__)
-        res = analyze_file(f1; context, virtualize = false)
+        res = report_file2(f1; context, virtualize = false).res
 
         @test f1 in res.included_files
         @test f2 in res.included_files
@@ -441,7 +441,7 @@ end
 
     let
         f = normpath(FIXTURE_DIR, "nonexistinclude.jl")
-        res = analyze_file(f)
+        res = report_file2(f).res
 
         @test f in res.included_files
         @test !isempty(res.toplevel_error_reports)
@@ -452,7 +452,7 @@ end
 
     let
         f = normpath(FIXTURE_DIR, "selfrecursiveinclude.jl")
-        res = analyze_file(f)
+        res = report_file2(f).res
 
         @test f in res.included_files
         @test !isempty(res.toplevel_error_reports)
@@ -462,7 +462,7 @@ end
     let
         f1 = normpath(FIXTURE_DIR, "chainrecursiveinclude1.jl")
         f2 = normpath(FIXTURE_DIR, "chainrecursiveinclude2.jl")
-        res = analyze_file(f1)
+        res = report_file2(f1).res
 
         @test f1 in res.included_files
         @test f2 in res.included_files
@@ -491,7 +491,7 @@ end
                                        end
                                        """
                                        )
-    res = analyze_text(s)
+    res = report_text(s).res
     @test isempty(res.toplevel_error_reports)
 end
 
@@ -1299,7 +1299,7 @@ const CONCRETIZATION_PATTERNS_CONFIG = normpath(@__DIR__, "fixtures", "..JET.tom
     # the analysis on `test/fixtures/concretization_patterns.jl` will produce inappropriate
     # top-level error report because of missing concretization
     let
-        res = analyze_file(CONCRETIZATION_PATTERNS_FILE)
+        res = report_file2(CONCRETIZATION_PATTERNS_FILE).res
         @test length(res.toplevel_error_reports) == 1
         let r = first(res.toplevel_error_reports)
             @test isa(r, MissingConcretization)
@@ -1308,9 +1308,9 @@ const CONCRETIZATION_PATTERNS_CONFIG = normpath(@__DIR__, "fixtures", "..JET.tom
 
     # we can circumvent the issue by using the `concretization_patterns` configuration !
     let
-        res = analyze_file(CONCRETIZATION_PATTERNS_FILE;
+        res = report_file2(CONCRETIZATION_PATTERNS_FILE;
                            concretization_patterns = [:(const GLOBAL_CODE_STORE = Dict())],
-                           )
+                           ).res
         @test isempty(res.toplevel_error_reports)
     end
 
@@ -1358,8 +1358,8 @@ end
 
         # no configuration, thus top-level analysis should fail
         let
-            io = IOBuffer()
-            _, nreported = report_file(io, analysis_target; toplevel_logger=nothing)
+            res = report_file2(analysis_target)
+            nreported = print_reports(IOBuffer(), res)
             @test !iszero(nreported) # error reported
         end
 
@@ -1370,8 +1370,8 @@ end
 
         # now any top-level analysis failure shouldn't happen
         let
-            io = IOBuffer()
-            _, nreported = report_file(io, analysis_target; toplevel_logger=nothing)
+            res = report_file2(analysis_target)
+            nreported = print_reports(IOBuffer(), res)
             @test iszero(nreported) # no error happened
             @test isfile("toplevel.txt") # not closed yet
         end
@@ -1641,7 +1641,8 @@ end
             # yet we still need to make `geterr` over-approximate an actual execution soundly;
             # currently JET's abstract interpretation special-cases `_INACTIVE_EXCEPTION`
             # and fix it to `Any`, and we test it here in the last test case
-            @test MethodError ⊑ get_result(analyze_call(vmod.geterr)[2])
+            _, rt = report_call(vmod.geterr)
+            @test MethodError ⊑ rt
         end
     end
 
@@ -1844,12 +1845,12 @@ end
     TARGET_DIR = normpath(FIXTURE_DIR, "targets")
 
     let
-        res = analyze_file(normpath(TARGET_DIR, "error.jl"))
+        res = report_file2(normpath(TARGET_DIR, "error.jl")).res
         @test isempty(res.toplevel_error_reports)
     end
 
     let
-        res = analyze_file(normpath(TARGET_DIR, "dict.jl"))
+        res = report_file2(normpath(TARGET_DIR, "dict.jl")).res
         @test isempty(res.toplevel_error_reports)
     end
 end

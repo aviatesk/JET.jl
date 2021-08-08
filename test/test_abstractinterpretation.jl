@@ -3,9 +3,9 @@
     let
         # NOTE: we can't just wrap them into `let`, closures can't be inferred correctly
         m = gen_virtual_module()
-        analyzer, frame = Core.eval(m, quote
+        analyzer, = Core.eval(m, quote
             foo(a::Integer) = :Integer
-            $analyze_call((AbstractString,)) do a
+            $report_call((AbstractString,)) do a
                 foo(a)
             end
         end)
@@ -16,7 +16,7 @@
     end
 
     let
-        analyzer, report = analyze_call(()->sum([]))
+        analyzer, = report_call(()->sum([]))
         @test length(get_reports(analyzer)) === 1
         report = first(get_reports(analyzer))
         @test report isa SeriousExceptionReport
@@ -27,11 +27,11 @@
     # if there is no method matching case in union-split, it should be reported
     let
         m = gen_virtual_module()
-        analyzer, frame = Core.eval(m, quote
+        analyzer, = Core.eval(m, quote
             foo(a::Integer) = :Integer
             foo(a::AbstractString) = "AbstractString"
 
-            $analyze_call(a->foo(a), (Union{Nothing,Int},))
+            $report_call(a->foo(a), (Union{Nothing,Int},))
         end)
 
         @test length(get_reports(analyzer)) === 1
@@ -43,7 +43,7 @@ end
 
 @testset "report local undefined variables" begin
     let
-        analyzer, frame = analyze_call((Bool,)) do b
+        analyzer, = report_call((Bool,)) do b
             if b
                 bar = rand(Int)
                 return bar
@@ -70,7 +70,7 @@ end
             baz(a) = foo(a)
         end
 
-        analyzer, frame = Core.eval(m, :($analyze_call(baz, (Bool,))))
+        analyzer, = Core.eval(m, :($report_call(baz, (Bool,))))
         @test length(get_reports(analyzer)) === 1
         r = first(get_reports(analyzer))
         @test r isa LocalUndefVarErrorReport
@@ -78,7 +78,7 @@ end
         @test last(r.vst).line == (@__LINE__)-10
 
         # works when cached
-        analyzer, frame = Core.eval(m, :($analyze_call(baz, (Bool,))))
+        analyzer, = Core.eval(m, :($report_call(baz, (Bool,))))
         @test length(get_reports(analyzer)) === 1
         r = first(get_reports(analyzer))
         @test r isa LocalUndefVarErrorReport
@@ -88,7 +88,7 @@ end
 
     # try to exclude false negatives as possible (by collecting reports in after-optimization pass)
     let
-        analyzer, frame = analyze_call((Bool,)) do b
+        analyzer, = report_call((Bool,)) do b
             if b
                 bar = rand()
             end
@@ -103,7 +103,7 @@ end
     end
 
     let
-        analyzer, frame = analyze_call((Bool,)) do b
+        analyzer, = report_call((Bool,)) do b
             if b
                 bar = rand()
             end
@@ -122,7 +122,7 @@ end
     end
 
     let
-        analyzer, frame = analyze_call((Int,)) do a
+        analyzer, = report_call((Int,)) do a
             function inner(n)
                 if n > 0
                    a = n
@@ -152,7 +152,7 @@ end
 
 @testset "report undefined (global) variables" begin
     let
-        analyzer, frame = analyze_call(()->foo)
+        analyzer, = report_call(()->foo)
         @test length(get_reports(analyzer)) === 1
         @test first(get_reports(analyzer)) isa GlobalUndefVarErrorReport
         @test first(get_reports(analyzer)).name === :foo
@@ -165,13 +165,13 @@ end
             qux(a) = foo(a)
         end
 
-        analyzer, frame = Core.eval(m, :($analyze_call(qux, (Int,))))
+        analyzer, = Core.eval(m, :($report_call(qux, (Int,))))
         @test length(get_reports(analyzer)) === 1
         @test first(get_reports(analyzer)) isa GlobalUndefVarErrorReport
         @test first(get_reports(analyzer)).name === :baz
 
         # works when cached
-        analyzer, frame = Core.eval(m, :($analyze_call(qux, (Int,))))
+        analyzer, = Core.eval(m, :($report_call(qux, (Int,))))
         @test length(get_reports(analyzer)) === 1
         @test first(get_reports(analyzer)) isa GlobalUndefVarErrorReport
         @test first(get_reports(analyzer)).name === :baz
@@ -181,7 +181,7 @@ end
 @testset "report non-boolean condition error" begin
     # simple case
     let
-        analyzer, frame = analyze_call((Int,)) do a
+        analyzer, = report_call((Int,)) do a
             a ? a : nothing
         end
         @test length(get_reports(analyzer)) === 1
@@ -192,7 +192,7 @@ end
 
     # don't report when a type can be `Bool` (Bool ⊑ type)
     let
-        analyzer, frame = analyze_call((Integer,)) do a
+        analyzer, = report_call((Integer,)) do a
             a ? a : nothing
         end
         @test isempty(get_reports(analyzer))
@@ -200,7 +200,7 @@ end
 
     # report union split case
     let
-        analyzer, frame = analyze_call((Union{Nothing,Bool},)) do a
+        analyzer, = report_call((Union{Nothing,Bool},)) do a
             a ? a : false
         end
         @test length(get_reports(analyzer)) === 1
@@ -212,7 +212,7 @@ end
     end
 
     let
-        analyzer, frame = analyze_call() do
+        analyzer, = report_call() do
             anyary = Any[1,2,3]
             first(anyary) ? first(anyary) : nothing
         end
@@ -222,11 +222,11 @@ end
     # `strict_condition_check` configuration
     let
         # `==(::Missing, ::Any)`
-        analyzer, frame = analyze_call((Any,Symbol); strict_condition_check = false) do a, b
+        analyzer, = report_call((Any,Symbol); strict_condition_check = false) do a, b
             a == b ? 0 : 1
         end
         @test isempty(get_reports(analyzer))
-        analyzer, frame = analyze_call((Any,Symbol); strict_condition_check = true) do a, b
+        analyzer, = report_call((Any,Symbol); strict_condition_check = true) do a, b
             a == b ? 0 : 1
         end
         @test any(get_reports(analyzer)) do r
@@ -321,9 +321,9 @@ end
 @testset "UndefKeywordError" begin
     let
         m = gen_virtual_module()
-        analyzer, frame = Core.eval(m, quote
+        analyzer, = Core.eval(m, quote
             foo(a; #= can be undef =# kw) =  a, kw
-            $analyze_call(foo, (Any,))
+            $report_call(foo, (Any,))
         end)
         @test !isempty(get_reports(analyzer))
         @test any(get_reports(analyzer)) do r
@@ -340,20 +340,20 @@ end
     let
         apply(f, args...) = f(args...)
 
-        analyzer, frame = analyze_call() do
+        analyzer, = report_call() do
             apply(div, 1, 0)
         end
         @test !isempty(get_reports(analyzer))
         @test any(Fix2(isa, DivideErrorReport), get_reports(analyzer))
 
-        analyzer, frame = analyze_call() do
+        analyzer, = report_call() do
             apply(rem, 1, 0)
         end
         @test !isempty(get_reports(analyzer))
         @test any(Fix2(isa, DivideErrorReport), get_reports(analyzer))
 
         # JET analysis isn't sound
-        analyzer, frame = analyze_call((Int,Int)) do a, b
+        analyzer, = report_call((Int,Int)) do a, b
             apply(div, a, b)
         end
         @test isempty(get_reports(analyzer))
@@ -363,7 +363,7 @@ end
 @testset "report `throw` calls" begin
     # simplest case
     let
-        analyzer, frame = analyze_call(()->throw("foo"))
+        analyzer, = report_call(()->throw("foo"))
         @test !isempty(get_reports(analyzer))
         @test first(get_reports(analyzer)) isa UncaughtExceptionReport
     end
@@ -371,7 +371,7 @@ end
     # throws in deep level
     let
         foo(a) = throw(a)
-        analyzer, frame = analyze_call(()->foo("foo"))
+        analyzer, = report_call(()->foo("foo"))
         @test !isempty(get_reports(analyzer))
         @test first(get_reports(analyzer)) isa UncaughtExceptionReport
     end
@@ -379,14 +379,14 @@ end
     # don't report possibly false negative `throw`s
     let
         foo(a) = a ≤ 0 ? throw("a is $(a)") : a
-        analyzer, frame = analyze_call(foo, (Int,))
+        analyzer, = report_call(foo, (Int,))
         @test isempty(get_reports(analyzer))
     end
 
     # constant prop sometimes helps exclude false negatives
     let
         foo(a) = a ≤ 0 ? throw("a is $(a)") : a
-        analyzer, frame = analyze_call(()->foo(0))
+        analyzer, = report_call(()->foo(0))
         @test !isempty(get_reports(analyzer))
         @test first(get_reports(analyzer)) isa UncaughtExceptionReport
     end
@@ -394,10 +394,10 @@ end
     # report even if there're other "critical" error exist
     let
         m = gen_virtual_module()
-        analyzer, frame = Core.eval(m, quote
+        analyzer, = Core.eval(m, quote
             foo(a) = sum(a) # should be reported
             bar(a) = throw(a) # shouldn't be reported first
-            $analyze_call((Bool, String)) do b, s
+            $report_call((Bool, String)) do b, s
                 b && foo(s)
                 bar(s)
             end
@@ -409,16 +409,16 @@ end
     # end to end
     let
         # this should report `throw(ArgumentError("Sampler for this object is not defined")`
-        analyzer, frame = analyze_call(rand, (Char,))
+        analyzer, = report_call(rand, (Char,))
         @test !isempty(get_reports(analyzer))
         @test first(get_reports(analyzer)) isa UncaughtExceptionReport
 
         # this should not report `throw(DomainError(x, "sin(x) is only defined for finite x."))`
-        analyzer, frame = analyze_call(sin, (Int,))
+        analyzer, = report_call(sin, (Int,))
         @test isempty(get_reports(analyzer))
 
         # again, constant prop sometimes can exclude false negatives
-        analyzer, frame = analyze_call(()->sin(Inf))
+        analyzer, = report_call(()->sin(Inf))
         @test !isempty(get_reports(analyzer))
         @test first(get_reports(analyzer)) isa UncaughtExceptionReport
     end
@@ -436,11 +436,11 @@ end
         end
 
         # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)" should be threw away
-        analyzer, frame = Core.eval(m, :($analyze_call(foo, (P, Int))))
+        analyzer, = Core.eval(m, :($report_call(foo, (P, Int))))
         @test isempty(get_reports(analyzer))
 
         # works for cache
-        analyzer, frame = Core.eval(m, :($analyze_call(foo, (P, Int))))
+        analyzer, = Core.eval(m, :($report_call(foo, (P, Int))))
         @test isempty(get_reports(analyzer))
     end
 
@@ -456,18 +456,18 @@ end
         end
 
         # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)" should be threw away
-        analyzer, frame = Core.eval(m, :($analyze_call(bar, (P, Int))))
+        analyzer, = Core.eval(m, :($report_call(bar, (P, Int))))
         @test isempty(get_reports(analyzer))
 
         # works for cache
-        analyzer, frame = Core.eval(m, :($analyze_call(bar, (P, Int))))
+        analyzer, = Core.eval(m, :($report_call(bar, (P, Int))))
         @test isempty(get_reports(analyzer))
     end
 
     # constant prop should not exclude those are not related
     let
         m = gen_virtual_module()
-        analyzer, frame = Core.eval(m, quote
+        analyzer, = Core.eval(m, quote
             mutable struct P
                 i::Int
                 s::String
@@ -477,7 +477,7 @@ end
                 p.s = s
             end
 
-            $analyze_call(foo, (P, Int, #= invalid =# Int))
+            $report_call(foo, (P, Int, #= invalid =# Int))
         end)
 
         # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)" should be threw away, while
@@ -491,7 +491,7 @@ end
     # constant prop should narrow down union-split no method error to single no method matching error
     let
         m = gen_virtual_module()
-        analyzer, frame = Core.eval(m, quote
+        analyzer, = Core.eval(m, quote
             mutable struct P
                 i::Int
                 s::String
@@ -501,7 +501,7 @@ end
                 p.s = s
             end
 
-            $analyze_call(foo, (P, String, Int))
+            $report_call(foo, (P, String, Int))
         end)
 
         # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::String)" should be narrowed down to "no matching method found for call signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{Int}, v::String)"
@@ -518,10 +518,10 @@ end
     # frame but with the other constants
     let
         m = gen_virtual_module()
-        analyzer, frame = Core.eval(m, quote
+        analyzer, = Core.eval(m, quote
             foo(a) = a<0 ? a+string(a) : a
             bar() = foo(-1), foo(1) # constant analysis on `foo(1)` shouldn't throw away reports from `foo(-1)`
-            $analyze_call(bar)
+            $report_call(bar)
         end)
         @test !isempty(get_reports(analyzer))
         @test any(r->isa(r,NoMethodErrorReport), get_reports(analyzer))
@@ -529,14 +529,14 @@ end
 
     let
         m = gen_virtual_module()
-        analyzer, frame = Core.eval(m, quote
+        analyzer, = Core.eval(m, quote
             foo(a) = a<0 ? a+string(a) : a
             function bar(b)
                 a = b ? foo(-1) : foo(1)
                 b = foo(-1)
                 return a, b
             end
-            $analyze_call(bar, (Bool,))
+            $report_call(bar, (Bool,))
         end)
         @test !isempty(get_reports(analyzer))
         # FIXME our report uniquify logic might be wrong and it wrongly singlifies the different reports here
@@ -551,18 +551,18 @@ end
             end
 
             # constant propagation can reveal the error pass can't happen
-            analyzer, frame = Core.eval(m, :($analyze_call(()->bar(10))))
+            analyzer, = Core.eval(m, :($report_call(()->bar(10))))
             @test isempty(get_reports(analyzer))
 
             # for this case, no constant prop' doesn't happen, we can't throw away error pass
-            analyzer, frame = Core.eval(m, :($analyze_call(bar, (Int,))))
+            analyzer, = Core.eval(m, :($report_call(bar, (Int,))))
             @test length(get_reports(analyzer)) === 1
             er = first(get_reports(analyzer))
             @test er isa NoMethodErrorReport
             @test er.t == [Tuple{typeof(+),String,Int}]
 
             # if we run constant prop' that leads to the error pass, we should get the reports
-            analyzer, frame = Core.eval(m, :($analyze_call(()->bar(0))))
+            analyzer, = Core.eval(m, :($report_call(()->bar(0))))
             @test length(get_reports(analyzer)) === 1
             er = first(get_reports(analyzer))
             @test er isa NoMethodErrorReport
@@ -586,23 +586,23 @@ end
             end
 
             # no constant prop, just report everything
-            analyzer, frame = Core.eval(m, :($analyze_call(foo, (Int,))))
+            analyzer, = Core.eval(m, :($report_call(foo, (Int,))))
             @test length(get_reports(analyzer)) === 1
             er = first(get_reports(analyzer))
             @test er isa NonBooleanCondErrorReport &&
                 er.t === Int
 
             # constant prop should throw away the non-boolean condition report from `baz1`
-            analyzer, frame = Core.eval(m, quote
-                $analyze_call() do
+            analyzer, = Core.eval(m, quote
+                $report_call() do
                     foo(1)
                 end
             end)
             @test isempty(get_reports(analyzer))
 
             # constant prop'ed, still we want to have the non-boolean condition report from `baz1`
-            analyzer, frame = Core.eval(m, quote
-                $analyze_call() do
+            analyzer, = Core.eval(m, quote
+                $report_call() do
                     foo(0)
                 end
             end)
@@ -612,7 +612,7 @@ end
                 er.t === Int
 
             # so `Bool` is good for `foo` after all
-            analyzer, frame = Core.eval(m, :($analyze_call(foo, (Bool,))))
+            analyzer, = Core.eval(m, :($report_call(foo, (Bool,))))
             @test isempty(get_reports(analyzer))
         end
 
@@ -645,9 +645,9 @@ end
 end
 
 @testset "keyword argument methods" begin
-    analyzer, frame = Core.eval(gen_virtual_module(), quote
+    analyzer, = Core.eval(gen_virtual_module(), quote
         f(a; b = nothing, c = nothing) = return
-        $analyze_call((Any,)) do b
+        $report_call((Any,)) do b
             f(1; b)
         end
     end)
@@ -690,7 +690,7 @@ end
 
 @static isdefined(CC, :abstract_invoke) && @testset "abstract_invoke" begin
     # non-`Type` `argtypes`
-    analyzer, frame = analyze_call() do
+    analyzer, = report_call() do
         invoke(sin, :this_should_be_type, 1.0)
     end
     @test length(get_reports(analyzer)) == 1
@@ -698,7 +698,7 @@ end
     @test isa(r, InvalidInvokeErrorReport)
 
     # invalid `argtype`
-    analyzer, frame = analyze_call() do
+    analyzer, = report_call() do
         Base.@invoke sin(1.0::Int)
     end
     @test length(get_reports(analyzer)) == 1
@@ -707,7 +707,7 @@ end
 
     # don't report errors collected in `invoke`d functions
     foo(i::Integer) = throw(string(i))
-    analyzer, frame = analyze_call((Any,)) do a
+    analyzer, = report_call((Any,)) do a
         Base.@invoke foo(a::Integer)
     end
     @test !isempty(get_reports(analyzer))
@@ -718,7 +718,7 @@ end
         a += 1
         Base.@invoke bar(a::Int) # `invoke` is valid, but error should happne within `bar`
     end
-    analyzer, frame = analyze_call(baz, (Any,))
+    analyzer, = report_call(baz, (Any,))
     @test !isempty(get_reports(analyzer))
     @test !any(r->isa(r, InvalidInvokeErrorReport), get_reports(analyzer))
     # virtual stack trace should include frames of both `bar` and `baz`
@@ -742,7 +742,7 @@ end
 
 @testset "additional analysis pass for task parallelism code" begin
     # general case with `schedule(::Task)` pattern
-    analyzer, frame = analyze_call() do
+    analyzer, = report_call() do
         t = Task() do
             sum("julia")
         end
@@ -752,7 +752,7 @@ end
     test_sum_over_string(analyzer)
 
     # handle `Threads.@spawn` (https://github.com/aviatesk/JET.jl/issues/114)
-    analyzer, frame = analyze_call() do
+    analyzer, = report_call() do
         fetch(Threads.@spawn 1 + "foo")
     end
     @test length(get_reports(analyzer)) == 1
@@ -762,7 +762,7 @@ end
     end
 
     # handle `Threads.@threads`
-    analyzer, frame = analyze_call((Int,)) do n
+    analyzer, = report_call((Int,)) do n
         a = String[]
         Threads.@threads for i in 1:n
             push!(a, i)
@@ -776,7 +776,7 @@ end
     end
 
     # multiple tasks in the same frame
-    analyzer, frame = analyze_call() do
+    analyzer, = report_call() do
         t1 = Threads.@spawn 1 + "foo"
         t2 = Threads.@spawn "foo" + 1
         fetch(t1), fetch(t2)
@@ -792,7 +792,7 @@ end
     end
 
     # nested tasks
-    analyzer, frame = analyze_call() do
+    analyzer, = report_call() do
         t0 = Task() do
             t = Threads.@spawn sum("julia")
             fetch(t)
@@ -810,7 +810,7 @@ end
         schedule(t)
         fetch(t)
     end
-    analyzer, frame = analyze_call() do
+    analyzer, = report_call() do
         t = make_task("julia")
 
         run_task(t)
@@ -824,7 +824,7 @@ end
     end
 
     # report uncaught exception happened in a task
-    analyzer, frame = analyze_call() do
+    analyzer, = report_call() do
         fetch(Threads.@spawn throw("foo"))
     end
     @test length(get_reports(analyzer)) == 1
@@ -874,7 +874,7 @@ end
             return v
         end
     end
-    analyzer, frame = analyze_call(m.psort!, (Vector{Int},))
+    analyzer, = report_call(m.psort!, (Vector{Int},))
     @test true
 end
 
@@ -886,7 +886,7 @@ end
         oc = Base.Experimental.@opaque (args...)->args[1]+args[2]+arg[3] # typo on `arg[3]`
         return Val{oc(1,2,3)}()
     end
-    analyzer, = @analyze_call oc_varargs_constprop()
+    analyzer, = @report_call oc_varargs_constprop()
     @test !isempty(get_cache(analyzer))
 end
 
@@ -913,15 +913,13 @@ end
 
     # successful code generation, valid code
     let
-        analyzer, frame = analyze_call(m.foo, (Int,))
-        @test !isnothing(frame) # code generation should be successful
+        analyzer, = report_call(m.foo, (Int,))
         @test isempty(get_reports(analyzer))
     end
 
     # successful code generation, invalid code
     let
-        analyzer, frame = analyze_call(m.foo, (Float64,))
-        @test !isnothing(frame) # code generation should be successful
+        analyzer, = report_call(m.foo, (Float64,))
         @test length(get_reports(analyzer)) == 1
         r = first(get_reports(analyzer))
         @test isa(r, GlobalUndefVarErrorReport)
@@ -930,8 +928,7 @@ end
 
     # unsuccessful code generation
     let
-        analyzer, frame = analyze_call(m.foo, (String,))
-        @test isnothing(frame) # code generation should be unsuccessful
+        analyzer, = report_call(m.foo, (String,))
         @test length(get_reports(analyzer)) == 1
         r = first(get_reports(analyzer))
         @test isa(r, GeneratorErrorReport) && r.err == "invalid argument"

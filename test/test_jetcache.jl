@@ -53,19 +53,19 @@
         end
 
         # run first analysis and cache
-        analyzer, frame = @eval m $analyze_call((Int,); max_methods=3) do a
+        analyzer, = @eval m $report_call((Int,); max_methods=3) do a
             foo(Val(a))
         end
         @test isempty(get_reports(analyzer))
 
         # should use the cached result
-        analyzer, frame = @eval m $analyze_call((Int,); max_methods=3) do a
+        analyzer, = @eval m $report_call((Int,); max_methods=3) do a
             foo(Val(a))
         end
         @test isempty(get_reports(analyzer))
 
         # should re-run analysis, and should get a report
-        analyzer, frame = @eval m $analyze_call((Int,); max_methods=4) do a
+        analyzer, = @eval m $report_call((Int,); max_methods=4) do a
             foo(Val(a))
         end
         @test any(get_reports(analyzer)) do r
@@ -74,7 +74,7 @@
         end
 
         # should run the cached previous result
-        analyzer, frame = @eval m $analyze_call((Int,); max_methods=4) do a
+        analyzer, = @eval m $report_call((Int,); max_methods=4) do a
             foo(Val(a))
         end
         @test any(get_reports(analyzer)) do r
@@ -88,7 +88,7 @@ end
     # invalidate native code cache in a system image if it has not been analyzed by JET
     # yes this slows down anlaysis for sure, but otherwise JET will miss obvious errors like below
     let
-        analyzer, frame = analyze_call((Nothing,)) do a
+        analyzer, = report_call((Nothing,)) do a
             a.field
         end
         @test length(get_reports(analyzer)) === 1
@@ -117,7 +117,7 @@ end
             end
 
             # should have error reported
-            interp1, = @analyze_call println(QuoteNode(nothing))
+            interp1, = @report_call println(QuoteNode(nothing))
 
             # should invoke invalidation in the deeper call site of `println(::QuoteNode)`
             @eval Base begin
@@ -134,7 +134,7 @@ end
             end
 
             # now we shouldn't have reports
-            interp2, = @analyze_call println(QuoteNode(nothing))
+            interp2, = @report_call println(QuoteNode(nothing))
 
             # again, invoke invalidation
             @eval Base begin
@@ -151,7 +151,7 @@ end
             end
 
             # now we should have reports, again
-            interp3, = @analyze_call println(QuoteNode(nothing))
+            interp3, = @report_call println(QuoteNode(nothing))
 
             (length ∘ JET.get_reports).((interp1, interp2, interp3)) # return
         end
@@ -166,10 +166,10 @@ end
     # analysis for `sum(::String)` is already cached, `sum′` and `sum′′` should use it
     let
         m = gen_virtual_module()
-        analyzer, frame = Core.eval(m, quote
+        analyzer, = Core.eval(m, quote
             sum′(s) = sum(s)
             sum′′(s) = sum′(s)
-            $analyze_call() do
+            $report_call() do
                 sum′′("julia")
             end
         end)
@@ -180,24 +180,24 @@ end
     let
         m = gen_virtual_module()
 
-        analyzer, frame = Core.eval(m, quote
-            $analyze_call() do
+        analyzer, = Core.eval(m, quote
+            $report_call() do
                 sum("julia")
             end
         end)
         test_sum_over_string(analyzer)
 
-        analyzer, frame = Core.eval(m, quote
+        analyzer, = Core.eval(m, quote
             sum′(s) = sum(s)
-            $analyze_call() do
+            $report_call() do
                 sum′("julia")
             end
         end)
         test_sum_over_string(analyzer)
 
-        analyzer, frame = Core.eval(m, quote
+        analyzer, = Core.eval(m, quote
             sum′′(s) = sum′(s)
-            $analyze_call() do
+            $report_call() do
                 sum′′("julia")
             end
         end)
@@ -218,11 +218,11 @@ end
 @testset "integrate with local code cache" begin
     let
         m = gen_virtual_module()
-        analyzer, frame = Core.eval(m, quote
+        analyzer, = Core.eval(m, quote
             struct Foo{T}
                 bar::T
             end
-            $analyze_call((Foo{Int},)) do foo
+            $report_call((Foo{Int},)) do foo
                 foo.baz # typo
             end
         end)
@@ -236,12 +236,12 @@ end
 
     let
         m = gen_virtual_module()
-        analyzer, frame = Core.eval(m, quote
+        analyzer, = Core.eval(m, quote
             struct Foo{T}
                 bar::T
             end
             getter(foo, prop) = getproperty(foo, prop)
-            $analyze_call((Foo{Int}, Bool)) do foo, cond
+            $report_call((Foo{Int}, Bool)) do foo, cond
                 getter(foo, :bar)
                 cond ? getter(foo, :baz) : getter(foo, :qux) # non-deterministic typos
             end

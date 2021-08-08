@@ -17,34 +17,34 @@ function simple_benchmark(ntimes = 5; verbose = false)
 
     let
         setup_ex = :(using JET)
-        ex       = :(@analyze_call identity(nothing))
+        ex       = :(@report_call identity(nothing))
         _simple_benchmark!(setup_ex, ex, "first-time analysis")
     end
 
     let
         setup_ex = quote
             using JET
-            @analyze_call identity(nothing)
+            @report_call identity(nothing)
         end
-        ex       = :(@analyze_call sum("julia"))
+        ex       = :(@report_call sum("julia"))
         _simple_benchmark!(setup_ex, ex, "simple analysis")
     end
 
     let
         setup_ex = quote
             using JET
-            @analyze_call sum("julia")
+            @report_call sum("julia")
         end
-        ex       = :(@analyze_call sum("julia"))
+        ex       = :(@report_call sum("julia"))
         _simple_benchmark!(setup_ex, ex, "cached simple analysis")
     end
 
     let
         setup_ex = quote
             using JET
-            @analyze_call identity(nothing)
+            @report_call identity(nothing)
         end
-        ex       = :(@analyze_call rand(Bool))
+        ex       = :(@report_call rand(Bool))
         _simple_benchmark!(setup_ex, ex, "a bit complex analysis")
     end
 

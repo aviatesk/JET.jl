@@ -281,8 +281,29 @@ function virtual_process(x::Union{AbstractString,Expr},
         analyze_from_definitions!(analyzer, res)
     end
 
+    # TODO want to do in `analyze_from_definitions!` ?
+    unique!(report_identity_key, res.inference_error_reports)
+
     return res
 end
+
+# @withmixedhash struct VirtualFrameNoLinfo
+#     file::Symbol
+#     line::Int
+#     sig::Vector{Any}
+#     # linfo::MethodInstance
+# end
+# VirtualFrameNoLinfo(vf::VirtualFrame) = VirtualFrameNoLinfo(vf.file, vf.line, vf.sig)
+#
+# @withmixedhash struct ReportIdentityKey2
+#     T::Type{<:InferenceErrorReport}
+#     sig::Vector{Any}
+#     # entry_frame::VirtualFrame
+#     error_frame::VirtualFrameNoLinfo
+# end
+#
+# report_identity_key2(report::T) where {T<:InferenceErrorReport} =
+#     ReportIdentityKey2(T, report.sig, #=VirtualFrameNoLinfo(first(report.vst)),=# VirtualFrameNoLinfo(last(report.vst)))
 
 """
     virtualize_module_context(actual::Module)

@@ -507,35 +507,102 @@ include("graph.jl")
 include("virtualprocess.jl")
 # watch mode
 include("watch.jl")
+
+# results
+# =======
+
+"""
+    res::JETToplevelResult
+
+Represents the result of JET's analysis on a top-level script.
+- `res.analyzer::AbstractAnalyzer`: [`AbstractAnalyzer`](@ref) used for this analysis
+- `res.res::VirtualProcessResult`: [`VirtualProcessResult`](@ref) collected from this analysis
+- `res.source::String`: the identity key of this analysis
+- `res.jetconfigs`: [JET configurations](@ref JET-configurations) used for this analysis
+
+`JETToplevelResult` implements `show` methods for each different frontend.
+An appropriate `show` method will be automatically choosen and render the analysis result.
+"""
+struct JETToplevelResult{Analyzer<:AbstractAnalyzer,JETConfigs}
+    analyzer::Analyzer
+    res::VirtualProcessResult
+    source::String
+    jetconfigs::JETConfigs
+end
+JETToplevelResult(analyzer, res, source; jetconfigs...) =
+    return JETToplevelResult(analyzer, res, source, jetconfigs)
+@eval Base.iterate(res::JETToplevelResult, state=1) =
+    return state > $(fieldcount(JETToplevelResult)) ? nothing : (getfield(res, state), state+1)
+
+"""
+    res::JETCallResult
+
+Represents the result of JET's analysis on a function call.
+- `res.analyzer::AbstractAnalyzer`: [`AbstractAnalyzer`](@ref) used for this analysis
+- `res.type`: the return type of the function call
+- `res.source::String`: the identity key of this analysis
+- `res.jetconfigs`: [JET configurations](@ref JET-configurations) used for this analysis
+
+`JETCallResult` implements `show` methods for each different frontend.
+An appropriate `show` method will be automatically choosen and render the analysis result.
+"""
+struct JETCallResult{Analyzer<:AbstractAnalyzer,JETConfigs}
+    analyzer::Analyzer
+    type
+    source::String
+    jetconfigs::JETConfigs
+    JETCallResult(analyzer::Analyzer, @nospecialize(type), source;
+                  jetconfigs...) where {Analyzer<:AbstractAnalyzer} =
+        new{Analyzer,typeof(jetconfigs)}(analyzer, type, source, jetconfigs)
+end
+@eval Base.iterate(res::JETCallResult, state=1) =
+    return state > $(fieldcount(JETCallResult)) ? nothing : (getfield(res, state), state+1)
+
+function get_critical_reports(res::VirtualProcessResult)
+    # non-empty `ret.toplevel_error_reports` means critical errors happened during
+    # the AST transformation, so they always have precedence over `ret.inference_error_reports`
+    return !isempty(res.toplevel_error_reports) ? res.toplevel_error_reports :
+           res.inference_error_reports
+end
+
+# when virtualized, fix virtual module printing based on string manipulation;
+# the "actual" modules may not be loaded into this process
+gen_postprocess(::Nothing) = return identity
+function gen_postprocess((actualmod, virtualmod)::Actual2Virtual)
+    virtual = string(virtualmod)
+    actual  = string(actualmod)
+    return actualmod === Main ?
+           Fix2(replace, "Main." => "") ∘ Fix2(replace, virtual => actual) :
+           Fix2(replace, virtual => actual)
+end
+
+# we may need something like this for stdlibs as well ?
+
+function tofullpath(filename::AbstractString)
+    path = abspath(filename)
+    return isfile(path) ? path : fullbasepath(filename)
+end
+fullbasepath(filename) = normpath(JULIA_DIR, "base", filename)
+
+# TODO make this configurable ?
+const JULIA_DIR = @static occursin("DEV", string(VERSION)) ?
+                  normpath(Sys.BINDIR, "..", "..", "..", "julia") :
+                  normpath(Sys.BINDIR, Base.DATAROOTDIR)
+
 # UIs
+# ===
+
+# default UI (console)
 include("print.jl")
 
 # entry
 # =====
 
 """
-    res::ReportResult
+    report_file(filename::AbstractString;
+                jetconfigs...) -> JETToplevelResult
 
-- `res.included_files::Set{String}`: files analyzed by JET
-- `res.nreported::Bool`: the number of the reported errors
-"""
-const ReportResult = @NamedTuple begin
-    included_files::Set{String}
-    nreported::Int
-end
-
-function report_result(io::IO, res::VirtualProcessResult; jetconfigs...)
-    nreported = print_reports(io, res; jetconfigs...)
-    return (; included_files = res.included_files,
-              nreported      = nreported)::ReportResult
-end
-
-"""
-    report_file([io::IO = stdout],
-                filename::AbstractString;
-                jetconfigs...) -> res::ReportResult
-
-Analyzes `filename`, prints the collected error reports to the `io` stream, and finally returns $(@doc ReportResult)
+Analyzes `filename` and returns [`JETToplevelResult`](@ref).
 
 This function will look for `$CONFIG_FILE_NAME` configuration file in the directory of `filename`,
   and search _up_ the file tree until any `$CONFIG_FILE_NAME` is (or isn't) found.
@@ -564,7 +631,11 @@ See [Configuration File](@ref) for more details.
     ```
     See [Logging Configurations](@ref) for more details.
 """
-function report_file(io::IO, filename::AbstractString; jetconfigs...)
+function report_file(filename::AbstractString;
+                     source::Union{Nothing,AbstractString} = nothing,
+                     jetconfigs...) where T
+    isfile(filename) || throw(ArgumentError("$filename doesn't exist"))
+
     configfile = find_config_file(dirname(abspath(filename)))
     if isnothing(configfile)
         jetconfigs = set_toplevel_logger_if_missing(jetconfigs)
@@ -577,10 +648,12 @@ function report_file(io::IO, filename::AbstractString; jetconfigs...)
         end
     end
 
-    res = analyze_file(filename; jetconfigs...)
-    return report_result(io, res; jetconfigs...)
+    if isnothing(source)
+        source = string(nameof(var"#self#"), "(\"$filename\")")
+    end
+
+    return report_text(read(filename, String), filename; source, jetconfigs...)
 end
-report_file(args...; jetconfigs...) = report_file(stdout::IO, args...; jetconfigs...)
 
 function set_toplevel_logger_if_missing(@nospecialize(jetconfigs))
     haskey(jetconfigs, :toplevel_logger) && return jetconfigs
@@ -588,9 +661,6 @@ function set_toplevel_logger_if_missing(@nospecialize(jetconfigs))
         kwargs((; toplevel_logger = IOContext(stdout::IO, LOGGER_LEVEL_KEY => DEFAULT_LOGGER_LEVEL)))
     return overwrite_options(jetconfigs, default_toplevel_logger_config)
 end
-
-analyze_file(filename, args...; jetconfigs...) =
-    analyze_text(read(filename, String), filename, args...; jetconfigs...)
 
 function find_config_file(dir)
     next_dir = dirname(dir)
@@ -686,9 +756,8 @@ end
 overwrite_options(old, new) = kwargs(merge(old, new))
 
 """
-    report_package([io::IO = stdout],
-                   package::Union{AbstractString,Module};
-                   jetconfigs...) -> res::ReportResult
+    report_package(package::Union{AbstractString,Module};
+                   jetconfigs...) -> JETToplevelResult
 
 Analyzes `package` in the same way as [`report_file`](@ref) with the special default
 configurations, which are especially tuned for package analysis (see below for details).
@@ -713,15 +782,13 @@ Like above but analyzes the package of the current project.
 
 See also: [`report_file`](@ref)
 """
-function report_package(io::IO,
-                        package::Union{AbstractString,Module,Nothing} = nothing;
+function report_package(package::Union{AbstractString,Module,Nothing} = nothing;
                         analyze_from_definitions::Bool = true,
                         concretization_patterns = [:(x_ = y_), :(const x_ = y_)],
                         jetconfigs...)
     filename = get_package_file(package)
-    return report_file(io, filename; analyze_from_definitions, jetconfigs...)
+    return report_file(filename; analyze_from_definitions, jetconfigs...)
 end
-report_package(args...; jetconfigs...) = report_package(stdout::IO, args...; jetconfigs...)
 
 function get_package_file(package::AbstractString)
     filename = Base.find_package(package)
@@ -742,34 +809,29 @@ function get_package_file(::Nothing)
 end
 
 """
-    report_text([io::IO = stdout],
-                text::AbstractString,
+    report_text(text::AbstractString,
                 filename::AbstractString = "top-level";
-                jetconfigs...) -> res::ReportResult
+                jetconfigs...) -> JETToplevelResult
 
-Analyzes `text`, prints the collected error reports to the `io` stream, and finally returns $(@doc ReportResult)
+Analyzes `text` and returns [`JETToplevelResult`](@ref).
 """
-function report_text(io::IO,
-                     text::AbstractString,
+function report_text(text::AbstractString,
                      filename::AbstractString = "top-level";
-                     jetconfigs...)
-    res = analyze_text(text, filename; jetconfigs...)
-    return report_result(io, res; jetconfigs...)
-end
-report_text(args...; jetconfigs...) = report_text(stdout::IO, args...; jetconfigs...)
-
-function analyze_text(text::AbstractString,
-                      filename::AbstractString = "top-level";
-                      analyzer::Type{Analyzer} = JETAnalyzer,
-                      jetconfigs...) where {Analyzer<:AbstractAnalyzer}
-    analyzer = Analyzer(; jetconfigs...)
-    maybe_initialize_caches!(analyzer)
+                     analyzer::Type{Analyzer} = JETAnalyzer,
+                     source::Union{Nothing,AbstractString} = nothing,
+                     jetconfigs...) where {Analyzer<:AbstractAnalyzer}
+    analyzer′ = Analyzer(; jetconfigs...)
+    maybe_initialize_caches!(analyzer′)
     config = ToplevelConfig(; jetconfigs...)
-    return virtual_process(text,
-                           filename,
-                           analyzer,
-                           config,
-                           )
+    res = virtual_process(text,
+                          filename,
+                          analyzer′,
+                          config,
+                          )
+    if isnothing(source)
+        source = string(nameof(var"#self#"), "(..., \"$filename\")")
+    end
+    return JETToplevelResult(analyzer′, res, source; analyzer, jetconfigs...)
 end
 
 function analyze_toplevel!(analyzer::AbstractAnalyzer, src::CodeInfo)
@@ -833,7 +895,7 @@ function transform_abstract_global_symbols!(analyzer::AbstractAnalyzer, src::Cod
     set_global_slots!(analyzer, Dict(idx => slotname for (slotname, idx) in abstrct_global_variables))
 end
 
-# TODO `analyze_call_builtin!` ?
+# TODO `analyze_builtin!` ?
 function analyze_gf_by_type!(analyzer::AbstractAnalyzer, @nospecialize(tt::Type{<:Tuple}))
     mm = get_single_method_match(tt, InferenceParams(analyzer).MAX_METHODS, get_world_counter(analyzer))
     return analyze_method_signature!(analyzer, mm.method, mm.spec_types, mm.sparams)
@@ -922,49 +984,6 @@ end
 # TODO improve inferrability by making `analyzer` argument positional
 
 """
-    @analyze_call [jetconfigs...] f(args...)
-
-Evaluates the arguments to the function call, determines its types, and then calls
-  [`analyze_call`](@ref) on the resulting expression.
-As with `@code_typed` and its family, any of [JET configurations](@ref) can be given as the optional
-  arguments like this:
-```julia
-# analyzes `rand(::Type{Bool})` with `aggressive_constant_propagation` configuration turned off
-julia> @analyze_call aggressive_constant_propagation=false rand(Bool)
-```
-"""
-macro analyze_call(ex0...)
-    return gen_call_with_extracted_types_and_kwargs(__module__, :analyze_call, ex0)
-end
-
-"""
-    analyze_call(f, types = Tuple{}; jetconfigs...) -> (analyzer::AbstractAnalyzer, frame::Union{InferenceFrame,Nothing})
-    analyze_call(tt::Type{<:Tuple}; jetconfigs...) -> (analyzer::AbstractAnalyzer, frame::Union{InferenceFrame,Nothing})
-
-Analyzes the generic function call with the given type signature, and returns:
-- `analyzer::AbstractAnalyzer`: contains analyzed error reports and such
-- `frame::Union{InferenceFrame,Nothing}`: the final state of the abstract interpretation,
-  or `nothing` if `f` is a generator and the code generation failed
-"""
-function analyze_call(@nospecialize(f), @nospecialize(types = Tuple{}); jetconfigs...)
-    ft = Core.Typeof(f)
-    if isa(types, Type)
-        u = unwrap_unionall(types)
-        tt = rewrap_unionall(Tuple{ft, u.parameters...}, types)
-    else
-        tt = Tuple{ft, types...}
-    end
-    return analyze_call(tt; jetconfigs...)
-end
-function analyze_call(@nospecialize(tt::Type{<:Tuple});
-                      analyzer::Type{Analyzer} = JETAnalyzer,
-                      jetconfigs...) where {Analyzer<:AbstractAnalyzer}
-    analyzer = Analyzer(; jetconfigs...)
-    maybe_initialize_caches!(analyzer)
-    return analyze_gf_by_type!(analyzer, tt)
-end
-
-"""
     @report_call [jetconfigs...] f(args...)
 
 Evaluates the arguments to the function call, determines its types, and then calls
@@ -981,22 +1000,47 @@ macro report_call(ex0...)
 end
 
 """
-    report_call(f, types = Tuple{}; jetconfigs...) -> (result_type::Any, nreports::Int)
-    report_call(tt::Type{<:Tuple}; jetconfigs...) -> (result_type::Any, nreports::Int)
+    report_call(f, types = Tuple{};
+                analyzer::Type{<:AbstractAnalyzer} = JETAnalyzer,
+                jetconfigs...) -> JETCallResult
+    report_call(tt::Type{<:Tuple};
+                analyzer::Type{<:AbstractAnalyzer} = JETAnalyzer,
+                jetconfigs...) -> JETCallResult
 
-Analyzes the generic function call with the given type signature, and then prints collected
-error points to `stdout`, and finally returns the result type of the call as well as
-the number of detected reports.
+Analyzes the generic function call with the given type signature with `analyzer`.
+And finally returns the analysis result as [`JETCallResult`](@ref).
 """
-function report_call(@nospecialize(args...); jetconfigs...)
-    analyzer, frame = analyze_call(args...; jetconfigs...)
-    reports = get_reports(analyzer)
-    nreported = print_reports(reports; jetconfigs...)
+function report_call(@nospecialize(f), @nospecialize(types = Tuple{}); jetconfigs...)
+    ft = Core.Typeof(f)
+    if isa(types, Type)
+        u = unwrap_unionall(types)
+        tt = rewrap_unionall(Tuple{ft, u.parameters...}, types)
+    else
+        tt = Tuple{ft, types...}
+    end
+    return report_call(tt; jetconfigs...)
+end
+
+function report_call(@nospecialize(tt::Type{<:Tuple});
+                     analyzer::Type{Analyzer} = JETAnalyzer,
+                     source::Union{Nothing,AbstractString} = nothing,
+                     jetconfigs...) where {Analyzer<:AbstractAnalyzer}
+    analyzer = Analyzer(; jetconfigs...)
+    maybe_initialize_caches!(analyzer)
+    analyzer, frame = analyze_gf_by_type!(analyzer, tt)
+
     if isnothing(frame)
         # if there is `GeneratorErrorReport`, it means the code generation happened and failed
-        return any(r->isa(r, GeneratorErrorReport), reports) ? Bottom : Any
+        rt = any(r->isa(r, GeneratorErrorReport), get_reports(analyzer)) ? Bottom : Any
+    else
+        rt = get_result(frame)
     end
-    return get_result(frame), nreported
+
+    if isnothing(source)
+        source = string(nameof(var"@report_call"), " ", sprint(show_tuple_as_call, Symbol(""), tt))
+    end
+
+    return JETCallResult(analyzer, rt, source; jetconfigs...)
 end
 
 # for inspection
@@ -1055,8 +1099,6 @@ export
     report_and_watch_file,
     report_package,
     report_text,
-    @analyze_call,
-    analyze_call,
     @report_call,
     report_call
 

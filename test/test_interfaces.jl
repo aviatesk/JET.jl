@@ -6,7 +6,7 @@ using JET.JETInterfaces
 struct IgnoreAllPass <: ReportPass end
 (::IgnoreAllPass)(::Type{<:InferenceErrorReport}, @nospecialize(_...)) = return
 let
-    analyzer, frame = @analyze_call report_pass=IgnoreAllPass() sum("julia")
+    analyzer, = @report_call report_pass=IgnoreAllPass() sum("julia")
     @test isempty(get_reports(analyzer))
 end
 
@@ -16,7 +16,7 @@ function (::IgnoreAllExceptGlobalUndefVar)(::Type{GlobalUndefVarErrorReport}, @n
     BasicPass()(GlobalUndefVarErrorReport, args...)
 end
 let
-    analyzer, frame = analyze_call(; report_pass=IgnoreAllExceptGlobalUndefVar()) do
+    analyzer, = report_call(; report_pass=IgnoreAllExceptGlobalUndefVar()) do
         sum("julia") # should be ignored
         undefvar
     end
@@ -46,26 +46,26 @@ function compute_sins(i)
     return out
 end
 
-@test_throws ErrorException @analyze_call analyzer=APIValidator compute_sins(10)
+@test_throws ErrorException @report_call analyzer=APIValidator compute_sins(10)
 
 # `APIValidator(; jetconfigs...) -> APIValidator`
 APIValidator(; jetconfigs...) = APIValidator(AnalyzerState(; jetconfigs...))
 
-@test_throws ErrorException @analyze_call analyzer=APIValidator compute_sins(10)
+@test_throws ErrorException @report_call analyzer=APIValidator compute_sins(10)
 
 # `AnalyzerState(analyzer::APIValidator) -> AnalyzerState`
 AnalyzerState(analyzer::APIValidator) = analyzer.state
 
-@test_throws ErrorException @analyze_call analyzer=APIValidator compute_sins(10)
+@test_throws ErrorException @report_call analyzer=APIValidator compute_sins(10)
 
 # `ReportPass(analyzer::APIValidator) -> ReportPass`
 ReportPass(analyzer::APIValidator) = IgnoreAllPass()
 
-@test_throws ErrorException @analyze_call analyzer=APIValidator compute_sins(10)
+@test_throws ErrorException @report_call analyzer=APIValidator compute_sins(10)
 
 # `AbstractAnalyzer(analyzer::APIValidator, state::AnalyzerState) -> APIValidator`
 AbstractAnalyzer(analyzer::APIValidator, state::AnalyzerState) = APIValidator(state)
 
 # because `APIValidator` uses `IgnoreAllPass`, we won't get any reports
-analyzer, = @analyze_call analyzer=APIValidator compute_sins(10)
+analyzer, = @report_call analyzer=APIValidator compute_sins(10)
 @test isempty(get_reports(analyzer))

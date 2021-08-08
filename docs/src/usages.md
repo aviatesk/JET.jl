@@ -1,11 +1,5 @@
 # [How to Use JET.jl](@id usages)
 
-!!! note
-    JET's analysis entry points follow the naming conventions below:
-    - `report_xxx`: runs analysis, and then prints the collected error points
-    - `analyze_xxx`: just runs analysis, and returns the final state of the analysis
-    The `report_xxx` entries are for general users, while `analyze_xxx` is mainly for internal usages or debugging purposes.
-
 
 ## [Entry Points into Analysis](@id entry-points)
 
@@ -38,6 +32,4 @@ There are utilities for checking JET analysis in a running Julia session like RE
 ```@docs
 report_call
 @report_call
-analyze_call
-@analyze_call
 ```

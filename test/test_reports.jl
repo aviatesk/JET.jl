@@ -19,7 +19,7 @@ function ⫇(a, b)
 end
 
 @testset "error location signature" begin
-    analyzer, frame = analyze_call((Char,Char)) do a, b
+    analyzer, = report_call((Char,Char)) do a, b
         a + b
     end
     @test length(get_reports(analyzer)) == 1
@@ -32,7 +32,7 @@ end
     m = @fixturedef begin
         foo(s::AbstractString) = throw(ArgumentError(s))
     end
-    analyzer, frame = analyze_call(m.foo, (String,))
+    analyzer, = report_call(m.foo, (String,))
     @test length(get_reports(analyzer)) == 1
     r = first(get_reports(analyzer))
     @test isa(r, UncaughtExceptionReport)
