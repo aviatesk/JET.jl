@@ -45,10 +45,6 @@ let
     end
 end
 
-import Base:
-    Fix1,
-    Fix2
-
 import Base.Meta:
     isexpr
 

@@ -131,8 +131,6 @@ import Base:
     unwrap_unionall,
     rewrap_unionall,
     uniontypes,
-    Fix1,
-    Fix2,
     IdSet
 
 import Base.Meta:
@@ -572,9 +570,10 @@ function gen_postprocess((actualmod, virtualmod)::Actual2Virtual)
     virtual = string(virtualmod)
     actual  = string(actualmod)
     return actualmod === Main ?
-           Fix2(replace, "Main." => "") ∘ Fix2(replace, virtual => actual) :
-           Fix2(replace, virtual => actual)
+           replace2("Main." => "") ∘ replace2(virtual => actual) :
+           replace2(virtual => actual)
 end
+replace2(pat) = x -> replace(x, pat)
 
 # we may need something like this for stdlibs as well ?
 

@@ -203,7 +203,7 @@ function print_reports(io::IO,
             s = string('└', '─'^(length(s)-1))
             printlnstyled(io, s; color)
         end
-    end |> postprocess |> Fix1(print, io)
+    end |> postprocess |> (x->print(io::IO,x))
 
     return n
 end
@@ -265,7 +265,7 @@ function print_reports(io::IO,
             end
             print_report(io, report, config, wrote_linfos)
         end
-    end |> postprocess |> Fix1(print, io)
+    end |> postprocess |> (x->print(io::IO,x))
 
     return n
 end

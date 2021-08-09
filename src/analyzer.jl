@@ -147,7 +147,7 @@ const LOGGER_LEVELS_DESC   = let
         else
             "`$level` (\"$desc\" level)"
         end
-    end |> Fix2(join, ", ")
+    end |> (x->join(x,", "))
 end
 get_logger_level(io::IO)   = get(io, LOGGER_LEVEL_KEY, DEFAULT_LOGGER_LEVEL)::Int
 

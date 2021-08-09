@@ -319,6 +319,7 @@ end
 end
 
 @testset "UndefKeywordError" begin
+    isa2(t) = x -> isa(x, t)
     let
         m = gen_virtual_module()
         analyzer, = Core.eval(m, quote
@@ -332,11 +333,12 @@ end
             err isa UndefKeywordError && err.var === :kw
         end
         # there shouldn't be duplicated report for the `throw` call
-        @test !any(Fix2(isa, UncaughtExceptionReport), get_reports(analyzer))
+        @test !any(isa2(UncaughtExceptionReport), get_reports(analyzer))
     end
 end
 
 @testset "DivideError" begin
+    isa2(t) = x -> isa(x, t)
     let
         apply(f, args...) = f(args...)
 
@@ -344,13 +346,13 @@ end
             apply(div, 1, 0)
         end
         @test !isempty(get_reports(analyzer))
-        @test any(Fix2(isa, DivideErrorReport), get_reports(analyzer))
+        @test any(isa2(DivideErrorReport), get_reports(analyzer))
 
         analyzer, = report_call() do
             apply(rem, 1, 0)
         end
         @test !isempty(get_reports(analyzer))
-        @test any(Fix2(isa, DivideErrorReport), get_reports(analyzer))
+        @test any(isa2(DivideErrorReport), get_reports(analyzer))
 
         # JET analysis isn't sound
         analyzer, = report_call((Int,Int)) do a, b
