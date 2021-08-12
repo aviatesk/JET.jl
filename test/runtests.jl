@@ -37,4 +37,8 @@ include("setup.jl")
     @testset "interface.jl" begin
         include("test_interfaces.jl")
     end
+
+    @testset "Test.jl integration" begin
+        include("test_test.jl")
+    end
 end

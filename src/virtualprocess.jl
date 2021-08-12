@@ -1,7 +1,7 @@
 """
 Configurations for top-level analysis.
 These configurations will be active for all the top-level entries explained in the
-  [top-level analysis entry points](@ref entry-points) section.
+  [top-level analysis entry points](@ref toplevel-entries) section.
 
 ---
 - `context::Bool = Main` \\

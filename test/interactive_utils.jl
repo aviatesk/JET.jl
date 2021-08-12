@@ -18,7 +18,8 @@ import JET:
     InferenceErrorReport,
     print_reports,
     get_reports,
-    get_cache
+    get_cache,
+    iskwarg
 
 function subtypes_recursive!(t, ts)
     push!(ts, t)
@@ -99,8 +100,6 @@ macro analyze_toplevel2(xs...)
         $(esc(vmod)), ret2
     end)
 end
-
-iskwarg(@nospecialize(x)) = isexpr(x, :(=))
 
 function _analyze_toplevel(ex, lnn, jetconfigs)
     toplevelex = (isexpr(ex, :block) ?

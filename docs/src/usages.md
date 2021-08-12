@@ -1,7 +1,7 @@
 # [How to Use JET.jl](@id usages)
 
 
-## [Entry Points into Analysis](@id entry-points)
+## [Top-level Entry Points](@id toplevel-entries)
 
 JET can analyze your "top-level" code.
 This means you can just give your Julia file or code to JET and get error reports.
@@ -25,11 +25,23 @@ report_text
 ```
 
 
-## [Testing, Interactive Usage](@id interactive-entries)
+## [Interactive Entry Points](@id interactive-entries)
 
 There are utilities for checking JET analysis in a running Julia session like REPL or such.
 
 ```@docs
 report_call
 @report_call
+```
+
+
+## [`Test` Integration](@id test-integration)
+
+JET offers entries that are integrated with [`Test` standard library's unit-testing infrastructure](https://docs.julialang.org/en/v1/stdlib/Test/).
+It can be used in your test suite to assert your program is free from errors that JET can detect.
+Currently, it only supports [interactive entries](@ref).
+
+```@docs
+@test_call
+test_call
 ```
