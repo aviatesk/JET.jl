@@ -204,7 +204,7 @@ end;
 
 # ### Analyze a real-world package
 
-# Finally we can use [JET's top-level analysis entry points](@ref entry-points) to analyze
+# Finally we can use [JET's top-level analysis entry points](@ref toplevel-entries) to analyze
 # a whole script or package.
 #
 # Here we will run `UnstableAPIAnalyzer` on [IRTools.jl](https://github.com/FluxML/IRTools.jl),

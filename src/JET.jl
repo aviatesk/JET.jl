@@ -248,6 +248,12 @@ _isexpr_check(ex::Expr, heads, n::Int)        = in(ex.head, heads) && length(ex.
 islnn(@nospecialize(_)) = false
 islnn(::LineNumberNode) = true
 
+iskwarg(@nospecialize(x)) = @isexpr(x, :(=))
+
+# for inspection
+macro lwr(ex) QuoteNode(lower(__module__, ex)) end
+macro src(ex) QuoteNode(first(lower(__module__, ex).args)) end
+
 """
     @invoke f(arg::T, ...; kwargs...)
 
@@ -977,8 +983,8 @@ function analyze_frame!(analyzer::AbstractAnalyzer, frame::InferenceState)
     return analyzer, frame
 end
 
-# test, interactive
-# =================
+# interactive
+# ===========
 
 # TODO improve inferrability by making `analyzer` argument positional
 
@@ -1042,9 +1048,10 @@ function report_call(@nospecialize(tt::Type{<:Tuple});
     return JETCallResult(analyzer, rt, source; jetconfigs...)
 end
 
-# for inspection
-macro lwr(ex) QuoteNode(lower(__module__, ex)) end
-macro src(ex) QuoteNode(first(lower(__module__, ex).args)) end
+# Test.jl integration
+# ===================
+
+include("test.jl")
 
 # exports
 # =======
@@ -1099,6 +1106,8 @@ export
     report_package,
     report_text,
     @report_call,
-    report_call
+    report_call,
+    @test_call,
+    test_call
 
 end
