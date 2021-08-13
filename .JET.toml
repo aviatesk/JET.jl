@@ -1,2 +1,0 @@
-analyze_from_definitions = true
-concretization_patterns = ["const x_ = y_"]
