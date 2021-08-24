@@ -599,6 +599,7 @@ const JULIA_DIR = @static occursin("DEV", string(VERSION)) ?
 
 # default UI (console)
 include("print.jl")
+include("reasons.jl")
 
 # entry
 # =====
