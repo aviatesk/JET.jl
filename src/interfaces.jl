@@ -212,7 +212,7 @@ const INFERENCE_ERROR_REPORT_FIELD_DECLS = [
 """
     InferenceErrorReport
 
-An interface type of error reports that JET collects by abstract interpration.
+An interface type of error reports that JET collects by abstract interpretation.
 If `T` implements this interface, the following requirements should be satisfied:
 
 ---
