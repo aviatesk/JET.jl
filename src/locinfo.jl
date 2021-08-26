@@ -160,15 +160,7 @@ function _get_sig_type((sv, _)::StateAtPC, arg::Argument)
     return Any[sig, typ], typ
 end
 _get_sig_type(_::StateAtPC, gr::GlobalRef) = Any[string(gr.mod, '.', gr.name)], nothing
-function _get_sig_type(s::StateAtPC, name::Symbol)
-    sv = first(s)
-    if istoplevel(sv)
-        # this is concrete global variable, form the global reference
-        return _get_sig_type(s, GlobalRef(sv.linfo.def, name))
-    else
-        return Any[repr(name; context = :compact => true)], nothing
-    end
-end
+_get_sig_type(_::StateAtPC, name::Symbol) = Any[repr(name; context = :compact => true)], nothing
 function _get_sig_type(s::StateAtPC, gotoifnot::GotoIfNot)
     sig  = Any[string("goto %", gotoifnot.dest, " if not "), _get_sig(s, gotoifnot.cond)...]
     return sig, nothing

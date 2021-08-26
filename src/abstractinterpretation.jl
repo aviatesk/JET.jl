@@ -385,9 +385,6 @@ function CC.abstract_eval_special_value(analyzer::AbstractAnalyzer, @nospecializ
                 # if it's really not defined, the error will be generated later anyway
                 e = GlobalRef(get_toplevelmod(analyzer), get_slotname(sv, e))
             end
-        elseif isa(e, Symbol)
-            # (already concretized) toplevel global symbols
-            e = GlobalRef(get_toplevelmod(analyzer), e)
         end
     end
 
@@ -749,7 +746,7 @@ function is_constant_declared(name::Symbol, sv::InferenceState)
     return any(sv.src.code) do @nospecialize(x)
         if @isexpr(x, :const)
             arg = first(x.args)
-            # `transform_global_symbols!` replaces all the global symbols in this toplevel frame with `Slot`s
+            # `transform_abstract_global_symbols!` replaces all the global symbols in this toplevel frame with `Slot`s
             if isa(arg, Slot)
                 return get_slotname(sv, arg) === name
             end
