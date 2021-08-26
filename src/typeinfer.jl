@@ -217,7 +217,7 @@ function report_undefined_local_slots!(analyzer::AbstractAnalyzer, frame::Infere
             sym = stmt.args[1]::Symbol
 
             # slots in toplevel frame may be a abstract global slot
-            istoplevel(analyzer, frame) && is_global_slot(analyzer, sym) && continue
+            istoplevel(frame) && is_global_slot(analyzer, sym) && continue
 
             if unsound
                 next_idx = idx + 1
@@ -257,12 +257,12 @@ This is reported only when it's not caught by control flow.
     throw_calls::Vector{Tuple{Int,Expr}} # (pc, call)
 end
 function UncaughtExceptionReport(analyzer::AbstractAnalyzer, sv::InferenceState, throw_calls::Vector{Tuple{Int,Expr}})
-    vf = get_virtual_frame(analyzer, sv.linfo)
+    vf = get_virtual_frame(sv.linfo)
     msg = length(throw_calls) == 1 ? "may throw" : "may throw either of"
     sig = Any[]
     ncalls = length(throw_calls)
     for (i, (pc, call)) in enumerate(throw_calls)
-        call_sig = _get_sig(analyzer, (sv, pc), call)
+        call_sig = _get_sig((sv, pc), call)
         append!(sig, call_sig)
         i ≠ ncalls && push!(sig, ", ")
     end
@@ -309,7 +309,7 @@ function is_throw_call_expr(analyzer::AbstractAnalyzer, frame::InferenceState, @
     if isa(e, Expr)
         if e.head === :call
             f = e.args[1]
-            if istoplevel(analyzer, frame) && isa(f, Symbol)
+            if istoplevel(frame) && isa(f, Symbol)
                 f = GlobalRef(get_toplevelmod(analyzer), f)
             end
             if isa(f, GlobalRef)

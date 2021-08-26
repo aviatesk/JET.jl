@@ -109,12 +109,9 @@ end
     bail_out_toplevel_call(analyzer::AbstractAnalyzer, ...)
 
 An overload for `abstract_call_gf_by_type(analyzer::AbstractAnalyzer, ...)`, which keeps
-  inference on non-concrete call sites in a toplevel frame created by
-  [`virtual_process`](@ref).
+inference on non-concrete call sites in a toplevel frame created by [`virtual_process`](@ref).
 """
-function CC.bail_out_toplevel_call(analyzer::AbstractAnalyzer, @nospecialize(sig), sv)
-    return isa(sv.linfo.def, Module) && !isdispatchtuple(sig) && !istoplevel(analyzer, sv)
-end
+CC.bail_out_toplevel_call(analyzer::AbstractAnalyzer, @nospecialize(sig), sv) = false
 
 @doc """
     bail_out_call(analyzer::AbstractAnalyzer, ...)
@@ -310,7 +307,7 @@ end
 function update_reports!(analyzer::AbstractAnalyzer, sv::InferenceState)
     rs = get_to_be_updated(analyzer)
     if !isempty(rs)
-        vf = get_virtual_frame(analyzer, sv)
+        vf = get_virtual_frame(sv)
         for r in rs
             pushfirst!(r.vst, vf)
         end
@@ -378,7 +375,7 @@ end
 end # @static if isdefined(CC, :abstract_invoke)
 
 function CC.abstract_eval_special_value(analyzer::AbstractAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    toplevel = istoplevel(analyzer, sv)
+    toplevel = istoplevel(sv)
     if toplevel
         if isa(e, Slot) && is_global_slot(analyzer, e)
             if get_slottype((sv, get_currpc(sv)), e) === Bottom
@@ -544,7 +541,7 @@ function (::BasicPass)(::Type{NonBooleanCondErrorReport}, analyzer::AbstractAnal
 end
 
 function CC.abstract_eval_statement(analyzer::AbstractAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    if istoplevel(analyzer, sv)
+    if istoplevel(sv)
         if get_concretized(analyzer)[get_currpc(sv)]
             return Any # bail out if it has been interpreted by `ConcreteInterpreter`
         end
@@ -556,7 +553,7 @@ end
 function CC.finish(me::InferenceState, analyzer::AbstractAnalyzer)
     @invoke finish(me::InferenceState, analyzer::AbstractInterpreter)
 
-    if istoplevel(analyzer, me)
+    if istoplevel(me)
         # find assignments of abstract global variables, and assign types to them,
         # so that later analysis can refer to them
 

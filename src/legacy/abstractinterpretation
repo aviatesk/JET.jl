@@ -122,7 +122,7 @@ function abstract_call_gf_by_type(interp::AbstractAnalyzer, @nospecialize(f), ar
     edges = MethodInstance[]
     nonbot = 0  # the index of the only non-Bottom inference result if > 0
     seen = 0    # number of signatures actually inferred
-    istoplevel = sv.linfo.def isa Module
+    # istoplevel = sv.linfo.def isa Module
     multiple_matches = napplicable > 1
 
     if f !== nothing && napplicable == 1 && is_method_pure(applicable[1]::MethodMatch)
@@ -142,7 +142,7 @@ function abstract_call_gf_by_type(interp::AbstractAnalyzer, @nospecialize(f), ar
         method = match.method
         sig = match.spec_types
         #=== abstract_call_gf_by_type patch point 2 start ===#
-        if istoplevel && !isdispatchtuple(sig) && !JET.istoplevel(interp, sv) # keep going for "our" toplevel frame
+        if #= istoplevel && !isdispatchtuple(sig) =# false # keep going for "our" toplevel frame
         #=== abstract_call_gf_by_type patch point 2 end ===#
             # only infer concrete call sites in top-level expressions
             add_remark!(interp, sv, "Refusing to infer non-concrete call site in top-level expression")

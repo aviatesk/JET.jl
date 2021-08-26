@@ -494,6 +494,10 @@ end
 
 ignorenotfound(@nospecialize(t)) = t === NOT_FOUND ? Bottom : t
 
+# location
+
+include("locinfo.jl")
+
 # includes
 # ========
 
@@ -505,7 +509,6 @@ include("abstractinterpretation.jl")
 include("typeinfer.jl")
 include("analyzer.jl")
 include("jetcache.jl")
-include("locinfo.jl")
 # top-level analysis
 include("graph.jl")
 include("virtualprocess.jl")

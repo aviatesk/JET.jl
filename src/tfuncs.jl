@@ -77,7 +77,7 @@ end
 get_spec_args(report::SeriousExceptionReport) = (report.err,)
 
 function SeriousExceptionReport(analyzer::AbstractAnalyzer, state::InferenceState, err)
-    vf = get_virtual_frame(analyzer, state)
+    vf = get_virtual_frame(state)
     msg = string(first(split(sprint(showerror, err), '\n')))
     ret = SeriousExceptionReport([vf], msg, vf.sig, err)
     push!(get_throw_locs(analyzer), get_lin((state, get_currpc(state))))
@@ -203,7 +203,7 @@ function istoplevel_globalref(analyzer::AbstractAnalyzer, sv::InferenceState)
     def.name === :getproperty || return false
     def.sig === Tuple{typeof(getproperty), Module, Symbol} || return false
     parent = sv.parent
-    return !isnothing(parent) && istoplevel(analyzer, parent)
+    return !isnothing(parent) && istoplevel(parent)
 end
 
 # `return_type_tfunc` internally uses `abstract_call` to model `Core.Compiler.return_type`
