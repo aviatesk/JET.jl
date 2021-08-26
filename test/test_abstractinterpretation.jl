@@ -134,9 +134,7 @@ end
         @test isempty(get_reports(analyzer))
     end
 
-    # with the current approach, local undefined variables in toplevel frame can't be found
-    # since we don't cache toplevel frame and thus it won't be optimized
-    let
+    let # should work for top-level analysis
         res = @analyze_toplevel begin
             foo = let
                 if rand(Bool)
@@ -146,7 +144,9 @@ end
                 end
             end
         end
-        @test_broken !isempty(res.inference_error_reports)
+        @test length(res.inference_error_reports) === 1 &&
+              first(res.inference_error_reports) isa LocalUndefVarErrorReport &&
+              first(res.inference_error_reports).name === :bar
     end
 end
 

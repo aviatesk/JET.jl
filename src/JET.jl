@@ -842,30 +842,32 @@ function report_text(text::AbstractString,
     return JETToplevelResult(analyzer′, res, source; analyzer, jetconfigs...)
 end
 
+# we have to go on hacks; see `transform_abstract_global_symbols!` and `resolve_toplevel_symbols!`
 function analyze_toplevel!(analyzer::AbstractAnalyzer, src::CodeInfo)
     # construct toplevel `MethodInstance`
     mi = ccall(:jl_new_method_instance_uninit, Ref{Core.MethodInstance}, ());
-    mi.uninferred = src
     mi.specTypes = Tuple{}
 
-    transform_abstract_global_symbols!(analyzer, src)
-    mi.def = get_toplevelmod(analyzer)
+    mi.def = mod = get_toplevelmod(analyzer)
+    src = transform_abstract_global_symbols!(analyzer, src)
+    src = resolve_toplevel_symbols!(mod, src)
+    mi.uninferred = src
 
     result = InferenceResult(mi);
-    # toplevel frame doesn't need to be cached (and so it won't be optimized), nor should
-    # go through JET's code generation error check
-    frame = InferenceState(result, src, #=cached=# false, analyzer);
+    # toplevel frames don't really need to be cached, but still better to be optimized
+    # in order to get reasonable `LocalUndefVarErrorReport` and `UncaughtExceptionReport`
+    frame = InferenceState(result, src, #=cached=# true, analyzer);
 
     return analyze_frame!(analyzer, frame)
 end
 
-# HACK this is an native hack to re-use `AbstractInterpreter`'s approximated slot types for
+# HACK this is very naive hack to re-use `AbstractInterpreter`'s slot type approximation for
 # assignments of abstract global variables, which are represented as toplevel symbols at this point;
-# the idea is just to transform them into slots from symbols and use their approximated type
-# on their assignment.
+# the idea is just to transform them into slot from symbol and use their approximated type
+# on their assignment (see `finish(::InferenceState, ::AbstractAnalyzer)`).
 # NOTE that `transform_abstract_global_symbols!` will produce really invalid code for
 # actual interpretation or execution, but all the statements won't be interpreted anymore
-# by `ConcreteInterpreter` nor executed anyway since toplevel frames aren't cached
+# by `ConcreteInterpreter` nor executed by the native compilation pipeline anyway
 function transform_abstract_global_symbols!(analyzer::AbstractAnalyzer, src::CodeInfo)
     nslots = length(src.slotnames)
     abstrct_global_variables = Dict{Symbol,Int}()
@@ -901,6 +903,41 @@ function transform_abstract_global_symbols!(analyzer::AbstractAnalyzer, src::Cod
     end
 
     set_global_slots!(analyzer, Dict(idx => slotname for (slotname, idx) in abstrct_global_variables))
+
+    return src
+end
+
+# resolve toplevel symbols (and other expressions like `:foreigncall`)
+# so that the returned `CodeInfo` is eligible for abstractintepret and optimization
+# TODO `jl_resolve_globals_in_ir` can throw, and we want to bypass it to `ToplevelErrorReport`
+@static if VERSION ≥ v"1.8.0-DEV.421"
+    function resolve_toplevel_symbols!(mod::Module, src::CodeInfo)
+        newsrc = copy(src)
+        @ccall jl_resolve_globals_in_ir(
+            #=jl_array_t *stmts=# newsrc.code::Any,
+            #=jl_module_t *m=# mod::Any,
+            #=jl_svec_t *sparam_vals=# svec()::Any,
+            #=int binding_effects=# 0::Int)::Cvoid
+        return newsrc
+    end
+else
+    # HACK before https://github.com/JuliaLang/julia/pull/42013, we need to go through
+    # the method definition pipeline to get the effect of `jl_resolve_globals_in_ir`
+    function resolve_toplevel_symbols!(mod::Module, src::CodeInfo)
+        sig = svec(
+            #=atypes=# svec(typeof(__toplevelf__)),
+            #=tvars=# svec(),
+            #=functionloc=# LineNumberNode(@__LINE__, @__FILE__))
+        # branching on https://github.com/JuliaLang/julia/pull/41137
+        method = (@static if isdefined(Core.Compiler, :OverlayMethodTable)
+            ccall(:jl_method_def, Any, (Any, Ptr{Cvoid}, Any, Any), sig, C_NULL, src, mod)
+        else
+            ccall(:jl_method_def, Cvoid, (Any, Any, Any), sig, src, mod)
+            only(methods(__toplevelf__))
+        end)::Method
+        return CC.uncompressed_ir(method)
+    end
+    function __toplevelf__ end
 end
 
 # TODO `analyze_builtin!` ?

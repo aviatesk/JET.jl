@@ -103,7 +103,7 @@ function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
     this_caches = union!(setdiff!(reports_after, reports_before),
                          setdiff!(uncaught_exceptions_after, uncaught_exceptions_before))
 
-    if !isempty(this_caches)
+    if !isempty(this_caches) && !istoplevel(frame) # no need to cache
         if iscp
             result = frame.result
             argtypes = result.argtypes
@@ -287,7 +287,8 @@ function (::SoundBasicPass)(::Type{UncaughtExceptionReport}, analyzer::AbstractA
         throw_locs  = get_throw_locs(analyzer)
         throw_calls = Tuple{Int,Expr}[]
         for (pc, stmt) in enumerate(stmts)
-            is_throw_call_expr(analyzer, frame, stmt) || continue
+            isa(stmt, Expr) || continue
+            is_throw_call(stmt) || continue
             # if this `throw` is already reported, don't duplciate
             linetable[codelocs[pc]]::LineInfoNode in throw_locs && continue
             push!(throw_calls, (pc, stmt))
@@ -302,23 +303,4 @@ function (::SoundBasicPass)(::Type{UncaughtExceptionReport}, analyzer::AbstractA
         # and its parents, so just filter them away
         empty!(get_uncaught_exceptions(analyzer))
     end
-end
-
-# basically same as `is_throw_call`, but also toplevel module handling added
-function is_throw_call_expr(analyzer::AbstractAnalyzer, frame::InferenceState, @nospecialize(e))
-    if isa(e, Expr)
-        if e.head === :call
-            f = e.args[1]
-            if istoplevel(frame) && isa(f, Symbol)
-                f = GlobalRef(get_toplevelmod(analyzer), f)
-            end
-            if isa(f, GlobalRef)
-                ff = CC.abstract_eval_global(f.mod, f.name)
-                if isa(ff, Const) && ff.val === Core.throw
-                    return true
-                end
-            end
-        end
-    end
-    return false
 end
