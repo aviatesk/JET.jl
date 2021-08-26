@@ -911,16 +911,16 @@ end
             end
             throw("invalid argument")
         end
+
+        bar(args...) = foo(args...)
     end
 
-    # successful code generation, valid code
-    let
+    let # successful code generation, valid code
         analyzer, = report_call(m.foo, (Int,))
         @test isempty(get_reports(analyzer))
     end
 
-    # successful code generation, invalid code
-    let
+    let # successful code generation, invalid code
         analyzer, = report_call(m.foo, (Float64,))
         @test length(get_reports(analyzer)) == 1
         r = first(get_reports(analyzer))
@@ -928,9 +928,15 @@ end
         @test r.name === :undefvar
     end
 
-    # unsuccessful code generation
-    let
+    let # unsuccessful code generation
         analyzer, = report_call(m.foo, (String,))
+        @test length(get_reports(analyzer)) == 1
+        r = first(get_reports(analyzer))
+        @test isa(r, GeneratorErrorReport) && r.err == "invalid argument"
+    end
+
+    let # should work if cached
+        analyzer, = report_call(m.bar, (String,))
         @test length(get_reports(analyzer)) == 1
         r = first(get_reports(analyzer))
         @test isa(r, GeneratorErrorReport) && r.err == "invalid argument"

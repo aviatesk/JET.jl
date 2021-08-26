@@ -966,7 +966,8 @@ function (::SoundBasicPass)(::Type{GeneratorErrorReport}, analyzer::AbstractAnal
             ccall(:jl_code_for_staged, Any, (Any,), mi)
         catch err
             # if user code throws error, wrap and report it
-            add_new_report!(GeneratorErrorReport(analyzer, mi, err), analyzer)
+            report = add_new_report!(GeneratorErrorReport(analyzer, mi, err), analyzer)
+            push!(get_to_be_updated(analyzer), report)
         end
     end
 end
