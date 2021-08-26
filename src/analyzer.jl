@@ -482,9 +482,9 @@ function maybe_initialize_caches!(analyzer::AbstractAnalyzer)
 end
 
 # check if we're in a toplevel module
-@inline istoplevel(analyzer::AbstractAnalyzer, sv::InferenceState)    = istoplevel(analyzer, sv.linfo)
-@inline istoplevel(::AbstractAnalyzer, ::OptimizationState)           = false # optimization never happen for top-level code
-@inline istoplevel(analyzer::AbstractAnalyzer, linfo::MethodInstance) = get_toplevelmod(analyzer) === linfo.def
+@inline istoplevel(sv::InferenceState)    = istoplevel(sv.linfo)
+@inline istoplevel(::OptimizationState)   = false # optimization never happen for top-level code
+@inline istoplevel(linfo::MethodInstance) = isa(linfo.def, Module)
 
 is_global_slot(analyzer::AbstractAnalyzer, slot::Int)   = slot in keys(get_global_slots(analyzer))
 is_global_slot(analyzer::AbstractAnalyzer, slot::Slot)  = is_global_slot(analyzer, slot_id(slot))

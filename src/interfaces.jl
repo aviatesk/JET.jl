@@ -287,7 +287,7 @@ get_spec_args(T::Type{<:InferenceErrorReport}) =                error("`get_spec
 
 # default constructor to create a report from abstract interpretation routine
 function (T::Type{<:InferenceErrorReport})(analyzer::AbstractAnalyzer, state, @nospecialize(spec_args...))
-    vf = get_virtual_frame(analyzer, state)
+    vf = get_virtual_frame(state)
     msg = get_msg(T, analyzer, state, spec_args...)
     return T([vf], msg, vf.sig, spec_args...)
 end

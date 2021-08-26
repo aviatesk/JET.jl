@@ -2,15 +2,15 @@
 # =============
 
 # get location information at the given program counter (or a current counter if not specified)
-function get_virtual_frame(analyzer::AbstractAnalyzer, state::StateAtPC)
-    sig = get_sig(analyzer, state)
+function get_virtual_frame(state::StateAtPC)
+    sig = get_sig(state)
     file, line = get_file_line(state)
     linfo = isa(state, MethodInstance) ? state : first(state).linfo
     return VirtualFrame(file, line, sig, linfo)
 end
-get_virtual_frame(analyzer::AbstractAnalyzer, sv::InferenceState) = get_virtual_frame(analyzer, (sv, get_currpc(sv)))
-function get_virtual_frame(analyzer::AbstractAnalyzer, linfo::MethodInstance)
-    sig = get_sig(analyzer, linfo)
+get_virtual_frame(sv::InferenceState) = get_virtual_frame((sv, get_currpc(sv)))
+function get_virtual_frame(linfo::MethodInstance)
+    sig = get_sig(linfo)
     file, line = get_file_line(linfo)
     return VirtualFrame(file, line, sig, linfo)
 end
@@ -31,7 +31,7 @@ end
 # =========
 
 # adapted from https://github.com/JuliaLang/julia/blob/0f11a7bb07d2d0d8413da05dadd47441705bf0dd/base/show.jl#L989-L1011
-function get_sig(analyzer::AbstractAnalyzer, l::MethodInstance)
+function get_sig(l::MethodInstance)
     def = l.def
     ret = if isa(def, Method)
         if isdefined(def, :generator) && l === def.generator
@@ -66,18 +66,18 @@ end
     end
 end
 
-@inline get_sig(analyzer::AbstractAnalyzer, s::StateAtPC) = return _get_sig(analyzer, s, get_stmt(s))
+@inline get_sig(s::StateAtPC) = return _get_sig(s, get_stmt(s))
 
-@inline _get_sig(analyzer::AbstractAnalyzer, s::StateAtPC, @nospecialize(x)) = return first(_get_sig_type(analyzer, s, x))::Vector{Any}
+@inline _get_sig(s::StateAtPC, @nospecialize(x)) = return first(_get_sig_type(s, x))::Vector{Any}
 
-function _get_callsig(analyzer::AbstractAnalyzer, s::StateAtPC, @nospecialize(f), args::Vector{Any};
+function _get_callsig(s::StateAtPC, @nospecialize(f), args::Vector{Any};
                       splat::Bool = false)
-    sig = _get_sig(analyzer, s, f)
+    sig = _get_sig(s, f)
     push!(sig, '(')
 
     nargs = length(args)
     for (i, arg) in enumerate(args)
-        arg_sig = _get_sig(analyzer, s, arg)
+        arg_sig = _get_sig(s, arg)
         append!(sig, arg_sig)
         if i ≠ nargs
             push!(sig, ", ")
@@ -90,7 +90,7 @@ function _get_callsig(analyzer::AbstractAnalyzer, s::StateAtPC, @nospecialize(f)
     return sig
 end
 
-function _get_sig_type(analyzer::AbstractAnalyzer, s::StateAtPC, expr::Expr)
+function _get_sig_type(s::StateAtPC, expr::Expr)
     head = expr.head
     if head === :call
         f = first(expr.args)
@@ -103,16 +103,16 @@ function _get_sig_type(analyzer::AbstractAnalyzer, s::StateAtPC, expr::Expr)
             end
             f = args[2]
             args = args[3:end]
-            return _get_callsig(analyzer, s, f, args; splat = true), nothing
+            return _get_callsig(s, f, args; splat = true), nothing
         else
-            return _get_callsig(analyzer, s, f, args), nothing
+            return _get_callsig(s, f, args), nothing
         end
     elseif head === :invoke
         f = expr.args[2]
         args = expr.args[3:end]
-        return _get_callsig(analyzer, s, f, args), nothing
+        return _get_callsig(s, f, args), nothing
     elseif head === :(=)
-        return _get_sig_type(analyzer, s, last(expr.args))
+        return _get_sig_type(s, last(expr.args))
     elseif head === :static_parameter
         typ = widenconst(first(s).sptypes[first(expr.args)])
         return Any['_', typ], typ
@@ -120,7 +120,7 @@ function _get_sig_type(analyzer::AbstractAnalyzer, s::StateAtPC, expr::Expr)
         return Any[string(expr)], nothing
     end
 end
-function _get_sig_type(analyzer::AbstractAnalyzer, (sv, _)::StateAtPC, ssa::SSAValue)
+function _get_sig_type((sv, _)::StateAtPC, ssa::SSAValue)
     news = (sv, ssa.id)
     if isa(sv, OptimizationState)
         # when working on `OptimizationState`, the SSA traverse could be really long because
@@ -129,22 +129,22 @@ function _get_sig_type(analyzer::AbstractAnalyzer, (sv, _)::StateAtPC, ssa::SSAV
         sig = Any["%$(ssa.id)", typ]
     else
         # XXX the same problem _may_ happen for `InferenceState` too ?
-        sig, sig_typ = _get_sig_type(analyzer, news, get_stmt(news))
+        sig, sig_typ = _get_sig_type(news, get_stmt(news))
         typ = widenconst(ignorelimited(ignorenotfound(get_ssavaluetype(news))))
         sig_typ == typ || push!(sig, typ) # XXX I forgot why I added this line ...
     end
     return sig, typ
 end
-function _get_sig_type(analyzer::AbstractAnalyzer, s::StateAtPC, slot::SlotNumber)
+function _get_sig_type(s::StateAtPC, slot::SlotNumber)
     sv = first(s)
     name = get_slotname(sv, slot)
     sig = string(name)
     if isempty(sig)
         sig = string(slot) # fallback if no explicit slotname
     end
-    if istoplevel(analyzer, sv)
+    if istoplevel(sv)
         # this is a abstract global variable, form the global reference
-        return _get_sig_type(analyzer, s, GlobalRef(get_toplevelmod(analyzer), name))
+        return _get_sig_type(s, GlobalRef(sv.linfo.def::Module, name))
     else
         # we can use per-program counter type after inference
         t = (isa(sv, InferenceState) && sv.inferred) ? get_slottype(sv, slot) : get_slottype(s, slot)
@@ -153,31 +153,32 @@ function _get_sig_type(analyzer::AbstractAnalyzer, s::StateAtPC, slot::SlotNumbe
     end
 end
 # NOTE `Argument` is introduced by optimization, and so we don't need to handle abstract global variable here, etc.
-function _get_sig_type(analyzer::AbstractAnalyzer, (sv, _)::StateAtPC, arg::Argument)
+function _get_sig_type((sv, _)::StateAtPC, arg::Argument)
     name = get_slotname(sv, arg.n)
     sig = string(name)
     typ = widenconst(ignorelimited(get_slottype(sv, arg))) # after optimization we shouldn't use `get_slottype(::StateAtPC, ::Any)`
     return Any[sig, typ], typ
 end
-_get_sig_type(analyzer::AbstractAnalyzer, _::StateAtPC, gr::GlobalRef) = Any[string(gr.mod, '.', gr.name)], nothing
-function _get_sig_type(analyzer::AbstractAnalyzer, s::StateAtPC, name::Symbol)
-    if istoplevel(analyzer, first(s))
+_get_sig_type(_::StateAtPC, gr::GlobalRef) = Any[string(gr.mod, '.', gr.name)], nothing
+function _get_sig_type(s::StateAtPC, name::Symbol)
+    sv = first(s)
+    if istoplevel(sv)
         # this is concrete global variable, form the global reference
-        return _get_sig_type(analyzer, s, GlobalRef(get_toplevelmod(analyzer), name))
+        return _get_sig_type(s, GlobalRef(sv.linfo.def, name))
     else
         return Any[repr(name; context = :compact => true)], nothing
     end
 end
-function _get_sig_type(analyzer::AbstractAnalyzer, s::StateAtPC, gotoifnot::GotoIfNot)
-    sig  = Any[string("goto %", gotoifnot.dest, " if not "), _get_sig(analyzer, s, gotoifnot.cond)...]
+function _get_sig_type(s::StateAtPC, gotoifnot::GotoIfNot)
+    sig  = Any[string("goto %", gotoifnot.dest, " if not "), _get_sig(s, gotoifnot.cond)...]
     return sig, nothing
 end
-function _get_sig_type(analyzer::AbstractAnalyzer, s::StateAtPC, rn::ReturnNode)
-    sig = is_unreachable(rn) ? Any["unreachable"] : Any["return ", _get_sig(analyzer, s, rn.val)...]
+function _get_sig_type(s::StateAtPC, rn::ReturnNode)
+    sig = is_unreachable(rn) ? Any["unreachable"] : Any["return ", _get_sig(s, rn.val)...]
     return sig, nothing
 end
-function _get_sig_type(analyzer::AbstractAnalyzer, ::StateAtPC, qn::QuoteNode)
+function _get_sig_type(::StateAtPC, qn::QuoteNode)
     typ = typeof(qn.value)
     return Any[string(qn), typ], typ
 end
-_get_sig_type(analyzer::AbstractAnalyzer, ::StateAtPC, @nospecialize(x)) = Any[repr(x; context = :compact => true)], nothing
+_get_sig_type(::StateAtPC, @nospecialize(x)) = Any[repr(x; context = :compact => true)], nothing
