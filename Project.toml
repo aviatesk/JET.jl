@@ -1,27 +1,9 @@
 name = "JET"
 uuid = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
 authors = ["Shuhei Kadowaki <aviatesk@gmail.com>"]
-version = "0.5.0"
+version = "0.0.1"
 
 [deps]
-InteractiveUtils = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
-JuliaInterpreter = "aa1ae85d-cabe-5617-a682-6adf51b2e16a"
-LoweredCodeUtils = "6f1432cf-f94c-5a45-995e-cdbf5db27b0b"
-MacroTools = "1914dd2f-81c6-5fcd-8719-6d5c9610ff09"
-Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
-Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 
 [compat]
-JuliaInterpreter = "0.8.16"
-LoweredCodeUtils = "~2.1.0"
-MacroTools = "0.5.6"
-Revise = "3.1.15"
-julia = "1.6"
-
-[extras]
-Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
-Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
-Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
-
-[targets]
-test = ["Logging", "Random", "Test"]
+julia = "1"
