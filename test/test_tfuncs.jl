@@ -1,9 +1,9 @@
 @testset "report invalid builtin call" begin
-    analyzer, = report_call((Int, Type{Int}, Any)) do a, b, c
+    result = report_call((Int, Type{Int}, Any)) do a, b, c
         isa(a, b, c)
     end
-    @test length(get_reports(analyzer)) === 1
-    report = first(get_reports(analyzer))
+    @test length(get_reports(result)) === 1
+    report = first(get_reports(result))
     @test report isa UnimplementedBuiltinCallErrorReport &&
         widenconst.(report.argtypes) == [Int, Type{Int}, Any]
 
@@ -16,35 +16,35 @@
             access_field(t, sym) = getfield(t, sym)
         end)
 
-        analyzer, = Core.eval(m, quote
+        result = Core.eval(m, quote
             $report_call(t->access_field(t,:v), (T,))
         end)
-        @test isempty(get_reports(analyzer))
+        @test isempty(get_reports(result))
 
-        analyzer, = Core.eval(m, quote
+        result = Core.eval(m, quote
             $report_call(t->access_field(t,:w), (T,))
         end)
-        @test length(get_reports(analyzer)) === 1
-        er = first(get_reports(analyzer))
+        @test length(get_reports(result)) === 1
+        er = first(get_reports(result))
         @test er isa NoFieldErrorReport
         @test er.typ === m.T
         @test er.name === :w
 
-        analyzer, = Core.eval(m, quote
+        result = Core.eval(m, quote
             $report_call(t->access_field(t,:v), (T,))
         end)
-        @test isempty(get_reports(analyzer))
+        @test isempty(get_reports(result))
     end
 end
 
 @testset "malformed getfield" begin
     let
         # shouldn't error
-        analyzer, = report_call((Any,)) do a
+        result = report_call((Any,)) do a
             getfield(a)
         end
-        @test length(get_reports(analyzer)) == 1
-        @test first(get_reports(analyzer)) isa UnimplementedBuiltinCallErrorReport
+        @test length(get_reports(result)) == 1
+        @test first(get_reports(result)) isa UnimplementedBuiltinCallErrorReport
     end
 end
 
@@ -97,24 +97,24 @@ end
 @testset "special case `return_type`" begin
     # don't report invalid method calls simulated in `return_type_tfunc`
     let
-        analyzer, = report_call(()->CC.return_type(sum, Tuple{String}))
-        @test isempty(get_reports(analyzer))
+        result = report_call(()->CC.return_type(sum, Tuple{String}))
+        @test isempty(get_reports(result))
     end
 
     # report invalid call of `return_type` itself
     let
-        analyzer, = report_call(()->CC.return_type(sum))
-        @test length(get_reports(analyzer)) == 1
-        @test isa(first(get_reports(analyzer)), InvalidReturnTypeCall)
+        result = report_call(()->CC.return_type(sum))
+        @test length(get_reports(result)) == 1
+        @test isa(first(get_reports(result)), InvalidReturnTypeCall)
     end
 
     # end to end
     let
         # this shouldn't report "no matching method found for call signature: Base.iterate(itr::DataType)"
         # , which otherwise will be caught in `abstract_cal` in `return_type_tfunc`
-        analyzer, = report_call(()->Dict('a' => 1,
+        result = report_call(()->Dict('a' => 1,
                                               :b => 2)
                                      )
-        @test isempty(get_reports(analyzer))
+        @test isempty(get_reports(result))
     end
 end

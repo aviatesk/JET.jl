@@ -64,25 +64,15 @@ Represents a "serious" error that is manually thrown by a `throw` call.
 This is reported regardless of whether it's caught by control flow or not, as opposed to
 [`UncaughtExceptionReport`](@ref).
 """
-struct SeriousExceptionReport{T} <: InferenceErrorReport
-    vst::VirtualStackTrace
-    msg::String
-    sig::Vector{Any}
-    err::T
-    SeriousExceptionReport(vst::VirtualStackTrace, msg::String, sig::Vector{Any}, err::T) where T =
-        return new{T}(vst, msg, sig, err)
-    SeriousExceptionReport{T}(vst::VirtualStackTrace, msg::String, sig::Vector{Any}, (err,)::Tuple{T}) where T =
-        return new{T}(vst, msg, sig, err)
+@reportdef struct SeriousExceptionReport <: InferenceErrorReport
+    @nospecialize(err)
+    # keeps the location where this exception is raised
+    # this information will be used later when collecting `UncaughtExceptionReport`s
+    # in order to avoid duplicated reports from the same `throw` call
+    loc::LineInfoNode
 end
-get_spec_args(report::SeriousExceptionReport) = (report.err,)
-
-function SeriousExceptionReport(analyzer::AbstractAnalyzer, state::InferenceState, err)
-    vf = get_virtual_frame(state)
-    msg = string(first(split(sprint(showerror, err), '\n')))
-    ret = SeriousExceptionReport([vf], msg, vf.sig, err)
-    push!(get_throw_locs(analyzer), get_lin((state, get_currpc(state))))
-    return ret
-end
+get_msg(T::Type{SeriousExceptionReport}, analyzer::AbstractAnalyzer, state, @nospecialize(err), loc::LineInfoNode) =
+    string(first(split(sprint(showerror, err), '\n')))
 
 function (::SoundBasicPass)(::Type{SeriousExceptionReport}, analyzer::AbstractAnalyzer, sv::InferenceState, argtypes::Vector{Any})
     if length(argtypes) ≥ 1
@@ -90,11 +80,11 @@ function (::SoundBasicPass)(::Type{SeriousExceptionReport}, analyzer::AbstractAn
         if isa(a, Const)
             err = a.val
             if isa(err, UndefKeywordError)
-                add_new_report!(SeriousExceptionReport(analyzer, sv, err), analyzer)
+                add_new_report!(sv.result, SeriousExceptionReport(analyzer, sv, err, get_lin((sv, get_currpc(sv)))))
             elseif isa(err, MethodError)
                 # ignore https://github.com/JuliaLang/julia/blob/7409a1c007b7773544223f0e0a2d8aaee4a45172/base/boot.jl#L261
                 if err.f !== Bottom
-                    add_new_report!(SeriousExceptionReport(analyzer, sv, err), analyzer)
+                    add_new_report!(sv.result, SeriousExceptionReport(analyzer, sv, err, get_lin((sv, get_currpc(sv)))))
                 end
             end
         end
@@ -137,7 +127,7 @@ function handle_unimplemented_builtins!(analyzer::AbstractAnalyzer, sv::Inferenc
     if ret === Bottom
         @assert !(f === throw) "`throw` calls shuold be handled by report passes of `SeriousExceptionReport` or `UncaughtExceptionReport`"
 
-        add_new_report!(UnimplementedBuiltinCallErrorReport(analyzer, sv, argtypes), analyzer)
+        add_new_report!(sv.result, UnimplementedBuiltinCallErrorReport(analyzer, sv, argtypes))
     end
 end
 
@@ -161,7 +151,7 @@ function (::SoundBasicPass)(::Type{InvalidBuiltinCallErrorReport}, analyzer::Abs
                 elseif ret === Bottom
                     # general case when an error is detected by the native `getfield_tfunc`
                     typ = widenconst(obj)
-                    add_new_report!(NoFieldErrorReport(analyzer, sv, typ, name), analyzer)
+                    add_new_report!(sv.result, NoFieldErrorReport(analyzer, sv, typ, name))
                     return
                 end
             end
@@ -186,7 +176,7 @@ function (::SoundBasicPass)(::Type{InvalidBuiltinCallErrorReport}, analyzer::Abs
             t = widenconst(a)
             if isprimitivetype(t) && t <: Number
                 if isa(a, Const) && a.val === zero(t)
-                    add_new_report!(DivideErrorReport(analyzer, sv), analyzer)
+                    add_new_report!(sv.result, DivideErrorReport(analyzer, sv))
                     return
                 end
             end
@@ -207,16 +197,19 @@ function istoplevel_globalref(analyzer::AbstractAnalyzer, sv::InferenceState)
 end
 
 # `return_type_tfunc` internally uses `abstract_call` to model `Core.Compiler.return_type`
-# and here we shouldn't pass `AbstractAnalyzer` to it; otherwise we may get false error reports
-# from the `abstract_call`, which will simulate the call and isn't any abstraction of actual
-# execution of it
+# and here we should NOT catch error reports detected within the simulated call
+# because it is really not any abstraction of actual execution
 function CC.return_type_tfunc(analyzer::AbstractAnalyzer, argtypes::Vector{Any}, sv::InferenceState)
     # report pass for invalid `Core.Compiler.return_type` call
     ReportPass(analyzer)(InvalidReturnTypeCall, analyzer, sv, argtypes)
 
-    # don't recursively pass on `AbstractAnalyzer` via `@invoke` here, and make sure
-    # JET's analysis enter into the simulated call
-    return return_type_tfunc(get_native(analyzer), argtypes, sv)
+    # stash and discard the result from the simulated call, and keep the original result (`result0`)
+    result = sv.result
+    result0 = result.src
+    set_result!(result)
+    ret = @invoke return_type_tfunc(analyzer::AbstractInterpreter, argtypes::Vector{Any}, sv::InferenceState)
+    set_result!(sv.result, result0)
+    return ret
 end
 
 @reportdef struct InvalidReturnTypeCall <: InferenceErrorReport end
@@ -228,6 +221,6 @@ function (::SoundBasicPass)(::Type{InvalidReturnTypeCall}, analyzer::AbstractAna
     # `NativeInterpreter`'s `return_type_tfunc` hard-codes its return type to `Type`
     if length(argtypes) ≠ 3
         # invalid argument number, let's report and return error result (i.e. `Bottom`)
-        add_new_report!(InvalidReturnTypeCall(analyzer, sv), analyzer)
+        add_new_report!(sv.result, InvalidReturnTypeCall(analyzer, sv))
     end
 end

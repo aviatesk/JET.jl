@@ -19,11 +19,11 @@ function ⫇(a, b)
 end
 
 @testset "error location signature" begin
-    analyzer, = report_call((Char,Char)) do a, b
+    result = report_call((Char,Char)) do a, b
         a + b
     end
-    @test length(get_reports(analyzer)) == 1
-    r = first(get_reports(analyzer))
+    @test length(get_reports(result)) == 1
+    r = first(get_reports(result))
     @test isa(r, NoMethodErrorReport)
     @test Any['(', 'a', Char, ", ", 'b', Char, ')'] ⫇ r.sig
 end
@@ -32,9 +32,9 @@ end
     m = @fixturedef begin
         foo(s::AbstractString) = throw(ArgumentError(s))
     end
-    analyzer, = report_call(m.foo, (String,))
-    @test length(get_reports(analyzer)) == 1
-    r = first(get_reports(analyzer))
+    result = report_call(m.foo, (String,))
+    @test length(get_reports(result)) == 1
+    r = first(get_reports(result))
     @test isa(r, UncaughtExceptionReport)
     @test Any['(', 's', String, ')', ArgumentError] ⫇ r.sig
 end

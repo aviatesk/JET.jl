@@ -1,22 +1,21 @@
 """
     mutable struct AbstractGlobal
         t::Any     # analyzed type
-        iscd::Bool # whether this abstract global variable is declarared as constant or not
+        iscd::Bool # is this abstract global variable declarared as constant or not
     end
 
 Wraps a global variable whose type is analyzed by abtract interpretation.
 `AbstractGlobal` object will be actually evaluated into the context module, and a later
-  analysis may refer to its type or alter it on another assignment.
+analysis may refer to or alter its type on future load and store operations.
 
 !!! note
     The type of the wrapped global variable will be propagated only when in a toplevel frame,
-      and thus we don't care about the analysis cache invalidation on a refinement of the
-      wrapped global variable, since JET doesn't cache the toplevel frame.
+    and thus we don't care about the analysis cache invalidation on a refinement of the
+    wrapped global variable, since JET doesn't cache the toplevel frame.
 """
 mutable struct AbstractGlobal
-    # analyzed type
-    t::Any
-    iscd::Bool
+    t::Any     # analyzed type
+    iscd::Bool # is this abstract global variable declarared as constant or not
 
     function AbstractGlobal(@nospecialize(t),
                             iscd::Bool,
@@ -30,7 +29,6 @@ end
 @reportdef struct NoMethodErrorReport <: InferenceErrorReport
     @nospecialize(t::Union{Type,Vector{Type}})
 end
-# TODO count invalid union split case
 get_msg(::Type{NoMethodErrorReport}, analyzer::AbstractAnalyzer, sv::InferenceState, @nospecialize(t::Type)) =
     "no matching method found for call signature ($t)"
 get_msg(::Type{NoMethodErrorReport}, analyzer::AbstractAnalyzer, sv::InferenceState, ts::Vector{Type}) =
@@ -42,22 +40,7 @@ function is_empty_match(info::MethodMatchInfo)
     return isempty(res.matches)
 end
 
-# branching on https://github.com/JuliaLang/julia/pull/41020
-@static if isdefined(CC, :MethodCallResult)
-
-import .CC:
-    bail_out_toplevel_call,
-    bail_out_call,
-    add_call_backedges!,
-    MethodCallResult,
-    ConstCallInfo,
-    const_prop_entry_heuristic,
-    const_prop_rettype_heuristic
-
-# TODO:
-# - report "too many method matched"
-# - maybe "cound not identify method table for call" won't happen since we eagerly propagate bottom for e.g. undef var case, etc.
-
+# TODO report "too many method matched"
 function CC.abstract_call_gf_by_type(analyzer::AbstractAnalyzer, @nospecialize(f),
                                      fargs::Union{Nothing,Vector{Any}}, argtypes::Vector{Any}, @nospecialize(atype),
                                      sv::InferenceState, max_methods::Int = InferenceParams(analyzer).MAX_METHODS)
@@ -96,12 +79,12 @@ function (::SoundBasicPass)(::Type{NoMethodErrorReport}, analyzer::AbstractAnaly
     end
 
     if !isnothing(ts)
-        add_new_report!(NoMethodErrorReport(analyzer, sv, ts), analyzer)
+        add_new_report!(sv.result, NoMethodErrorReport(analyzer, sv, ts))
     end
 end
 function (::SoundBasicPass)(::Type{NoMethodErrorReport}, analyzer::AbstractAnalyzer, sv::InferenceState, info::MethodMatchInfo, @nospecialize(atype))
     if is_empty_match(info)
-        add_new_report!(NoMethodErrorReport(analyzer, sv, atype), analyzer)
+        add_new_report!(sv.result, NoMethodErrorReport(analyzer, sv, atype))
     end
 end
 
@@ -116,11 +99,11 @@ CC.bail_out_toplevel_call(analyzer::AbstractAnalyzer, @nospecialize(sig), sv) = 
 @doc """
     bail_out_call(analyzer::AbstractAnalyzer, ...)
 
-With this overload, `abstract_call_gf_by_type(analyzer::AbstractAnalyzer, ...)` doesn't bail out
-  inference even after the current return type grows up to `Any` and collects as much error
-  points as possible.
+With this overload, `abstract_call_gf_by_type(analyzer::AbstractAnalyzer, ...)` doesn't bail
+out inference even after the current return type grows up to `Any` and collects as much
+error points as possible.
 Of course this slows down inference performance, but hoopefully it stays to be "practical"
-  speed since the number of matching methods are limited beforehand.
+speed since the number of matching methods are limited beforehand.
 """
 CC.bail_out_call(analyzer::AbstractAnalyzer, @nospecialize(t), sv) = false
 
@@ -182,25 +165,34 @@ end # @static if isdefined(CC, :find_matching_methods)
 function CC.abstract_call_method_with_const_args(analyzer::AbstractAnalyzer, result::MethodCallResult,
                                                  @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch,
                                                  sv::InferenceState, va_override::Bool)
+    set_cacher!(analyzer, :abstract_call_method_with_const_args => sv.result)
+
     const_result =
         @invoke abstract_call_method_with_const_args(analyzer::AbstractInterpreter, result::MethodCallResult,
                                                      @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch,
                                                      sv::InferenceState, va_override::Bool)
+
+    # we should make sure we reset the cacher because at this point we may have not hit
+    # `CC.cache_lookup(linfo::MethodInstance, given_argtypes::Vector{Any}, cache::JETLocalCache)`
+    set_cacher!(analyzer, nothing)
+
     # update reports if constant prop' was successful
     # branch on https://github.com/JuliaLang/julia/pull/41697/
     @static if VERSION ≥ v"1.8.0-DEV.282"
         if !isnothing(const_result)
             # successful constant prop', we also need to update reports
-            update_reports!(analyzer, sv)
+            collect_callee_reports!(analyzer, sv)
         end
     else
         if !isnothing(getfield(const_result, 2))
             # successful constant prop', we also need to update reports
-            update_reports!(analyzer, sv)
+            collect_callee_reports!(analyzer, sv)
         end
     end
     return const_result
 end
+
+# this overload isn't necessary after https://github.com/JuliaLang/julia/pull/41882
 
 @doc """
     const_prop_entry_heuristic(analyzer::AbstractAnalyzer, result::MethodCallResult, sv::InferenceState)
@@ -215,30 +207,17 @@ highly possible constant prop' can produce more accurate analysis result, by thr
 false positive error reports by cutting off the unreachable control flow or detecting
 must-reachable `throw` calls.
 """
-function CC.const_prop_entry_heuristic(analyzer::AbstractAnalyzer, result::MethodCallResult, sv::InferenceState)
-    edge = result.edge # edge associated with the previous non-constant analysis
-    if !isnothing(edge)
-        # if any error has been reported within the previous `abstract_call_method` (associated with `edge`),
-        # force constant prop' and hope it can cut-off false positives
-        any(is_from_same_frame(sv.linfo, edge), get_reports(analyzer)) && return true
-    end
-    return @invoke const_prop_entry_heuristic(analyzer::AbstractInterpreter, result::MethodCallResult, sv::InferenceState)
-end
-
-else # @static if isdefined(CC, :MethodCallResult)
-
-include("legacy/abstractinterpretation")
-
-end # @static if isdefined(CC, :MethodCallResult)
+CC.const_prop_entry_heuristic(analyzer::AbstractAnalyzer, result::MethodCallResult, sv::InferenceState) =
+    return true
 
 """
     analyze_task_parallel_code!(analyzer::AbstractAnalyzer, @nospecialize(f), argtypes::Vector{Any}, sv::InferenceState)
 
 Adds special cased analysis pass for task parallelism (xref: <https://github.com/aviatesk/JET.jl/issues/114>).
 In Julia's task parallelism implementation, parallel code is represented as closure and it's
-  wrapped in a `Task` object. `NativeInterpreter` doesn't run type inference nor optimization
-  on the body of those closures when compiling code that creates parallel tasks, but JET will
-  try to run additional analysis pass by recurring into the closures.
+wrapped in a `Task` object. `NativeInterpreter` doesn't infer nor optimize the bodies of
+those closures when compiling code that creates parallel tasks, but JET will try to run
+additional analysis pass by recurring into the closures.
 
 !!! note
     JET won't do anything other than doing JET analysis, e.g. won't annotate return type
@@ -281,46 +260,30 @@ function analyze_additional_pass_by_type!(analyzer::AbstractAnalyzer, @nospecial
     # the threaded code block as a usual code block, and thus the side-effects won't (hopefully)
     # confuse the abstract interpretation, which is supposed to terminate on any kind of code
     mm = get_single_method_match(tt, InferenceParams(newanalyzer).MAX_METHODS, get_world_counter(newanalyzer))
-    result = abstract_call_method(newanalyzer, mm.method, mm.spec_types, mm.sparams, false, sv)
-
-    rt = @static @isdefined(MethodCallResult) ? result.rt : first(result)
-
-    # corresponding to the same logic in `analyze_frame!`
-    if rt === Bottom
-        if !isempty(get_uncaught_exceptions(newanalyzer))
-            append!(get_reports(newanalyzer), get_uncaught_exceptions(newanalyzer))
-        end
-    end
-
-    append!(get_reports(analyzer), get_reports(newanalyzer))
+    abstract_call_method(newanalyzer, mm.method, mm.spec_types, mm.sparams, false, sv)
+    return nothing
 end
 
 # works within inter-procedural context
 function CC.abstract_call_method(analyzer::AbstractAnalyzer, method::Method, @nospecialize(sig), sparams::SimpleVector, hardlimit::Bool, sv::InferenceState)
     ret = @invoke abstract_call_method(analyzer::AbstractInterpreter, method::Method, sig, sparams::SimpleVector, hardlimit::Bool, sv::InferenceState)
 
-    update_reports!(analyzer, sv)
+    collect_callee_reports!(analyzer, sv)
 
     return ret
 end
 
-function update_reports!(analyzer::AbstractAnalyzer, sv::InferenceState)
-    rs = get_to_be_updated(analyzer)
-    if !isempty(rs)
+function collect_callee_reports!(analyzer::AbstractAnalyzer, sv::InferenceState)
+    reports = get_caller_cache(analyzer)
+    if !isempty(reports)
         vf = get_virtual_frame(sv)
-        for r in rs
-            pushfirst!(r.vst, vf)
+        for report in reports
+            pushfirst!(report.vst, vf)
+            add_new_report!(sv.result, report)
         end
-        empty!(rs)
+        empty!(reports)
     end
 end
-
-@static if isdefined(CC, :abstract_invoke)
-
-import .CC:
-    abstract_invoke,
-    InvokeCallInfo,
-    instanceof_tfunc
 
 function CC.abstract_invoke(analyzer::AbstractAnalyzer, argtypes::Vector{Any}, sv::InferenceState)
     ret = @invoke abstract_invoke(analyzer::AbstractInterpreter, argtypes::Vector{Any}, sv::InferenceState)
@@ -329,7 +292,7 @@ function CC.abstract_invoke(analyzer::AbstractAnalyzer, argtypes::Vector{Any}, s
     # since it's an inter-procedural inference that internally uses `typeinf_edge`
     info = ret.info
     if isa(info, InvokeCallInfo)
-        update_reports!(analyzer, sv)
+        collect_callee_reports!(analyzer, sv)
     end
 
     ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret, argtypes)
@@ -367,12 +330,10 @@ function (::SoundBasicPass)(::Type{InvalidInvokeErrorReport}, analyzer::Abstract
         # if the error type (`Bottom`) is propagated from the `invoke`d call, the error has
         # already been reported within `typeinf_edge`, so ignore that case
         if !isa(ret.info, InvokeCallInfo)
-            add_new_report!(InvalidInvokeErrorReport(analyzer, sv, argtypes), analyzer)
+            add_new_report!(sv.result, InvalidInvokeErrorReport(analyzer, sv, argtypes))
         end
     end
 end
-
-end # @static if isdefined(CC, :abstract_invoke)
 
 function CC.abstract_eval_special_value(analyzer::AbstractAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
     toplevel = istoplevel(sv)
@@ -432,19 +393,19 @@ get_msg(::Type{GlobalUndefVarErrorReport}, analyzer::AbstractAnalyzer, sv::Infer
     "variable $(mod).$(name) is not defined"
 
 function (::SoundPass)(::Type{GlobalUndefVarErrorReport}, analyzer::AbstractAnalyzer, sv::InferenceState, mod::Module, name::Symbol)
-    add_new_report!(GlobalUndefVarErrorReport(analyzer, sv, mod, name), analyzer)
+    add_new_report!(sv.result, GlobalUndefVarErrorReport(analyzer, sv, mod, name))
 end
 
 function (::BasicPass)(::Type{GlobalUndefVarErrorReport}, analyzer::AbstractAnalyzer, sv::InferenceState, mod::Module, name::Symbol)
     is_corecompiler_undefglobal(mod, name) && return
-    add_new_report!(GlobalUndefVarErrorReport(analyzer, sv, mod, name), analyzer)
+    add_new_report!(sv.result, GlobalUndefVarErrorReport(analyzer, sv, mod, name))
 end
 
 """
     is_corecompiler_undefglobal
 
 Returns `true` if this global reference is undefined inside `Core.Compiler`, but the
-  corresponding name exists in the `Base` module.
+corresponding name exists in the `Base` module.
 `Core.Compiler` reuses the minimum amount of `Base` code and there're some of missing
 definitions, and `BasicPass` will exclude reports on those undefined names since they
 usually don't matter and `Core.Compiler`'s basic functionality is battle-tested and validated
@@ -504,11 +465,11 @@ function (::SoundPass)(::Type{NonBooleanCondErrorReport}, analyzer::AbstractAnal
             end
         end
         if !isempty(ts)
-            add_new_report!(NonBooleanCondErrorReport(analyzer, sv, ts), analyzer)
+            add_new_report!(sv.result, NonBooleanCondErrorReport(analyzer, sv, ts))
         end
     else
         if !(t ⊑ Bool)
-            add_new_report!(NonBooleanCondErrorReport(analyzer, sv, t), analyzer)
+            add_new_report!(sv.result, NonBooleanCondErrorReport(analyzer, sv, t))
         end
     end
 end
@@ -528,11 +489,11 @@ function (::BasicPass)(::Type{NonBooleanCondErrorReport}, analyzer::AbstractAnal
             end
         end
         if !isempty(ts)
-            add_new_report!(NonBooleanCondErrorReport(analyzer, sv, ts), analyzer)
+            add_new_report!(sv.result, NonBooleanCondErrorReport(analyzer, sv, ts))
         end
     else
         if typeintersect(Bool, t) !== Bool
-            add_new_report!(NonBooleanCondErrorReport(analyzer, sv, t), analyzer)
+            add_new_report!(sv.result, NonBooleanCondErrorReport(analyzer, sv, t))
         end
     end
 end
@@ -548,7 +509,62 @@ function CC.abstract_eval_statement(analyzer::AbstractAnalyzer, @nospecialize(e)
 end
 
 function CC.finish(me::InferenceState, analyzer::AbstractAnalyzer)
-    @invoke finish(me::InferenceState, analyzer::AbstractInterpreter)
+    # @invoke finish(me::InferenceState, analyzer::AbstractInterpreter)
+    # prepare to run optimization passes on fulltree
+    s_edges = me.stmt_edges[1]
+    if s_edges === nothing
+        s_edges = me.stmt_edges[1] = []
+    end
+    for edges in me.stmt_edges
+        edges === nothing && continue
+        edges === s_edges && continue
+        append!(s_edges, edges)
+        empty!(edges)
+    end
+    if me.src.edges !== nothing
+        append!(s_edges, me.src.edges::Vector)
+        me.src.edges = nothing
+    end
+    # inspect whether our inference had a limited result accuracy,
+    # else it may be suitable to cache
+    me.bestguess = CC.cycle_fix_limited(me.bestguess, me)
+    limited_ret = me.bestguess isa LimitedAccuracy
+    limited_src = false
+    if !limited_ret
+        gt = me.src.ssavaluetypes::Vector{Any}
+        for j = 1:length(gt)
+            gt[j] = gtj = CC.cycle_fix_limited(gt[j], me)
+            if gtj isa LimitedAccuracy && me.parent !== nothing
+                limited_src = true
+                break
+            end
+        end
+    end
+    if limited_ret
+        # a parent may be cached still, but not this intermediate work:
+        # we can throw everything else away now
+        set_source!(me.result, nothing)
+        me.cached = false
+        me.src.inlineable = false
+        unlock_mi_inference(analyzer, me.linfo)
+    elseif limited_src
+        # a type result will be cached still, but not this intermediate work:
+        # we can throw everything else away now
+        set_source!(me.result, nothing)
+        me.src.inlineable = false
+    else
+        # annotate fulltree with type information,
+        # either because we are the outermost code, or we might use this later
+        doopt = (me.cached || me.parent !== nothing)
+        CC.type_annotate!(me, doopt)
+        if doopt && may_optimize(analyzer)
+            set_source!(me.result, OptimizationState(me, OptimizationParams(analyzer), analyzer))
+        else
+            set_source!(me.result, me.src::CodeInfo) # stash a convenience copy of the code (e.g. for reflection)
+        end
+    end
+    me.result.valid_worlds = me.valid_worlds
+    me.result.result = me.bestguess
 
     if istoplevel(me)
         # find assignments of abstract global variables, and assign types to them,
@@ -728,7 +744,7 @@ get_msg(::Type{InvalidConstantRedefinition}, analyzer::AbstractAnalyzer, sv::Inf
     "invalid redefinition of constant $(mod).$(name) (from $(t′) to $(t))"
 
 function (::SoundBasicPass)(::Type{InvalidConstantRedefinition}, analyzer::AbstractAnalyzer, sv::InferenceState, mod::Module, name::Symbol, @nospecialize(prev_t), @nospecialize(t))
-    add_new_report!(InvalidConstantRedefinition(analyzer, sv, mod, name, prev_t, t), analyzer)
+    add_new_report!(sv.result, InvalidConstantRedefinition(analyzer, sv, mod, name, prev_t, t))
 end
 
 @reportdef struct InvalidConstantDeclaration <: InferenceErrorReport
@@ -739,7 +755,7 @@ get_msg(::Type{InvalidConstantDeclaration}, analyzer::AbstractAnalyzer, sv::Infe
     "cannot declare a constant $(mod).$(name); it already has a value"
 
 function (::SoundBasicPass)(::Type{InvalidConstantDeclaration}, analyzer::AbstractAnalyzer, sv::InferenceState, mod::Module, name::Symbol)
-    add_new_report!(InvalidConstantDeclaration(analyzer, sv, mod, name), analyzer)
+    add_new_report!(sv.result, InvalidConstantDeclaration(analyzer, sv, mod, name))
 end
 
 function is_constant_declared(name::Symbol, sv::InferenceState)

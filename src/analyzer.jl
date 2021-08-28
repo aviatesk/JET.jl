@@ -9,20 +9,20 @@ These configurations will be active for all the entries.
 - `strict_condition_check::Bool = false` \\
   Enables strict condition check.
   JET reports an error if a condition expression type is "non-boolean". In a case when
-    the condition type is `Union`, JET will report if either of union split case is
-    non-boolean type, but this can lead to lots of false positive error reports when the
-    code is not well-typed, because Julia `Base` defines generic functions that are commonly
-    used at a conditional context but also may return "non-boolean" values, e.g.:
-    - `!(::Function) -> Function`
-    - `!(::Missing) -> Missing`
-    - `==(::Missing, ::Any) -> Missing`
-    - `==(::Any, ::Missing) -> Missing`
-    and thus loosely-typed conditional expression often becomes e.g. `Union{Bool, Missing}`,
-    and consequently JET will report it as "non-boolean" type
-    (NOTE: in Julia `Missing` is certainly not valid conditional type).
+  the condition type is `Union`, JET will report if either of union split case is
+  non-boolean type, but this can lead to lots of false positive error reports when the
+  code is not well-typed, because Julia `Base` defines generic functions that are commonly
+  used at a conditional context but also may return "non-boolean" values, e.g.:
+  - `!(::Function) -> Function`
+  - `!(::Missing) -> Missing`
+  - `==(::Missing, ::Any) -> Missing`
+  - `==(::Any, ::Missing) -> Missing`
+  and thus loosely-typed conditional expression often becomes e.g. `Union{Bool, Missing}`,
+  and consequently JET will report it as "non-boolean" type
+  (NOTE: in Julia `Missing` is certainly not valid conditional type).
   If this configuration is set to `false`, JET enables an heuristic to avoid those false
-    positive error reports and won't report an error if a condition expression type is
-    `Union` and either of its union split case is `Function` or `Missing`.
+  positive error reports and won't report an error if a condition expression type is
+  `Union` and either of its union split case is `Function` or `Missing`.
 
   The effect of this configuration can be described with the following examples:
 
@@ -211,22 +211,12 @@ struct JETLogger
     end
 end
 
-# XXX we need to consider world range ?
-struct AnalysisResult
-    linfo::MethodInstance
-    argtypes::Vector{Any}
-    overridden_by_const::CC.BitVector
-    cache::Vector{InferenceErrorReportCache}
-end
-
 mutable struct AnalyzerState
-    ### native ###
+    ## native ##
 
     native::NativeInterpreter
 
-    ### JET.jl specific ###
-
-    ## general ##
+    ## `AbstractAnalyzer` ##
 
     # additional configurations for abstract interpretation
     analysis_params::JETAnalysisParams
@@ -234,29 +224,14 @@ mutable struct AnalyzerState
     # key for the JET's global cache
     cache_key::UInt
 
-    # reports found so far
-    reports::Vector{InferenceErrorReport}
+    # temporal stash to keep reports that are collected within the currently-analyzed frame
+    # and should be appended to the caller when returning back to the caller frame next time
+    caller_cache::Vector{InferenceErrorReport}
 
-    # stashes `UncaughtExceptionReport`s that are not caught so far
-    uncaught_exceptions::Vector{UncaughtExceptionReport}
+    # temporal stash to keep track of inference caller, to which reconstructed cached reports will be appended
+    cacher::Union{Nothing,Pair{Symbol,InferenceResult}}
 
-    # keeps locations where `SeriousExceptionReport` are reported, in order to avoid
-    # duplicated `UncaughtExceptionReport`s on same `throw` calls
-    throw_locs::Vector{LineInfoNode}
-
-    # keeps reports that should be updated when returning back the parent frame (i.e. the next time we get back to inter-procedural context)
-    to_be_updated::Set{InferenceErrorReport}
-
-    # keeps track of the current inference frame (needed for report cache reconstruction)
-    current_frame::Union{Nothing,InferenceState}
-
-    # whether to enable global report cache restoration at the next call of `CC.get(wvc::WorldView{JETGlobalCache}, mi::MethodInstance, default)`
-    cache_enabled::Bool
-
-    # local report cache for constant analysis
-    cache::Vector{AnalysisResult}
-
-    ## virtual toplevel execution ##
+    ## abstract toplevel execution ##
 
     # will be used in toplevel analysis (skip inference on actually interpreted statements)
     concretized::BitVector
@@ -329,8 +304,6 @@ end
 # constructor for fresh analysis
 @jetconfigurable function AnalyzerState(world::UInt     = get_world_counter();
                                         analysis_params = nothing,
-                                        current_frame   = nothing,
-                                        cache           = AnalysisResult[],
                                         inf_params      = nothing,
                                         opt_params      = nothing,
                                         concretized     = _CONCRETIZED,
@@ -344,21 +317,16 @@ end
     isnothing(opt_params)      && (opt_params      = JETOptimizationParams(; jetconfigs...))
     isnothing(logger)          && (logger          = JETLogger(; jetconfigs...))
 
-    return AnalyzerState(NativeInterpreter(world; inf_params, opt_params),
-                         analysis_params,
-                         get_cache_key_per_config(analysis_params, inf_params),
-                         InferenceErrorReport[],
-                         UncaughtExceptionReport[],
-                         LineInfoNode[],
-                         Set{InferenceErrorReport}(),
-                         current_frame,
-                         false,
-                         cache,
-                         concretized,
-                         toplevelmod,
-                         global_slots,
-                         logger,
-                         depth,
+    return AnalyzerState(#=native::NativeInterpreter=# NativeInterpreter(world; inf_params, opt_params),
+                         #=analysis_params::JETAnalysisParams=# analysis_params,
+                         #=cache_key::UInt=# get_cache_key_per_config(analysis_params, inf_params),
+                         #=caller_cache::Vector{InferenceErrorReport}=# InferenceErrorReport[],
+                         #=cacher::Union{Nothing,InferenceResult}=# nothing,
+                         #=concretized::BitVector=# concretized,
+                         #=toplevelmod::Module=# toplevelmod,
+                         #=global_slots::Dict{Int,Symbol}=# global_slots,
+                         #=logger::JETLogger=# logger,
+                         #=depth::Int=# depth,
                          )
 end
 
@@ -389,8 +357,6 @@ end
 function AbstractAnalyzer(analyzer::T) where {T<:AbstractAnalyzer}
     newstate = AnalyzerState(get_world_counter(analyzer);
                              analysis_params = JETAnalysisParams(analyzer),
-                             current_frame   = get_current_frame(analyzer),
-                             cache           = get_cache(analyzer),
                              inf_params      = InferenceParams(analyzer),
                              opt_params      = OptimizationParams(analyzer),
                              logger          = JETLogger(analyzer),
@@ -401,16 +367,7 @@ function AbstractAnalyzer(analyzer::T) where {T<:AbstractAnalyzer}
     return newanalyzer
 end
 
-function Base.show(io::IO, analyzer::AbstractAnalyzer)
-    rn = length(get_reports(analyzer))
-    en = length(get_uncaught_exceptions(analyzer))
-    print(io, "AbstractAnalyzer with $(rn) reports and $(en) uncaught exceptions")
-    frame = get_current_frame(analyzer)
-    if !isnothing(frame)
-        print(io, " at ")
-        show(io, frame.linfo)
-    end
-end
+Base.show(io::IO, analyzer::AbstractAnalyzer) = print(io, "AbstractAnalyzer")
 Base.show(io::IO, ::MIME"application/prs.juno.inline", analyzer::AbstractAnalyzer) =
     return analyzer
 Base.show(io::IO, ::MIME"application/prs.juno.inline", analyzer::NativeInterpreter) =
@@ -424,6 +381,85 @@ function Base.show(io::IO, frame::InferenceState)
 end
 Base.show(io::IO, ::MIME"application/prs.juno.inline", frame::InferenceState) =
     return frame
+
+# InferenceResult
+# ---------------
+
+const Reports = Vector{InferenceErrorReport}
+const CachedReports = Vector{InferenceErrorReportCache}
+const WrappedSource = Union{CodeInfo,OptimizationState,Nothing}
+
+"""
+    JETResult
+
+`result::InferenceResult` keeps the result of inference performed by `AbstractInterpreter`,
+where `result.src` holds the type-inferred source code.
+
+JET's [`AbstractAnalyzer`](@ref) uses the `result.src` field in a different way, where
+`result.src::JETResult` keeps both of error reports that are collected during inference and
+the type-inferred source code.
+
+When cached, `JETResult` is transformed into [`JETCachedResult`](@ref).
+"""
+struct JETResult
+    reports::Reports
+    wrapped_source::WrappedSource
+end
+
+"""
+    JETCachedResult
+
+When [`result::JETResult`](@ref JETResult) is being cached, it's transformed into
+`cached::JETCachedResult` with its `result.reports::$Reports` converted to `cached.reports::$CachedReports`.
+When working with [`AbstractAnalyzer`](@ref), we can expect `codeinf::CodeInstance` to have
+the field `codeinf.inferred::JETCachedResult` as far as it's managed by [`JET_CACHE`](@ref).
+"""
+struct JETCachedResult
+    reports::CachedReports
+    wrapped_source::WrappedSource
+end
+
+const AnyJETResult = Union{JETResult,JETCachedResult}
+
+function set_result!(result::InferenceResult)
+    init = JETResult(InferenceErrorReport[], nothing)
+    set_result!(result, init)
+end
+function set_result!(result::InferenceResult, jetresult::JETResult)
+    result.src = jetresult
+end
+function set_source!(result::InferenceResult, source::Union{CodeInfo,OptimizationState,Nothing})
+    new = JETResult(get_reports(result), source)
+    set_result!(result, new)
+end
+function set_cached_result!(result::InferenceResult, cache::CachedReports)
+    result.src = JETCachedResult(cache, get_source(result.src::JETResult))
+end
+get_reports((; src)::InferenceResult) = get_reports(src::JETResult)
+get_reports(result::JETResult) = result.reports
+get_cached_reports((; src)::InferenceResult) = get_cached_reports(src::JETCachedResult)
+get_cached_reports(result::JETCachedResult) = result.reports
+get_source((; src)::InferenceResult) = get_source(src::AnyJETResult)
+get_source(jetresult::AnyJETResult) = jetresult.wrapped_source
+
+"""
+    add_new_report!(result::InferenceResult, report::InferenceErrorReport)
+
+Adds new [`report::InferenceErrorReport`](@ref InferenceErrorReport) to `result::InferenceResult`.
+`result.src` is supposed to be [`JETResult`](@ref).
+"""
+add_new_report!(result::InferenceResult, report::InferenceErrorReport) =
+    return add_new_report!(get_reports(result), report)
+add_new_report!(reports::Reports, report::InferenceErrorReport) =
+    (push!(reports, report); return report)
+
+add_cached_report!(caller, cached::InferenceErrorReportCache) =
+    return add_new_report!(caller, restore_cached_report(cached))
+
+add_caller_cache!(analyzer::AbstractAnalyzer, report::InferenceErrorReport) =
+    return push!(get_caller_cache(analyzer), report)
+add_caller_cache!(analyzer::AbstractAnalyzer, reports::Vector{InferenceErrorReport}) =
+    return append!(get_caller_cache(analyzer), reports)
 
 # AbstractInterpreter API
 # -----------------------
@@ -441,26 +477,30 @@ CC.add_remark!(analyzer::AbstractAnalyzer, sv, s) = ReportPass(analyzer)(NativeR
 CC.may_optimize(analyzer::AbstractAnalyzer)      = true
 CC.may_compress(analyzer::AbstractAnalyzer)      = false
 CC.may_discard_trees(analyzer::AbstractAnalyzer) = false
+CC.verbose_stmt_info(analyzer::AbstractAnalyzer) = false
+
+"""
+    jet_inlining_policy(src)
+
+Implements `Core.Compiler.inlining_policy` for `AbstractAnalyzer`.
+Since `AbstractAnalyzer` works on `InferenceResult` whose `src` field keeps
+[`result::JETResult`](@ref JETResult), `jet_inlining_policy` bypasses its wrapped source to
+`Core.Compiler.default_inlining_policy`.
+"""
+@inline function jet_inlining_policy(@nospecialize(src))
+    if isa(src, JETResult)
+        src = get_source(src)
+    elseif isa(src, JETCachedResult)
+        src = get_source(src)
+    end
+    return default_inlining_policy(src)
+end
+CC.inlining_policy(::AbstractAnalyzer) = jet_inlining_policy
 
 # AbstractAnalyzer
 # ----------------
 
 JETAnalysisParams(analyzer::AbstractAnalyzer) = get_analysis_params(analyzer)
-
-# maybe we want to strip off `@nospecialize`s below ?
-
-@inline add_new_report!(report::InferenceErrorReport, analyzer::AbstractAnalyzer) =
-    return stash_report!(report, analyzer)
-@inline restore_cached_report!(cache::InferenceErrorReportCache, analyzer::AbstractAnalyzer) =
-    return stash_report!(restore_cached_report(cache), analyzer)
-@inline function stash_report!(report::InferenceErrorReport, analyzer::AbstractAnalyzer)
-    if isa(report, UncaughtExceptionReport)
-        push!(get_uncaught_exceptions(analyzer), report)
-    else
-        push!(get_reports(analyzer), report)
-    end
-    return report
-end
 
 function get_cache_key_per_config(analysis_params::JETAnalysisParams, inf_params::InferenceParams)
     h = @static UInt === UInt64 ? 0xa49bd446c0a5d90e : 0xe45361ac
@@ -477,13 +517,14 @@ end
 
 function maybe_initialize_caches!(analyzer::AbstractAnalyzer)
     cache_key = get_cache_key(analyzer)
-    haskey(JET_REPORT_CACHE, cache_key) || (JET_REPORT_CACHE[cache_key] = IdDict())
-    haskey(JET_CODE_CACHE, cache_key)   || (JET_CODE_CACHE[cache_key]   = IdDict())
+    if !haskey(JET_CACHE, cache_key)
+        JET_CACHE[cache_key] = IdDict()
+    end
 end
 
 # check if we're in a toplevel module
-@inline istoplevel(sv::State)             = istoplevel(sv.linfo)
-@inline istoplevel(linfo::MethodInstance) = isa(linfo.def, Module)
+istoplevel(sv::State)             = istoplevel(sv.linfo)
+istoplevel(linfo::MethodInstance) = isa(linfo.def, Module)
 
 is_global_slot(analyzer::AbstractAnalyzer, slot::Int)   = slot in keys(get_global_slots(analyzer))
 is_global_slot(analyzer::AbstractAnalyzer, slot::Slot)  = is_global_slot(analyzer, slot_id(slot))

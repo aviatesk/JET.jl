@@ -1,28 +1,22 @@
 # global cache
 # ============
 
-# XXX `JET_REPORT_CACHE` isn't synced with `JET_CODE_CACHE`, and this may lead to a problem ?
-
 """
-    JET_REPORT_CACHE::$(typeof(JET_REPORT_CACHE))
+    JET_CACHE::$(typeof(JET_CACHE))
 
-Keeps JET report cache for a `MethodInstance`.
-Reports are cached when `AbstractAnalyzer` exits from `_typeinf`.
-"""
-const JET_REPORT_CACHE = IdDict{UInt, IdDict{MethodInstance,Vector{InferenceErrorReportCache}}}()
+Keeps `src::CodeInstance` cache associated with `mi::MethodInstace` that represents the
+analysis result on `mi` performed by [`analyzer::AbstractAnalyzer`](@ref AbstractAnalyzer),
+where [`src.inferred::JETCachedResult`](@ref JETCachedResult) caches JET's analysis result.
+This cache is separated by the identities of `AbstractAnalyzer`, which are hash keys
+computed by `get_cache_key(analyzer::AbstractAnalyzer)`
 
+`JET_CACHE` is completely separated from the `NativeInterpreter`'s global cache, so that
+JET's analysis never interacts with actual code execution.
 """
-    JET_CODE_CACHE::$(typeof(JET_CODE_CACHE))
-
-Keeps `CodeInstance` cache associated with `mi::MethodInstace` that represent the result of
-  an inference on `mi` performed by `AbstractAnalyzer`.
-This cache is completely separated from the `NativeInterpreter`'s global cache, so that
-  JET analysis never interacts with actual code execution.
-"""
-const JET_CODE_CACHE = IdDict{UInt, IdDict{MethodInstance,CodeInstance}}()
+const JET_CACHE = IdDict{UInt, IdDict{MethodInstance,CodeInstance}}()
 
 # just used for interactive developments
-__clear_caches!() = (empty!(JET_REPORT_CACHE); empty!(JET_CODE_CACHE))
+__clear_caches!() = empty!(JET_CACHE)
 
 function CC.code_cache(analyzer::AbstractAnalyzer)
     cache  = JETGlobalCache(analyzer)
@@ -35,21 +29,19 @@ struct JETGlobalCache
 end
 
 # cache existence for this `analyzer` is ensured on its construction
-jet_report_cache(analyzer::AbstractAnalyzer)     = JET_REPORT_CACHE[get_cache_key(analyzer)]
-jet_report_cache(wvc::WorldView{JETGlobalCache}) = jet_report_cache(wvc.cache.analyzer)
-jet_code_cache(analyzer::AbstractAnalyzer)       = JET_CODE_CACHE[get_cache_key(analyzer)]
-jet_code_cache(wvc::WorldView{JETGlobalCache})   = jet_code_cache(wvc.cache.analyzer)
+jet_cache(analyzer::AbstractAnalyzer)     = JET_CACHE[get_cache_key(analyzer)]
+jet_cache(wvc::WorldView{JETGlobalCache}) = jet_cache(wvc.cache.analyzer)
 
-CC.haskey(wvc::WorldView{JETGlobalCache}, mi::MethodInstance) = haskey(jet_code_cache(wvc), mi)
+CC.haskey(wvc::WorldView{JETGlobalCache}, mi::MethodInstance) = haskey(jet_cache(wvc), mi)
 
 function CC.typeinf_edge(analyzer::AbstractAnalyzer, method::Method, @nospecialize(atypes), sparams::SimpleVector, caller::InferenceState)
     # NOTE enable the report cache restoration at `code = get(code_cache(interp), mi, nothing)`
-    set_cache_enabled!(analyzer, true)
+    set_cacher!(analyzer, :typeinf_edge => caller.result)
     return @invoke typeinf_edge(analyzer::AbstractInterpreter, method::Method, @nospecialize(atypes), sparams::SimpleVector, caller::InferenceState)
 end
 
 function CC.get(wvc::WorldView{JETGlobalCache}, mi::MethodInstance, default)
-    ret = get(jet_code_cache(wvc), mi, default) # will ignore native code cache for a `MethodInstance` that is not analyzed by JET yet
+    codeinf = get(jet_cache(wvc), mi, default) # will ignore native code cache for a `MethodInstance` that is not analyzed by JET yet
 
     analyzer = wvc.cache.analyzer
 
@@ -59,27 +51,27 @@ function CC.get(wvc::WorldView{JETGlobalCache}, mi::MethodInstance, default)
     # want to use report cache only in edge inference, but we can't tell which context is
     # the caller of this specific method call here and thus can't tell whether we should
     # enable report cache reconstruction without the information
-    if get_cache_enabled(analyzer)
-        if isa(ret, CodeInstance)
-            # cache hit, now we need to append cached reports associated with this `MethodInstance`
-            global_cache = get(jet_report_cache(wvc), mi, nothing)
-            if isa(global_cache, Vector{InferenceErrorReportCache})
-                for cached in global_cache
-                    restored = restore_cached_report!(cached, analyzer)
-                    push!(get_to_be_updated(analyzer), restored) # should be updated in `abstract_call` (after exiting `typeinf_edge`)
-                    # TODO make this holds when the `analyzer` hooks into `finish` or `optimize`
-                    # more generally, handle cycles correctly
+    # XXX move this logic into `typeinf_edge` ?
+    cacher = get_cacher(analyzer)
+    if isa(cacher, Pair{Symbol,InferenceResult})
+        setter, caller = cacher
+        if setter === :typeinf_edge
+            if isa(codeinf, CodeInstance)
+                # cache hit, now we need to append cached reports associated with this `MethodInstance`
+                for cached in get_cached_reports(codeinf.inferred::JETCachedResult)
+                    restored = add_cached_report!(caller, cached)
                     @static JET_DEV_MODE && if isa(analyzer, JETAnalyzer)
                         actual, expected = first(restored.vst).linfo, mi
                         @assert actual === expected "invalid global cache restoration, expected $expected but got $actual"
                     end
+                    add_caller_cache!(analyzer, restored) # should be updated in `abstract_call` (after exiting `typeinf_edge`)
                 end
             end
+            set_cacher!(analyzer, nothing)
         end
     end
 
-    set_cache_enabled!(analyzer, false)
-    return ret
+    return codeinf
 end
 
 function CC.getindex(wvc::WorldView{JETGlobalCache}, mi::MethodInstance)
@@ -88,15 +80,27 @@ function CC.getindex(wvc::WorldView{JETGlobalCache}, mi::MethodInstance)
     return r::CodeInstance
 end
 
+function CC.transform_result_for_cache(interp::AbstractAnalyzer, linfo::MethodInstance,
+                                       valid_worlds::WorldRange, @nospecialize(inferred_result))
+    jetresult = inferred_result::JETResult
+    cache = InferenceErrorReportCache[]
+    for report in get_reports(jetresult)
+        @static JET_DEV_MODE && if isa(interp, JETAnalyzer)
+            actual, expected = first(report.vst).linfo, linfo
+            @assert actual === expected "invalid global caching detected, expected $expected but got $actual"
+        end
+        cache_report!(cache, report)
+    end
+    return JETCachedResult(cache, get_source(jetresult))
+end
+
 function CC.setindex!(wvc::WorldView{JETGlobalCache}, ci::CodeInstance, mi::MethodInstance)
-    setindex!(jet_code_cache(wvc), ci, mi)
+    setindex!(jet_cache(wvc), ci, mi)
     add_jet_callback!(mi) # register the callback on invalidation
     return nothing
 end
 
 function add_jet_callback!(linfo)
-    @static BACKEDGE_CALLBACK_ENABLED || return nothing
-
     if !isdefined(linfo, :callbacks)
         linfo.callbacks = Any[invalidate_jet_cache!]
     else
@@ -108,14 +112,14 @@ function add_jet_callback!(linfo)
 end
 
 function invalidate_jet_cache!(replaced, max_world, depth = 0)
-    for cache in values(JET_REPORT_CACHE); delete!(cache, replaced); end
-    for cache in values(JET_CODE_CACHE); delete!(cache, replaced); end
+    for cache in values(JET_CACHE)
+        delete!(cache, replaced)
+    end
 
     if isdefined(replaced, :backedges)
         for mi in replaced.backedges
             mi = mi::MethodInstance
-            if !(any(cache->haskey(cache, mi), values(JET_REPORT_CACHE)) ||
-                 any(cache->haskey(cache, mi), values(JET_CODE_CACHE)))
+            if !any(cache->haskey(cache, mi), values(JET_CACHE))
                 continue # otherwise fall into infinite loop
             end
             invalidate_jet_cache!(mi, max_world, depth+1)
@@ -135,6 +139,14 @@ end
 CC.get_inference_cache(analyzer::AbstractAnalyzer) = JETLocalCache(analyzer, get_inference_cache(get_native(analyzer)))
 
 function CC.cache_lookup(linfo::MethodInstance, given_argtypes::Vector{Any}, cache::JETLocalCache)
+    # XXX the very dirty analyzer state observation again
+    # this method should only be called from the single context i.e. `abstract_call_method_with_const_args`,
+    # and so we should reset the cacher immediately we reach here
+    analyzer = cache.analyzer
+    setter, caller = get_cacher(analyzer)::Pair{Symbol,InferenceResult}
+    @assert setter === :abstract_call_method_with_const_args
+    set_cacher!(analyzer, nothing)
+
     inf_result = cache_lookup(linfo, given_argtypes, cache.cache)
 
     isa(inf_result, InferenceResult) || return inf_result
@@ -143,58 +155,20 @@ function CC.cache_lookup(linfo::MethodInstance, given_argtypes::Vector{Any}, cac
     isa(inf_result.result, InferenceState) && return inf_result
 
     # cache hit, try to restore local report caches
-    analyzer = cache.analyzer
-    sv = get_current_frame(analyzer)::InferenceState
 
-    analysis_result = jet_cache_lookup(linfo, given_argtypes, get_cache(analyzer))
+    # corresponds to the throw-away logic in `_typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)`
+    filter!(!is_from_same_frame(caller.linfo, linfo), get_reports(caller))
 
-    # corresponds to report throw away logic in `_typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)`
-    filter!(!is_from_same_frame(sv.linfo, linfo), get_reports(analyzer))
-
-    if isa(analysis_result, AnalysisResult)
-        for cached in analysis_result.cache
-            restored = restore_cached_report!(cached, analyzer)
-            push!(get_to_be_updated(analyzer), restored) # should be updated in `abstract_call_method_with_const_args`
-            # TODO make this holds when the `analyzer` hooks into `finish` or `optimize`
-            # more generally, handle cycles correctly
-            @static JET_DEV_MODE && if isa(analyzer, JETAnalyzer)
-                actual, expected = first(restored.vst).linfo, linfo
-                @assert actual === expected "invalid local cache restoration, expected $expected but got $actual"
-            end
+    for cached in get_cached_reports(inf_result)
+        restored = add_cached_report!(caller, cached)
+        @static JET_DEV_MODE && if isa(analyzer, JETAnalyzer)
+            actual, expected = first(restored.vst).linfo, linfo
+            @assert actual === expected "invalid local cache restoration, expected $expected but got $actual"
         end
+        add_caller_cache!(analyzer, restored) # should be updated in `abstract_call_method_with_const_args`
     end
 
     return inf_result
-end
-
-# should sync with the implementation of `cache_lookup(linfo::MethodInstance, given_argtypes::Vector{Any}, cache::Vector{InferenceResult})`
-function jet_cache_lookup(linfo::MethodInstance, given_argtypes::Vector{Any}, cache::Vector{AnalysisResult})
-    method = linfo.def::Method
-    nargs::Int = method.nargs
-    method.isva && (nargs -= 1)
-    length(given_argtypes) >= nargs || return nothing
-    for cached_result in cache
-        cached_result.linfo === linfo || continue
-        cache_match = true
-        cache_argtypes = cached_result.argtypes
-        cache_overridden_by_const = cached_result.overridden_by_const
-        for i in 1:nargs
-            if !is_argtype_match(given_argtypes[i],
-                                 cache_argtypes[i],
-                                 CC.getindex(cache_overridden_by_const, i))
-                cache_match = false
-                break
-            end
-        end
-        if method.isva && cache_match
-            cache_match = is_argtype_match(tuple_tfunc(given_argtypes[(nargs + 1):end]),
-                                           cache_argtypes[end],
-                                           CC.getindex(cache_overridden_by_const, CC.length(cache_overridden_by_const)))
-        end
-        cache_match || continue
-        return cached_result
-    end
-    return nothing
 end
 
 CC.push!(cache::JETLocalCache, inf_result::InferenceResult) = CC.push!(cache.cache, inf_result)

@@ -153,7 +153,7 @@ function test_exs(ex0, m, source)
     source = QuoteNode(source)
     testres = :(try
         result = $analysis
-        if $length($get_reports(result.analyzer)) == 0
+        if $length($get_reports(result.result)) == 0
             $Pass(:test_call, $orig_expr, nothing, nothing, $source)
         else
             $JETTestFailure($orig_expr, $source, result)
@@ -186,7 +186,7 @@ function test_call(@nospecialize(args...);
     else
         testres = try
             result = report_call(args...; jetconfigs...)
-            if length(get_reports(result.analyzer)) == 0
+            if length(get_reports(result.result)) == 0
                 Pass(:test_call, orig_expr, nothing, nothing, source)
             else
                 JETTestFailure(orig_expr, source, result)

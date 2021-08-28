@@ -55,6 +55,7 @@ const CC = Core.Compiler
 import JET:
     JET,
     @invoke,
+    get_source,
     @isexpr,
     gen_call_with_extracted_types_and_kwargs
 
@@ -107,10 +108,10 @@ function CC.finish(frame::CC.InferenceState, analyzer::DispatchAnalyzer)
     if !analyzer.frame_filter(frame)
         push!(analyzer.opts, false)
     else
-        if isa(frame.result.src, CC.OptimizationState)
+        if isa(get_source(frame.result), CC.OptimizationState)
             push!(analyzer.opts, true)
         else # means, compiler decides not to do optimization
-            ReportPass(analyzer)(OptimizationFailureReport, analyzer, frame)
+            ReportPass(analyzer)(OptimizationFailureReport, analyzer, frame.result)
             push!(analyzer.opts, false)
         end
     end
@@ -122,24 +123,27 @@ end
 JETInterfaces.get_msg(::Type{OptimizationFailureReport}, args...) =
     return "failed to optimize" #: signature of this MethodInstance
 
-function (::DispatchAnalysisPass)(::Type{OptimizationFailureReport}, analyzer::DispatchAnalyzer, frame::CC.InferenceState)
-    add_new_report!(OptimizationFailureReport(analyzer, frame.linfo), analyzer)
+function (::DispatchAnalysisPass)(::Type{OptimizationFailureReport}, analyzer::DispatchAnalyzer, result::CC.InferenceResult)
+    add_new_report!(result, OptimizationFailureReport(analyzer, result.linfo))
 end
 
-function CC.finish!(analyzer::DispatchAnalyzer, caller::CC.InferenceResult)
-    opt = caller.src
+function CC.finish!(analyzer::DispatchAnalyzer, frame::CC.InferenceState)
+    caller = frame.result
 
-    ret = @invoke CC.finish!(analyzer::CC.AbstractInterpreter, caller::CC.InferenceResult)
+    ## get the source before running `finish!` to keep the reference to `OptimizationState`
+    src = get_source(caller)
+
+    ## run `finish!(::AbstractAnalyzer, ::CC.InferenceState)` first to convert the optimized `IRCode` into optimized `CodeInfo`
+    ret = @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::CC.InferenceState)
 
     if popfirst!(analyzer.opts) # optimization happened
-        if isa(ret, Core.Const) # the optimization was very successful, nothing to report
-        elseif isa(ret, CC.OptimizationState) # compiler cached the optimized IR, just analyze it
-            ReportPass(analyzer)(RuntimeDispatchReport, analyzer, ret)
-        elseif isa(ret, Core.CodeInfo) # compiler didn't cache the optimized IR, but `finish!(::AbstractInterpreter, ::InferenceResult)` transformed it to `opt.src`, so we can analyze it
-            @assert opt.src === ret && isa(opt, CC.OptimizationState)
-            ReportPass(analyzer)(RuntimeDispatchReport, analyzer, opt)
+        if isa(src, Core.Const) # the optimization was very successful, nothing to report
+        elseif isa(src, CC.OptimizationState) # the compiler cached the optimized IR, just analyze it
+            ReportPass(analyzer)(RuntimeDispatchReport, analyzer, caller, src)
         else
-            throw("got $ret, unexpected state happened") # this pass should never happen
+            ## we should already report `OptimizationFailureReport` for this case,
+            ## and thus this pass should never happen
+            throw("got $src, unexpected source found")
         end
     end
 
@@ -150,13 +154,13 @@ end
 JETInterfaces.get_msg(::Type{RuntimeDispatchReport}, analyzer, s) =
     return "runtime dispatch detected" #: call signature
 
-function (::DispatchAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::DispatchAnalyzer, opt::CC.OptimizationState)
+function (::DispatchAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::DispatchAnalyzer, caller::CC.InferenceResult, opt::CC.OptimizationState)
     (; sptypes, slottypes) = opt
     for (pc, x) in enumerate(opt.src.code)
         if @isexpr(x, :call)
             ft = CC.widenconst(CC.argextype(first(x.args), opt.src, sptypes, slottypes))
             ft <: Core.Builtin && continue # ignore `:call`s of language intrinsics
-            add_new_report!(RuntimeDispatchReport(analyzer, (opt, pc)), analyzer)
+            add_new_report!(caller, RuntimeDispatchReport(analyzer, (opt, pc)))
         end
     end
 end
@@ -190,19 +194,19 @@ f(a) = a
 f(a::Number) = a
 
 # `f(::Int)` a concrete call and just type stable and anything shouldn't be reported:
-@report_dispatch f(10); # should be ok
+@report_dispatch f(10) # should be ok
 
 # But if the argument type isn't well typed, compiler can't determine which method to call,
 # and it will lead to runtime dispatch:
 report_dispatch((Any,)) do a
     f(a) # runtime dispatch !
-end;
+end
 
 # Note that even if a call is not "well-typed", i.e. it's not a concrete call, runtime
 # dispatch won't happen as far as a single method can be resovled statically:
 report_dispatch((Integer,)) do a
     f(a) # this isn't so good, but ok
-end;
+end
 
 # Ok, working nicely so far. Let's move on to a bit more complicated examples.
 # If we annotate `@noinline` to a function, then its call won't be inlined and will be
@@ -211,15 +215,17 @@ end;
 @inline   g1(a) = return a # WARNING use `@inline` just for demonstrative purpose, usually we really don't need to use it for a very trivial function like this
 @noinline g2(a) = return a
 report_dispatch((Any,)) do a
-    g1(a) # this call should be statically resolved and inlined
-    g2(a) # this call should be statically resolved but not inlined, and will be dispatched
-end;
+    r1 = g1(a) # this call should be statically resolved and inlined
+    r2 = g2(a) # this call should be statically resolved but not inlined, and will be dispatched
+    return (r1, r2)
+end
 
 # We can assert this report by looking at the output of `code_typed`, where `g1(a)` has been
 # just disappeared by inlining and optimizations, but `g2(a)` still remains as a `:call` expression:
 code_typed((Any,)) do a
-    g1(a) # this call should be statically resolved and inlined
-    g2(a) # this call should be statically resolved but not inlined, and will be dispatched
+    r1 = g1(a) # this call should be statically resolved and inlined
+    r2 = g2(a) # this call should be statically resolved but not inlined, and will be dispatched
+    return (r1, r2)
 end |> first
 
 # ### Real-world targets
@@ -229,7 +235,7 @@ end |> first
 
 # Numerical computations are usually written to be very type-stable, and so we expects e.g.
 # `sin(10)` to be dispatch-free and run fast. Let's check it.
-@report_dispatch sin(10);
+@report_dispatch sin(10)
 
 # Oh no, so runtime dispatch happens there even in `Base`. Well, actually, this specific dispatch
 # is expected. Especially, <https://github.com/JuliaLang/julia/pull/35982> implements an
@@ -238,12 +244,12 @@ end |> first
 # The report trace certainly suggests a dispatch was detected where `DomainError` can be thrown.
 # We can turn off the heuristic by turning off [the `unoptimize_throw_blocks::Bool` configuration](@ref abstractinterpret-config),
 # and this time any runtime dispatch won't be reported:
-@report_dispatch unoptimize_throw_blocks=false sin(10);
+@report_dispatch unoptimize_throw_blocks=false sin(10)
 
 # We can also confirm that the same thing would happen for `rand(1:1000)`:
-@report_dispatch rand(1:1000); # an runtiem dispatch will be detected within a `throw` block
+@report_dispatch rand(1:1000) # an runtiem dispatch will be detected within a `throw` block
 #
-@report_dispatch unoptimize_throw_blocks=false rand(1:1000); # nothing should be reported
+@report_dispatch unoptimize_throw_blocks=false rand(1:1000) # nothing should be reported
 
 # Finally, let's see an example of very "type-instable" code maintained within `Base`.
 # Typically, anything involved with I/O is written in a very dynamic way for good reasons,
@@ -284,4 +290,4 @@ end
 ## NOTE:
 ## `compute(30)` will take more than hours in actual execution, according to https://twitter.com/genkuroki/status/1401332946707963909,
 ## but `@report_dispatch` will just do abstract interpretation of the call, so will finish instantly
-@report_dispatch frame_filter=module_filter(@__MODULE__) compute(30);
+@report_dispatch frame_filter=module_filter(@__MODULE__) compute(30)
