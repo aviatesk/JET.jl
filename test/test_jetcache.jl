@@ -84,8 +84,39 @@
     end
 end
 
-# COMBAK & TODO this test is very fragile, think about the alternate tests
-# @testset "invalidate native code cache" begin
+@testset "simple invalidation" begin
+    let # simple invalidation
+        m = Module()
+
+        # analyze the first definition
+        @eval m foo(a, b) = (sum(a), b)
+        result = @report_call m.foo([1,2,3], "julia")
+        @test isempty(get_reports(result))
+
+        # renew the definition and invalidate it
+        @eval m foo(a, b) = (a, sum(b))
+        result = @report_call m.foo([1,2,3], "julia")
+        test_sum_over_string(result)
+    end
+
+    let # backedge invalidation
+        m = Module()
+        @eval m callf(f, args...) = f(args...)
+
+        # analyze the first definition
+        @eval m foo(a, b) = (sum(a), b)
+        result = @report_call m.callf(m.foo, [1,2,3], "julia")
+        @test isempty(get_reports(result))
+
+        # renew the definition and invalidate it
+        @eval m foo(a, b) = (a, sum(b))
+        result = @report_call m.callf(m.foo, [1,2,3], "julia")
+        test_sum_over_string(result)
+    end
+end
+
+# COMBAK this test is very fragile, think about the alternate tests
+# @testset "end to end invalidation" begin
 #     # invalidate native code cache in a system image if it has not been analyzed by JET
 #     # yes this slows down anlaysis for sure, but otherwise JET will miss obvious errors like below
 #     let
