@@ -7,8 +7,8 @@
 Keeps `src::CodeInstance` cache associated with `mi::MethodInstace` that represents the
 analysis result on `mi` performed by [`analyzer::AbstractAnalyzer`](@ref AbstractAnalyzer),
 where [`src.inferred::JETCachedResult`](@ref JETCachedResult) caches JET's analysis result.
-This cache is separated by the identities of `AbstractAnalyzer`, which are hash keys
-computed by `get_cache_key(analyzer::AbstractAnalyzer)`
+This cache is separated by the identities of `AbstractAnalyzer`s, which are hash keys
+computed by `get_cache_key(analyzer::AbstractAnalyzer)`.
 
 `JET_CACHE` is completely separated from the `NativeInterpreter`'s global cache, so that
 JET's analysis never interacts with actual code execution.
@@ -35,7 +35,7 @@ jet_cache(wvc::WorldView{JETGlobalCache}) = jet_cache(wvc.cache.analyzer)
 CC.haskey(wvc::WorldView{JETGlobalCache}, mi::MethodInstance) = haskey(jet_cache(wvc), mi)
 
 function CC.typeinf_edge(analyzer::AbstractAnalyzer, method::Method, @nospecialize(atypes), sparams::SimpleVector, caller::InferenceState)
-    # NOTE enable the report cache restoration at `code = get(code_cache(interp), mi, nothing)`
+    # enable the report cache restoration at `code = get(code_cache(interp), mi, nothing)`
     set_cacher!(analyzer, :typeinf_edge => caller.result)
     return @invoke typeinf_edge(analyzer::AbstractInterpreter, method::Method, @nospecialize(atypes), sparams::SimpleVector, caller::InferenceState)
 end

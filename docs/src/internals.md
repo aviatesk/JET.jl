@@ -31,6 +31,7 @@ JET.analyze_task_parallel_code!
 ```@docs
 JET.JET_CACHE
 JET.JETCachedResult
+JET.jet_inlining_policy
 ```
 
 

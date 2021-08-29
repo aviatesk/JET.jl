@@ -484,8 +484,8 @@ CC.verbose_stmt_info(analyzer::AbstractAnalyzer) = false
 
 Implements `Core.Compiler.inlining_policy` for `AbstractAnalyzer`.
 Since `AbstractAnalyzer` works on `InferenceResult` whose `src` field keeps
-[`result::JETResult`](@ref JETResult), `jet_inlining_policy` bypasses its wrapped source to
-`Core.Compiler.default_inlining_policy`.
+[`JETResult`](@ref) or [`JETCachedResult`](@ref), `jet_inlining_policy` bypasses
+their wrapped source to `Core.Compiler.default_inlining_policy`.
 """
 @inline function jet_inlining_policy(@nospecialize(src))
     if isa(src, JETResult)
