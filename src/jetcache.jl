@@ -60,7 +60,7 @@ function CC.get(wvc::WorldView{JETGlobalCache}, mi::MethodInstance, default)
                 # cache hit, now we need to append cached reports associated with this `MethodInstance`
                 for cached in get_cached_reports(codeinf.inferred::JETCachedResult)
                     restored = add_cached_report!(caller, cached)
-                    @static JET_DEV_MODE && if isa(analyzer, JETAnalyzer)
+                    @static if JET_DEV_MODE
                         actual, expected = first(restored.vst).linfo, mi
                         @assert actual === expected "invalid global cache restoration, expected $expected but got $actual"
                     end
@@ -85,7 +85,7 @@ function CC.transform_result_for_cache(interp::AbstractAnalyzer, linfo::MethodIn
     jetresult = inferred_result::JETResult
     cache = InferenceErrorReportCache[]
     for report in get_reports(jetresult)
-        @static JET_DEV_MODE && if isa(interp, JETAnalyzer)
+        @static if JET_DEV_MODE
             actual, expected = first(report.vst).linfo, linfo
             @assert actual === expected "invalid global caching detected, expected $expected but got $actual"
         end
@@ -161,7 +161,7 @@ function CC.cache_lookup(linfo::MethodInstance, given_argtypes::Vector{Any}, cac
 
     for cached in get_cached_reports(inf_result)
         restored = add_cached_report!(caller, cached)
-        @static JET_DEV_MODE && if isa(analyzer, JETAnalyzer)
+        @static if JET_DEV_MODE
             actual, expected = first(restored.vst).linfo, linfo
             @assert actual === expected "invalid local cache restoration, expected $expected but got $actual"
         end
