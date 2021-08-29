@@ -128,7 +128,7 @@ function (::UnstableAPIAnalysisPass)(::Type{UnstableAPI}, analyzer::UnstableAPIA
         analyzer.is_target_module(mod) && return # we don't care about what we defined ourselves
 
         if isunstable(mod, name)
-            add_new_report!(UnstableAPI(analyzer, sv, e), analyzer)
+            add_new_report!(sv.result, UnstableAPI(analyzer, sv, e))
         end
     end
 end
@@ -186,13 +186,13 @@ using JET # to use analysis entry points
 function some_reflection_code(@nospecialize(f))
     return any(Base.hasgenerator, methods(f)) # Base.hasgenerator is unstable
 end
-@report_call analyzer=UnstableAPIAnalyzer some_reflection_code(sin);
+@report_call analyzer=UnstableAPIAnalyzer some_reflection_code(sin)
 
 # `UnstableAPIAnalyzer` can find an "unstable" global variable:
 module foo; bar = 1 end
 report_call((Any,); analyzer=UnstableAPIAnalyzer) do a
     foo.bar + a # foo.bar is unstable
-end;
+end
 
 # `UnstableAPIAnalyzer` can detect "unstable API"s even if they're imported binding or
 # nested reference (, which will be resolve to `getproperty`)
@@ -200,7 +200,7 @@ import Base: hasgenerator
 report_call((Any,); analyzer=UnstableAPIAnalyzer) do mi
     ## NOTE every function call appearing here is unstable
     ci = hasgenerator(mi) ? Core.Compiler.get_staged(mi) : Base.uncompressed_ast(mi)
-end;
+end
 
 # ### Analyze a real-world package
 

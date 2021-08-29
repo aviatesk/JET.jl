@@ -1,14 +1,14 @@
 """
 Configurations for top-level analysis.
 These configurations will be active for all the top-level entries explained in the
-  [top-level analysis entry points](@ref toplevel-entries) section.
+[top-level analysis entry points](@ref toplevel-entries) section.
 
 ---
 - `context::Bool = Main` \\
   The module context in which the top-level execution will be simulated.
 
   This configuration can be useful when you just want to analyze a submodule, without
-    starting entire analysis from the root module.
+  starting entire analysis from the root module.
   For example, we can analyze `Base.Math` like below:
   ```julia
   julia> report_file(JET.fullbasepath("math.jl");
@@ -18,27 +18,27 @@ These configurations will be active for all the top-level entries explained in t
   ```
 
   Note that this module context will be virtualized by default so that JET can repeat analysis
-    in the same session without having "invalid redefinition of constant ..." error etc.
+  in the same session without having "invalid redefinition of constant ..." error etc.
   In other word, JET virtualize the module context of `context` and make sure the original
-    module context isn't polluted by JET.
+  module context isn't polluted by JET.
 ---
 - `analyze_from_definitions::Bool = false` \\
   If `true`, JET will start analysis using signatures of top-level definitions (e.g. method signatures),
-    after the top-level interpretation has been done (unless no serious top-level error has
-    happened, like errors involved within a macro expansion).
+  after the top-level interpretation has been done (unless no serious top-level error has
+  happened, like errors involved within a macro expansion).
 
   This can be handy when you want to analyze a package, which usually contains only definitions
-    but not their usages (i.e. top-level callsites).
+  but not their usages (i.e. top-level callsites).
   With this option, JET can enter analysis just with method or type definitions, and we don't
-    need to pass a file that uses the target package.
+  need to pass a file that uses the target package.
 
   !!! warning
       This feature is very experimental at this point, and you may face lots of false positive
-        errors, especially when trying to analyze a big package with lots of dependencies.
+      errors, especially when trying to analyze a big package with lots of dependencies.
       If a file that contains top-level callsites (e.g. `test/runtests.jl`) is available,
-        JET analysis using the file is generally preferred, since analysis entered from
-        concrete call sites will produce more accurate results than analysis entered from
-        (maybe not concrete-typed) method signatures.
+      JET analysis using the file is generally preferred, since analysis entered from
+      concrete call sites will produce more accurate results than analysis entered from
+      (maybe not concrete-typed) method signatures.
 
   Also see: [`report_file`](@ref), [`report_and_watch_file`](@ref)
 ---
@@ -46,17 +46,17 @@ These configurations will be active for all the top-level entries explained in t
   Specifies a customized top-level code concretization strategy.
 
   When analyzing a top-level code, JET first splits the entire code into appropriate units
-    of code (i.e. code blocks), and then iterate a virtual top-level code execution process
-    on each code block in order to simulate Julia's sequential top-level code execution.
+  of code (i.e. code blocks), and then iterate a virtual top-level code execution process
+  on each code block in order to simulate Julia's sequential top-level code execution.
   In virtual code execution, JET will selectively interpret "top-level definitions" (like a function definition)
-    just like Julia's top-level code execution, while it tries to avoid executing any other
-    parts of code like function calls and leaves them to succeeding static analysis by
-    abstract interpretation.
+  just like Julia's top-level code execution, while it tries to avoid executing any other
+  parts of code like function calls and leaves them to succeeding static analysis by
+  abstract interpretation.
 
   However, currently, JET doesn't track the "inter-code-block" level code dependencies, and
-    so the selective interpretation of top-level definitions can fail if it needs an access to
-    global variables defined in other code blocks that are not actually interpreted (i.e. "concretized")
-    but just left for abstract interpreation (i.e. "abstracted").
+  so the selective interpretation of top-level definitions can fail if it needs an access to
+  global variables defined in other code blocks that are not actually interpreted (i.e. "concretized")
+  but just left for abstract interpreation (i.e. "abstracted").
 
   For example, the issue happens when your macro accesses to a global variable during its expansion, e.g.:
   > test/fixtures/concretization_patterns.jl
@@ -68,24 +68,24 @@ These configurations will be active for all the top-level entries explained in t
   end)
 
   To circumvent this issue, JET offers the `concretization_patterns::Vector{<:Any}` configuration,
-    which allows us to customize JET's top-level code concretization strategy.
+  which allows us to customize JET's top-level code concretization strategy.
   `concretization_patterns` specifies the _patterns of code_ that should be concretized.
   To put in other word, when JET sees a code that matches any of code patterns specified by
-    an user, JET will try to interpret and concretize the code, regardless of whether JET's
-    code selection logic decides to concretize it or not.
+  an user, JET will try to interpret and concretize the code, regardless of whether JET's
+  code selection logic decides to concretize it or not.
 
   JET uses [MacroTools.jl's expression pattern match](https://fluxml.ai/MacroTools.jl/stable/pattern-matching/),
-    and we can specify whatever code pattern expected by `MacroTools.@capture` macro.
+  and we can specify whatever code pattern expected by `MacroTools.@capture` macro.
   For example, in order to solve the issue explained above, we can have:
   ```julia
   concretization_patterns = [:(const GLOBAL_CODE_STORE = Dict())]
   ```
   Then `GLOBAL_CODE_STORE` will just be concretized and so any top-level error won't happen
-    at the macro expansion.
+  at the macro expansion.
 
   Although configuring `concretization_patterns` properly could be really tricky, we can
-    effectively debug JET's top-level code concretization plan using [`toplevel_logger`](@ref JETLogger)
-    configuration with the logging level above than `$DEBUG_LOGGER_LEVEL` ("debug") level.
+  effectively debug JET's top-level code concretization plan using [`toplevel_logger`](@ref JETLogger)
+  configuration with the logging level above than `$DEBUG_LOGGER_LEVEL` ("debug") level.
   With the `toplevel_logger` configuration, we can see:
   - which code is matched with `concretization_patterns` and forcibly concretized
   - which code is selected to be concretized or not by JET's code selection logic:
@@ -226,24 +226,24 @@ end
 Simulates Julia's toplevel execution and collects error points, and finally returns $(@doc VirtualProcessResult)
 
 This function first parses `s::AbstractString` into `toplevelex::Expr` and then iterate the
-  following steps on each code block (`blk`) of `toplevelex`:
+following steps on each code block (`blk`) of `toplevelex`:
 1. if `blk` is a `:module` expression, recusively enters analysis into an newly defined
-     virtual module
+   virtual module
 2. `lower`s `blk` into `:thunk` expression `lwr` (macros are also expanded in this step)
 3. if the context module is virtualized, replaces self-references of the original context
-     module with virtualized one: see `fix_self_references`
+   module with virtualized one: see `fix_self_references`
 4. `ConcreteInterpreter` partially interprets some statements in `lwr` that should not be
-     abstracted away (e.g. a `:method` definition); see also [`partially_interpret!`](@ref)
+   abstracted away (e.g. a `:method` definition); see also [`partially_interpret!`](@ref)
 5. finally, `AbstractAnalyzer` analyzes the remaining statements by abstract interpretation
 
 !!! warning
     In order to process the toplevel code sequentially as Julia runtime does, `virtual_process`
-      splits the entire code, and then iterate a simulation process on each code block.
+    splits the entire code, and then iterate a simulation process on each code block.
     With this approach, we can't track the inter-code-block level dependencies, and so a
-      partial interpretation of toplevle definitions will fail if it needs an access to global
-      variables defined in other code blocks that are not interpreted but just abstracted.
+    partial interpretation of toplevle definitions will fail if it needs an access to global
+    variables defined in other code blocks that are not interpreted but just abstracted.
     We can circumvent this issue using JET's `concretization_patterns` configuration, which
-      allows us to customize JET's concretization strategy.
+    allows us to customize JET's concretization strategy.
     See [`ToplevelConfig`](@ref) for more details.
 """
 function virtual_process(x::Union{AbstractString,Expr},
@@ -282,28 +282,10 @@ function virtual_process(x::Union{AbstractString,Expr},
     end
 
     # TODO want to do in `analyze_from_definitions!` ?
-    unique!(report_identity_key, res.inference_error_reports)
+    unique!(aggregation_policy(analyzer), res.inference_error_reports)
 
     return res
 end
-
-# @withmixedhash struct VirtualFrameNoLinfo
-#     file::Symbol
-#     line::Int
-#     sig::Vector{Any}
-#     # linfo::MethodInstance
-# end
-# VirtualFrameNoLinfo(vf::VirtualFrame) = VirtualFrameNoLinfo(vf.file, vf.line, vf.sig)
-#
-# @withmixedhash struct ReportIdentityKey2
-#     T::Type{<:InferenceErrorReport}
-#     sig::Vector{Any}
-#     # entry_frame::VirtualFrame
-#     error_frame::VirtualFrameNoLinfo
-# end
-#
-# report_identity_key2(report::T) where {T<:InferenceErrorReport} =
-#     ReportIdentityKey2(T, report.sig, #=VirtualFrameNoLinfo(first(report.vst)),=# VirtualFrameNoLinfo(last(report.vst)))
 
 """
     virtualize_module_context(actual::Module)
@@ -314,14 +296,14 @@ The virtualization will be done by 2 steps below:
 1. loads the module context of `actual` into a sandbox module, and export the whole context from there
 2. then uses names exported from the sandbox
 
-This way, JET's runtime simulation in the virtual module context will be able to define a name
-  that is already defined in `actual` without causing
-  "cannot assign a value to variable ... from module ..." error, etc.
+This way, JET's runtime simulation in the virtual module context will be able to define
+a name that is already defined in `actual` without causing
+"cannot assign a value to variable ... from module ..." error, etc.
 It allows JET to virtualize the context of already-existing module other than `Main`.
 
 !!! warning "TODO"
     Currently this function relies on `Base.names`, and thus it can't restore the `using`ed
-      names.
+    names.
 """
 function virtualize_module_context(actual::Module)
     modpath = split_module_path(actual)
@@ -381,8 +363,8 @@ function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProce
             # if code generation from the entry has failed given the method signature (it's higly possible),
             # the overload of `InferenceState(..., ::AbstractAnalyzer)` should have reported errors
             # and so here we just ignore that
-            analyze_method!(analyzer, mm.method)
-            append!(res.inference_error_reports, get_reports(analyzer))
+            analyzer, result = analyze_method!(analyzer, mm.method)
+            append!(res.inference_error_reports, get_reports(result))
             continue
         end
 
@@ -613,9 +595,9 @@ function _virtual_process!(toplevelex::Expr,
 
         analyzer = AbstractAnalyzer(analyzer, concretized, context)
 
-        analyze_toplevel!(analyzer, src)
+        _, result = analyze_toplevel!(analyzer, src)
 
-        append!(res.inference_error_reports, get_reports(analyzer)) # collect error reports
+        append!(res.inference_error_reports, get_reports(result)) # collect error reports
     end
 
     return res
@@ -740,10 +722,10 @@ end
 
 The trait to inject code into JuliaInterpreter's interpretation process; JET.jl overloads:
 - `JuliaInterpreter.step_expr!` to add error report pass for module usage expressions and
-    support package analysis
+  support package analysis
 - `JuliaInterpreter.evaluate_call_recurse!` to special case `include` calls
 - `JuliaInterpreter.handle_err` to wrap an error happened during interpretation into
-    `ActualErrorWrapped`
+  `ActualErrorWrapped`
 """
 struct ConcreteInterpreter{Analyzer<:AbstractAnalyzer,CP}
     filename::String
@@ -760,7 +742,7 @@ end
 
 Partially interprets statements in `src` using JuliaInterpreter.jl:
 - concretizes "toplevel definitions", i.e. `:method`, `:struct_type`, `:abstract_type` and
-    `:primitive_type` expressions and their dependencies
+  `:primitive_type` expressions and their dependencies
 - concretizes user-specified toplevel code (see [`ToplevelConfig`](@ref))
 - directly evaluates module usage expressions and report error of invalid module usages
   (TODO: enter into the loaded module and keep JET analysis)

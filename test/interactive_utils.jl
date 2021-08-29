@@ -18,8 +18,10 @@ import JET:
     InferenceErrorReport,
     print_reports,
     get_reports,
-    get_cache,
+    get_result,
     iskwarg
+
+get_cache(analyzer::AbstractAnalyzer) = JET.get_native(analyzer).cache
 
 function subtypes_recursive!(t, ts)
     push!(ts, t)

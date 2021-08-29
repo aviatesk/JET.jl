@@ -12,7 +12,7 @@ end
 Base.show(io::IO, res::JETCallResult) = print_reports(io, res)
 function print_reports(io::IO, res::JETCallResult)
     return print_reports(io,
-                         get_reports(res.analyzer);
+                         get_reports(res.result);
                          res.jetconfigs...)
 end
 

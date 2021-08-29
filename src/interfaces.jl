@@ -243,7 +243,7 @@ If `T` implements this interface, the following requirements should be satisfied
   location or even `sv::InferenceState` isn't available, `T` can implement its own constructor method.
 ---
 - **A contructor interface to create `T` from the global report cache** \\
-  In order to be cached and restored from [`JET_REPORT_CACHE`](@ref), `T` _**must**_ implement
+  In order to be cached and restored from [`JET_CACHE`](@ref), `T` _**must**_ implement
   the following interfaces:
   * `JET.get_spec_args(::T) -> Tuple{...}`:
     returns fields that are specific to `T`, which is internally used by the caching logic
@@ -290,6 +290,45 @@ function (T::Type{<:InferenceErrorReport})(analyzer::AbstractAnalyzer, state, @n
     vf = get_virtual_frame(state)
     msg = get_msg(T, analyzer, state, spec_args...)
     return T([vf], msg, vf.sig, spec_args...)
+end
+
+"""
+    aggregation_policy(analyzer::AbstractAnalyzer)
+
+Defines how `analyzer` aggregates [`InferenceErrorReport`](@ref)s.
+Defaults to `default_aggregation_policy`.
+
+---
+
+    default_aggregation_policy(report::InferenceErrorReport) -> DefaultReportIdentity
+
+Returns the default identity of `report::InferenceErrorReport`, where `DefaultReportIdentity`
+aggregates reports based on "error location" of each `report`.
+`DefaultReportIdentity` aggregates `InferenceErrorReport`s aggressively in a sense that it
+ignores the identity of error point's `MethodInstance`, under the assumption that errors are
+identical as far as they're collected at the same file and line.
+"""
+aggregation_policy(::AbstractAnalyzer) = default_aggregation_policy
+function default_aggregation_policy(@nospecialize(report::InferenceErrorReport))
+    return DefaultReportIdentity(
+        typeof(report),
+        report.sig,
+        # VirtualFrameNoLinfo(first(report.vst)),
+        VirtualFrameNoLinfo(last(report.vst)),
+        )
+end
+@withmixedhash struct VirtualFrameNoLinfo
+    file::Symbol
+    line::Int
+    sig::Vector{Any}
+    # linfo::MethodInstance # ignore the idenity of `MethodInstace`
+    VirtualFrameNoLinfo(vf::VirtualFrame) = new(vf.file, vf.line, vf.sig)
+end
+@withmixedhash struct DefaultReportIdentity
+    T::Type{<:InferenceErrorReport}
+    sig::Vector{Any}
+    # entry_frame::VirtualFrameNoLinfo
+    error_frame::VirtualFrameNoLinfo
 end
 
 # cache

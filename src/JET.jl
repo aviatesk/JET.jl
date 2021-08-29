@@ -11,14 +11,12 @@ Base.Experimental.@optlevel 1
 
 const CC = Core.Compiler
 
-@static isdefined(CC, :AbstractInterpreter) || throw(ErrorException("JET.jl only works with Julia versions 1.6 and higher"))
-
 # imports
 # =======
 
 # `AbstractAnalyzer`
 import .CC:
-    # abstractinterpreterinterface.jl
+    # analyzer.jl
     InferenceParams,
     OptimizationParams,
     get_world_counter,
@@ -28,7 +26,9 @@ import .CC:
     may_optimize,
     may_compress,
     may_discard_trees,
+    inlining_policy,
     # jetcache.jl
+    transform_result_for_cache,
     code_cache,
     # haskey,
     # get,
@@ -42,8 +42,13 @@ import .CC:
     return_type_tfunc,
     # abstractinterpretation.jl
     abstract_call_gf_by_type,
+    bail_out_toplevel_call,
+    bail_out_call,
+    add_call_backedges!,
     abstract_call_method_with_const_args,
+    const_prop_entry_heuristic,
     abstract_call_method,
+    abstract_invoke,
     abstract_eval_special_value,
     abstract_eval_value,
     abstract_eval_statement,
@@ -97,9 +102,13 @@ import .CC:
     WorldRange,
     WorldView,
     Bottom,
+    LimitedAccuracy,
     NOT_FOUND,
+    MethodCallResult,
     MethodMatchInfo,
     UnionSplitInfo,
+    ConstCallInfo,
+    InvokeCallInfo,
     MethodLookupResult,
     VarState,
     VarTable,
@@ -124,9 +133,13 @@ import .CC:
     is_argtype_match,
     tuple_tfunc,
     may_invoke_generator,
-    inlining_enabled
+    inlining_enabled,
+    default_inlining_policy,
+    instanceof_tfunc,
+    ignorelimited
 
 import Base:
+    @aggressive_constprop,
     parse_input_line,
     unwrap_unionall,
     rewrap_unionall,
@@ -191,26 +204,6 @@ __init__() = foreach(@nospecialize(f)->f(), INIT_HOOKS)
 # compat
 # ------
 
-const BACKEDGE_CALLBACK_ENABLED = :callbacks in fieldnames(Core.MethodInstance)
-
-@static BACKEDGE_CALLBACK_ENABLED || push_inithook!() do
-@warn """with your Julia version, JET.jl may not be able to update analysis result
-correctly after refinement of a method in deeper call sites
-"""
-end
-
-@static if isdefined(CC, :LimitedAccuracy)
-    import .CC: ignorelimited
-else
-    ignorelimited(@nospecialize(x)) = x
-end
-
-@static if isdefined(Base, Symbol("@aggressive_constprop"))
-    import Base: @aggressive_constprop
-else
-    macro aggressive_constprop(x) esc(x) end # not available
-end
-
 # early take in https://github.com/JuliaLang/julia/pull/41040
 function gen_call_with_extracted_types_and_kwargs(__module__, fcn, ex0)
     kws = Expr[]
@@ -263,9 +256,9 @@ When an argument's type annotation is omitted, it's specified as `Any` argument,
 `@invoke f(arg1::T, arg2)` will be expanded into `invoke(f, Tuple{T,Any}, arg1, arg2)`.
 
 This could be used to call down to `NativeInterpreter`'s abstract interpretation method of
-  `f` while passing `AbstractAnalyzer` so that subsequent calls of abstract interpretation
-  functions overloaded against `AbstractAnalyzer` can be called from the native method of `f`;
-e.g. calls down to `NativeInterpreter`'s `abstract_call_gf_by_type` method:
+`f` while passing `AbstractAnalyzer` so that subsequent calls of abstract interpretation
+functions overloaded against `AbstractAnalyzer` can be called from the native method of `f`.
+E.g. `@invoke` can be used to call down to `NativeInterpreter`'s `abstract_call_gf_by_type`:
 ```julia
 @invoke abstract_call_gf_by_type(analyzer::AbstractInterpreter, f, argtypes::Vector{Any}, atype, sv::InferenceState,
                                  max_methods::Int)
@@ -320,7 +313,7 @@ end
     end
 
 Defines struct `T` while automatically defining its `Base.hash(::T, ::UInt)` method which
-  mixes hashes of all of `T`'s fields (and also corresponding `Base.:(==)(::T, ::T)` method).
+mixes hashes of all of `T`'s fields (and also corresponding `Base.:(==)(::T, ::T)` method).
 
 This macro is supposed to abstract the following kind of pattern:
 
@@ -354,15 +347,17 @@ See also: [`EGAL_TYPES`](@ref)
 macro withmixedhash(typedef)
     @assert @isexpr(typedef, :struct) "struct definition should be given"
     name = esc(typedef.args[2])
-    fld2typs = map(filter(!islnn, typedef.args[3].args)) do x
+    fld2typs = filter(!isnothing, map(filter(!islnn, typedef.args[3].args)) do x
         if @isexpr(x, :(::))
             fld, typex = x.args
             typ = Core.eval(__module__, typex)
             fld, typ
-        else
+        elseif isa(x, Symbol)
             (x, Any)
+        else # constructor etc.
+            nothing
         end
-    end
+    end)
     @assert !isempty(fld2typs) "no fields given, nothing to hash"
 
     h_init = UInt === UInt64 ? rand(UInt64) : rand(UInt32)
@@ -408,10 +403,10 @@ typenames(u::UnionAll)                = [u.body.name.name]
     end
 
 This macro asserts that there's no configuration naming conflict across the `@jetconfigurable`
-  functions so that a configuration for a `@jetconfigurable` function  doesn't affect the other
-  `@jetconfigurable` functions.
+functions so that a configuration for a `@jetconfigurable` function  doesn't affect the other
+`@jetconfigurable` functions.
 This macro also adds a dummy splat keyword arguments (`jetconfigs...`) to the function definition
-  so that any configuration of other `@jetconfigurable` functions can be passed on to it.
+so that any configuration of other `@jetconfigurable` functions can be passed on to it.
 """
 macro jetconfigurable(funcdef)
     @assert @isexpr(funcdef, :(=)) || @isexpr(funcdef, :function) "function definition should be given"
@@ -452,26 +447,24 @@ const _JET_CONFIGURATIONS = Dict{Symbol,Union{Symbol,Expr}}()
 
 # common
 
-@inline get_stmt((sv, pc)::StateAtPC)         = @inbounds sv.src.code[pc]
-@inline get_lin((sv, pc)::StateAtPC)          = @inbounds (sv.src.linetable::Vector)[sv.src.codelocs[pc]]::LineInfoNode
-@inline get_ssavaluetype((sv, pc)::StateAtPC) = @inbounds sv.src.ssavaluetypes[pc]
+get_stmt((sv, pc)::StateAtPC)         = @inbounds sv.src.code[pc]
+get_lin((sv, pc)::StateAtPC)          = @inbounds (sv.src.linetable::Vector)[sv.src.codelocs[pc]]::LineInfoNode
+get_ssavaluetype((sv, pc)::StateAtPC) = @inbounds sv.src.ssavaluetypes[pc]
 
-@inline get_slottype(s::Union{StateAtPC,State}, slot)      = get_slottype(s, slot_id(slot))
-@inline get_slottype((sv, pc)::StateAtPC,       slot::Int) = get_slottype(sv, slot)
-@inline get_slottype(sv::State,                 slot::Int) = @inbounds sv.slottypes[slot]
+get_slottype(s::Union{StateAtPC,State}, slot)      = get_slottype(s, slot_id(slot))
+get_slottype((sv, pc)::StateAtPC,       slot::Int) = get_slottype(sv, slot)
+get_slottype(sv::State,                 slot::Int) = @inbounds sv.slottypes[slot]
 
-@inline get_slotname(s::Union{StateAtPC,State}, slot)      = get_slotname(s, slot_id(slot))
-@inline get_slotname((sv, pc)::StateAtPC,       slot::Int) = @inbounds sv.src.slotnames[slot]
-@inline get_slotname(sv::State,                 slot::Int) = @inbounds sv.src.slotnames[slot]
+get_slotname(s::Union{StateAtPC,State}, slot)      = get_slotname(s, slot_id(slot))
+get_slotname((sv, pc)::StateAtPC,       slot::Int) = @inbounds sv.src.slotnames[slot]
+get_slotname(sv::State,                 slot::Int) = @inbounds sv.src.slotnames[slot]
 
 # InfernceState
 
 # we can retrieve program-counter-level slottype during inference
-@inline get_slottype(s::Tuple{InferenceState,Int}, slot::Int) = @inbounds (get_states(s)[slot]::VarState).typ
-@inline get_states((sv, pc)::Tuple{InferenceState,Int})       = @inbounds sv.stmt_types[pc]::VarTable
-
-@inline get_currpc(sv::InferenceState)  = min(sv.currpc, length(sv.src.code))
-@inline get_result(sv::InferenceState)  = sv.bestguess
+get_slottype(s::Tuple{InferenceState,Int}, slot::Int) = @inbounds (get_states(s)[slot]::VarState).typ
+get_states((sv, pc)::Tuple{InferenceState,Int})       = @inbounds sv.stmt_types[pc]::VarTable
+get_currpc(sv::InferenceState) = min(sv.currpc, length(sv.src.code))
 
 function is_constant_propagated(frame::InferenceState)
     return !frame.cached && CC.any(frame.result.overridden_by_const)
@@ -545,8 +538,8 @@ JETToplevelResult(analyzer, res, source; jetconfigs...) =
     res::JETCallResult
 
 Represents the result of JET's analysis on a function call.
+- `res.result::InferenceResult`: the result of this analysis
 - `res.analyzer::AbstractAnalyzer`: [`AbstractAnalyzer`](@ref) used for this analysis
-- `res.type`: the return type of the function call
 - `res.source::String`: the identity key of this analysis
 - `res.jetconfigs`: [JET configurations](@ref JET-configurations) used for this analysis
 
@@ -554,16 +547,26 @@ Represents the result of JET's analysis on a function call.
 An appropriate `show` method will be automatically choosen and render the analysis result.
 """
 struct JETCallResult{Analyzer<:AbstractAnalyzer,JETConfigs}
+    result::InferenceResult
     analyzer::Analyzer
-    type
     source::String
     jetconfigs::JETConfigs
-    JETCallResult(analyzer::Analyzer, @nospecialize(type), source;
+    JETCallResult(result::InferenceResult, analyzer::Analyzer, source::AbstractString;
                   jetconfigs...) where {Analyzer<:AbstractAnalyzer} =
-        new{Analyzer,typeof(jetconfigs)}(analyzer, type, source, jetconfigs)
+        new{Analyzer,typeof(jetconfigs)}(result, analyzer, source, jetconfigs)
 end
 @eval Base.iterate(res::JETCallResult, state=1) =
     return state > $(fieldcount(JETCallResult)) ? nothing : (getfield(res, state), state+1)
+
+get_result(result::JETCallResult) = get_result(result.result)
+function get_result(result::InferenceResult)
+    if any(r->isa(r, GeneratorErrorReport), get_reports(result))
+        return Bottom
+    else
+        return result.result
+    end
+end
+get_reports(result::JETCallResult) = get_reports(result.result)
 
 function get_critical_reports(res::VirtualProcessResult)
     # non-empty `ret.toplevel_error_reports` means critical errors happened during
@@ -613,13 +616,13 @@ include("print.jl")
 Analyzes `filename` and returns [`JETToplevelResult`](@ref).
 
 This function will look for `$CONFIG_FILE_NAME` configuration file in the directory of `filename`,
-  and search _up_ the file tree until any `$CONFIG_FILE_NAME` is (or isn't) found.
+and search _up_ the file tree until any `$CONFIG_FILE_NAME` is (or isn't) found.
 When found, the configurations specified in the file will be applied.
 See [Configuration File](@ref) for more details.
 
 !!! tip
     When you want to analyze your package, but any file actually using it isn't available, the
-      `analyze_from_definitions` option can be useful (see [`ToplevelConfig`](@ref)'s `analyze_from_definitions` option). \\
+    `analyze_from_definitions` option can be useful (see [`ToplevelConfig`](@ref)'s `analyze_from_definitions` option). \\
     For example, JET can analyze JET itself like below:
     ```julia
     # from the root directory of JET.jl
@@ -682,13 +685,13 @@ end
 
 """
 JET.jl offers [`.prettierrc` style](https://prettier.io/docs/en/configuration.html)
-  configuration file support.
+configuration file support.
 This means you can use `$CONFIG_FILE_NAME` configuration file to specify any of configurations
-  explained above and share that with others.
+explained above and share that with others.
 
 When [`$report_file`](@ref) or [`$report_and_watch_file`](@ref) is called, it will look for
-  `$CONFIG_FILE_NAME` in the directory of the given file, and search _up_ the file tree until
-  a JET configuration file is (or isn't) found.
+`$CONFIG_FILE_NAME` in the directory of the given file, and search _up_ the file tree until
+a JET configuration file is (or isn't) found.
 When found, the configurations specified in the file will be applied.
 
 A configuration file can specify any of JET configurations like:
@@ -721,7 +724,7 @@ E.g. the configurations below are equivalent:
 
 !!! note
     JET configurations specified as keyword arguments have precedence over those specified
-      via a configuration file.
+    via a configuration file.
 """
 parse_config_file(path) = process_config_dict!(TOML.parsefile(path))
 
@@ -854,8 +857,10 @@ function analyze_toplevel!(analyzer::AbstractAnalyzer, src::CodeInfo)
     mi.uninferred = src
 
     result = InferenceResult(mi);
+    set_result!(result) # modify `result::InferenceResult` for succeeding JET analysis
     # toplevel frames don't really need to be cached, but still better to be optimized
     # in order to get reasonable `LocalUndefVarErrorReport` and `UncaughtExceptionReport`
+    # NOTE and also, otherwise `typeinf_edge` won't add "toplevel-to-callee" edges
     frame = InferenceState(result, src, #=cached=# true, analyzer);
 
     return analyze_frame!(analyzer, frame)
@@ -976,13 +981,14 @@ function analyze_method_instance!(analyzer::AbstractAnalyzer, mi::MethodInstance
     result = InferenceResult(mi)
 
     frame = InferenceState(result, #=cached=# true, analyzer)
-    isnothing(frame) && return analyzer, nothing
+    isnothing(frame) && return analyzer, result
 
     return analyze_frame!(analyzer, frame)
 end
 
 function InferenceState(result::InferenceResult, cached::Bool, analyzer::AbstractAnalyzer)
-    ReportPass(analyzer)(GeneratorErrorReport, analyzer, result.linfo)
+    set_result!(result) # modify `result` for succeeding JET analysis
+    ReportPass(analyzer)(GeneratorErrorReport, analyzer, result)
     return @invoke InferenceState(result::InferenceResult, cached::Bool, analyzer::AbstractInterpreter)
 end
 
@@ -994,7 +1000,8 @@ get_msg(::Type{GeneratorErrorReport}, analyzer::AbstractAnalyzer, linfo::MethodI
 
 # XXX what's the "soundness" of a `@generated` function ?
 # adapated from https://github.com/JuliaLang/julia/blob/f806df603489cfca558f6284d52a38f523b81881/base/compiler/utilities.jl#L107-L137
-function (::SoundBasicPass)(::Type{GeneratorErrorReport}, analyzer::AbstractAnalyzer, mi::MethodInstance)
+function (::SoundBasicPass)(::Type{GeneratorErrorReport}, analyzer::AbstractAnalyzer, result::InferenceResult)
+    mi = result.linfo
     m = mi.def::Method
     if isdefined(m, :generator)
         # analyze_method_instance!(analyzer, linfo) XXX doesn't work
@@ -1003,25 +1010,16 @@ function (::SoundBasicPass)(::Type{GeneratorErrorReport}, analyzer::AbstractAnal
             ccall(:jl_code_for_staged, Any, (Any,), mi)
         catch err
             # if user code throws error, wrap and report it
-            report = add_new_report!(GeneratorErrorReport(analyzer, mi, err), analyzer)
-            push!(get_to_be_updated(analyzer), report)
+            report = add_new_report!(result, GeneratorErrorReport(analyzer, mi, err))
+            # we will return back to the caller immediately
+            add_caller_cache!(analyzer, report)
         end
     end
 end
 
 function analyze_frame!(analyzer::AbstractAnalyzer, frame::InferenceState)
     typeinf(analyzer, frame)
-
-    # report `throw` calls "appropriately";
-    # if the final return type here is `Bottom`-annotated, it _may_ mean the control flow
-    # didn't catch some of the `UncaughtExceptionReport`s stashed within `uncaught_exceptions(analyzer)`,
-    if get_result(frame) === Bottom
-        if !isempty(get_uncaught_exceptions(analyzer))
-            append!(get_reports(analyzer), get_uncaught_exceptions(analyzer))
-        end
-    end
-
-    return analyzer, frame
+    return analyzer, frame.result
 end
 
 # interactive
@@ -1033,9 +1031,9 @@ end
     @report_call [jetconfigs...] f(args...)
 
 Evaluates the arguments to the function call, determines its types, and then calls
-  [`report_call`](@ref) on the resulting expression.
+[`report_call`](@ref) on the resulting expression.
 As with `@code_typed` and its family, any of [JET configurations](@ref) can be given as the optional
-  arguments like this:
+arguments like this:
 ```julia
 # reports `rand(::Type{Bool})` with `aggressive_constant_propagation` configuration turned off
 julia> @report_call aggressive_constant_propagation=false rand(Bool)
@@ -1073,20 +1071,13 @@ function report_call(@nospecialize(tt::Type{<:Tuple});
                      jetconfigs...) where {Analyzer<:AbstractAnalyzer}
     analyzer = Analyzer(; jetconfigs...)
     maybe_initialize_caches!(analyzer)
-    analyzer, frame = analyze_gf_by_type!(analyzer, tt)
-
-    if isnothing(frame)
-        # if there is `GeneratorErrorReport`, it means the code generation happened and failed
-        rt = any(r->isa(r, GeneratorErrorReport), get_reports(analyzer)) ? Bottom : Any
-    else
-        rt = get_result(frame)
-    end
+    analyzer, result = analyze_gf_by_type!(analyzer, tt)
 
     if isnothing(source)
         source = string(nameof(var"@report_call"), " ", sprint(show_tuple_as_call, Symbol(""), tt))
     end
 
-    return JETCallResult(analyzer, rt, source; jetconfigs...)
+    return JETCallResult(result, analyzer, source; jetconfigs...)
 end
 
 # Test.jl integration
@@ -1132,10 +1123,11 @@ reexport_as_api!(AbstractAnalyzer,
                  AnalyzerState,
                  ReportPass,
                  InferenceErrorReport,
+                 aggregation_policy,
+                 add_new_report!,
                  get_msg,
                  get_spec_args,
                  var"@reportdef",
-                 add_new_report!,
                  )
 reexport_as_api!(subtypes(InferenceErrorReport)...; documented = false)
 reexport_as_api!(subtypes(ReportPass)...; documented = false)
