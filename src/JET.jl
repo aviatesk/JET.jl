@@ -732,7 +732,7 @@ function process_config_dict!(config_dict)
     context = get(config_dict, "context", nothing)
     if !isnothing(context)
         @assert isa(context, String) "`context` should be string of Julia code"
-            config_dict["context"] = Core.eval(Main, trymetaparse(context))
+        config_dict["context"] = Core.eval(Main, trymetaparse(context))
     end
     concretization_patterns = get(config_dict, "concretization_patterns", nothing)
     if !isnothing(concretization_patterns)
@@ -1119,7 +1119,8 @@ function reexport_as_api!(xs...; documented = true)
     end
 end
 
-reexport_as_api!(AbstractAnalyzer,
+reexport_as_api!(JETInterfaces,
+                 AbstractAnalyzer,
                  AnalyzerState,
                  ReportPass,
                  InferenceErrorReport,

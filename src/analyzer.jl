@@ -518,7 +518,7 @@ end
 function maybe_initialize_caches!(analyzer::AbstractAnalyzer)
     cache_key = get_cache_key(analyzer)
     if !haskey(JET_CACHE, cache_key)
-        JET_CACHE[cache_key] = IdDict()
+        JET_CACHE[cache_key] = IdDict{MethodInstance,CodeInstance}()
     end
 end
 
