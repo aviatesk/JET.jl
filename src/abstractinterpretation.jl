@@ -347,11 +347,7 @@ function CC.abstract_eval_special_value(analyzer::AbstractAnalyzer, @nospecializ
     if isa(e, GlobalRef)
         mod, name = e.mod, e.name
         if isdefined(mod, name)
-            if name === :Main
-                # special case and propagate `Main` module as constant
-                # XXX this was somewhat critical for accuracy and performance, but I'm not sure this still holds
-                ret = Const(Main)
-            elseif toplevel
+            if toplevel
                 # here we will eagerly propagate the type of this global variable
                 # of course the traced type might be difference from its type in actual execution
                 # e.g. we don't track a global variable assignment wrapped in a function,
@@ -366,11 +362,11 @@ function CC.abstract_eval_special_value(analyzer::AbstractAnalyzer, @nospecializ
             # report pass for undefined global reference
             ReportPass(analyzer)(GlobalUndefVarErrorReport, analyzer, sv, mod, name)
 
-            # `ret` at this point should be annotated as `Any` by `NativeInterpreter`, and we
-            # just pass it as is to collect as much error points as possible within this frame
-            # IDEA we can change it to `Bottom` to suppress any further abstract interpretation
-            # with this variable, but at the same time we need to make sure we will invalidate
-            # the cache for this frame on the future definition of this (currently) undefined binding
+            # # NOTE `ret` at this point should be annotated as `Any` by `NativeInterpreter`, 
+            # # and we just pass it as is to collect as much error points as possible
+            # # we can change it to `Bottom` to suppress any further abstract interpretation
+            # # with this variable, but then we also need to make sure to invalidate the cache
+            # # for the analysis on the future re-definition of this (currently) undefined binding
             # return Bottom
         end
     end
