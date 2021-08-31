@@ -1,6 +1,6 @@
 # Internals of JET.jl
 
-## [Abstract Interpretation Based Analysis](@id abstractinterpret-analysis)
+## [Abstract Interpretation](@id abstractinterpret)
 
 In order to perform type level program analysis, JET.jl uses
 [`Core.Compiler.AbstractInterpreter` interface](https://github.com/JuliaLang/julia/blob/master/base/compiler/types.jl),
@@ -35,7 +35,7 @@ JET.inlining_policy
 ```
 
 
-## [Top-level Analysis](@id top-level-analysis)
+## [Top-level Analysis](@id toplevel)
 
 ```@docs
 JET.virtual_process

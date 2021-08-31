@@ -52,7 +52,7 @@ JETInterfaces.AbstractAnalyzer(analyzer::UnstableAPIAnalyzer, state::AnalyzerSta
     UnstableAPIAnalyzer(state, analyzer.is_target_module)
 JETInterfaces.ReportPass(analyzer::UnstableAPIAnalyzer) = UnstableAPIAnalysisPass()
 
-# Next, we overload some of `Core.Compiler`'s [abstract interpretation](@ref abstractinterpret-analysis) methods,
+# Next, we overload some of `Core.Compiler`'s [abstract interpretation](@ref abstractinterpret) methods,
 # and inject a customized analysis pass (here we gonna name it `UnstableAPIAnalysisPass`).
 # In this analysis, we are interested in whether a binding that appears in a target code is
 # an "unstable API" or not, and we can simply check if each abstract element appeared during

@@ -49,6 +49,7 @@ import .CC:
     const_prop_entry_heuristic,
     abstract_call_method,
     abstract_invoke,
+    abstract_call,
     abstract_eval_special_value,
     abstract_eval_value,
     abstract_eval_statement,
@@ -66,6 +67,10 @@ import JuliaInterpreter:
     step_expr!,
     evaluate_call_recurse!,
     handle_err
+
+# Test.jl integration
+import Test:
+    record
 
 # usings
 # ======
@@ -122,6 +127,7 @@ import .CC:
     tmerge,
     switchtupleunion,
     argtypes_to_type,
+    argtype_to_function,
     argtype_by_index,
     argtype_tail,
     _methods_by_ftype,
@@ -183,15 +189,20 @@ using InteractiveUtils
 
 using Pkg, Pkg.TOML
 
+import Test:
+    Test,
+    Result, Pass, Fail, Broken, Error,
+    get_testset,
+    TESTSET_PRINT_ENABLE,
+    FallbackTestSet, DefaultTestSet,
+    FallbackTestSetException
+
 # common
 # ======
 
 const JET_DEV_MODE = parse(Bool, get(ENV, "JET_DEV_MODE", "false"))
 
 const CONFIG_FILE_NAME = ".JET.toml"
-
-const State     = Union{InferenceState,OptimizationState}
-const StateAtPC = Tuple{State,Int}
 
 # hooks
 # -----
@@ -444,7 +455,10 @@ const _JET_CONFIGURATIONS = Dict{Symbol,Union{Symbol,Expr}}()
 # utils
 # -----
 
-# common
+# state
+
+const State     = Union{InferenceState,OptimizationState}
+const StateAtPC = Tuple{State,Int}
 
 get_stmt((sv, pc)::StateAtPC)         = @inbounds sv.src.code[pc]
 get_lin((sv, pc)::StateAtPC)          = @inbounds (sv.src.linetable::Vector)[sv.src.codelocs[pc]]::LineInfoNode
@@ -458,7 +472,9 @@ get_slotname(s::Union{StateAtPC,State}, slot)      = get_slotname(s, slot_id(slo
 get_slotname((sv, pc)::StateAtPC,       slot::Int) = @inbounds sv.src.slotnames[slot]
 get_slotname(sv::State,                 slot::Int) = @inbounds sv.src.slotnames[slot]
 
-# InfernceState
+# check if we're in a toplevel module
+istoplevel(sv::State)             = istoplevel(sv.linfo)
+istoplevel(linfo::MethodInstance) = isa(linfo.def, Module)
 
 # we can retrieve program-counter-level slottype during inference
 get_slottype(s::Tuple{InferenceState,Int}, slot::Int) = @inbounds (get_states(s)[slot]::VarState).typ
@@ -482,30 +498,28 @@ function postwalk_inf_frame(@nospecialize(f), frame::InferenceState)
     return f(frame)
 end
 
+# XXX this should be upstreamed
+function Base.show(io::IO, frame::InferenceState)
+    print(io, "InfernceState for ")
+    show(io, frame.linfo)
+    print(io, " at pc ", frame.currpc, '/', length(frame.src.code))
+end
+Base.show(io::IO, ::MIME"application/prs.juno.inline", frame::InferenceState) =
+    return frame
+
 # lattice
 
 ignorenotfound(@nospecialize(t)) = t === NOT_FOUND ? Bottom : t
 
-# location
+# analysis core
+# =============
 
-include("locinfo.jl")
+include("abstractinterpret/inferenceerrorreport.jl")
+include("abstractinterpret/abstractanalyzer.jl")
+include("abstractinterpret/typeinfer.jl")
 
-# includes
-# ========
-
-# interface
-include("interfaces.jl")
-# abstract interpretaion based analysis
-include("tfuncs.jl")
-include("abstractinterpretation.jl")
-include("typeinfer.jl")
-include("analyzer.jl")
-include("jetcache.jl")
-# top-level analysis
-include("graph.jl")
-include("virtualprocess.jl")
-# watch mode
-include("watch.jl")
+include("toplevel/graph.jl")
+include("toplevel/virtualprocess.jl")
 
 # results
 # =======
@@ -603,10 +617,67 @@ const JULIA_DIR = @static occursin("DEV", string(VERSION)) ?
 # ===
 
 # default UI (console)
-include("print.jl")
+include("ui/print.jl")
 
-# entry
-# =====
+# entries
+# =======
+
+# abstractinterpret
+# -----------------
+
+# TODO `analyze_builtin!` ?
+function analyze_gf_by_type!(analyzer::AbstractAnalyzer, @nospecialize(tt::Type{<:Tuple}))
+    mm = get_single_method_match(tt, InferenceParams(analyzer).MAX_METHODS, get_world_counter(analyzer))
+    return analyze_method_signature!(analyzer, mm.method, mm.spec_types, mm.sparams)
+end
+
+function get_single_method_match(@nospecialize(tt), lim, world)
+    mms = _methods_by_ftype(tt, lim, world)
+    @assert !isa(mms, Bool) "unable to find matching method for $(tt)"
+
+    filter!(mm::MethodMatch->mm.spec_types===tt, mms)
+    @assert length(mms) == 1 "unable to find single target method for $(tt)"
+
+    return first(mms)::MethodMatch
+end
+
+analyze_method!(analyzer::AbstractAnalyzer, m::Method) =
+    analyze_method_signature!(analyzer, m, m.sig, method_sparams(m))
+
+function method_sparams(m::Method)
+    s = TypeVar[]
+    sig = m.sig
+    while isa(sig, UnionAll)
+        push!(s, sig.var)
+        sig = sig.body
+    end
+    return svec(s...)
+end
+
+analyze_method_signature!(analyzer::AbstractAnalyzer, m::Method, @nospecialize(atype), sparams::SimpleVector) =
+    analyze_method_instance!(analyzer, specialize_method(m, atype, sparams))
+
+function analyze_method_instance!(analyzer::AbstractAnalyzer, mi::MethodInstance)
+    result = InferenceResult(mi)
+
+    frame = InferenceState(result, #=cached=# true, analyzer)
+    isnothing(frame) && return analyzer, result
+
+    return analyze_frame!(analyzer, frame)
+end
+
+function InferenceState(result::InferenceResult, cached::Bool, analyzer::AbstractAnalyzer)
+    set_result!(result) # modify `result` for succeeding JET analysis
+    return @invoke InferenceState(result::InferenceResult, cached::Bool, analyzer::AbstractInterpreter)
+end
+
+function analyze_frame!(analyzer::AbstractAnalyzer, frame::InferenceState)
+    typeinf(analyzer, frame)
+    return analyzer, frame.result
+end
+
+# toplevel
+# --------
 
 """
     report_file(filename::AbstractString;
@@ -688,7 +759,7 @@ configuration file support.
 This means you can use `$CONFIG_FILE_NAME` configuration file to specify any of configurations
 explained above and share that with others.
 
-When [`$report_file`](@ref) or [`$report_and_watch_file`](@ref) is called, it will look for
+When [`report_file`](@ref) or [`report_and_watch_file`](@ref) is called, it will look for
 `$CONFIG_FILE_NAME` in the directory of the given file, and search _up_ the file tree until
 a JET configuration file is (or isn't) found.
 When found, the configurations specified in the file will be applied.
@@ -844,6 +915,136 @@ function report_text(text::AbstractString,
     return JETToplevelResult(analyzer′, res, source; analyzer, jetconfigs...)
 end
 
+"""
+Configurations for "watch" mode.
+The configurations will only be active when used with [`report_and_watch_file`](@ref).
+
+---
+- `revise_all::Bool = true` \\
+  Redirected to [`Revise.entr`](https://timholy.github.io/Revise.jl/stable/user_reference/#Revise.entr)'s `all` keyword argument.
+  When set to `true`, JET will retrigger analysis as soon as code updates are detected in
+  any module tracked by Revise.
+  Currently when encountering `import/using` statements, JET won't perform analysis, but
+  rather will just load the modules as usual execution (this also means Revise will track
+  those modules).
+  So if you're editing both files analyzed by JET and modules that are used within the files,
+  this configuration should be enabled.
+---
+- `revise_modules = nothing` \\
+  Redirected to [`Revise.entr`](https://timholy.github.io/Revise.jl/stable/user_reference/#Revise.entr)'s `modules` positional argument.
+  If a iterator of `Module` is given, JET will retrigger analysis whenever code in `modules` updates.
+
+  !!! tip
+      This configuration is useful when your're also editing files that are not tracked by Revise,
+      e.g. editing functions defined in `Base`:
+      ```julia
+      # re-performe analysis when you make a change to `Base`
+      julia> report_and_watch_file(yourfile; revise_modules = [Base])
+      ```
+---
+"""
+struct WatchConfig
+    # Revise configurations
+    revise_all::Bool
+    revise_modules
+    @jetconfigurable WatchConfig(; revise_all::Bool = true,
+                                   revise_modules   = nothing,
+                                   ) =
+        return new(revise_all,
+                   revise_modules,
+                   )
+end
+
+"""
+    report_and_watch_file(filename::AbstractString;
+                          jetconfigs...)
+
+Watches `filename` and keeps re-triggering analysis with [`report_file`](@ref) on code update.
+JET will try to analyze all the `include`d files reachable from `filename`, and it will
+re-trigger analysis if there is code update detected in any of the `include`d files.
+
+This function internally uses [Revise.jl](https://timholy.github.io/Revise.jl/stable/) to
+track code updates. Revise also offers possibilities to track changes in files that are
+not directly analyzed by JET, or even changes in `Base` files. See [Watch Configurations](@ref)
+for more details.
+
+See also: [`report_file`](@ref)
+"""
+function report_and_watch_file(args...; kwargs...)
+    if @isdefined(Revise)
+        _report_and_watch_file(args...; kwargs...)
+    else
+        init_revise!()
+        @invokelatest _report_and_watch_file(args...; kwargs...)
+    end
+end
+
+# HACK to avoid Revise loading overhead when just using `@report_call`, etc.
+function init_revise!()
+    @eval (@__MODULE__) using Revise
+end
+
+function _report_and_watch_file(filename::AbstractString; jetconfigs...)
+    config = WatchConfig(; jetconfigs...)
+
+    res = report_file(filename; jetconfigs...)
+    display(res)
+    included_files = res.res.included_files
+
+    interrupted = false
+    while !interrupted
+        try
+            Revise.entr(collect(included_files), config.revise_modules;
+                        postpone = true, all = config.revise_all) do
+                res = report_file(filename; jetconfigs...)
+                display(res)
+                next_included_files = res.res.included_files
+                if any(∉(included_files), next_included_files)
+                    # refresh watch files
+                    throw(InsufficientWatches(next_included_files))
+                end
+                return nothing
+            end
+            interrupted = true # `InterruptException` was gracefully handled within `entr`, shutdown watch mode
+        catch err
+            # handle "expected" errors, keep running
+
+            if isa(err, InsufficientWatches)
+                included_files = err.included_files
+                continue
+            elseif isa(err, LoadError) ||
+                   (isa(err, ErrorException) && startswith(err.msg, "lowering returned an error")) ||
+                   isa(err, Revise.ReviseEvalException)
+                continue
+
+            # async errors
+            elseif isa(err, CompositeException)
+                errs = err.exceptions
+                i = findfirst(e->isa(e, TaskFailedException), errs)
+                if !isnothing(i)
+                    tfe = errs[i]::TaskFailedException
+                    res = tfe.task.result
+                    if isa(res, InsufficientWatches)
+                        included_files = res.included_files
+                        continue
+                    elseif isa(res, LoadError) ||
+                           (isa(res, ErrorException) && startswith(res.msg, "lowering returned an error")) ||
+                           isa(res, Revise.ReviseEvalException)
+                        continue
+                    end
+                end
+            end
+
+            # fatal uncaught error happened in Revise.jl
+            rethrow(err)
+        end
+    end
+end
+
+struct InsufficientWatches <: Exception
+    included_files::Set{String}
+end
+
 # we have to go on hacks; see `transform_abstract_global_symbols!` and `resolve_toplevel_symbols!`
 function analyze_toplevel!(analyzer::AbstractAnalyzer, src::CodeInfo)
     # construct toplevel `MethodInstance`
@@ -944,85 +1145,8 @@ else
     function __toplevelf__ end
 end
 
-# TODO `analyze_builtin!` ?
-function analyze_gf_by_type!(analyzer::AbstractAnalyzer, @nospecialize(tt::Type{<:Tuple}))
-    mm = get_single_method_match(tt, InferenceParams(analyzer).MAX_METHODS, get_world_counter(analyzer))
-    return analyze_method_signature!(analyzer, mm.method, mm.spec_types, mm.sparams)
-end
-
-function get_single_method_match(@nospecialize(tt), lim, world)
-    mms = _methods_by_ftype(tt, lim, world)
-    @assert !isa(mms, Bool) "unable to find matching method for $(tt)"
-
-    filter!(mm::MethodMatch->mm.spec_types===tt, mms)
-    @assert length(mms) == 1 "unable to find single target method for $(tt)"
-
-    return first(mms)::MethodMatch
-end
-
-analyze_method!(analyzer::AbstractAnalyzer, m::Method) =
-    analyze_method_signature!(analyzer, m, m.sig, method_sparams(m))
-
-function method_sparams(m::Method)
-    s = TypeVar[]
-    sig = m.sig
-    while isa(sig, UnionAll)
-        push!(s, sig.var)
-        sig = sig.body
-    end
-    return svec(s...)
-end
-
-analyze_method_signature!(analyzer::AbstractAnalyzer, m::Method, @nospecialize(atype), sparams::SimpleVector) =
-    analyze_method_instance!(analyzer, specialize_method(m, atype, sparams))
-
-function analyze_method_instance!(analyzer::AbstractAnalyzer, mi::MethodInstance)
-    result = InferenceResult(mi)
-
-    frame = InferenceState(result, #=cached=# true, analyzer)
-    isnothing(frame) && return analyzer, result
-
-    return analyze_frame!(analyzer, frame)
-end
-
-function InferenceState(result::InferenceResult, cached::Bool, analyzer::AbstractAnalyzer)
-    set_result!(result) # modify `result` for succeeding JET analysis
-    ReportPass(analyzer)(GeneratorErrorReport, analyzer, result)
-    return @invoke InferenceState(result::InferenceResult, cached::Bool, analyzer::AbstractInterpreter)
-end
-
-@reportdef struct GeneratorErrorReport <: InferenceErrorReport
-    @nospecialize(err) # actual error wrapped
-end
-get_msg(::Type{GeneratorErrorReport}, analyzer::AbstractAnalyzer, linfo::MethodInstance, @nospecialize(err)) =
-    return sprint(showerror, err)
-
-# XXX what's the "soundness" of a `@generated` function ?
-# adapated from https://github.com/JuliaLang/julia/blob/f806df603489cfca558f6284d52a38f523b81881/base/compiler/utilities.jl#L107-L137
-function (::SoundBasicPass)(::Type{GeneratorErrorReport}, analyzer::AbstractAnalyzer, result::InferenceResult)
-    mi = result.linfo
-    m = mi.def::Method
-    if isdefined(m, :generator)
-        # analyze_method_instance!(analyzer, linfo) XXX doesn't work
-        may_invoke_generator(mi) || return
-        try
-            ccall(:jl_code_for_staged, Any, (Any,), mi)
-        catch err
-            # if user code throws error, wrap and report it
-            report = add_new_report!(result, GeneratorErrorReport(analyzer, mi, err))
-            # we will return back to the caller immediately
-            add_caller_cache!(analyzer, report)
-        end
-    end
-end
-
-function analyze_frame!(analyzer::AbstractAnalyzer, frame::InferenceState)
-    typeinf(analyzer, frame)
-    return analyzer, frame.result
-end
-
 # interactive
-# ===========
+# -----------
 
 # TODO improve inferrability by making `analyzer` argument positional
 
@@ -1080,9 +1204,249 @@ function report_call(@nospecialize(tt::Type{<:Tuple});
 end
 
 # Test.jl integration
-# ===================
+# -------------------
 
-include("test.jl")
+"""
+    @test_call [jetconfigs...] [broken=false] [skip=false] f(args...)
+
+Runs [`@report_call jetconfigs... f(args...)`](@ref @report_call) and tests that the generic
+function call `f(args...)` is free from problems that `@report_call` can detect.
+If executed inside `@testset`, returns a `Pass` result if it is, a `Fail` result if it
+contains any error points detected, or an `Error` result if this macro encounters an
+unexpected error. When the test `Fail`s, abstract call stack to each problem location will
+also be printed to `stdout`.
+
+```julia
+julia> @test_call sincos(10)
+Test Passed
+  Expression: #= none:1 =# JET.@test_call sincos(10)
+```
+
+As with [`@report_call`](@ref), any of [JET configurations](https://aviatesk.github.io/JET.jl/dev/config/)
+or analyzer specific configurations can be given as the optional arguments `jetconfigs...` like this:
+```julia
+julia> cond = false
+
+julia> function f(n)
+            if cond           # `cond` is untyped, and will be reported by the sound analysis pass, while JET's default analysis pass will ignore it
+                return sin(n)
+            else
+                return cos(n)
+            end
+       end;
+
+julia> @test_call f(10)
+Test Passed
+  Expression: #= none:1 =# JET.@test_call f(10)
+
+julia> @test_call mode=:sound f(10)
+JET-test failed at none:1
+  Expression: #= none:1 =# JET.@test_call mode = :sound f(10)
+  ═════ 1 possible error found ═════
+  ┌ @ none:2 goto %4 if not Main.cond
+  │ non-boolean (Any) used in boolean context: goto %4 if not Main.cond
+  └──────────
+
+ERROR: There was an error during testing
+```
+
+`@test_call` is fully integrated with [`Test` standard library's unit-testing infrastructure](https://docs.julialang.org/en/v1/stdlib/Test/).
+It means, the result of `@test_call` will be included in the final `@testset` summary,
+it supports `skip` and `broken` annotations as like `@test` and its family:
+```julia
+julia> using JET, Test
+
+julia> f(ref) = isa(ref[], Number) ? sin(ref[]) : nothing;      # Julia can't propagate the type constraint `ref[]::Number` to `sin(ref[])`, JET will report `NoMethodError`
+
+julia> g(ref) = (x = ref[]; isa(x, Number) ? sin(x) : nothing); # we can make it type-stable if we extract `ref[]` into a local variable `x`
+
+julia> @testset "check errors" begin
+           ref = Ref{Union{Nothing,Int}}(0)
+           @test_call f(ref)             # fail
+           @test_call g(ref)             # fail
+           @test_call broken=true f(ref) # annotated as broken, thus still "pass"
+       end
+check errors: JET-test failed at none:3
+  Expression: #= none:3 =# JET.@test_call f(ref)
+  ═════ 1 possible error found ═════
+  ┌ @ none:1 Main.sin(Base.getindex(ref))
+  │ for 1 of union split cases, no matching method found for call signatures (Tuple{typeof(sin), Nothing})): Main.sin(Base.getindex(ref::Base.RefValue{Union{Nothing, Int64}})::Union{Nothing, Int64})
+  └──────────
+
+Test Summary: | Pass  Fail  Broken  Total
+check errors  |    1     1       1      3
+ERROR: Some tests did not pass: 1 passed, 1 failed, 0 errored, 1 broken.
+```
+"""
+macro test_call(ex0...)
+    ex0 = collect(ex0)
+
+    local broken = nothing
+    local skip   = nothing
+    idx = Int[]
+    for (i,x) in enumerate(ex0)
+        if iskwarg(x)
+            key, val = x.args
+            if key === :broken
+                if !isnothing(broken)
+                    error("invalid test macro call: cannot set `broken` keyword multiple times")
+                end
+                broken = esc(val)
+                push!(idx, i)
+            elseif key === :skip
+                if !isnothing(skip)
+                    error("invalid test macro call: cannot set `skip` keyword multiple times")
+                end
+                skip = esc(val)
+                push!(idx, i)
+            end
+        end
+    end
+    if !isnothing(broken) && !isnothing(skip)
+        error("invalid test macro call: cannot set both `skip` and `broken` keywords")
+    end
+    deleteat!(ex0, idx)
+
+    testres, orig_expr = test_exs(ex0, __module__, __source__)
+
+    return quote
+        if $(!isnothing(skip) && skip)
+            $record($get_testset(), $Broken(:skipped, $orig_expr))
+        else
+            testres = $testres
+            if $(!isnothing(broken) && broken)
+                if isa(testres, $JETTestFailure)
+                    testres = $Broken(:test_call, $orig_expr)
+                elseif isa(testres, $Pass)
+                    testres = $Error(:test_unbroken, $orig_expr, nothing, nothing, $(QuoteNode(__source__)))
+                end
+            else
+                isa(testres, $Pass) || ccall(:jl_breakpoint, $Cvoid, ($Any,), testres)
+            end
+            $record($get_testset(), testres)
+        end
+    end
+end
+
+get_exceptions() = @static if isdefined(Base, :current_exceptions)
+    Base.current_exceptions()
+else
+    Base.catch_stack()
+end
+@static if !hasfield(Pass, :source)
+    Pass(test_type::Symbol, orig_expr, data, thrown, source) = Pass(test_type, orig_expr, data, thrown)
+end
+
+function test_exs(ex0, m, source)
+    analysis = gen_call_with_extracted_types_and_kwargs(m, :report_call, ex0)
+    orig_expr = QuoteNode(
+        Expr(:macrocall, GlobalRef(@__MODULE__, Symbol("@test_call")), source, ex0...))
+    source = QuoteNode(source)
+    testres = :(try
+        result = $analysis
+        if $length($get_reports(result.result)) == 0
+            $Pass(:test_call, $orig_expr, nothing, nothing, $source)
+        else
+            $JETTestFailure($orig_expr, $source, result)
+        end
+    catch err
+        isa(err, $InterruptException) && rethrow()
+        $Error(:test_error, $orig_expr, err, $get_exceptions(), $source)
+    end) |> Base.remove_linenums!
+    return testres, orig_expr
+end
+
+"""
+    test_call(f, types = Tuple{}; broken::Bool = false, skip::Bool = false, jetconfigs...)
+    test_call(tt::Type{<:Tuple}; broken::Bool = false, skip::Bool = false, jetconfigs...)
+
+Runs [`report_call(f, types; jetconfigs...`](@ref report_call) and tests that the generic
+function call `f(args...)` is free from problems that `report_call` can detect.
+Except that it takes a type signature rather than a call expression, this function works
+in the same way as [`@test_call`](@ref).
+"""
+function test_call(@nospecialize(args...);
+                   broken::Bool = false, skip::Bool = false,
+                   jetconfigs...)
+    source = LineNumberNode(@__LINE__, @__FILE__)
+    kwargs = map(((k,v),)->Expr(:kw, k, v), collect(jetconfigs))
+    orig_expr = :($test_call($(args...); $(kwargs...)))
+
+    if skip
+        record(get_testset(), Broken(:skipped, orig_expr))
+    else
+        testres = try
+            result = report_call(args...; jetconfigs...)
+            if length(get_reports(result.result)) == 0
+                Pass(:test_call, orig_expr, nothing, nothing, source)
+            else
+                JETTestFailure(orig_expr, source, result)
+            end
+        catch err
+            isa(err, InterruptException) && rethrow()
+            Error(:test_error, orig_expr, err, get_exceptions(), source)
+        end
+
+        if broken
+            if isa(testres, JETTestFailure)
+                testres = Broken(:test_call, orig_expr)
+            elseif isa(testres, Pass)
+                testres = Error(:test_unbroken, orig_expr, nothing, nothing, source)
+            end
+        else
+            isa(testres, Pass) || ccall(:jl_breakpoint, Cvoid, (Any,), testres)
+        end
+        record(get_testset(), testres)
+    end
+end
+
+# NOTE we will just show abstract call strack, and won't show backtrace of actual test executions
+
+struct JETTestFailure <: Result
+    orig_expr::Expr
+    source::LineNumberNode
+    result::JETCallResult
+end
+
+const TEST_INDENTS = "  "
+
+function Base.show(io::IO, t::JETTestFailure)
+    printstyled(io, "JET-test failed"; bold=true, color=Base.error_color())
+    print(io, " at ")
+    printstyled(io, something(t.source.file, :none), ":", t.source.line, "\n"; bold=true, color=:default)
+    println(io, TEST_INDENTS, "Expression: ", t.orig_expr)
+    # print abstract call stack, with appropriate indents
+    _, ctx = Base.unwrapcontext(io)
+    buf = IOBuffer()
+    ioctx = IOContext(buf, ctx)
+    show(ioctx, t.result)
+    lines = replace(String(take!(buf)), '\n'=>string('\n',TEST_INDENTS))
+    print(io, TEST_INDENTS, lines)
+end
+
+Base.show(io::IO, ::MIME"application/prs.juno.inline", t::JETTestFailure) =
+    return t
+
+function Test.record(::FallbackTestSet, t::JETTestFailure)
+    println(t)
+    throw(FallbackTestSetException("There was an error during testing"))
+end
+
+function Test.record(ts::DefaultTestSet, t::JETTestFailure)
+    if TESTSET_PRINT_ENABLE[]
+        printstyled(ts.description, ": ", color=:white)
+        print(t)
+        println()
+    end
+    # HACK convert to `Fail` so that test summarization works correctly
+    push!(ts.results, Fail(:test_call, t.orig_expr, nothing, nothing, t.source))
+    return t
+end
+
+# builtin analyzers
+# =================
+
+include("analyzers/jetanalyzer.jl")
 
 # exports
 # =======
@@ -1091,8 +1455,7 @@ include("test.jl")
     JETInterfaces
 
 This `baremodule` exports names that form the APIs of [JET.jl Pluggable Analysis Framework](@ref).
-If you are going to define a plug-in analysis, `using JET.JETInterfaces` will load most useful
-names described below.
+`using JET.JETInterfaces` loads all names that are necessary to define a plugin analysis.
 """
 baremodule JETInterfaces
 const DOCUMENTED_NAMES = Symbol[] # will be used in docs/make.jl
@@ -1132,8 +1495,8 @@ reexport_as_api!(JETInterfaces,
 reexport_as_api!(subtypes(InferenceErrorReport)...; documented = false)
 reexport_as_api!(subtypes(ReportPass)...; documented = false)
 
-# export entries
 export
+    # generic entries & default analyzer
     report_file,
     report_and_watch_file,
     report_package,
