@@ -41,4 +41,10 @@ include("setup.jl")
     @testset "Test.jl integration" begin
         include("test_test.jl")
     end
+
+    @testset "analyzers" begin
+        @testset "PerformanceAnalyzer" begin
+            include("analyzers/test_perfanalyzer.jl")
+        end
+    end
 end

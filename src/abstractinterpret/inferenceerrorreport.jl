@@ -150,7 +150,18 @@ function _get_sig_type(s::StateAtPC, expr::Expr)
         args = expr.args[3:end]
         return _get_callsig(s, f, args), nothing
     elseif head === :(=)
-        return _get_sig_type(s, last(expr.args))
+        sigtyp = _get_sig_type(s, last(expr.args))
+        sv = first(s)
+        if isa(sv, InferenceState)
+            lhs = first(expr.args)
+            if isa(lhs, SlotNumber)
+                name = sv.src.slotnames[slot_id(lhs)]
+                sig, typ = sigtyp
+                pushfirst!(sig, string(name), " = ")
+                return sig, typ
+            end
+        end
+        return sigtyp
     elseif head === :static_parameter
         typ = widenconst(first(s).sptypes[first(expr.args)])
         return Any['_', typ], typ

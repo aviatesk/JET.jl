@@ -141,7 +141,8 @@ import .CC:
     may_invoke_generator,
     inlining_enabled,
     instanceof_tfunc,
-    ignorelimited
+    ignorelimited,
+    argextype
 
 import Base:
     @aggressive_constprop,
@@ -1447,6 +1448,7 @@ end
 # =================
 
 include("analyzers/jetanalyzer.jl")
+include("analyzers/perfanalyzer.jl")
 
 # exports
 # =======
@@ -1504,6 +1506,11 @@ export
     @report_call,
     report_call,
     @test_call,
-    test_call
+    test_call,
+    # performance analyzer
+    @report_pitfall,
+    report_pitfall,
+    @test_nopitfall,
+    test_nopitfall
 
 end
