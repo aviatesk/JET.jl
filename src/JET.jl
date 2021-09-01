@@ -1454,12 +1454,12 @@ include("analyzers/perfanalyzer.jl")
 # =======
 
 """
-    JETInterfaces
+    JETInterface
 
 This `baremodule` exports names that form the APIs of [JET.jl Pluggable Analysis Framework](@ref).
-`using JET.JETInterfaces` loads all names that are necessary to define a plugin analysis.
+`using JET.JETInterface` loads all names that are necessary to define a plugin analysis.
 """
-baremodule JETInterfaces
+baremodule JETInterface
 const DOCUMENTED_NAMES = Symbol[] # will be used in docs/make.jl
 end
 
@@ -1478,12 +1478,12 @@ function reexport_as_api!(xs...; documented = true)
         exportex = Expr(:export, symname)
 
         push!(ex.args, importex, exportex)
-        Core.eval(JETInterfaces, ex)
-        documented && push!(JETInterfaces.DOCUMENTED_NAMES, symname)
+        Core.eval(JETInterface, ex)
+        documented && push!(JETInterface.DOCUMENTED_NAMES, symname)
     end
 end
 
-reexport_as_api!(JETInterfaces,
+reexport_as_api!(JETInterface,
                  AbstractAnalyzer,
                  AnalyzerState,
                  ReportPass,
