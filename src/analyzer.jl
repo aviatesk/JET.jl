@@ -514,7 +514,7 @@ CC.inlining_policy(::AbstractAnalyzer) = jet_inlining_policy
     elseif isa(src, JETCachedResult)
         src = get_source(src)
     end
-    return default_inlining_policy(src)
+    return CC.default_inlining_policy(src)
 end
 end # @static if isdefined(Compiler, :is_stmt_inline)
 

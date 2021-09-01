@@ -134,7 +134,6 @@ import .CC:
     tuple_tfunc,
     may_invoke_generator,
     inlining_enabled,
-    default_inlining_policy,
     instanceof_tfunc,
     ignorelimited
 
