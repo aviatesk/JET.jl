@@ -479,14 +479,35 @@ CC.may_compress(analyzer::AbstractAnalyzer)      = false
 CC.may_discard_trees(analyzer::AbstractAnalyzer) = false
 CC.verbose_stmt_info(analyzer::AbstractAnalyzer) = false
 
-"""
-    jet_inlining_policy(src)
+# branch on https://github.com/JuliaLang/julia/pull/41328
+@static if isdefined(CC, :is_stmt_inline)
+@doc """
+    inlining_policy(analyzer::AbstractAnalyzer, @nospecialize(src), stmt_flag::UInt8) -> source::Any
 
-Implements `Core.Compiler.inlining_policy` for `AbstractAnalyzer`.
+Implements inlining policy for `AbstractAnalyzer`.
+Since `AbstractAnalyzer` works on `InferenceResult` whose `src` field keeps
+[`JETResult`](@ref) or [`JETCachedResult`](@ref), this implementation just bypasses
+their wrapped source to `inlining_policy(::AbstractInterpreter, ::Any, ::UInt8)`.
+"""
+function CC.inlining_policy(analyzer::AbstractAnalyzer, @nospecialize(src), stmt_flag::UInt8)
+    if isa(src, JETResult)
+        src = get_source(src)
+    elseif isa(src, JETCachedResult)
+        src = get_source(src)
+    end
+    return @invoke CC.inlining_policy(analyzer::AbstractInterpreter, @nospecialize(src), stmt_flag::UInt8)
+end
+else # @static if isdefined(Compiler, :is_stmt_inline)
+@doc """
+    inlining_policy(::AbstractAnalyzer) = jet_inlining_policy
+    jet_inlining_policy(@nospecialize(src)) -> source::Any
+
+`jet_inlining_policy` implements `Core.Compiler.inlining_policy` for `AbstractAnalyzer`.
 Since `AbstractAnalyzer` works on `InferenceResult` whose `src` field keeps
 [`JETResult`](@ref) or [`JETCachedResult`](@ref), `jet_inlining_policy` bypasses
 their wrapped source to `Core.Compiler.default_inlining_policy`.
 """
+CC.inlining_policy(::AbstractAnalyzer) = jet_inlining_policy
 @inline function jet_inlining_policy(@nospecialize(src))
     if isa(src, JETResult)
         src = get_source(src)
@@ -495,7 +516,7 @@ their wrapped source to `Core.Compiler.default_inlining_policy`.
     end
     return default_inlining_policy(src)
 end
-CC.inlining_policy(::AbstractAnalyzer) = jet_inlining_policy
+end # @static if isdefined(Compiler, :is_stmt_inline)
 
 # AbstractAnalyzer
 # ----------------
