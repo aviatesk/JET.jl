@@ -1,4 +1,27 @@
 """
+    ToplevelErrorReport
+
+An interface type of error reports that JET collects while top-level concrete interpration.
+All `ToplevelErrorReport` should have the following fields:
+- `file::String`: the path to the file containing the interpretation context
+- `line::Int`: the line number in the file containing the interpretation context
+
+See also: [`virtual_process`](@ref), [`ConcreteInterpreter`](@ref)
+"""
+abstract type ToplevelErrorReport end
+
+# `ToplevelErrorReport` interface
+function Base.getproperty(er::ToplevelErrorReport, sym::Symbol)
+    return if sym === :file
+        getfield(er, sym)::String
+    elseif sym === :line
+        getfield(er, sym)::Int
+    else
+        getfield(er, sym) # fallback
+    end
+end
+
+"""
 Configurations for top-level analysis.
 These configurations will be active for all the top-level entries explained in the
 [top-level analysis entry points](@ref toplevel-entries) section.
@@ -61,7 +84,7 @@ These configurations will be active for all the top-level entries explained in t
   For example, the issue happens when your macro accesses to a global variable during its expansion, e.g.:
   > test/fixtures/concretization_patterns.jl
   $(let
-      text = read(normpath(@__DIR__, "..", "test", "fixtures", "concretization_patterns.jl"), String)
+      text = read(normpath(@__DIR__, "..", "..", "test", "fixtures", "concretization_patterns.jl"), String)
       lines = split(text, '\n')
       pushfirst!(lines, "```julia"); push!(lines, "```")
       join(lines, "\n  ")

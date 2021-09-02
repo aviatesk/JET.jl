@@ -32,7 +32,7 @@
 # language and those written by ourselves, and in the latter case we're certainly uses
 # "unstable API" under the definition above.
 
-using JET.JETInterfaces  # to load APIs of the pluggable analysis framework
+using JET.JETInterface  # to load APIs of the pluggable analysis framework
 const CC = Core.Compiler # to inject a customized report pass
 
 # First off, we define `UnstableAPIAnalyzer`, which is a new [`AbstractAnalyzer`](@ref) and will
@@ -47,12 +47,12 @@ function UnstableAPIAnalyzer(;
     jetconfigs...)
     return UnstableAPIAnalyzer(AnalyzerState(; jetconfigs...), is_target_module)
 end
-JETInterfaces.AnalyzerState(analyzer::UnstableAPIAnalyzer) = analyzer.state
-JETInterfaces.AbstractAnalyzer(analyzer::UnstableAPIAnalyzer, state::AnalyzerState) =
+JETInterface.AnalyzerState(analyzer::UnstableAPIAnalyzer) = analyzer.state
+JETInterface.AbstractAnalyzer(analyzer::UnstableAPIAnalyzer, state::AnalyzerState) =
     UnstableAPIAnalyzer(state, analyzer.is_target_module)
-JETInterfaces.ReportPass(analyzer::UnstableAPIAnalyzer) = UnstableAPIAnalysisPass()
+JETInterface.ReportPass(analyzer::UnstableAPIAnalyzer) = UnstableAPIAnalysisPass()
 
-# Next, we overload some of `Core.Compiler`'s [abstract interpretation](@ref abstractinterpret-analysis) methods,
+# Next, we overload some of `Core.Compiler`'s [abstract interpretation](@ref abstractinterpret) methods,
 # and inject a customized analysis pass (here we gonna name it `UnstableAPIAnalysisPass`).
 # In this analysis, we are interested in whether a binding that appears in a target code is
 # an "unstable API" or not, and we can simply check if each abstract element appeared during
@@ -115,7 +115,7 @@ end
 @reportdef struct UnstableAPI <: InferenceErrorReport
     g::GlobalRef
 end
-function JETInterfaces.get_msg(::Type{UnstableAPI}, analyzer::UnstableAPIAnalyzer, sv, g::GlobalRef)
+function JETInterface.get_msg(::Type{UnstableAPI}, analyzer::UnstableAPIAnalyzer, sv, g::GlobalRef)
     (; mod, name) = Base.resolve(g) # resolve to original name
     return "$mod.$name is unstable !"
 end

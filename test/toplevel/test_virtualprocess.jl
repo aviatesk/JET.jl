@@ -1278,8 +1278,11 @@ end
 end
 
 # will be used in the following two testsets
-const CONCRETIZATION_PATTERNS_FILE   = normpath(@__DIR__, "fixtures", "concretization_patterns.jl")
-const CONCRETIZATION_PATTERNS_CONFIG = normpath(@__DIR__, "fixtures", "..JET.toml")
+let
+    fixtures_dir = normpath(@__DIR__, "..", "fixtures")
+    global const CONCRETIZATION_PATTERNS_FILE   = normpath(fixtures_dir, "concretization_patterns.jl")
+    global const CONCRETIZATION_PATTERNS_CONFIG = normpath(fixtures_dir, "..JET.toml")
+end
 
 @testset "custom concretization pattern" begin
     # custom concretization pattern should work on AST level

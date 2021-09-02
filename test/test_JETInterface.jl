@@ -1,6 +1,6 @@
 module InterfaceTest
 
-using JET.JETInterfaces, JET, Test
+using JET.JETInterface, JET, Test
 import JET: get_reports
 
 # customized report pass

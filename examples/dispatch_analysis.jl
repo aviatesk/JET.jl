@@ -50,7 +50,7 @@
 # - `Core.Compiler.finish(frame::CC.InferenceState, analyzer::DispatchAnalyzer)` to check if optimization will happen or not (the case 1.)
 # - `Core.Compiler.finish!(analyzer::DispatchAnalyzer, caller::CC.InferenceResult)` to inspect an optimized IR (the case 2.)
 
-using JET.JETInterfaces
+using JET.JETInterface
 const CC = Core.Compiler
 import JET:
     JET,
@@ -79,9 +79,9 @@ function module_filter(m)
 end
 
 ## AbstractAnalyzer API requirements
-JETInterfaces.AnalyzerState(analyzer::DispatchAnalyzer)                          = analyzer.state
-JETInterfaces.AbstractAnalyzer(analyzer::DispatchAnalyzer, state::AnalyzerState) = DispatchAnalyzer(state, analyzer.opts, analyzer.frame_filter)
-JETInterfaces.ReportPass(analyzer::DispatchAnalyzer)                             = DispatchAnalysisPass()
+JETInterface.AnalyzerState(analyzer::DispatchAnalyzer)                          = analyzer.state
+JETInterface.AbstractAnalyzer(analyzer::DispatchAnalyzer, state::AnalyzerState) = DispatchAnalyzer(state, analyzer.opts, analyzer.frame_filter)
+JETInterface.ReportPass(analyzer::DispatchAnalyzer)                             = DispatchAnalysisPass()
 
 ## we want to run different analysis with a different filter, so include its hash into the cache key
 function JET.get_cache_key(analyzer::DispatchAnalyzer)
@@ -120,7 +120,7 @@ function CC.finish(frame::CC.InferenceState, analyzer::DispatchAnalyzer)
 end
 
 @reportdef struct OptimizationFailureReport <: InferenceErrorReport end
-JETInterfaces.get_msg(::Type{OptimizationFailureReport}, args...) =
+JETInterface.get_msg(::Type{OptimizationFailureReport}, args...) =
     return "failed to optimize" #: signature of this MethodInstance
 
 function (::DispatchAnalysisPass)(::Type{OptimizationFailureReport}, analyzer::DispatchAnalyzer, result::CC.InferenceResult)
@@ -151,7 +151,7 @@ function CC.finish!(analyzer::DispatchAnalyzer, frame::CC.InferenceState)
 end
 
 @reportdef struct RuntimeDispatchReport <: InferenceErrorReport end
-JETInterfaces.get_msg(::Type{RuntimeDispatchReport}, analyzer, s) =
+JETInterface.get_msg(::Type{RuntimeDispatchReport}, analyzer, s) =
     return "runtime dispatch detected" #: call signature
 
 function (::DispatchAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::DispatchAnalyzer, caller::CC.InferenceResult, opt::CC.OptimizationState)
