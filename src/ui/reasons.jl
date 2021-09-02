@@ -6,9 +6,12 @@ Construct a unique set of "reasons" for errors. Each reason is a unique file/lin
 `results` is most easily constructed from SnoopCompile's `report.(itrigs)`, where `itrigs` is a list of inference triggers.
 See the SnoopCompile documentation for details.
 """
-reasons(results::AbstractVector{<:JETCallResult}) = unique(reduce(vcat, filter(!isempty, reasons.(results))))
-reasons(result::JETCallResult) = reasons(result.analyzer)
-reasons(analyzer::AbstractAnalyzer) = Reason.(get_reports(analyzer))
+reasons(results::AbstractVector{<:JETCallResult}) = unique(reduce(vcat, filter(!isempty, reasons.(results)); init=Reason[]))
+reasons(result::JETCallResult) = Reason.(get_reports(result))
+
+struct Reason
+    report::InferenceErrorReport
+end
 
 # A limited form of comparison so as to aggregate equivalent errors that were
 # arrived at by different callgraphs

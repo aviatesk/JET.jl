@@ -12,7 +12,7 @@ end
 Base.show(io::IO, res::JETCallResult) = print_reports(io, res)
 function print_reports(io::IO, res::JETCallResult)
     return print_reports(io,
-                         get_reports(res.analyzer);
+                         get_reports(res.result);
                          res.jetconfigs...)
 end
 
@@ -331,8 +331,3 @@ function print_error_report(io, report::InferenceErrorReport)
                     bold = true,
                     )
 end
-# those don't need explicit signatures
-print_error_report(io, report::NoFieldErrorReport)       = printlnstyled(io, "│ ", report.msg; color = ERROR_COLOR)
-print_error_report(io, report::LocalUndefVarErrorReport) = printlnstyled(io, "│ ", report.msg; color = ERROR_COLOR)
-print_error_report(io, report::DivideErrorReport)        = printlnstyled(io, "│ ", report.msg; color = ERROR_COLOR)
-print_error_report(io, report::SeriousExceptionReport)   = printlnstyled(io, "│ ", report.msg; color = ERROR_COLOR)

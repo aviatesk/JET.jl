@@ -11,9 +11,9 @@ using Test
 const FIXTURE_DIR = normpath(@__DIR__, "fixtures")
 
 const ERROR_REPORTS_FROM_SUM_OVER_STRING = let
-    analyzer, = report_call(sum, (String,))
-    @test !isempty(get_reports(analyzer))
-    get_reports(analyzer)
+    result = report_call(sum, (String,))
+    @test !isempty(get_reports(result))
+    get_reports(result)
 end
 
 function test_sum_over_string(ers)
@@ -25,6 +25,4 @@ function test_sum_over_string(ers)
     end
 end
 test_sum_over_string(res::JET.VirtualProcessResult) = test_sum_over_string(res.inference_error_reports)
-test_sum_over_string(analyzer::JET.AbstractAnalyzer)  = test_sum_over_string(get_reports(analyzer))
-
-return
+test_sum_over_string(res::JET.JETCallResult) = test_sum_over_string(get_reports(res.result))

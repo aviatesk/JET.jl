@@ -47,7 +47,7 @@ function generate_api_doc(examples_pages)
     isfile(PLUGIN_API_FILENAME) && rm(PLUGIN_API_FILENAME)
     open(PLUGIN_API_FILENAME, write=true) do io
         contents = codeblock("Pages = $(repr([out]))", "@contents")
-        interface_docs = codeblock(join(JET.JETInterfaces.DOCUMENTED_NAMES, '\n'))
+        interface_docs = codeblock(join(JET.JETInterface.DOCUMENTED_NAMES, '\n'))
         examples_contents = codeblock("Pages = $(repr(examples_pages))", "@contents")
 
         s = md"""

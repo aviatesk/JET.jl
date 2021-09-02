@@ -133,17 +133,16 @@ SUITE["invalidation"] = @jetbenchmarkable (@report_call println(QuoteNode(nothin
         end
     end
 end
-# FIXME debug the error and enable this performance tracking
-# SUITE["self analysis"] = @jetbenchmarkable(
-#     begin
-#         analyzer = JET.JETAnalyzer()
-#         m = only(methods(JET.virtual_process))
-#         JET.analyze_method!(analyzer, m)
-#     end,
-#     setup = begin
-#         using JET
-#         @report_call identity(nothing)
-#     end)
+SUITE["self analysis"] = @jetbenchmarkable(
+    begin
+        analyzer = JET.JETAnalyzer()
+        m = only(methods(JET.virtual_process))
+        JET.analyze_method!(analyzer, m)
+    end,
+    setup = begin
+        using JET
+        @report_call identity(nothing)
+    end)
 SUITE["top-level"] = @jetbenchmarkable(
     (@analyze_toplevel begin
         foo(args...) = sum(args)

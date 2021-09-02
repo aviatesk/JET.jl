@@ -32,7 +32,7 @@
 # language and those written by ourselves, and in the latter case we're certainly uses
 # "unstable API" under the definition above.
 
-using JET.JETInterfaces  # to load APIs of the pluggable analysis framework
+using JET.JETInterface  # to load APIs of the pluggable analysis framework
 const CC = Core.Compiler # to inject a customized report pass
 
 # First off, we define `UnstableAPIAnalyzer`, which is a new [`AbstractAnalyzer`](@ref) and will
@@ -47,12 +47,12 @@ function UnstableAPIAnalyzer(;
     jetconfigs...)
     return UnstableAPIAnalyzer(AnalyzerState(; jetconfigs...), is_target_module)
 end
-JETInterfaces.AnalyzerState(analyzer::UnstableAPIAnalyzer) = analyzer.state
-JETInterfaces.AbstractAnalyzer(analyzer::UnstableAPIAnalyzer, state::AnalyzerState) =
+JETInterface.AnalyzerState(analyzer::UnstableAPIAnalyzer) = analyzer.state
+JETInterface.AbstractAnalyzer(analyzer::UnstableAPIAnalyzer, state::AnalyzerState) =
     UnstableAPIAnalyzer(state, analyzer.is_target_module)
-JETInterfaces.ReportPass(analyzer::UnstableAPIAnalyzer) = UnstableAPIAnalysisPass()
+JETInterface.ReportPass(analyzer::UnstableAPIAnalyzer) = UnstableAPIAnalysisPass()
 
-# Next, we overload some of `Core.Compiler`'s [abstract interpretation](@ref abstractinterpret-analysis) methods,
+# Next, we overload some of `Core.Compiler`'s [abstract interpretation](@ref abstractinterpret) methods,
 # and inject a customized analysis pass (here we gonna name it `UnstableAPIAnalysisPass`).
 # In this analysis, we are interested in whether a binding that appears in a target code is
 # an "unstable API" or not, and we can simply check if each abstract element appeared during
@@ -115,7 +115,7 @@ end
 @reportdef struct UnstableAPI <: InferenceErrorReport
     g::GlobalRef
 end
-function JETInterfaces.get_msg(::Type{UnstableAPI}, analyzer::UnstableAPIAnalyzer, sv, g::GlobalRef)
+function JETInterface.get_msg(::Type{UnstableAPI}, analyzer::UnstableAPIAnalyzer, sv, g::GlobalRef)
     (; mod, name) = Base.resolve(g) # resolve to original name
     return "$mod.$name is unstable !"
 end
@@ -128,7 +128,7 @@ function (::UnstableAPIAnalysisPass)(::Type{UnstableAPI}, analyzer::UnstableAPIA
         analyzer.is_target_module(mod) && return # we don't care about what we defined ourselves
 
         if isunstable(mod, name)
-            add_new_report!(UnstableAPI(analyzer, sv, e), analyzer)
+            add_new_report!(sv.result, UnstableAPI(analyzer, sv, e))
         end
     end
 end
@@ -186,13 +186,13 @@ using JET # to use analysis entry points
 function some_reflection_code(@nospecialize(f))
     return any(Base.hasgenerator, methods(f)) # Base.hasgenerator is unstable
 end
-@report_call analyzer=UnstableAPIAnalyzer some_reflection_code(sin);
+@report_call analyzer=UnstableAPIAnalyzer some_reflection_code(sin)
 
 # `UnstableAPIAnalyzer` can find an "unstable" global variable:
 module foo; bar = 1 end
 report_call((Any,); analyzer=UnstableAPIAnalyzer) do a
     foo.bar + a # foo.bar is unstable
-end;
+end
 
 # `UnstableAPIAnalyzer` can detect "unstable API"s even if they're imported binding or
 # nested reference (, which will be resolve to `getproperty`)
@@ -200,7 +200,7 @@ import Base: hasgenerator
 report_call((Any,); analyzer=UnstableAPIAnalyzer) do mi
     ## NOTE every function call appearing here is unstable
     ci = hasgenerator(mi) ? Core.Compiler.get_staged(mi) : Base.uncompressed_ast(mi)
-end;
+end
 
 # ### Analyze a real-world package
 

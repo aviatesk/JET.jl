@@ -1,34 +1,53 @@
 # Internals of JET.jl
 
-## [Abstract Interpretation Based Analysis](@id abstractinterpret-analysis)
+## [Abstract Interpretation](@id abstractinterpret)
 
-JET.jl overloads functions with the [`Core.Compiler.AbstractInterpreter` interface](https://github.com/JuliaLang/julia/blob/master/base/compiler/types.jl), and customizes its abstract interpretation routine.
-The overloads are done on `AbstractAnalyzer <: AbstractInterpreter` so that `typeinf(::AbstractAnalyzer, ::InferenceState)` will do the customized abstract interpretation and collect type errors.
+In order to perform type level program analysis, JET.jl uses
+[`Core.Compiler.AbstractInterpreter` interface](https://github.com/JuliaLang/julia/blob/master/base/compiler/types.jl),
+and customizes its abstract interpretation by overloading subset of `Core.Compiler` functions, that are originally
+developed for Julia compiler's type inference and optimizations that aim at generating efficient native code for CPU execution.
+
+[`JET.AbstractAnalyzer`](@ref) overloads a set of `Core.Compiler` functions to implement the "core" functionalities
+of JET's analysis, including inter-procedural error report propagation and caching of analysis result.
+And each plugin analyzer (e.g. [`JET.JETAnalyzer`](@ref)) will overload more `Core.Compiler` functions so that it can
+perform its own program analysis on top of the core `AbstractAnalyzer` infrastructure.
 
 Most overloads use the [`invoke`](https://docs.julialang.org/en/v1/base/base/#Core.invoke) reflection, which allows
-[`JET.AbstractAnalyzer`](@ref) to dispatch to the original `AbstractInterpreter`'s abstract interpretation methods and still keep passing
-it to the subsequent (maybe overloaded) callees (see [`JET.@invoke`](@ref) macro).
+`AbstractAnalyzer` to dispatch to the original `AbstractInterpreter`'s abstract interpretation methods while still
+passing `AbstractAnalyzer` to the subsequent (maybe overloaded) callees (see [`JET.@invoke`](@ref) macro).
 
 ```@docs
+JET.JETResult
+JET.is_from_same_frame
 JET.bail_out_toplevel_call
 JET.bail_out_call
 JET.add_call_backedges!
 JET.const_prop_entry_heuristic
 JET.analyze_task_parallel_code!
-JET.is_from_same_frame
-JET.AbstractGlobal
-JET.JET_REPORT_CACHE
-JET.JET_CODE_CACHE
+```
+
+### How `AbstractAnalyzer` manages caches
+
+```@docs
+JET.JET_CACHE
+JET.JETCachedResult
+JET.inlining_policy
 ```
 
 
-## [Top-level Analysis](@id top-level-analysis)
+## [Top-level Analysis](@id toplevel)
 
 ```@docs
 JET.virtual_process
 JET.virtualize_module_context
 JET.ConcreteInterpreter
 JET.partially_interpret!
+```
+
+### How top-level analysis is bridged to `AbstractAnalyzer`
+
+```@docs
+JET.AbstractGlobal
 ```
 
 
