@@ -230,7 +230,7 @@ _get_sig_type(::StateAtPC, @nospecialize(x)) = Any[repr(x; context = :compact =>
 """
     InferenceErrorReport
 
-An interface type of error reports that JET collects by abstract interpration.
+An interface type of error reports that JET collects by abstract interpretation.
 If `T` implements this interface, the following requirements should be satisfied:
 
 ---
