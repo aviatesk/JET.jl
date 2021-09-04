@@ -56,8 +56,7 @@ import JET:
     JET,
     @invoke,
     get_source,
-    @isexpr,
-    gen_call_with_extracted_types_and_kwargs
+    @isexpr
 
 struct DispatchAnalyzer{T} <: AbstractAnalyzer
     state::AnalyzerState
@@ -170,7 +169,7 @@ end
 # So we defined our analyzer.
 # Let's setup utility analysis entries first:
 
-using JET # to use analysis entry points
+using JET, InteractiveUtils # to use analysis entry points
 
 function report_dispatch(@nospecialize(f), @nospecialize(types = Tuple{});
                          analyzer = DispatchAnalyzer,
@@ -179,7 +178,7 @@ function report_dispatch(@nospecialize(f), @nospecialize(types = Tuple{});
     report_call(f, types; analyzer, jetconfigs...)
 end
 macro report_dispatch(ex0...)
-    return gen_call_with_extracted_types_and_kwargs(__module__, :report_dispatch, ex0)
+    return InteractiveUtils.gen_call_with_extracted_types_and_kwargs(__module__, :report_dispatch, ex0)
 end
 
 # Now we can just call `@report_dispatch f(args...)` and check if there are any problematic

@@ -639,25 +639,31 @@ CC.may_compress(analyzer::AbstractAnalyzer)      = false
 CC.may_discard_trees(analyzer::AbstractAnalyzer) = false
 CC.verbose_stmt_info(analyzer::AbstractAnalyzer) = false
 
-# branch on https://github.com/JuliaLang/julia/pull/41328
-@static if isdefined(CC, :is_stmt_inline)
+# branch on https://github.com/JuliaLang/julia/pull/41328 & https://github.com/JuliaLang/julia/pull/42082
+@static if IS_AFTER_42082
 @doc """
-    inlining_policy(analyzer::AbstractAnalyzer, @nospecialize(src), stmt_flag::UInt8) -> source::Any
+    inlining_policy(
+        analyzer::AbstractAnalyzer, @nospecialize(src), stmt_flag::UInt8,
+        mi::MethodInstance, argtypes::Vector{Any}) -> source::Any
 
 Implements inlining policy for `AbstractAnalyzer`.
 Since `AbstractAnalyzer` works on `InferenceResult` whose `src` field keeps
 [`JETResult`](@ref) or [`JETCachedResult`](@ref), this implementation just bypasses
 their wrapped source to `inlining_policy(::AbstractInterpreter, ::Any, ::UInt8)`.
 """
-function CC.inlining_policy(analyzer::AbstractAnalyzer, @nospecialize(src), stmt_flag::UInt8)
+function CC.inlining_policy(
+    analyzer::AbstractAnalyzer, @nospecialize(src), stmt_flag::UInt8,
+    mi::MethodInstance, argtypes::Vector{Any})
     if isa(src, JETResult)
         src = get_source(src)
     elseif isa(src, JETCachedResult)
         src = get_source(src)
     end
-    return @invoke CC.inlining_policy(analyzer::AbstractInterpreter, @nospecialize(src), stmt_flag::UInt8)
+    return @invoke CC.inlining_policy(
+        analyzer::AbstractInterpreter, @nospecialize(src), stmt_flag::UInt8,
+        mi::MethodInstance, argtypes::Vector{Any})
 end
-else # @static if isdefined(Compiler, :is_stmt_inline)
+else # @static if IS_AFTER_42082
 @doc """
     inlining_policy(::AbstractAnalyzer) = jet_inlining_policy
     jet_inlining_policy(@nospecialize(src)) -> source::Any
@@ -676,7 +682,7 @@ CC.inlining_policy(::AbstractAnalyzer) = jet_inlining_policy
     end
     return CC.default_inlining_policy(src)
 end
-end # @static if isdefined(Compiler, :is_stmt_inline)
+end # @static if IS_AFTER_42082
 
 # AbstractAnalyzer
 # ================

@@ -215,23 +215,8 @@ __init__() = foreach(@nospecialize(f)->f(), INIT_HOOKS)
 # compat
 # ------
 
-# early take in https://github.com/JuliaLang/julia/pull/41040
-function gen_call_with_extracted_types_and_kwargs(__module__, fcn, ex0)
-    kws = Expr[]
-    arg = ex0[end] # Mandatory argument
-    for i in 1:length(ex0)-1
-        x = ex0[i]
-        if x isa Expr && x.head === :(=) # Keyword given of the form "foo=bar"
-            if length(x.args) != 2
-                return Expr(:call, :error, "Invalid keyword argument: $x")
-            end
-            push!(kws, Expr(:kw, esc(x.args[1]), esc(x.args[2])))
-        else
-            return Expr(:call, :error, "@$fcn expects only one non-keyword argument")
-        end
-    end
-    return InteractiveUtils.gen_call_with_extracted_types(__module__, fcn, arg, kws)
-end
+# branch on https://github.com/JuliaLang/julia/pull/42082
+const IS_AFTER_42082 = hasmethod(InferenceState, (InferenceResult, Symbol, AbstractInterpreter))
 
 # macros
 # ------
@@ -661,15 +646,22 @@ analyze_method_signature!(analyzer::AbstractAnalyzer, m::Method, @nospecialize(a
 function analyze_method_instance!(analyzer::AbstractAnalyzer, mi::MethodInstance)
     result = InferenceResult(mi)
 
-    frame = InferenceState(result, #=cached=# true, analyzer)
+    @static if IS_AFTER_42082
+        frame = InferenceState(result, #=cache=# :global, analyzer)
+    else # static if IS_AFTER_42082
+        frame = InferenceState(result, #=cached=# true, analyzer)
+    end # static if IS_AFTER_42082
+
     isnothing(frame) && return analyzer, result
 
     return analyze_frame!(analyzer, frame)
 end
 
-function InferenceState(result::InferenceResult, cached::Bool, analyzer::AbstractAnalyzer)
+const CACHE_ARG_TYPE = IS_AFTER_42082 ? Symbol : Bool
+
+function InferenceState(result::InferenceResult, cache::CACHE_ARG_TYPE, analyzer::AbstractAnalyzer)
     set_result!(result) # modify `result` for succeeding JET analysis
-    return @invoke InferenceState(result::InferenceResult, cached::Bool, analyzer::AbstractInterpreter)
+    return @invoke InferenceState(result::InferenceResult, cache::CACHE_ARG_TYPE, analyzer::AbstractInterpreter)
 end
 
 function analyze_frame!(analyzer::AbstractAnalyzer, frame::InferenceState)
@@ -1062,7 +1054,11 @@ function analyze_toplevel!(analyzer::AbstractAnalyzer, src::CodeInfo)
     # toplevel frames don't really need to be cached, but still better to be optimized
     # in order to get reasonable `LocalUndefVarErrorReport` and `UncaughtExceptionReport`
     # NOTE and also, otherwise `typeinf_edge` won't add "toplevel-to-callee" edges
-    frame = InferenceState(result, src, #=cached=# true, analyzer);
+    @static if IS_AFTER_42082
+        frame = InferenceState(result, src, #=cache=# :global, analyzer)
+    else # @static if IS_AFTER_42082
+        frame = InferenceState(result, src, #=cached=# true, analyzer)
+    end # @static if IS_AFTER_42082
 
     return analyze_frame!(analyzer, frame)
 end
@@ -1164,7 +1160,7 @@ julia> @report_call aggressive_constant_propagation=false rand(Bool)
 ```
 """
 macro report_call(ex0...)
-    return gen_call_with_extracted_types_and_kwargs(__module__, :report_call, ex0)
+    return InteractiveUtils.gen_call_with_extracted_types_and_kwargs(__module__, :report_call, ex0)
 end
 
 """
@@ -1339,7 +1335,7 @@ end
 end
 
 function test_exs(ex0, m, source)
-    analysis = gen_call_with_extracted_types_and_kwargs(m, :report_call, ex0)
+    analysis = InteractiveUtils.gen_call_with_extracted_types_and_kwargs(m, :report_call, ex0)
     orig_expr = QuoteNode(
         Expr(:macrocall, GlobalRef(@__MODULE__, Symbol("@test_call")), source, ex0...))
     source = QuoteNode(source)

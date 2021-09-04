@@ -66,8 +66,8 @@ const SoundBasicPass = Union{SoundPass,BasicPass}
 # analysis
 # ========
 
-function InferenceState(result::InferenceResult, cached::Bool, analyzer::JETAnalyzer)
-    frame = @invoke InferenceState(result::InferenceResult, cached::Bool, analyzer::AbstractAnalyzer)
+function InferenceState(result::InferenceResult, cache::CACHE_ARG_TYPE, analyzer::JETAnalyzer)
+    frame = @invoke InferenceState(result::InferenceResult, cache::CACHE_ARG_TYPE, analyzer::AbstractAnalyzer)
     if isnothing(frame) # indicates something bad happened within `retrieve_code_info`
         ReportPass(analyzer)(GeneratorErrorReport, analyzer, result)
     end
