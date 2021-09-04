@@ -38,7 +38,7 @@ If the entry prints the collected error points, the configurations below will be
   When set to `true`, annotates types when printing analyzed call stack.
   Here are examples:
   * with `annotate_types = false` (default):
-    ```julia
+    ```julia-repl
     julia> @report_call sum("julia")
     ═════ 2 possible errors found ═════
     ┌ @ reduce.jl:530 Base.#sum#241(Base.pairs(Core.NamedTuple()), #self#, a)
@@ -67,7 +67,7 @@ If the entry prints the collected error points, the configurations below will be
     Char
     ```
   * with `annotate_types = true`
-    ```julia
+    ```julia-repl
     julia> @report_call annotate_types = true sum("julia")
     ═════ 2 possible errors found ═════
     ┌ @ reduce.jl:530 Base.#sum#241(Base.pairs(Core.NamedTuple()::NamedTuple{(), Tuple{}})::Base.Pairs{Symbol, Union{}, Tuple{}, NamedTuple{(), Tuple{}}}, #self#::typeof(sum), a::String)

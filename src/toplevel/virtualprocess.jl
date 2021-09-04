@@ -33,7 +33,7 @@ These configurations will be active for all the top-level entries explained in t
   This configuration can be useful when you just want to analyze a submodule, without
   starting entire analysis from the root module.
   For example, we can analyze `Base.Math` like below:
-  ```julia
+  ```julia-repl
   julia> report_file(JET.fullbasepath("math.jl");
                      context = Base,                  # `Base.Math`'s root module
                      analyze_from_definitions = true, # there're only definitions in `Base`
@@ -114,7 +114,7 @@ These configurations will be active for all the top-level entries explained in t
   - which code is selected to be concretized or not by JET's code selection logic:
     where `t`-annotated statements are concretized while `f`-annotated statements are abstracted
     and left abstract interpretation
-  ```julia
+  ```julia-repl
   julia> report_file("test/fixtures/concretization_patterns.jl";
                      concretization_patterns = [:(const GLOBAL_CODE_STORE = Dict())],
                      toplevel_logger = IOContext(stdout, :JET_LOGGER_LEVEL => 1))

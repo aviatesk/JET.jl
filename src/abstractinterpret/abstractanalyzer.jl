@@ -104,7 +104,7 @@ These configurations will be active for all the entries.
   The effect of this configuration can be described with the following examples:
 
   * with `strict_condition_check::Bool = false` (default)
-    ```julia
+    ```julia-repl
     julia> test_f() = Dict('a' => 1, :b => 2) # ::Dict{Any,Int}
     test_f (generic function with 1 method)
 
@@ -114,7 +114,7 @@ These configurations will be active for all the entries.
     ```
 
   * with `strict_condition_check::Bool = true`
-    ```julia
+    ```julia-repl
     julia> test_f() = Dict('a' => 1, :b => 2) # ::Dict{Any,Int}
     test_f (generic function with 1 method)
 
@@ -196,11 +196,11 @@ Logging configurations for JET analysis.
 
   Examples:
   * logs into `stdout`
-    ```julia
+    ```julia-repl
     julia> report_file(filename; toplevel_logger = stdout)
     ```
   * logs into `io::IOBuffer` with "debug" logger level
-    ```julia
+    ```julia-repl
     julia> report_file(filename; toplevel_logger = IOContext(io, $(repr(LOGGER_LEVEL_KEY)) => $DEBUG_LOGGER_LEVEL));
     ```
 ---
@@ -211,17 +211,17 @@ Logging configurations for JET analysis.
 
   Examples:
   * logs into `stdout`
-    ```julia
-    report_call(f, args...; inference_logger = stdout)
+    ```julia-repl
+    julia> report_call(f, args...; inference_logger = stdout)
     ```
   * logs into `io::IOBuffer` with "debug" logger level
-    ```julia
+    ```julia-repl
     julia> report_call(f, args...; inference_logger = IOContext(io, $(repr(LOGGER_LEVEL_KEY)) => $DEBUG_LOGGER_LEVEL))
     ```
 ---
 !!! tip
     Of course you can specify both `toplevel_logger` and `inference_logger` at the same time like below:
-    ```julia
+    ```julia-repl
     julia> report_and_watch_file(filename;
                                  toplevel_logger = IOContext(logger_io, $(repr(LOGGER_LEVEL_KEY)) => $DEBUG_LOGGER_LEVEL),
                                  inference_logger = inference_io)

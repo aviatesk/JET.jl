@@ -9,7 +9,7 @@ the following additional configurations that are specific to dispatch analysis.
 ---
 - `frame_filter = x::$State->true`:\\
   A predicate which takes `InfernceState` or `OptimizationState` and returns `false` to skip analysis on the frame.
-  ```julia
+  ```julia-repl
   # only checks code within the current module:
   julia> mymodule_filter(x) = x.mod === @__MODULE__;
   julia> @test_nopitfall frame_filter=mymodule_filter f(args...)
@@ -19,7 +19,7 @@ the following additional configurations that are specific to dispatch analysis.
 ---
 - `function_filter = @nospecialize(ft)->true`:\\
   A predicate which takes a function type and returns `false` to skip analysis on the call.
-  ```julia
+  ```julia-repl
   # ignores `Core.Compiler.widenconst` calls (since it's designed to be runtime-dispatched):
   julia> myfunction_filter(@nospecialize(ft)) = ft !== typeof(Core.Compiler.widenconst)
   julia> @test_nopitfall function_filter=myfunction_filter f(args...)
@@ -37,7 +37,7 @@ the following additional configurations that are specific to dispatch analysis.
   or runtime dispatches detected within non-concrete calls under the default configuration.
   We can turn off this `skip_nonconcrete_calls` configuration to get type-instabilities
   within non-concrete calls.
-  ```julia
+  ```julia-repl
   # the following examples are adapted from https://docs.julialang.org/en/v1/manual/performance-tips/#kernel-functions
   julia> function fill_twos!(a)
              for i = eachindex(a)
@@ -95,7 +95,7 @@ the following additional configurations that are specific to dispatch analysis.
 
   See also <https://github.com/JuliaLang/julia/pull/35982>.
 
-  ```julia
+  ```julia-repl
   # by default, unoptimized "throw blocks" are not analyzed
   julia> @test_nopitfall sin(10)
   Test Passed
@@ -298,7 +298,7 @@ Evaluates the arguments to the function call, determines its types, and then cal
 [`report_pitfall`](@ref) on the resulting expression.
 As with `@code_typed` and its family, any of [JET configurations](https://aviatesk.github.io/JET.jl/dev/config/)
 or [dispatch analysis specific configurations](@ref dispatch-analysis-configurations) can be given as the optional arguments like this:
-```julia
+```julia-repl
 # reports `rand(::Type{Bool})` with `unoptimize_throw_blocks` configuration turned on
 julia> @report_pitfall unoptimize_throw_blocks=true rand(Bool)
 ```
@@ -316,7 +316,7 @@ dispatch or optimization failure happens, or an `Error` result if this macro enc
 unexpected error. When the test `Fail`s, abstract call stack to each problem location will
 also be printed to `stdout`.
 
-```julia
+```julia-repl
 julia> @test_nopitfall sincos(10)
 Test Passed
   Expression: #= none:1 =# JET.@test_nopitfall sincos(10)
@@ -324,7 +324,7 @@ Test Passed
 
 As with [`@report_pitfall`](@ref), any of [JET configurations](https://aviatesk.github.io/JET.jl/dev/config/)
 or [dispatch analysis specific configurations](@ref dispatch-analysis-configurations) can be given as the optional arguments like this:
-```julia
+```julia-repl
 julia> function f(n)
             r = sincos(n)
             println(r) # `println` is full of runtime dispatches, but we can ignore the corresponding reports from `Base` by explicit frame filter
@@ -340,7 +340,7 @@ Test Passed
 `@test_nopitfall` is fully integrated with [`Test` standard library's unit-testing infrastructure](https://docs.julialang.org/en/v1/stdlib/Test/).
 It means, the result of `@test_nopitfall` will be included in the final `@testset` summary,
 it supports `skip` and `broken` annotations as `@test` macro does, etc.
-```julia
+```julia-repl
 julia> using Test
 
 julia> f(params) = sin(params.value); # type-stable

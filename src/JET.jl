@@ -687,9 +687,9 @@ See [Configuration File](@ref) for more details.
     When you want to analyze your package, but any file actually using it isn't available, the
     `analyze_from_definitions` option can be useful (see [`ToplevelConfig`](@ref)'s `analyze_from_definitions` option). \\
     For example, JET can analyze JET itself like below:
-    ```julia
+    ```julia-repl
     # from the root directory of JET.jl
-    julia> report_file("src/JET";
+    julia> report_file("src/JET.jl";
                        analyze_from_definitions = true)
     ```
 
@@ -930,7 +930,7 @@ The configurations will only be active when used with [`report_and_watch_file`](
   !!! tip
       This configuration is useful when your're also editing files that are not tracked by Revise,
       e.g. editing functions defined in `Base`:
-      ```julia
+      ```julia-repl
       # re-performe analysis when you make a change to `Base`
       julia> report_and_watch_file(yourfile; revise_modules = [Base])
       ```
@@ -1154,7 +1154,7 @@ Evaluates the arguments to the function call, determines its types, and then cal
 [`report_call`](@ref) on the resulting expression.
 As with `@code_typed` and its family, any of [JET configurations](@ref) can be given as the optional
 arguments like this:
-```julia
+```julia-repl
 # reports `rand(::Type{Bool})` with `aggressive_constant_propagation` configuration turned off
 julia> @report_call aggressive_constant_propagation=false rand(Bool)
 ```
@@ -1213,7 +1213,7 @@ contains any error points detected, or an `Error` result if this macro encounter
 unexpected error. When the test `Fail`s, abstract call stack to each problem location will
 also be printed to `stdout`.
 
-```julia
+```julia-repl
 julia> @test_call sincos(10)
 Test Passed
   Expression: #= none:1 =# JET.@test_call sincos(10)
@@ -1221,7 +1221,7 @@ Test Passed
 
 As with [`@report_call`](@ref), any of [JET configurations](https://aviatesk.github.io/JET.jl/dev/config/)
 or analyzer specific configurations can be given as the optional arguments `jetconfigs...` like this:
-```julia
+```julia-repl
 julia> cond = false
 
 julia> function f(n)
@@ -1250,7 +1250,7 @@ ERROR: There was an error during testing
 `@test_call` is fully integrated with [`Test` standard library's unit-testing infrastructure](https://docs.julialang.org/en/v1/stdlib/Test/).
 It means, the result of `@test_call` will be included in the final `@testset` summary,
 it supports `skip` and `broken` annotations as like `@test` and its family:
-```julia
+```julia-repl
 julia> using JET, Test
 
 julia> f(ref) = isa(ref[], Number) ? sin(ref[]) : nothing;      # Julia can't propagate the type constraint `ref[]::Number` to `sin(ref[])`, JET will report `NoMethodError`
@@ -1452,7 +1452,7 @@ include("analyzers/perfanalyzer.jl")
 """
     JETInterface
 
-This `baremodule` exports names that form the APIs of [JET.jl Pluggable Analysis Framework](@ref).
+This `baremodule` exports names that form the APIs of [JET Analyzer Framework](@ref).
 `using JET.JETInterface` loads all names that are necessary to define a plugin analysis.
 """
 baremodule JETInterface

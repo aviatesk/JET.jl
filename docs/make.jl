@@ -100,8 +100,11 @@ let
                         "Examples" => examples,
                     ]
                ],
-               format = Documenter.HTML(prettyurls = get(ENV, "CI", nothing) == "true"),
-               )
+               format = Documenter.HTML(;
+                   prettyurls = get(ENV, "CI", nothing) == "true",
+                   ansicolor = true,
+               ),
+            )
 end
 
 deploydocs(; repo = "github.com/aviatesk/JET.jl.git",
