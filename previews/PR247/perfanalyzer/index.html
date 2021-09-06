@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Performance Analysis · JET.jl</title><script data-outdated-warner src="../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.039/juliamono-regular.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.13.11/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL=".."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../assets/documenter.js"></script><script src="../siteinfo.js"></script><script src="../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../">JET.jl</a></span></div><form class="docs-search" action="../search/"><input class="docs-search-query" id="documenter-search-query" name="q" type="text" placeholder="Search docs"/></form><ul class="docs-menu"><li><a class="tocitem" href="../">README</a></li><li><a class="tocitem" href="../usages/">Usages</a></li><li><a class="tocitem" href="../config/">Configurations</a></li><li class="is-active"><a class="tocitem" href>Performance Analysis</a><ul class="internal"><li><a class="tocitem" href="#perfanalysis-quick-start"><span>Quick Start</span></a></li><li><a class="tocitem" href="#perfanalysis-entry"><span>Entry Points</span></a></li><li><a class="tocitem" href="#perfanalysis-config"><span>Configurations</span></a></li></ul></li><li><a class="tocitem" href="../internals/">Internals</a></li><li><span class="tocitem">JET Analyzer Framework</span><ul><li><a class="tocitem" href="../generated-plugin-api/">API</a></li><li><input class="collapse-toggle" id="menuitem-6-2" type="checkbox"/><label class="tocitem" for="menuitem-6-2"><span class="docs-label">Examples</span><i class="docs-chevron"></i></label><ul class="collapsed"><li><a class="tocitem" href="../generated-plugin-examples/dispatch_analysis/">Dispatch Analysis</a></li><li><a class="tocitem" href="../generated-plugin-examples/find_unstable_api/">&quot;Unstable API&quot; Analysis</a></li></ul></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href>Performance Analysis</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Performance Analysis</a></li></ul></nav><div class="docs-right"><a class="docs-edit-link" href="https://github.com/aviatesk/JET.jl/blob/master/docs/src/perfanalyzer.md" title="Edit on GitHub"><span class="docs-icon fab"></span><span class="docs-label is-hidden-touch">Edit on GitHub</span></a><a class="docs-settings-button fas fa-cog" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-sidebar-button fa fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a></div></header><article class="content" id="documenter-page"><h1 id="perfanalysis"><a class="docs-heading-anchor" href="#perfanalysis">Performance Analysis</a><a id="perfanalysis-1"></a><a class="docs-heading-anchor-permalink" href="#perfanalysis" title="Permalink"></a></h1><p>When Julia compiles your code but type inference was not so successful, the compiler is likely to be unable to resolve which method should be called at each generic function call-site, and then it will be looked up at runtime. That is called &quot;runtime dispatch&quot;, which is known as a common source of performance problem — since the compiler can&#39;t do various kinds of optimizations including inlining when it doesn&#39;t know matching methods, and method lookup itself can also be a bottleneck if it happens many times.</p><p>In order to avoid this problem, we usually use <a href="https://docs.julialang.org/en/v1/base/base/#Base.code_typed"><code>code_typed</code></a> or its family, inspect their output, and check if there is anywhere type is not well inferred (i.e. where is &quot;type-instable&quot;) and optimization was not successful. But the problem is that they can only present the &quot;final&quot; output of inference or optimization, and we can&#39;t inspect an entire call graph and may not be able to find where a problem happened and how the &quot;type instability&quot; has been propagated.</p><p>There is a nice package called <a href="https://github.com/JuliaDebug/Cthulhu.jl">Cthulhu.jl</a>, which allows us to inspect the output of <code>code_typed</code> by <em>descending</em> into a call tree, recursively and interactively. The workflow with Cthulhu is much more powerful, but still, it&#39;s tedious.</p><p>So, why not automate it ? JET.jl implements such an analyzer that investigates optimized IRs of your code and automatically detects anywhere the compiler failed to do optimizations, or couldn&#39;t resolve matching methods and thus dispatch will happen at runtime.</p><h2 id="perfanalysis-quick-start"><a class="docs-heading-anchor" href="#perfanalysis-quick-start">Quick Start</a><a id="perfanalysis-quick-start-1"></a><a class="docs-heading-anchor-permalink" href="#perfanalysis-quick-start" title="Permalink"></a></h2><p><a href="#JET.@report_pitfall"><code>@report_pitfall</code></a> analyzes the entire call graph of a given generic function call, and then reports detected optimization failures and runtime dispatch points:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; using JET</code><code class="nohighlight hljs ansi" style="display:block;"></code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; n = rand(Int);</code><code class="nohighlight hljs ansi" style="display:block;"></code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; make_vals(n) = n ≥ 0 ? (zero(n):n) : (n:zero(n));</code><code class="nohighlight hljs ansi" style="display:block;"></code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; function sumup(f)
+           vals = make_vals(n) # this function uses the non-constant global variable here and it makes everything very type-unstable
+           s = zero(eltype(vals))
+           for v in vals
+               s += f(v)
+           end
+           return s
+       end;</code><code class="nohighlight hljs ansi" style="display:block;"></code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; @report_pitfall sumup(sin) # runtime dispatches will be reported</code><code class="nohighlight hljs ansi" style="display:block;">═════ 7 possible errors found ═════
+┌ @ REPL[4]:2 Main.make_vals(%1)
+│ runtime dispatch detected: Main.make_vals(%1::Any)
+└─────────────
+┌ @ REPL[4]:3 Main.eltype(%2)
+│ runtime dispatch detected: Main.eltype(%2::Any)
+└─────────────
+┌ @ REPL[4]:3 Main.zero(%3)
+│ runtime dispatch detected: Main.zero(%3::Any)
+└─────────────
+┌ @ REPL[4]:4 Base.iterate(%2)
+│ runtime dispatch detected: Base.iterate(%2::Any)
+└─────────────
+┌ @ REPL[4]:5 f(%11)
+│ runtime dispatch detected: f::typeof(sin)(%11::Any)
+└─────────────
+┌ @ REPL[4]:5 Main.+(%10, %13)
+│ runtime dispatch detected: Main.+(%10::Any, %13::Any)
+└─────────────
+┌ @ REPL[4]:6 Base.iterate(%2, %12)
+│ runtime dispatch detected: Base.iterate(%2::Any, %12::Any)
+└─────────────</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; function sumup(f, n) # we can pass parameters as a function argument, and then everything is type-stable
+           vals = make_vals(n)
+           s = zero(eltype(vals))
+           for v in vals
+               s += f(v) # we may get an union type, but Julia can optimize away small unions (thus no dispatch here)
+           end
+           return s
+       end;</code><code class="nohighlight hljs ansi" style="display:block;"></code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; @report_pitfall sumup(sin, rand(Int)) # now runtime dispatch free !</code><code class="nohighlight hljs ansi" style="display:block;">No errors !</code></pre><p>With the <a href="#perfanalysis-config"><code>frame_filter</code></a> configuration, we can focus on type instabilities within specific modules of our interest:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; # problem: when ∑1/n exceeds `x` ?
+       function compute(x)
+           r = 1
+           s = 0.0
+           n = 1
+           @time while r &lt; x
+               s += 1/n
+               if s ≥ r
+                   # `println` call is full of runtime dispatches for good reasons
+                   # and we&#39;re not interested in type-instabilities within this call
+                   # since we know it&#39;s only called few times
+                   println(&quot;round $r/$x has been finished&quot;)
+                   r += 1
+               end
+               n += 1
+           end
+           return n, s
+       end</code><code class="nohighlight hljs ansi" style="display:block;">compute (generic function with 1 method)</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; @report_pitfall compute(30) # bunch of reports will be reported from the `println` call</code><code class="nohighlight hljs ansi" style="display:block;">═════ 23 possible errors found ═════
+┌ @ REPL[1]:11 Main.println(Base.string(&quot;round &quot;, r, &quot;/&quot;, x, &quot; has been finished&quot;))
+│┌ @ coreio.jl:4 Base.println(Core.tuple(Core.typeassert(Base.stdout, Base.IO)), xs...)
+││┌ @ strings/io.jl:73 Base.print(Core.tuple(io), xs, Core.tuple(&quot;\n&quot;)...)
+│││┌ @ strings/io.jl:43 Base.lock(io)
+││││┌ @ show.jl:334 Base.lock(Base.getproperty(io, :io))
+│││││┌ @ stream.jl:283 Base.lock(Base.getproperty(s, :lock))
+││││││┌ @ lock.jl:100 Base.wait(Base.getproperty(rl, :cond_wait))
+│││││││┌ @ condition.jl:112  = Base.wait()
+││││││││┌ @ task.jl:824 result = Base.try_yieldto(Base.ensure_rescheduled)
+│││││││││┌ @ task.jl:761 Base.getproperty(%7, :result)
+││││││││││ runtime dispatch detected: Base.getproperty(%7::Task, :result::Symbol)
+│││││││││└───────────────
+│││││││││┌ @ task.jl:762 Base.setproperty!(%7, :result, Base.nothing)
+││││││││││ runtime dispatch detected: Base.setproperty!(%7::Task, :result::Symbol, Base.nothing)
+│││││││││└───────────────
+│││││││││┌ @ task.jl:763 Base.setproperty!(%7, :_isexception, false)
+││││││││││ runtime dispatch detected: Base.setproperty!(%7::Task, :_isexception::Symbol, false)
+│││││││││└───────────────
+│││││││┌ @ condition.jl:114 Base.list_deletefirst!(Base.getproperty(ct, :queue), ct)
+││││││││┌ @ linked_list.jl:145 Base.isequal(Base.getproperty(h, :value), val)
+│││││││││┌ @ gcutils.jl:4 Base.isequal(%1, v)
+││││││││││ runtime dispatch detected: Base.isequal(%1::Any, v::Task)
+│││││││││└────────────────
+│││││││┌ @ condition.jl:114 Base.list_deletefirst!(%56, %50)
+││││││││ runtime dispatch detected: Base.list_deletefirst!(%56::Any, %50::Task)
+│││││││└────────────────────
+│││┌ @ strings/io.jl:49 Base.unlock(io)
+││││┌ @ show.jl:335 Base.unlock(Base.getproperty(io, :io))
+│││││┌ @ stream.jl:284 Base.unlock(Base.getproperty(s, :lock))
+││││││┌ @ lock.jl:132 Base.notify(Base.getproperty(rl, :cond_wait))
+│││││││┌ @ condition.jl:130 #self#(c, Base.nothing)
+││││││││┌ @ condition.jl:130 Base.#notify#564(true, false, #self#, c, arg)
+│││││││││┌ @ condition.jl:130 Base.notify(c, arg, all, error)
+││││││││││┌ @ condition.jl:136 Core.kwfunc(Base.schedule)(Core.apply_type(Core.NamedTuple, (:error,))(Core.tuple(error)), Base.schedule, t, arg)
+│││││││││││┌ @ task.jl:684 Base.#schedule#585(error, _3, t, arg)
+││││││││││││┌ @ task.jl:686 %10(%11, t)
+│││││││││││││ runtime dispatch detected: %10::typeof(Base.list_deletefirst!)(%11::Any, t::Task)
+││││││││││││└───────────────
+│┌ @ coreio.jl:4 Base.println(%3, %4)
+││ runtime dispatch detected: Base.println(%3::IO, %4::String)
+│└───────────────
+┌ @ timing.jl:214 Base.time_print(elapsedtime, Base.getproperty(diff, :allocd), Base.getproperty(diff, :total_time), Base.gc_alloc_count(diff), compile_elapsedtime, true)
+│┌ @ timing.jl:120 str = Base.sprint(#866)
+││┌ @ strings/io.jl:106 Base.#sprint#430(Core.tuple(Base.nothing, 0, #self#, f), args...)
+│││┌ @ strings/io.jl:112 f(Core.tuple(s), args...)
+││││┌ @ timing.jl:123 Base.!=(%32, 0)
+│││││ runtime dispatch detected: Base.!=(%32::Any, 0)
+││││└─────────────────
+││││┌ @ timing.jl:125 Base.!=(%65, 0)
+│││││ runtime dispatch detected: Base.!=(%65::Any, 0)
+││││└─────────────────
+││││┌ @ timing.jl:126 Base.prettyprint_getunits(%73, %75, 1000)
+│││││ runtime dispatch detected: Base.prettyprint_getunits(%73::Any, %75::Int64, 1000)
+││││└─────────────────
+││││┌ @ timing.jl:127 Base.==(%80, 1)
+│││││ runtime dispatch detected: Base.==(%80::Any, 1)
+││││└─────────────────
+││││┌ @ timing.jl:128 Base.Int(%88)
+│││││ runtime dispatch detected: Base.Int(%88::Any)
+││││└─────────────────
+││││┌ @ timing.jl:128 Base.getindex(Base._cnt_units, %80)
+│││││ runtime dispatch detected: Base.getindex(Base._cnt_units, %80::Any)
+││││└─────────────────
+││││┌ @ timing.jl:128 Base.==(%96, 1)
+│││││ runtime dispatch detected: Base.==(%96::Any, 1)
+││││└─────────────────
+││││┌ @ timing.jl:128 Base.print(io, %89, %90, %101)
+│││││ runtime dispatch detected: Base.print(io::IOBuffer, %89::Any, %90::Any, %101::String)
+││││└─────────────────
+││││┌ @ timing.jl:130 Base.Float64(%110)
+│││││ runtime dispatch detected: Base.Float64(%110::Any)
+││││└─────────────────
+││││┌ @ timing.jl:130 %104(%111, 2)
+│││││ runtime dispatch detected: %104::typeof(Base.Ryu.writefixed)(%111::Any, 2)
+││││└─────────────────
+││││┌ @ timing.jl:130 Base.getindex(Base._cnt_units, %80)
+│││││ runtime dispatch detected: Base.getindex(Base._cnt_units, %80::Any)
+││││└─────────────────
+││││┌ @ timing.jl:130 Base.print(io, %112, %113, &quot; allocations: &quot;)
+│││││ runtime dispatch detected: Base.print(io::IOBuffer, %112::String, %113::Any, &quot; allocations: &quot;)
+││││└─────────────────
+││││┌ @ timing.jl:135 Base.!=(%138, 0)
+│││││ runtime dispatch detected: Base.!=(%138::Any, 0)
+││││└─────────────────
+││││┌ @ timing.jl:141 Base.!=(%173, 0)
+│││││ runtime dispatch detected: Base.!=(%173::Any, 0)
+││││└─────────────────
+│┌ @ timing.jl:148 Base.print(str)
+││┌ @ coreio.jl:3 Base.print(%3, %4)
+│││ runtime dispatch detected: Base.print(%3::IO, %4::String)
+││└───────────────
+│┌ @ timing.jl:119 allocs = Core.Box(:(_11::Int64))
+││ captured variable `allocs` detected
+│└─────────────────</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; this_module_filter(sv) = sv.mod === @__MODULE__;</code><code class="nohighlight hljs ansi" style="display:block;"></code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; @report_pitfall frame_filter=this_module_filter compute(30) # focus on what we wrote, and no error should be reported</code><code class="nohighlight hljs ansi" style="display:block;">No errors !</code></pre><p><a href="#JET.@test_nopitfall"><code>@test_nopitfall</code></a> can be used to assert that a given function call is free from type instabilities under <a href="https://docs.julialang.org/en/v1/stdlib/Test/"><code>Test</code> standard library&#39;s unit-testing infrastructure</a>:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; @test_nopitfall sumup(cos)</code><code class="nohighlight hljs ansi" style="display:block;"><span class="sgr91"><span class="sgr1">JET-test failed</span></span> at <span class="sgr1">REPL[1]:1</span>
+  Expression: <span class="sgr90">#= REPL[1]:1 =#</span> JET.@test_call analyzer = JET.PerfAnalyzer sumup(cos)
+  <span class="sgr7">═════ 7 possible errors found ═════</span>
+  <span class="sgr91">┌ @ REPL[4]:2 </span>Main.make_vals(%1)
+  <span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.make_vals(%1<span class="sgr96">::Any</span>)</span>
+  <span class="sgr91">└─────────────</span>
+  <span class="sgr91">┌ @ REPL[4]:3 </span>Main.eltype(%2)
+  <span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.eltype(%2<span class="sgr96">::Any</span>)</span>
+  <span class="sgr91">└─────────────</span>
+  <span class="sgr91">┌ @ REPL[4]:3 </span>Main.zero(%3)
+  <span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.zero(%3<span class="sgr96">::Any</span>)</span>
+  <span class="sgr91">└─────────────</span>
+  <span class="sgr91">┌ @ REPL[4]:4 </span>Base.iterate(%2)
+  <span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Base.iterate(%2<span class="sgr96">::Any</span>)</span>
+  <span class="sgr91">└─────────────</span>
+  <span class="sgr91">┌ @ REPL[4]:5 </span>f(%11)
+  <span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">f<span class="sgr96">::typeof(cos)</span>(%11<span class="sgr96">::Any</span>)</span>
+  <span class="sgr91">└─────────────</span>
+  <span class="sgr91">┌ @ REPL[4]:5 </span>Main.+(%10, %13)
+  <span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.+(%10<span class="sgr96">::Any</span>, %13<span class="sgr96">::Any</span>)</span>
+  <span class="sgr91">└─────────────</span>
+  <span class="sgr91">┌ @ REPL[4]:6 </span>Base.iterate(%2, %12)
+  <span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Base.iterate(%2<span class="sgr96">::Any</span>, %12<span class="sgr96">::Any</span>)</span>
+  <span class="sgr91">└─────────────</span>
+  
+ERROR: There was an error during testing</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; @test_nopitfall frame_filter=this_module_filter compute(30)</code><code class="nohighlight hljs ansi" style="display:block;">Test Passed
+  Expression: #= REPL[2]:1 =# JET.@test_call analyzer = JET.PerfAnalyzer frame_filter = this_module_filter compute(30)</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; using Test</code><code class="nohighlight hljs ansi" style="display:block;"></code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; @testset &quot;check type-stabilities&quot; begin
+           @test_nopitfall sumup(cos) # should fail
+       
+           n = rand(Int)
+           @test_nopitfall sumup(cos, n) # should pass
+       
+           @test_nopitfall frame_filter=this_module_filter compute(30) # should pass
+       
+           @test_nopitfall broken=true compute(30) # should pass with the &quot;broken&quot; annotation
+       end</code><code class="nohighlight hljs ansi" style="display:block;"><span class="sgr37">check type-stabilities: </span><span class="sgr91"><span class="sgr1">JET-test failed</span></span> at <span class="sgr1">REPL[4]:2</span>
+  Expression: <span class="sgr90">#= REPL[4]:2 =#</span> JET.@test_call analyzer = JET.PerfAnalyzer sumup(cos)
+  <span class="sgr7">═════ 7 possible errors found ═════</span>
+  <span class="sgr91">┌ @ REPL[4]:2 </span>Main.make_vals(%1)
+  <span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.make_vals(%1<span class="sgr96">::Any</span>)</span>
+  <span class="sgr91">└─────────────</span>
+  <span class="sgr91">┌ @ REPL[4]:3 </span>Main.eltype(%2)
+  <span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.eltype(%2<span class="sgr96">::Any</span>)</span>
+  <span class="sgr91">└─────────────</span>
+  <span class="sgr91">┌ @ REPL[4]:3 </span>Main.zero(%3)
+  <span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.zero(%3<span class="sgr96">::Any</span>)</span>
+  <span class="sgr91">└─────────────</span>
+  <span class="sgr91">┌ @ REPL[4]:4 </span>Base.iterate(%2)
+  <span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Base.iterate(%2<span class="sgr96">::Any</span>)</span>
+  <span class="sgr91">└─────────────</span>
+  <span class="sgr91">┌ @ REPL[4]:5 </span>f(%11)
+  <span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">f<span class="sgr96">::typeof(cos)</span>(%11<span class="sgr96">::Any</span>)</span>
+  <span class="sgr91">└─────────────</span>
+  <span class="sgr91">┌ @ REPL[4]:5 </span>Main.+(%10, %13)
+  <span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.+(%10<span class="sgr96">::Any</span>, %13<span class="sgr96">::Any</span>)</span>
+  <span class="sgr91">└─────────────</span>
+  <span class="sgr91">┌ @ REPL[4]:6 </span>Base.iterate(%2, %12)
+  <span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Base.iterate(%2<span class="sgr96">::Any</span>, %12<span class="sgr96">::Any</span>)</span>
+  <span class="sgr91">└─────────────</span>
+  
+<span class="sgr37"><span class="sgr1">Test Summary:          | </span></span><span class="sgr1"><span class="sgr32">Pass  </span><span class="sgr91">Fail  </span><span class="sgr33">Broken  </span><span class="sgr36">Total</span></span>
+check type-stabilities | <span class="sgr32">   2  </span><span class="sgr91">   1  </span><span class="sgr33">     1  </span><span class="sgr36">    4</span>
+ERROR: Some tests did not pass: 2 passed, 1 failed, 0 errored, 1 broken.</code></pre><h2 id="perfanalysis-entry"><a class="docs-heading-anchor" href="#perfanalysis-entry">Entry Points</a><a id="perfanalysis-entry-1"></a><a class="docs-heading-anchor-permalink" href="#perfanalysis-entry" title="Permalink"></a></h2><p>These macros/functions are the entries of dispatch analysis:</p><article class="docstring"><header><a class="docstring-binding" id="JET.@report_pitfall" href="#JET.@report_pitfall"><code>JET.@report_pitfall</code></a> — <span class="docstring-category">Macro</span></header><section><div><pre><code class="language-julia hljs">@report_pitfall [jetconfigs...] f(args...)</code></pre><p>Evaluates the arguments to the function call, determines its types, and then calls <a href="#JET.report_pitfall"><code>report_pitfall</code></a> on the resulting expression. As with <code>@code_typed</code> and its family, any of <a href="https://aviatesk.github.io/JET.jl/dev/config/">JET configurations</a> or <a href="@ref dispatch-analysis-configurations">performance analysis specific configurations</a> can be given as the optional arguments like this:</p><pre><code class="language-julia-repl hljs"># reports `rand(::Type{Bool})` with `unoptimize_throw_blocks` configuration turned on
+julia&gt; @report_pitfall unoptimize_throw_blocks=true rand(Bool)</code></pre></div><a class="docs-sourcelink" target="_blank" href="https://github.com/aviatesk/JET.jl/blob/fb42faf1ae5d7c5c1324d3e4cb40a3d31409cb7b/src/analyzers/perfanalyzer.jl#L297-L308">source</a></section></article><article class="docstring"><header><a class="docstring-binding" id="JET.report_pitfall" href="#JET.report_pitfall"><code>JET.report_pitfall</code></a> — <span class="docstring-category">Function</span></header><section><div><pre><code class="language-julia hljs">report_pitfall(f, types = Tuple{}; jetconfigs...) -&gt; JETCallResult
+report_pitfall(tt::Type{&lt;:Tuple}; jetconfigs...) -&gt; JETCallResult</code></pre><p>Analyzes the generic function call with the given type signature with <a href="#perfanalysis">the performance analyzer</a>, which collects optimization failures and runtime dispatches involved within the call stack.</p></div><a class="docs-sourcelink" target="_blank" href="https://github.com/aviatesk/JET.jl/blob/fb42faf1ae5d7c5c1324d3e4cb40a3d31409cb7b/src/analyzers/perfanalyzer.jl#L281-L287">source</a></section></article><article class="docstring"><header><a class="docstring-binding" id="JET.@test_nopitfall" href="#JET.@test_nopitfall"><code>JET.@test_nopitfall</code></a> — <span class="docstring-category">Macro</span></header><section><div><pre><code class="language-julia hljs">@test_nopitfall [jetconfigs...] [broken=false] [skip=false] f(args...)</code></pre><p>Tests the generic function call <code>f(args...)</code> is free from runtime dispatch. Returns a <code>Pass</code> result if it is, a <code>Fail</code> result if if contains any location where runtime dispatch or optimization failure happens, or an <code>Error</code> result if this macro encounters an unexpected error. When the test <code>Fail</code>s, abstract call stack to each problem location will also be printed to <code>stdout</code>.</p><pre><code class="language-julia-repl hljs">julia&gt; @test_nopitfall sincos(10)
+Test Passed
+  Expression: #= none:1 =# JET.@test_nopitfall sincos(10)</code></pre><p>As with <a href="#JET.@report_pitfall"><code>@report_pitfall</code></a>, any of <a href="https://aviatesk.github.io/JET.jl/dev/config/">JET configurations</a> or <a href="@ref dispatch-analysis-configurations">performance analysis specific configurations</a> can be given as the optional arguments like this:</p><pre><code class="language-julia-repl hljs">julia&gt; function f(n)
+            r = sincos(n)
+            println(r) # `println` is full of runtime dispatches, but we can ignore the corresponding reports from `Base` by explicit frame filter
+            return r
+       end;
+julia&gt; this_module_filter(x) = x.mod === @__MODULE__;
+
+julia&gt; @test_nopitfall frame_filter=this_module_filter f(10)
+Test Passed
+  Expression: #= none:1 =# JET.@test_nopitfall frame_filter = this_module_filter f(10)</code></pre><p><code>@test_nopitfall</code> is fully integrated with <a href="https://docs.julialang.org/en/v1/stdlib/Test/"><code>Test</code> standard library&#39;s unit-testing infrastructure</a>. It means, the result of <code>@test_nopitfall</code> will be included in the final <code>@testset</code> summary, it supports <code>skip</code> and <code>broken</code> annotations as <code>@test</code> macro does, etc.</p><pre><code class="language-julia-repl hljs">julia&gt; using Test
+
+julia&gt; f(params) = sin(params.value); # type-stable
+julia&gt; params = (; value = 10);       # non-constant global variable
+julia&gt; g() = sin(params.value);       # very type-instable
+
+julia&gt; @testset &quot;check optimizations&quot; begin
+           @test_nopitfall f((; value = 10)) # pass
+           @test_nopitfall g()               # fail
+           @test_nopitfall broken=true g()   # annotated as broken, thus still &quot;pass&quot;
+       end
+check optimizations: Dispatch Test Failed at none:3
+  Expression: #= none:3 =# JET.@test_nopitfall g()
+  ═════ 2 possible errors found ═════
+  ┌ @ none:1 Base.getproperty(%1, :value)
+  │ runtime dispatch detected: Base.getproperty(%1::Any, :value::Symbol)
+  └──────────
+  ┌ @ none:1 Main.sin(%2)
+  │ runtime dispatch detected: Main.sin(%2::Any)
+  └──────────
+
+Test Summary:       | Pass  Fail  Broken  Total
+check optimizations |    1     1       1      3
+ERROR: Some tests did not pass: 1 passed, 1 failed, 0 errored, 1 broken.</code></pre></div><a class="docs-sourcelink" target="_blank" href="https://github.com/aviatesk/JET.jl/blob/fb42faf1ae5d7c5c1324d3e4cb40a3d31409cb7b/src/analyzers/perfanalyzer.jl#L313-L372">source</a></section></article><article class="docstring"><header><a class="docstring-binding" id="JET.test_nopitfall" href="#JET.test_nopitfall"><code>JET.test_nopitfall</code></a> — <span class="docstring-category">Function</span></header><section><div><pre><code class="language-julia hljs">test_nopitfall(f, types = Tuple{}; broken::Bool = false, skip::Bool = false, jetconfigs...)
+test_nopitfall(tt::Type{&lt;:Tuple}; broken::Bool = false, skip::Bool = false, jetconfigs...)</code></pre><p>Tests the generic function call with the given type signature is free from runtime dispatch. Except that it takes a type signature rather than a call expression, this function works in the same way as <a href="#JET.@test_nopitfall"><code>@test_nopitfall</code></a>.</p></div><a class="docs-sourcelink" target="_blank" href="https://github.com/aviatesk/JET.jl/blob/fb42faf1ae5d7c5c1324d3e4cb40a3d31409cb7b/src/analyzers/perfanalyzer.jl#L377-L384">source</a></section></article><h2 id="perfanalysis-config"><a class="docs-heading-anchor" href="#perfanalysis-config">Configurations</a><a id="perfanalysis-config-1"></a><a class="docs-heading-anchor-permalink" href="#perfanalysis-config" title="Permalink"></a></h2><article class="docstring"><header><a class="docstring-binding" id="JET.PerfAnalyzer" href="#JET.PerfAnalyzer"><code>JET.PerfAnalyzer</code></a> — <span class="docstring-category">Type</span></header><section><div><p>Every <a href="#perfanalysis-entry">entry point of performance analysis</a> can accept any of <a href="../config/#JET-configurations">JET configurations</a> as well as the following additional configurations that are specific to performance analysis.</p><hr/><ul><li><p><code>frame_filter = x::Union{Core.Compiler.InferenceState, Core.Compiler.OptimizationState}-&gt;true</code>:<br/>A predicate which takes <code>InfernceState</code> or <code>OptimizationState</code> and returns <code>false</code> to skip analysis on the frame.</p><pre><code class="language-julia-repl hljs"># only checks code within the current module:
+julia&gt; mymodule_filter(x) = x.mod === @__MODULE__;
+
+julia&gt; @test_nopitfall frame_filter=mymodule_filter f(args...)
+...</code></pre></li></ul><hr/><ul><li><p><code>function_filter = @nospecialize(ft)-&gt;true</code>:<br/>A predicate which takes a function type and returns <code>false</code> to skip analysis on the call.</p><pre><code class="language-julia-repl hljs"># ignores `Core.Compiler.widenconst` calls (since it&#39;s designed to be runtime-dispatched):
+julia&gt; myfunction_filter(@nospecialize(ft)) = ft !== typeof(Core.Compiler.widenconst)
+
+julia&gt; @test_nopitfall function_filter=myfunction_filter f(args...)
+...</code></pre></li></ul><hr/><ul><li><p><code>skip_nonconcrete_calls::Bool = true</code>:<br/>Julia&#39;s runtime dispatch is &quot;powerful&quot; because it can always compile code with concrete runtime arguments so that <a href="https://docs.julialang.org/en/v1/manual/performance-tips/#kernel-functions">a &quot;kernel&quot; function</a> runs very effectively even if it&#39;s called from a type-instable call site. This means, we (really) often accept that some parts of our code are not inferred statically, and rather we want to just rely on information that is only available at runtime. To model this programming style, performance analyzer does NOT report any optimization failures or runtime dispatches detected within non-concrete calls under the default configuration. We can turn off this <code>skip_nonconcrete_calls</code> configuration to get type-instabilities within non-concrete calls.</p><pre><code class="language-julia-repl hljs"># the following examples are adapted from https://docs.julialang.org/en/v1/manual/performance-tips/#kernel-functions
+julia&gt; function fill_twos!(a)
+           for i = eachindex(a)
+               a[i] = 2
+           end
+       end;
+
+julia&gt; function strange_twos(n)
+           a = Vector{rand(Bool) ? Int64 : Float64}(undef, n)
+           fill_twos!(a)
+           return a
+       end;
+
+# by default, only type-instabilities within concrete call (i.e. `strange_twos(3)`) are reported
+# and those within non-concrete calls (`fill_twos!(a)`) are not reported
+julia&gt; @report_pitfall strange_twos(3)
+═════ 2 possible errors found ═════
+┌ @ REPL[2]:2 %45(Main.undef, n)
+│ runtime dispatch detected: %45::Type{Vector{_A}} where _A(Main.undef, n::Int64)
+└─────────────
+┌ @ REPL[2]:3 Main.fill_twos!(%46)
+│ runtime dispatch detected: Main.fill_twos!(%46::Vector)
+└─────────────
+Vector (alias for Array{_A, 1} where _A)
+
+# we can get reports from non-concrete calls with `skip_nonconcrete_calls=false`
+julia&gt; @report_pitfall skip_nonconcrete_calls=false strange_twos(3)
+═════ 4 possible errors found ═════
+┌ @ REPL[2]:3 Main.fill_twos!(a)
+│┌ @ REPL[1]:3 Base.setindex!(a, 2, %14)
+││ runtime dispatch detected: Base.setindex!(a::Vector, 2, %14::Int64)
+│└─────────────
+│┌ @ REPL[1]:3 Base.setindex!(a, 2, i)
+││┌ @ array.jl:877 Base.convert(_, x)
+│││ runtime dispatch detected: Base.convert(_::Any, x::Int64)
+││└────────────────
+┌ @ REPL[2]:2 %45(Main.undef, n)
+│ runtime dispatch detected: %45::Type{Vector{_A}} where _A(Main.undef, n::Int64)
+└─────────────
+┌ @ REPL[2]:3 Main.fill_twos!(%46)
+│ runtime dispatch detected: Main.fill_twos!(%46::Vector)
+└─────────────
+Vector (alias for Array{_A, 1} where _A)</code></pre></li></ul><hr/><ul><li><p><code>skip_unoptimized_throw_blocks::Bool = true</code>:<br/>By default, Julia&#39;s native compilation pipeline intentionally disables inference (and so succeeding optimizations too) on &quot;throw blocks&quot;, which are code blocks that will eventually lead to <code>throw</code> calls, in order to ease <a href="https://julialang.org/blog/2020/08/invalidations/">the compilation latency problem, a.k.a. &quot;first-time-to-plot&quot;</a>. Accordingly, the performance analyzer also ignores any performance pitfalls detected within those blocks since we <em>usually</em> don&#39;t mind if code involved with error handling isn&#39;t optimized. If <code>skip_unoptimized_throw_blocks</code> is set to <code>false</code>, it doesn&#39;t ignore them and will report type instabilities detected within &quot;throw blocks&quot;.</p><p>See also <a href="https://github.com/JuliaLang/julia/pull/35982">https://github.com/JuliaLang/julia/pull/35982</a>.</p><pre><code class="language-julia-repl hljs"># by default, unoptimized &quot;throw blocks&quot; are not analyzed
+julia&gt; @test_nopitfall sin(10)
+Test Passed
+  Expression: #= none:1 =# JET.@test_nopitfall sin(10)
+
+# we can turn on the analysis on unoptimized &quot;throw blocks&quot; with `skip_unoptimized_throw_blocks=false`
+julia&gt; @test_nopitfall skip_unoptimized_throw_blocks=false sin(10)
+JET-test failed at none:1
+  Expression: #= REPL[6]:1 =# JET.@test_call analyzer = JET.PerfAnalyzer skip_unoptimized_throw_blocks = false sin(10)
+  ═════ 1 possible error found ═════
+  ┌ @ math.jl:1221 Base.Math.sin(xf)
+  │┌ @ special/trig.jl:39 Base.Math.sin_domain_error(x)
+  ││┌ @ special/trig.jl:28 Base.Math.DomainError(x, &quot;sin(x) is only defined for finite x.&quot;)
+  │││ runtime dispatch detected: Base.Math.DomainError(x::Float64, &quot;sin(x) is only defined for finite x.&quot;)
+  ││└──────────────────────
+
+ERROR: There was an error during testing
+
+# we can also turns off the heuristic itself
+julia&gt; @test_nopitfall unoptimize_throw_blocks=false skip_unoptimized_throw_blocks=false sin(10)
+Test Passed
+  Expression: #= REPL[7]:1 =# JET.@test_call analyzer = JET.PerfAnalyzer unoptimize_throw_blocks = false skip_unoptimized_throw_blocks = false sin(10)</code></pre></li></ul><hr/></div><a class="docs-sourcelink" target="_blank" href="https://github.com/aviatesk/JET.jl/blob/fb42faf1ae5d7c5c1324d3e4cb40a3d31409cb7b/src/analyzers/perfanalyzer.jl#L4-L127">source</a></section></article></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../config/">« Configurations</a><a class="docs-footer-nextpage" href="../internals/">Internals »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.5 on <span class="colophon-date" title="Monday 6 September 2021 15:54">Monday 6 September 2021</span>. Using Julia version 1.8.0-DEV.474.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
