@@ -16,34 +16,36 @@ const CC = Core.Compiler
 
 # `AbstractAnalyzer`
 import .CC:
-    # analyzer.jl
+    #= cicache.jl =#
+    # haskey,
+    # get,
+    # getindex,
+    # setindex!,
+    # push!,
+    #= types.jl =#
     InferenceParams,
     OptimizationParams,
     get_world_counter,
+    get_inference_cache,
+    code_cache,
     lock_mi_inference,
     unlock_mi_inference,
     add_remark!,
     may_optimize,
     may_compress,
     may_discard_trees,
-    inlining_policy,
-    # jetcache.jl
-    transform_result_for_cache,
-    code_cache,
-    # haskey,
-    # get,
-    # getindex,
-    # setindex!,
-    get_inference_cache,
-    cache_lookup,
-    # push!,
-    # tfuncs.jl
-    builtin_tfunction,
-    return_type_tfunc,
-    # abstractinterpretation.jl
-    abstract_call_gf_by_type,
+    verbose_stmt_info,
     bail_out_toplevel_call,
     bail_out_call,
+    #= inferenceresult.jl =#
+    cache_lookup,
+    #= inferencestate.jl =#
+    InferenceState,
+    #= tfuncs.jl =#
+    builtin_tfunction,
+    return_type_tfunc,
+    #= abstractinterpretation.jl =#
+    abstract_call_gf_by_type,
     add_call_backedges!,
     abstract_call_method_with_const_args,
     const_prop_entry_heuristic,
@@ -53,17 +55,19 @@ import .CC:
     abstract_eval_special_value,
     abstract_eval_value,
     abstract_eval_statement,
-    # typeinfer.jl
+    #= typeinfer.jl =#
     typeinf,
     _typeinf,
     finish,
+    transform_result_for_cache,
+    finish!,
     typeinf_edge,
-    # JET.jl
-    InferenceState
+    #= optimize.jl =#
+    inlining_policy
 
 # `ConcreteInterpreter`
 import JuliaInterpreter:
-    # virtualprocess.jl
+    #= interpreter.jl =#
     step_expr!,
     evaluate_call_recurse!,
     handle_err
@@ -135,9 +139,6 @@ import .CC:
     add_backedge!,
     add_mt_backedge!,
     compute_basic_blocks,
-    matching_cache_argtypes,
-    is_argtype_match,
-    tuple_tfunc,
     may_invoke_generator,
     inlining_enabled,
     instanceof_tfunc,
@@ -178,7 +179,7 @@ import JuliaInterpreter:
     bypass_builtins,
     maybe_evaluate_builtin,
     collect_args,
-    finish!,
+    # finish!,
     is_return,
     is_quotenode_egal,
     moduleof,
@@ -1308,7 +1309,7 @@ macro test_call(ex0...)
 
     return quote
         if $(!isnothing(skip) && skip)
-            $record($get_testset(), $Broken(:skipped, $orig_expr))
+            $(Test.record)($get_testset(), $Broken(:skipped, $orig_expr))
         else
             testres = $testres
             if $(!isnothing(broken) && broken)
@@ -1320,7 +1321,7 @@ macro test_call(ex0...)
             else
                 isa(testres, $Pass) || ccall(:jl_breakpoint, $Cvoid, ($Any,), testres)
             end
-            $record($get_testset(), testres)
+            $(Test.record)($get_testset(), testres)
         end
     end
 end
@@ -1370,7 +1371,7 @@ function test_call(@nospecialize(args...);
     orig_expr = :($test_call($(args...); $(kwargs...)))
 
     if skip
-        record(get_testset(), Broken(:skipped, orig_expr))
+        Test.record(get_testset(), Broken(:skipped, orig_expr))
     else
         testres = try
             result = report_call(args...; jetconfigs...)
@@ -1393,7 +1394,7 @@ function test_call(@nospecialize(args...);
         else
             isa(testres, Pass) || ccall(:jl_breakpoint, Cvoid, (Any,), testres)
         end
-        record(get_testset(), testres)
+        Test.record(get_testset(), testres)
     end
 end
 

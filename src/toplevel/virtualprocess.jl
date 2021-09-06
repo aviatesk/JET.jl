@@ -538,7 +538,7 @@ function _virtual_process!(toplevelex::Expr,
                                              config,
                                              res,
                                              )
-                finish!(interp, Frame(context, src), true)
+                JuliaInterpreter.finish!(interp, Frame(context, src), true)
                 break
             end
         end
@@ -947,7 +947,7 @@ function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, 
         return nothing
     end
 
-    res = @invoke step_expr!(interp, frame, node, true::Bool)
+    res = @invoke JuliaInterpreter.step_expr!(interp, frame, node, true::Bool)
 
     interp.config.analyze_from_definitions && collect_toplevel_signature!(interp, frame, node)
 
