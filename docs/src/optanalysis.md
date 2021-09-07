@@ -52,7 +52,7 @@ end;
 @report_opt sumup(sin) # runtime dispatches will be reported
 ```
 
-JET's analysis result will be dynamically updated when we update fucntion definition[^1], and we can "hot-fix" the runtime
+JET's analysis result will be dynamically updated when we update function definition[^1], and we can "hot-fix" the runtime
 dispatches within the same running Julia session like this:
 ```@repl quickstart
 # we can pass parameters as a function argument instead, and then everything will be type-stable
