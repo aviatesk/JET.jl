@@ -47,7 +47,10 @@ function generate_api_doc(examples_pages)
     isfile(PLUGIN_API_FILENAME) && rm(PLUGIN_API_FILENAME)
     open(PLUGIN_API_FILENAME, write=true) do io
         contents = codeblock("Pages = $(repr([out]))", "@contents")
-        interface_docs = codeblock(join(JET.JETInterface.DOCUMENTED_NAMES, '\n'))
+        interface_docs = let
+            objs = getfield.(Ref(JET.JETInterface), JET.JETInterface.DOCUMENTED_NAMES)
+            codeblock(join(string.(parentmodule.(objs), '.', nameof.(objs)), '\n'))
+        end
         examples_contents = codeblock("Pages = $(repr(examples_pages))", "@contents")
 
         s = md"""
@@ -64,10 +67,6 @@ function generate_api_doc(examples_pages)
         !!! warning
             The APIs described in this page is _very_ experimental and subject to changes.
             And this documentation is also very WIP.
-
-        ```@meta
-        CurrentModule = JET
-        ```
 
         ## Interfaces
 
