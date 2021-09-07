@@ -1,5 +1,5 @@
-# PerformanceAnalyzer
-# ===================
+# OptAnalyzer
+# ===========
 
 @testset "runtime dispatch" begin
     let M = Module()
@@ -9,12 +9,12 @@
         end
 
         # `f(::Int)` a concrete call and just type stable and anything shouldn't be reported
-        @test_nopitfall M.f(10)  # should be ok
+        @test_opt M.f(10)  # should be ok
 
         let # if the argument type isn't well typed, compiler can't determine which method to call,
             # and it will lead to runtime dispatch
             result = @eval M begin
-                $report_pitfall((Vector{Any},)) do ary
+                $report_opt((Vector{Any},)) do ary
                     f(ary[1]) # runtime dispatch !
                 end
             end
@@ -33,7 +33,7 @@
         end
 
         let
-            result = @eval M $report_pitfall((Vector{Any},)) do ary
+            result = @eval M $report_opt((Vector{Any},)) do ary
                 a = ary[1]
                 g1(a) # this call should be statically resolved and inlined
                 g2(a) # this call should be statically resolved but not inlined, and will be dispatched
@@ -53,7 +53,7 @@
     # real-world targets
     # the `unoptimize_throw_blocks` configuration disables optimizations on "throw blocks" by default,
     # but `DispatchAnalyzer` ignores problems from them, so we don't get error reports here
-    @test_nopitfall sin(10)
+    @test_opt sin(10)
 end
 
 @testset "captured variables" begin
@@ -69,7 +69,7 @@ end
 
                 return a
             end
-            $report_pitfall(foo, (Int, Int))
+            $report_opt(foo, (Int, Int))
         end
         @test any(get_reports(result)) do report
             return isa(report, CapturedVariableReport) &&
@@ -108,20 +108,20 @@ end
             end
         end
 
-        let result = @report_pitfall M.abmult(42)
+        let result = @report_opt M.abmult(42)
             @test any(get_reports(result)) do report
                 return isa(report, CapturedVariableReport) &&
                        report.name === :r
             end
         end
-        let result = @report_pitfall M.abmult2(42)
+        let result = @report_opt M.abmult2(42)
             @test any(get_reports(result)) do report
                 return isa(report, CapturedVariableReport) &&
                        report.name === :r
             end
         end
 
-        @test_nopitfall M.abmult3(42) # no captured variable for `abmult3` !
+        @test_opt M.abmult3(42) # no captured variable for `abmult3` !
     end
 end
 
@@ -146,7 +146,7 @@ end
     end
 
     let # we will get bunch of reports from the `println` call
-        result = @report_pitfall M.compute(30)
+        result = @report_opt M.compute(30)
         @test !isempty(get_reports(result))
     end
 
@@ -156,7 +156,7 @@ end
                 x.mod === mod
             end
         end
-        @test_nopitfall frame_filter=module_filter(@__MODULE__) M.compute(30)
+        @test_opt frame_filter=module_filter(@__MODULE__) M.compute(30)
     end
 end
 
@@ -168,13 +168,13 @@ end
     end
 
     # by default, we'd ignore error reports from `f1` calls
-    @eval M $test_nopitfall((Vector{Any},)) do ary
+    @eval M $test_opt((Vector{Any},)) do ary
         callsin(ary[1]) # runtime dispatch !
     end
 
     let # when the `skip_nonconcrete_calls` configuration is turned off, we will get error reports
         # from those non-concrete call inside of `callsin`
-        result = @eval M $report_pitfall((Vector{Any},); skip_nonconcrete_calls=false) do ary
+        result = @eval M $report_opt((Vector{Any},); skip_nonconcrete_calls=false) do ary
             callsin(ary[1]) # runtime dispatch !
         end
         @test length(get_reports(result)) ≥ 1

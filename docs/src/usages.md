@@ -1,6 +1,6 @@
 # [How to Use JET.jl](@id usages)
 
-!!! tip "Time to first result"
+!!! tip
     Hold on tight and fasten your seatbelt while JET is analyzing your code for the first time.
     Once the caches get accumulated, subsequent analysis will run at ✈ speed.
 
@@ -16,7 +16,7 @@ and try to simulate Julia's top-level code execution, while it tries to avoid ex
 but analyzes them by [abstract interpretation](https://en.wikipedia.org/wiki/Abstract_interpretation) instead (and this is a part where JET statically analyzes your code).
 If you're interested in how JET selects "top-level definitions", please see [`JET.virtual_process`](@ref).
 
-!!! warning "JET is not fully static !"
+!!! warning
     Because JET will actually interpret "top-level definitions" in your code, it certainly _runs_ your code.
     So we should note that JET can cause some side effects from your code; for example JET will try to expand all the
     macros used in your code, and so the side effects involved with macro expansions will also happen in JET's analysis process.

@@ -1445,7 +1445,7 @@ end
 # =================
 
 include("analyzers/jetanalyzer.jl")
-include("analyzers/perfanalyzer.jl")
+include("analyzers/optanalyzer.jl")
 
 # exports
 # =======
@@ -1495,7 +1495,7 @@ reexport_as_api!(subtypes(InferenceErrorReport)...; documented = false)
 reexport_as_api!(subtypes(ReportPass)...; documented = false)
 
 export
-    # generic entries & default analyzer
+    # generic entries & default jetanalyzer
     report_file,
     report_and_watch_file,
     report_package,
@@ -1504,10 +1504,10 @@ export
     report_call,
     @test_call,
     test_call,
-    # performance analyzer
-    @report_pitfall,
-    report_pitfall,
-    @test_nopitfall,
-    test_nopitfall
+    # optanalyzer
+    @report_opt,
+    report_opt,
+    @test_opt,
+    test_opt
 
 end
