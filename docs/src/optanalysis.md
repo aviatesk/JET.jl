@@ -1,4 +1,4 @@
-# [Performance Analysis](@id perfanalysis)
+# [Optimization Analysis](@id optanalysis)
 
 Successful type inference and optimization is key to high-performing Julia programs.
 But as mentioned in [the performance tips](https://docs.julialang.org/en/v1/manual/performance-tips/), there are some
@@ -27,9 +27,9 @@ JET implements such an analyzer that investigates optimized representation of yo
 anywhere the compiler failed in optimization. Especially, it can find where Julia creates captured variables, where
 runtime dispatch will happen, and where Julia gives up the optimization work due to unresolvable recursive function call.
 
-## [Quick Start](@id perfanalysis-quick-start)
+## [Quick Start](@id optanalysis-quick-start)
 
-JET exports [`@report_pitfall`](@ref), which analyzes the entire call graph of a given generic function call,
+JET exports [`@report_opt`](@ref), which analyzes the entire call graph of a given generic function call,
 and then reports detected performance pitfalls:
 ```@repl quickstart
 using JET
@@ -49,7 +49,7 @@ function sumup(f)
     end
     return s
 end;
-@report_pitfall sumup(sin) # runtime dispatches will be reported
+@report_opt sumup(sin) # runtime dispatches will be reported
 ```
 
 JET's analysis result will be dynamically updated when we update fucntion definition[^1], and we can "hot-fix" the runtime
@@ -67,11 +67,11 @@ function sumup(f, n)
     return s
 end;
 
-@report_pitfall sumup(sin, rand(Int)) # now runtime dispatch free !
+@report_opt sumup(sin, rand(Int)) # now runtime dispatch free !
 ```
 [^1]: Technically, it's fully integrated with [Julia's method invalidation system](https://julialang.org/blog/2020/08/invalidations/).
 
-`@report_pitfall` can also report existence of captured variables, which are really better to be eliminated within
+`@report_opt` can also report existence of captured variables, which are really better to be eliminated within
 performance-sensitive context:
 ```@repl quickstart
 # the examples below are all adapted from https://docs.julialang.org/en/v1/manual/performance-tips/#man-performance-captured
@@ -83,7 +83,7 @@ function abmult(r::Int)
     f = x -> x * r
     return f
 end;
-@report_pitfall abmult(42)
+@report_opt abmult(42)
 
 function abmult(r0::Int)
     # we can improve the type stability of the variable `r` like this,
@@ -95,7 +95,7 @@ function abmult(r0::Int)
     f = x -> x * r
     return f
 end;
-@report_pitfall abmult(42)
+@report_opt abmult(42)
 
 function abmult(r::Int)
     if r < 0
@@ -108,10 +108,10 @@ function abmult(r::Int)
     end
     return f
 end;
-@report_pitfall abmult(42)
+@report_opt abmult(42)
 ```
 
-With the [`frame_filter`](@ref perfanalysis-config) configuration, we can easily limit the scope of analysis to specific module context:
+With the [`frame_filter`](@ref optanalysis-config) configuration, we can easily limit the scope of analysis to specific module context:
 ```@repl quickstart
 # problem: when ∑1/n exceeds `x` ?
 function compute(x)
@@ -132,48 +132,48 @@ function compute(x)
     return n, s
 end
 
-@report_pitfall compute(30) # bunch of reports will be reported from the `println` call
+@report_opt compute(30) # bunch of reports will be reported from the `println` call
 
 this_module_filter(sv) = sv.mod === @__MODULE__;
-@report_pitfall frame_filter=this_module_filter compute(30) # focus on what we wrote, and no error should be reported
+@report_opt frame_filter=this_module_filter compute(30) # focus on what we wrote, and no error should be reported
 ```
 
-There is also [`function_filter`](@ref perfanalysis-config), which can ignore specific function call.
+There is also [`function_filter`](@ref optanalysis-config), which can ignore specific function call.
 
-[`@test_nopitfall`](@ref) can be used to assert that a given function call is free from the performance pitfalls.
+[`@test_opt`](@ref) can be used to assert that a given function call is free from the performance pitfalls.
 It is fully integrated with [`Test` standard library's unit-testing infrastructure](https://docs.julialang.org/en/v1/stdlib/Test/),
 and we can use it as like other `Test` macros e.g. `@test`:
 ```@repl quickstart
-@test_nopitfall sumup(cos)
+@test_opt sumup(cos)
 
-@test_nopitfall frame_filter=this_module_filter compute(30)
+@test_opt frame_filter=this_module_filter compute(30)
 
 using Test
 
 @testset "check type-stabilities" begin
-    @test_nopitfall sumup(cos) # should fail
+    @test_opt sumup(cos) # should fail
 
     n = rand(Int)
-    @test_nopitfall sumup(cos, n) # should pass
+    @test_opt sumup(cos, n) # should pass
 
-    @test_nopitfall frame_filter=this_module_filter compute(30) # should pass
+    @test_opt frame_filter=this_module_filter compute(30) # should pass
 
-    @test_nopitfall broken=true compute(30) # should pass with the "broken" annotation
+    @test_opt broken=true compute(30) # should pass with the "broken" annotation
 end
 ```
 
-## [Entry Points](@id perfanalysis-entry)
+## [Entry Points](@id optanalysis-entry)
 
 These macros/functions are the entries of dispatch analysis:
 ```@docs
-JET.@report_pitfall
-JET.report_pitfall
-JET.@test_nopitfall
-JET.test_nopitfall
+JET.@report_opt
+JET.report_opt
+JET.@test_opt
+JET.test_opt
 ```
 
-## [Configurations](@id perfanalysis-config)
+## [Configurations](@id optanalysis-config)
 
 ```@docs
-JET.PerfAnalyzer
+JET.OptAnalyzer
 ```

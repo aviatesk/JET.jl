@@ -95,7 +95,7 @@ let
                     # TODO combine usages.md / config.md / perfanalyzer.md
                     "Usages" => "usages.md",
                     "Configurations" => "config.md",
-                    "Performance Analysis" => "perfanalyzer.md",
+                    "Optimization Analysis" => "optanalysis.md",
                     "Internals" => "internals.md",
                     "JET Analyzer Framework" => Any[
                         "API"      => generate_api_doc(examples),

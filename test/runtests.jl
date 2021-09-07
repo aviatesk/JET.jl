@@ -41,13 +41,13 @@ include("setup.jl")
             include("analyzers/test_jetanalyzer.jl")
         end
 
-        @testset "PerfAnalyzer" begin
-            include("analyzers/test_perfanalyzer.jl")
+        @testset "OptAnalyzer" begin
+            include("analyzers/test_optanalyzer.jl")
         end
     end
 
     # run simple performance benchmark
-    # and also run PerfAnalyzer on JET
+    # and also run OptAnalyzer on JET
     @testset "performance" begin
         include("performance.jl")
     end
