@@ -7,7 +7,7 @@
 
 JET.jl employs Julia's type inference for bug reports.
 
-!!! note "Julia version compatibility"
+!!! note
     The latest version of JET requires Julia versions **1.7 and higher**;
     JET is tested against [the current beta v1.7 release](https://julialang.org/downloads/#upcoming_release) as well as [nightly version](https://julialang.org/downloads/nightlies/). \
     Also note that JET deeply relies on the type inference routine implemented in [Julia's compiler](https://github.com/JuliaLang/julia/tree/master/base/compiler),

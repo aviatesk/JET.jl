@@ -1,5 +1,5 @@
-# PerformanceAnalyzer
-# ===================
+# PerfAnalyzer
+# ============
 
 @testset "runtime dispatch" begin
     let M = Module()
