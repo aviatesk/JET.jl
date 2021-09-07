@@ -160,8 +160,8 @@ function OptAnalyzer(;
 end
 
 # AbstractAnalyzer API requirements
-AnalyzerState(analyzer::OptAnalyzer) = analyzer.state
-function AbstractAnalyzer(analyzer::OptAnalyzer, state::AnalyzerState)
+JETInterface.AnalyzerState(analyzer::OptAnalyzer) = analyzer.state
+function JETInterface.AbstractAnalyzer(analyzer::OptAnalyzer, state::AnalyzerState)
     return OptAnalyzer(
         state,
         analyzer.frame_filter,
@@ -170,16 +170,18 @@ function AbstractAnalyzer(analyzer::OptAnalyzer, state::AnalyzerState)
         analyzer._frame_checks,
         )
 end
-ReportPass(analyzer::OptAnalyzer) = OptAnalysisPass() # TODO parameterize this
+JETInterface.ReportPass(analyzer::OptAnalyzer) = OptAnalysisPass() # TODO parameterize this
 
 # we want to run different analysis with a different filter, so include its hash into the cache key
-function get_cache_key(analyzer::OptAnalyzer)
+function JET.get_cache_key(analyzer::OptAnalyzer)
     h = @invoke get_cache_key(analyzer::AbstractAnalyzer)
     h = @invoke hash(analyzer.frame_filter::Any, h::UInt)    # HACK avoid dynamic dispatch
     h = @invoke hash(analyzer.function_filter::Any, h::UInt) # HACK avoid dynamic dispatch
     h = hash(analyzer.skip_unoptimized_throw_blocks, h)
     return h
 end
+
+JETInterface.vscode_diagnostics_order(analyzer::OptAnalyzer) = false
 
 struct OptAnalysisPass <: ReportPass end
 
