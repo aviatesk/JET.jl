@@ -8,7 +8,28 @@
                s += f(v)
            end
            return s
-       end;</code><code class="nohighlight hljs ansi" style="display:block;"></code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; @report_opt sumup(sin) # runtime dispatches will be reported</code><code class="nohighlight hljs ansi" style="display:block;">ERROR: UndefVarError: throw_blocks not defined</code></pre><p>JET&#39;s analysis result will be dynamically updated when we update function definition<sup class="footnote-reference"><a id="citeref-1" href="#footnote-1">[1]</a></sup>, and we can &quot;hot-fix&quot; the runtime dispatches within the same running Julia session like this:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; # we can pass parameters as a function argument instead, and then everything will be type-stable
+       end;</code><code class="nohighlight hljs ansi" style="display:block;"></code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; @report_opt sumup(sin) # runtime dispatches will be reported</code><code class="nohighlight hljs ansi" style="display:block;"><span class="sgr7">═════ 7 possible errors found ═════</span>
+<span class="sgr91">┌ @ REPL[3]:4 </span>Main.make_vals(%1)
+<span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.make_vals(%1<span class="sgr96">::Any</span>)</span>
+<span class="sgr91">└─────────────</span>
+<span class="sgr91">┌ @ REPL[3]:5 </span>Main.eltype(%2)
+<span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.eltype(%2<span class="sgr96">::Any</span>)</span>
+<span class="sgr91">└─────────────</span>
+<span class="sgr91">┌ @ REPL[3]:5 </span>Main.zero(%3)
+<span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.zero(%3<span class="sgr96">::Any</span>)</span>
+<span class="sgr91">└─────────────</span>
+<span class="sgr91">┌ @ REPL[3]:6 </span>Base.iterate(%2)
+<span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Base.iterate(%2<span class="sgr96">::Any</span>)</span>
+<span class="sgr91">└─────────────</span>
+<span class="sgr91">┌ @ REPL[3]:7 </span>f(%11)
+<span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">f<span class="sgr96">::typeof(sin)</span>(%11<span class="sgr96">::Any</span>)</span>
+<span class="sgr91">└─────────────</span>
+<span class="sgr91">┌ @ REPL[3]:7 </span>Main.+(%10, %13)
+<span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.+(%10<span class="sgr96">::Any</span>, %13<span class="sgr96">::Any</span>)</span>
+<span class="sgr91">└─────────────</span>
+<span class="sgr91">┌ @ REPL[3]:8 </span>Base.iterate(%2, %12)
+<span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Base.iterate(%2<span class="sgr96">::Any</span>, %12<span class="sgr96">::Any</span>)</span>
+<span class="sgr91">└─────────────</span></code></pre><p>JET&#39;s analysis result will be dynamically updated when we update function definition<sup class="footnote-reference"><a id="citeref-1" href="#footnote-1">[1]</a></sup>, and we can &quot;hot-fix&quot; the runtime dispatches within the same running Julia session like this:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; # we can pass parameters as a function argument instead, and then everything will be type-stable
        function sumup(f, n)
            vals = make_vals(n)
            s = zero(eltype(vals))
@@ -18,7 +39,7 @@
                s += f(v)
            end
            return s
-       end;</code><code class="nohighlight hljs ansi" style="display:block;"></code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; @report_opt sumup(sin, rand(Int)) # now runtime dispatch free !</code><code class="nohighlight hljs ansi" style="display:block;">ERROR: UndefVarError: throw_blocks not defined</code></pre><p><code>@report_opt</code> can also report existence of captured variables, which are really better to be eliminated within performance-sensitive context:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; # the examples below are all adapted from https://docs.julialang.org/en/v1/manual/performance-tips/#man-performance-captured
+       end;</code><code class="nohighlight hljs ansi" style="display:block;"></code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; @report_opt sumup(sin, rand(Int)) # now runtime dispatch free !</code><code class="nohighlight hljs ansi" style="display:block;"><span class="sgr92">No errors !</span></code></pre><p><code>@report_opt</code> can also report existence of captured variables, which are really better to be eliminated within performance-sensitive context:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; # the examples below are all adapted from https://docs.julialang.org/en/v1/manual/performance-tips/#man-performance-captured
        function abmult(r::Int)
            if r &lt; 0
                r = -r
@@ -26,7 +47,16 @@
            # the closure assigned to `f` make the variable `r` captured
            f = x -&gt; x * r
            return f
-       end;</code><code class="nohighlight hljs ansi" style="display:block;"></code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; @report_opt abmult(42)</code><code class="nohighlight hljs ansi" style="display:block;">ERROR: UndefVarError: throw_blocks not defined</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; function abmult(r0::Int)
+       end;</code><code class="nohighlight hljs ansi" style="display:block;"></code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; @report_opt abmult(42)</code><code class="nohighlight hljs ansi" style="display:block;"><span class="sgr7">═════ 3 possible errors found ═════</span>
+<span class="sgr91">┌ @ REPL[1]:2 </span>r = Core.Box(:(_7::Int64))
+<span class="sgr91">│ captured variable `r` detected</span>
+<span class="sgr91">└─────────────</span>
+<span class="sgr91">┌ @ REPL[1]:2 </span>Main.&lt;(%7, 0)
+<span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.&lt;(%7<span class="sgr96">::Any</span>, 0)</span>
+<span class="sgr91">└─────────────</span>
+<span class="sgr91">┌ @ REPL[1]:3 </span>Main.-(%14)
+<span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.-(%14<span class="sgr96">::Any</span>)</span>
+<span class="sgr91">└─────────────</span></code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; function abmult(r0::Int)
            # we can improve the type stability of the variable `r` like this,
            # but it is still captured
            r::Int = r0
@@ -35,7 +65,10 @@
            end
            f = x -&gt; x * r
            return f
-       end;</code><code class="nohighlight hljs ansi" style="display:block;"></code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; @report_opt abmult(42)</code><code class="nohighlight hljs ansi" style="display:block;">ERROR: UndefVarError: throw_blocks not defined</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; function abmult(r::Int)
+       end;</code><code class="nohighlight hljs ansi" style="display:block;"></code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; @report_opt abmult(42)</code><code class="nohighlight hljs ansi" style="display:block;"><span class="sgr7">═════ 1 possible error found ═════</span>
+<span class="sgr91">┌ @ REPL[3]:4 </span>r = Core.Box()
+<span class="sgr91">│ captured variable `r` detected</span>
+<span class="sgr91">└─────────────</span></code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; function abmult(r::Int)
            if r &lt; 0
                r = -r
            end
@@ -45,7 +78,7 @@
                x -&gt; x * r
            end
            return f
-       end;</code><code class="nohighlight hljs ansi" style="display:block;"></code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; @report_opt abmult(42)</code><code class="nohighlight hljs ansi" style="display:block;">ERROR: UndefVarError: throw_blocks not defined</code></pre><p>With the <a href="#optanalysis-config"><code>frame_filter</code></a> configuration, we can easily limit the scope of analysis to specific module context:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; # problem: when ∑1/n exceeds `x` ?
+       end;</code><code class="nohighlight hljs ansi" style="display:block;"></code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; @report_opt abmult(42)</code><code class="nohighlight hljs ansi" style="display:block;"><span class="sgr92">No errors !</span></code></pre><p>With the <a href="#optanalysis-config"><code>frame_filter</code></a> configuration, we can easily limit the scope of analysis to specific module context:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; # problem: when ∑1/n exceeds `x` ?
        function compute(x)
            r = 1
            s = 0.0
@@ -62,145 +95,126 @@
                n += 1
            end
            return n, s
-       end</code><code class="nohighlight hljs ansi" style="display:block;">compute (generic function with 1 method)</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; @report_opt compute(30) # bunch of reports will be reported from the `println` call</code><code class="nohighlight hljs ansi" style="display:block;">ERROR: UndefVarError: throw_blocks not defined</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; this_module_filter(sv) = sv.mod === @__MODULE__;</code><code class="nohighlight hljs ansi" style="display:block;"></code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; @report_opt frame_filter=this_module_filter compute(30) # focus on what we wrote, and no error should be reported</code><code class="nohighlight hljs ansi" style="display:block;">ERROR: UndefVarError: throw_blocks not defined</code></pre><p>There is also <a href="#optanalysis-config"><code>function_filter</code></a>, which can ignore specific function call.</p><p><a href="#JET.@test_opt"><code>@test_opt</code></a> can be used to assert that a given function call is free from the performance pitfalls. It is fully integrated with <a href="https://docs.julialang.org/en/v1/stdlib/Test/"><code>Test</code> standard library&#39;s unit-testing infrastructure</a>, and we can use it as like other <code>Test</code> macros e.g. <code>@test</code>:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; @test_opt sumup(cos)</code><code class="nohighlight hljs ansi" style="display:block;"><span class="sgr91"><span class="sgr1">Error During Test</span></span> at <span class="sgr1">REPL[1]:1</span>
-  Test threw exception
-  Expression: #= REPL[1]:1 =# JET.@test_call analyzer = JET.OptAnalyzer sumup(cos)
-  UndefVarError: throw_blocks not defined
-  Stacktrace:
-    [1] <span class="sgr1">(::JET.OptAnalysisPass)(</span><span class="sgr90">#unused#</span>::Type<span class="sgr90">{JET.RuntimeDispatchReport}</span>, <span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">caller</span>::Core.Compiler.InferenceResult, <span class="sgr90">opt</span>::Core.Compiler.OptimizationState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/analyzers/<span class="sgr4">optanalyzer.jl:275</span></span>
-    [2] <span class="sgr1">finish!(</span><span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/analyzers/<span class="sgr4">optanalyzer.jl:244</span></span>
-    [3] <span class="sgr1">_typeinf(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/abstractinterpret/<span class="sgr4">typeinfer.jl:648</span></span>
-    [4] <span class="sgr1">typeinf(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ Core.Compiler</span> <span class="sgr90">./compiler/<span class="sgr4">typeinfer.jl:209</span></span>
-    [5] <span class="sgr1">typeinf(</span><span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/abstractinterpret/<span class="sgr4">typeinfer.jl:513</span></span>
-    [6] <span class="sgr1">analyze_frame!</span>
-  <span class="sgr90">    @ ~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:671</span> [inlined]</span>
-    [7] <span class="sgr1">analyze_method_instance!</span>
-  <span class="sgr90">    @ ~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:660</span> [inlined]</span>
-    [8] <span class="sgr1">analyze_method_signature!(</span><span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">m</span>::Method, <span class="sgr90">atype</span>::Any, <span class="sgr90">sparams</span>::Core.SimpleVector<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:646</span></span>
-    [9] <span class="sgr1">analyze_gf_by_type!</span>
-  <span class="sgr90">    @ ~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:620</span> [inlined]</span>
-   [10] <span class="sgr1">report_call(</span><span class="sgr90">tt</span>::Type<span class="sgr90">{&lt;:Tuple}</span>; <span class="sgr90">analyzer</span>::Type<span class="sgr90">{JET.OptAnalyzer}</span>, <span class="sgr90">source</span>::Nothing, <span class="sgr90">jetconfigs</span>::Base.Pairs<span class="sgr90">{Symbol, Union{}, Tuple{}, NamedTuple{(), Tuple{}}}</span><span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:1197</span></span>
-   [11] <span class="sgr1">report_call(</span><span class="sgr90">f</span>::Any, <span class="sgr90">types</span>::Any; <span class="sgr90">jetconfigs</span>::Base.Pairs<span class="sgr90">{Symbol, UnionAll, Tuple{Symbol}, NamedTuple{(:analyzer,), Tuple{UnionAll}}}</span><span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:1188</span></span>
-   [12] top-level scope
-  <span class="sgr90">    @ ~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:1316</span></span>
-   [13] <span class="sgr1">eval</span>
-  <span class="sgr90">    @ ./<span class="sgr4">boot.jl:368</span> [inlined]</span>
-   [14] <span class="sgr1">#20</span>
-  <span class="sgr90">    @ ~/.julia/packages/Documenter/ruzxx/src/<span class="sgr4">Expanders.jl:667</span> [inlined]</span>
-   [15] <span class="sgr1">cd(</span><span class="sgr90">f</span>::Documenter.Expanders.var&quot;#20#22&quot;<span class="sgr90">{Module}</span>, <span class="sgr90">dir</span>::String<span class="sgr1">)</span>
-  <span class="sgr90">    @ Base.Filesystem</span> <span class="sgr90">./<span class="sgr4">file.jl:111</span></span>
-   [16] <span class="sgr1">(::Documenter.Expanders.var&quot;#19#21&quot;{Documenter.Documents.Page, Module})()</span>
-  <span class="sgr90">    @ </span><span class="sgr36">Documenter.Expanders</span> <span class="sgr90">~/.julia/packages/Documenter/ruzxx/src/<span class="sgr4">Expanders.jl:666</span></span>
-   [17] <span class="sgr1">(::IOCapture.var&quot;#3#5&quot;{DataType, Documenter.Expanders.var&quot;#19#21&quot;{Documenter.Documents.Page, Module}, Task, IOContext{Base.PipeEndpoint}, IOContext{Base.PipeEndpoint}, IOContext{Base.PipeEndpoint}, IOContext{Base.PipeEndpoint}})()</span>
-  <span class="sgr90">    @ </span><span class="sgr32">IOCapture</span> <span class="sgr90">~/.julia/packages/IOCapture/sXY71/src/<span class="sgr4">IOCapture.jl:118</span></span>
-   [18] <span class="sgr1">with_logstate(</span><span class="sgr90">f</span>::Function, <span class="sgr90">logstate</span>::Any<span class="sgr1">)</span>
-  <span class="sgr90">    @ Base.CoreLogging</span> <span class="sgr90">./<span class="sgr4">logging.jl:511</span></span>
-   [19] <span class="sgr1">with_logger</span>
-  <span class="sgr90">    @ ./<span class="sgr4">logging.jl:623</span> [inlined]</span>
-   [20] <span class="sgr1">capture(</span><span class="sgr90">f</span>::Documenter.Expanders.var&quot;#19#21&quot;<span class="sgr90">{Documenter.Documents.Page, Module}</span>; <span class="sgr90">rethrow</span>::Type, <span class="sgr90">color</span>::Bool<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr32">IOCapture</span> <span class="sgr90">~/.julia/packages/IOCapture/sXY71/src/<span class="sgr4">IOCapture.jl:116</span></span>
-   [21] <span class="sgr1">runner(</span><span class="sgr90">#unused#</span>::Type<span class="sgr90">{Documenter.Expanders.REPLBlocks}</span>, <span class="sgr90">x</span>::Markdown.Code, <span class="sgr90">page</span>::Documenter.Documents.Page, <span class="sgr90">doc</span>::Documenter.Documents.Document<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr36">Documenter.Expanders</span> <span class="sgr90">~/.julia/packages/Documenter/ruzxx/src/<span class="sgr4">Expanders.jl:665</span></span>
-   [22] <span class="sgr1">dispatch(</span>::Type<span class="sgr90">{Documenter.Expanders.ExpanderPipeline}</span>, ::Markdown.Code, ::Vararg<span class="sgr90">{Any}</span><span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr36">Documenter.Utilities.Selectors</span> <span class="sgr90">~/.julia/packages/Documenter/ruzxx/src/Utilities/<span class="sgr4">Selectors.jl:170</span></span>
-   [23] <span class="sgr1">expand(</span><span class="sgr90">doc</span>::Documenter.Documents.Document<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr36">Documenter.Expanders</span> <span class="sgr90">~/.julia/packages/Documenter/ruzxx/src/<span class="sgr4">Expanders.jl:42</span></span>
-   [24] <span class="sgr1">runner(</span><span class="sgr90">#unused#</span>::Type<span class="sgr90">{Documenter.Builder.ExpandTemplates}</span>, <span class="sgr90">doc</span>::Documenter.Documents.Document<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr36">Documenter.Builder</span> <span class="sgr90">~/.julia/packages/Documenter/ruzxx/src/<span class="sgr4">Builder.jl:227</span></span>
-   [25] <span class="sgr1">dispatch(</span><span class="sgr90">#unused#</span>::Type<span class="sgr90">{Documenter.Builder.DocumentPipeline}</span>, <span class="sgr90">x</span>::Documenter.Documents.Document<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr36">Documenter.Utilities.Selectors</span> <span class="sgr90">~/.julia/packages/Documenter/ruzxx/src/Utilities/<span class="sgr4">Selectors.jl:170</span></span>
-   [26] <span class="sgr1">#2</span>
-  <span class="sgr90">    @ ~/.julia/packages/Documenter/ruzxx/src/<span class="sgr4">Documenter.jl:257</span> [inlined]</span>
-   [27] <span class="sgr1">cd(</span><span class="sgr90">f</span>::Documenter.var&quot;#2#3&quot;<span class="sgr90">{Documenter.Documents.Document}</span>, <span class="sgr90">dir</span>::String<span class="sgr1">)</span>
-  <span class="sgr90">    @ Base.Filesystem</span> <span class="sgr90">./<span class="sgr4">file.jl:111</span></span>
-   [28] <span class="sgr1">#makedocs#1</span>
-  <span class="sgr90">    @ ~/.julia/packages/Documenter/ruzxx/src/<span class="sgr4">Documenter.jl:256</span> [inlined]</span>
-   [29] top-level scope
-  <span class="sgr90">    @ ~/work/JET.jl/JET.jl/docs/<span class="sgr4">make.jl:90</span></span>
-   [30] <span class="sgr1">include(</span><span class="sgr90">mod</span>::Module, <span class="sgr90">_path</span>::String<span class="sgr1">)</span>
-  <span class="sgr90">    @ Base</span> <span class="sgr90">./<span class="sgr4">Base.jl:416</span></span>
-   [31] <span class="sgr1">exec_options(</span><span class="sgr90">opts</span>::Base.JLOptions<span class="sgr1">)</span>
-  <span class="sgr90">    @ Base</span> <span class="sgr90">./<span class="sgr4">client.jl:292</span></span>
-   [32] <span class="sgr1">_start()</span>
-  <span class="sgr90">    @ Base</span> <span class="sgr90">./<span class="sgr4">client.jl:495</span></span>
-ERROR: <span class="sgr91">There was an error during testing</span></code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; @test_opt frame_filter=this_module_filter compute(30)</code><code class="nohighlight hljs ansi" style="display:block;"><span class="sgr91"><span class="sgr1">Error During Test</span></span> at <span class="sgr1">REPL[2]:1</span>
-  Test threw exception
-  Expression: #= REPL[2]:1 =# JET.@test_call analyzer = JET.OptAnalyzer frame_filter = this_module_filter compute(30)
-  UndefVarError: throw_blocks not defined
-  Stacktrace:
-    [1] <span class="sgr1">(::JET.OptAnalysisPass)(</span><span class="sgr90">#unused#</span>::Type<span class="sgr90">{JET.RuntimeDispatchReport}</span>, <span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{typeof(Main.this_module_filter)}, JET.var&quot;#151#156&quot;}</span>, <span class="sgr90">caller</span>::Core.Compiler.InferenceResult, <span class="sgr90">opt</span>::Core.Compiler.OptimizationState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/analyzers/<span class="sgr4">optanalyzer.jl:275</span></span>
-    [2] <span class="sgr1">finish!(</span><span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{typeof(Main.this_module_filter)}, JET.var&quot;#151#156&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/analyzers/<span class="sgr4">optanalyzer.jl:244</span></span>
-    [3] <span class="sgr1">_typeinf(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{typeof(Main.this_module_filter)}, JET.var&quot;#151#156&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/abstractinterpret/<span class="sgr4">typeinfer.jl:648</span></span>
-    [4] <span class="sgr1">typeinf(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{typeof(Main.this_module_filter)}, JET.var&quot;#151#156&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ Core.Compiler</span> <span class="sgr90">./compiler/<span class="sgr4">typeinfer.jl:209</span></span>
-    [5] <span class="sgr1">typeinf(</span><span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{typeof(Main.this_module_filter)}, JET.var&quot;#151#156&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/abstractinterpret/<span class="sgr4">typeinfer.jl:513</span></span>
-    [6] <span class="sgr1">analyze_frame!</span>
-  <span class="sgr90">    @ ~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:671</span> [inlined]</span>
-    [7] <span class="sgr1">analyze_method_instance!</span>
-  <span class="sgr90">    @ ~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:660</span> [inlined]</span>
-    [8] <span class="sgr1">analyze_method_signature!(</span><span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{typeof(Main.this_module_filter)}, JET.var&quot;#151#156&quot;}</span>, <span class="sgr90">m</span>::Method, <span class="sgr90">atype</span>::Any, <span class="sgr90">sparams</span>::Core.SimpleVector<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:646</span></span>
-    [9] <span class="sgr1">analyze_gf_by_type!</span>
-  <span class="sgr90">    @ ~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:620</span> [inlined]</span>
-   [10] <span class="sgr1">report_call(</span><span class="sgr90">tt</span>::Type<span class="sgr90">{&lt;:Tuple}</span>; <span class="sgr90">analyzer</span>::Type<span class="sgr90">{JET.OptAnalyzer}</span>, <span class="sgr90">source</span>::Nothing, <span class="sgr90">jetconfigs</span>::Base.Pairs<span class="sgr90">{Symbol, typeof(Main.this_module_filter), Tuple{Symbol}, NamedTuple{(:frame_filter,), Tuple{typeof(Main.this_module_filter)}}}</span><span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:1197</span></span>
-   [11] <span class="sgr1">report_call(</span><span class="sgr90">f</span>::Any, <span class="sgr90">types</span>::Any; <span class="sgr90">jetconfigs</span>::Base.Pairs<span class="sgr90">{Symbol, Any, Tuple{Symbol, Symbol}, NamedTuple{(:analyzer, :frame_filter), Tuple{UnionAll, typeof(Main.this_module_filter)}}}</span><span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:1188</span></span>
-   [12] top-level scope
-  <span class="sgr90">    @ ~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:1316</span></span>
-   [13] <span class="sgr1">eval</span>
-  <span class="sgr90">    @ ./<span class="sgr4">boot.jl:368</span> [inlined]</span>
-   [14] <span class="sgr1">#20</span>
-  <span class="sgr90">    @ ~/.julia/packages/Documenter/ruzxx/src/<span class="sgr4">Expanders.jl:667</span> [inlined]</span>
-   [15] <span class="sgr1">cd(</span><span class="sgr90">f</span>::Documenter.Expanders.var&quot;#20#22&quot;<span class="sgr90">{Module}</span>, <span class="sgr90">dir</span>::String<span class="sgr1">)</span>
-  <span class="sgr90">    @ Base.Filesystem</span> <span class="sgr90">./<span class="sgr4">file.jl:111</span></span>
-   [16] <span class="sgr1">(::Documenter.Expanders.var&quot;#19#21&quot;{Documenter.Documents.Page, Module})()</span>
-  <span class="sgr90">    @ </span><span class="sgr36">Documenter.Expanders</span> <span class="sgr90">~/.julia/packages/Documenter/ruzxx/src/<span class="sgr4">Expanders.jl:666</span></span>
-   [17] <span class="sgr1">(::IOCapture.var&quot;#3#5&quot;{DataType, Documenter.Expanders.var&quot;#19#21&quot;{Documenter.Documents.Page, Module}, Task, IOContext{Base.PipeEndpoint}, IOContext{Base.PipeEndpoint}, IOContext{Base.PipeEndpoint}, IOContext{Base.PipeEndpoint}})()</span>
-  <span class="sgr90">    @ </span><span class="sgr32">IOCapture</span> <span class="sgr90">~/.julia/packages/IOCapture/sXY71/src/<span class="sgr4">IOCapture.jl:118</span></span>
-   [18] <span class="sgr1">with_logstate(</span><span class="sgr90">f</span>::Function, <span class="sgr90">logstate</span>::Any<span class="sgr1">)</span>
-  <span class="sgr90">    @ Base.CoreLogging</span> <span class="sgr90">./<span class="sgr4">logging.jl:511</span></span>
-   [19] <span class="sgr1">with_logger</span>
-  <span class="sgr90">    @ ./<span class="sgr4">logging.jl:623</span> [inlined]</span>
-   [20] <span class="sgr1">capture(</span><span class="sgr90">f</span>::Documenter.Expanders.var&quot;#19#21&quot;<span class="sgr90">{Documenter.Documents.Page, Module}</span>; <span class="sgr90">rethrow</span>::Type, <span class="sgr90">color</span>::Bool<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr32">IOCapture</span> <span class="sgr90">~/.julia/packages/IOCapture/sXY71/src/<span class="sgr4">IOCapture.jl:116</span></span>
-   [21] <span class="sgr1">runner(</span><span class="sgr90">#unused#</span>::Type<span class="sgr90">{Documenter.Expanders.REPLBlocks}</span>, <span class="sgr90">x</span>::Markdown.Code, <span class="sgr90">page</span>::Documenter.Documents.Page, <span class="sgr90">doc</span>::Documenter.Documents.Document<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr36">Documenter.Expanders</span> <span class="sgr90">~/.julia/packages/Documenter/ruzxx/src/<span class="sgr4">Expanders.jl:665</span></span>
-   [22] <span class="sgr1">dispatch(</span>::Type<span class="sgr90">{Documenter.Expanders.ExpanderPipeline}</span>, ::Markdown.Code, ::Vararg<span class="sgr90">{Any}</span><span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr36">Documenter.Utilities.Selectors</span> <span class="sgr90">~/.julia/packages/Documenter/ruzxx/src/Utilities/<span class="sgr4">Selectors.jl:170</span></span>
-   [23] <span class="sgr1">expand(</span><span class="sgr90">doc</span>::Documenter.Documents.Document<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr36">Documenter.Expanders</span> <span class="sgr90">~/.julia/packages/Documenter/ruzxx/src/<span class="sgr4">Expanders.jl:42</span></span>
-   [24] <span class="sgr1">runner(</span><span class="sgr90">#unused#</span>::Type<span class="sgr90">{Documenter.Builder.ExpandTemplates}</span>, <span class="sgr90">doc</span>::Documenter.Documents.Document<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr36">Documenter.Builder</span> <span class="sgr90">~/.julia/packages/Documenter/ruzxx/src/<span class="sgr4">Builder.jl:227</span></span>
-   [25] <span class="sgr1">dispatch(</span><span class="sgr90">#unused#</span>::Type<span class="sgr90">{Documenter.Builder.DocumentPipeline}</span>, <span class="sgr90">x</span>::Documenter.Documents.Document<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr36">Documenter.Utilities.Selectors</span> <span class="sgr90">~/.julia/packages/Documenter/ruzxx/src/Utilities/<span class="sgr4">Selectors.jl:170</span></span>
-   [26] <span class="sgr1">#2</span>
-  <span class="sgr90">    @ ~/.julia/packages/Documenter/ruzxx/src/<span class="sgr4">Documenter.jl:257</span> [inlined]</span>
-   [27] <span class="sgr1">cd(</span><span class="sgr90">f</span>::Documenter.var&quot;#2#3&quot;<span class="sgr90">{Documenter.Documents.Document}</span>, <span class="sgr90">dir</span>::String<span class="sgr1">)</span>
-  <span class="sgr90">    @ Base.Filesystem</span> <span class="sgr90">./<span class="sgr4">file.jl:111</span></span>
-   [28] <span class="sgr1">#makedocs#1</span>
-  <span class="sgr90">    @ ~/.julia/packages/Documenter/ruzxx/src/<span class="sgr4">Documenter.jl:256</span> [inlined]</span>
-   [29] top-level scope
-  <span class="sgr90">    @ ~/work/JET.jl/JET.jl/docs/<span class="sgr4">make.jl:90</span></span>
-   [30] <span class="sgr1">include(</span><span class="sgr90">mod</span>::Module, <span class="sgr90">_path</span>::String<span class="sgr1">)</span>
-  <span class="sgr90">    @ Base</span> <span class="sgr90">./<span class="sgr4">Base.jl:416</span></span>
-   [31] <span class="sgr1">exec_options(</span><span class="sgr90">opts</span>::Base.JLOptions<span class="sgr1">)</span>
-  <span class="sgr90">    @ Base</span> <span class="sgr90">./<span class="sgr4">client.jl:292</span></span>
-   [32] <span class="sgr1">_start()</span>
-  <span class="sgr90">    @ Base</span> <span class="sgr90">./<span class="sgr4">client.jl:495</span></span>
-ERROR: <span class="sgr91">There was an error during testing</span></code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; using Test</code><code class="nohighlight hljs ansi" style="display:block;"></code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; @testset &quot;check type-stabilities&quot; begin
+       end</code><code class="nohighlight hljs ansi" style="display:block;">compute (generic function with 1 method)</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; @report_opt compute(30) # bunch of reports will be reported from the `println` call</code><code class="nohighlight hljs ansi" style="display:block;"><span class="sgr7">═════ 23 possible errors found ═════</span>
+<span class="sgr35">┌ @ REPL[1]:11 </span>Main.println(Base.string(&quot;round &quot;, r, &quot;/&quot;, x, &quot; has been finished&quot;))
+<span class="sgr35">│</span><span class="sgr34">┌ @ coreio.jl:4 </span>Base.println(Core.tuple(Core.typeassert(Base.stdout, Base.IO)), xs...)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">┌ @ strings/io.jl:73 </span>Base.print(Core.tuple(io), xs, Core.tuple(&quot;\n&quot;)...)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">┌ @ strings/io.jl:43 </span>Base.lock(io)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">┌ @ stream.jl:283 </span>Base.lock(Base.getproperty(s, :lock))
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">┌ @ lock.jl:100 </span>Base.wait(Base.getproperty(rl, :cond_wait))
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">┌ @ condition.jl:112 </span> = Base.wait()
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">┌ @ task.jl:824 </span>result = Base.try_yieldto(Base.ensure_rescheduled)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">┌ @ task.jl:761 </span>Base.getproperty(%7, :result)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Base.getproperty(%7<span class="sgr96">::Task</span>, :result<span class="sgr96">::Symbol</span>)</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">└───────────────</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">┌ @ task.jl:762 </span>Base.setproperty!(%7, :result, Base.nothing)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Base.setproperty!(%7<span class="sgr96">::Task</span>, :result<span class="sgr96">::Symbol</span>, Base.nothing)</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">└───────────────</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">┌ @ task.jl:763 </span>Base.setproperty!(%7, :_isexception, false)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Base.setproperty!(%7<span class="sgr96">::Task</span>, :_isexception<span class="sgr96">::Symbol</span>, false)</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">└───────────────</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">┌ @ condition.jl:114 </span>Base.list_deletefirst!(Base.getproperty(ct, :queue), ct)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">┌ @ linked_list.jl:145 </span>Base.isequal(Base.getproperty(h, :value), val)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">┌ @ gcutils.jl:4 </span>Base.isequal(%1, v)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Base.isequal(%1<span class="sgr96">::Any</span>, v<span class="sgr96">::Task</span>)</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">└────────────────</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr91">┌ @ condition.jl:114 </span>Base.list_deletefirst!(%56, %50)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Base.list_deletefirst!(%56<span class="sgr96">::Any</span>, %50<span class="sgr96">::Task</span>)</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr91">└────────────────────</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">┌ @ strings/io.jl:49 </span>Base.unlock(io)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">┌ @ show.jl:335 </span>Base.unlock(Base.getproperty(io, :io))
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">┌ @ stream.jl:284 </span>Base.unlock(Base.getproperty(s, :lock))
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">┌ @ lock.jl:132 </span>Base.notify(Base.getproperty(rl, :cond_wait))
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">┌ @ condition.jl:130 </span>#self#(c, Base.nothing)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">┌ @ condition.jl:130 </span>Base.#notify#564(true, false, #self#, c, arg)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">┌ @ condition.jl:130 </span>Base.notify(c, arg, all, error)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">┌ @ condition.jl:136 </span>Core.kwfunc(Base.schedule)(Core.apply_type(Core.NamedTuple, (:error,))(Core.tuple(error)), Base.schedule, t, arg)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">┌ @ task.jl:684 </span>Base.#schedule#585(error, _3, t, arg)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">┌ @ task.jl:686 </span>%10(%11, t)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">%10<span class="sgr96">::typeof(Base.list_deletefirst!)</span>(%11<span class="sgr96">::Any</span>, t<span class="sgr96">::Task</span>)</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">└───────────────</span>
+<span class="sgr35">│</span><span class="sgr91">┌ @ coreio.jl:4 </span>Base.println(%3, %4)
+<span class="sgr35">│</span><span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Base.println(%3<span class="sgr96">::IO</span>, %4<span class="sgr96">::String</span>)</span>
+<span class="sgr35">│</span><span class="sgr91">└───────────────</span>
+<span class="sgr35">┌ @ timing.jl:214 </span>Base.time_print(elapsedtime, Base.getproperty(diff, :allocd), Base.getproperty(diff, :total_time), Base.gc_alloc_count(diff), compile_elapsedtime, true)
+<span class="sgr35">│</span><span class="sgr34">┌ @ timing.jl:120 </span>str = Base.sprint(#866)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">┌ @ strings/io.jl:106 </span>Base.#sprint#430(Core.tuple(Base.nothing, 0, #self#, f), args...)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">┌ @ strings/io.jl:112 </span>f(Core.tuple(s), args...)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">┌ @ timing.jl:123 </span>Base.!=(%32, 0)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Base.!=(%32<span class="sgr96">::Any</span>, 0)</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">└─────────────────</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">┌ @ timing.jl:125 </span>Base.!=(%65, 0)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Base.!=(%65<span class="sgr96">::Any</span>, 0)</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">└─────────────────</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">┌ @ timing.jl:126 </span>Base.prettyprint_getunits(%73, %75, 1000)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Base.prettyprint_getunits(%73<span class="sgr96">::Any</span>, %75<span class="sgr96">::Int64</span>, 1000)</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">└─────────────────</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">┌ @ timing.jl:127 </span>Base.==(%80, 1)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Base.==(%80<span class="sgr96">::Any</span>, 1)</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">└─────────────────</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">┌ @ timing.jl:128 </span>Base.Int(%88)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Base.Int(%88<span class="sgr96">::Any</span>)</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">└─────────────────</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">┌ @ timing.jl:128 </span>Base.getindex(Base._cnt_units, %80)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Base.getindex(Base._cnt_units, %80<span class="sgr96">::Any</span>)</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">└─────────────────</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">┌ @ timing.jl:128 </span>Base.==(%96, 1)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Base.==(%96<span class="sgr96">::Any</span>, 1)</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">└─────────────────</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">┌ @ timing.jl:128 </span>Base.print(io, %89, %90, %101)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Base.print(io<span class="sgr96">::IOBuffer</span>, %89<span class="sgr96">::Any</span>, %90<span class="sgr96">::Any</span>, %101<span class="sgr96">::String</span>)</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">└─────────────────</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">┌ @ timing.jl:130 </span>Base.Float64(%110)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Base.Float64(%110<span class="sgr96">::Any</span>)</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">└─────────────────</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">┌ @ timing.jl:130 </span>%104(%111, 2)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">%104<span class="sgr96">::typeof(Base.Ryu.writefixed)</span>(%111<span class="sgr96">::Any</span>, 2)</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">└─────────────────</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">┌ @ timing.jl:130 </span>Base.getindex(Base._cnt_units, %80)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Base.getindex(Base._cnt_units, %80<span class="sgr96">::Any</span>)</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">└─────────────────</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">┌ @ timing.jl:130 </span>Base.print(io, %112, %113, &quot; allocations: &quot;)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Base.print(io<span class="sgr96">::IOBuffer</span>, %112<span class="sgr96">::String</span>, %113<span class="sgr96">::Any</span>, &quot; allocations: &quot;)</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">└─────────────────</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">┌ @ timing.jl:135 </span>Base.!=(%138, 0)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Base.!=(%138<span class="sgr96">::Any</span>, 0)</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">└─────────────────</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">┌ @ timing.jl:141 </span>Base.!=(%173, 0)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Base.!=(%173<span class="sgr96">::Any</span>, 0)</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr33">│</span><span class="sgr32">│</span><span class="sgr91">└─────────────────</span>
+<span class="sgr35">│</span><span class="sgr34">┌ @ timing.jl:148 </span>Base.print(str)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr91">┌ @ coreio.jl:3 </span>Base.print(%3, %4)
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Base.print(%3<span class="sgr96">::IO</span>, %4<span class="sgr96">::String</span>)</span>
+<span class="sgr35">│</span><span class="sgr34">│</span><span class="sgr91">└───────────────</span>
+<span class="sgr35">│</span><span class="sgr91">┌ @ timing.jl:119 </span>allocs = Core.Box(:(_11::Int64))
+<span class="sgr35">│</span><span class="sgr91">│ captured variable `allocs` detected</span>
+<span class="sgr35">│</span><span class="sgr91">└─────────────────</span></code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; this_module_filter(sv) = sv.mod === @__MODULE__;</code><code class="nohighlight hljs ansi" style="display:block;"></code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; @report_opt frame_filter=this_module_filter compute(30) # focus on what we wrote, and no error should be reported</code><code class="nohighlight hljs ansi" style="display:block;"><span class="sgr92">No errors !</span></code></pre><p>There is also <a href="#optanalysis-config"><code>function_filter</code></a>, which can ignore specific function call.</p><p><a href="#JET.@test_opt"><code>@test_opt</code></a> can be used to assert that a given function call is free from the performance pitfalls. It is fully integrated with <a href="https://docs.julialang.org/en/v1/stdlib/Test/"><code>Test</code> standard library&#39;s unit-testing infrastructure</a>, and we can use it as like other <code>Test</code> macros e.g. <code>@test</code>:</p><pre><code class="language-julia-repl hljs" style="display:block;">julia&gt; @test_opt sumup(cos)</code><code class="nohighlight hljs ansi" style="display:block;"><span class="sgr91"><span class="sgr1">JET-test failed</span></span> at <span class="sgr1">REPL[1]:1</span>
+  Expression: <span class="sgr90">#= REPL[1]:1 =#</span> JET.@test_call analyzer = JET.OptAnalyzer sumup(cos)
+  <span class="sgr7">═════ 7 possible errors found ═════</span>
+  <span class="sgr91">┌ @ REPL[3]:4 </span>Main.make_vals(%1)
+  <span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.make_vals(%1<span class="sgr96">::Any</span>)</span>
+  <span class="sgr91">└─────────────</span>
+  <span class="sgr91">┌ @ REPL[3]:5 </span>Main.eltype(%2)
+  <span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.eltype(%2<span class="sgr96">::Any</span>)</span>
+  <span class="sgr91">└─────────────</span>
+  <span class="sgr91">┌ @ REPL[3]:5 </span>Main.zero(%3)
+  <span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.zero(%3<span class="sgr96">::Any</span>)</span>
+  <span class="sgr91">└─────────────</span>
+  <span class="sgr91">┌ @ REPL[3]:6 </span>Base.iterate(%2)
+  <span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Base.iterate(%2<span class="sgr96">::Any</span>)</span>
+  <span class="sgr91">└─────────────</span>
+  <span class="sgr91">┌ @ REPL[3]:7 </span>f(%11)
+  <span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">f<span class="sgr96">::typeof(cos)</span>(%11<span class="sgr96">::Any</span>)</span>
+  <span class="sgr91">└─────────────</span>
+  <span class="sgr91">┌ @ REPL[3]:7 </span>Main.+(%10, %13)
+  <span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.+(%10<span class="sgr96">::Any</span>, %13<span class="sgr96">::Any</span>)</span>
+  <span class="sgr91">└─────────────</span>
+  <span class="sgr91">┌ @ REPL[3]:8 </span>Base.iterate(%2, %12)
+  <span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Base.iterate(%2<span class="sgr96">::Any</span>, %12<span class="sgr96">::Any</span>)</span>
+  <span class="sgr91">└─────────────</span>
+  
+ERROR: <span class="sgr91">There was an error during testing</span></code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; @test_opt frame_filter=this_module_filter compute(30)</code><code class="nohighlight hljs ansi" style="display:block;"><span class="sgr32"><span class="sgr1">Test Passed</span></span>
+  Expression: <span class="sgr90">#= REPL[2]:1 =#</span> JET.@test_call analyzer = JET.OptAnalyzer frame_filter = this_module_filter compute(30)</code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; using Test</code><code class="nohighlight hljs ansi" style="display:block;"></code><br/><code class="language-julia-repl hljs" style="display:block;">julia&gt; @testset &quot;check type-stabilities&quot; begin
            @test_opt sumup(cos) # should fail
        
            n = rand(Int)
@@ -209,240 +223,36 @@ ERROR: <span class="sgr91">There was an error during testing</span></code><br/><
            @test_opt frame_filter=this_module_filter compute(30) # should pass
        
            @test_opt broken=true compute(30) # should pass with the &quot;broken&quot; annotation
-       end</code><code class="nohighlight hljs ansi" style="display:block;"><span class="sgr37">check type-stabilities: </span><span class="sgr91"><span class="sgr1">Error During Test</span></span> at <span class="sgr1">REPL[4]:2</span>
-  Test threw exception
-  Expression: #= REPL[4]:2 =# JET.@test_call analyzer = JET.OptAnalyzer sumup(cos)
-  UndefVarError: throw_blocks not defined
-  Stacktrace:
-    [1] <span class="sgr1">(::JET.OptAnalysisPass)(</span><span class="sgr90">#unused#</span>::Type<span class="sgr90">{JET.RuntimeDispatchReport}</span>, <span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">caller</span>::Core.Compiler.InferenceResult, <span class="sgr90">opt</span>::Core.Compiler.OptimizationState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/analyzers/<span class="sgr4">optanalyzer.jl:275</span></span>
-    [2] <span class="sgr1">finish!(</span><span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/analyzers/<span class="sgr4">optanalyzer.jl:244</span></span>
-    [3] <span class="sgr1">_typeinf(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/abstractinterpret/<span class="sgr4">typeinfer.jl:648</span></span>
-    [4] <span class="sgr1">typeinf(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ Core.Compiler</span> <span class="sgr90">./compiler/<span class="sgr4">typeinfer.jl:209</span></span>
-    [5] <span class="sgr1">typeinf(</span><span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/abstractinterpret/<span class="sgr4">typeinfer.jl:513</span></span>
-    [6] <span class="sgr1">analyze_frame!</span>
-  <span class="sgr90">    @ ~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:671</span> [inlined]</span>
-    [7] <span class="sgr1">analyze_method_instance!</span>
-  <span class="sgr90">    @ ~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:660</span> [inlined]</span>
-    [8] <span class="sgr1">analyze_method_signature!(</span><span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">m</span>::Method, <span class="sgr90">atype</span>::Any, <span class="sgr90">sparams</span>::Core.SimpleVector<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:646</span></span>
-    [9] <span class="sgr1">analyze_gf_by_type!</span>
-  <span class="sgr90">    @ ~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:620</span> [inlined]</span>
-   [10] <span class="sgr1">report_call(</span><span class="sgr90">tt</span>::Type<span class="sgr90">{&lt;:Tuple}</span>; <span class="sgr90">analyzer</span>::Type<span class="sgr90">{JET.OptAnalyzer}</span>, <span class="sgr90">source</span>::Nothing, <span class="sgr90">jetconfigs</span>::Base.Pairs<span class="sgr90">{Symbol, Union{}, Tuple{}, NamedTuple{(), Tuple{}}}</span><span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:1197</span></span>
-   [11] <span class="sgr1">report_call(</span><span class="sgr90">f</span>::Any, <span class="sgr90">types</span>::Any; <span class="sgr90">jetconfigs</span>::Base.Pairs<span class="sgr90">{Symbol, UnionAll, Tuple{Symbol}, NamedTuple{(:analyzer,), Tuple{UnionAll}}}</span><span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:1188</span></span>
-   [12] <span class="sgr1">macro expansion</span>
-  <span class="sgr90">    @ ~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:1316</span> [inlined]</span>
-   [13] <span class="sgr1">macro expansion</span>
-  <span class="sgr90">    @ ./<span class="sgr4">REPL[4]:2</span> [inlined]</span>
-   [14] <span class="sgr1">macro expansion</span>
-  <span class="sgr90">    @ /buildworker/worker/package_linux64/build/usr/share/julia/stdlib/v1.8/Test/src/<span class="sgr4">Test.jl:1321</span> [inlined]</span>
-   [15] top-level scope
-  <span class="sgr90">    @ ./<span class="sgr4">REPL[4]:2</span></span>
-<span class="sgr37">check type-stabilities: </span><span class="sgr91"><span class="sgr1">Error During Test</span></span> at <span class="sgr1">REPL[4]:5</span>
-  Test threw exception
-  Expression: #= REPL[4]:5 =# JET.@test_call analyzer = JET.OptAnalyzer sumup(cos, n)
-  UndefVarError: throw_blocks not defined
-  Stacktrace:
-    [1] <span class="sgr1">(::JET.OptAnalysisPass)(</span><span class="sgr90">#unused#</span>::Type<span class="sgr90">{JET.RuntimeDispatchReport}</span>, <span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">caller</span>::Core.Compiler.InferenceResult, <span class="sgr90">opt</span>::Core.Compiler.OptimizationState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/analyzers/<span class="sgr4">optanalyzer.jl:275</span></span>
-    [2] <span class="sgr1">finish!(</span><span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/analyzers/<span class="sgr4">optanalyzer.jl:244</span></span>
-    [3] <span class="sgr1">_typeinf(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/abstractinterpret/<span class="sgr4">typeinfer.jl:648</span></span>
-    [4] <span class="sgr1">typeinf(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr36">Core.Compiler</span> <span class="sgr90">./compiler/<span class="sgr4">typeinfer.jl:209</span></span>
-    [5] <span class="sgr1">typeinf(</span><span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/abstractinterpret/<span class="sgr4">typeinfer.jl:513</span></span>
-    [6] <span class="sgr1">typeinf_edge</span>
-  <span class="sgr90">    @ ./compiler/<span class="sgr4">typeinfer.jl:825</span> [inlined]</span>
-    [7] <span class="sgr1">typeinf_edge</span>
-  <span class="sgr90">    @ ~/work/JET.jl/JET.jl/src/abstractinterpret/<span class="sgr4">typeinfer.jl:331</span> [inlined]</span>
-    [8] <span class="sgr1">abstract_call_method(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">method</span>::Method, <span class="sgr90">sig</span>::Any, <span class="sgr90">sparams</span>::Core.SimpleVector, <span class="sgr90">hardlimit</span>::Bool, <span class="sgr90">sv</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr36">Core.Compiler</span> <span class="sgr90">./compiler/<span class="sgr4">abstractinterpretation.jl:504</span></span>
-    [9] <span class="sgr1">abstract_call_method</span>
-  <span class="sgr90">    @ ~/work/JET.jl/JET.jl/src/abstractinterpret/<span class="sgr4">typeinfer.jl:170</span> [inlined]</span>
-   [10] <span class="sgr1">abstract_call_gf_by_type(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">f</span>::Any, <span class="sgr90">fargs</span>::Vector<span class="sgr90">{Any}</span>, <span class="sgr90">argtypes</span>::Vector<span class="sgr90">{Any}</span>, <span class="sgr90">atype</span>::Any, <span class="sgr90">sv</span>::Core.Compiler.InferenceState, <span class="sgr90">max_methods</span>::Int64<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr36">Core.Compiler</span> <span class="sgr90">./compiler/<span class="sgr4">abstractinterpretation.jl:105</span></span>
-   [11] <span class="sgr1">abstract_call_known(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">f</span>::Any, <span class="sgr90">fargs</span>::Vector<span class="sgr90">{Any}</span>, <span class="sgr90">argtypes</span>::Vector<span class="sgr90">{Any}</span>, <span class="sgr90">sv</span>::Core.Compiler.InferenceState, <span class="sgr90">max_methods</span>::Int64<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr36">Core.Compiler</span> <span class="sgr90">./compiler/<span class="sgr4">abstractinterpretation.jl:1337</span></span>
-   [12] <span class="sgr1">abstract_call(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">fargs</span>::Vector<span class="sgr90">{Any}</span>, <span class="sgr90">argtypes</span>::Vector<span class="sgr90">{Any}</span>, <span class="sgr90">sv</span>::Core.Compiler.InferenceState, <span class="sgr90">max_methods</span>::Int64<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr36">Core.Compiler</span> <span class="sgr90">./compiler/<span class="sgr4">abstractinterpretation.jl:1392</span></span>
-   [13] <span class="sgr1">abstract_call(</span><span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">fargs</span>::Vector<span class="sgr90">{Any}</span>, <span class="sgr90">argtypes</span>::Vector<span class="sgr90">{Any}</span>, <span class="sgr90">sv</span>::Core.Compiler.InferenceState, <span class="sgr90">max_methods</span>::Int64<span class="sgr1">)</span><span class="sgr90"> (repeats 2 times)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/abstractinterpret/<span class="sgr4">typeinfer.jl:209</span></span>
-   [14] <span class="sgr1">abstract_eval_statement(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">e</span>::Any, <span class="sgr90">vtypes</span>::Vector<span class="sgr90">{Any}</span>, <span class="sgr90">sv</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr36">Core.Compiler</span> <span class="sgr90">./compiler/<span class="sgr4">abstractinterpretation.jl:1532</span></span>
-   [15] <span class="sgr1">abstract_eval_statement(</span><span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">e</span>::Any, <span class="sgr90">vtypes</span>::Vector<span class="sgr90">{Any}</span>, <span class="sgr90">sv</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/abstractinterpret/<span class="sgr4">typeinfer.jl:97</span></span>
-   [16] <span class="sgr1">typeinf_local(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr36">Core.Compiler</span> <span class="sgr90">./compiler/<span class="sgr4">abstractinterpretation.jl:1917</span></span>
-   [17] <span class="sgr1">typeinf_nocycle(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr36">Core.Compiler</span> <span class="sgr90">./compiler/<span class="sgr4">abstractinterpretation.jl:2013</span></span>
-   [18] <span class="sgr1">_typeinf(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/abstractinterpret/<span class="sgr4">typeinfer.jl:591</span></span>
-  <span class="sgr90">--- the last 15 lines are repeated 1 more time ---</span>
-   [34] <span class="sgr1">typeinf(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr36">Core.Compiler</span> <span class="sgr90">./compiler/<span class="sgr4">typeinfer.jl:209</span></span>
-   [35] <span class="sgr1">typeinf(</span><span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/abstractinterpret/<span class="sgr4">typeinfer.jl:513</span></span>
-   [36] <span class="sgr1">typeinf_edge</span>
-  <span class="sgr90">    @ ./compiler/<span class="sgr4">typeinfer.jl:825</span> [inlined]</span>
-   [37] <span class="sgr1">typeinf_edge</span>
-  <span class="sgr90">    @ ~/work/JET.jl/JET.jl/src/abstractinterpret/<span class="sgr4">typeinfer.jl:331</span> [inlined]</span>
-   [38] <span class="sgr1">abstract_call_method(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">method</span>::Method, <span class="sgr90">sig</span>::Any, <span class="sgr90">sparams</span>::Core.SimpleVector, <span class="sgr90">hardlimit</span>::Bool, <span class="sgr90">sv</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr36">Core.Compiler</span> <span class="sgr90">./compiler/<span class="sgr4">abstractinterpretation.jl:504</span></span>
-   [39] <span class="sgr1">abstract_call_method</span>
-  <span class="sgr90">    @ ~/work/JET.jl/JET.jl/src/abstractinterpret/<span class="sgr4">typeinfer.jl:170</span> [inlined]</span>
-   [40] <span class="sgr1">abstract_call_gf_by_type(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">f</span>::Any, <span class="sgr90">fargs</span>::Vector<span class="sgr90">{Any}</span>, <span class="sgr90">argtypes</span>::Vector<span class="sgr90">{Any}</span>, <span class="sgr90">atype</span>::Any, <span class="sgr90">sv</span>::Core.Compiler.InferenceState, <span class="sgr90">max_methods</span>::Int64<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr36">Core.Compiler</span> <span class="sgr90">./compiler/<span class="sgr4">abstractinterpretation.jl:105</span></span>
-   [41] <span class="sgr1">abstract_call_known(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">f</span>::Any, <span class="sgr90">fargs</span>::Vector<span class="sgr90">{Any}</span>, <span class="sgr90">argtypes</span>::Vector<span class="sgr90">{Any}</span>, <span class="sgr90">sv</span>::Core.Compiler.InferenceState, <span class="sgr90">max_methods</span>::Int64<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr36">Core.Compiler</span> <span class="sgr90">./compiler/<span class="sgr4">abstractinterpretation.jl:1337</span></span>
-   [42] <span class="sgr1">abstract_call(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">fargs</span>::Vector<span class="sgr90">{Any}</span>, <span class="sgr90">argtypes</span>::Vector<span class="sgr90">{Any}</span>, <span class="sgr90">sv</span>::Core.Compiler.InferenceState, <span class="sgr90">max_methods</span>::Int64<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr36">Core.Compiler</span> <span class="sgr90">./compiler/<span class="sgr4">abstractinterpretation.jl:1392</span></span>
-   [43] <span class="sgr1">abstract_call(</span><span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">fargs</span>::Vector<span class="sgr90">{Any}</span>, <span class="sgr90">argtypes</span>::Vector<span class="sgr90">{Any}</span>, <span class="sgr90">sv</span>::Core.Compiler.InferenceState, <span class="sgr90">max_methods</span>::Int64<span class="sgr1">)</span><span class="sgr90"> (repeats 2 times)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/abstractinterpret/<span class="sgr4">typeinfer.jl:209</span></span>
-   [44] <span class="sgr1">abstract_eval_statement(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">e</span>::Any, <span class="sgr90">vtypes</span>::Vector<span class="sgr90">{Any}</span>, <span class="sgr90">sv</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr36">Core.Compiler</span> <span class="sgr90">./compiler/<span class="sgr4">abstractinterpretation.jl:1532</span></span>
-   [45] <span class="sgr1">abstract_eval_statement(</span><span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">e</span>::Any, <span class="sgr90">vtypes</span>::Vector<span class="sgr90">{Any}</span>, <span class="sgr90">sv</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/abstractinterpret/<span class="sgr4">typeinfer.jl:97</span></span>
-   [46] <span class="sgr1">typeinf_local(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr36">Core.Compiler</span> <span class="sgr90">./compiler/<span class="sgr4">abstractinterpretation.jl:1897</span></span>
-   [47] <span class="sgr1">typeinf_nocycle(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr36">Core.Compiler</span> <span class="sgr90">./compiler/<span class="sgr4">abstractinterpretation.jl:2013</span></span>
-   [48] <span class="sgr1">_typeinf(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/abstractinterpret/<span class="sgr4">typeinfer.jl:591</span></span>
-   [49] <span class="sgr1">typeinf(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr36">Core.Compiler</span> <span class="sgr90">./compiler/<span class="sgr4">typeinfer.jl:209</span></span>
-   [50] <span class="sgr1">typeinf(</span><span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/abstractinterpret/<span class="sgr4">typeinfer.jl:513</span></span>
-   [51] <span class="sgr1">analyze_frame!</span>
-  <span class="sgr90">    @ ~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:671</span> [inlined]</span>
-   [52] <span class="sgr1">analyze_method_instance!</span>
-  <span class="sgr90">    @ ~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:660</span> [inlined]</span>
-   [53] <span class="sgr1">analyze_method_signature!(</span><span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">m</span>::Method, <span class="sgr90">atype</span>::Any, <span class="sgr90">sparams</span>::Core.SimpleVector<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:646</span></span>
-   [54] <span class="sgr1">analyze_gf_by_type!</span>
-  <span class="sgr90">    @ ~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:620</span> [inlined]</span>
-   [55] <span class="sgr1">report_call(</span><span class="sgr90">tt</span>::Type<span class="sgr90">{&lt;:Tuple}</span>; <span class="sgr90">analyzer</span>::Type<span class="sgr90">{JET.OptAnalyzer}</span>, <span class="sgr90">source</span>::Nothing, <span class="sgr90">jetconfigs</span>::Base.Pairs<span class="sgr90">{Symbol, Union{}, Tuple{}, NamedTuple{(), Tuple{}}}</span><span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:1197</span></span>
-   [56] <span class="sgr1">report_call(</span><span class="sgr90">f</span>::Any, <span class="sgr90">types</span>::Any; <span class="sgr90">jetconfigs</span>::Base.Pairs<span class="sgr90">{Symbol, UnionAll, Tuple{Symbol}, NamedTuple{(:analyzer,), Tuple{UnionAll}}}</span><span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:1188</span></span>
-   [57] <span class="sgr1">macro expansion</span>
-  <span class="sgr90">    @ ~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:1316</span> [inlined]</span>
-   [58] <span class="sgr1">macro expansion</span>
-  <span class="sgr90">    @ ./<span class="sgr4">REPL[4]:5</span> [inlined]</span>
-   [59] <span class="sgr1">macro expansion</span>
-  <span class="sgr90">    @ /buildworker/worker/package_linux64/build/usr/share/julia/stdlib/v1.8/Test/src/<span class="sgr4">Test.jl:1321</span> [inlined]</span>
-<span class="sgr37">check type-stabilities: </span><span class="sgr91"><span class="sgr1">Error During Test</span></span> at <span class="sgr1">REPL[4]:7</span>
-  Test threw exception
-  Expression: #= REPL[4]:7 =# JET.@test_call analyzer = JET.OptAnalyzer frame_filter = this_module_filter compute(30)
-  UndefVarError: throw_blocks not defined
-  Stacktrace:
-    [1] <span class="sgr1">(::JET.OptAnalysisPass)(</span><span class="sgr90">#unused#</span>::Type<span class="sgr90">{JET.RuntimeDispatchReport}</span>, <span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{typeof(Main.this_module_filter)}, JET.var&quot;#151#156&quot;}</span>, <span class="sgr90">caller</span>::Core.Compiler.InferenceResult, <span class="sgr90">opt</span>::Core.Compiler.OptimizationState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/analyzers/<span class="sgr4">optanalyzer.jl:275</span></span>
-    [2] <span class="sgr1">finish!(</span><span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{typeof(Main.this_module_filter)}, JET.var&quot;#151#156&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/analyzers/<span class="sgr4">optanalyzer.jl:244</span></span>
-    [3] <span class="sgr1">_typeinf(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{typeof(Main.this_module_filter)}, JET.var&quot;#151#156&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/abstractinterpret/<span class="sgr4">typeinfer.jl:648</span></span>
-    [4] <span class="sgr1">typeinf(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{typeof(Main.this_module_filter)}, JET.var&quot;#151#156&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ Core.Compiler</span> <span class="sgr90">./compiler/<span class="sgr4">typeinfer.jl:209</span></span>
-    [5] <span class="sgr1">typeinf(</span><span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{typeof(Main.this_module_filter)}, JET.var&quot;#151#156&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/abstractinterpret/<span class="sgr4">typeinfer.jl:513</span></span>
-    [6] <span class="sgr1">analyze_frame!</span>
-  <span class="sgr90">    @ ~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:671</span> [inlined]</span>
-    [7] <span class="sgr1">analyze_method_instance!</span>
-  <span class="sgr90">    @ ~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:660</span> [inlined]</span>
-    [8] <span class="sgr1">analyze_method_signature!(</span><span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{typeof(Main.this_module_filter)}, JET.var&quot;#151#156&quot;}</span>, <span class="sgr90">m</span>::Method, <span class="sgr90">atype</span>::Any, <span class="sgr90">sparams</span>::Core.SimpleVector<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:646</span></span>
-    [9] <span class="sgr1">analyze_gf_by_type!</span>
-  <span class="sgr90">    @ ~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:620</span> [inlined]</span>
-   [10] <span class="sgr1">report_call(</span><span class="sgr90">tt</span>::Type<span class="sgr90">{&lt;:Tuple}</span>; <span class="sgr90">analyzer</span>::Type<span class="sgr90">{JET.OptAnalyzer}</span>, <span class="sgr90">source</span>::Nothing, <span class="sgr90">jetconfigs</span>::Base.Pairs<span class="sgr90">{Symbol, typeof(Main.this_module_filter), Tuple{Symbol}, NamedTuple{(:frame_filter,), Tuple{typeof(Main.this_module_filter)}}}</span><span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:1197</span></span>
-   [11] <span class="sgr1">report_call(</span><span class="sgr90">f</span>::Any, <span class="sgr90">types</span>::Any; <span class="sgr90">jetconfigs</span>::Base.Pairs<span class="sgr90">{Symbol, Any, Tuple{Symbol, Symbol}, NamedTuple{(:analyzer, :frame_filter), Tuple{UnionAll, typeof(Main.this_module_filter)}}}</span><span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:1188</span></span>
-   [12] <span class="sgr1">macro expansion</span>
-  <span class="sgr90">    @ ~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:1316</span> [inlined]</span>
-   [13] <span class="sgr1">macro expansion</span>
-  <span class="sgr90">    @ ./<span class="sgr4">REPL[4]:7</span> [inlined]</span>
-   [14] <span class="sgr1">macro expansion</span>
-  <span class="sgr90">    @ /buildworker/worker/package_linux64/build/usr/share/julia/stdlib/v1.8/Test/src/<span class="sgr4">Test.jl:1321</span> [inlined]</span>
-   [15] top-level scope
-  <span class="sgr90">    @ ./<span class="sgr4">REPL[4]:2</span></span>
-<span class="sgr37">check type-stabilities: </span><span class="sgr91"><span class="sgr1">Error During Test</span></span> at <span class="sgr1">REPL[4]:9</span>
-  Test threw exception
-  Expression: #= REPL[4]:9 =# JET.@test_call analyzer = JET.OptAnalyzer compute(30)
-  UndefVarError: throw_blocks not defined
-  Stacktrace:
-    [1] <span class="sgr1">(::JET.OptAnalysisPass)(</span><span class="sgr90">#unused#</span>::Type<span class="sgr90">{JET.RuntimeDispatchReport}</span>, <span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">caller</span>::Core.Compiler.InferenceResult, <span class="sgr90">opt</span>::Core.Compiler.OptimizationState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/analyzers/<span class="sgr4">optanalyzer.jl:275</span></span>
-    [2] <span class="sgr1">finish!(</span><span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/analyzers/<span class="sgr4">optanalyzer.jl:244</span></span>
-    [3] <span class="sgr1">_typeinf(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/abstractinterpret/<span class="sgr4">typeinfer.jl:648</span></span>
-    [4] <span class="sgr1">typeinf(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ Core.Compiler</span> <span class="sgr90">./compiler/<span class="sgr4">typeinfer.jl:209</span></span>
-    [5] <span class="sgr1">typeinf(</span><span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/abstractinterpret/<span class="sgr4">typeinfer.jl:513</span></span>
-    [6] <span class="sgr1">typeinf_edge</span>
-  <span class="sgr90">    @ ./compiler/<span class="sgr4">typeinfer.jl:825</span> [inlined]</span>
-    [7] <span class="sgr1">typeinf_edge</span>
-  <span class="sgr90">    @ ~/work/JET.jl/JET.jl/src/abstractinterpret/<span class="sgr4">typeinfer.jl:331</span> [inlined]</span>
-    [8] <span class="sgr1">abstract_call_method(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">method</span>::Method, <span class="sgr90">sig</span>::Any, <span class="sgr90">sparams</span>::Core.SimpleVector, <span class="sgr90">hardlimit</span>::Bool, <span class="sgr90">sv</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ Core.Compiler</span> <span class="sgr90">./compiler/<span class="sgr4">abstractinterpretation.jl:504</span></span>
-    [9] <span class="sgr1">abstract_call_method</span>
-  <span class="sgr90">    @ ~/work/JET.jl/JET.jl/src/abstractinterpret/<span class="sgr4">typeinfer.jl:170</span> [inlined]</span>
-   [10] <span class="sgr1">abstract_call_gf_by_type(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">f</span>::Any, <span class="sgr90">fargs</span>::Vector<span class="sgr90">{Any}</span>, <span class="sgr90">argtypes</span>::Vector<span class="sgr90">{Any}</span>, <span class="sgr90">atype</span>::Any, <span class="sgr90">sv</span>::Core.Compiler.InferenceState, <span class="sgr90">max_methods</span>::Int64<span class="sgr1">)</span>
-  <span class="sgr90">    @ Core.Compiler</span> <span class="sgr90">./compiler/<span class="sgr4">abstractinterpretation.jl:105</span></span>
-   [11] <span class="sgr1">abstract_call_known(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">f</span>::Any, <span class="sgr90">fargs</span>::Vector<span class="sgr90">{Any}</span>, <span class="sgr90">argtypes</span>::Vector<span class="sgr90">{Any}</span>, <span class="sgr90">sv</span>::Core.Compiler.InferenceState, <span class="sgr90">max_methods</span>::Int64<span class="sgr1">)</span>
-  <span class="sgr90">    @ Core.Compiler</span> <span class="sgr90">./compiler/<span class="sgr4">abstractinterpretation.jl:1337</span></span>
-   [12] <span class="sgr1">abstract_call(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">fargs</span>::Vector<span class="sgr90">{Any}</span>, <span class="sgr90">argtypes</span>::Vector<span class="sgr90">{Any}</span>, <span class="sgr90">sv</span>::Core.Compiler.InferenceState, <span class="sgr90">max_methods</span>::Int64<span class="sgr1">)</span>
-  <span class="sgr90">    @ Core.Compiler</span> <span class="sgr90">./compiler/<span class="sgr4">abstractinterpretation.jl:1392</span></span>
-   [13] <span class="sgr1">abstract_call(</span><span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">fargs</span>::Vector<span class="sgr90">{Any}</span>, <span class="sgr90">argtypes</span>::Vector<span class="sgr90">{Any}</span>, <span class="sgr90">sv</span>::Core.Compiler.InferenceState, <span class="sgr90">max_methods</span>::Int64<span class="sgr1">)</span><span class="sgr90"> (repeats 2 times)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/abstractinterpret/<span class="sgr4">typeinfer.jl:209</span></span>
-   [14] <span class="sgr1">abstract_eval_statement(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">e</span>::Any, <span class="sgr90">vtypes</span>::Vector<span class="sgr90">{Any}</span>, <span class="sgr90">sv</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ Core.Compiler</span> <span class="sgr90">./compiler/<span class="sgr4">abstractinterpretation.jl:1532</span></span>
-   [15] <span class="sgr1">abstract_eval_statement(</span><span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">e</span>::Any, <span class="sgr90">vtypes</span>::Vector<span class="sgr90">{Any}</span>, <span class="sgr90">sv</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/abstractinterpret/<span class="sgr4">typeinfer.jl:97</span></span>
-   [16] <span class="sgr1">typeinf_local(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ Core.Compiler</span> <span class="sgr90">./compiler/<span class="sgr4">abstractinterpretation.jl:1897</span></span>
-   [17] <span class="sgr1">typeinf_nocycle(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ Core.Compiler</span> <span class="sgr90">./compiler/<span class="sgr4">abstractinterpretation.jl:2013</span></span>
-   [18] <span class="sgr1">_typeinf(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/abstractinterpret/<span class="sgr4">typeinfer.jl:591</span></span>
-   [19] <span class="sgr1">typeinf(</span><span class="sgr90">interp</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ Core.Compiler</span> <span class="sgr90">./compiler/<span class="sgr4">typeinfer.jl:209</span></span>
-   [20] <span class="sgr1">typeinf(</span><span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">frame</span>::Core.Compiler.InferenceState<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/abstractinterpret/<span class="sgr4">typeinfer.jl:513</span></span>
-   [21] <span class="sgr1">analyze_frame!</span>
-  <span class="sgr90">    @ ~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:671</span> [inlined]</span>
-   [22] <span class="sgr1">analyze_method_instance!</span>
-  <span class="sgr90">    @ ~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:660</span> [inlined]</span>
-   [23] <span class="sgr1">analyze_method_signature!(</span><span class="sgr90">analyzer</span>::JET.OptAnalyzer<span class="sgr90">{JET.var&quot;#147#152&quot;{JET.var&quot;#148#153&quot;}, JET.var&quot;#149#154&quot;}</span>, <span class="sgr90">m</span>::Method, <span class="sgr90">atype</span>::Any, <span class="sgr90">sparams</span>::Core.SimpleVector<span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:646</span></span>
-   [24] <span class="sgr1">analyze_gf_by_type!</span>
-  <span class="sgr90">    @ ~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:620</span> [inlined]</span>
-   [25] <span class="sgr1">report_call(</span><span class="sgr90">tt</span>::Type<span class="sgr90">{&lt;:Tuple}</span>; <span class="sgr90">analyzer</span>::Type<span class="sgr90">{JET.OptAnalyzer}</span>, <span class="sgr90">source</span>::Nothing, <span class="sgr90">jetconfigs</span>::Base.Pairs<span class="sgr90">{Symbol, Union{}, Tuple{}, NamedTuple{(), Tuple{}}}</span><span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:1197</span></span>
-   [26] <span class="sgr1">report_call(</span><span class="sgr90">f</span>::Any, <span class="sgr90">types</span>::Any; <span class="sgr90">jetconfigs</span>::Base.Pairs<span class="sgr90">{Symbol, UnionAll, Tuple{Symbol}, NamedTuple{(:analyzer,), Tuple{UnionAll}}}</span><span class="sgr1">)</span>
-  <span class="sgr90">    @ </span><span class="sgr35">JET</span> <span class="sgr90">~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:1188</span></span>
-   [27] <span class="sgr1">macro expansion</span>
-  <span class="sgr90">    @ ~/work/JET.jl/JET.jl/src/<span class="sgr4">JET.jl:1316</span> [inlined]</span>
-   [28] <span class="sgr1">macro expansion</span>
-  <span class="sgr90">    @ ./<span class="sgr4">REPL[4]:9</span> [inlined]</span>
-   [29] <span class="sgr1">macro expansion</span>
-  <span class="sgr90">    @ /buildworker/worker/package_linux64/build/usr/share/julia/stdlib/v1.8/Test/src/<span class="sgr4">Test.jl:1321</span> [inlined]</span>
-   [30] top-level scope
-  <span class="sgr90">    @ ./<span class="sgr4">REPL[4]:2</span></span>
-<span class="sgr37"><span class="sgr1">Test Summary:          | </span></span><span class="sgr1"><span class="sgr91">Error  </span><span class="sgr36">Total</span></span>
-check type-stabilities | <span class="sgr91">    4  </span><span class="sgr36">    4</span>
-ERROR: <span class="sgr91">Some tests did not pass: 0 passed, 0 failed, 4 errored, 0 broken.</span></code></pre><h2 id="optanalysis-entry"><a class="docs-heading-anchor" href="#optanalysis-entry">Entry Points</a><a id="optanalysis-entry-1"></a><a class="docs-heading-anchor-permalink" href="#optanalysis-entry" title="Permalink"></a></h2><p>These macros/functions are the entries of dispatch analysis:</p><article class="docstring"><header><a class="docstring-binding" id="JET.@report_opt" href="#JET.@report_opt"><code>JET.@report_opt</code></a> — <span class="docstring-category">Macro</span></header><section><div><pre><code class="language-julia hljs">@report_opt [jetconfigs...] f(args...)</code></pre><p>Evaluates the arguments to the function call, determines its types, and then calls <a href="#JET.report_opt"><code>report_opt</code></a> on the resulting expression. As with <code>@code_typed</code> and its family, any of <a href="../config/#JET-configurations">JET configurations</a> or <a href="#optanalysis-config">optimization analysis specific configurations</a> can be given as the optional arguments like this:</p><pre><code class="language-julia-repl hljs"># reports `rand(::Type{Bool})` with `unoptimize_throw_blocks` configuration turned on
-julia&gt; @report_opt unoptimize_throw_blocks=true rand(Bool)</code></pre></div><a class="docs-sourcelink" target="_blank" href="https://github.com/aviatesk/JET.jl/blob/3a1bc14d57dbf0d6b27f0ce4edc42f2f5db49c16/src/analyzers/optanalyzer.jl#L309-L321">source</a></section></article><article class="docstring"><header><a class="docstring-binding" id="JET.report_opt" href="#JET.report_opt"><code>JET.report_opt</code></a> — <span class="docstring-category">Function</span></header><section><div><pre><code class="language-julia hljs">report_opt(f, types = Tuple{}; jetconfigs...) -&gt; JETCallResult
-report_opt(tt::Type{&lt;:Tuple}; jetconfigs...) -&gt; JETCallResult</code></pre><p>Analyzes the generic function call with the given type signature with <a href="#optanalysis">the optimization analyzer</a>, which collects optimization failures and runtime dispatches involved within the call stack.</p></div><a class="docs-sourcelink" target="_blank" href="https://github.com/aviatesk/JET.jl/blob/3a1bc14d57dbf0d6b27f0ce4edc42f2f5db49c16/src/analyzers/optanalyzer.jl#L293-L299">source</a></section></article><article class="docstring"><header><a class="docstring-binding" id="JET.@test_opt" href="#JET.@test_opt"><code>JET.@test_opt</code></a> — <span class="docstring-category">Macro</span></header><section><div><pre><code class="language-julia hljs">@test_opt [jetconfigs...] [broken=false] [skip=false] f(args...)</code></pre><p>Tests the generic function call <code>f(args...)</code> is free from runtime dispatch. Returns a <code>Pass</code> result if it is, a <code>Fail</code> result if if contains any location where runtime dispatch or optimization failure happens, or an <code>Error</code> result if this macro encounters an unexpected error. When the test <code>Fail</code>s, abstract call stack to each problem location will also be printed to <code>stdout</code>.</p><pre><code class="language-julia-repl hljs">julia&gt; @test_opt sincos(10)
+       end</code><code class="nohighlight hljs ansi" style="display:block;"><span class="sgr37">check type-stabilities: </span><span class="sgr91"><span class="sgr1">JET-test failed</span></span> at <span class="sgr1">REPL[4]:2</span>
+  Expression: <span class="sgr90">#= REPL[4]:2 =#</span> JET.@test_call analyzer = JET.OptAnalyzer sumup(cos)
+  <span class="sgr7">═════ 7 possible errors found ═════</span>
+  <span class="sgr91">┌ @ REPL[3]:4 </span>Main.make_vals(%1)
+  <span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.make_vals(%1<span class="sgr96">::Any</span>)</span>
+  <span class="sgr91">└─────────────</span>
+  <span class="sgr91">┌ @ REPL[3]:5 </span>Main.eltype(%2)
+  <span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.eltype(%2<span class="sgr96">::Any</span>)</span>
+  <span class="sgr91">└─────────────</span>
+  <span class="sgr91">┌ @ REPL[3]:5 </span>Main.zero(%3)
+  <span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.zero(%3<span class="sgr96">::Any</span>)</span>
+  <span class="sgr91">└─────────────</span>
+  <span class="sgr91">┌ @ REPL[3]:6 </span>Base.iterate(%2)
+  <span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Base.iterate(%2<span class="sgr96">::Any</span>)</span>
+  <span class="sgr91">└─────────────</span>
+  <span class="sgr91">┌ @ REPL[3]:7 </span>f(%11)
+  <span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">f<span class="sgr96">::typeof(cos)</span>(%11<span class="sgr96">::Any</span>)</span>
+  <span class="sgr91">└─────────────</span>
+  <span class="sgr91">┌ @ REPL[3]:7 </span>Main.+(%10, %13)
+  <span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.+(%10<span class="sgr96">::Any</span>, %13<span class="sgr96">::Any</span>)</span>
+  <span class="sgr91">└─────────────</span>
+  <span class="sgr91">┌ @ REPL[3]:8 </span>Base.iterate(%2, %12)
+  <span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Base.iterate(%2<span class="sgr96">::Any</span>, %12<span class="sgr96">::Any</span>)</span>
+  <span class="sgr91">└─────────────</span>
+  
+<span class="sgr37"><span class="sgr1">Test Summary:          | </span></span><span class="sgr1"><span class="sgr32">Pass  </span><span class="sgr91">Fail  </span><span class="sgr33">Broken  </span><span class="sgr36">Total</span></span>
+check type-stabilities | <span class="sgr32">   2  </span><span class="sgr91">   1  </span><span class="sgr33">     1  </span><span class="sgr36">    4</span>
+ERROR: <span class="sgr91">Some tests did not pass: 2 passed, 1 failed, 0 errored, 1 broken.</span></code></pre><h2 id="optanalysis-entry"><a class="docs-heading-anchor" href="#optanalysis-entry">Entry Points</a><a id="optanalysis-entry-1"></a><a class="docs-heading-anchor-permalink" href="#optanalysis-entry" title="Permalink"></a></h2><p>These macros/functions are the entries of dispatch analysis:</p><article class="docstring"><header><a class="docstring-binding" id="JET.@report_opt" href="#JET.@report_opt"><code>JET.@report_opt</code></a> — <span class="docstring-category">Macro</span></header><section><div><pre><code class="language-julia hljs">@report_opt [jetconfigs...] f(args...)</code></pre><p>Evaluates the arguments to the function call, determines its types, and then calls <a href="#JET.report_opt"><code>report_opt</code></a> on the resulting expression. As with <code>@code_typed</code> and its family, any of <a href="../config/#JET-configurations">JET configurations</a> or <a href="#optanalysis-config">optimization analysis specific configurations</a> can be given as the optional arguments like this:</p><pre><code class="language-julia-repl hljs"># reports `rand(::Type{Bool})` with `unoptimize_throw_blocks` configuration turned on
+julia&gt; @report_opt unoptimize_throw_blocks=true rand(Bool)</code></pre></div><a class="docs-sourcelink" target="_blank" href="https://github.com/aviatesk/JET.jl/blob/2723fe1b67f26742af1befb99ef2ec053413aa93/src/analyzers/optanalyzer.jl#L309-L321">source</a></section></article><article class="docstring"><header><a class="docstring-binding" id="JET.report_opt" href="#JET.report_opt"><code>JET.report_opt</code></a> — <span class="docstring-category">Function</span></header><section><div><pre><code class="language-julia hljs">report_opt(f, types = Tuple{}; jetconfigs...) -&gt; JETCallResult
+report_opt(tt::Type{&lt;:Tuple}; jetconfigs...) -&gt; JETCallResult</code></pre><p>Analyzes the generic function call with the given type signature with <a href="#optanalysis">the optimization analyzer</a>, which collects optimization failures and runtime dispatches involved within the call stack.</p></div><a class="docs-sourcelink" target="_blank" href="https://github.com/aviatesk/JET.jl/blob/2723fe1b67f26742af1befb99ef2ec053413aa93/src/analyzers/optanalyzer.jl#L293-L299">source</a></section></article><article class="docstring"><header><a class="docstring-binding" id="JET.@test_opt" href="#JET.@test_opt"><code>JET.@test_opt</code></a> — <span class="docstring-category">Macro</span></header><section><div><pre><code class="language-julia hljs">@test_opt [jetconfigs...] [broken=false] [skip=false] f(args...)</code></pre><p>Tests the generic function call <code>f(args...)</code> is free from runtime dispatch. Returns a <code>Pass</code> result if it is, a <code>Fail</code> result if if contains any location where runtime dispatch or optimization failure happens, or an <code>Error</code> result if this macro encounters an unexpected error. When the test <code>Fail</code>s, abstract call stack to each problem location will also be printed to <code>stdout</code>.</p><pre><code class="language-julia-repl hljs">julia&gt; @test_opt sincos(10)
 Test Passed
   Expression: #= none:1 =# JET.@test_opt sincos(10)</code></pre><p>As with <a href="#JET.@report_opt"><code>@report_opt</code></a>, any of <a href="../config/#JET-configurations">JET configurations</a> or <a href="#optanalysis-config">optimization analysis specific configurations</a> can be given as the optional arguments like this:</p><pre><code class="language-julia-repl hljs">julia&gt; function f(n)
             r = sincos(n)
@@ -456,8 +266,8 @@ julia&gt; this_module_filter(x) = x.mod === @__MODULE__;
 
 julia&gt; @test_opt frame_filter=this_module_filter f(10)
 Test Passed
-  Expression: #= none:1 =# JET.@test_opt frame_filter = this_module_filter f(10)</code></pre><p>Like <a href="../usages/#JET.@test_call"><code>@test_call</code></a>, <code>@test_opt</code> is fully integrated with <a href="https://docs.julialang.org/en/v1/stdlib/Test/"><code>Test</code> standard library</a>. See <a href="../usages/#JET.@test_call"><code>@test_call</code></a> for the details.</p></div><a class="docs-sourcelink" target="_blank" href="https://github.com/aviatesk/JET.jl/blob/3a1bc14d57dbf0d6b27f0ce4edc42f2f5db49c16/src/analyzers/optanalyzer.jl#L326-L362">source</a></section></article><article class="docstring"><header><a class="docstring-binding" id="JET.test_opt" href="#JET.test_opt"><code>JET.test_opt</code></a> — <span class="docstring-category">Function</span></header><section><div><pre><code class="language-julia hljs">test_opt(f, types = Tuple{}; broken::Bool = false, skip::Bool = false, jetconfigs...)
-test_opt(tt::Type{&lt;:Tuple}; broken::Bool = false, skip::Bool = false, jetconfigs...)</code></pre><p>Tests the generic function call with the given type signature is free from runtime dispatch. Except that it takes a type signature rather than a call expression, this function works in the same way as <a href="#JET.@test_opt"><code>@test_opt</code></a>.</p></div><a class="docs-sourcelink" target="_blank" href="https://github.com/aviatesk/JET.jl/blob/3a1bc14d57dbf0d6b27f0ce4edc42f2f5db49c16/src/analyzers/optanalyzer.jl#L367-L374">source</a></section></article><h2 id="optanalysis-config"><a class="docs-heading-anchor" href="#optanalysis-config">Configurations</a><a id="optanalysis-config-1"></a><a class="docs-heading-anchor-permalink" href="#optanalysis-config" title="Permalink"></a></h2><article class="docstring"><header><a class="docstring-binding" id="JET.OptAnalyzer" href="#JET.OptAnalyzer"><code>JET.OptAnalyzer</code></a> — <span class="docstring-category">Type</span></header><section><div><p>Every <a href="#optanalysis-entry">entry point of optimization analysis</a> can accept any of <a href="../config/#JET-configurations">JET configurations</a> as well as the following additional configurations that are specific to optimization analysis.</p><hr/><ul><li><p><code>frame_filter = x::Union{Core.Compiler.InferenceState, Core.Compiler.OptimizationState}-&gt;true</code>:<br/>A predicate which takes <code>InfernceState</code> or <code>OptimizationState</code> and returns <code>false</code> to skip analysis on the frame.</p><pre><code class="language-julia-repl hljs"># only checks code within the current module:
+  Expression: #= none:1 =# JET.@test_opt frame_filter = this_module_filter f(10)</code></pre><p>Like <a href="../usages/#JET.@test_call"><code>@test_call</code></a>, <code>@test_opt</code> is fully integrated with <a href="https://docs.julialang.org/en/v1/stdlib/Test/"><code>Test</code> standard library</a>. See <a href="../usages/#JET.@test_call"><code>@test_call</code></a> for the details.</p></div><a class="docs-sourcelink" target="_blank" href="https://github.com/aviatesk/JET.jl/blob/2723fe1b67f26742af1befb99ef2ec053413aa93/src/analyzers/optanalyzer.jl#L326-L362">source</a></section></article><article class="docstring"><header><a class="docstring-binding" id="JET.test_opt" href="#JET.test_opt"><code>JET.test_opt</code></a> — <span class="docstring-category">Function</span></header><section><div><pre><code class="language-julia hljs">test_opt(f, types = Tuple{}; broken::Bool = false, skip::Bool = false, jetconfigs...)
+test_opt(tt::Type{&lt;:Tuple}; broken::Bool = false, skip::Bool = false, jetconfigs...)</code></pre><p>Tests the generic function call with the given type signature is free from runtime dispatch. Except that it takes a type signature rather than a call expression, this function works in the same way as <a href="#JET.@test_opt"><code>@test_opt</code></a>.</p></div><a class="docs-sourcelink" target="_blank" href="https://github.com/aviatesk/JET.jl/blob/2723fe1b67f26742af1befb99ef2ec053413aa93/src/analyzers/optanalyzer.jl#L367-L374">source</a></section></article><h2 id="optanalysis-config"><a class="docs-heading-anchor" href="#optanalysis-config">Configurations</a><a id="optanalysis-config-1"></a><a class="docs-heading-anchor-permalink" href="#optanalysis-config" title="Permalink"></a></h2><article class="docstring"><header><a class="docstring-binding" id="JET.OptAnalyzer" href="#JET.OptAnalyzer"><code>JET.OptAnalyzer</code></a> — <span class="docstring-category">Type</span></header><section><div><p>Every <a href="#optanalysis-entry">entry point of optimization analysis</a> can accept any of <a href="../config/#JET-configurations">JET configurations</a> as well as the following additional configurations that are specific to optimization analysis.</p><hr/><ul><li><p><code>frame_filter = x::Union{Core.Compiler.InferenceState, Core.Compiler.OptimizationState}-&gt;true</code>:<br/>A predicate which takes <code>InfernceState</code> or <code>OptimizationState</code> and returns <code>false</code> to skip analysis on the frame.</p><pre><code class="language-julia-repl hljs"># only checks code within the current module:
 julia&gt; mymodule_filter(x) = x.mod === @__MODULE__;
 
 julia&gt; @test_opt frame_filter=mymodule_filter f(args...)
@@ -528,4 +338,4 @@ ERROR: There was an error during testing
 # we can also turns off the heuristic itself
 julia&gt; @test_opt unoptimize_throw_blocks=false skip_unoptimized_throw_blocks=false sin(10)
 Test Passed
-  Expression: #= REPL[7]:1 =# JET.@test_call analyzer = JET.OptAnalyzer unoptimize_throw_blocks = false skip_unoptimized_throw_blocks = false sin(10)</code></pre></li></ul><hr/></div><a class="docs-sourcelink" target="_blank" href="https://github.com/aviatesk/JET.jl/blob/3a1bc14d57dbf0d6b27f0ce4edc42f2f5db49c16/src/analyzers/optanalyzer.jl#L4-L127">source</a></section></article><section class="footnotes is-size-7"><ul><li class="footnote" id="footnote-1"><a class="tag is-link" href="#citeref-1">1</a>Technically, it&#39;s fully integrated with <a href="https://julialang.org/blog/2020/08/invalidations/">Julia&#39;s method invalidation system</a>.</li></ul></section></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../config/">« Configurations</a><a class="docs-footer-nextpage" href="../internals/">Internals »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.6 on <span class="colophon-date" title="Wednesday 8 September 2021 16:40">Wednesday 8 September 2021</span>. Using Julia version 1.8.0-DEV.484.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+  Expression: #= REPL[7]:1 =# JET.@test_call analyzer = JET.OptAnalyzer unoptimize_throw_blocks = false skip_unoptimized_throw_blocks = false sin(10)</code></pre></li></ul><hr/></div><a class="docs-sourcelink" target="_blank" href="https://github.com/aviatesk/JET.jl/blob/2723fe1b67f26742af1befb99ef2ec053413aa93/src/analyzers/optanalyzer.jl#L4-L127">source</a></section></article><section class="footnotes is-size-7"><ul><li class="footnote" id="footnote-1"><a class="tag is-link" href="#citeref-1">1</a>Technically, it&#39;s fully integrated with <a href="https://julialang.org/blog/2020/08/invalidations/">Julia&#39;s method invalidation system</a>.</li></ul></section></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../config/">« Configurations</a><a class="docs-footer-nextpage" href="../internals/">Internals »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.6 on <span class="colophon-date" title="Wednesday 8 September 2021 16:42">Wednesday 8 September 2021</span>. Using Julia version 1.8.0-DEV.484.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
