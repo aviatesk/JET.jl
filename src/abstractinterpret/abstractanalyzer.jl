@@ -24,8 +24,11 @@ as subtype of `AbstractAnalyzer`, and is expected to the following interfaces:
 4. `ReportPass(analyzer::NewAnalyzer) -> ReportPass`: \\
    Returns [`ReportPass`](@ref) used for `analyzer::NewAnalyzer`.
 ---
+5. `get_cache_key(analyzer::NewAnalyzer) -> cache_key::$UInt`: \\
+   Returns cache_key::$UInt used for `analyzer::NewAnalyzer`.
+---
 
-See also [`AnalyzerState`](@ref) and [`ReportPass`](@ref).
+See also [`AnalyzerState`](@ref), [`ReportPass`](@ref) and [`get_cache_key`](@ref).
 
 # Example
 
@@ -282,8 +285,7 @@ mutable struct AnalyzerState
     # additional configurations for abstract interpretation
     analysis_params::JETAnalysisParams
 
-    # key for the JET's global cache
-    cache_key::UInt
+    param_key::UInt
 
     # temporal stash to keep reports that are collected within the currently-analyzed frame
     # and should be appended to the caller when returning back to the caller frame next time
@@ -313,7 +315,6 @@ end
 
 # define shortcut getter/setter methods for `AbstractAnalyzer`s
 for fld in fieldnames(AnalyzerState)
-    fld === :cache_key && continue # will be defined later (in order to take in `ReportPass` hash)
     getter = Symbol("get_", fld)
     setter = Symbol("set_", fld, '!')
     @eval (@__MODULE__) @inline $getter(analyzer::AbstractAnalyzer)    = getfield(AnalyzerState(analyzer), $(QuoteNode(fld)))
@@ -338,7 +339,7 @@ end
 
     return AnalyzerState(#=native::NativeInterpreter=# NativeInterpreter(world; inf_params, opt_params),
                          #=analysis_params::JETAnalysisParams=# analysis_params,
-                         #=cache_key::UInt=# get_cache_key_per_config(analysis_params, inf_params),
+                         #=param_key::UInt=# get_param_key(analysis_params, inf_params),
                          #=caller_cache::Vector{InferenceErrorReport}=# InferenceErrorReport[],
                          #=cacher::Union{Nothing,InferenceResult}=# nothing,
                          #=concretized::BitVector=# concretized,
@@ -550,6 +551,27 @@ function (T::Type{<:InferenceErrorReport})(analyzer::AbstractAnalyzer, state, @n
     return T([vf], msg, vf.sig, spec_args...)
 end
 
+# interface 5
+# -----------
+# 5. `get_cache_key(analyzer::NewAnalyzer) -> cache_key::$UInt`
+
+"""
+    get_cache_key(analyzer::AbstractAnalyzer) -> cache_key::$UInt
+
+Returns the cache key for this `analyzer::AbstractAnalyzer`.
+`AbstractAnalyzer`s that have different cache keys will use different cache so that their
+analysis results are completely separated.
+
+See also [`JET_CACHE`](@ref).
+"""
+function get_cache_key(::Analyzer) where Analyzer<:AbstractAnalyzer
+    error("""
+    missing `$AbstractAnalyzer` API:
+    `$Analyzer` is required to implement the `$get_cache_key(analyzer::$Analyzer) -> $UInt` interface.
+    See the documentation of `$AbstractAnalyzer` and `$get_cache_key`.
+    """)
+end
+
 # InferenceResult
 # ===============
 # define how AbstractAnalyzer manages `InferenceResult`
@@ -712,16 +734,10 @@ end # @static if IS_AFTER_42082
 
 JETAnalysisParams(analyzer::AbstractAnalyzer) = get_analysis_params(analyzer)
 
-function get_cache_key_per_config(analysis_params::JETAnalysisParams, inf_params::InferenceParams)
+function get_param_key(analysis_params::JETAnalysisParams, inf_params::InferenceParams)
     h = @static UInt === UInt64 ? 0xa49bd446c0a5d90e : 0xe45361ac
     h = hash(analysis_params, h)
     h = hash(inf_params, h)
-    return h
-end
-
-function get_cache_key(analyzer::AbstractAnalyzer)
-    h = AnalyzerState(analyzer).cache_key
-    h = hash(ReportPass(analyzer), h)
     return h
 end
 

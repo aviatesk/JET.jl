@@ -51,23 +51,28 @@ end
 
 @test_throws ErrorException @report_call analyzer=APIValidator compute_sins(10)
 
-# `APIValidator(; jetconfigs...) -> APIValidator`
+# interface 1: `APIValidator(; jetconfigs...) -> APIValidator`
 APIValidator(; jetconfigs...) = APIValidator(AnalyzerState(; jetconfigs...))
 
 @test_throws ErrorException @report_call analyzer=APIValidator compute_sins(10)
 
-# `AnalyzerState(analyzer::APIValidator) -> AnalyzerState`
-AnalyzerState(analyzer::APIValidator) = analyzer.state
+# interface 2: `AnalyzerState(analyzer::APIValidator) -> AnalyzerState`
+JETInterface.AnalyzerState(analyzer::APIValidator) = analyzer.state
 
 @test_throws ErrorException @report_call analyzer=APIValidator compute_sins(10)
 
-# `ReportPass(analyzer::APIValidator) -> ReportPass`
-ReportPass(analyzer::APIValidator) = IgnoreAllPass()
+# interface 3: `AbstractAnalyzer(analyzer::APIValidator, state::AnalyzerState) -> APIValidator`
+JETInterface.AbstractAnalyzer(analyzer::APIValidator, state::AnalyzerState) = APIValidator(state)
 
 @test_throws ErrorException @report_call analyzer=APIValidator compute_sins(10)
 
-# `AbstractAnalyzer(analyzer::APIValidator, state::AnalyzerState) -> APIValidator`
-AbstractAnalyzer(analyzer::APIValidator, state::AnalyzerState) = APIValidator(state)
+# interface 4: `ReportPass(analyzer::APIValidator) -> ReportPass`
+JETInterface.ReportPass(analyzer::APIValidator) = IgnoreAllPass()
+
+@test_throws ErrorException @report_call analyzer=APIValidator compute_sins(10)
+
+# interface 5: `get_cache_key(analyzer::APIValidator) -> UInt`
+JETInterface.get_cache_key(analyzer::APIValidator) = AnalyzerState(analyzer).param_key
 
 # because `APIValidator` uses `IgnoreAllPass`, we won't get any reports
 let

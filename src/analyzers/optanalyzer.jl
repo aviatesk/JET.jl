@@ -153,6 +153,7 @@ struct OptAnalyzer{RP,FF} <: AbstractAnalyzer
     function_filter::FF
     skip_unoptimized_throw_blocks::Bool
     __frame_checks::BitVector # temporary stash to keep per-frame analysis-skip configuration
+    __cache_key::UInt
 end
 function OptAnalyzer(;
     report_pass = OptAnalysisPass(),
@@ -162,6 +163,12 @@ function OptAnalyzer(;
     skip_unoptimized_throw_blocks::Bool = true,
     jetconfigs...)
     state = AnalyzerState(; jetconfigs...)
+    # we want to run different analysis with a different filter, so include its hash into the cache key
+    cache_key = state.param_key
+    cache_key = hash(skip_nonconcrete_calls, cache_key)
+    cache_key = hash(target_module, cache_key)
+    cache_key = @invoke hash(function_filter::Any, cache_key::UInt) # HACK avoid dynamic dispatch
+    cache_key = hash(skip_unoptimized_throw_blocks, cache_key)
     return OptAnalyzer(
         state,
         report_pass,
@@ -170,6 +177,7 @@ function OptAnalyzer(;
         function_filter,
         skip_unoptimized_throw_blocks,
         #=__frame_checks=# BitVector(),
+        cache_key,
         )
 end
 
@@ -184,19 +192,11 @@ function JETInterface.AbstractAnalyzer(analyzer::OptAnalyzer, state::AnalyzerSta
         analyzer.function_filter,
         analyzer.skip_unoptimized_throw_blocks,
         analyzer.__frame_checks,
+        analyzer.__cache_key,
         )
 end
 JETInterface.ReportPass(analyzer::OptAnalyzer) = analyzer.report_pass
-
-# we want to run different analysis with a different filter, so include its hash into the cache key
-function JET.get_cache_key(analyzer::OptAnalyzer)
-    h = @invoke get_cache_key(analyzer::AbstractAnalyzer)
-    h = hash(analyzer.skip_nonconcrete_calls, h)
-    h = hash(analyzer.target_module, h)
-    h = @invoke hash(analyzer.function_filter::Any, h::UInt) # HACK avoid dynamic dispatch
-    h = hash(analyzer.skip_unoptimized_throw_blocks, h)
-    return h
-end
+JETInterface.get_cache_key(analyzer::OptAnalyzer) = analyzer.__cache_key
 
 JETInterface.vscode_diagnostics_order(analyzer::OptAnalyzer) = false
 
