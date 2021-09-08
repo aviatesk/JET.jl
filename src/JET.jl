@@ -1228,11 +1228,13 @@ or analyzer specific configurations can be given as the optional arguments `jetc
 julia> cond = false
 
 julia> function f(n)
-            if cond           # `cond` is untyped, and will be reported by the sound analysis pass, while JET's default analysis pass will ignore it
-                return sin(n)
-            else
-                return cos(n)
-            end
+           # `cond` is untyped, and will be reported by the sound analysis pass,
+           # while JET's default analysis pass will ignore it
+           if cond
+               return sin(n)
+           else
+               return cos(n)
+           end
        end;
 
 julia> @test_call f(10)

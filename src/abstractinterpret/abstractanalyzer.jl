@@ -167,23 +167,24 @@ struct JETAnalysisParams
     end
 end
 
-const LOGGER_LEVEL_KEY     = :JET_LOGGER_LEVEL
-const INFO_LOGGER_LEVEL    = 0
-const DEBUG_LOGGER_LEVEL   = 1
-const LOGGER_LEVELS        = Dict(INFO_LOGGER_LEVEL  => :info,
-                                  DEBUG_LOGGER_LEVEL => :debug,
-                                  )
+const LOGGER_LEVEL_KEY = :JET_LOGGER_LEVEL
+const INFO_LOGGER_LEVEL = 0
+const DEBUG_LOGGER_LEVEL = 1
+const LOGGER_LEVELS = Dict(INFO_LOGGER_LEVEL  => :info,
+                           DEBUG_LOGGER_LEVEL => :debug,
+                           )
 const DEFAULT_LOGGER_LEVEL = INFO_LOGGER_LEVEL
-const LOGGER_LEVELS_DESC   = let
-    map(collect(LOGGER_LEVELS)) do (level, desc)
+const LOGGER_LEVELS_DESC = let
+    descs = map(collect(LOGGER_LEVELS)) do (level, desc)
         if level == DEFAULT_LOGGER_LEVEL
             "`$level` (\"$desc\" level, default)"
         else
             "`$level` (\"$desc\" level)"
         end
-    end |> (x->join(x,", "))
+    end
+    join(descs, ", ")
 end
-get_logger_level(io::IO)   = get(io, LOGGER_LEVEL_KEY, DEFAULT_LOGGER_LEVEL)::Int
+get_logger_level(io::IO) = get(io, LOGGER_LEVEL_KEY, DEFAULT_LOGGER_LEVEL)::Int
 
 """
 Logging configurations for JET analysis.

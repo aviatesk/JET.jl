@@ -125,62 +125,112 @@ end
     end
 end
 
-@testset "module_filter" begin
-    M = Module()
-    @eval M begin
-        # problem: when ∑1/n exceeds 30 ?
-        function compute(x)
-            r = 1
-            s = 0.0
-            n = 1
-            @time while r < x
-                s += 1/n
-                if s ≥ r
-                    println("round $r/$x has been finished") # we're not interested type-instabilities within this call
-                    r += 1
+@testset "OptAnalyzer configurations" begin
+    @testset "function_filter" begin
+        M = Module()
+        @eval M begin
+            with_runtime_dispatch(::UInt8)  = :UInt8
+            with_runtime_dispatch(::UInt16) = :UInt16
+            with_runtime_dispatch(::UInt32) = :UInt32
+            with_runtime_dispatch(::UInt64) = :UInt64
+            with_runtime_dispatch(::UInt128) = :UInt128
+        end
+        @assert JET.OptimizationParams(JET.OptAnalyzer()).MAX_UNION_SPLITTING < 5
+
+        let
+            result = @eval M $report_opt((Vector{Any},)) do xs
+                with_runtime_dispatch(xs[1])
+            end
+            @test !isempty(get_reports(result))
+            @test any(r->isa(r,RuntimeDispatchReport), get_reports(result))
+        end
+
+        let
+            function_filter(x) = x !== typeof(M.with_runtime_dispatch)
+            @eval M $test_opt((Vector{Any},); function_filter=$function_filter) do xs
+                with_runtime_dispatch(xs[1])
+            end
+        end
+    end
+
+    @testset "skip_nonconcrete_calls" begin
+        M = Module()
+        @eval M begin
+            with_runtime_dispatch(::UInt8)  = :UInt8
+            with_runtime_dispatch(::UInt16) = :UInt16
+            with_runtime_dispatch(::UInt32) = :UInt32
+            with_runtime_dispatch(::UInt64) = :UInt64
+            with_runtime_dispatch(::UInt128) = :UInt128
+        end
+        @assert JET.OptimizationParams(JET.OptAnalyzer()).MAX_UNION_SPLITTING < 5
+
+        let
+            result = @eval M $report_opt((Any,); skip_nonconcrete_calls=false) do x
+                with_runtime_dispatch(x)
+            end
+            @test !isempty(get_reports(result))
+            @test any(r->isa(r,RuntimeDispatchReport), get_reports(result))
+        end
+
+        let
+            @eval M $test_opt((Any,); skip_nonconcrete_calls=true) do x
+                with_runtime_dispatch(x)
+            end
+        end
+    end
+
+    @testset "target_module" begin
+        M = Module()
+        @eval M begin
+            # problem: when ∑1/n exceeds 30 ?
+            function compute(x)
+                r = 1
+                s = 0.0
+                n = 1
+                @time while r < x
+                    s += 1/n
+                    if s ≥ r
+                        println("round $r/$x has been finished") # we're not interested type-instabilities within this call
+                        r += 1
+                    end
+                    n += 1
                 end
-                n += 1
+                return n, s
             end
-            return n, s
+        end
+
+        let # we will get bunch of reports from the `println` call
+            result = @report_opt M.compute(30)
+            @test !isempty(get_reports(result))
+        end
+
+        let # if we use different `target_module`, a fresh analysis should run
+            @test_opt target_module=(@__MODULE__) M.compute(30)
         end
     end
 
-    let # we will get bunch of reports from the `println` call
-        result = @report_opt M.compute(30)
-        @test !isempty(get_reports(result))
-    end
-
-    let # if we use different `frame_filter`, a fresh analysis should run
-        function module_filter(mod::Module)
-            return function (x::JET.State)
-                x.mod === mod
-            end
+    @testset "skip_nonconcrete_calls" begin
+        M = Module()
+        F1_DEFINITION_LINE = @__LINE__
+        @eval M begin
+            callsin(@nospecialize a) = sin(a)
         end
-        @test_opt frame_filter=module_filter(@__MODULE__) M.compute(30)
-    end
-end
 
-@testset "skip_nonconcrete_calls" begin
-    M = Module()
-    F1_DEFINITION_LINE = @__LINE__
-    @eval M begin
-        callsin(@nospecialize a) = sin(a)
-    end
-
-    # by default, we'd ignore error reports from `f1` calls
-    @eval M $test_opt((Vector{Any},)) do ary
-        callsin(ary[1]) # runtime dispatch !
-    end
-
-    let # when the `skip_nonconcrete_calls` configuration is turned off, we will get error reports
-        # from those non-concrete call inside of `callsin`
-        result = @eval M $report_opt((Vector{Any},); skip_nonconcrete_calls=false) do ary
+        # by default, we'd ignore error reports from `f1` calls
+        @eval M $test_opt((Vector{Any},)) do ary
             callsin(ary[1]) # runtime dispatch !
         end
-        @test length(get_reports(result)) ≥ 1
-        @test any(get_reports(result)) do r
-            isa(r, RuntimeDispatchReport) &&
-            last(r.vst).file === Symbol(@__FILE__) && last(r.vst).line == F1_DEFINITION_LINE + 2 # report for `sin(a::Any)`
+
+        let # when the `skip_nonconcrete_calls` configuration is turned off, we will get error reports
+            # from those non-concrete call inside of `callsin`
+            result = @eval M $report_opt((Vector{Any},); skip_nonconcrete_calls=false) do ary
+                callsin(ary[1]) # runtime dispatch !
+            end
+            @test length(get_reports(result)) ≥ 1
+            @test any(get_reports(result)) do r
+                isa(r, RuntimeDispatchReport) &&
+                last(r.vst).file === Symbol(@__FILE__) && last(r.vst).line == F1_DEFINITION_LINE + 2 # report for `sin(a::Any)`
+            end
         end
     end
 end
