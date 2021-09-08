@@ -62,12 +62,17 @@ struct DispatchAnalyzer{T} <: AbstractAnalyzer
     state::AnalyzerState
     opts::BitVector
     frame_filter::T
+    __cache_key::UInt
 end
 function DispatchAnalyzer(;
     ## a predicate, which takes `CC.InfernceState` and returns whether we want to analyze the call or not
     frame_filter = x::CC.InferenceState->true,
     jetconfigs...)
-    return DispatchAnalyzer(AnalyzerState(; jetconfigs...), BitVector(), frame_filter)
+    state = AnalyzerState(; jetconfigs...)
+    ## we want to run different analysis with a different filter, so include its hash into the cache key
+    cache_key = state.param_key
+    cache_key = hash(frame_filter, cache_key)
+    return DispatchAnalyzer(state, BitVector(), frame_filter, cache_key)
 end
 
 ## maybe filtering by module would be most useful
@@ -79,15 +84,9 @@ end
 
 ## AbstractAnalyzer API requirements
 JETInterface.AnalyzerState(analyzer::DispatchAnalyzer)                          = analyzer.state
-JETInterface.AbstractAnalyzer(analyzer::DispatchAnalyzer, state::AnalyzerState) = DispatchAnalyzer(state, analyzer.opts, analyzer.frame_filter)
+JETInterface.AbstractAnalyzer(analyzer::DispatchAnalyzer, state::AnalyzerState) = DispatchAnalyzer(state, analyzer.opts, analyzer.frame_filter, analyzer.__cache_key)
 JETInterface.ReportPass(analyzer::DispatchAnalyzer)                             = DispatchAnalysisPass()
-
-## we want to run different analysis with a different filter, so include its hash into the cache key
-function JET.get_cache_key(analyzer::DispatchAnalyzer)
-    h = @invoke JET.get_cache_key(analyzer::AbstractAnalyzer)
-    h = hash(analyzer.frame_filter, h)
-    return h
-end
+JETInterface.get_cache_key(analyzer::DispatchAnalyzer)                          = analyzer.__cache_key
 
 struct DispatchAnalysisPass <: ReportPass end
 

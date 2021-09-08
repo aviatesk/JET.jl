@@ -6,6 +6,7 @@ JET.jl's default error analyzer.
 struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
     report_pass::RP
     state::AnalyzerState
+    __cache_key::UInt
 end
 
 # AbstractAnalyzer API
@@ -35,14 +36,18 @@ end
                             unoptimize_throw_blocks,
                             inlining,
                             jetconfigs...)
-    return JETAnalyzer(report_pass, state)
+    cache_key = state.param_key
+    cache_key = hash(report_pass, cache_key)
+    return JETAnalyzer(report_pass, state, cache_key)
 end
 JETInterface.AnalyzerState(analyzer::JETAnalyzer) =
     return analyzer.state
 JETInterface.AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerState) =
-    return JETAnalyzer(ReportPass(analyzer), state)
+    return JETAnalyzer(ReportPass(analyzer), state, analyzer.__cache_key)
 JETInterface.ReportPass(analyzer::JETAnalyzer) =
     return analyzer.report_pass
+JETInterface.get_cache_key(analyzer::JETAnalyzer) =
+    return analyzer.__cache_key
 
 # TODO document the definitions of errors, elaborate the difference of these two passes
 

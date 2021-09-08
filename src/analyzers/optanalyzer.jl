@@ -7,28 +7,6 @@ any of [JET configurations](@ref JET-configurations) as well as
 the following additional configurations that are specific to optimization analysis.
 
 ---
-- `frame_filter = x::$State->true`:\\
-  A predicate which takes `InfernceState` or `OptimizationState` and returns `false` to skip analysis on the frame.
-  ```julia-repl
-  # only checks code within the current module:
-  julia> mymodule_filter(x) = x.mod === @__MODULE__;
-
-  julia> @test_opt frame_filter=mymodule_filter f(args...)
-  ...
-  ```
-
----
-- `function_filter = @nospecialize(ft)->true`:\\
-  A predicate which takes a function type and returns `false` to skip analysis on the call.
-  ```julia-repl
-  # ignores `Core.Compiler.widenconst` calls (since it's designed to be runtime-dispatched):
-  julia> myfunction_filter(@nospecialize(ft)) = ft !== typeof(Core.Compiler.widenconst)
-
-  julia> @test_opt function_filter=myfunction_filter f(args...)
-  ...
-  ```
-
----
 - `skip_nonconcrete_calls::Bool = true`:\\
   Julia's runtime dispatch is "powerful" because it can always compile code with concrete
   runtime arguments so that [a "kernel" function](https://docs.julialang.org/en/v1/manual/performance-tips/#kernel-functions)
@@ -86,6 +64,48 @@ the following additional configurations that are specific to optimization analys
   ```
 
 ---
+- `target_module::Union{Nothing,Module} = nothing`:\\
+  If `Module` is specified, limits the analysis scope to the specific module context.
+  ```julia-repl
+  # problem: when ∑1/n exceeds `x` ?
+  julia> function compute(x)
+             r = 1
+             s = 0.0
+             n = 1
+             @time while r < x
+                 s += 1/n
+                 if s ≥ r
+                     # `println` call is full of runtime dispatches for good reasons
+                     # and we're not interested in type-instabilities within this call
+                     # since we know it's only called few times
+                     println("round \$r/\$x has been finished")
+                     r += 1
+                 end
+                 n += 1
+             end
+             return n, s
+         end
+
+  julia> @report_opt compute(30) # bunch of reports will be reported from the `println` call
+
+  julia> @report_opt target_module=(@__MODULE__) compute(30) # focus on what we wrote, and no error should be reported
+  ```
+
+---
+- `function_filter = @nospecialize(ft)->true`:\\
+  A predicate which takes a function type and returns `false` to skip runtime dispatch
+  analysis on the function call. This configuration is particularly useful when your program
+  uses a function that is intentionally written to use runtime dispatch.
+
+  ```julia-repl
+  # ignores `Core.Compiler.widenconst` calls (since it's designed to be runtime-dispatched):
+  julia> function_filter(@nospecialize(ft)) = ft !== typeof(Core.Compiler.widenconst)
+
+  julia> @test_opt function_filter=function_filter f(args...)
+  ...
+  ```
+
+---
 - `skip_unoptimized_throw_blocks::Bool = true`:\\
   By default, Julia's native compilation pipeline intentionally disables inference (and so
   succeeding optimizations too) on "throw blocks", which are code blocks that will eventually
@@ -125,37 +145,39 @@ the following additional configurations that are specific to optimization analys
 
 ---
 """
-struct OptAnalyzer{S,T} <: AbstractAnalyzer
+struct OptAnalyzer{RP,FF} <: AbstractAnalyzer
     state::AnalyzerState
-    frame_filter::S
-    function_filter::T
+    report_pass::RP
+    skip_nonconcrete_calls::Bool
+    target_module::Union{Nothing,Module}
+    function_filter::FF
     skip_unoptimized_throw_blocks::Bool
-    _frame_checks::BitVector
+    __frame_checks::BitVector # temporary stash to keep per-frame analysis-skip configuration
+    __cache_key::UInt
 end
 function OptAnalyzer(;
-    frame_filter = x::State->true,
-    function_filter = @nospecialize(ft)->true,
+    report_pass = OptAnalysisPass(),
     skip_nonconcrete_calls::Bool = true,
+    target_module::Union{Nothing,Module} = nothing,
+    function_filter = @nospecialize(ft)->true,
     skip_unoptimized_throw_blocks::Bool = true,
     jetconfigs...)
     state = AnalyzerState(; jetconfigs...)
-    if skip_nonconcrete_calls
-        new_frame_filter = function (x::State)
-            if isdispatchtuple(x.linfo.specTypes)
-                return frame_filter(x)
-            else
-                return false
-            end
-        end
-    else
-        new_frame_filter = frame_filter
-    end
+    # we want to run different analysis with a different filter, so include its hash into the cache key
+    cache_key = state.param_key
+    cache_key = hash(skip_nonconcrete_calls, cache_key)
+    cache_key = hash(target_module, cache_key)
+    cache_key = @invoke hash(function_filter::Any, cache_key::UInt) # HACK avoid dynamic dispatch
+    cache_key = hash(skip_unoptimized_throw_blocks, cache_key)
     return OptAnalyzer(
         state,
-        new_frame_filter,
+        report_pass,
+        skip_nonconcrete_calls,
+        target_module,
         function_filter,
         skip_unoptimized_throw_blocks,
-        #=_frame_checks=# BitVector(),
+        #=__frame_checks=# BitVector(),
+        cache_key,
         )
 end
 
@@ -164,22 +186,17 @@ JETInterface.AnalyzerState(analyzer::OptAnalyzer) = analyzer.state
 function JETInterface.AbstractAnalyzer(analyzer::OptAnalyzer, state::AnalyzerState)
     return OptAnalyzer(
         state,
-        analyzer.frame_filter,
+        analyzer.report_pass,
+        analyzer.skip_nonconcrete_calls,
+        analyzer.target_module,
         analyzer.function_filter,
         analyzer.skip_unoptimized_throw_blocks,
-        analyzer._frame_checks,
+        analyzer.__frame_checks,
+        analyzer.__cache_key,
         )
 end
-JETInterface.ReportPass(analyzer::OptAnalyzer) = OptAnalysisPass() # TODO parameterize this
-
-# we want to run different analysis with a different filter, so include its hash into the cache key
-function JET.get_cache_key(analyzer::OptAnalyzer)
-    h = @invoke get_cache_key(analyzer::AbstractAnalyzer)
-    h = @invoke hash(analyzer.frame_filter::Any, h::UInt)    # HACK avoid dynamic dispatch
-    h = @invoke hash(analyzer.function_filter::Any, h::UInt) # HACK avoid dynamic dispatch
-    h = hash(analyzer.skip_unoptimized_throw_blocks, h)
-    return h
-end
+JETInterface.ReportPass(analyzer::OptAnalyzer) = analyzer.report_pass
+JETInterface.get_cache_key(analyzer::OptAnalyzer) = analyzer.__cache_key
 
 JETInterface.vscode_diagnostics_order(analyzer::OptAnalyzer) = false
 
@@ -188,9 +205,21 @@ struct OptAnalysisPass <: ReportPass end
 function CC.finish(frame::InferenceState, analyzer::OptAnalyzer)
     ret = @invoke CC.finish(frame::InferenceState, analyzer::AbstractAnalyzer)
 
-    check = analyzer.frame_filter(frame)
-    push!(analyzer._frame_checks, check)
-    if check
+    skip = false
+    mod = analyzer.target_module
+    if !isnothing(mod)
+        if frame.mod !== mod
+            skip |= true
+        end
+    end
+    if !skip && analyzer.skip_nonconcrete_calls
+        if !isdispatchtuple(frame.linfo.specTypes)
+            skip |= true
+        end
+    end
+
+    push!(analyzer.__frame_checks, skip)
+    if !skip
         if isa(get_source(frame.result), OptimizationState)
             ReportPass(analyzer)(CapturedVariableReport, analyzer, frame)
         else
@@ -238,7 +267,7 @@ function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState)
 
     ret = @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
 
-    if popfirst!(analyzer._frame_checks)
+    if !popfirst!(analyzer.__frame_checks)
         if isa(src, Const) # the optimization was very successful, nothing to report
         elseif isa(src, OptimizationState) # compiler cached the optimized IR, just analyze it
             ReportPass(analyzer)(RuntimeDispatchReport, analyzer, caller, src)
@@ -346,15 +375,14 @@ julia> function f(n)
             r = sincos(n)
             # `println` is full of runtime dispatches,
             # but we can ignore the corresponding reports from `Base`
-            # with the `frame_filter` configuration
+            # with the `target_module` configuration
             println(r)
             return r
        end;
-julia> this_module_filter(x) = x.mod === @__MODULE__;
 
-julia> @test_opt frame_filter=this_module_filter f(10)
+julia> @test_opt target_module=(@__MODULE__) f(10)
 Test Passed
-  Expression: #= none:1 =# JET.@test_opt frame_filter = this_module_filter f(10)
+  Expression: #= REPL[3]:1 =# JET.@test_call analyzer = JET.OptAnalyzer target_module = #= REPL[3]:1 =# @__MODULE__() f(10)
 ```
 
 Like [`@test_call`](@ref), `@test_opt` is fully integrated with [`Test` standard library](https://docs.julialang.org/en/v1/stdlib/Test/).
