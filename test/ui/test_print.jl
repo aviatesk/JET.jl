@@ -50,7 +50,7 @@ end
         let
             # LINE SENSITIVITY START
             res = @analyze_toplevel begin
-                foo(args...) = sum(args)
+                foo(args...) = args_typo # typo
                 foo(rand(Char, 1000000000)...)
             end
 
