@@ -11,12 +11,17 @@ struct DispatchAnalyzer{T} &lt;: AbstractAnalyzer
     state::AnalyzerState
     opts::BitVector
     frame_filter::T
+    __cache_key::UInt
 end
 function DispatchAnalyzer(;
     # a predicate, which takes `CC.InfernceState` and returns whether we want to analyze the call or not
     frame_filter = x::CC.InferenceState-&gt;true,
     jetconfigs...)
-    return DispatchAnalyzer(AnalyzerState(; jetconfigs...), BitVector(), frame_filter)
+    state = AnalyzerState(; jetconfigs...)
+    # we want to run different analysis with a different filter, so include its hash into the cache key
+    cache_key = state.param_key
+    cache_key = hash(frame_filter, cache_key)
+    return DispatchAnalyzer(state, BitVector(), frame_filter, cache_key)
 end
 
 # maybe filtering by module would be most useful
@@ -28,15 +33,9 @@ end
 
 # AbstractAnalyzer API requirements
 JETInterface.AnalyzerState(analyzer::DispatchAnalyzer)                          = analyzer.state
-JETInterface.AbstractAnalyzer(analyzer::DispatchAnalyzer, state::AnalyzerState) = DispatchAnalyzer(state, analyzer.opts, analyzer.frame_filter)
+JETInterface.AbstractAnalyzer(analyzer::DispatchAnalyzer, state::AnalyzerState) = DispatchAnalyzer(state, analyzer.opts, analyzer.frame_filter, analyzer.__cache_key)
 JETInterface.ReportPass(analyzer::DispatchAnalyzer)                             = DispatchAnalysisPass()
-
-# we want to run different analysis with a different filter, so include its hash into the cache key
-function JET.get_cache_key(analyzer::DispatchAnalyzer)
-    h = @invoke JET.get_cache_key(analyzer::AbstractAnalyzer)
-    h = hash(analyzer.frame_filter, h)
-    return h
-end
+JETInterface.get_cache_key(analyzer::DispatchAnalyzer)                          = analyzer.__cache_key
 
 struct DispatchAnalysisPass &lt;: ReportPass end
 
@@ -126,7 +125,7 @@ f(a::Number) = a</code></pre><pre class="documenter-example-output"><code class=
 </code></pre><p>But if the argument type isn&#39;t well typed, compiler can&#39;t determine which method to call, and it will lead to runtime dispatch:</p><pre><code class="language-julia hljs">report_dispatch((Any,)) do a
     f(a) # runtime dispatch !
 end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi"><span class="sgr7">═════ 1 possible error found ═════</span>
-<span class="sgr91">┌ @ dispatch_analysis.md:216 </span>Main.f(a)
+<span class="sgr91">┌ @ dispatch_analysis.md:215 </span>Main.f(a)
 <span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.f(a<span class="sgr96">::Any</span>)</span>
 <span class="sgr91">└────────────────────────────</span>
 </code></pre><p>Note that even if a call is not &quot;well-typed&quot;, i.e. it&#39;s not a concrete call, runtime dispatch won&#39;t happen as far as a single method can be resovled statically:</p><pre><code class="language-julia hljs">report_dispatch((Integer,)) do a
@@ -139,7 +138,7 @@ report_dispatch((Any,)) do a
     r2 = g2(a) # this call should be statically resolved but not inlined, and will be dispatched
     return (r1, r2)
 end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi"><span class="sgr7">═════ 1 possible error found ═════</span>
-<span class="sgr91">┌ @ dispatch_analysis.md:238 </span>Main.g2(a)
+<span class="sgr91">┌ @ dispatch_analysis.md:237 </span>Main.g2(a)
 <span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.g2(a<span class="sgr96">::Any</span>)</span>
 <span class="sgr91">└────────────────────────────</span>
 </code></pre><p>We can assert this report by looking at the output of <code>code_typed</code>, where <code>g1(a)</code> has been just disappeared by inlining and optimizations, but <code>g2(a)</code> still remains as a <code>:call</code> expression:</p><pre><code class="language-julia hljs">code_typed((Any,)) do a
@@ -192,4 +191,4 @@ end
 # `compute(30)` will take more than hours in actual execution, according to https://twitter.com/genkuroki/status/1401332946707963909,
 # but `@report_dispatch` will just do abstract interpretation of the call, so will finish instantly
 @report_dispatch frame_filter=module_filter(@__MODULE__) compute(30)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi"><span class="sgr92">No errors !</span>
-</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../generated-plugin-api/">« API</a><a class="docs-footer-nextpage" href="../find_unstable_api/">&quot;Unstable API&quot; Analysis »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.6 on <span class="colophon-date" title="Wednesday 8 September 2021 17:36">Wednesday 8 September 2021</span>. Using Julia version 1.8.0-DEV.485.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../generated-plugin-api/">« API</a><a class="docs-footer-nextpage" href="../find_unstable_api/">&quot;Unstable API&quot; Analysis »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.6 on <span class="colophon-date" title="Wednesday 8 September 2021 19:00">Wednesday 8 September 2021</span>. Using Julia version 1.8.0-DEV.485.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
