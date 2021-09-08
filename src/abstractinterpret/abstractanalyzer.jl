@@ -373,26 +373,47 @@ JETInferenceParams(; ipo_constant_propagation::Bool        = true,
                              tupletype_depth,
                              tuple_splat,
                              )
-JETOptimizationParams(; inlining::Bool                = inlining_enabled(),
-                        inline_cost_threshold::Int    = 100,
-                        inline_nonleaf_penalty::Int   = 1000,
-                        inline_tupleret_bonus::Int    = 250,
-                        inline_error_path_cost::Int   = 20,
-                        max_methods::Int              = 3,
-                        tuple_splat::Int              = 32,
-                        union_splitting::Int          = 4,
-                        unoptimize_throw_blocks::Bool = true,
-                        __jetconfigs...) =
-    return OptimizationParams(; inlining,
-                                inline_cost_threshold,
-                                inline_nonleaf_penalty,
-                                inline_tupleret_bonus,
-                                inline_error_path_cost,
-                                max_methods,
-                                tuple_splat,
-                                union_splitting,
-                                unoptimize_throw_blocks,
-                                )
+@static if isdefined(CC, :mark_throw_blocks!)
+    JETOptimizationParams(; inlining::Bool                = inlining_enabled(),
+                            inline_cost_threshold::Int    = 100,
+                            inline_nonleaf_penalty::Int   = 1000,
+                            inline_tupleret_bonus::Int    = 250,
+                            inline_error_path_cost::Int   = 20,
+                            max_methods::Int              = 3,
+                            tuple_splat::Int              = 32,
+                            union_splitting::Int          = 4,
+                            __jetconfigs...) =
+        return OptimizationParams(; inlining,
+                                    inline_cost_threshold,
+                                    inline_nonleaf_penalty,
+                                    inline_tupleret_bonus,
+                                    inline_error_path_cost,
+                                    max_methods,
+                                    tuple_splat,
+                                    union_splitting,
+                                    )
+else # @static if isdefined(CC, :mark_throw_blocks!)
+    JETOptimizationParams(; inlining::Bool                = inlining_enabled(),
+                            inline_cost_threshold::Int    = 100,
+                            inline_nonleaf_penalty::Int   = 1000,
+                            inline_tupleret_bonus::Int    = 250,
+                            inline_error_path_cost::Int   = 20,
+                            max_methods::Int              = 3,
+                            tuple_splat::Int              = 32,
+                            union_splitting::Int          = 4,
+                            unoptimize_throw_blocks::Bool = true,
+                            __jetconfigs...) =
+        return OptimizationParams(; inlining,
+                                    inline_cost_threshold,
+                                    inline_nonleaf_penalty,
+                                    inline_tupleret_bonus,
+                                    inline_error_path_cost,
+                                    max_methods,
+                                    tuple_splat,
+                                    union_splitting,
+                                    unoptimize_throw_blocks,
+                                    )
+end # @static if isdefined(CC, :mark_throw_blocks!)
 # # assert here that they create same objects as the original constructors
 @assert JETInferenceParams() == InferenceParams()
 @assert JETOptimizationParams() == OptimizationParams()

@@ -258,14 +258,24 @@ get_msg(::Type{RuntimeDispatchReport}, analyzer, s) = "runtime dispatch detected
 function (::OptAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::OptAnalyzer, caller::InferenceResult, opt::OptimizationState)
     (; src, sptypes, slottypes) = opt
 
-    throw_blocks =
-        analyzer.skip_unoptimized_throw_blocks && opt.inlining.params.unoptimize_throw_blocks ?
-        CC.find_throw_blocks(src.code) : nothing
+    # branch on https://github.com/JuliaLang/julia/pull/42149
+    @static if !isdefined(CC, :mark_throw_blocks!)
+        throw_blocks =
+            analyzer.skip_unoptimized_throw_blocks && opt.inlining.params.unoptimize_throw_blocks ?
+            CC.find_throw_blocks(src.code) : nothing
+    end
 
     for (pc, x) in enumerate(src.code)
-        if !isnothing(throw_blocks)
-            # optimization is intentionally turned off for this block, let's ignore anything here
-            CC.in(pc, throw_blocks) && continue
+        # branch on https://github.com/JuliaLang/julia/pull/42149
+        @static if isdefined(CC, :mark_throw_blocks!)
+            if analyzer.skip_unoptimized_throw_blocks
+                CC.is_stmt_throw_block(src.ssaflags[pc]) && continue
+            end
+        else
+            if !isnothing(throw_blocks)
+                # optimization is intentionally turned off for this block, let's ignore anything here
+                CC.in(pc, throw_blocks) && continue
+            end
         end
         if @isexpr(x, :call)
             ft = widenconst(argextype(first(x.args), src, sptypes, slottypes))
