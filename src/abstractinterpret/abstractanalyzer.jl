@@ -24,8 +24,8 @@ as subtype of `AbstractAnalyzer`, and is expected to the following interfaces:
 4. `ReportPass(analyzer::NewAnalyzer) -> ReportPass`: \\
    Returns [`ReportPass`](@ref) used for `analyzer::NewAnalyzer`.
 ---
-5. `get_cache_key(analyzer::NewAnalyzer) -> cache_key::$UInt`: \\
-   Returns cache_key::$UInt used for `analyzer::NewAnalyzer`.
+5. `get_cache_key(analyzer::NewAnalyzer) -> cache_key::UInt`: \\
+   Returns [`cache_key::UInt`](@ref get_cache_key) used for `analyzer::NewAnalyzer`.
 ---
 
 See also [`AnalyzerState`](@ref), [`ReportPass`](@ref) and [`get_cache_key`](@ref).
@@ -553,10 +553,10 @@ end
 
 # interface 5
 # -----------
-# 5. `get_cache_key(analyzer::NewAnalyzer) -> cache_key::$UInt`
+# 5. `get_cache_key(analyzer::NewAnalyzer) -> cache_key::UInt`
 
 """
-    get_cache_key(analyzer::AbstractAnalyzer) -> cache_key::$UInt
+    get_cache_key(analyzer::AbstractAnalyzer) -> cache_key::UInt
 
 Returns the cache key for this `analyzer::AbstractAnalyzer`.
 `AbstractAnalyzer`s that have different cache keys will use different cache so that their
@@ -567,7 +567,7 @@ See also [`JET_CACHE`](@ref).
 function get_cache_key(::Analyzer) where Analyzer<:AbstractAnalyzer
     error("""
     missing `$AbstractAnalyzer` API:
-    `$Analyzer` is required to implement the `$get_cache_key(analyzer::$Analyzer) -> $UInt` interface.
+    `$Analyzer` is required to implement the `$get_cache_key(analyzer::$Analyzer) -> UInt` interface.
     See the documentation of `$AbstractAnalyzer` and `$get_cache_key`.
     """)
 end

@@ -299,7 +299,7 @@ Keeps `src::CodeInstance` cache associated with `mi::MethodInstace` that represe
 analysis result on `mi` performed by [`analyzer::AbstractAnalyzer`](@ref AbstractAnalyzer),
 where [`src.inferred::JETCachedResult`](@ref JETCachedResult) caches JET's analysis result.
 This cache is separated by the identities of `AbstractAnalyzer`s, which are hash keys
-computed by `get_cache_key(analyzer::AbstractAnalyzer)`.
+computed by [`get_cache_key(analyzer::AbstractAnalyzer)`](@ref get_cache_key).
 
 `JET_CACHE` is completely separated from the `NativeInterpreter`'s global cache, so that
 JET's analysis never interacts with actual code execution.
