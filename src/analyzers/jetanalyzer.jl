@@ -12,16 +12,16 @@ end
 # AbstractAnalyzer API
 # ====================
 
-# NOTE `@aggressive_constprop` here makes sure `mode` to be propagated as constant
-@aggressive_constprop @jetconfigurable function JETAnalyzer(;
-    report_pass::Union{Nothing,T} = nothing,
-    mode::Symbol                  = :basic,
+# NOTE `@constprop :aggressive` here makes sure `mode` to be propagated as constant
+@constprop :aggressive @jetconfigurable function JETAnalyzer(;
+    report_pass::Union{Nothing,ReportPass} = nothing,
+    mode::Symbol                           = :basic,
     # default `InferenceParams` tuning
     aggressive_constant_propagation::Bool = true,
     unoptimize_throw_blocks::Bool         = false,
     # default `OptimizationParams` tuning
     inlining::Bool = false,
-    jetconfigs...) where {T<:ReportPass}
+    jetconfigs...)
     if isnothing(report_pass)
         # if `report_pass` isn't passed explicitly, here we configure it according to `mode`
         report_pass = mode === :basic ? BasicPass() :

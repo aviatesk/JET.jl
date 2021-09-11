@@ -146,7 +146,7 @@ import .CC:
     argextype
 
 import Base:
-    @aggressive_constprop,
+    # @constprop,
     parse_input_line,
     unwrap_unionall,
     rewrap_unionall,
@@ -218,6 +218,13 @@ __init__() = foreach(@nospecialize(f)->f(), INIT_HOOKS)
 
 # branch on https://github.com/JuliaLang/julia/pull/42082
 const IS_AFTER_42082 = hasmethod(InferenceState, (InferenceResult, Symbol, AbstractInterpreter))
+
+# branch on https://github.com/JuliaLang/julia/pull/42125
+@static if isdefined(Base, Symbol("@constprop"))
+    import Base: @constprop
+else
+    macro constprop(_, ex); esc(ex); end
+end
 
 # macros
 # ------
