@@ -475,6 +475,9 @@ get_slottype(s::Tuple{InferenceState,Int}, slot::Int) = @inbounds (get_states(s)
 get_states((sv, pc)::Tuple{InferenceState,Int})       = @inbounds sv.stmt_types[pc]::VarTable
 get_currpc(sv::InferenceState) = min(sv.currpc, length(sv.src.code))
 
+# XXX this might be wrong when `sv` is involved with cycles
+isentry(sv::InferenceState) = sv.parent === nothing
+
 function is_constant_propagated(frame::InferenceState)
     return !frame.cached && CC.any(frame.result.overridden_by_const)
 end

@@ -88,7 +88,7 @@ end
     # if there is no method matching case, it should be reported
     let
         # NOTE: we can't just wrap them into `let`, closures can't be inferred correctly
-        m = gen_virtual_module()
+        m = Module()
         result = Core.eval(m, quote
             foo(a::Integer) = :Integer
             $report_call((AbstractString,)) do a
@@ -112,7 +112,7 @@ end
 
     # if there is no method matching case in union-split, it should be reported
     let
-        m = gen_virtual_module()
+        m = Module()
         result = Core.eval(m, quote
             foo(a::Integer) = :Integer
             foo(a::AbstractString) = "AbstractString"
@@ -123,7 +123,7 @@ end
         @test length(get_reports(result)) === 1
         report = first(get_reports(result))
         @test report isa NoMethodErrorReport
-        @test report.t == [Tuple{typeof(m.foo), Nothing}]
+        @test report.t == Any[Tuple{typeof(m.foo), Nothing}]
     end
 end
 
@@ -499,6 +499,7 @@ end
     @test !isempty(get_reports(result))
     @test !any(r->isa(r, InvalidInvokeErrorReport), get_reports(result))
 
+    #== LINE SENSITIVITY START ===#
     bar(a) = return a + undefvar
     function baz(a)
         a += 1
@@ -508,8 +509,8 @@ end
     @test !isempty(get_reports(result))
     @test !any(r->isa(r, InvalidInvokeErrorReport), get_reports(result))
     # virtual stack trace should include frames of both `bar` and `baz`
-    # we already `@assert` it within `typeinf` when `JET_DEV_MODE` is enabled, but test it
-    # here just to make sure it's working
+    # we already `@assert` it within `typeinf` when `JET_DEV_MODE` is enabled,
+    # but test it explicitly here just to make sure it's working
     # WARNING the code block below is really line sensitive, in a relative way to the definitions of `bar` and `baz`
     @test all(get_reports(result)) do r
         any(r.vst) do vf
@@ -524,6 +525,7 @@ end
         end || return false
         return true
     end
+    #== LINE SENSITIVITY END ===#
 end
 
 @testset "staged programming" begin

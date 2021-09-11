@@ -1,2 +1,2 @@
 analyze_from_definitions = true
-concretization_patterns = ["const x_ = y_"]
+concretization_patterns = ["const x_ = y_", "reexport_as_api!(x__)"]

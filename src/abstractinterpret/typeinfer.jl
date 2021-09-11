@@ -656,12 +656,11 @@ function CC._typeinf(interp::AbstractAnalyzer, frame::InferenceState)
         end
     end
 
-    isentry = isnothing(frame.parent)
     for (frame, _, _) in results
         result = frame.result
         reports = get_reports(result)
 
-        if !isentry
+        if !isentry(frame)
             # get back to the caller what we got from these results
             add_caller_cache!(interp, reports)
 
