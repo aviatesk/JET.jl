@@ -474,7 +474,7 @@ end
     end
 end
 
-@static isdefined(CC, :abstract_invoke) && @testset "abstract_invoke" begin
+@testset "abstract_invoke" begin
     # non-`Type` `argtypes`
     result = report_call() do
         invoke(sin, :this_should_be_type, 1.0)

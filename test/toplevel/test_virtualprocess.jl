@@ -1716,12 +1716,10 @@ end
             @test true
             @test [1, 2] + [2, 1] == [3, 3]
             @test π ≈ 3.14 atol=0.01
-            @static if VERSION ≥ v"1.7.0-DEV"
-                @test 2 + 2 ≈ 6 atol=1 broken=true
-                @test 2 + 2 ≈ 5 atol=1 broken=false
-                @test 2 + 2 == 5 skip=true
-                @test 2 + 2 == 4 skip=false
-            end
+            @test 2 + 2 ≈ 6 atol=1 broken=true
+            @test 2 + 2 ≈ 5 atol=1 broken=false
+            @test 2 + 2 == 5 skip=true
+            @test 2 + 2 == 4 skip=false
         end
         @test isempty(res.toplevel_error_reports)
     end

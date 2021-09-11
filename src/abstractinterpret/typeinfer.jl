@@ -188,19 +188,11 @@ function CC.abstract_call_method_with_const_args(analyzer::AbstractAnalyzer, res
     # `CC.cache_lookup(linfo::MethodInstance, given_argtypes::Vector{Any}, cache::JETLocalCache)`
     set_cacher!(analyzer, nothing)
 
-    # update reports if constant prop' was successful
-    # branch on https://github.com/JuliaLang/julia/pull/41697/
-    @static if VERSION ≥ v"1.8.0-DEV.282"
-        if !isnothing(const_result)
-            # successful constant prop', we also need to update reports
-            collect_callee_reports!(analyzer, sv)
-        end
-    else
-        if !isnothing(getfield(const_result, 2))
-            # successful constant prop', we also need to update reports
-            collect_callee_reports!(analyzer, sv)
-        end
+    if !isnothing(const_result)
+        # successful constant prop', we also need to update reports
+        collect_callee_reports!(analyzer, sv)
     end
+
     return const_result
 end
 

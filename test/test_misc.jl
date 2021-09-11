@@ -11,13 +11,8 @@
     @test_throws ErrorException get_package_file(Module())
 
     # suppress logs from Pkg.jl if possible
-    function pkg_activate(args...; io = IOBuffer(), kwargs...)
-        @static if VERSION ≥ v"1.7-DEV"
-            Pkg.activate(args...; io, kwargs...)
-        else
-            Pkg.activate(args...; kwargs...)
-        end
-    end
+    pkg_activate(args...; io = IOBuffer(), kwargs...) =
+        Pkg.activate(args...; io, kwargs...)
     old = Pkg.project().path
     try
         pkg_activate(pkgdir(JET))

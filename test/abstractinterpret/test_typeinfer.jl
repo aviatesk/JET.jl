@@ -692,8 +692,6 @@ end
     @test true
 end
 
-@static if VERSION ≥ v"1.7.0-DEV.705"
-
 @testset "opaque closure" begin
     # can cache const prop' result with varargs
     function oc_varargs_constprop()
@@ -703,8 +701,6 @@ end
     result = @report_call oc_varargs_constprop()
     @test !isempty(get_cache(result.analyzer))
 end
-
-end # @static if VERSION ≥ v"1.7.0-DEV.705"
 
 @testset "https://github.com/aviatesk/JET.jl/issues/133" begin
     res = @analyze_toplevel begin

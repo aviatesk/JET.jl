@@ -114,6 +114,8 @@ import .CC:
     LimitedAccuracy,
     NOT_FOUND,
     MethodCallResult,
+    MethodMatches,
+    UnionSplitMethodMatches,
     MethodMatchInfo,
     UnionSplitInfo,
     ConstCallInfo,

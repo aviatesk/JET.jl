@@ -315,12 +315,6 @@ An overload for `abstract_call_gf_by_type(analyzer::JETAnalyzer, ...)`, which al
 backedges (even if a new method can't refine the return type grew up to `Any`).
 This is because a new method definition always has a potential to change `JETAnalyzer`'s analysis result.
 """
-:(add_call_backedges!)
-# branch on https://github.com/JuliaLang/julia/pull/41633
-@static if isdefined(CC, :find_matching_methods)
-import .CC:
-    MethodMatches,
-    UnionSplitMethodMatches
 function CC.add_call_backedges!(analyzer::JETAnalyzer, @nospecialize(rettype), edges::Vector{MethodInstance},
                                 matches::Union{MethodMatches,UnionSplitMethodMatches}, @nospecialize(atype),
                                 sv::InferenceState)
@@ -340,28 +334,6 @@ function CC.add_call_backedges!(analyzer::JETAnalyzer, @nospecialize(rettype), e
         end
     end
 end
-else # @static if isdefined(CC, :find_matching_methods)
-function CC.add_call_backedges!(analyzer::JETAnalyzer, @nospecialize(rettype), edges::Vector{MethodInstance},
-                                fullmatch::Vector{Bool}, mts::Vector{Core.MethodTable}, @nospecialize(atype),
-                                sv::InferenceState)
-    # NOTE a new method may refine analysis, so we always add backedges
-    # if rettype === Any
-    #     # for `NativeInterpreter`, we don't add backedges when a new method couldn't refine
-    #     # (widen) this type
-    #     return
-    # end
-    for edge in edges
-        add_backedge!(edge, sv)
-    end
-    for (thisfullmatch, mt) in zip(fullmatch, mts)
-        if !thisfullmatch
-            # also need an edge to the method table in case something gets
-            # added that did not intersect with any existing method
-            add_mt_backedge!(mt, atype, sv)
-        end
-    end
-end
-end # @static if isdefined(CC, :find_matching_methods)
 
 # this overload isn't necessary after https://github.com/JuliaLang/julia/pull/41882
 
