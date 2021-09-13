@@ -271,6 +271,7 @@ function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState)
         if isa(src, Const) # the optimization was very successful, nothing to report
         elseif isa(src, OptimizationState) # compiler cached the optimized IR, just analyze it
             ReportPass(analyzer)(RuntimeDispatchReport, analyzer, caller, src)
+        elseif isnothing(src) # the optimization didn't happen, `OptAnalyzer` should have reported `OptimizationFailureReport` for this frame
         else
             # we should already report `OptimizationFailureReport` for this case,
             # and thus this pass should never happen
