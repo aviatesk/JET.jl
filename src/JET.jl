@@ -377,7 +377,7 @@ macro withmixedhash(typedef)
         eq_ex = if all(in(EGAL_TYPES), typenames(typ))
             :(x1.$fld === x2.$fld)
         else
-            :(x1.$fld == x2.$fld)
+            :((x1.$fld == x2.$fld)::Bool)
         end
         Expr(:&&, eq_ex, x)
     end
@@ -477,8 +477,11 @@ get_slottype(s::Tuple{InferenceState,Int}, slot::Int) = @inbounds (get_states(s)
 get_states((sv, pc)::Tuple{InferenceState,Int})       = @inbounds sv.stmt_types[pc]::VarTable
 get_currpc(sv::InferenceState) = min(sv.currpc, length(sv.src.code))
 
-# XXX this might be wrong when `sv` is involved with cycles
-isentry(sv::InferenceState) = sv.parent === nothing
+isconcreteframe(x) = isdispatchtuple(get_linfo(x).specTypes)
+
+get_linfo(sv::State)               = sv.linfo
+get_linfo(result::InferenceResult) = result.linfo
+get_linfo(linfo::MethodInstance)   = linfo
 
 function is_constant_propagated(frame::InferenceState)
     return !frame.cached && CC.any(frame.result.overridden_by_const)
@@ -627,9 +630,9 @@ include("ui/vscode.jl")
 # -----------------
 
 # TODO `analyze_builtin!` ?
-function analyze_gf_by_type!(analyzer::AbstractAnalyzer, @nospecialize(tt::Type{<:Tuple}))
+function analyze_gf_by_type!(analyzer::AbstractAnalyzer, @nospecialize(tt::Type{<:Tuple}); kwargs...)
     mm = get_single_method_match(tt, InferenceParams(analyzer).MAX_METHODS, get_world_counter(analyzer))
-    return analyze_method_signature!(analyzer, mm.method, mm.spec_types, mm.sparams)
+    return analyze_method_signature!(analyzer, mm.method, mm.spec_types, mm.sparams; kwargs...)
 end
 
 function get_single_method_match(@nospecialize(tt), lim, world)
@@ -642,8 +645,8 @@ function get_single_method_match(@nospecialize(tt), lim, world)
     return first(mms)::MethodMatch
 end
 
-analyze_method!(analyzer::AbstractAnalyzer, m::Method) =
-    analyze_method_signature!(analyzer, m, m.sig, method_sparams(m))
+analyze_method!(analyzer::AbstractAnalyzer, m::Method; kwargs...) =
+    analyze_method_signature!(analyzer, m, m.sig, method_sparams(m); kwargs...)
 
 function method_sparams(m::Method)
     s = TypeVar[]
@@ -655,20 +658,25 @@ function method_sparams(m::Method)
     return svec(s...)
 end
 
-analyze_method_signature!(analyzer::AbstractAnalyzer, m::Method, @nospecialize(atype), sparams::SimpleVector) =
-    analyze_method_instance!(analyzer, specialize_method(m, atype, sparams))
+function analyze_method_signature!(analyzer::AbstractAnalyzer, m::Method, @nospecialize(atype), sparams::SimpleVector; kwargs...)
+    mi = specialize_method(m, atype, sparams)::MethodInstance
+    return analyze_method_instance!(analyzer, mi; kwargs...)
+end
 
-function analyze_method_instance!(analyzer::AbstractAnalyzer, mi::MethodInstance)
+function analyze_method_instance!(analyzer::AbstractAnalyzer, mi::MethodInstance;
+                                  set_entry::Bool = true,
+                                  )
     result = InferenceResult(mi)
 
     @static if IS_AFTER_42082
         frame = InferenceState(result, #=cache=# :global, analyzer)
-    else # static if IS_AFTER_42082
+    else # @static if IS_AFTER_42082
         frame = InferenceState(result, #=cached=# true, analyzer)
-    end # static if IS_AFTER_42082
+    end # @static if IS_AFTER_42082
 
     isnothing(frame) && return analyzer, result
 
+    set_entry && set_entry!(analyzer, mi)
     return analyze_frame!(analyzer, frame)
 end
 
@@ -988,25 +996,27 @@ function report_and_watch_file(args...; kwargs...)
 end
 
 # HACK to avoid Revise loading overhead when just using `@report_call`, etc.
-function init_revise!()
-    @eval (@__MODULE__) using Revise
-end
+init_revise!() = @eval (@__MODULE__) using Revise
 
 function _report_and_watch_file(filename::AbstractString; jetconfigs...)
+    local included_files::Set{String}
+
     config = WatchConfig(; jetconfigs...)
 
-    res = report_file(filename; jetconfigs...)
-    display(res)
-    included_files = res.res.included_files
+    included_files = let res = report_file(filename; jetconfigs...)
+        display(res)
+        res.res.included_files
+    end
 
     interrupted = false
     while !interrupted
         try
             Revise.entr(collect(included_files), config.revise_modules;
                         postpone = true, all = config.revise_all) do
-                res = report_file(filename; jetconfigs...)
-                display(res)
-                next_included_files = res.res.included_files
+                next_included_files = let res = report_file(filename; jetconfigs...)
+                    display(res)
+                    res.res.included_files
+                end
                 if any(∉(included_files), next_included_files)
                     # refresh watch files
                     throw(InsufficientWatches(next_included_files))
@@ -1031,14 +1041,15 @@ function _report_and_watch_file(filename::AbstractString; jetconfigs...)
                 i = findfirst(e->isa(e, TaskFailedException), errs)
                 if !isnothing(i)
                     tfe = errs[i]::TaskFailedException
-                    res = tfe.task.result
-                    if isa(res, InsufficientWatches)
-                        included_files = res.included_files
-                        continue
-                    elseif isa(res, LoadError) ||
-                           (isa(res, ErrorException) && startswith(res.msg, "lowering returned an error")) ||
-                           isa(res, Revise.ReviseEvalException)
-                        continue
+                    let res = tfe.task.result
+                        if isa(res, InsufficientWatches)
+                            included_files = res.included_files
+                            continue
+                        elseif isa(res, LoadError) ||
+                               (isa(res, ErrorException) && startswith(res.msg, "lowering returned an error")) ||
+                               isa(res, Revise.ReviseEvalException)
+                            continue
+                        end
                     end
                 end
             end
@@ -1054,7 +1065,9 @@ struct InsufficientWatches <: Exception
 end
 
 # we have to go on hacks; see `transform_abstract_global_symbols!` and `resolve_toplevel_symbols!`
-function analyze_toplevel!(analyzer::AbstractAnalyzer, src::CodeInfo)
+function analyze_toplevel!(analyzer::AbstractAnalyzer, src::CodeInfo;
+                           set_entry::Bool = true,
+                           )
     # construct toplevel `MethodInstance`
     mi = ccall(:jl_new_method_instance_uninit, Ref{Core.MethodInstance}, ());
     mi.specTypes = Tuple{}
@@ -1069,12 +1082,11 @@ function analyze_toplevel!(analyzer::AbstractAnalyzer, src::CodeInfo)
     # toplevel frames don't really need to be cached, but still better to be optimized
     # in order to get reasonable `LocalUndefVarErrorReport` and `UncaughtExceptionReport`
     # NOTE and also, otherwise `typeinf_edge` won't add "toplevel-to-callee" edges
-    @static if IS_AFTER_42082
-        frame = InferenceState(result, src, #=cache=# :global, analyzer)
-    else # @static if IS_AFTER_42082
-        frame = InferenceState(result, src, #=cached=# true, analyzer)
-    end # @static if IS_AFTER_42082
+    frame = (@static IS_AFTER_42082 ?
+             InferenceState(result, src, #=cache=# :global, analyzer) :
+             InferenceState(result, src, #=cached=# true, analyzer))::InferenceState
 
+    set_entry && set_entry!(analyzer, mi)
     return analyze_frame!(analyzer, frame)
 end
 

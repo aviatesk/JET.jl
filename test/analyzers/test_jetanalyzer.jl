@@ -19,7 +19,7 @@
         @test k1 ≠ k2
     end
 
-    # configurations other than `JETAnalysisParams`, `InferenceParams` and `ReportPass`
+    # configurations other than `InferenceParams` and `ReportPass`
     # shouldn't affect the cache key identity
     let
         analyzer1 = JETAnalyzer(; toplevel_logger=nothing)
@@ -305,19 +305,38 @@ end
         @test isempty(get_reports(result)) # very untyped, we can't report on this ...
     end
 
-    # `strict_condition_check` configuration
-    let
-        # `==(::Missing, ::Any)`
-        result = report_call((Any,Symbol); strict_condition_check = false) do a, b
-            a == b ? 0 : 1
+    @testset "SoundPass" begin
+        let # `:basicfilter`
+            m = Module()
+            # `==(::Missing, ::Any) -> Missing` will be reported
+            @eval m foo(a, b) = a == b ? 0 : 1
+            result = @eval m $report_call((Any,Symbol)) do a, b
+                foo(a, b)
+            end
+            @test isempty(get_reports(result))
+
+            result = report_call((Any,Symbol); mode = :sound) do a, b
+                a == b ? 0 : 1
+            end
+            @test any(get_reports(result)) do r
+                isa(r, NonBooleanCondErrorReport) &&
+                r.t == Type[Missing]
+            end
         end
-        @test isempty(get_reports(result))
-        result = report_call((Any,Symbol); strict_condition_check = true) do a, b
-            a == b ? 0 : 1
-        end
-        @test any(get_reports(result)) do r
-            isa(r, NonBooleanCondErrorReport) &&
-            r.t == Type[Missing]
+
+        let # `!(t ⊑ Bool)` -> error
+            basic = report_call((Integer,)) do cond
+                cond ? 0 : 1
+            end
+            @test isempty(get_reports(basic))
+
+            sound = report_call((Integer,); mode=:sound) do cond
+                cond ? 0 : 1
+            end
+            @test any(get_reports(sound)) do r
+                isa(r, NonBooleanCondErrorReport) &&
+                r.t == Integer
+            end
         end
     end
 end
@@ -492,40 +511,45 @@ end
     @test isa(r, InvalidInvokeErrorReport)
 
     # don't report errors collected in `invoke`d functions
-    foo(i::Integer) = throw(string(i))
-    result = report_call((Any,)) do a
-        Base.@invoke foo(a::Integer)
+    result = @eval Module() begin
+        foo(i::Integer) = throw(string(i))
+        $report_call((Int,)) do a
+            Base.@invoke foo(a::Integer)
+        end
     end
     @test !isempty(get_reports(result))
     @test !any(r->isa(r, InvalidInvokeErrorReport), get_reports(result))
 
     #== LINE SENSITIVITY START ===#
-    bar(a) = return a + undefvar
-    function baz(a)
-        a += 1
-        Base.@invoke bar(a::Int) # `invoke` is valid, but error should happne within `bar`
+    BAR_LINE = (@__LINE__) + 3
+    BAZ_LINE = (@__LINE__) + 5
+    result = @eval begin
+        bar(a) = return a + undefvar
+        function baz(a)
+            a += 1
+            Base.@invoke bar(a::Int) # `invoke` is valid, but error should happne within `bar`
+        end
+        $report_call(baz, (Any,))
     end
-    result = report_call(baz, (Any,))
+    #== LINE SENSITIVITY END ===#
     @test !isempty(get_reports(result))
     @test !any(r->isa(r, InvalidInvokeErrorReport), get_reports(result))
     # virtual stack trace should include frames of both `bar` and `baz`
     # we already `@assert` it within `typeinf` when `JET_DEV_MODE` is enabled,
     # but test it explicitly here just to make sure it's working
-    # WARNING the code block below is really line sensitive, in a relative way to the definitions of `bar` and `baz`
     @test all(get_reports(result)) do r
         any(r.vst) do vf
             vf.file === Symbol(@__FILE__) &&
-            vf.line == (@__LINE__) - 15 && # `bar`
+            vf.line == BAR_LINE && # `bar`
             vf.linfo.def.name === :bar
         end || return false
         any(r.vst) do vf
             vf.file === Symbol(@__FILE__) &&
-            vf.line == (@__LINE__) - 17 && # `baz`
+            vf.line == BAZ_LINE && # `baz`
             vf.linfo.def.name === :baz
         end || return false
         return true
     end
-    #== LINE SENSITIVITY END ===#
 end
 
 @testset "staged programming" begin
@@ -636,11 +660,47 @@ end
 
     # end to end
     let
-        # this shouldn't report "no matching method found for call signature: Base.iterate(itr::DataType)"
-        # , which otherwise will be caught in `abstract_cal` in `return_type_tfunc`
-        result = report_call(()->Dict('a' => 1,
-                                              :b => 2)
-                                     )
+        # this shouldn't report "no matching method found for call signature: Base.iterate(itr::DataType)",
+        # which otherwise will be caught in `abstract_cal` in `return_type_tfunc`
+        result = report_call(() -> Dict('a' => 1, :b => 2))
         @test isempty(get_reports(result))
+    end
+end
+
+@testset "BasicPass" begin
+    # `basicfilter`: skip errors on abstract dispatch
+    let # https://github.com/aviatesk/JET.jl/issues/154
+        res = @analyze_toplevel analyze_from_definitions=true begin
+            struct Foo
+                x::AbstractVector{<:AbstractString}
+            end
+        end
+        @test isempty(res.inference_error_reports)
+    end
+
+    # `basicfilter`: should still report anything within entry frame
+    let
+        res = @eval Module() begin
+            foo(a::Int) = "hello"
+            $report_call((AbstractString,)) do a # this abstract call isn't concrete dispatch
+                foo(a)
+            end
+        end
+        @test !isempty(get_reports(res))
+        @test any(r->isa(r,NoMethodErrorReport), get_reports(res))
+    end
+
+    # `basicfilter`: skip errors on abstract entry frame entered by `analyze_from_definitions!`
+    let
+        res = @analyze_toplevel analyze_from_definitions=true begin
+            struct Foo end
+            function isfoo(x)
+                # ==(::Missing, ::Foo) -> Missing will lead to `NonBooleanCondErrorReport` otherwise
+                return x == Foo() ? :foo : :bar
+            end
+        end
+        @test !any(res.inference_error_reports) do r
+            isa(r, NonBooleanCondErrorReport)
+        end
     end
 end

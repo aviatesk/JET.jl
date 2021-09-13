@@ -25,7 +25,7 @@ JET.ToplevelConfig
 ## [Configurations for Abstract Interpretation](@id abstractinterpret-config)
 
 ```@docs
-JET.JETAnalysisParams
+JET.JETInferenceParams
 ```
 
 

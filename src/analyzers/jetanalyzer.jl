@@ -31,7 +31,7 @@ end
     # NOTE we always disable inlining, because:
     # - our current strategy to find undefined local variables and uncaught `throw` calls assumes un-inlined frames
     # - the cost for inlining isn't necessary for JETAnalyzer
-    @assert !inlining "inlining should be disabled for JETAnalyzer"
+    inlining && throw(ArgumentError("inlining should be disabled for `JETAnalyzer`"))
     state = AnalyzerState(; aggressive_constant_propagation,
                             unoptimize_throw_blocks,
                             inlining,
@@ -65,7 +65,11 @@ struct SoundPass <: ReportPass end
 """
 struct BasicPass <: ReportPass end
 
-# `SoundPass` is still WIP, we will use it to implement both passes at once for the meantime
+# the `isentry` check is useful when entering analysis with abstract types
+basicfilter(analyzer::JETAnalyzer, sv) =
+    isconcreteframe(sv) || get_entry(analyzer) === get_linfo(sv)
+
+# `SoundPass` is still WIP, we may use it to implement both passes at once for the meantime
 const SoundBasicPass = Union{SoundPass,BasicPass}
 
 # analysis
@@ -92,7 +96,7 @@ function (::SoundBasicPass)(::Type{GeneratorErrorReport}, analyzer::JETAnalyzer,
     m = mi.def::Method
     if isdefined(m, :generator)
         # analyze_method_instance!(analyzer, linfo) XXX doesn't work
-        may_invoke_generator(mi) || return
+        may_invoke_generator(mi) || return false
         try
             ccall(:jl_code_for_staged, Any, (Any,), mi) # invoke the "errorneous" generator again
         catch err
@@ -100,8 +104,10 @@ function (::SoundBasicPass)(::Type{GeneratorErrorReport}, analyzer::JETAnalyzer,
             report = add_new_report!(result, GeneratorErrorReport(analyzer, mi, err))
             # we will return back to the caller immediately
             add_caller_cache!(analyzer, report)
+            return true
         end
     end
+    return false
 end
 
 # TODO disable optimization for better performance, only do necessary analysis work by ourselves
@@ -114,19 +120,12 @@ function CC.finish!(analyzer::JETAnalyzer, frame::InferenceState)
         return src
     else
         code = (src::CodeInfo).code
+
         # report pass for (local) undef var error
         ReportPass(analyzer)(LocalUndefVarErrorReport, analyzer, frame, code)
 
-        if frame.bestguess === Bottom
-            # report pass for uncaught `throw` calls
-            ReportPass(analyzer)(UncaughtExceptionReport, frame, code)
-        else
-            # the non-`Bottom` result may mean `throw` calls from the children frames
-            # (if exists) are caught and not propagated here;
-            # we don't want to cache `UncaughtExceptionReport`s for those calls for this frame
-            # and its parents, and just filter them away now
-            filter!(report->!isa(report, UncaughtExceptionReport), get_reports(frame.result))
-        end
+        # report pass for uncaught `throw` calls
+        ReportPass(analyzer)(UncaughtExceptionReport, frame, code)
 
         return src
     end
@@ -147,31 +146,32 @@ print_error_report(io, report::LocalUndefVarErrorReport) = printlnstyled(io, "�
     report_undefined_local_slots!(analyzer, frame, stmts, true)
 
 function report_undefined_local_slots!(analyzer::JETAnalyzer, frame::InferenceState, stmts::Vector{Any}, unsound::Bool)
+    local reported = false
     for (idx, stmt) in enumerate(stmts)
         if isa(stmt, Expr) && stmt.head === :throw_undef_if_not
             sym = stmt.args[1]::Symbol
-
             # slots in toplevel frame may be a abstract global slot
             istoplevel(frame) && is_global_slot(analyzer, sym) && continue
-
             if unsound
                 next_idx = idx + 1
-                if checkbounds(Bool, stmts, next_idx) && is_unreachable(@inbounds stmts[next_idx])
+                if checkbounds(Bool, stmts, next_idx) && is_unreachable(stmts[next_idx])
                     # the optimization so far has found this statement is never "reachable";
                     # JET reports it since it will invoke undef var error at runtime, or will just
                     # be dead code otherwise
                     add_new_report!(frame.result, LocalUndefVarErrorReport(analyzer, (frame, idx), sym))
+                    reported |= true
                 else
                     # by excluding this pass, this analysis accepts some false negatives and
                     # some undefined variable error may happen in actual execution (thus unsound)
                 end
             else
                 add_new_report!(frame.result, LocalUndefVarErrorReport(analyzer, (frame, idx), sym))
+                reported |= true
             end
         end
     end
+    return reported
 end
-
 is_unreachable(@nospecialize(x)) = isa(x, ReturnNode) && !isdefined(x, :val)
 
 """
@@ -197,11 +197,24 @@ function UncaughtExceptionReport(sv::InferenceState, throw_calls::Vector{Tuple{I
 end
 
 # report `throw` calls "appropriately"
-# this error report pass is really special, and requires special care when overloaded
-# since it is tightly bound to that of `SeriousExceptionReport`
-function (::SoundBasicPass)(::Type{UncaughtExceptionReport}, frame::InferenceState, stmts::Vector{Any})
-    @assert frame.bestguess === Bottom
-
+# this error report pass is very special, since 1.) it's tightly bound to the report pass of
+# `SeriousExceptionReport` and 2.) it involves "report filtering" on its own
+function (::BasicPass)(::Type{UncaughtExceptionReport}, frame::InferenceState, stmts::Vector{Any})
+    if frame.bestguess === Bottom
+        report_uncaught_exceptions!(frame, stmts)
+        return true
+    else
+        # the non-`Bottom` result may mean `throw` calls from the children frames
+        # (if exists) are caught and not propagated here
+        # we don't want to cache the caught `UncaughtExceptionReport`s for this frame and
+        # its parents, and just filter them away now
+        filter!(report->!isa(report, UncaughtExceptionReport), get_reports(frame.result))
+    end
+    return false
+end
+(::SoundPass)(::Type{UncaughtExceptionReport}, frame::InferenceState, stmts::Vector{Any}) =
+    report_uncaught_exceptions!(frame, stmts) # yes, you want tons of false positives !
+function report_uncaught_exceptions!(frame::InferenceState, stmts::Vector{Any})
     # if the return type here is `Bottom` annotated, this _may_ mean there're uncaught
     # `throw` calls
     # XXX it's possible that the `throw` calls within them are all caught but the other
@@ -234,7 +247,9 @@ function (::SoundBasicPass)(::Type{UncaughtExceptionReport}, frame::InferenceSta
     end
     if !isnothing(throw_calls) && !isempty(throw_calls)
         add_new_report!(frame.result, UncaughtExceptionReport(frame, throw_calls))
+        return true
     end
+    return false
 end
 
 @reportdef struct NoMethodErrorReport <: InferenceErrorReport
@@ -245,13 +260,6 @@ get_msg(::Type{NoMethodErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, 
 get_msg(::Type{NoMethodErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, ts::Vector{Type}) =
     "for $(length(ts)) of union split cases, no matching method found for call signatures ($(join(ts, ", "))))"
 
-function is_empty_match(info::MethodMatchInfo)
-    res = info.results
-    isa(res, MethodLookupResult) || return false # when does this happen ?
-    return isempty(res.matches)
-end
-
-# TODO report "too many method matched"
 function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer, @nospecialize(f),
                                      fargs::Union{Nothing,Vector{Any}}, argtypes::Vector{Any}, @nospecialize(atype),
                                      sv::InferenceState, max_methods::Int = InferenceParams(analyzer).MAX_METHODS)
@@ -273,7 +281,11 @@ function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer, @nospecialize(f),
     return ret
 end
 
-function (::SoundBasicPass)(::Type{NoMethodErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, info::UnionSplitInfo, argtypes::Vector{Any})
+(::BasicPass)(::Type{NoMethodErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, info::UnionSplitInfo, argtypes::Vector{Any}) =
+    basicfilter(analyzer, sv) && report_no_method_error_for_union_split!(analyzer, sv, info, argtypes)
+(::SoundPass)(::Type{NoMethodErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, info::UnionSplitInfo, argtypes::Vector{Any}) =
+    report_no_method_error_for_union_split!(analyzer, sv, info, argtypes)
+function report_no_method_error_for_union_split!(analyzer::JETAnalyzer, sv::InferenceState, info::UnionSplitInfo, argtypes::Vector{Any})
     # check each match for union-split signature
     split_argtypes = nothing
     ts = nothing
@@ -289,12 +301,27 @@ function (::SoundBasicPass)(::Type{NoMethodErrorReport}, analyzer::JETAnalyzer, 
 
     if !isnothing(ts)
         add_new_report!(sv.result, NoMethodErrorReport(analyzer, sv, ts))
+        return true
     end
+    return false
 end
-function (::SoundBasicPass)(::Type{NoMethodErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, info::MethodMatchInfo, @nospecialize(atype))
+
+(::BasicPass)(::Type{NoMethodErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, info::MethodMatchInfo, @nospecialize(atype)) =
+    basicfilter(analyzer, sv) && report_no_method_error!(analyzer, sv, info, atype)
+(::SoundPass)(::Type{NoMethodErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, info::MethodMatchInfo, @nospecialize(atype)) =
+    report_no_method_error!(analyzer, sv, info, atype)
+function report_no_method_error!(analyzer::JETAnalyzer, sv::InferenceState, info::MethodMatchInfo, @nospecialize(atype))
     if is_empty_match(info)
         add_new_report!(sv.result, NoMethodErrorReport(analyzer, sv, atype))
+        return true
     end
+    return false
+end
+
+function is_empty_match(info::MethodMatchInfo)
+    res = info.results
+    isa(res, MethodLookupResult) || return false # when does this happen ?
+    return isempty(res.matches)
 end
 
 @doc """
@@ -363,13 +390,16 @@ end
 get_msg(::Type{InvalidReturnTypeCall}, analyzer::AbstractAnalyzer, sv::InferenceState) = "invalid `Core.Compiler.return_type` call"
 
 function (::SoundBasicPass)(::Type{InvalidReturnTypeCall}, analyzer::AbstractAnalyzer, sv::InferenceState, argtypes::Vector{Any})
-    # here we just check if the call of `return_type` is valid or not by very simple analysis
-    # we don't take (possible, but very unexpected) overloads into account here, just as
-    # `NativeInterpreter`'s `return_type_tfunc` hard-codes its return type to `Type`
+    # here we make a very simple analysis to check if the call of `return_type` is clearly
+    # invalid or not by just checking the # of call arguments
+    # we don't take a (very unexpected) possibility of its overload into account here,
+    # `NativeInterpreter` doens't also (it hard-codes the return type as `Type`)
     if length(argtypes) ≠ 3
-        # invalid argument number, let's report and return error result (i.e. `Bottom`)
+        # invalid argument #, let's report and return error result (i.e. `Bottom`)
         add_new_report!(sv.result, InvalidReturnTypeCall(analyzer, sv))
+        return true
     end
+    return false
 end
 
 function CC.abstract_invoke(analyzer::JETAnalyzer, argtypes::Vector{Any}, sv::InferenceState)
@@ -411,8 +441,10 @@ function (::SoundBasicPass)(::Type{InvalidInvokeErrorReport}, analyzer::JETAnaly
         # already been reported within `typeinf_edge`, so ignore that case
         if !isa(ret.info, InvokeCallInfo)
             add_new_report!(sv.result, InvalidInvokeErrorReport(analyzer, sv, argtypes))
+            return true
         end
     end
+    return false
 end
 
 function CC.abstract_eval_special_value(analyzer::JETAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
@@ -420,17 +452,15 @@ function CC.abstract_eval_special_value(analyzer::JETAnalyzer, @nospecialize(e),
 
     if isa(e, GlobalRef)
         mod, name = e.mod, e.name
-        if !isdefined(mod, name)
-            # report pass for undefined global reference
-            ReportPass(analyzer)(GlobalUndefVarErrorReport, analyzer, sv, mod, name)
+        # report pass for undefined global reference
+        ReportPass(analyzer)(GlobalUndefVarErrorReport, analyzer, sv, mod, name)
 
-            # # NOTE `ret` at this point should be annotated as `Any` by `NativeInterpreter`,
-            # # and we just pass it as is to collect as much error points as possible
-            # # we can change it to `Bottom` to suppress any further abstract interpretation
-            # # with this variable, but then we also need to make sure to invalidate the cache
-            # # for the analysis on the future re-definition of this (currently) undefined binding
-            # return Bottom
-        end
+        # NOTE `NativeInterpreter` should return `ret = Any` `ret` even if `mod.name`
+        # isn't defined and we just pass it as is to collect as much error points as possible
+        # we can change it to `Bottom` to suppress any further inference with this variable,
+        # but then we also need to make sure to invalidate the cache for the analysis on
+        # the future re-definition of this (currently) undefined binding
+        # return Bottom
     end
 
     return ret
@@ -444,12 +474,20 @@ get_msg(::Type{GlobalUndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceS
     "variable $(mod).$(name) is not defined"
 
 function (::SoundPass)(::Type{GlobalUndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, mod::Module, name::Symbol)
-    add_new_report!(sv.result, GlobalUndefVarErrorReport(analyzer, sv, mod, name))
+    if !isdefined(mod, name)
+        add_new_report!(sv.result, GlobalUndefVarErrorReport(analyzer, sv, mod, name))
+        return true
+    end
+    return false
 end
-
 function (::BasicPass)(::Type{GlobalUndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, mod::Module, name::Symbol)
-    is_corecompiler_undefglobal(mod, name) && return
-    add_new_report!(sv.result, GlobalUndefVarErrorReport(analyzer, sv, mod, name))
+    if !isdefined(mod, name)
+        if !is_corecompiler_undefglobal(mod, name)
+            add_new_report!(sv.result, GlobalUndefVarErrorReport(analyzer, sv, mod, name))
+            return true
+        end
+    end
+    return false
 end
 
 """
@@ -478,7 +516,7 @@ function CC.abstract_eval_value(analyzer::JETAnalyzer, @nospecialize(e), vtypes:
             ReportPass(analyzer)(NonBooleanCondErrorReport, analyzer, sv, t)
             # if this condition leads to an "non-boolean (t) used in boolean context" error,
             # we can turn it into Bottom and bail out early
-            # TODO upstream this
+            # TODO upstream this ?
             if typeintersect(Bool, t) !== Bool
                 ret = Bottom
             end
@@ -506,43 +544,47 @@ function (::SoundPass)(::Type{NonBooleanCondErrorReport}, analyzer::JETAnalyzer,
         end
         if !isempty(ts)
             add_new_report!(sv.result, NonBooleanCondErrorReport(analyzer, sv, ts))
+            return true
         end
     else
         if !(t ⊑ Bool)
             add_new_report!(sv.result, NonBooleanCondErrorReport(analyzer, sv, t))
+            return true
         end
     end
+    return false
 end
 
 function (::BasicPass)(::Type{NonBooleanCondErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(t))
-    if isa(t, Union)
-        ts = Type[]
-        for t in Base.uniontypes(t)
-            if typeintersect(Bool, t) !== Bool
-                # TODO move this to abstractinterpretation.jl
-                if JETAnalysisParams(analyzer).strict_condition_check ||
-                   !(t <: Function || # !(::Function)
-                     t === Missing || # ==(::Missing, ::Any), ==(::Any, ::Missing), ...
-                     false)
+    if basicfilter(analyzer, sv)
+        if isa(t, Union)
+            ts = Type[]
+            for t in Base.uniontypes(t)
+                if typeintersect(Bool, t) !== Bool
                     push!(ts, t)
                 end
             end
-        end
-        if !isempty(ts)
-            add_new_report!(sv.result, NonBooleanCondErrorReport(analyzer, sv, ts))
-        end
-    else
-        if typeintersect(Bool, t) !== Bool
-            add_new_report!(sv.result, NonBooleanCondErrorReport(analyzer, sv, t))
+            if !isempty(ts)
+                add_new_report!(sv.result, NonBooleanCondErrorReport(analyzer, sv, ts))
+                return true
+            end
+        else
+            if typeintersect(Bool, t) !== Bool
+                add_new_report!(sv.result, NonBooleanCondErrorReport(analyzer, sv, t))
+                return true
+            end
         end
     end
+    return false
 end
 
 function (::SoundBasicPass)(::Type{InvalidConstantRedefinition}, analyzer::JETAnalyzer, sv::InferenceState, mod::Module, name::Symbol, @nospecialize(prev_t), @nospecialize(t))
     add_new_report!(sv.result, InvalidConstantRedefinition(analyzer, sv, mod, name, prev_t, t))
+    return true
 end
 function (::SoundBasicPass)(::Type{InvalidConstantDeclaration}, analyzer::JETAnalyzer, sv::InferenceState, mod::Module, name::Symbol)
     add_new_report!(sv.result, InvalidConstantDeclaration(analyzer, sv, mod, name))
+    return true
 end
 
 # XXX tfunc implementations in Core.Compiler are really not enough to catch invalid calls
@@ -558,13 +600,10 @@ function CC.builtin_tfunction(analyzer::JETAnalyzer, @nospecialize(f), argtypes:
         # reported even if they may be caught in actual execution;
         ReportPass(analyzer)(SeriousExceptionReport, analyzer, sv, argtypes)
 
-        # other general `throw` calls will be reported within `_typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)`
-        # only when they are not caught by control flow, which is judged by whether if the
-        # final return type of `sv` is annotated as `Bottom` or not, thus early return now
-        return ret
+        # other general `throw` calls will be handled within `_typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)`
+    else
+        ReportPass(analyzer)(InvalidBuiltinCallErrorReport, analyzer, sv, f, argtypes, ret)
     end
-
-    ReportPass(analyzer)(InvalidBuiltinCallErrorReport, analyzer, sv, f, argtypes, ret)
 
     return ret
 end
@@ -587,21 +626,28 @@ get_msg(T::Type{SeriousExceptionReport}, analyzer::JETAnalyzer, state, @nospecia
     string(first(split(sprint(showerror, err), '\n')))
 print_error_report(io, report::SeriousExceptionReport) = printlnstyled(io, "│ ", report.msg; color = ERROR_COLOR)
 
-function (::SoundBasicPass)(::Type{SeriousExceptionReport}, analyzer::JETAnalyzer, sv::InferenceState, argtypes::Vector{Any})
+(::BasicPass)(::Type{SeriousExceptionReport}, analyzer::JETAnalyzer, sv::InferenceState, argtypes::Vector{Any}) =
+    basicfilter(analyzer, sv) && report_serious_exception!(analyzer, sv, argtypes)
+(::SoundPass)(::Type{SeriousExceptionReport}, analyzer::JETAnalyzer, sv::InferenceState, argtypes::Vector{Any}) =
+    report_serious_exception!(analyzer, sv, argtypes) # any (non-serious) `throw` calls will be caught by the report pass for `UncaughtExceptionReport`
+function report_serious_exception!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Vector{Any})
     if length(argtypes) ≥ 1
         a = first(argtypes)
         if isa(a, Const)
             err = a.val
             if isa(err, UndefKeywordError)
                 add_new_report!(sv.result, SeriousExceptionReport(analyzer, sv, err, get_lin((sv, get_currpc(sv)))))
+                return true
             elseif isa(err, MethodError)
                 # ignore https://github.com/JuliaLang/julia/blob/7409a1c007b7773544223f0e0a2d8aaee4a45172/base/boot.jl#L261
                 if err.f !== Bottom
                     add_new_report!(sv.result, SeriousExceptionReport(analyzer, sv, err, get_lin((sv, get_currpc(sv)))))
+                    return true
                 end
             end
         end
     end
+    return false
 end
 
 """
@@ -621,7 +667,7 @@ get_msg(::Type{NoFieldErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @
     "type $(typ) has no field $(name)"
 print_error_report(io, report::NoFieldErrorReport) = printlnstyled(io, "│ ", report.msg; color = ERROR_COLOR)
 
-@reportdef struct DivideErrorReport <: InferenceErrorReport end
+@reportdef struct DivideErrorReport <: InvalidBuiltinCallErrorReport end
 let s = sprint(showerror, DivideError())
     global get_msg(::Type{DivideErrorReport}, analyzer::JETAnalyzer, sv::InferenceState) = s
 end
@@ -634,52 +680,15 @@ get_msg(::Type{UnimplementedBuiltinCallErrorReport}, analyzer::JETAnalyzer, sv::
     "invalid builtin function call"
 
 # TODO we do need sound versions of these functions
+# XXX for general case JET just relies on the (maybe too permissive) return type from native
+# tfuncs to report invalid builtin calls and probably there're lots of false negatives
 
-# XXX: for general case, JET just relies on the (maybe too persmissive) return type
-# from native tfuncs to report invalid builtin calls and probably there're lots of
-# false negatives
-function handle_unimplemented_builtins!(analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Vector{Any}, @nospecialize(ret))
-    if ret === Bottom
-        @assert !(f === throw) "`throw` calls shuold be handled by report passes of `SeriousExceptionReport` or `UncaughtExceptionReport`"
-
-        add_new_report!(sv.result, UnimplementedBuiltinCallErrorReport(analyzer, sv, argtypes))
-    end
-end
-
-# fallback for unimplemented tfuncs, eliminate me in the future
-function (::SoundBasicPass)(::Type{InvalidBuiltinCallErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f::Builtin), argtypes::Vector{Any}, @nospecialize(ret))
-    handle_unimplemented_builtins!(analyzer, sv, f, argtypes, ret)
-end
-
-function (::SoundBasicPass)(::Type{InvalidBuiltinCallErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, f::typeof(getfield), argtypes::Vector{Any}, @nospecialize(ret))
-    if 2 ≤ length(argtypes) ≤ 3
-        obj, fld = argtypes
-        if isa(fld, Const)
-            name = fld.val
-            if isa(name, Symbol)
-                if isa(obj, Const) && (mod = obj.val; isa(mod, Module))
-                    if !isdefined(mod, name)
-                        # bypass for report pass for undefined global reference
-                        ReportPass(analyzer)(GlobalUndefVarErrorReport, analyzer, sv, mod, name)
-                        return
-                    end
-                elseif ret === Bottom
-                    # general case when an error is detected by the native `getfield_tfunc`
-                    typ = widenconst(obj)
-                    add_new_report!(sv.result, NoFieldErrorReport(analyzer, sv, typ, name))
-                    return
-                end
-            end
-        end
-    end
-
-    handle_unimplemented_builtins!(analyzer, sv, f, argtypes, ret)
-end
-
-function (::SoundBasicPass)(::Type{InvalidBuiltinCallErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, f::IntrinsicFunction, argtypes::Vector{Any}, @nospecialize(ret))
-    # TODO this check might be better in its own report pass, say `NumericalPass`
-    if length(argtypes) == 2
-        if f === Intrinsics.checked_sdiv_int ||
+function (::BasicPass)(::Type{InvalidBuiltinCallErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Vector{Any}, @nospecialize(ret))
+    @assert !(f === throw) "`throw` calls shuold be handled either by the report pass of `SeriousExceptionReport` or `UncaughtExceptionReport`"
+    if f === getfield
+        maybe_report_getfield!(analyzer, sv, argtypes, ret) && return true
+    elseif length(argtypes) == 2 &&
+           f === Intrinsics.checked_sdiv_int ||
            f === Intrinsics.checked_srem_int ||
            f === Intrinsics.checked_udiv_int ||
            f === Intrinsics.checked_urem_int ||
@@ -687,16 +696,65 @@ function (::SoundBasicPass)(::Type{InvalidBuiltinCallErrorReport}, analyzer::JET
            f === Intrinsics.srem_int ||
            f === Intrinsics.udiv_int ||
            f === Intrinsics.urem_int
-            a = argtypes[2]
-            t = widenconst(a)
-            if isprimitivetype(t) && t <: Number
-                if isa(a, Const) && a.val === zero(t)
-                    add_new_report!(sv.result, DivideErrorReport(analyzer, sv))
-                    return
+        maybe_report_devide_error!(analyzer, sv, argtypes, ret) && return true
+    end
+    return handle_invalid_builtins!(analyzer, sv, argtypes, ret)
+end
+
+function maybe_report_getfield!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Vector{Any}, @nospecialize(ret))
+    if 2 ≤ length(argtypes) ≤ 3
+        obj, fld = argtypes
+        if isa(fld, Const)
+            name = fld.val
+            if isa(name, Symbol)
+                if isa(obj, Const) && (mod = obj.val; isa(mod, Module))
+                    # bypass to the report pass for undefined global reference
+                    if ReportPass(analyzer)(GlobalUndefVarErrorReport, analyzer, sv, mod, name)
+                        return true
+                    end
+                elseif ret === Bottom
+                    # report invalid field access detected by the native `getfield_tfunc`
+                    typ = widenconst(obj)
+                    add_new_report!(sv.result, NoFieldErrorReport(analyzer, sv, typ, name))
+                    return true
                 end
             end
         end
     end
+    return false
+end
 
-    handle_unimplemented_builtins!(analyzer, sv, f, argtypes, ret)
+# TODO this check might be better in its own report pass, say `NumericalPass`
+function maybe_report_devide_error!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Vector{Any}, @nospecialize(ret))
+    a = argtypes[2]
+    t = widenconst(a)
+    if isprimitivetype(t) && t <: Number
+        if isa(a, Const) && a.val === zero(t)
+            add_new_report!(sv.result, DivideErrorReport(analyzer, sv))
+            return true
+        end
+    end
+    return false
+end
+
+function handle_invalid_builtins!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Vector{Any}, @nospecialize(ret))
+    # we don't bail out using `basicfilter` here because the native tfuncs are already very permissive
+    if ret === Bottom
+        add_new_report!(sv.result, UnimplementedBuiltinCallErrorReport(analyzer, sv, argtypes))
+        return true
+    end
+    return false
+end
+
+function (::SoundPass)(::Type{InvalidBuiltinCallErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Vector{Any}, @nospecialize(ret))
+    return BasicPass()(InvalidBuiltinCallErrorReport, analyzer, sv, f, argtypes, ret)
+
+    # TODO enable this sound pass:
+    # - make `stmt_effect_free` work on `InfernceState`
+    # - sort out `argextype` interface to make it accept `InfernceState`
+    @assert !(f === throw) "`throw` calls shuold be handled either by the report pass of `SeriousExceptionReport` or `UncaughtExceptionReport`"
+    stmt = get_stmt((sv, get_currpc(sv)))
+    if !CC.stmt_effect_free(stmt, ret, sv, sv.sptypes)
+        add_new_report!(sv.result, UnsoundBuiltinCallErrorReport(analyzer, sv, argtypes))
+    end
 end

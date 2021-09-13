@@ -365,38 +365,39 @@ const VIRTUAL_MODULE_NAME = :JETVirtualModule
 gen_virtual_module(root = Main; name = VIRTUAL_MODULE_NAME) =
     Core.eval(root, :(module $(gensym(name)) end))::Module
 
+# NOTE when `@generated` function has been defined, signatures of both its entry and
+# generator should have been collected, and we will just analyze them separately
+# if code generation has failed given the entry method signature, the overload of
+# `InferenceState(..., ::AbstractAnalyzer)` will collect `GeneratorErrorReport`
 function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProcessResult)
     n = length(res.toplevel_signatures)
     succeeded = 0
-    clearline(io) = print(io, '\r')
     for (i, tt) in enumerate(res.toplevel_signatures)
         mms = _methods_by_ftype(tt, -1, get_world_counter())
-        isa(mms, Bool) && @goto failed
-
-        filter!(mm::MethodMatch->mm.spec_types===tt, mms)
-        if length(mms) == 1
-            succeeded += 1
-            with_toplevel_logger(analyzer; pre=clearline) do io
-                (i == n ? println : print)(io, "analyzing from top-level definitions ... $succeeded/$n")
+        if isa(mms, Vector{Any})
+            filter!(mm::MethodMatch->mm.spec_types===tt, mms)
+            if length(mms) == 1
+                succeeded += 1
+                with_toplevel_logger(analyzer; pre=clearline) do io
+                    (i == n ? println : print)(io, "analyzing from top-level definitions ... $succeeded/$n")
+                end
+                analyzer = AbstractAnalyzer(analyzer, _CONCRETIZED, _TOPLEVELMOD)
+                analyzer, result = analyze_method!(
+                    analyzer, (first(mms)::MethodMatch).method;
+                    # JETAnalyzer{BasicPass}: don't report errors unless this frame is concrete
+                    set_entry = false)
+                append!(res.inference_error_reports, get_reports(result))
+                continue
             end
-            analyzer = AbstractAnalyzer(analyzer, _CONCRETIZED, _TOPLEVELMOD)
-            mm = first(mms)::MethodMatch
-            # when `@generated` function has been defined, signatures of both its entry and
-            # its generator should have been collected, and we will just analyze them separately
-            # if code generation from the entry has failed given the method signature (it's higly possible),
-            # the overload of `InferenceState(..., ::AbstractAnalyzer)` should have reported errors
-            # and so here we just ignore that
-            analyzer, result = analyze_method!(analyzer, mm.method)
-            append!(res.inference_error_reports, get_reports(result))
-            continue
         end
-
-        @label failed
+        # something went wrong
         with_toplevel_logger(analyzer, ≥(DEBUG_LOGGER_LEVEL); pre=clearline) do io
             println(io, "couldn't find a single method matching the signature `$tt`")
         end
     end
+    return nothing
 end
+clearline(io) = print(io, '\r')
 
 function _virtual_process!(s::AbstractString,
                            filename::AbstractString,
@@ -851,7 +852,7 @@ function find_iterblocks(src) end
 function add_iterblocks!(cocretize, src, edges, iterblocks) end
 
 # implementation of https://github.com/aviatesk/JET.jl/issues/196
-function select_dependencies!(concretize::AbstractVector{Bool}, src::CodeInfo, edges::CodeEdges)
+function select_dependencies!(concretize, src, edges)
     debug = false
     debug && println("initially selected:", findall(concretize))
 

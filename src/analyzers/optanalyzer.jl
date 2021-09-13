@@ -213,18 +213,18 @@ function CC.finish(frame::InferenceState, analyzer::OptAnalyzer)
         end
     end
     if !skip && analyzer.skip_nonconcrete_calls
-        if !isdispatchtuple(frame.linfo.specTypes)
+        if !isconcreteframe(frame)
             skip |= true
         end
     end
 
     push!(analyzer.__frame_checks, skip)
     if !skip
-        if isa(get_source(frame.result), OptimizationState)
-            ReportPass(analyzer)(CapturedVariableReport, analyzer, frame)
-        else
-            ReportPass(analyzer)(OptimizationFailureReport, analyzer, frame.result)
-        end
+        # report pass for captured variables
+        ReportPass(analyzer)(CapturedVariableReport, analyzer, frame)
+
+        # report pass for optimization failure due to recursive calls, etc.
+        ReportPass(analyzer)(OptimizationFailureReport, analyzer, frame.result)
     end
 
     return ret
@@ -237,6 +237,7 @@ get_msg(::Type{CapturedVariableReport}, analyzer, s, name::Union{Nothing,Symbol}
     isnothing(name) ? "captured variable detected" : "captured variable `$name` detected"
 print_error_report(io, report::CapturedVariableReport) = printlnstyled(io, "│ ", report.msg; color = ERROR_COLOR)
 function (::OptAnalysisPass)(::Type{CapturedVariableReport}, analyzer::OptAnalyzer, frame::InferenceState)
+    local reported = false
     for (pc, typ) in enumerate(frame.src.ssavaluetypes)
         if typ === Core.Box
             stmt = frame.src.code[pc]
@@ -248,15 +249,21 @@ function (::OptAnalysisPass)(::Type{CapturedVariableReport}, analyzer::OptAnalyz
                     name = nothing
                 end
                 add_new_report!(frame.result, CapturedVariableReport(analyzer, (frame, pc), name))
+                reported |= true
             end
         end
     end
+    return reported
 end
 
 @reportdef struct OptimizationFailureReport <: InferenceErrorReport end
 get_msg(::Type{OptimizationFailureReport}, args...) = "failed to optimize"
 function (::OptAnalysisPass)(::Type{OptimizationFailureReport}, analyzer::OptAnalyzer, caller::InferenceResult)
-    add_new_report!(caller, OptimizationFailureReport(analyzer, caller.linfo))
+    if !isa(get_source(caller), OptimizationState)
+        add_new_report!(caller, OptimizationFailureReport(analyzer, caller.linfo))
+        return true
+    end
+    return false
 end
 
 function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState)
@@ -267,25 +274,27 @@ function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState)
 
     ret = @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
 
-    if !popfirst!(analyzer.__frame_checks)
-        if isa(src, Const) # the optimization was very successful, nothing to report
-        elseif isa(src, OptimizationState) # compiler cached the optimized IR, just analyze it
-            ReportPass(analyzer)(RuntimeDispatchReport, analyzer, caller, src)
-        elseif isnothing(src) # the optimization didn't happen, `OptAnalyzer` should have reported `OptimizationFailureReport` for this frame
-        else
-            # we should already report `OptimizationFailureReport` for this case,
-            # and thus this pass should never happen
-            Core.eval(@__MODULE__, :(ret = $ret))
-            throw("unexpected state happened, inspect $(@__MODULE__).ret") # this pass should never happen
-        end
-    end
+    popfirst!(analyzer.__frame_checks) || ReportPass(analyzer)(RuntimeDispatchReport, analyzer, caller, src)
 
     return ret
 end
 
 @reportdef struct RuntimeDispatchReport <: InferenceErrorReport end
 get_msg(::Type{RuntimeDispatchReport}, analyzer, s) = "runtime dispatch detected"
-function (::OptAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::OptAnalyzer, caller::InferenceResult, opt::OptimizationState)
+function (::OptAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::OptAnalyzer, caller::InferenceResult, @nospecialize(src))
+    if isa(src, Const) # the optimization was very successful, nothing to report
+        return false
+    elseif isnothing(src) # the optimization didn't happen, `OptAnalyzer` should have reported `OptimizationFailureReport` for this frame
+        return false
+    elseif isa(src, OptimizationState) # compiler cached the optimized IR, just analyze it
+        opt = src
+    else
+        # we should already report `OptimizationFailureReport` for this case,
+        # and thus this pass should never happen
+        Core.eval(@__MODULE__, :(src = $src))
+        throw("unexpected state happened, inspect `$(@__MODULE__).src`") # this pass should never happen
+    end
+
     (; src, sptypes, slottypes) = opt
 
     # branch on https://github.com/JuliaLang/julia/pull/42149
@@ -295,6 +304,7 @@ function (::OptAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::OptAnalyze
             CC.find_throw_blocks(src.code) : nothing
     end
 
+    local reported = false
     for (pc, x) in enumerate(src.code)
         # branch on https://github.com/JuliaLang/julia/pull/42149
         @static if isdefined(CC, :mark_throw_blocks!)
@@ -312,9 +322,11 @@ function (::OptAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::OptAnalyze
             ft <: Builtin && continue # ignore `:call`s of language intrinsics
             if analyzer.function_filter(ft)
                 add_new_report!(caller, RuntimeDispatchReport(analyzer, (opt, pc)))
+                reported |= true
             end
         end
     end
+    return reported
 end
 
 # entries
