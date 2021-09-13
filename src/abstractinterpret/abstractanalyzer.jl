@@ -60,10 +60,6 @@ ReportPass(analyzer::JETAnalyzer) =
 """
 abstract type AbstractAnalyzer <: AbstractInterpreter end
 
-Base.show(io::IO, analyzer::AbstractAnalyzer) = print(io, "AbstractAnalyzer")
-Base.show(io::IO, ::MIME"application/prs.juno.inline", analyzer::AbstractAnalyzer) =
-    return analyzer
-
 # interface 1
 # -----------
 # 1. `NewAnalyzer(; jetconfigs...) -> NewAnalyzer`
@@ -79,96 +75,6 @@ end
 # interface 2
 # -----------
 # 2. `AnalyzerState(analyzer::NewAnalyzer) -> AnalyzerState`
-
-# TODO move this to `JETAnalyzer`
-"""
-Configurations for abstract interpretation performed by JET.
-These configurations will be active for all the entries.
-
----
-- `strict_condition_check::Bool = false` \\
-  Enables strict condition check.
-  JET reports an error if a condition expression type is "non-boolean". In a case when
-  the condition type is `Union`, JET will report if either of union split case is
-  non-boolean type, but this can lead to lots of false positive error reports when the
-  code is not well-typed, because Julia `Base` defines generic functions that are commonly
-  used at a conditional context but also may return "non-boolean" values, e.g.:
-  - `!(::Function) -> Function`
-  - `!(::Missing) -> Missing`
-  - `==(::Missing, ::Any) -> Missing`
-  - `==(::Any, ::Missing) -> Missing`
-  and thus loosely-typed conditional expression often becomes e.g. `Union{Bool, Missing}`,
-  and consequently JET will report it as "non-boolean" type
-  (NOTE: in Julia `Missing` is certainly not valid conditional type).
-  If this configuration is set to `false`, JET enables an heuristic to avoid those false
-  positive error reports and won't report an error if a condition expression type is
-  `Union` and either of its union split case is `Function` or `Missing`.
-
-  The effect of this configuration can be described with the following examples:
-
-  * with `strict_condition_check::Bool = false` (default)
-    ```julia-repl
-    julia> test_f() = Dict('a' => 1, :b => 2) # ::Dict{Any,Int}
-    test_f (generic function with 1 method)
-
-    julia> @report_call test_f()
-    No errors !
-    Dict{Any, Int64}
-    ```
-
-  * with `strict_condition_check::Bool = true`
-    ```julia-repl
-    julia> test_f() = Dict('a' => 1, :b => 2) # ::Dict{Any,Int}
-    test_f (generic function with 1 method)
-
-    julia> @report_call strict_condition_check = true test_f()
-    ═════ 1 possible error found ═════
-    ┌ @ REPL[2]:1 Main.Dict(Main.=>('a', 1), Main.=>(:b, 2))
-    │┌ @ dict.jl:125 Base.Dict(ps)
-    ││┌ @ dict.jl:129 Base.dict_with_eltype(#308, kv, Base.eltype(kv))
-    │││┌ @ abstractdict.jl:539 Base.grow_to!(Base.dict_with_eltype(DT_apply, _5), kv)
-    ││││┌ @ dict.jl:145 Base.grow_to!(dest2, itr, st)
-    │││││┌ @ dict.jl:159 Base.setindex!(new, v, k)
-    ││││││┌ @ dict.jl:383 Base.ht_keyindex2!(h, key)
-    │││││││┌ @ dict.jl:328 goto %35 if not Base.isequal(key, Base.getindex(keys, index))
-    ││││││││ for 1 of union split cases, non-boolean (Missing) used in boolean context: goto %35 if not Base.isequal(key::Symbol, Base.getindex(keys::Vector{Any}, index::Int64)::Any)::Union{Missing, Bool}
-    │││││││└───────────────
-    Dict{Any, Int64}
-    ```
-
----
----
-
-You can also configure any of the keyword parameters that `$InferenceParams` or `$OptimizationParams` can take,
-e.g. `max_methods::Int = 3`, `union_splitting::Int = 4`.
-Listed below are selections of those parameters that can have a potent influence on JET analysis.
-
----
-- `ipo_constant_propagation::Bool = true` \\
-  Enables constant propagation in abstract interpretation.
-  It is _**highly**_ recommended that you keep this configuration `true` to get reasonable analysis result,
-  because constant propagation can cut off lots of false positive errorenous code paths and
-  thus produce more accurate and useful analysis results.
----
-- `aggressive_constant_propagation::Bool = true` \\
-  If `true`, JET will try to do constant propagation more "aggressively".
-  It can lead to more accurate analysis as explained above, but also it may incur a performance cost.
-  JET by default enables this configuration to get more accurate analysis result.
----
-- `unoptimize_throw_blocks::Bool = false` \\
-  Turn this on to skip analysis on code blocks that will eventually lead to a `throw` call.
-  This configuration improves the analysis performance, but it's better to be turned off
-  to get a "proper" analysis result, just because there may be other errors even in those "throw blocks".
----
-"""
-struct JETAnalysisParams
-    strict_condition_check::Bool
-    @jetconfigurable function JETAnalysisParams(; strict_condition_check::Bool = false,
-                                                  )
-        return new(strict_condition_check,
-                   )
-    end
-end
 
 const LOGGER_LEVEL_KEY = :JET_LOGGER_LEVEL
 const INFO_LOGGER_LEVEL = 0
@@ -282,9 +188,7 @@ mutable struct AnalyzerState
 
     ## `AbstractAnalyzer` ##
 
-    # additional configurations for abstract interpretation
-    analysis_params::JETAnalysisParams
-
+    # identity hash key for this state
     param_key::UInt
 
     # temporal stash to keep reports that are collected within the currently-analyzed frame
@@ -305,6 +209,9 @@ mutable struct AnalyzerState
     # slots to represent toplevel global variables
     global_slots::Dict{Int,Symbol}
 
+    # some `AbstractAnalyzer` may want to use this inforamion
+    entry::Union{Nothing,MethodInstance}
+
     ## debug ##
 
     logger::JETLogger
@@ -322,29 +229,31 @@ for fld in fieldnames(AnalyzerState)
 end
 
 # constructor for fresh analysis
-@jetconfigurable function AnalyzerState(world::UInt     = get_world_counter();
-                                        analysis_params = nothing,
-                                        inf_params      = nothing,
-                                        opt_params      = nothing,
-                                        concretized     = _CONCRETIZED,
-                                        toplevelmod     = _TOPLEVELMOD,
-                                        global_slots    = _GLOBAL_SLOTS,
-                                        logger          = nothing,
-                                        depth           = 0,
+@jetconfigurable function AnalyzerState(world::UInt  = get_world_counter();
+                                        inf_params   = nothing,
+                                        opt_params   = nothing,
+                                        concretized  = _CONCRETIZED,
+                                        toplevelmod  = _TOPLEVELMOD,
+                                        global_slots = _GLOBAL_SLOTS,
+                                        logger       = nothing,
+                                        depth        = 0,
                                         jetconfigs...)
-    isnothing(analysis_params) && (analysis_params = JETAnalysisParams(; jetconfigs...))
-    isnothing(inf_params)      && (inf_params      = JETInferenceParams(; jetconfigs...))
-    isnothing(opt_params)      && (opt_params      = JETOptimizationParams(; jetconfigs...))
-    isnothing(logger)          && (logger          = JETLogger(; jetconfigs...))
+    isnothing(inf_params) && (inf_params = JETInferenceParams(; jetconfigs...))
+    isnothing(opt_params) && (opt_params = JETOptimizationParams(; jetconfigs...))
+    isnothing(logger)     && (logger     = JETLogger(; jetconfigs...))
 
-    return AnalyzerState(#=native::NativeInterpreter=# NativeInterpreter(world; inf_params, opt_params),
-                         #=analysis_params::JETAnalysisParams=# analysis_params,
-                         #=param_key::UInt=# get_param_key(analysis_params, inf_params),
-                         #=caller_cache::Vector{InferenceErrorReport}=# InferenceErrorReport[],
+    native       = NativeInterpreter(world; inf_params, opt_params)
+    param_key    = get_param_key(inf_params)
+    caller_cache = InferenceErrorReport[]
+
+    return AnalyzerState(#=native::NativeInterpreter=# native,
+                         #=param_key::UInt=# param_key,
+                         #=caller_cache::Vector{InferenceErrorReport}=# caller_cache,
                          #=cacher::Union{Nothing,InferenceResult}=# nothing,
                          #=concretized::BitVector=# concretized,
                          #=toplevelmod::Module=# toplevelmod,
                          #=global_slots::Dict{Int,Symbol}=# global_slots,
+                         #=entry::Union{Nothing,MethodInstance}=# nothing,
                          #=logger::JETLogger=# logger,
                          #=depth::Int=# depth,
                          )
@@ -357,6 +266,33 @@ const _TOPLEVELMOD  = __toplevelmod__
 const _GLOBAL_SLOTS = Dict{Int,Symbol}()
 
 # wrappers of `InferenceParams` and `OptimizationParams` that can accept JET configrations
+
+"""
+Configurations for abstract interpretation performed by JET.
+These configurations will be active for all the entries.
+
+You can configure any of the keyword parameters that `$InferenceParams` or `$OptimizationParams`
+can take, e.g. `max_methods::Int = 3`, `union_splitting::Int = 4`.
+Listed below are selections of those parameters that can have a potent influence on JET analysis.
+
+---
+- `ipo_constant_propagation::Bool = true` \\
+  Enables constant propagation in abstract interpretation.
+  It is _**highly**_ recommended that you keep this configuration `true` to get reasonable analysis result,
+  because constant propagation can cut off lots of false positive errorenous code paths and
+  thus produce more accurate and useful analysis results.
+---
+- `aggressive_constant_propagation::Bool = true` \\
+  If `true`, JET will try to do constant propagation more "aggressively".
+  It can lead to more accurate analysis as explained above, but also it may incur a performance cost.
+  JET by default enables this configuration to get more accurate analysis result.
+---
+- `unoptimize_throw_blocks::Bool = false` \\
+  Turn this on to skip analysis on code blocks that will eventually lead to a `throw` call.
+  This configuration improves the analysis performance, but it's better to be turned off
+  to get a "proper" analysis result, just because there may be other errors even in those "throw blocks".
+---
+"""
 JETInferenceParams(; ipo_constant_propagation::Bool        = true,
                      aggressive_constant_propagation::Bool = false,
                      unoptimize_throw_blocks::Bool         = true,
@@ -443,7 +379,6 @@ end
 # constructor for additional JET analysis in the middle of parent (non top-level) abstractinterpret
 function AbstractAnalyzer(analyzer::T) where {T<:AbstractAnalyzer}
     newstate = AnalyzerState(get_world_counter(analyzer);
-                             analysis_params = JETAnalysisParams(analyzer),
                              inf_params      = InferenceParams(analyzer),
                              opt_params      = OptimizationParams(analyzer),
                              logger          = JETLogger(analyzer),
@@ -459,7 +394,6 @@ function AbstractAnalyzer(analyzer::T, concretized, toplevelmod) where {T<:Abstr
     newstate = AnalyzerState(# update world age to take in newly added methods defined
                              # in a previous toplevel interpretation performed by `ConcreteInterpreter`
                              get_world_counter();
-                             analysis_params = JETAnalysisParams(analyzer),
                              inf_params      = InferenceParams(analyzer),
                              opt_params      = OptimizationParams(analyzer),
                              concretized     = concretized, # or construct partial `CodeInfo` from remaining abstract statements ?
@@ -541,6 +475,7 @@ function (rp::ReportPass)(T, @nospecialize(args...))
          T === InvalidConstantDeclaration)
         throw(MethodError(rp, (T, args...)))
     end
+    return false
 end
 
 # TODO separate this from `AbstractAnalyzer`
@@ -732,11 +667,8 @@ end # @static if IS_AFTER_42082
 # ================
 # AbstractAnalyzer specific APIs
 
-JETAnalysisParams(analyzer::AbstractAnalyzer) = get_analysis_params(analyzer)
-
-function get_param_key(analysis_params::JETAnalysisParams, inf_params::InferenceParams)
+function get_param_key(inf_params::InferenceParams)
     h = @static UInt === UInt64 ? 0xa49bd446c0a5d90e : 0xe45361ac
-    h = hash(analysis_params, h)
     h = hash(inf_params, h)
     return h
 end
