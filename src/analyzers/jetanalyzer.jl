@@ -24,7 +24,7 @@ end
     jetconfigs...)
     if isnothing(report_pass)
         # if `report_pass` isn't passed explicitly, here we configure it according to `mode`
-        report_pass = mode === :basic ? BasicPass() :
+        report_pass = mode === :basic ? BasicPass(; jetconfigs...) :
                       mode === :sound ? SoundPass() :
                       throw(ArgumentError("`mode` configuration should be either of `:basic` or `:sound`"))
     end
@@ -52,20 +52,32 @@ JETInterface.get_cache_key(analyzer::JETAnalyzer) =
 # TODO document the definitions of errors, elaborate the difference of these two passes
 
 """
+    BasicPass <: ReportPass
+
+`ReportPass` for the basic (default) `JETAnalyzer`'s error analysis.
+"""
+struct BasicPass{FF} <: ReportPass
+    function_filter::FF
+end
+function BasicPass(; function_filter = basic_function_filter,
+                     __jetconfigs...)
+    return BasicPass(function_filter)
+end
+
+function basic_function_filter(@nospecialize ft)
+    ft === typeof(Base.mapreduce_empty) && return false
+    ft === typeof(Base.reduce_empty) && return false
+    return true
+end
+
+"""
     SoundPass <: ReportPass
 
 `ReportPass` for the sound `JETAnalyzer`'s error analysis.
 """
 struct SoundPass <: ReportPass end
 
-"""
-    BasicPass <: ReportPass
-
-`ReportPass` for the basic (default) `JETAnalyzer`'s error analysis.
-"""
-struct BasicPass <: ReportPass end
-
-basicfilter(analyzer::JETAnalyzer, sv) =
+basic_filter(analyzer::JETAnalyzer, sv) =
     isconcreteframe(sv) || get_entry(analyzer) === get_linfo(sv) # `report_call` may start analysis with abstract signature
 
 # `SoundPass` is still WIP, we may use it to implement both passes at once for the meantime
@@ -272,23 +284,32 @@ function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer, @nospecialize(f),
     end
     # report passes for no matching methods error
     if isa(info, UnionSplitInfo)
-        ReportPass(analyzer)(NoMethodErrorReport, analyzer, sv, info, argtypes)
+        ReportPass(analyzer)(NoMethodErrorReport, analyzer, sv, info, argtypes, atype)
     elseif isa(info, MethodMatchInfo)
-        ReportPass(analyzer)(NoMethodErrorReport, analyzer, sv, info, atype)
+        ReportPass(analyzer)(NoMethodErrorReport, analyzer, sv, info, argtypes, atype)
     end
 
     return ret
 end
 
-(::BasicPass)(::Type{NoMethodErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, info::UnionSplitInfo, argtypes::Vector{Any}) =
-    basicfilter(analyzer, sv) && report_no_method_error_for_union_split!(analyzer, sv, info, argtypes)
-(::SoundPass)(::Type{NoMethodErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, info::UnionSplitInfo, argtypes::Vector{Any}) =
-    report_no_method_error_for_union_split!(analyzer, sv, info, argtypes)
-function report_no_method_error_for_union_split!(analyzer::JETAnalyzer, sv::InferenceState, info::UnionSplitInfo, argtypes::Vector{Any})
+function (rp::BasicPass)(
+    ::Type{NoMethodErrorReport}, analyzer::JETAnalyzer, sv::InferenceState,
+    info::UnionSplitInfo, argtypes::Vector{Any}, @nospecialize(_))
+    basic_filter(analyzer, sv) || return false
+    ft = widenconst(first(argtypes))
+    rp.function_filter(ft) || return false
+    return report_no_method_error_for_union_split!(analyzer, sv, info, argtypes)
+end
+function (::SoundPass)(
+    ::Type{NoMethodErrorReport}, analyzer::JETAnalyzer, sv::InferenceState,
+    info::UnionSplitInfo, argtypes::Vector{Any}, @nospecialize(_))
+    return report_no_method_error_for_union_split!(analyzer, sv, info, argtypes)
+end
+function report_no_method_error_for_union_split!(
+    analyzer::JETAnalyzer, sv::InferenceState, info::UnionSplitInfo, argtypes::Vector{Any})
     # check each match for union-split signature
     split_argtypes = nothing
     ts = nothing
-
     for (i, matchinfo) in enumerate(info.matches)
         if is_empty_match(matchinfo)
             isnothing(split_argtypes) && (split_argtypes = switchtupleunion(argtypes))
@@ -297,7 +318,6 @@ function report_no_method_error_for_union_split!(analyzer::JETAnalyzer, sv::Infe
             push!(ts, sig_n)
         end
     end
-
     if !isnothing(ts)
         add_new_report!(sv.result, NoMethodErrorReport(analyzer, sv, ts))
         return true
@@ -305,11 +325,21 @@ function report_no_method_error_for_union_split!(analyzer::JETAnalyzer, sv::Infe
     return false
 end
 
-(::BasicPass)(::Type{NoMethodErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, info::MethodMatchInfo, @nospecialize(atype)) =
-    basicfilter(analyzer, sv) && report_no_method_error!(analyzer, sv, info, atype)
-(::SoundPass)(::Type{NoMethodErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, info::MethodMatchInfo, @nospecialize(atype)) =
-    report_no_method_error!(analyzer, sv, info, atype)
-function report_no_method_error!(analyzer::JETAnalyzer, sv::InferenceState, info::MethodMatchInfo, @nospecialize(atype))
+function (rp::BasicPass)(
+    ::Type{NoMethodErrorReport}, analyzer::JETAnalyzer, sv::InferenceState,
+    info::MethodMatchInfo, argtypes::Vector{Any}, @nospecialize(atype))
+    basic_filter(analyzer, sv) || return false
+    ft = widenconst(first(argtypes))
+    rp.function_filter(ft) || return false
+    return report_no_method_error!(analyzer, sv, info, atype)
+end
+function (::SoundPass)(
+    ::Type{NoMethodErrorReport}, analyzer::JETAnalyzer, sv::InferenceState,
+    info::MethodMatchInfo, argtypes::Vector{Any}, @nospecialize(atype))
+    return report_no_method_error!(analyzer, sv, info, atype)
+end
+function report_no_method_error!(
+    analyzer::JETAnalyzer, sv::InferenceState, info::MethodMatchInfo, @nospecialize(atype))
     if is_empty_match(info)
         add_new_report!(sv.result, NoMethodErrorReport(analyzer, sv, atype))
         return true
@@ -555,7 +585,7 @@ function (::SoundPass)(::Type{NonBooleanCondErrorReport}, analyzer::JETAnalyzer,
 end
 
 function (::BasicPass)(::Type{NonBooleanCondErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(t))
-    if basicfilter(analyzer, sv)
+    if basic_filter(analyzer, sv)
         if isa(t, Union)
             ts = Type[]
             for t in Base.uniontypes(t)
@@ -626,7 +656,7 @@ get_msg(T::Type{SeriousExceptionReport}, analyzer::JETAnalyzer, state, @nospecia
 print_error_report(io, report::SeriousExceptionReport) = printlnstyled(io, "│ ", report.msg; color = ERROR_COLOR)
 
 (::BasicPass)(::Type{SeriousExceptionReport}, analyzer::JETAnalyzer, sv::InferenceState, argtypes::Vector{Any}) =
-    basicfilter(analyzer, sv) && report_serious_exception!(analyzer, sv, argtypes)
+    basic_filter(analyzer, sv) && report_serious_exception!(analyzer, sv, argtypes)
 (::SoundPass)(::Type{SeriousExceptionReport}, analyzer::JETAnalyzer, sv::InferenceState, argtypes::Vector{Any}) =
     report_serious_exception!(analyzer, sv, argtypes) # any (non-serious) `throw` calls will be caught by the report pass for `UncaughtExceptionReport`
 function report_serious_exception!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Vector{Any})
@@ -736,7 +766,7 @@ function maybe_report_devide_error!(analyzer::JETAnalyzer, sv::InferenceState, a
 end
 
 function handle_invalid_builtins!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Vector{Any}, @nospecialize(ret))
-    # we don't bail out using `basicfilter` here because the native tfuncs are already very permissive
+    # we don't bail out using `basic_filter` here because the native tfuncs are already very permissive
     if ret === Bottom
         add_new_report!(sv.result, InvalidBuiltinCallErrorReport(analyzer, sv, argtypes))
         return true
