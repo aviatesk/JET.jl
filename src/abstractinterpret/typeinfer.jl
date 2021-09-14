@@ -171,7 +171,23 @@ function CC.abstract_call_method(analyzer::AbstractAnalyzer, method::Method, @no
 
     collect_callee_reports!(analyzer, sv)
 
+    @static if VERSION < v"1.8.0-DEV.510"
+        # manually take in https://github.com/JuliaLang/julia/pull/42195
+        if method === ISEQUAL_ANY_ANY && ret.rt === Union{Bool,Missing}
+            ret = MethodCallResult(Bool, ret.edgecycle, ret.edgelimited, ret.edge)
+        end
+    end
+
     return ret
+end
+
+@static if VERSION < v"1.8.0-DEV.510"
+    # manually take in https://github.com/JuliaLang/julia/pull/42195
+    const ISEQUAL_ANY_ANY = let
+        ms = methods(isequal)
+        i = findfirst(m->m.sig===Tuple{typeof(isequal),Any,Any}, ms)::Int
+        ms[i]
+    end
 end
 
 function CC.abstract_call_method_with_const_args(analyzer::AbstractAnalyzer, result::MethodCallResult,
