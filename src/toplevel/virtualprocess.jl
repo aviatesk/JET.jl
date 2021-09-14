@@ -731,7 +731,7 @@ struct ActualErrorWrapped <: ToplevelErrorReport
     # default constructor
     ActualErrorWrapped(err, st, file, line) = new(err, st, file, line)
 
-    # bypass syntax error
+    # forward syntax error
     function ActualErrorWrapped(err::ErrorException, st, file, line)
         return if startswith(err.msg, "syntax: ")
             SyntaxErrorReport(err.msg, file, line)

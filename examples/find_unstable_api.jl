@@ -107,7 +107,7 @@ CC.may_optimize(analyzer::UnstableAPIAnalyzer) = return false
 # but except the report of undefined global references (i.e. `GlobalUndefVarErrorReport`).
 # This overload allow us to find code that falls into the category 1.
 function (::UnstableAPIAnalysisPass)(T::Type{GlobalUndefVarErrorReport}, analyzer, state, @nospecialize(spec_args...))
-    BasicPass()(T, analyzer, state, spec_args...) # bypass to JET's default report pass
+    BasicPass()(T, analyzer, state, spec_args...) # forward to JET's default report pass
 end
 
 # And now we will define new [`InferenceErrorReport`](@ref) report type `UnstableAPI`,

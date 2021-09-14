@@ -440,7 +440,7 @@ struct IgnoreAllExceptGlobalUndefVar <: ReportPass end
 # ignores all the reports analyzed by `JETAnalyzer`
 (::IgnoreAllExceptGlobalUndefVar)(::Type{<:InferenceErrorReport}, @nospecialize(_...)) = return
 
-# bypass to `BasicPass` to collect `GlobalUndefVarErrorReport`
+# forward to `BasicPass` to collect `GlobalUndefVarErrorReport`
 function (::IgnoreAllExceptGlobalUndefVar)(::Type{GlobalUndefVarErrorReport}, @nospecialize(args...))
     BasicPass()(GlobalUndefVarErrorReport, args...)
 end
@@ -627,7 +627,7 @@ CC.verbose_stmt_info(analyzer::AbstractAnalyzer) = false
 
 Implements inlining policy for `AbstractAnalyzer`.
 Since `AbstractAnalyzer` works on `InferenceResult` whose `src` field keeps
-[`JETResult`](@ref) or [`JETCachedResult`](@ref), this implementation just bypasses
+[`JETResult`](@ref) or [`JETCachedResult`](@ref), this implementation just forwards
 their wrapped source to `inlining_policy(::AbstractInterpreter, ::Any, ::UInt8)`.
 """
 function CC.inlining_policy(
@@ -649,7 +649,7 @@ else # @static if IS_AFTER_42082
 
 `jet_inlining_policy` implements `Core.Compiler.inlining_policy` for `AbstractAnalyzer`.
 Since `AbstractAnalyzer` works on `InferenceResult` whose `src` field keeps
-[`JETResult`](@ref) or [`JETCachedResult`](@ref), `jet_inlining_policy` bypasses
+[`JETResult`](@ref) or [`JETCachedResult`](@ref), `jet_inlining_policy` forwards
 their wrapped source to `Core.Compiler.default_inlining_policy`.
 """
 CC.inlining_policy(::AbstractAnalyzer) = jet_inlining_policy

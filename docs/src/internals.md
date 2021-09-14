@@ -51,7 +51,7 @@ JET.AbstractGlobal
 ```
 
 
-## Analysis Results
+## [Analysis Result](@id analysis-result)
 
 ```@docs
 JET.JETToplevelResult

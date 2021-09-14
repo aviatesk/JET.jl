@@ -736,7 +736,7 @@ function maybe_report_getfield!(analyzer::JETAnalyzer, sv::InferenceState, argty
             name = fld.val
             if isa(name, Symbol)
                 if isa(obj, Const) && (mod = obj.val; isa(mod, Module))
-                    # bypass to the report pass for undefined global reference
+                    # forward to the report pass for undefined global reference
                     if ReportPass(analyzer)(GlobalUndefVarErrorReport, analyzer, sv, mod, name)
                         return true
                     end
