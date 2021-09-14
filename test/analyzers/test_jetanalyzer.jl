@@ -600,7 +600,7 @@ end
     end
     @test length(get_reports(result)) === 1
     report = first(get_reports(result))
-    @test report isa UnimplementedBuiltinCallErrorReport &&
+    @test report isa InvalidBuiltinCallErrorReport &&
         widenconst.(report.argtypes) == [Int, Type{Int}, Any]
 
     @testset "constant propagation" begin
@@ -640,7 +640,7 @@ end
             getfield(a)
         end
         @test length(get_reports(result)) == 1
-        @test first(get_reports(result)) isa UnimplementedBuiltinCallErrorReport
+        @test first(get_reports(result)) isa InvalidBuiltinCallErrorReport
     end
 end
 

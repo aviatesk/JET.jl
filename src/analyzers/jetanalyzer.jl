@@ -65,9 +65,8 @@ struct SoundPass <: ReportPass end
 """
 struct BasicPass <: ReportPass end
 
-# the `isentry` check is useful when entering analysis with abstract types
 basicfilter(analyzer::JETAnalyzer, sv) =
-    isconcreteframe(sv) || get_entry(analyzer) === get_linfo(sv)
+    isconcreteframe(sv) || get_entry(analyzer) === get_linfo(sv) # `report_call` may start analysis with abstract signature
 
 # `SoundPass` is still WIP, we may use it to implement both passes at once for the meantime
 const SoundBasicPass = Union{SoundPass,BasicPass}
@@ -602,7 +601,7 @@ function CC.builtin_tfunction(analyzer::JETAnalyzer, @nospecialize(f), argtypes:
 
         # other general `throw` calls will be handled within `_typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)`
     else
-        ReportPass(analyzer)(InvalidBuiltinCallErrorReport, analyzer, sv, f, argtypes, ret)
+        ReportPass(analyzer)(BuiltinErrorReport, analyzer, sv, f, argtypes, ret)
     end
 
     return ret
@@ -651,15 +650,14 @@ function report_serious_exception!(analyzer::JETAnalyzer, sv::InferenceState, ar
 end
 
 """
-    InvalidBuiltinCallErrorReport
+    BuiltinErrorReport
 
-Represents errors caused by invalid builtin-function calls.
-Technically they're defined as those error points that should be caught within
-`Core.Compiler.builtin_tfunction`.
+Represents errors caused by builtin-function calls.
+Technically they're defined as those error points that can be caught within `Core.Compiler.builtin_tfunction`.
 """
-abstract type InvalidBuiltinCallErrorReport <: InferenceErrorReport end
+abstract type BuiltinErrorReport <: InferenceErrorReport end
 
-@reportdef struct NoFieldErrorReport <: InvalidBuiltinCallErrorReport
+@reportdef struct NoFieldErrorReport <: BuiltinErrorReport
     @nospecialize(typ::Type)
     name::Symbol
 end
@@ -667,23 +665,23 @@ get_msg(::Type{NoFieldErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @
     "type $(typ) has no field $(name)"
 print_error_report(io, report::NoFieldErrorReport) = printlnstyled(io, "│ ", report.msg; color = ERROR_COLOR)
 
-@reportdef struct DivideErrorReport <: InvalidBuiltinCallErrorReport end
+@reportdef struct DivideErrorReport <: BuiltinErrorReport end
 let s = sprint(showerror, DivideError())
     global get_msg(::Type{DivideErrorReport}, analyzer::JETAnalyzer, sv::InferenceState) = s
 end
 print_error_report(io, report::DivideErrorReport) = printlnstyled(io, "│ ", report.msg; color = ERROR_COLOR)
 
-@reportdef struct UnimplementedBuiltinCallErrorReport <: InvalidBuiltinCallErrorReport
+@reportdef struct InvalidBuiltinCallErrorReport <: BuiltinErrorReport
     argtypes::Vector{Any}
 end
-get_msg(::Type{UnimplementedBuiltinCallErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(args...)) =
+get_msg(::Type{InvalidBuiltinCallErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(args...)) =
     "invalid builtin function call"
 
 # TODO we do need sound versions of these functions
 # XXX for general case JET just relies on the (maybe too permissive) return type from native
 # tfuncs to report invalid builtin calls and probably there're lots of false negatives
 
-function (::BasicPass)(::Type{InvalidBuiltinCallErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Vector{Any}, @nospecialize(ret))
+function (::BasicPass)(::Type{BuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Vector{Any}, @nospecialize(ret))
     @assert !(f === throw) "`throw` calls shuold be handled either by the report pass of `SeriousExceptionReport` or `UncaughtExceptionReport`"
     if f === getfield
         maybe_report_getfield!(analyzer, sv, argtypes, ret) && return true
@@ -740,14 +738,14 @@ end
 function handle_invalid_builtins!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Vector{Any}, @nospecialize(ret))
     # we don't bail out using `basicfilter` here because the native tfuncs are already very permissive
     if ret === Bottom
-        add_new_report!(sv.result, UnimplementedBuiltinCallErrorReport(analyzer, sv, argtypes))
+        add_new_report!(sv.result, InvalidBuiltinCallErrorReport(analyzer, sv, argtypes))
         return true
     end
     return false
 end
 
-function (::SoundPass)(::Type{InvalidBuiltinCallErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Vector{Any}, @nospecialize(ret))
-    return BasicPass()(InvalidBuiltinCallErrorReport, analyzer, sv, f, argtypes, ret)
+function (::SoundPass)(::Type{BuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Vector{Any}, @nospecialize(ret))
+    return BasicPass()(BuiltinErrorReport, analyzer, sv, f, argtypes, ret)
 
     # TODO enable this sound pass:
     # - make `stmt_effect_free` work on `InfernceState`
