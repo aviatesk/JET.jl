@@ -71,7 +71,7 @@ JETInterface.get_msg(::Type{OptimizationFailureReport}, args...) =
     return &quot;failed to optimize&quot; #: signature of this MethodInstance
 
 function (::DispatchAnalysisPass)(::Type{OptimizationFailureReport}, analyzer::DispatchAnalyzer, result::CC.InferenceResult)
-    add_new_report!(result, OptimizationFailureReport(analyzer, result.linfo))
+    add_new_report!(result, OptimizationFailureReport(result.linfo))
 end
 
 function CC.finish!(analyzer::DispatchAnalyzer, frame::CC.InferenceState)
@@ -98,7 +98,7 @@ function CC.finish!(analyzer::DispatchAnalyzer, frame::CC.InferenceState)
 end
 
 @reportdef struct RuntimeDispatchReport &lt;: InferenceErrorReport end
-JETInterface.get_msg(::Type{RuntimeDispatchReport}, analyzer, s) =
+JETInterface.get_msg(::Type{RuntimeDispatchReport}, _) =
     return &quot;runtime dispatch detected&quot; #: call signature
 
 function (::DispatchAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::DispatchAnalyzer, caller::CC.InferenceResult, opt::CC.OptimizationState)
@@ -107,7 +107,7 @@ function (::DispatchAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::Dispa
         if @isexpr(x, :call)
             ft = CC.widenconst(CC.argextype(first(x.args), opt.src, sptypes, slottypes))
             ft &lt;: Core.Builtin &amp;&amp; continue # ignore `:call`s of language intrinsics
-            add_new_report!(caller, RuntimeDispatchReport(analyzer, (opt, pc)))
+            add_new_report!(caller, RuntimeDispatchReport((opt, pc)))
         end
     end
 end</code></pre><h2 id="Usages"><a class="docs-heading-anchor" href="#Usages">Usages</a><a id="Usages-1"></a><a class="docs-heading-anchor-permalink" href="#Usages" title="Permalink"></a></h2><p>So we defined our analyzer. Let&#39;s setup utility analysis entries first:</p><pre><code class="language-julia hljs">using JET, InteractiveUtils # to use analysis entry points
@@ -191,4 +191,4 @@ end
 # `compute(30)` will take more than hours in actual execution, according to https://twitter.com/genkuroki/status/1401332946707963909,
 # but `@report_dispatch` will just do abstract interpretation of the call, so will finish instantly
 @report_dispatch frame_filter=module_filter(@__MODULE__) compute(30)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi"><span class="sgr92">No errors !</span>
-</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../generated-plugin-api/">« API</a><a class="docs-footer-nextpage" href="../find_unstable_api/">&quot;Unstable API&quot; Analysis »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.6 on <span class="colophon-date" title="Thursday 16 September 2021 16:05">Thursday 16 September 2021</span>. Using Julia version 1.8.0-DEV.547.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../generated-plugin-api/">« API</a><a class="docs-footer-nextpage" href="../find_unstable_api/">&quot;Unstable API&quot; Analysis »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.6 on <span class="colophon-date" title="Thursday 16 September 2021 16:08">Thursday 16 September 2021</span>. Using Julia version 1.8.0-DEV.547.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
