@@ -478,14 +478,6 @@ function (rp::ReportPass)(T, @nospecialize(args...))
     return false
 end
 
-# TODO separate this from `AbstractAnalyzer`
-# default constructor to create a report from abstract interpretation routine
-function (T::Type{<:InferenceErrorReport})(analyzer::AbstractAnalyzer, state, @nospecialize(spec_args...))
-    vf = get_virtual_frame(state)
-    msg = get_msg(T, analyzer, state, spec_args...)
-    return T([vf], msg, vf.sig, spec_args...)
-end
-
 # interface 5
 # -----------
 # 5. `get_cache_key(analyzer::NewAnalyzer) -> cache_key::UInt`
@@ -610,8 +602,8 @@ pre-defined report passes doesn't make any use of `NativeRemark`.
 @reportdef struct NativeRemark <: InferenceErrorReport
     s::String
 end
-get_msg(::Type{NativeRemark}, analyzer::AbstractAnalyzer, sv, s) = s
-CC.add_remark!(analyzer::AbstractAnalyzer, sv, s) = ReportPass(analyzer)(NativeRemark, analyzer, sv, s) # ignored by default
+get_msg(::Type{NativeRemark}, sv, s) = s
+CC.add_remark!(analyzer::AbstractAnalyzer, sv, s) = ReportPass(analyzer)(NativeRemark, sv, s) # ignored by default
 
 CC.may_optimize(analyzer::AbstractAnalyzer)      = true
 CC.may_compress(analyzer::AbstractAnalyzer)      = false

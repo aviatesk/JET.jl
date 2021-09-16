@@ -194,7 +194,7 @@ end
 @reportdef struct CapturedVariableReport <: InferenceErrorReport
     name::Union{Nothing,Symbol}
 end
-get_msg(::Type{CapturedVariableReport}, analyzer, s, name::Union{Nothing,Symbol}) =
+get_msg(::Type{CapturedVariableReport}, _, name::Union{Nothing,Symbol}) =
     isnothing(name) ? "captured variable detected" : "captured variable `$name` detected"
 print_error_report(io, report::CapturedVariableReport) = printlnstyled(io, "│ ", report.msg; color = ERROR_COLOR)
 function (::OptAnalysisPass)(::Type{CapturedVariableReport}, analyzer::OptAnalyzer, frame::InferenceState)
@@ -209,7 +209,7 @@ function (::OptAnalysisPass)(::Type{CapturedVariableReport}, analyzer::OptAnalyz
                 else
                     name = nothing
                 end
-                add_new_report!(frame.result, CapturedVariableReport(analyzer, (frame, pc), name))
+                add_new_report!(frame.result, CapturedVariableReport((frame, pc), name))
                 reported |= true
             end
         end
@@ -221,7 +221,7 @@ end
 get_msg(::Type{OptimizationFailureReport}, args...) = "failed to optimize"
 function (::OptAnalysisPass)(::Type{OptimizationFailureReport}, analyzer::OptAnalyzer, caller::InferenceResult)
     if !isa(get_source(caller), OptimizationState)
-        add_new_report!(caller, OptimizationFailureReport(analyzer, caller.linfo))
+        add_new_report!(caller, OptimizationFailureReport(caller.linfo))
         return true
     end
     return false
@@ -241,7 +241,7 @@ function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState)
 end
 
 @reportdef struct RuntimeDispatchReport <: InferenceErrorReport end
-get_msg(::Type{RuntimeDispatchReport}, analyzer, s) = "runtime dispatch detected"
+get_msg(::Type{RuntimeDispatchReport}, _) = "runtime dispatch detected"
 function (::OptAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::OptAnalyzer, caller::InferenceResult, @nospecialize(src))
     if isa(src, Const) # the optimization was very successful, nothing to report
         return false
@@ -282,7 +282,7 @@ function (::OptAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::OptAnalyze
             ft = widenconst(argextype(first(x.args), src, sptypes, slottypes))
             ft <: Builtin && continue # ignore `:call`s of language intrinsics
             if analyzer.function_filter(ft)
-                add_new_report!(caller, RuntimeDispatchReport(analyzer, (opt, pc)))
+                add_new_report!(caller, RuntimeDispatchReport((opt, pc)))
                 reported |= true
             end
         end

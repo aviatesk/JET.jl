@@ -250,7 +250,7 @@ If `T` implements this interface, the following requirements should be satisfied
   which works when `T` is reported when `sv`'s program counter (`sv.currpc`) points to that
   of statement where the error may happen. If so `T` just needs to overload
 
-      JET.get_msg(::Type{T}, ::AbstractAnalyzer, ::InferenceState, spec_args...) -> msg::String
+      JET.get_msg(::Type{T}, ::InferenceState, spec_args...) -> msg::String
 
   to provide the message that describes why this error is reported (otherwise the senseless
   default message will be used).
@@ -299,6 +299,13 @@ function Base.show(io::IO, report::InferenceErrorReport)
 end
 Base.show(io::IO, ::MIME"application/prs.juno.inline", report::InferenceErrorReport) =
     return report
+
+# the default constructor to create a report from abstract interpretation
+function (T::Type{<:InferenceErrorReport})(state, @nospecialize(spec_args...))
+    vf = get_virtual_frame(state)
+    msg = get_msg(T, state, spec_args...)
+    return T([vf], msg, vf.sig, spec_args...)
+end
 
 get_msg(T::Type{<:InferenceErrorReport}, @nospecialize(_...)) = error("`get_msg` is not implemented for $T")
 get_spec_args(T::Type{<:InferenceErrorReport}) =                error("`get_spec_args` is not implemented for $T")
