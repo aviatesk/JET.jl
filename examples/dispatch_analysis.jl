@@ -122,7 +122,7 @@ JETInterface.get_msg(::Type{OptimizationFailureReport}, args...) =
     return "failed to optimize" #: signature of this MethodInstance
 
 function (::DispatchAnalysisPass)(::Type{OptimizationFailureReport}, analyzer::DispatchAnalyzer, result::CC.InferenceResult)
-    add_new_report!(result, OptimizationFailureReport(analyzer, result.linfo))
+    add_new_report!(result, OptimizationFailureReport(result.linfo))
 end
 
 function CC.finish!(analyzer::DispatchAnalyzer, frame::CC.InferenceState)
@@ -149,7 +149,7 @@ function CC.finish!(analyzer::DispatchAnalyzer, frame::CC.InferenceState)
 end
 
 @reportdef struct RuntimeDispatchReport <: InferenceErrorReport end
-JETInterface.get_msg(::Type{RuntimeDispatchReport}, analyzer, s) =
+JETInterface.get_msg(::Type{RuntimeDispatchReport}, _) =
     return "runtime dispatch detected" #: call signature
 
 function (::DispatchAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::DispatchAnalyzer, caller::CC.InferenceResult, opt::CC.OptimizationState)
@@ -158,7 +158,7 @@ function (::DispatchAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::Dispa
         if @isexpr(x, :call)
             ft = CC.widenconst(CC.argextype(first(x.args), opt.src, sptypes, slottypes))
             ft <: Core.Builtin && continue # ignore `:call`s of language intrinsics
-            add_new_report!(caller, RuntimeDispatchReport(analyzer, (opt, pc)))
+            add_new_report!(caller, RuntimeDispatchReport((opt, pc)))
         end
     end
 end

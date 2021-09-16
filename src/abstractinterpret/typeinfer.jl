@@ -916,14 +916,14 @@ This may fail, cause incorrect analysis, or produce unexpected errors.
     @nospecialize(t′::Any)
     @nospecialize(t::Any)
 end
-get_msg(::Type{InvalidConstantRedefinition}, analyzer::AbstractAnalyzer, sv::InferenceState, mod::Module, name::Symbol, @nospecialize(t′::Any), @nospecialize(t::Any)) =
+get_msg(::Type{InvalidConstantRedefinition}, sv::InferenceState, mod::Module, name::Symbol, @nospecialize(t′::Any), @nospecialize(t::Any)) =
     "invalid redefinition of constant $(mod).$(name) (from $(t′) to $(t))"
 
 @reportdef struct InvalidConstantDeclaration <: InferenceErrorReport
     mod::Module
     name::Symbol
 end
-get_msg(::Type{InvalidConstantDeclaration}, analyzer::AbstractAnalyzer, sv::InferenceState, mod::Module, name::Symbol) =
+get_msg(::Type{InvalidConstantDeclaration}, sv::InferenceState, mod::Module, name::Symbol) =
     "cannot declare a constant $(mod).$(name); it already has a value"
 
 function is_constant_declared(name::Symbol, sv::InferenceState)
