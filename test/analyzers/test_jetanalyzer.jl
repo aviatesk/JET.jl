@@ -304,41 +304,6 @@ end
         end
         @test isempty(get_reports(result)) # very untyped, we can't report on this ...
     end
-
-    @testset "SoundPass" begin
-        let # `:basicfilter`
-            m = Module()
-            # `==(::Missing, ::Any) -> Missing` will be reported
-            @eval m foo(a, b) = a == b ? 0 : 1
-            result = @eval m $report_call((Any,Symbol)) do a, b
-                foo(a, b)
-            end
-            @test isempty(get_reports(result))
-
-            result = report_call((Any,Symbol); mode = :sound) do a, b
-                a == b ? 0 : 1
-            end
-            @test any(get_reports(result)) do r
-                isa(r, NonBooleanCondErrorReport) &&
-                r.t == Type[Missing]
-            end
-        end
-
-        let # `!(t ⊑ Bool)` -> error
-            basic = report_call((Integer,)) do cond
-                cond ? 0 : 1
-            end
-            @test isempty(get_reports(basic))
-
-            sound = report_call((Integer,); mode=:sound) do cond
-                cond ? 0 : 1
-            end
-            @test any(get_reports(sound)) do r
-                isa(r, NonBooleanCondErrorReport) &&
-                r.t == Integer
-            end
-        end
-    end
 end
 
 @testset "UndefKeywordError" begin
@@ -667,9 +632,36 @@ end
     end
 end
 
-@testset "JETAnalyzer configurations" begin
-    @testset "BasicPass" begin
-        # `basicfilter`: skip errors on abstract dispatch
+@testset "target_modules" begin
+    # from `PrintConfig` docstring
+
+    M = Module()
+    @eval M begin
+        function foo(a)
+            r1 = sum(a)       # => Base: MethodError(+(::Char, ::Char)), MethodError(zero(::Type{Any}))
+            r2 = undefsum(a)  # => @__MODULE__: UndefVarError(:undefsum)
+            return r1, r2
+        end
+    end
+
+    let
+        result = @report_call M.foo("julia")
+        @test length(get_reports(result)) == 3
+        @test any(get_reports(result)) do report
+            isa(report, GlobalUndefVarErrorReport) && report.name === :undefsum
+        end
+    end
+
+    let
+        result = @report_call target_modules=(M,) M.foo("julia")
+        report = only(get_reports(result))
+        @test isa(report, GlobalUndefVarErrorReport) && report.name === :undefsum
+    end
+end
+
+@testset "BasicPass" begin
+    @testset "basicfilter" begin
+        # skip errors on abstract dispatch
         let # https://github.com/aviatesk/JET.jl/issues/154
             res = @analyze_toplevel analyze_from_definitions=true begin
                 struct Foo
@@ -679,7 +671,7 @@ end
             @test isempty(res.inference_error_reports)
         end
 
-        # `basicfilter`: should still report anything within entry frame
+        # should still report anything within entry frame
         let
             res = @eval Module() begin
                 foo(a::Int) = "hello"
@@ -691,7 +683,7 @@ end
             @test any(r->isa(r,NoMethodErrorReport), get_reports(res))
         end
 
-        # `basicfilter`: skip errors on abstract entry frame entered by `analyze_from_definitions!`
+        # skip errors on abstract entry frame entered by `analyze_from_definitions!`
         let
             res = @analyze_toplevel analyze_from_definitions=true begin
                 struct Foo end
@@ -705,31 +697,86 @@ end
             end
         end
     end
+end
 
-    @testset "target_modules" begin
-        # from `PrintConfig` docstring
-
-        M = Module()
-        @eval M begin
-            function foo(a)
-                r1 = sum(a)       # => Base: MethodError(+(::Char, ::Char)), MethodError(zero(::Type{Any}))
-                r2 = undefsum(a)  # => @__MODULE__: UndefVarError(:undefsum)
-                return r1, r2
-            end
+@testset "SoundPass" begin
+    let # `:basicfilter`
+        m = Module()
+        # `==(::Missing, ::Any) -> Missing` will be reported
+        @eval m foo(a, b) = a == b ? 0 : 1
+        result = @eval m $report_call((Any,Symbol)) do a, b
+            foo(a, b)
         end
+        @test isempty(get_reports(result))
 
+        result = report_call((Any,Symbol); mode = :sound) do a, b
+            a == b ? 0 : 1
+        end
+        @test any(get_reports(result)) do r
+            isa(r, NonBooleanCondErrorReport) &&
+            r.t == Type[Missing]
+        end
+    end
+
+    let # `!(t ⊑ Bool)` -> error
+        basic = report_call((Integer,)) do cond
+            cond ? 0 : 1
+        end
+        @test isempty(get_reports(basic))
+
+        sound = report_call((Integer,); mode=:sound) do cond
+            cond ? 0 : 1
+        end
+        @test any(get_reports(sound)) do r
+            isa(r, NonBooleanCondErrorReport) &&
+            r.t == Integer
+        end
+    end
+end
+
+@testset "TypoPass" begin
+    @test_call mode=:typo sum("julia") # don't report NoMethodError, etc.
+
+    @testset "global undef var" begin
         let
-            result = @report_call M.foo("julia")
-            @test length(get_reports(result)) == 3
-            @test any(get_reports(result)) do report
-                isa(report, GlobalUndefVarErrorReport) && report.name === :undefsum
-            end
+            result = report_call(()->foo; mode=:typo)
+            @test length(get_reports(result)) === 1
+            @test first(get_reports(result)) isa GlobalUndefVarErrorReport
+            @test first(get_reports(result)).name === :foo
         end
 
-        let
-            result = @report_call target_modules=(M,) M.foo("julia")
-            report = only(get_reports(result))
-            @test isa(report, GlobalUndefVarErrorReport) && report.name === :undefsum
+        let # deeper level
+            m = @fixturedef begin
+                foo(bar) = bar + baz
+                qux(a) = foo(a)
+            end
+
+            result = Core.eval(m, :($report_call(qux, (Int,); mode=:typo)))
+            @test length(get_reports(result)) === 1
+            @test first(get_reports(result)) isa GlobalUndefVarErrorReport
+            @test first(get_reports(result)).name === :baz
+
+            # works when cached
+            result = Core.eval(m, :($report_call(qux, (Int,); mode=:typo)))
+            @test length(get_reports(result)) === 1
+            @test first(get_reports(result)) isa GlobalUndefVarErrorReport
+            @test first(get_reports(result)).name === :baz
         end
+    end
+
+    @testset "no field" begin
+        m = @fixturedef begin
+            struct T
+                v
+            end
+            access_field(t, sym) = getfield(t, sym)
+        end
+
+        result = Core.eval(m, :($report_call(t->access_field(t,:w), (T,); mode=:typo)))
+        @test length(get_reports(result)) === 1
+        er = first(get_reports(result))
+        @test er isa NoFieldErrorReport
+        @test er.typ === m.T
+        @test er.name === :w
     end
 end
