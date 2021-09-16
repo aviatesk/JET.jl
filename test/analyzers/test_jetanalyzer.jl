@@ -667,40 +667,69 @@ end
     end
 end
 
-@testset "BasicPass" begin
-    # `basicfilter`: skip errors on abstract dispatch
-    let # https://github.com/aviatesk/JET.jl/issues/154
-        res = @analyze_toplevel analyze_from_definitions=true begin
-            struct Foo
-                x::AbstractVector{<:AbstractString}
+@testset "JETAnalyzer configurations" begin
+    @testset "BasicPass" begin
+        # `basicfilter`: skip errors on abstract dispatch
+        let # https://github.com/aviatesk/JET.jl/issues/154
+            res = @analyze_toplevel analyze_from_definitions=true begin
+                struct Foo
+                    x::AbstractVector{<:AbstractString}
+                end
+            end
+            @test isempty(res.inference_error_reports)
+        end
+
+        # `basicfilter`: should still report anything within entry frame
+        let
+            res = @eval Module() begin
+                foo(a::Int) = "hello"
+                $report_call((AbstractString,)) do a # this abstract call isn't concrete dispatch
+                    foo(a)
+                end
+            end
+            @test !isempty(get_reports(res))
+            @test any(r->isa(r,NoMethodErrorReport), get_reports(res))
+        end
+
+        # `basicfilter`: skip errors on abstract entry frame entered by `analyze_from_definitions!`
+        let
+            res = @analyze_toplevel analyze_from_definitions=true begin
+                struct Foo end
+                function isfoo(x)
+                    # ==(::Missing, ::Foo) -> Missing will lead to `NonBooleanCondErrorReport` otherwise
+                    return x == Foo() ? :foo : :bar
+                end
+            end
+            @test !any(res.inference_error_reports) do r
+                isa(r, NonBooleanCondErrorReport)
             end
         end
-        @test isempty(res.inference_error_reports)
     end
 
-    # `basicfilter`: should still report anything within entry frame
-    let
-        res = @eval Module() begin
-            foo(a::Int) = "hello"
-            $report_call((AbstractString,)) do a # this abstract call isn't concrete dispatch
-                foo(a)
-            end
-        end
-        @test !isempty(get_reports(res))
-        @test any(r->isa(r,NoMethodErrorReport), get_reports(res))
-    end
+    @testset "target_modules" begin
+        # from `PrintConfig` docstring
 
-    # `basicfilter`: skip errors on abstract entry frame entered by `analyze_from_definitions!`
-    let
-        res = @analyze_toplevel analyze_from_definitions=true begin
-            struct Foo end
-            function isfoo(x)
-                # ==(::Missing, ::Foo) -> Missing will lead to `NonBooleanCondErrorReport` otherwise
-                return x == Foo() ? :foo : :bar
+        M = Module()
+        @eval M begin
+            function foo(a)
+                r1 = sum(a)       # => Base: MethodError(+(::Char, ::Char)), MethodError(zero(::Type{Any}))
+                r2 = undefsum(a)  # => @__MODULE__: UndefVarError(:undefsum)
+                return r1, r2
             end
         end
-        @test !any(res.inference_error_reports) do r
-            isa(r, NonBooleanCondErrorReport)
+
+        let
+            result = @report_call M.foo("julia")
+            @test length(get_reports(result)) == 3
+            @test any(get_reports(result)) do report
+                isa(report, GlobalUndefVarErrorReport) && report.name === :undefsum
+            end
+        end
+
+        let
+            result = @report_call target_modules=(M,) M.foo("julia")
+            report = only(get_reports(result))
+            @test isa(report, GlobalUndefVarErrorReport) && report.name === :undefsum
         end
     end
 end

@@ -4,7 +4,7 @@
 Base.show(io::IO, res::JETToplevelResult) = print_reports(io, res)
 function print_reports(io::IO, res::JETToplevelResult)
     return print_reports(io,
-                         get_critical_reports(res.res),
+                         get_reports(res),
                          gen_postprocess(res.res.actual2virtual);
                          res.jetconfigs...)
 end
@@ -12,7 +12,7 @@ end
 Base.show(io::IO, res::JETCallResult) = print_reports(io, res)
 function print_reports(io::IO, res::JETCallResult)
     return print_reports(io,
-                         get_reports(res.result);
+                         get_reports(res);
                          res.jetconfigs...)
 end
 
@@ -24,19 +24,14 @@ print_reports(args...; jetconfigs...) =
 # =============
 
 """
-Configurations for error printing.
-If the entry prints the collected error points, the configurations below will be active.
+Configurations for report printing.
+The configurations below will be active whenever `show`ing [JET's analysis result](@ref analysis-result) within REPL.
 
----
-- `print_toplevel_success::Bool = false` \\
-  If `true`, prints a message when there is no toplevel errors found.
----
-- `print_inference_success::Bool = true` \\
-  If `true`, print a message when there is no errors found in abstract interpretation based analysis pass.
 ---
 - `annotate_types::Bool = false` \\
   When set to `true`, annotates types when printing analyzed call stack.
-  Here are examples:
+
+  > Examples:
   * with `annotate_types = false` (default):
     ```julia-repl
     julia> @report_call sum("julia")
@@ -106,6 +101,12 @@ If the entry prints the collected error points, the configurations below will be
   Controls whether or not expand a file path to full path when printing analyzed call stack.
   Note that paths of Julia's `Base` files will also be expanded when set to `true`.
 ---
+- `print_toplevel_success::Bool = false` \\
+  If `true`, prints a message when there is no toplevel errors found.
+---
+- `print_inference_success::Bool = true` \\
+  If `true`, print a message when there is no errors found in abstract interpretation based analysis pass.
+---
 """
 struct PrintConfig
     print_toplevel_success::Bool
@@ -167,7 +168,7 @@ end
 # ========
 
 function print_reports(io::IO,
-                       reports::AbstractVector{<:ToplevelErrorReport},
+                       reports::Vector{ToplevelErrorReport},
                        @nospecialize(postprocess = identity);
                        jetconfigs...)
     config = PrintConfig(; jetconfigs...)
@@ -233,14 +234,11 @@ end
 # =========
 
 function print_reports(io::IO,
-                       reports::AbstractVector{<:InferenceErrorReport},
+                       reports::Vector{InferenceErrorReport},
                        @nospecialize(postprocess = identity);
                        jetconfigs...)
     config = PrintConfig(; jetconfigs...)
 
-    # here we more aggressively uniqify reports, ignoring the difference between different `MethodInstance`s
-    # as far as the report location and its signature are the same
-    # reports = unique(print_identity_key, reports)
     n = length(reports)
 
     if n == 0

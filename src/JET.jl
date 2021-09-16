@@ -549,6 +549,18 @@ JETToplevelResult(analyzer, res, source; jetconfigs...) =
 @eval Base.iterate(res::JETToplevelResult, state=1) =
     return state > $(fieldcount(JETToplevelResult)) ? nothing : (getfield(res, state), state+1)
 
+function get_reports(result::JETToplevelResult)
+    res = result.res
+    if !isempty(res.toplevel_error_reports)
+        # non-empty `ret.toplevel_error_reports` means critical errors happened during
+        # the AST transformation, so they always have precedence over `ret.inference_error_reports`
+        return res.toplevel_error_reports
+    else
+        reports = res.inference_error_reports
+        return _get_configured_reports(reports; res.defined_modules, result.jetconfigs...)
+    end
+end
+
 """
     res::JETCallResult
 
@@ -581,14 +593,97 @@ function get_result(result::InferenceResult)
         return result.result
     end
 end
-get_reports(result::JETCallResult) = get_reports(result.result)
-
-function get_critical_reports(res::VirtualProcessResult)
-    # non-empty `ret.toplevel_error_reports` means critical errors happened during
-    # the AST transformation, so they always have precedence over `ret.inference_error_reports`
-    return !isempty(res.toplevel_error_reports) ? res.toplevel_error_reports :
-           res.inference_error_reports
+function get_reports(result::JETCallResult)
+    reports = get_reports(result.result)
+    return _get_configured_reports(reports; result.jetconfigs...)
 end
+
+"""
+Configurations for [JET's analysis results](@ref analysis-result).
+These configurations should be active always.
+
+---
+- `target_modules = nothing` \\
+  Filters out collected reports based on their module context.
+  By default (`target_modules = nothing`), JET prints any collected reports.
+  If specified `target_modules` should be an iterator of `Module`s, and then JET will ignore
+  whose error point is not in the specified module context.
+
+  > Examples:
+  ```julia-repl
+  julia> function foo(a)
+             r1 = sum(a)       # => Base: MethodError(+(::Char, ::Char)), MethodError(zero(::Type{Any}))
+             r2 = undefsum(a)  # => @__MODULE__: UndefVarError(:undefsum)
+             return r1, r2
+         end;
+
+  # by default, JET will print all the collected reports:
+  julia> @report_call foo("juila")
+  ════ 3 possible errors found ═════
+  ┌ @ none:2 r1 = Main.sum(a)
+  │┌ @ reduce.jl:544 Base.#sum#258(Base.pairs(Core.NamedTuple()), #self#, a)
+  ││┌ @ reduce.jl:544 Base.sum(Base.identity, a)
+  │││┌ @ reduce.jl:515 Base.#sum#257(Base.pairs(Core.NamedTuple()), #self#, f, a)
+  ││││┌ @ reduce.jl:515 Base.mapreduce(f, Base.add_sum, a)
+  │││││┌ @ reduce.jl:289 Base.#mapreduce#254(Base.pairs(Core.NamedTuple()), #self#, f, op, itr)
+  ││││││┌ @ reduce.jl:289 Base.mapfoldl(f, op, itr)
+  │││││││┌ @ reduce.jl:162 Base.#mapfoldl#250(Base._InitialValue(), #self#, f, op, itr)
+  ││││││││┌ @ reduce.jl:162 Base.mapfoldl_impl(f, op, init, itr)
+  │││││││││┌ @ reduce.jl:44 Base.foldl_impl(op′, nt, itr′)
+  ││││││││││┌ @ reduce.jl:48 v = Base._foldl_impl(op, nt, itr)
+  │││││││││││┌ @ reduce.jl:62 v = op(v, Base.getindex(y, 1))
+  ││││││││││││┌ @ reduce.jl:81 Base.getproperty(op, :rf)(acc, x)
+  │││││││││││││┌ @ reduce.jl:24 Base.+(x, y)
+  ││││││││││││││ no matching method found for call signature (Tuple{typeof(+), Char, Char}): Base.+(x::Char, y::Char)
+  │││││││││││││└────────────────
+  ││││││││││┌ @ reduce.jl:49 Base.reduce_empty_iter(op, itr)
+  │││││││││││┌ @ reduce.jl:365 Base.reduce_empty_iter(op, itr, Base.IteratorEltype(itr))
+  ││││││││││││┌ @ reduce.jl:366 Base.reduce_empty(op, Base.eltype(itr))
+  │││││││││││││┌ @ reduce.jl:342 Base.reduce_empty(Base.getproperty(op, :rf), _)
+  ││││││││││││││┌ @ reduce.jl:334 Base.reduce_empty(Base.+, _)
+  │││││││││││││││┌ @ reduce.jl:325 Base.zero(_)
+  ││││││││││││││││ no matching method found for call signature (Tuple{typeof(zero), Type{Char}}): Base.zero(_::Type{Char})
+  │││││││││││││││└─────────────────
+  ┌ @ none:3 r2 = Main.undefsum(a)
+  │ variable Main.undefsum is not defined: r2 = Main.undefsum(a::String)
+  └──────────
+
+  # with `target_modules=(@__MODULE__,)`, JET will ignore the errors detected within the `Base` module:
+  julia> @report_call target_modules=(@__MODULE__,) foo("juila")
+  ════ 1 possible error found ═════
+  ┌ @ none:3 r2 = Main.undefsum(a)
+  │ variable Main.undefsum is not defined: r2 = Main.undefsum(a::String)
+  └──────────
+  ```
+---
+"""
+@jetconfigurable function _get_configured_reports(
+    reports::Vector{InferenceErrorReport};
+    target_modules = nothing,
+    # only used for `JETToplevelResult`
+    target_defined_modules::Bool = false, defined_modules = nothing,
+    __jetconfigs...)
+    if target_defined_modules
+        target_modules = defined_modules
+    end
+    isnothing(target_modules) && return reports
+    return filter(reports) do report
+        def = last(report.vst).linfo.def
+        mod = isa(def, Method) ? def.module : def
+        mod in target_modules && return true
+        if isa(report, NoFieldErrorReport)
+            if length(report.vst) ≥ 2
+                def = report.vst[end-1].linfo.def
+                mod = isa(def, Method) ? def.module : def
+                mod in target_modules && return true
+            end
+        end
+        return false
+    end
+end
+
+# UIs
+# ===
 
 # when virtualized, fix virtual module printing based on string manipulation;
 # the "actual" modules may not be loaded into this process
@@ -614,9 +709,6 @@ fullbasepath(filename) = normpath(JULIA_DIR, "base", filename)
 const JULIA_DIR = @static occursin("DEV", string(VERSION)) ?
                   normpath(Sys.BINDIR, "..", "..", "..", "julia") :
                   normpath(Sys.BINDIR, Base.DATAROOTDIR)
-
-# UIs
-# ===
 
 # default UI (console)
 include("ui/print.jl")
@@ -704,7 +796,7 @@ Analyzes `filename` and returns [`JETToplevelResult`](@ref).
 This function will look for `$CONFIG_FILE_NAME` configuration file in the directory of `filename`,
 and search _up_ the file tree until any `$CONFIG_FILE_NAME` is (or isn't) found.
 When found, the configurations specified in the file will be applied.
-See [Configuration File](@ref) for more details.
+See [JET's configuration file](@ref config-file) for more details.
 
 !!! tip
     When you want to analyze your package, but any file actually using it isn't available, the
@@ -726,7 +818,7 @@ See [Configuration File](@ref) for more details.
                 toplevel_logger = nothing, # suppress toplevel logger
                 jetconfigs...) # other configurations
     ```
-    See [Logging Configurations](@ref) for more details.
+    See [JET's logging configurations](@ref logging-config) for more details.
 """
 function report_file(filename::AbstractString;
                      source::Union{Nothing,AbstractString} = nothing,
@@ -981,8 +1073,8 @@ re-trigger analysis if there is code update detected in any of the `include`d fi
 
 This function internally uses [Revise.jl](https://timholy.github.io/Revise.jl/stable/) to
 track code updates. Revise also offers possibilities to track changes in files that are
-not directly analyzed by JET, or even changes in `Base` files. See [Watch Configurations](@ref)
-for more details.
+not directly analyzed by JET, or even changes in `Base` files.
+See [watch configurations](@ref watch-config) for more details.
 
 See also: [`report_file`](@ref)
 """
@@ -1370,7 +1462,7 @@ function test_exs(ex0, m, source)
     source = QuoteNode(source)
     testres = :(try
         result = $analysis
-        if $length($get_reports(result.result)) == 0
+        if $length($get_reports(result)) == 0
             $Pass(:test_call, $orig_expr, nothing, nothing, $source)
         else
             $JETTestFailure($orig_expr, $source, result)
@@ -1403,7 +1495,7 @@ function test_call(@nospecialize(args...);
     else
         testres = try
             result = report_call(args...; jetconfigs...)
-            if length(get_reports(result.result)) == 0
+            if length(get_reports(result)) == 0
                 Pass(:test_call, orig_expr, nothing, nothing, source)
             else
                 JETTestFailure(orig_expr, source, result)

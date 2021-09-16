@@ -3,7 +3,6 @@ module VSCode
 import ..JET:
     @jetconfigurable,
     with_logger,
-    get_critical_reports,
     gen_postprocess,
     tofullpath,
     print_signature,
@@ -50,36 +49,33 @@ These configurations are active only when used in [the integrated Julia REPL](ht
 ---
 - `vscode_console_output::Union{Nothing,IO} = stdout` \\
   JET will show analysis result in VSCode's "PROBLEMS" pane and inline annotations.
-  If `vscode_console_output::IO`, in addition to showing the result in those integrated views,
-  JET will also print the result into the `IO` stream.
+  If `vscode_console_output::IO` is specified, JET will also print the result into the
+  specified output stream in addition to showing the result in the integrated views.
   When `nothing`, the result will be only shown in the integrated views.
 ---
 """
-struct VSCodeConfig
-    vscode_console_output::Union{Nothing,IO}
-    @jetconfigurable VSCodeConfig(; vscode_console_output::Union{Nothing,IO} = stdout::IO) =
-        return new(vscode_console_output)
-end
+struct VSCodeConfig end
+
+forward_to_console_output(res::Union{JETToplevelResult,JETCallResult};
+                          vscode_console_output::Union{Nothing,IO} = nothing,
+                          __jetconfigs...) =
+    isa(vscode_console_output, IO) && show(vscode_console_output, res)
 
 # top-level
 # =========
 
 Base.showable(::MIME"application/vnd.julia-vscode.diagnostics", ::JETToplevelResult) = true
-function Base.show(io::IO, ::MIME"application/vnd.julia-vscode.diagnostics", res::JETToplevelResult)
-    config = VSCodeConfig(; res.jetconfigs...)
-    io = config.vscode_console_output
-    if !isnothing(io)
-        show(io, res)
-    end
+function Base.show(io::IO, ::MIME"application/vnd.julia-vscode.diagnostics",
+                   res::JETToplevelResult)
+    forward_to_console_output(res; res.jetconfigs...)
     return vscode_diagnostics(res.analyzer,
-                              get_critical_reports(res.res),
+                              get_reports(res),
                               res.source,
                               gen_postprocess(res.res.actual2virtual),
                               )
 end
-
 function vscode_diagnostics(analyzer::Analyzer,
-                            reports::AbstractVector{<:ToplevelErrorReport},
+                            reports::Vector{ToplevelErrorReport},
                             source::AbstractString,
                             postprocess = identity) where {Analyzer<:AbstractAnalyzer}
     return (; source = vscode_source(analyzer, source),
@@ -97,20 +93,16 @@ end
 # =========
 
 Base.showable(::MIME"application/vnd.julia-vscode.diagnostics", ::JETCallResult) = true
-function Base.show(io::IO, ::MIME"application/vnd.julia-vscode.diagnostics", res::JETCallResult)
-    config = VSCodeConfig(; res.jetconfigs...)
-    io = config.vscode_console_output
-    if !isnothing(io)
-        show(io, res)
-    end
+function Base.show(io::IO, ::MIME"application/vnd.julia-vscode.diagnostics",
+                   res::JETCallResult)
+    forward_to_console_output(res; res.jetconfigs...)
     return vscode_diagnostics(res.analyzer,
-                              get_reports(res.result),
+                              get_reports(res),
                               res.source,
                               )
 end
-
 function vscode_diagnostics(analyzer::Analyzer,
-                            reports::AbstractVector{<:InferenceErrorReport},
+                            reports::Vector{InferenceErrorReport},
                             source::AbstractString,
                             postprocess = identity) where {Analyzer<:AbstractAnalyzer}
     order = vscode_diagnostics_order(analyzer)

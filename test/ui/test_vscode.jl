@@ -1,5 +1,5 @@
 import JET.VSCode:
-    get_critical_reports,
+    get_reports,
     gen_postprocess,
     vscode_diagnostics
 
@@ -84,7 +84,7 @@ end
             write(path, s)
             report_file2(path)
         end
-        reports = get_critical_reports(res.res)
+        reports = get_reports(res)
         diagnostics = vscode_diagnostics(res.analyzer,
                                          reports,
                                          res.source,
@@ -105,7 +105,7 @@ end
             write(path, s)
             report_file2(path)
         end
-        reports = get_critical_reports(res.res)
+        reports = get_reports(res)
         diagnostics = vscode_diagnostics(res.analyzer,
                                          reports,
                                          res.source,
