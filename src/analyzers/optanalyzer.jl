@@ -64,34 +64,6 @@ the following additional configurations that are specific to optimization analys
   ```
 
 ---
-- `target_module::Union{Nothing,Module} = nothing`:\\
-  If `Module` is specified, limits the analysis scope to the specific module context.
-  ```julia-repl
-  # problem: when ∑1/n exceeds `x` ?
-  julia> function compute(x)
-             r = 1
-             s = 0.0
-             n = 1
-             @time while r < x
-                 s += 1/n
-                 if s ≥ r
-                     # `println` call is full of runtime dispatches for good reasons
-                     # and we're not interested in type-instabilities within this call
-                     # since we know it's only called few times
-                     println("round \$r/\$x has been finished")
-                     r += 1
-                 end
-                 n += 1
-             end
-             return n, s
-         end
-
-  julia> @report_opt compute(30) # bunch of reports will be reported from the `println` call
-
-  julia> @report_opt target_module=(@__MODULE__) compute(30) # focus on what we wrote, and no error should be reported
-  ```
-
----
 - `function_filter = @nospecialize(ft)->true`:\\
   A predicate which takes a function type and returns `false` to skip runtime dispatch
   analysis on the function call. This configuration is particularly useful when your program
@@ -149,7 +121,6 @@ struct OptAnalyzer{RP,FF} <: AbstractAnalyzer
     state::AnalyzerState
     report_pass::RP
     skip_nonconcrete_calls::Bool
-    target_module::Union{Nothing,Module}
     function_filter::FF
     skip_unoptimized_throw_blocks::Bool
     __frame_checks::BitVector # temporary stash to keep per-frame analysis-skip configuration
@@ -158,7 +129,6 @@ end
 function OptAnalyzer(;
     report_pass = OptAnalysisPass(),
     skip_nonconcrete_calls::Bool = true,
-    target_module::Union{Nothing,Module} = nothing,
     function_filter = @nospecialize(ft)->true,
     skip_unoptimized_throw_blocks::Bool = true,
     jetconfigs...)
@@ -166,14 +136,12 @@ function OptAnalyzer(;
     # we want to run different analysis with a different filter, so include its hash into the cache key
     cache_key = state.param_key
     cache_key = hash(skip_nonconcrete_calls, cache_key)
-    cache_key = hash(target_module, cache_key)
     cache_key = @invoke hash(function_filter::Any, cache_key::UInt) # HACK avoid dynamic dispatch
     cache_key = hash(skip_unoptimized_throw_blocks, cache_key)
     return OptAnalyzer(
         state,
         report_pass,
         skip_nonconcrete_calls,
-        target_module,
         function_filter,
         skip_unoptimized_throw_blocks,
         #=__frame_checks=# BitVector(),
@@ -188,7 +156,6 @@ function JETInterface.AbstractAnalyzer(analyzer::OptAnalyzer, state::AnalyzerSta
         state,
         analyzer.report_pass,
         analyzer.skip_nonconcrete_calls,
-        analyzer.target_module,
         analyzer.function_filter,
         analyzer.skip_unoptimized_throw_blocks,
         analyzer.__frame_checks,
@@ -206,12 +173,6 @@ function CC.finish(frame::InferenceState, analyzer::OptAnalyzer)
     ret = @invoke CC.finish(frame::InferenceState, analyzer::AbstractAnalyzer)
 
     skip = false
-    mod = analyzer.target_module
-    if !isnothing(mod)
-        if frame.mod !== mod
-            skip |= true
-        end
-    end
     if !skip && analyzer.skip_nonconcrete_calls
         if !isconcreteframe(frame)
             skip |= true
@@ -388,14 +349,14 @@ julia> function f(n)
             r = sincos(n)
             # `println` is full of runtime dispatches,
             # but we can ignore the corresponding reports from `Base`
-            # with the `target_module` configuration
+            # with the `target_modules` configuration
             println(r)
             return r
        end;
 
-julia> @test_opt target_module=(@__MODULE__) f(10)
+julia> @test_opt target_modules=(@__MODULE__,) f(10)
 Test Passed
-  Expression: #= REPL[3]:1 =# JET.@test_call analyzer = JET.OptAnalyzer target_module = #= REPL[3]:1 =# @__MODULE__() f(10)
+  Expression: #= REPL[3]:1 =# JET.@test_call analyzer = JET.OptAnalyzer target_modules = (#= REPL[3]:1 =# @__MODULE__(),) f(10)
 ```
 
 Like [`@test_call`](@ref), `@test_opt` is fully integrated with [`Test` standard library](https://docs.julialang.org/en/v1/stdlib/Test/).

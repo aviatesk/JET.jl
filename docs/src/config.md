@@ -12,10 +12,17 @@ report_file("some/awesome/code.jl";
 ```
 
 !!! note
-    Please ignore the names of documented objects appearing below, like "[`JET.ToplevelConfig`](@ref)".
+    Please ignore the names of documented objects appearing below, like "[`JET._get_configured_reports`](@ref)".
     They are just remnants of documentation internals, and you will never directly interact with them.
 
-## Configurations for Top-level Analysis
+## [Configurations for Analysis Result](@id result-config)
+
+```@docs
+JET._get_configured_reports
+```
+
+
+## [Configurations for Top-level Analysis](@id toplevel-config)
 
 ```@docs
 JET.ToplevelConfig
@@ -29,28 +36,35 @@ JET.JETInferenceParams
 ```
 
 
-## Print Configurations
+## [Print Configurations](@id print-config)
 
 ```@docs
 JET.PrintConfig
 ```
 
 
-## Watch Configurations
+## [Configurations for VSCode Integration](@id vscode-config)
+
+```@docs
+JET.VSCode.VSCodeConfig
+```
+
+
+## [Watch Configurations](@id watch-config)
 
 ```@docs
 JET.WatchConfig
 ```
 
 
-## Logging Configurations
+## [Logging Configurations](@id logging-config)
 
 ```@docs
 JET.JETLogger
 ```
 
 
-## Configuration File
+## [Configuration File](@id config-file)
 
 ```@docs
 JET.parse_config_file

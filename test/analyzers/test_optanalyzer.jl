@@ -179,7 +179,7 @@ end
         end
     end
 
-    @testset "target_module" begin
+    @testset "target_modules" begin
         M = Module()
         @eval M begin
             # problem: when ∑1/n exceeds 30 ?
@@ -204,8 +204,8 @@ end
             @test !isempty(get_reports(result))
         end
 
-        let # if we use different `target_module`, a fresh analysis should run
-            @test_opt target_module=(@__MODULE__) M.compute(30)
+        let # if we use different `target_modules`, the reports from `println` should get filtered out
+            @test_opt target_modules=(@__MODULE__,) M.compute(30)
         end
     end
 

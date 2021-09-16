@@ -39,6 +39,7 @@ JET.inlining_policy
 
 ```@docs
 JET.virtual_process
+JET.VirtualProcessResult
 JET.virtualize_module_context
 JET.ConcreteInterpreter
 JET.partially_interpret!

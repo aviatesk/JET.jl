@@ -45,6 +45,10 @@ These configurations will be active for all the top-level entries explained in t
   In other word, JET virtualize the module context of `context` and make sure the original
   module context isn't polluted by JET.
 ---
+- `target_defined_modules::Bool = false` \\
+  If `true`, automatically set the [`target_modules`](@ref result-config) configuration so that
+  JET filters out errors that are reported within modules that JET doesn't analyze directly.
+---
 - `analyze_from_definitions::Bool = false` \\
   If `true`, JET will start analysis using signatures of top-level definitions (e.g. method signatures),
   after the top-level interpretation has been done (unless no serious top-level error has
@@ -164,7 +168,7 @@ These configurations will be active for all the top-level entries explained in t
   [toplevel-debug]  exited from test/fixtures/concretization_patterns.jl (took 0.032 sec)
   ```
 
-  Also see: [Logging Configurations](@ref), [`virtual_process`](@ref).
+  Also see: [JET's logging configurations](@ref logging-config), [`virtual_process`](@ref).
 ---
 - `virtualize::Bool = true` \\
   When `true`, JET will virtualize the given root module context.
@@ -214,6 +218,7 @@ const Actual2Virtual = Pair{Module,Module}
     res::VirtualProcessResult
 
 - `res.included_files::Set{String}`: files that have been analyzed
+- `res.defined_modules::Set{Module}`: module contexts created while this top-level analysis
 - `res.toplevel_error_reports::Vector{ToplevelErrorReport}`: toplevel errors found during the
     text parsing or partial (actual) interpretation; these reports are "critical" and should
     have precedence over `inference_error_reports`
@@ -224,14 +229,16 @@ const Actual2Virtual = Pair{Module,Module}
 """
 struct VirtualProcessResult
     included_files::Set{String}
+    defined_modules::Set{Module}
     toplevel_error_reports::Vector{ToplevelErrorReport}
     inference_error_reports::Vector{InferenceErrorReport}
     toplevel_signatures::Vector{Type}
     actual2virtual::Union{Actual2Virtual,Nothing}
 end
 
-function VirtualProcessResult(actual2virtual)
+function VirtualProcessResult(actual2virtual, context)
     return VirtualProcessResult(Set{String}(),
+                                Set{Module}((context,)),
                                 ToplevelErrorReport[],
                                 InferenceErrorReport[],
                                 Type[],
@@ -296,7 +303,7 @@ function virtual_process(x::Union{AbstractString,Expr},
                             analyzer,
                             config,
                             context,
-                            VirtualProcessResult(actual2virtual),
+                            VirtualProcessResult(actual2virtual, context),
                             )
 
     # analyze collected signatures unless critical error happened
@@ -560,7 +567,7 @@ function _virtual_process!(toplevelex::Expr,
                 # `@doc` macro usually produces :block expression, but may also produce :toplevel
                 # one when attached to a module expression
                 @assert @isexpr(newx, :block) || @isexpr(newx, :toplevel)
-                append!(exs, reverse!(newx.args))
+                append!(exs, reverse!((newx::Expr).args))
             else
                 push!(exs, newx)
             end
@@ -589,7 +596,9 @@ function _virtual_process!(toplevelex::Expr,
 
             isnothing(newcontext) && continue # error happened, e.g. duplicated naming
 
-            _virtual_process!(newtoplevelex, filename, analyzer, config, newcontext::Module, res)
+            newmod = newcontext::Module
+            push!(res.defined_modules, newmod)
+            _virtual_process!(newtoplevelex, filename, analyzer, config, newmod, res)
 
             continue
         end
