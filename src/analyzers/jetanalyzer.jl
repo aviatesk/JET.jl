@@ -26,7 +26,8 @@ end
         # if `report_pass` isn't passed explicitly, here we configure it according to `mode`
         report_pass = mode === :basic ? BasicPass(; jetconfigs...) :
                       mode === :sound ? SoundPass() :
-                      throw(ArgumentError("`mode` configuration should be either of `:basic` or `:sound`"))
+                      mode === :typo  ? TypoPass() :
+                      throw(ArgumentError("`mode` configuration should be either of `:basic`, `:sound` or `:typo`"))
     end
     # NOTE we always disable inlining, because:
     # - our current strategy to find undefined local variables and uncaught `throw` calls assumes un-inlined frames
@@ -52,9 +53,7 @@ JETInterface.get_cache_key(analyzer::JETAnalyzer) =
 # TODO document the definitions of errors, elaborate the difference of these two passes
 
 """
-    BasicPass <: ReportPass
-
-`ReportPass` for the basic (default) `JETAnalyzer`'s error analysis.
+The basic (default) error analysis pass.
 """
 struct BasicPass{FF} <: ReportPass
     function_filter::FF
@@ -71,9 +70,7 @@ function basic_function_filter(@nospecialize ft)
 end
 
 """
-    SoundPass <: ReportPass
-
-`ReportPass` for the sound `JETAnalyzer`'s error analysis.
+The sound error analysis pass.
 """
 struct SoundPass <: ReportPass end
 
@@ -82,6 +79,12 @@ basic_filter(analyzer::JETAnalyzer, sv) =
 
 # `SoundPass` is still WIP, we may use it to implement both passes at once for the meantime
 const SoundBasicPass = Union{SoundPass,BasicPass}
+
+"""
+Typo detection pass.
+"""
+struct TypoPass <: ReportPass end
+(::TypoPass)(@nospecialize _...) = return false # ignore everything except GlobalUndefVarErrorReport and NoFieldErrorReport
 
 # analysis
 # ========
@@ -502,16 +505,23 @@ end
 get_msg(::Type{GlobalUndefVarErrorReport}, sv::InferenceState, mod::Module, name::Symbol) =
     "variable $(mod).$(name) is not defined"
 
-function (::SoundPass)(::Type{GlobalUndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, mod::Module, name::Symbol)
+(::SoundPass)(::Type{GlobalUndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, mod::Module, name::Symbol) =
+    report_undef_var!(sv, mod, name, true)
+(::BasicPass)(::Type{GlobalUndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, mod::Module, name::Symbol) =
+    report_undef_var!(sv, mod, name, false)
+(::TypoPass)(::Type{GlobalUndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, mod::Module, name::Symbol) =
+    report_undef_var!(sv, mod, name, false)
+function report_undef_var!(sv::InferenceState, mod::Module, name::Symbol, sound::Bool)
     if !isdefined(mod, name)
-        add_new_report!(sv.result, GlobalUndefVarErrorReport(sv, mod, name))
-        return true
-    end
-    return false
-end
-function (::BasicPass)(::Type{GlobalUndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, mod::Module, name::Symbol)
-    if !isdefined(mod, name)
-        if !is_corecompiler_undefglobal(mod, name)
+        report = false
+        if sound
+            report |= true
+        else
+            if !is_corecompiler_undefglobal(mod, name)
+                report |= true
+            end
+        end
+        if report
             add_new_report!(sv.result, GlobalUndefVarErrorReport(sv, mod, name))
             return true
         end
@@ -727,6 +737,13 @@ function (::BasicPass)(::Type{BuiltinErrorReport}, analyzer::JETAnalyzer, sv::In
         maybe_report_devide_error!(analyzer, sv, argtypes, ret) && return true
     end
     return handle_invalid_builtins!(analyzer, sv, argtypes, ret)
+end
+
+function (::TypoPass)(::Type{BuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Vector{Any}, @nospecialize(ret))
+    if f === getfield
+        maybe_report_getfield!(analyzer, sv, argtypes, ret) && return true
+    end
+    return false
 end
 
 function maybe_report_getfield!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Vector{Any}, @nospecialize(ret))
