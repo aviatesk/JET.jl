@@ -490,7 +490,7 @@ function _virtual_process!(toplevelex::Expr,
         # here we should capture syntax errors found during lowering
         if @isexpr(lwr, :error)
             msg = first(lwr.args)
-            push!(res.toplevel_error_reports, SyntaxErrorReport("syntax: \$(msg)", filename, lnn.line))
+            push!(res.toplevel_error_reports, SyntaxErrorReport("syntax: $msg", filename, lnn.line))
             return nothing
         end
 
@@ -600,6 +600,12 @@ function _virtual_process!(toplevelex::Expr,
             push!(res.defined_modules, newmod)
             _virtual_process!(newtoplevelex, filename, analyzer, config, newmod, res)
 
+            continue
+        end
+
+        # can't wrap `:global` declaration into a block
+        if @isexpr(x, :global)
+            eval_with_err_handling(context, x)
             continue
         end
 

@@ -1007,6 +1007,13 @@ end
     end
 end
 
+let # global declaration
+    res = @analyze_toplevel begin
+        global var
+    end
+    @test isempty(res.toplevel_error_reports)
+end
+
 @testset "toplevel throw" begin
     res = @analyze_toplevel begin
         throw("throw me")
