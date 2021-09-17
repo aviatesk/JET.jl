@@ -379,7 +379,7 @@ function CC.getindex(wvc::WorldView{JETGlobalCache}, mi::MethodInstance)
     return r::CodeInstance
 end
 
-function CC.transform_result_for_cache(interp::AbstractAnalyzer, linfo::MethodInstance,
+function CC.transform_result_for_cache(analyzer::AbstractAnalyzer, linfo::MethodInstance,
                                        valid_worlds::WorldRange, @nospecialize(inferred_result))
     jetresult = inferred_result::JETResult
     cache = InferenceErrorReportCache[]
@@ -395,7 +395,6 @@ end
 
 function CC.setindex!(wvc::WorldView{JETGlobalCache}, ci::CodeInstance, mi::MethodInstance)
     setindex!(jet_cache(wvc), ci, mi)
-    add_jet_callback!(mi) # register the callback on invalidation
     return nothing
 end
 
@@ -403,8 +402,12 @@ function add_jet_callback!(linfo)
     if !isdefined(linfo, :callbacks)
         linfo.callbacks = Any[invalidate_jet_cache!]
     else
-        if !any(@nospecialize(cb)->cb===invalidate_jet_cache!, linfo.callbacks)
-            push!(linfo.callbacks, invalidate_jet_cache!)
+        callbacks = linfo.callbacks::Vector{Any}
+        if !any(function (@nospecialize(cb),)
+                    cb === invalidate_jet_cache!
+                end,
+                callbacks)
+            push!(callbacks, invalidate_jet_cache!)
         end
     end
     return nothing
@@ -479,7 +482,6 @@ CC.push!(cache::JETLocalCache, inf_result::InferenceResult) = CC.push!(cache.cac
 function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
     (; linfo, parent, result) = frame
     isentry = isnothing(parent)
-    iscp = is_constant_propagated(frame)
 
     #= logging stage1 start =#
     local sec::Float64, depth::Int
@@ -491,9 +493,6 @@ function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
             print_rails(io, depth)
             printstyled(io, "┌ @ "; color = RAIL_COLORS[(depth+1)%N_RAILS+1])
             print(io, linfo)
-            if is_constant_propagated(frame)
-                printstyled(io, " (constant prop': ", result.argtypes, ')'; color = NOERROR_COLOR)
-            end
             file, line = get_file_line(linfo)
             print(io, ' ', file, ':', line)
             println(io)
@@ -512,7 +511,7 @@ function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
     # NOTE `frame.linfo` is the exactly same object as that of the previous non-constant inference
     # IDEA we may still want to keep some "serious" error reports like `GlobalUndefVarErrorReport`
     # even when constant prop' reveals it never happ∫ens given the current constant arguments
-    if iscp && !isentry
+    if is_constant_propagated(frame) && !isentry
         filter!(!is_from_same_frame(parent.linfo, linfo), get_reports(parent.result))
     end
 
@@ -521,12 +520,6 @@ function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
     ret = @invoke typeinf(analyzer::AbstractInterpreter, frame::InferenceState)
 
     ret && @assert isa(result.src, isentry ? JETResult : JETCachedResult)
-
-    if !iscp && !isentry
-        # refinement for this `linfo` may change analysis result for parent frame
-        # XXX: is this okay from performance perspective ?
-        add_backedge!(linfo, parent)
-    end
 
     #= logging stage2 start =#
     if logger_activated
@@ -595,8 +588,8 @@ end
 
 # in this overload we can work on `frame.src::CodeInfo` (and also `frame::InferenceState`)
 # where type inference (and also optimization if applied) already ran on
-function CC._typeinf(interp::AbstractAnalyzer, frame::InferenceState)
-    CC.typeinf_nocycle(interp, frame) || return false # frame is now part of a higher cycle
+function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
+    CC.typeinf_nocycle(analyzer, frame) || return false # frame is now part of a higher cycle
     # with no active ip's, frame is done
     frames = frame.callers_in_cycle
     isempty(frames) && push!(frames, frame)
@@ -609,7 +602,7 @@ function CC._typeinf(interp::AbstractAnalyzer, frame::InferenceState)
     end
     for caller in frames
         caller.valid_worlds = valid_worlds
-        CC.finish(caller, interp)
+        CC.finish(caller, analyzer)
         # finalize and record the linfo result
         caller.inferred = true
     end
@@ -623,10 +616,10 @@ function CC._typeinf(interp::AbstractAnalyzer, frame::InferenceState)
     for (frame, _, _) in results
         caller = frame.result
         opt = get_source(caller)
-        if opt isa OptimizationState # implies `may_optimize(interp) === true`
+        if opt isa OptimizationState # implies `may_optimize(analyzer) === true`
             result_type = caller.result
             @assert !(result_type isa LimitedAccuracy)
-            CC.optimize(interp, opt, OptimizationParams(interp), result_type)
+            CC.optimize(analyzer, opt, OptimizationParams(analyzer), result_type)
             # # COMBAK we may want to enable inlining ?
             # if opt.const_api
             #     # XXX: The work in ir_to_codeinf! is essentially wasted. The only reason
@@ -653,31 +646,32 @@ function CC._typeinf(interp::AbstractAnalyzer, frame::InferenceState)
             # but our caller might, so let's just make it anyways
             CC.store_backedges(caller, edges)
         end
-        CC.finish!(interp, frame)
+        CC.finish!(analyzer, frame)
 
         # XXX this is a dirty fix for performance problem, we need more "proper" fix
         # https://github.com/aviatesk/JET.jl/issues/75
-        unique!(aggregation_policy(interp), get_reports(caller))
+        unique!(aggregation_policy(analyzer), get_reports(caller))
 
+        # global cache management
+        # part 1: transform collected reports to `JETCachedResult` and put it into `CodeInstance.inferred`
         if cached && !istoplevel(frame)
-            CC.cache_result!(interp, caller)
+            CC.cache_result!(analyzer, caller)
         end
-    end
+        # part 2: register invalidation callback for JET cache
+        add_jet_callback!(caller.linfo)
 
-    for (frame, _, _) in results
-        result = frame.result
-        reports = get_reports(result)
-
+        reports = get_reports(caller)
         if frame.parent !== nothing
-            # get back to the caller what we got from these results
-            add_caller_cache!(interp, reports)
+            # inter-procedural handling: get back to the caller what we got from these results
+            add_caller_cache!(analyzer, reports)
 
-            # there are duplicated work here and `transform_result_for_cache`
+            # local cache management
+            # TODO there are duplicated work here and `transform_result_for_cache`
             cache = InferenceErrorReportCache[]
             for report in reports
                 cache_report!(cache, report)
             end
-            set_cached_result!(result, cache)
+            set_cached_result!(caller, cache)
         end
     end
 
@@ -944,7 +938,7 @@ function CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
 
     # transform optimized `IRCode` to optimized `CodeInfo`
     src = get_source(caller)
-    if src isa OptimizationState # implies `may_optimize(interp) === true`
+    if src isa OptimizationState # implies `may_optimize(analyzer) === true`
         opt = src
         @assert opt.ir !== nothing # `_typeinf(::AbstractAnalyzer, ::InferenceState)` disabled `const_api`
 

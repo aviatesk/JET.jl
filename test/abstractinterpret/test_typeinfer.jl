@@ -126,6 +126,29 @@ end
     end
 end
 
+@testset "cache separation from native execution" begin
+    # we shouldn't use global code cache for native execution,
+    # since it has really not been analyzed by JET
+
+    let
+        # # check if the sysimg contains the cache for `getproperty(::Nothing, ::Symbol)`
+        # local found = false
+        # for mi in only(methods(getproperty, (Nothing,Symbol))).specializations
+        #     isnothing(mi) && continue
+        #     if mi.specTypes === Tuple{typeof(getproperty),Nothing,Symbol}
+        #         found |= true
+        #     end
+        # end
+        # @assert found
+
+        # we can still get error report from that frame
+        result = report_call((Nothing,)) do a
+            a.field
+        end
+        @test length(get_reports(result)) === 1
+    end
+end
+
 @testset "simple invalidation" begin
     let # simple invalidation
         m = Module()
@@ -159,16 +182,7 @@ end
 
 # COMBAK this test is very fragile, think about the alternate tests
 # @testset "end to end invalidation" begin
-#     # invalidate native code cache in a system image if it has not been analyzed by JET
-#     # yes this slows down anlaysis for sure, but otherwise JET will miss obvious errors like below
-#     let
-#         result = report_call((Nothing,)) do a
-#             a.field
-#         end
-#         @test length(get_reports(result)) === 1
-#     end
-#
-#     # invalidation from deeper call site can refresh JET analysis
+#     # invalidation from deeper call site should still refresh JET analysis
 #     let
 #         # NOTE: branching on https://github.com/JuliaLang/julia/pull/38830
 #         symarg = last(first(methods(Base.show_sym)).sig.parameters) === Symbol ?
