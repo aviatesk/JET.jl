@@ -377,12 +377,13 @@ This is because a new method definition always has a potential to change `JETAna
 function CC.add_call_backedges!(analyzer::JETAnalyzer, @nospecialize(rettype), edges::Vector{MethodInstance},
                                 matches::Union{MethodMatches,UnionSplitMethodMatches}, @nospecialize(atype),
                                 sv::InferenceState)
-    # NOTE a new method may refine analysis, so we always add backedges
+    # NOTE why we want to comment out the following lines:
+    # a new method may refine analysis, so we always add backedges
     # # for `NativeInterpreter`, we don't add backedges when a new method couldn't refine (widen) this type
     # rettype === Any && return
-    # for edge in edges
-    #     add_backedge!(edge, sv)
-    # end
+    for edge in edges
+        add_backedge!(edge, sv)
+    end
     # also need an edge to the method table in case something gets
     # added that did not intersect with any existing method
     if isa(matches, MethodMatches)
