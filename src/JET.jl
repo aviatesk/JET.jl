@@ -153,7 +153,8 @@ import Base:
     unwrap_unionall,
     rewrap_unionall,
     uniontypes,
-    IdSet
+    @invokelatest,
+    destructure_callex
 
 import Base.Meta:
     _parse_string,
@@ -280,37 +281,6 @@ macro invoke(ex)
     end
     args, argtypes = first.(arg2typs), last.(arg2typs)
     return esc(:($(GlobalRef(Core, :invoke))($(f), Tuple{$(argtypes...)}, $(args...); $(kwargs...))))
-end
-
-"""
-    @invokelatest f(args...; kwargs...)
-
-Provides a convenient way to call [`Base.invokelatest`](https://docs.julialang.org/en/v1/base/base/#Base.invokelatest).
-`@invokelatest f(args...; kwargs...)` will simply be expanded into
-`Base.invokelatest(f, args...; kwargs...)`.
-"""
-macro invokelatest(ex)
-    f, args, kwargs = destructure_callex(ex)
-    return esc(:($(GlobalRef(Base, :invokelatest))($(f), $(args...); $(kwargs...))))
-end
-
-function destructure_callex(ex)
-    @assert @isexpr(ex, :call) "call expression f(args...; kwargs...) should be given"
-
-    f = first(ex.args)
-    args = []
-    kwargs = []
-    for x in ex.args[2:end]
-        if @isexpr(x, :parameters)
-            append!(kwargs, x.args)
-        elseif @isexpr(x, :kw)
-            push!(kwargs, x)
-        else
-            push!(args, x)
-        end
-    end
-
-    return f, args, kwargs
 end
 
 """

@@ -74,7 +74,6 @@ JET.ToplevelErrorReport
 
 ```@docs
 JET.@invoke
-JET.@invokelatest
 JET.@withmixedhash
 JET.@jetconfigurable
 ```
