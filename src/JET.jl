@@ -477,8 +477,7 @@ function Base.show(io::IO, frame::InferenceState)
     show(io, frame.linfo)
     print(io, " at pc ", frame.currpc, '/', length(frame.src.code))
 end
-Base.show(io::IO, ::MIME"application/prs.juno.inline", frame::InferenceState) =
-    return frame
+Base.show(io::IO, ::MIME"application/prs.juno.inline", frame::InferenceState) = frame
 
 # lattice
 
@@ -515,8 +514,8 @@ struct JETToplevelResult{Analyzer<:AbstractAnalyzer,JETConfigs}
     source::String
     jetconfigs::JETConfigs
 end
-JETToplevelResult(analyzer, res, source; jetconfigs...) =
-    return JETToplevelResult(analyzer, res, source, jetconfigs)
+JETToplevelResult(analyzer::AbstractAnalyzer, res::VirtualProcessResult, source::AbstractString;
+                  jetconfigs...) = JETToplevelResult(analyzer, res, source, jetconfigs)
 @eval Base.iterate(res::JETToplevelResult, state=1) =
     return state > $(fieldcount(JETToplevelResult)) ? nothing : (getfield(res, state), state+1)
 
@@ -549,10 +548,9 @@ struct JETCallResult{Analyzer<:AbstractAnalyzer,JETConfigs}
     analyzer::Analyzer
     source::String
     jetconfigs::JETConfigs
-    JETCallResult(result::InferenceResult, analyzer::Analyzer, source::AbstractString;
-                  jetconfigs...) where {Analyzer<:AbstractAnalyzer} =
-        new{Analyzer,typeof(jetconfigs)}(result, analyzer, source, jetconfigs)
 end
+JETCallResult(result::InferenceResult, analyzer::AbstractAnalyzer, source::AbstractString;
+              jetconfigs...) = JETCallResult(result, analyzer, source, jetconfigs)
 @eval Base.iterate(res::JETCallResult, state=1) =
     return state > $(fieldcount(JETCallResult)) ? nothing : (getfield(res, state), state+1)
 
@@ -1545,7 +1543,7 @@ baremodule JETInterface
 const DOCUMENTED_NAMES = Symbol[] # will be used in docs/make.jl
 end
 
-function reexport_as_api!(xs...; documented = true)
+function reexport_as_api!(xs...)
     for x in xs
         ex = Expr(:block)
 
@@ -1561,7 +1559,7 @@ function reexport_as_api!(xs...; documented = true)
 
         push!(ex.args, importex, exportex)
         Core.eval(JETInterface, ex)
-        documented && push!(JETInterface.DOCUMENTED_NAMES, symname)
+        push!(JETInterface.DOCUMENTED_NAMES, symname)
     end
 end
 
@@ -1604,9 +1602,5 @@ export
     report_opt,
     @test_opt,
     test_opt
-
-# TODO maybe move this to `@reportdef`
-reexport_as_api!(subtypes(InferenceErrorReport)...; documented = false)
-reexport_as_api!(subtypes(ReportPass)...; documented = false)
 
 end
