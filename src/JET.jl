@@ -945,7 +945,7 @@ function report_package(package::Union{AbstractString,Module,Nothing} = nothing;
                         concretization_patterns = [:(x_ = y_), :(const x_ = y_)],
                         jetconfigs...)
     filename = get_package_file(package)
-    return report_file(filename; analyze_from_definitions, jetconfigs...)
+    return report_file(filename; analyze_from_definitions, concretization_patterns, jetconfigs...)
 end
 
 function get_package_file(package::AbstractString)
