@@ -790,17 +790,22 @@ See [JET's configuration file](@ref config-file) for more details.
     See [JET's logging configurations](@ref logging-config) for more details.
 """
 function report_file(filename::AbstractString;
+                     __default_configs = (default_toplevel_logger_config(),),
                      source::Union{Nothing,AbstractString} = nothing,
                      jetconfigs...) where T
     isfile(filename) || throw(ArgumentError("$filename doesn't exist"))
 
     configfile = find_config_file(dirname(abspath(filename)))
     if isnothing(configfile)
-        jetconfigs = set_toplevel_logger_if_missing(jetconfigs)
+        for default in __default_configs
+            jetconfigs = set_if_missing(jetconfigs, default)
+        end
     else
         config = parse_config_file(configfile)
         jetconfigs = overwrite_options(config, jetconfigs)
-        jetconfigs = set_toplevel_logger_if_missing(jetconfigs)
+        for default in __default_configs
+            jetconfigs = set_if_missing(jetconfigs, default)
+        end
         with_logger(get(jetconfigs, :toplevel_logger, nothing), ≥(INFO_LOGGER_LEVEL), "toplevel") do io
             println(io, "applied JET configurations in $configfile")
         end
@@ -813,11 +818,13 @@ function report_file(filename::AbstractString;
     return report_text(read(filename, String), filename; source, jetconfigs...)
 end
 
-function set_toplevel_logger_if_missing(@nospecialize(jetconfigs))
-    haskey(jetconfigs, :toplevel_logger) && return jetconfigs
-    default_toplevel_logger_config =
-        kwargs((; toplevel_logger = IOContext(stdout::IO, LOGGER_LEVEL_KEY => DEFAULT_LOGGER_LEVEL)))
-    return overwrite_options(jetconfigs, default_toplevel_logger_config)
+default_toplevel_logger_config() =
+    return :toplevel_logger => IOContext(stdout::IO, LOGGER_LEVEL_KEY => DEFAULT_LOGGER_LEVEL)
+
+function set_if_missing(@nospecialize(jetconfigs), (key, value))
+    haskey(jetconfigs, key) && return jetconfigs
+    default = kwargs((; key => value))
+    return overwrite_options(jetconfigs, default)
 end
 
 function find_config_file(dir)
@@ -945,7 +952,11 @@ function report_package(package::Union{AbstractString,Module,Nothing} = nothing;
                         concretization_patterns = [:(x_ = y_), :(const x_ = y_)],
                         jetconfigs...)
     filename = get_package_file(package)
-    return report_file(filename; analyze_from_definitions, concretization_patterns, jetconfigs...)
+    __default_configs = ( # allow a configuration file to overwrite these configurations
+        default_toplevel_logger_config(),
+        :analyze_from_definitions => analyze_from_definitions,
+        :concretization_patterns => concretization_patterns)
+    return report_file(filename; __default_configs, jetconfigs...)
 end
 
 function get_package_file(package::AbstractString)
