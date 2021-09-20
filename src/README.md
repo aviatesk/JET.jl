@@ -1,4 +1,4 @@
-## Organization
+## Source Organization
 
 JET's codebase is structured as following:
 - [src/abstractinterpret](./abstractinterpret/): implements the core functionalities of `AbstractAnalyzer`, the general program analysis framework based on abstract interpretation

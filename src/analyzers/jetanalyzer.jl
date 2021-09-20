@@ -1,7 +1,34 @@
 """
-    struct JETAnalyzer <: AbstractAnalyzer
+Every [entry point of error analysis](@ref jetanalysis-entry) can accept
+any of [general JET configurations](@ref JET-configurations) as well as
+the following additional configurations that are specific to the error analysis.
 
-JET.jl's default error analyzer.
+---
+- `mode::Symbol = :basic`:\\
+  Switches the error analysis pass. Each analysis pass reports errors according to their
+  own "error" definition.
+  JET by default offers the following modes:
+  - `mode = :basic`: the default error analysis pass.
+    This analysis pass is tuned to be useful for general Julia development by reporting common
+    problems, but also note that it is not enough strict to guarantee that your program never
+    throws runtime errors.\\
+    See [`BasicPass`](@ref) for more details.
+  - `mode = :sound`: the sound error analysis pass.
+    If this pass doesn't report any errors, then your program is assured to run without
+    any runtime errors (unless JET's error definition is not accurate and/or there is an
+    implementation flaw).\\
+    See [`SoundPass`](@ref) for more details.
+  - `mode = :typo`: a typo detection pass
+    A simple analysis pass to detect "typo"s in your program.
+    This analysis pass is essentially a subset of the default basic pass ([`BasicPass`](@ref)),
+    and it only reports undefined global reference and undefined field access.
+    This might be useful especially for a very complex code base, because even the basic pass
+    tends to be too noisy (spammed with too many errors) for such a case.\\
+    See [`TypoPass`](@ref) for more details.
+
+  !!! note
+      You can also set up your own analysis using JET's [`AbstractAnalyzer`-Framework](@ref).
+---
 """
 struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
     report_pass::RP
@@ -50,10 +77,10 @@ JETInterface.ReportPass(analyzer::JETAnalyzer) =
 JETInterface.get_cache_key(analyzer::JETAnalyzer) =
     return analyzer.__cache_key
 
-# TODO document the definitions of errors, elaborate the difference of these two passes
-
 """
 The basic (default) error analysis pass.
+
+_**TODO**_: elaborate the definitions of "error"s.
 """
 struct BasicPass{FF} <: ReportPass
     function_filter::FF
@@ -71,6 +98,8 @@ end
 
 """
 The sound error analysis pass.
+
+_**TODO**_: elaborate the definitions of "error"s.
 """
 struct SoundPass <: ReportPass end
 
@@ -81,7 +110,9 @@ basic_filter(analyzer::JETAnalyzer, sv) =
 const SoundBasicPass = Union{SoundPass,BasicPass}
 
 """
-Typo detection pass.
+A typo detection pass.
+
+_**TODO**_: elaborate the definitions of "error"s.
 """
 struct TypoPass <: ReportPass end
 (::TypoPass)(@nospecialize _...) = return false # ignore everything except GlobalUndefVarErrorReport and NoFieldErrorReport

@@ -3,8 +3,8 @@
 
 """
 Every [entry point of optimization analysis](@ref optanalysis-entry) can accept
-any of [JET configurations](@ref JET-configurations) as well as
-the following additional configurations that are specific to optimization analysis.
+any of [general JET configurations](@ref JET-configurations) as well as
+the following additional configurations that are specific to the optimization analysis.
 
 ---
 - `skip_nonconcrete_calls::Bool = true`:\\

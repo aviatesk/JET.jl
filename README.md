@@ -15,11 +15,9 @@ JET.jl employs Julia's type inference for bug reports.
     In general, the newer your Julia version is, more accurately and quickly your can expect JET to analyze your code,
     assuming the Julia compiler keeps evolving all the time from now on.
 
-
-## Documentation
-
-JET's documentation is now available at [here](https://aviatesk.github.io/JET.jl/dev/) !
-Any kind of feedback or help will be very appreciated.
+!!! tip
+    Hold on tight and fasten your seatbelt while JET is analyzing your code for the first time.
+    Once the caches get accumulated, subsequent analysis will run at ✈ speed.
 
 
 ## Demo
@@ -214,6 +212,6 @@ No errors !
 
 ## Acknowledgement
 
-This project started as my grad thesis project at Kyoto University, supervised by Prof. Takashi Sakuragawa.
+This project started as my undergrad thesis project at Kyoto University, supervised by Prof. Takashi Sakuragawa.
 We were heavily inspired by [ruby/typeprof](https://github.com/ruby/typeprof), an experimental type understanding/checking tool for Ruby.
 The grad thesis about this project is published at <https://github.com/aviatesk/grad-thesis>, but currently it's only available in Japanese.

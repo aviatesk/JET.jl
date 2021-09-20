@@ -12,7 +12,7 @@ is known as "runtime dispatch", which happens when a matching method can't be re
 of type information and it is looked up at runtime instead. Since runtime dispatch is caused by poor type information,
 it often indicates the compiler could not do other optimizations including inlining and scalar replacements of aggregates.
 
-In order to avoid such problems, we usually insect output of [`code_typed`](https://docs.julialang.org/en/v1/base/base/#Base.code_typed)
+In order to avoid such problems, we usually inspect output of [`code_typed`](https://docs.julialang.org/en/v1/base/base/#Base.code_typed)
 or its family, and check if there is anywhere type is not well inferred and optimization was not successful.
 But the problem is that one needs to have enough knowledge about the inference and optimization in order to interpret
 the output. Another problem is that they can only present the "final" output of the inference and optimization, and we
@@ -26,6 +26,7 @@ So, why not automate it ?
 JET implements such an analyzer that investigates optimized representation of your program and _automatically_ detects
 anywhere the compiler failed in optimization. Especially, it can find where Julia creates captured variables, where
 runtime dispatch will happen, and where Julia gives up the optimization work due to unresolvable recursive function call.
+
 
 ## [Quick Start](@id optanalysis-quick-start)
 
@@ -52,7 +53,7 @@ end;
 @report_opt sumup(sin) # runtime dispatches will be reported
 ```
 
-JET's analysis result will be dynamically updated when we update function definition[^1], and we can "hot-fix" the runtime
+JET's analysis result will be dynamically updated when we (re-)define functions[^1], and we can "hot-fix" the runtime
 dispatches within the same running Julia session like this:
 ```@repl quickstart
 # we can pass parameters as a function argument instead, and then everything will be type-stable
@@ -140,7 +141,7 @@ end
 There is also [`function_filter`](@ref optanalysis-config), which can ignore specific function call.
 
 [`@test_opt`](@ref) can be used to assert that a given function call is free from the performance pitfalls.
-It is fully integrated with [`Test` standard library's unit-testing infrastructure](https://docs.julialang.org/en/v1/stdlib/Test/),
+It is fully integrated with [`Test` standard library](https://docs.julialang.org/en/v1/stdlib/Test/)'s unit-testing infrastructure,
 and we can use it as like other `Test` macros e.g. `@test`:
 ```@repl quickstart
 @test_opt sumup(cos)
@@ -161,18 +162,38 @@ using Test
 end
 ```
 
+
 ## [Entry Points](@id optanalysis-entry)
 
-These macros/functions are the entries of dispatch analysis:
+### [Interactive Entry Points](@id optanalysis-interactive-entry)
+
+The optimization analysis offers interactive entry points that can be used in the same way as [`@report_call`](@ref) and [`report_call`](@ref):
 ```@docs
 JET.@report_opt
 JET.report_opt
+```
+
+### [`Test` Integration](@id optanalysis-test-integration)
+
+As with [the default error analysis](@ref jetanalysis), the optimization analysis also offers the integration with
+[`Test` standard library](https://docs.julialang.org/en/v1/stdlib/Test/):
+```@docs
 JET.@test_opt
 JET.test_opt
 ```
 
+### [Top-level Entry Points](@id optanalysis-toplevel-entry)
+
+By default, JET doesn't offer top-level entry points for the optimization analysis, because it's usually used for only a
+selective portion of your program.
+But if you want you can just use [`report_file`](@ref) or similar top-level entry points with specifying
+`analyzer = OptAnalyzer` configuration in order to apply the optimization analysis on top-level script,
+e.g. `report_file("path/to/file.jl"; analyzer = OptAnalyzer)`.
+
+
 ## [Configurations](@id optanalysis-config)
 
+In addition to [general configurations](@ref JET-configurations), the optimization analysis can take the following specific configurations:
 ```@docs
 JET.OptAnalyzer
 ```

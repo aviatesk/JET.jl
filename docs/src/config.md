@@ -1,19 +1,20 @@
 # [Configurations](@id JET-configurations)
 
 JET analysis can be flexibly fine-tuned.
-Any entry point explained in [the usage section](@ref usages) can accept any of the configuration parameters described below
-as keyword arguments (or optional parameters for the interactive macros).
-For example, if you want to analyze `some/awesome/code.jl` with turning on `strict_condition_check` configuration and
-also logs inference process into `stdout`, you can do:
+Any entry point explained in [JET's default error analysis](@ref jetanalysis-entry) and [the optimization analysis](@ref optanalysis-entry)
+can accept any of the configuration parameters described below as keyword arguments (or optional parameters for the interactive macros).
+For example, if you want to analyze `path/to/file.jl` with specifying [`target_defined_modules` configuration](@ref toplevel-config)
+and also logs inference process into `stdout`, you can do:
 ```julia
-report_file("some/awesome/code.jl";
-            strict_condition_check = true,
+report_file("path/to/file.jl";
+            target_defined_modules = true,
             inference_logger = stdout)
 ```
 
 !!! note
     Please ignore the names of documented objects appearing below, like "[`JET._get_configured_reports`](@ref)".
     They are just remnants of documentation internals, and you will never directly interact with them.
+
 
 ## [Configurations for Analysis Result](@id result-config)
 

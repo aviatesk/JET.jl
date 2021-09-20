@@ -54,13 +54,13 @@ function generate_api_doc(examples_pages)
         examples_contents = codeblock("Pages = $(repr(examples_pages))", "@contents")
 
         s = md"""
-        # [JET Analyzer Framework](@id JET-Analyzer-Framework)
+        # [`AbstractAnalyzer` Framework](@id AbstractAnalyzer-Framework)
 
         $contents
 
         JET offers an infrastructure to implement a "plugin" code analyzer.
-        Actually, JET's default error analyzer that explained [in the usage section](@ref usages)
-        is one specific instance of such a pluggin analyzer built on top of the framework.
+        Actually, [JET's default error analyzer](@ref jetanalysis) is one specific instance
+        of such a pluggin analyzer built on top of the framework.
 
         In this documentation we will try to elaborate the framework APIs and showcase example analyzers.
 
@@ -88,15 +88,16 @@ end
 let
     examples = generate_example_docs!()
     makedocs(; modules = [JET],
-               sitename="JET.jl",
-               pages = [
+               sitename = "JET.jl",
+               pages = Any[
                     "README" => generate_index!(),
-                    # TODO combine usages.md / config.md / perfanalyzer.md
-                    "Usages" => "usages.md",
+                    "Analyses" => Any[
+                        "Error Analysis" => "jetanalysis.md",
+                        "Optimization Analysis" => "optanalysis.md",
+                    ],
                     "Configurations" => "config.md",
-                    "Optimization Analysis" => "optanalysis.md",
                     "Internals" => "internals.md",
-                    "JET Analyzer Framework" => Any[
+                    "`AbstractAnalyzer` Framework" => Any[
                         "API"      => generate_api_doc(examples),
                         "Examples" => examples,
                     ]
@@ -105,7 +106,7 @@ let
                    prettyurls = get(ENV, "CI", nothing) == "true",
                    ansicolor = true,
                ),
-            )
+             )
 end
 
 deploydocs(; repo = "github.com/aviatesk/JET.jl.git",
