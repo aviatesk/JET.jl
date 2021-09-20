@@ -55,4 +55,25 @@ include("setup.jl")
     @testset "performance" begin
         include("performance.jl")
     end
+
+    @testset "self check !!!" begin
+        target_modules = (JET,)
+
+        # JETAnalyzer
+        test_call(JET.analyze_frame!, (typeof(JET.JETAnalyzer()), Core.Compiler.InferenceState);
+                  target_modules)
+        # OptAnalyzer
+        test_call(JET.analyze_frame!, (typeof(JET.OptAnalyzer()), Core.Compiler.InferenceState);
+                  target_modules)
+        # top-level
+        test_call(JET.virtual_process, (String, String, typeof(JET.JETAnalyzer()), JET.ToplevelConfig);
+                  target_modules)
+        # entries
+        test_call(JET.report_file, (String,);
+                  target_modules)
+        test_call(JET.report_package, (Union{String,Module,Nothing},);
+                  target_modules)
+
+        # TODO run `test_opt`
+    end
 end
