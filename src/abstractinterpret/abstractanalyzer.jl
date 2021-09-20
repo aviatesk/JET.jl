@@ -4,7 +4,7 @@
 """
     abstract type AbstractAnalyzer <: AbstractInterpreter end
 
-An interface type of analyzers that are built on top of [JET's analyzer framework](@ref JET-Analyzer-Framework).
+An interface type of analyzers that are built on top of [JET's analyzer framework](@ref AbstractAnalyzer-Framework).
 
 When a new type `NewAnalyzer` implements the `AbstractAnalyzer` interface, it should be declared
 as subtype of `AbstractAnalyzer`, and is expected to the following interfaces:

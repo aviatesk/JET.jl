@@ -24,7 +24,7 @@ end
 """
 Configurations for top-level analysis.
 These configurations will be active for all the top-level entries explained in the
-[top-level analysis entry points](@ref toplevel-entries) section.
+[top-level analysis entry points](@ref jetanalysis-toplevel-entry) section.
 
 ---
 - `context::Bool = Main` \\
@@ -200,7 +200,7 @@ struct ToplevelConfig{CP<:Any}
               # pushes elements (`v`) into a slot representing an array (`insts`),
               # which is very hard to be generalized;
               # here we add them as pre-defined concretization patterns and make sure
-              # false postive top-level errors won't happen by the macro
+              # false postive top-level errors won't happen by the macro expansion
               :(@enum(args__)), :(Base.@enum(args__)),
               )
         concretization_patterns = CP[striplines(normalise(x)) for x in concretization_patterns]

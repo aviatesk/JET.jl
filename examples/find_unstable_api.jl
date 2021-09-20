@@ -32,7 +32,8 @@
 # language and those written by ourselves, and in the latter case we're certainly uses
 # "unstable API" under the definition above.
 
-using JET.JETInterface  # to load APIs of the pluggable analysis framework
+using JET.JETInterface   # to load APIs of the pluggable analysis framework
+using JET                # to use analysis entry points
 const CC = Core.Compiler # to inject a customized report pass
 
 # First off, we define `UnstableAPIAnalyzer`, which is a new [`AbstractAnalyzer`](@ref) and will
@@ -106,8 +107,8 @@ CC.may_optimize(analyzer::UnstableAPIAnalyzer) = return false
 
 # but except the report of undefined global references (i.e. `GlobalUndefVarErrorReport`).
 # This overload allow us to find code that falls into the category 1.
-function (::UnstableAPIAnalysisPass)(T::Type{GlobalUndefVarErrorReport}, analyzer, state, @nospecialize(spec_args...))
-    BasicPass()(T, analyzer, state, spec_args...) # forward to JET's default report pass
+function (::UnstableAPIAnalysisPass)(T::Type{JET.GlobalUndefVarErrorReport}, analyzer, state, @nospecialize(spec_args...))
+    JET.BasicPass()(T, analyzer, state, spec_args...) # forward to JET's default report pass
 end
 
 # And now we will define new [`InferenceErrorReport`](@ref) report type `UnstableAPI`,
@@ -173,14 +174,12 @@ end
 
 # ## Usages
 
-# Now we find "unstable API"s in your code using [JET's analysis entry points](@ref usages)
+# Now we find "unstable API"s in your code using [JET's analysis entry points](@ref jetanalysis-entry)
 # with passing `UnstableAPIAnalyzer` as the `analyzer` configuration.
-
-using JET # to use analysis entry points
 
 # ### Simple cases
 
-# Let's first use the [interactive analysis entries](@ref interactive-entries) and
+# Let's first use the [interactive analysis entries](@ref jetanalysis-interactive-entry) and
 # try simple test cases.
 
 # `UnstableAPIAnalyzer` can find an "unstable" function:
@@ -205,7 +204,7 @@ end
 
 # ### Analyze a real-world package
 
-# Finally we can use [JET's top-level analysis entry points](@ref toplevel-entries) to analyze
+# Finally we can use [JET's top-level analysis entry points](@ref jetanalysis-toplevel-entry) to analyze
 # a whole script or package.
 #
 # Here we will run `UnstableAPIAnalyzer` on [IRTools.jl](https://github.com/FluxML/IRTools.jl),

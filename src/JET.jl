@@ -477,7 +477,8 @@ function Base.show(io::IO, frame::InferenceState)
     show(io, frame.linfo)
     print(io, " at pc ", frame.currpc, '/', length(frame.src.code))
 end
-Base.show(io::IO, ::MIME"application/prs.juno.inline", frame::InferenceState) = frame
+Base.show(io::IO, ::MIME"application/prs.juno.inline", frame::InferenceState) =
+    return frame
 
 # lattice
 
@@ -926,8 +927,8 @@ overwrite_options(old, new) = kwargs(merge(old, new))
 
 Analyzes `package` in the same way as [`report_file`](@ref) with the special default
 configurations, which are especially tuned for package analysis (see below for details).
-`package` can be either a module or a string. In the latter case it must be the name of a
-package in your current environment.
+`package` can be either a `Module` or a `String`.
+In the latter case it must be the name of a package in your current environment.
 
 This function configures analysis with the following configurations:
 - `analyze_from_definitions = true`: allows JET to enter analysis without top-level call sites;
@@ -1348,15 +1349,17 @@ JET-test failed at none:1
 ERROR: There was an error during testing
 ```
 
-`@test_call` is fully integrated with [`Test` standard library's unit-testing infrastructure](https://docs.julialang.org/en/v1/stdlib/Test/).
+`@test_call` is fully integrated with [`Test` standard library](https://docs.julialang.org/en/v1/stdlib/Test/)'s unit-testing infrastructure.
 It means, the result of `@test_call` will be included in the final `@testset` summary,
 it supports `skip` and `broken` annotations as like `@test` and its family:
 ```julia-repl
 julia> using JET, Test
 
-julia> f(ref) = isa(ref[], Number) ? sin(ref[]) : nothing;      # Julia can't propagate the type constraint `ref[]::Number` to `sin(ref[])`, JET will report `NoMethodError`
+# Julia can't propagate the type constraint `ref[]::Number` to `sin(ref[])`, JET will report `NoMethodError`
+julia> f(ref) = isa(ref[], Number) ? sin(ref[]) : nothing;
 
-julia> g(ref) = (x = ref[]; isa(x, Number) ? sin(x) : nothing); # we can make it type-stable if we extract `ref[]` into a local variable `x`
+# we can make it type-stable if we extract `ref[]` into a local variable `x`
+julia> g(ref) = (x = ref[]; isa(x, Number) ? sin(x) : nothing);
 
 julia> @testset "check errors" begin
            ref = Ref{Union{Nothing,Int}}(0)
@@ -1521,7 +1524,6 @@ function Base.show(io::IO, t::JETTestFailure)
     lines = replace(String(take!(buf)), '\n'=>string('\n',TEST_INDENTS))
     print(io, TEST_INDENTS, lines)
 end
-
 Base.show(io::IO, ::MIME"application/prs.juno.inline", t::JETTestFailure) =
     return t
 
@@ -1547,7 +1549,7 @@ end
 """
     JETInterface
 
-This `baremodule` exports names that form the APIs of [JET Analyzer Framework](@ref).
+This `baremodule` exports names that form the APIs of [`AbstractAnalyzer` Framework](@ref AbstractAnalyzer-Framework).
 `using JET.JETInterface` loads all names that are necessary to define a plugin analysis.
 """
 baremodule JETInterface
