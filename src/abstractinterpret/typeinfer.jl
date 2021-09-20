@@ -204,7 +204,7 @@ function CC.abstract_call_method_with_const_args(analyzer::AbstractAnalyzer, res
     # `CC.cache_lookup(linfo::MethodInstance, given_argtypes::Vector{Any}, cache::JETLocalCache)`
     set_cacher!(analyzer, nothing)
 
-    if !isnothing(const_result)
+    if const_result !== nothing
         # successful constant prop', we also need to update reports
         collect_callee_reports!(analyzer, sv)
     end
@@ -287,7 +287,7 @@ end
 function CC.return_type_tfunc(analyzer::AbstractAnalyzer, argtypes::Vector{Any}, sv::InferenceState)
     # stash and discard the result from the simulated call, and keep the original result (`result0`)
     result = sv.result
-    result0 = result.src
+    result0 = result.src::JETResult
     set_result!(result)
     ret = @invoke return_type_tfunc(analyzer::AbstractInterpreter, argtypes::Vector{Any}, sv::InferenceState)
     set_result!(sv.result, result0)
@@ -323,15 +323,15 @@ function CC.code_cache(analyzer::AbstractAnalyzer)
     return WorldView(cache, worlds)
 end
 
-struct JETGlobalCache
-    analyzer::AbstractAnalyzer
+struct JETGlobalCache{Analyzer<:AbstractAnalyzer}
+    analyzer::Analyzer
 end
 
 # cache existence for this `analyzer` is ensured on its construction
-jet_cache(analyzer::AbstractAnalyzer)     = JET_CACHE[get_cache_key(analyzer)]
-jet_cache(wvc::WorldView{JETGlobalCache}) = jet_cache(wvc.cache.analyzer)
+jet_cache(analyzer::AbstractAnalyzer)       = JET_CACHE[get_cache_key(analyzer)]
+jet_cache(wvc::WorldView{<:JETGlobalCache}) = jet_cache(wvc.cache.analyzer)
 
-CC.haskey(wvc::WorldView{JETGlobalCache}, mi::MethodInstance) = haskey(jet_cache(wvc), mi)
+CC.haskey(wvc::WorldView{<:JETGlobalCache}, mi::MethodInstance) = haskey(jet_cache(wvc), mi)
 
 function CC.typeinf_edge(analyzer::AbstractAnalyzer, method::Method, @nospecialize(atypes), sparams::SimpleVector, caller::InferenceState)
     # enable the report cache restoration at `code = get(code_cache(interp), mi, nothing)`
@@ -339,7 +339,7 @@ function CC.typeinf_edge(analyzer::AbstractAnalyzer, method::Method, @nospeciali
     return @invoke typeinf_edge(analyzer::AbstractInterpreter, method::Method, @nospecialize(atypes), sparams::SimpleVector, caller::InferenceState)
 end
 
-function CC.get(wvc::WorldView{JETGlobalCache}, mi::MethodInstance, default)
+function CC.get(wvc::WorldView{<:JETGlobalCache}, mi::MethodInstance, default)
     codeinf = get(jet_cache(wvc), mi, default) # will ignore native code cache for a `MethodInstance` that is not analyzed by JET yet
 
     analyzer = wvc.cache.analyzer
@@ -373,7 +373,7 @@ function CC.get(wvc::WorldView{JETGlobalCache}, mi::MethodInstance, default)
     return codeinf
 end
 
-function CC.getindex(wvc::WorldView{JETGlobalCache}, mi::MethodInstance)
+function CC.getindex(wvc::WorldView{<:JETGlobalCache}, mi::MethodInstance)
     r = CC.get(wvc, mi, nothing)
     r === nothing && throw(KeyError(mi))
     return r::CodeInstance
@@ -393,7 +393,7 @@ function CC.transform_result_for_cache(analyzer::AbstractAnalyzer, linfo::Method
     return JETCachedResult(cache, get_source(jetresult))
 end
 
-function CC.setindex!(wvc::WorldView{JETGlobalCache}, ci::CodeInstance, mi::MethodInstance)
+function CC.setindex!(wvc::WorldView{<:JETGlobalCache}, ci::CodeInstance, mi::MethodInstance)
     setindex!(jet_cache(wvc), ci, mi)
     return nothing
 end
@@ -433,8 +433,8 @@ end
 # local
 # -----
 
-struct JETLocalCache
-    analyzer::AbstractAnalyzer
+struct JETLocalCache{Analyzer<:AbstractAnalyzer}
+    analyzer::Analyzer
     cache::Vector{InferenceResult}
 end
 
@@ -485,7 +485,7 @@ function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
 
     #= logging stage1 start =#
     local sec::Float64, depth::Int
-    logger_activated = !isnothing(JETLogger(analyzer).inference_logger)
+    logger_activated = isa(JETLogger(analyzer).inference_logger, IO)
     if logger_activated
         sec = time()
         with_inference_logger(analyzer, ==(DEBUG_LOGGER_LEVEL)) do io

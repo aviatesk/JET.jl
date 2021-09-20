@@ -108,6 +108,9 @@ end
 
 @inline _get_sig(s::StateAtPC, @nospecialize(x)) = return first(_get_sig_type(s, x))::Vector{Any}
 
+# to help inference
+_get_sig_type(@nospecialize args...) = __get_sig_type(args...)::Tuple{Vector{Any},Any}
+
 function _get_callsig(s::StateAtPC, @nospecialize(f), args::Vector{Any};
                       splat::Bool = false)
     sig = _get_sig(s, f)
@@ -128,7 +131,7 @@ function _get_callsig(s::StateAtPC, @nospecialize(f), args::Vector{Any};
     return sig
 end
 
-function _get_sig_type(s::StateAtPC, expr::Expr)
+function __get_sig_type(s::StateAtPC, expr::Expr)
     head = expr.head
     if head === :call
         f = first(expr.args)
@@ -163,13 +166,13 @@ function _get_sig_type(s::StateAtPC, expr::Expr)
         end
         return sigtyp
     elseif head === :static_parameter
-        typ = widenconst(first(s).sptypes[first(expr.args)])
+        typ = widenconst(first(s).sptypes[first(expr.args)::Int])
         return Any['_', typ], typ
     else
         return Any[string(expr)], nothing
     end
 end
-function _get_sig_type((sv, _)::StateAtPC, ssa::SSAValue)
+function __get_sig_type((sv, _)::StateAtPC, ssa::SSAValue)
     news = (sv, ssa.id)
     if isa(sv, OptimizationState)
         # when working on `OptimizationState`, the SSA traverse could be really long because
@@ -184,7 +187,7 @@ function _get_sig_type((sv, _)::StateAtPC, ssa::SSAValue)
     end
     return sig, typ
 end
-function _get_sig_type(s::StateAtPC, slot::SlotNumber)
+function __get_sig_type(s::StateAtPC, slot::SlotNumber)
     sv = first(s)
     name = get_slotname(sv, slot)
     sig = string(name)
@@ -202,27 +205,27 @@ function _get_sig_type(s::StateAtPC, slot::SlotNumber)
     end
 end
 # NOTE `Argument` is introduced by optimization, and so we don't need to handle abstract global variable here, etc.
-function _get_sig_type((sv, _)::StateAtPC, arg::Argument)
+function __get_sig_type((sv, _)::StateAtPC, arg::Argument)
     name = get_slotname(sv, arg.n)
     sig = string(name)
     typ = widenconst(ignorelimited(get_slottype(sv, arg))) # after optimization we shouldn't use `get_slottype(::StateAtPC, ::Any)`
     return Any[sig, typ], typ
 end
-_get_sig_type(_::StateAtPC, gr::GlobalRef) = Any[string(gr.mod, '.', gr.name)], nothing
-_get_sig_type(_::StateAtPC, name::Symbol) = Any[repr(name; context = :compact => true)], nothing
-function _get_sig_type(s::StateAtPC, gotoifnot::GotoIfNot)
+__get_sig_type(_::StateAtPC, gr::GlobalRef) = Any[string(gr.mod, '.', gr.name)], nothing
+__get_sig_type(_::StateAtPC, name::Symbol) = Any[repr(name; context = :compact => true)], nothing
+function __get_sig_type(s::StateAtPC, gotoifnot::GotoIfNot)
     sig  = Any[string("goto %", gotoifnot.dest, " if not "), _get_sig(s, gotoifnot.cond)...]
     return sig, nothing
 end
-function _get_sig_type(s::StateAtPC, rn::ReturnNode)
+function __get_sig_type(s::StateAtPC, rn::ReturnNode)
     sig = is_unreachable(rn) ? Any["unreachable"] : Any["return ", _get_sig(s, rn.val)...]
     return sig, nothing
 end
-function _get_sig_type(::StateAtPC, qn::QuoteNode)
+function __get_sig_type(::StateAtPC, qn::QuoteNode)
     typ = typeof(qn.value)
     return Any[string(qn), typ], typ
 end
-_get_sig_type(::StateAtPC, @nospecialize(x)) = Any[repr(x; context = :compact => true)], nothing
+__get_sig_type(::StateAtPC, @nospecialize(x)) = Any[repr(x; context = :compact => true)], nothing
 
 # new report
 # ----------
@@ -319,9 +322,9 @@ get_spec_args(T::Type{<:InferenceErrorReport}) =                error("`get_spec
     spec_args::NTuple{N,Any} where N
 end
 
-function cache_report!(cache, report::T) where {T<:InferenceErrorReport}
+function cache_report!(cache, @nospecialize(report::InferenceErrorReport))
     vst = copy(report.vst)
-    new = InferenceErrorReportCache(T, vst, report.msg, report.sig, get_spec_args(report))
+    new = InferenceErrorReportCache(typeof(report), vst, report.msg, report.sig, get_spec_args(report))
     return push!(cache, new)
 end
 

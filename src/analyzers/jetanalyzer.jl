@@ -317,7 +317,7 @@ function report_no_method_error_for_union_split!(
         if is_empty_match(matchinfo)
             isnothing(split_argtypes) && (split_argtypes = switchtupleunion(argtypes))
             isnothing(ts) && (ts = Type[])
-            sig_n = argtypes_to_type(split_argtypes[i])
+            sig_n = argtypes_to_type(split_argtypes[i]::Vector{Any})
             push!(ts, sig_n)
         end
     end
