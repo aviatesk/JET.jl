@@ -308,17 +308,22 @@ function print_frame(io, frame, config, depth, is_err)
     return length(s) # the length of frame info string
 end
 
-function print_signature(io, sig, config; kwargs...)
+function print_signature(io, sig::Signature, config; kwargs...)
     for a in sig
         _print_signature(io, a, config; kwargs...)
     end
     println(io)
 end
-_print_signature(io, a::Union{AbstractChar,AbstractString}, config; kwargs...) =
-    printstyled(io, a; kwargs...)
-function _print_signature(io, @nospecialize(typ), config; kwargs...)
-    config.annotate_types || return
-    printstyled(io, "::", string(typ); color = TYPE_ANNOTATION_COLOR, kwargs...)
+function _print_signature(io, @nospecialize(x), config; kwargs...)
+    if isa(x, AbstractChar)
+        printstyled(io, x; kwargs...)
+    elseif isa(x, AbstractString)
+        printstyled(io, x; kwargs...)
+    else
+        if config.annotate_types
+            printstyled(io, "::", string(x); color = TYPE_ANNOTATION_COLOR, kwargs...)
+        end
+    end
 end
 
 # default error report printer

@@ -93,7 +93,7 @@ const LOGGER_LEVELS_DESC = let
     end
     join(descs, ", ")
 end
-get_logger_level(io::IO) = get(io, LOGGER_LEVEL_KEY, DEFAULT_LOGGER_LEVEL)::Int
+get_logger_level(@nospecialize io::IO) = get(io, LOGGER_LEVEL_KEY, DEFAULT_LOGGER_LEVEL)::Int
 
 """
 Logging configurations for JET analysis.
@@ -678,22 +678,25 @@ is_global_slot(analyzer::AbstractAnalyzer, sym::Symbol) = sym in values(get_glob
 
 JETLogger(analyzer::AbstractAnalyzer) = get_logger(analyzer)
 
-@inline with_toplevel_logger(@nospecialize(f), analyzer::AbstractAnalyzer, @nospecialize(filter = ≥(DEFAULT_LOGGER_LEVEL)); kwargs...) =
-    with_logger(f, JETLogger(analyzer).toplevel_logger, filter, "toplevel"; kwargs...)
+@nospecialize
 
-@inline with_inference_logger(@nospecialize(f), analyzer::AbstractAnalyzer, @nospecialize(filter = ≥(DEFAULT_LOGGER_LEVEL)); kwargs...) =
-    with_logger(f, JETLogger(analyzer).inference_logger, filter, "inference"; kwargs...)
-
-@inline function with_logger(
-    @nospecialize(f), io::Union{Nothing,IO}, @nospecialize(filter), logger_name;
-    @nospecialize(pre = identity))
-    isnothing(io) && return
+@inline function with_toplevel_logger(f, analyzer::AbstractAnalyzer, args...; kwargs...)
+    io = JETLogger(analyzer).toplevel_logger
+    isa(io, IO) && with_logger(f, io, :toplevel, args...; kwargs...)
+end
+@inline function with_inference_logger(f, analyzer::AbstractAnalyzer, args...; kwargs...)
+    io = JETLogger(analyzer).inference_logger
+    isa(io, IO) && with_logger(f, io, :inference, args...; kwargs...)
+end
+function with_logger(f, io::IO, mode, filter = ≥(DEFAULT_LOGGER_LEVEL); pre = identity)
     level = get_logger_level(io)
     filter(level) || return
     pre(io)
-    print(io, "[$logger_name-$(LOGGER_LEVELS[level])] ")
+    print(io, "[$mode-$(LOGGER_LEVELS[level])] ")
     f(io)
 end
+
+@specialize
 
 """
     aggregation_policy(analyzer::AbstractAnalyzer)
@@ -723,13 +726,13 @@ end
 @withmixedhash struct VirtualFrameNoLinfo
     file::Symbol
     line::Int
-    sig::Vector{Any}
+    sig::Signature
     # linfo::MethodInstance # ignore the idenity of `MethodInstace`
     VirtualFrameNoLinfo(vf::VirtualFrame) = new(vf.file, vf.line, vf.sig)
 end
 @withmixedhash struct DefaultReportIdentity
-    T::Type{<:InferenceErrorReport}
-    sig::Vector{Any}
+    T::DataType
+    sig::Signature
     # entry_frame::VirtualFrameNoLinfo
     error_frame::VirtualFrameNoLinfo
 end

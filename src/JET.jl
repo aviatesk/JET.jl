@@ -317,8 +317,6 @@ end
     name::String
 end
 ```
-
-See also: [`EGAL_TYPES`](@ref)
 """
 macro withmixedhash(typedef)
     @assert @isexpr(typedef, :struct) "struct definition should be given"
@@ -337,41 +335,31 @@ macro withmixedhash(typedef)
     @assert !isempty(fld2typs) "no fields given, nothing to hash"
 
     h_init = UInt === UInt64 ? rand(UInt64) : rand(UInt32)
-    hash_body = quote h = $(h_init) end
+    hash_body = quote h = $h_init end
     for (fld, typ) in fld2typs
-        push!(hash_body.args, :(h = $(Base.hash)(x.$fld, h)))
+        push!(hash_body.args, :(h = Base.hash(x.$fld, h)::UInt))
     end
     push!(hash_body.args, :(return h))
-    hash_func = :(function Base.hash(x::$name, h::$UInt); $(hash_body); end)
+    hash_func = :(function Base.hash(x::$name, h::UInt); $hash_body; end)
     eq_body = foldr(fld2typs; init = true) do (fld, typ), x
-        eq_ex = if all(in(EGAL_TYPES), typenames(typ))
-            :(x1.$fld === x2.$fld)
+        if typ in _EGAL_TYPES
+            eq_ex = :(x1.$fld === x2.$fld)
         else
-            :((x1.$fld == x2.$fld)::Bool)
+            eq_ex = :((x1.$fld == x2.$fld)::Bool)
         end
         Expr(:&&, eq_ex, x)
     end
-    eq_func = :(function Base.:(==)(x1::$name, x2::$name); $(eq_body); end)
+    eq_func = :(function Base.:(==)(x1::$name, x2::$name); $eq_body; end)
 
     return quote
-        Base.@__doc__ $(typedef)
-        $(hash_func)
-        $(eq_func)
+        Base.@__doc__ $typedef
+        $hash_func
+        $eq_func
     end
 end
 
-"""
-    const EGAL_TYPES = $(EGAL_TYPES)
-
-Keeps names of types that should be compared by `===` rather than `==`.
-
-See also: [`@withmixedhash`](@ref)
-"""
-const EGAL_TYPES = Set{Symbol}((:Type, :Symbol, :MethodInstance))
-
-typenames(@nospecialize(t::DataType)) = [t.name.name]
-typenames(u::Union)                   = collect(Base.Iterators.flatten(typenames.(CC.uniontypes(u))))
-typenames(u::UnionAll)                = [u.body.name.name]
+# types that should be compared by `===` rather than `==`
+const _EGAL_TYPES = Any[Symbol, MethodInstance, Type]
 
 """
     @jetconfigurable function config_func(args...; configurations...)
@@ -425,9 +413,10 @@ const _JET_CONFIGURATIONS = Dict{Symbol,Union{Symbol,Expr}}()
 
 const State     = Union{InferenceState,OptimizationState}
 const StateAtPC = Tuple{State,Int}
+const LineTable = Union{Vector{Any},Vector{LineInfoNode}}
 
 get_stmt((sv, pc)::StateAtPC)         = @inbounds sv.src.code[pc]
-get_lin((sv, pc)::StateAtPC)          = @inbounds (sv.src.linetable::Vector)[sv.src.codelocs[pc]]::LineInfoNode
+get_lin((sv, pc)::StateAtPC)          = @inbounds (sv.src.linetable::LineTable)[sv.src.codelocs[pc]]::LineInfoNode
 get_ssavaluetype((sv, pc)::StateAtPC) = @inbounds sv.src.ssavaluetypes[pc]
 
 get_slottype(s::Union{StateAtPC,State}, slot)      = get_slottype(s, slot_id(slot))
@@ -807,8 +796,11 @@ function report_file(filename::AbstractString;
         for default in __default_configs
             jetconfigs = set_if_missing(jetconfigs, default)
         end
-        with_logger(get(jetconfigs, :toplevel_logger, nothing), ≥(INFO_LOGGER_LEVEL), "toplevel") do io
-            println(io, "applied JET configurations in $configfile")
+        toplevel_logger = get(jetconfigs, :toplevel_logger, nothing)
+        if isa(toplevel_logger, IO)
+            with_logger(toplevel_logger, :toplevel, ≥(INFO_LOGGER_LEVEL)) do @nospecialize(io)
+                println(io, "applied JET configurations in $configfile")
+            end
         end
     end
 

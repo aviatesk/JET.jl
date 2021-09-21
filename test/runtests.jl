@@ -58,15 +58,21 @@ include("setup.jl")
 
     @testset "self check !!!" begin
         target_modules = (JET,)
+        JETAnalyzerT   = typeof(JET.JETAnalyzer())
+        OptAnalyzerT   = typeof(JET.OptAnalyzer())
+        InferenceState = Core.Compiler.InferenceState
+
+        # error analysis
+        # ==============
 
         # JETAnalyzer
-        test_call(JET.analyze_frame!, (typeof(JET.JETAnalyzer()), Core.Compiler.InferenceState);
+        test_call(JET.analyze_frame!, (JETAnalyzerT, InferenceState);
                   target_modules)
         # OptAnalyzer
-        test_call(JET.analyze_frame!, (typeof(JET.OptAnalyzer()), Core.Compiler.InferenceState);
+        test_call(JET.analyze_frame!, (OptAnalyzerT, InferenceState);
                   target_modules)
         # top-level
-        test_call(JET.virtual_process, (String, String, typeof(JET.JETAnalyzer()), JET.ToplevelConfig);
+        test_call(JET.virtual_process, (String, String, JETAnalyzerT, JET.ToplevelConfig);
                   target_modules)
         # entries
         test_call(JET.report_file, (String,);
@@ -74,6 +80,25 @@ include("setup.jl")
         test_call(JET.report_package, (Union{String,Module,Nothing},);
                   target_modules)
 
-        # TODO run `test_opt`
+        # optimization analysis
+        # =====================
+
+        function function_filter(@nospecialize ft)
+            if ft === typeof(JET.widenconst) ||
+               ft === typeof(JET.print) ||
+               ft === typeof(Base.CoreLogging.handle_message) ||
+               ft == Type{<:JET.InferenceErrorReport} # the constructor used in `restore_cached_report` is very dynamic
+                return false
+            end
+            return true
+        end
+        # JETAnalyzer
+        test_opt(JET.analyze_frame!, (JETAnalyzerT, InferenceState);
+                 target_modules,
+                 function_filter)
+        # OptAnalyzer
+        test_opt(JET.analyze_frame!, (OptAnalyzerT, InferenceState);
+                 target_modules,
+                 function_filter)
     end
 end

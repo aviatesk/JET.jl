@@ -5,12 +5,40 @@
 # --------------------
 
 """
+    Signature
+
+Represents an expression signature.
+`print_signature` implements a frontend functionality to show this type.
+"""
+struct Signature
+    _sig::Vector{Any}
+end
+
+# define equality functions that avoid dynamic dispatches
+function Base.:(==)(sig1::Signature, sig2::Signature)
+    sig1 = sig1._sig
+    sig2 = sig2._sig
+    length(sig1) == length(sig2) || return false
+    for (a1, a2) in zip(sig1, sig2)
+        a1 === a2 || return false
+    end
+    return true
+end
+function Base.hash(sig::Signature, h::UInt)
+    for a in sig._sig
+        h = @invoke hash(a::Any, h::UInt)
+    end
+    return h
+end
+@inline Base.iterate(sig::Signature, state...) = iterate(sig._sig, state...)
+
+"""
     VirtualFrame
 
 Stack information representing virtual execution context:
 - `file::Symbol`: the path to the file containing the virtual execution context
 - `line::Int`: the line number in the file containing the virtual execution context
-- `sig::Vector{Any}`: a signature of this frame
+- `sig::Signature`: a signature of this frame
 - `linfo::MethodInstance`: The `MethodInstance` containing the execution context
 
 This type is very similar to `Base.StackTraces.StackFrame`, but its execution context is
@@ -19,7 +47,7 @@ collected during abstract interpration, not collected from actual execution.
 @withmixedhash struct VirtualFrame
     file::Symbol
     line::Int
-    sig::Vector{Any}
+    sig::Signature
     linfo::MethodInstance
 end
 
@@ -36,7 +64,7 @@ const VirtualStackTrace = Vector{VirtualFrame}
 const INFERENCE_ERROR_REPORT_FIELD_DECLS = [
     :(vst::VirtualStackTrace),
     :(msg::String),
-    :(sig::Vector{Any}),
+    :(sig::Signature),
 ]
 
 # get location information at the given program counter (or a current counter if not specified)
@@ -62,7 +90,7 @@ get_file_line(linfo::MethodInstance) = begin
 
     # top-level
     src = linfo.uninferred::CodeInfo
-    return get_file_line(first(src.linetable::Vector)::LineInfoNode)
+    return get_file_line(first(src.linetable::LineTable)::LineInfoNode)
 end
 
 # signature
@@ -93,7 +121,7 @@ function get_sig(l::MethodInstance)
         # end
         "toplevel"
     end
-    return Any[ret]
+    return Signature(Any[ret])
 end
 
 @inline function show_tuple_as_call(io::IO, name::Symbol, @nospecialize(sig::Type))
@@ -104,9 +132,9 @@ end
     end
 end
 
-@inline get_sig(s::StateAtPC) = return _get_sig(s, get_stmt(s))
-
-@inline _get_sig(s::StateAtPC, @nospecialize(x)) = return first(_get_sig_type(s, x))::Vector{Any}
+@inline get_sig(s::StateAtPC) = get_sig(s, get_stmt(s))
+@inline get_sig(s::StateAtPC, @nospecialize(x)) = Signature(_get_sig(s, x))
+@inline _get_sig(@nospecialize args...) = first(_get_sig_type(args...))
 
 # to help inference
 _get_sig_type(@nospecialize args...) = __get_sig_type(args...)::Tuple{Vector{Any},Any}
@@ -241,7 +269,7 @@ If `T` implements this interface, the following requirements should be satisfied
   `T` should have the following fields, which explains _where_ and _why_ this error is reported:
   * `vst::VirtualStackTrace`: a virtual stack trace of the error
   * `msg::String`: explains why this error is reported
-  * `sig::Vector{Any}`: a signature of the error point
+  * `sig::Signature`: a signature of the error point
 
   Note that `T` can still have additional, specific fields.
 ---
@@ -268,7 +296,7 @@ If `T` implements this interface, the following requirements should be satisfied
   the following interfaces:
   * `JET.get_spec_args(::T) -> Tuple{...}`:
     returns fields that are specific to `T`, which is internally used by the caching logic
-  * `T(vst::VirtualStackTrace, msg::String, sig::Vector{Any} spec_args::Tuple{...}) -> T`:
+  * `T(vst::VirtualStackTrace, msg::String, sig::Signature spec_args::Tuple{...}) -> T`:
     constructor to create `T` from the cache, which should expand `spec_args` into each specific field
 ---
 
@@ -287,7 +315,7 @@ function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
     elseif sym === :msg
         getfield(er, sym)::String
     elseif sym === :sig
-        getfield(er, sym)::Vector{Any}
+        getfield(er, sym)::Signature
     else
         getfield(er, sym) # fallback
     end
@@ -355,7 +383,7 @@ macro reportdef(ex)
     # cache constructor
     cache_constructor_sig = :($T(vst::VirtualStackTrace,
                                  msg::String,
-                                 sig::Vector{Any},
+                                 sig::Signature,
                                  @nospecialize(spec_args::Tuple),
                                  ))
     cache_constructor_call = :($T(vst, msg, sig))

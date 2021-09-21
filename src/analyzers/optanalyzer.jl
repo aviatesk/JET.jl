@@ -199,7 +199,7 @@ get_msg(::Type{CapturedVariableReport}, _, name::Union{Nothing,Symbol}) =
 print_error_report(io, report::CapturedVariableReport) = printlnstyled(io, "│ ", report.msg; color = ERROR_COLOR)
 function (::OptAnalysisPass)(::Type{CapturedVariableReport}, analyzer::OptAnalyzer, frame::InferenceState)
     local reported = false
-    for (pc, typ) in enumerate(frame.src.ssavaluetypes)
+    for (pc, typ) in enumerate(frame.src.ssavaluetypes::Vector{Any})
         if typ === Core.Box
             stmt = frame.src.code[pc]
             if @isexpr(stmt, :(=))
