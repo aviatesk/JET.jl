@@ -238,7 +238,7 @@ function UncaughtExceptionReport(sv::InferenceState, throw_calls::Vector{Tuple{I
         append!(sig, call_sig)
         i ≠ ncalls && push!(sig, ", ")
     end
-    return UncaughtExceptionReport([vf], msg, sig, throw_calls)
+    return UncaughtExceptionReport([vf], msg, Signature(sig), throw_calls)
 end
 
 # report `throw` calls "appropriately"
@@ -267,7 +267,7 @@ function report_uncaught_exceptions!(frame::InferenceState, stmts::Vector{Any})
     # NOTE to reduce the false positive cases described above, we count `throw` calls
     # after optimization, since it may have eliminated "unreachable" `throw` calls
     codelocs = frame.src.codelocs
-    linetable = frame.src.linetable::Vector
+    linetable = frame.src.linetable::LineTable
     reported_locs = nothing
     for report in get_reports(frame.result)
         if isa(report, SeriousExceptionReport)

@@ -25,7 +25,7 @@ end
     @test length(get_reports(result)) == 1
     r = first(get_reports(result))
     @test isa(r, NoMethodErrorReport)
-    @test Any['(', 'a', Char, ", ", 'b', Char, ')'] ⫇ r.sig
+    @test Any['(', 'a', Char, ", ", 'b', Char, ')'] ⫇ r.sig._sig
 end
 
 @testset ":invoke signature" begin
@@ -36,5 +36,5 @@ end
     @test length(get_reports(result)) == 1
     r = first(get_reports(result))
     @test isa(r, UncaughtExceptionReport)
-    @test Any['(', 's', String, ')', ArgumentError] ⫇ r.sig
+    @test Any['(', 's', String, ')', ArgumentError] ⫇ r.sig._sig
 end

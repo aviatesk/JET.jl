@@ -484,12 +484,12 @@ function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
     isentry = isnothing(parent)
 
     #= logging stage1 start =#
-    local sec::Float64, depth::Int
+    local sec::Float64
     logger_activated = isa(JETLogger(analyzer).inference_logger, IO)
+    depth = get_depth(analyzer)
     if logger_activated
         sec = time()
-        with_inference_logger(analyzer, ==(DEBUG_LOGGER_LEVEL)) do io
-            depth = get_depth(analyzer)
+        with_inference_logger(analyzer, ==(DEBUG_LOGGER_LEVEL)) do @nospecialize(io)
             print_rails(io, depth)
             printstyled(io, "┌ @ "; color = RAIL_COLORS[(depth+1)%N_RAILS+1])
             print(io, linfo)
@@ -523,11 +523,11 @@ function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
 
     #= logging stage2 start =#
     if logger_activated
-        sec = round(time() - sec; digits = 3)
-        with_inference_logger(analyzer, ==(INFO_LOGGER_LEVEL)) do io
-            println(io, "inference on $linfo finished in $sec sec")
+        elapsed = round(time() - sec; digits = 3)
+        with_inference_logger(analyzer, ==(INFO_LOGGER_LEVEL)) do @nospecialize(io)
+            println(io, "inference on $linfo finished in $elapsed sec")
         end
-        with_inference_logger(analyzer, ==(DEBUG_LOGGER_LEVEL)) do io
+        with_inference_logger(analyzer, ==(DEBUG_LOGGER_LEVEL)) do @nospecialize(io)
             print_rails(io, depth)
             printstyled(io, "└─→ "; color = RAIL_COLORS[(depth+1)%N_RAILS+1])
             printstyled(io, frame.bestguess; color = TYPE_ANNOTATION_COLOR)
@@ -535,7 +535,7 @@ function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
                              linfo,
                              ret ? nothing : "in cycle",
                              string(length((isentry ? get_reports : get_cached_reports)(result)), " reports"),
-                             string(sec, " sec"),
+                             string(elapsed, " sec"),
                              )), ", "),
                          ')')
             set_depth!(analyzer, get_depth(analyzer) - 1) # manipulate this only in debug mode
@@ -692,7 +692,7 @@ function CC.finish(me::InferenceState, analyzer::AbstractAnalyzer)
         empty!(edges)
     end
     if me.src.edges !== nothing
-        append!(s_edges, me.src.edges::Vector)
+        append!(s_edges, me.src.edges::Vector{Any})
         me.src.edges = nothing
     end
     # inspect whether our inference had a limited result accuracy,

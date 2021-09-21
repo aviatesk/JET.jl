@@ -65,6 +65,7 @@ JET.JETCallResult
 ```@docs
 JET.VirtualFrame
 JET.VirtualStackTrace
+JET.Signature
 JET.InferenceErrorReport
 JET.ToplevelErrorReport
 ```

@@ -286,7 +286,7 @@ function virtual_process(x::Union{AbstractString,Expr},
 
         start = time()
         virtual = virtualize_module_context(actual)
-        with_toplevel_logger(analyzer) do io
+        with_toplevel_logger(analyzer) do @nospecialize(io)
             sec = round(time() - start; digits = 3)
             println(io, "virtualized the context of $actual (took $sec sec)")
         end
@@ -385,7 +385,7 @@ function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProce
             filter!(mm::MethodMatch->mm.spec_types===tt, mms)
             if length(mms) == 1
                 succeeded += 1
-                with_toplevel_logger(analyzer; pre=clearline) do io
+                with_toplevel_logger(analyzer; pre=clearline) do @nospecialize(io)
                     (i == n ? println : print)(io, "analyzing from top-level definitions ... $succeeded/$n")
                 end
                 analyzer = AbstractAnalyzer(analyzer, _CONCRETIZED, _TOPLEVELMOD)
@@ -398,7 +398,7 @@ function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProce
             end
         end
         # something went wrong
-        with_toplevel_logger(analyzer, ≥(DEBUG_LOGGER_LEVEL); pre=clearline) do io
+        with_toplevel_logger(analyzer, ≥(DEBUG_LOGGER_LEVEL); pre=clearline) do @nospecialize(io)
             println(io, "couldn't find a single method matching the signature `$tt`")
         end
     end
@@ -415,7 +415,7 @@ function _virtual_process!(s::AbstractString,
                            )
     start = time()
 
-    with_toplevel_logger(analyzer) do io
+    with_toplevel_logger(analyzer) do @nospecialize(io)
         println(io, "entered into $filename")
     end
 
@@ -432,7 +432,7 @@ function _virtual_process!(s::AbstractString,
         res = _virtual_process!(toplevelex, filename, analyzer, config, context, res)
     end
 
-    with_toplevel_logger(analyzer) do io
+    with_toplevel_logger(analyzer) do @nospecialize(io)
         sec = round(time() - start; digits = 3)
         println(io, " exited from $filename (took $sec sec)")
     end
@@ -503,7 +503,7 @@ function _virtual_process!(toplevelex::Expr,
     while !isempty(exs)
         x = pop!(exs)
 
-        # with_toplevel_logger(analyzer, ≥(DEBUG_LOGGER_LEVEL)) do io
+        # with_toplevel_logger(analyzer, ≥(DEBUG_LOGGER_LEVEL)) do @nospecialize(io)
         #     println(io, "analyzing ", x)
         # end
 
@@ -522,7 +522,7 @@ function _virtual_process!(toplevelex::Expr,
         for pat in config.concretization_patterns
             if @capture(x, $pat)
                 force_concretize = true
-                with_toplevel_logger(analyzer, ≥(DEBUG_LOGGER_LEVEL)) do io
+                with_toplevel_logger(analyzer, ≥(DEBUG_LOGGER_LEVEL)) do @nospecialize(io)
                     line, file = lnn.line, lnn.file
                     x′ = striplines(normalise(x))
                     println(io, "concretization pattern `$pat` matched `$x′` at $file:$line")
@@ -790,7 +790,7 @@ Partially interprets statements in `src` using JuliaInterpreter.jl:
 function partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::CodeInfo)
     concretize = select_statements(src)
 
-    with_toplevel_logger(interp.analyzer, ≥(DEBUG_LOGGER_LEVEL)) do io
+    with_toplevel_logger(interp.analyzer, ≥(DEBUG_LOGGER_LEVEL)) do @nospecialize(io)
         line, file = interp.lnn.line, interp.lnn.file
         println(io, "concretization plan at $file:$line:")
         print_with_code(io, src, concretize)
