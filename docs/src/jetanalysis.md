@@ -94,9 +94,9 @@ bar(s::AbstractString) = parse(Int, s)
 ```
 
 So far, we have used the default error analysis pass, which collects problems according to one
-specific definition of "errors" (see the [`BasicPass`](@ref) for more details). JET offers other
-error reporting passes, including the "sound" error detection ([`SoundPass`](@ref)) as well as the
-"typo" detection pass ([`TypoPass`](@ref))[^2]. They can be switched using the `mode` configuration:
+specific definition of "errors" (see the [`JET.BasicPass`](@ref) for more details). JET offers other
+error reporting passes, including the "sound" error detection ([`JET.SoundPass`](@ref)) as well as the
+"typo" detection pass ([`JET.TypoPass`](@ref))[^2]. They can be switched using the `mode` configuration:
 
 [^2]: Actually JET offers the framework to define your own abstract interpretation based analysis.
       See [`AbstractAnalyzer`-Framework](@ref) if interested.
@@ -157,7 +157,7 @@ end
 
 JET actually uses JET itself in its test pipeline.
 JET's static analysis has been proven to be very useful and helped its development a lot.
-If interested, take a peek at [JET's test suite](https://github.com/aviatesk/JET.jl/blob/b9c284d8727b6f4d2b56e73dfa543e7aa9ce0176/test/runtests.jl#L59-L77).
+If interested, take a peek at [JET's `"self check !!!"` testset](https://github.com/aviatesk/JET.jl/blob/master/test/runtests.jl).
 
 Lastly, let's see the example that demonstrates JET can analyze "top-level" program.
 The top-level analysis should be considered as a somewhat experimental feature, and at this moment

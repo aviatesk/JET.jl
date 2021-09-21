@@ -38,7 +38,7 @@ end
 Stack information representing virtual execution context:
 - `file::Symbol`: the path to the file containing the virtual execution context
 - `line::Int`: the line number in the file containing the virtual execution context
-- `sig::Signature`: a signature of this frame
+- [`sig::Signature`](@ref Signature): a signature of this frame
 - `linfo::MethodInstance`: The `MethodInstance` containing the execution context
 
 This type is very similar to `Base.StackTraces.StackFrame`, but its execution context is
@@ -269,7 +269,7 @@ If `T` implements this interface, the following requirements should be satisfied
   `T` should have the following fields, which explains _where_ and _why_ this error is reported:
   * `vst::VirtualStackTrace`: a virtual stack trace of the error
   * `msg::String`: explains why this error is reported
-  * `sig::Signature`: a signature of the error point
+  * [`sig::Signature`](@ref Signature): a signature of the error point
 
   Note that `T` can still have additional, specific fields.
 ---
