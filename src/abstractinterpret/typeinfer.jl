@@ -240,7 +240,7 @@ See also: <https://github.com/aviatesk/JET.jl/issues/114>
     interpretation routine.
 """
 function analyze_task_parallel_code!(analyzer::AbstractAnalyzer, argtypes::Vector{Any}, sv::InferenceState)
-    f = argtype_to_function(argtypes[1])
+    f = singleton_type(argtypes[1])
 
     # TODO we should analyze a closure wrapped in a `Task` only when it's `schedule`d
     # But the `Task` construction may not happen in the same frame where it's `schedule`d

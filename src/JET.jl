@@ -133,7 +133,7 @@ import .CC:
     tmerge,
     switchtupleunion,
     argtypes_to_type,
-    argtype_to_function,
+    singleton_type,
     argtype_by_index,
     argtype_tail,
     _methods_by_ftype,
