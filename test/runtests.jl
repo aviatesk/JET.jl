@@ -80,26 +80,25 @@ include("setup.jl")
         test_call(JET.report_package, (Union{String,Module,Nothing},);
                   target_modules)
 
-        # TODO enable once https://github.com/JuliaLang/julia/issues/42258 is resolved
-        # # optimization analysis
-        # # =====================
-        #
-        # function function_filter(@nospecialize ft)
-        #     if ft === typeof(JET.widenconst) ||
-        #        ft === typeof(JET.print) ||
-        #        ft === typeof(Base.CoreLogging.handle_message) ||
-        #        ft == Type{<:JET.InferenceErrorReport} # the constructor used in `restore_cached_report` is very dynamic
-        #         return false
-        #     end
-        #     return true
-        # end
-        # # JETAnalyzer
-        # test_opt(JET.analyze_frame!, (JETAnalyzerT, InferenceState);
-        #          target_modules,
-        #          function_filter)
-        # # OptAnalyzer
-        # test_opt(JET.analyze_frame!, (OptAnalyzerT, InferenceState);
-        #          target_modules,
-        #          function_filter)
+        # optimization analysis
+        # =====================
+
+        function function_filter(@nospecialize ft)
+            if ft === typeof(JET.widenconst) ||
+               ft === typeof(JET.print) ||
+               ft === typeof(Base.CoreLogging.handle_message) ||
+               ft == Type{<:JET.InferenceErrorReport} # the constructor used in `restore_cached_report` is very dynamic
+                return false
+            end
+            return true
+        end
+        # JETAnalyzer
+        test_opt(JET.analyze_frame!, (JETAnalyzerT, InferenceState);
+                 target_modules,
+                 function_filter)
+        # OptAnalyzer
+        test_opt(JET.analyze_frame!, (OptAnalyzerT, InferenceState);
+                 target_modules,
+                 function_filter)
     end
 end
