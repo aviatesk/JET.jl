@@ -6,4 +6,4 @@ version = "0.0.1"
 [deps]
 
 [compat]
-julia = "1"
+julia = "~1.5"
