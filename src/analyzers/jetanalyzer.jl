@@ -305,13 +305,32 @@ get_msg(::Type{NoMethodErrorReport}, sv::InferenceState, @nospecialize(t::Type))
 get_msg(::Type{NoMethodErrorReport}, sv::InferenceState, ts::Vector{Type}) =
     "for $(length(ts)) of union split cases, no matching method found for call signatures ($(join(ts, ", "))))"
 
+@static if IS_AFTER_42529
+function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer, @nospecialize(f),
+                                     arginfo::ArgInfo, @nospecialize(atype),
+                                     sv::InferenceState, max_methods::Int = InferenceParams(analyzer).MAX_METHODS)
+    ret = @invoke CC.abstract_call_gf_by_type(analyzer::AbstractAnalyzer, @nospecialize(f),
+                                              arginfo::ArgInfo, @nospecialize(atype),
+                                              sv::InferenceState, max_methods::Int)
+    info = ret.info
+    if isa(info, ConstCallInfo)
+        info = info.call # unwrap to `MethodMatchInfo` or `UnionSplitInfo`
+    end
+    # report passes for no matching methods error
+    if isa(info, UnionSplitInfo)
+        ReportPass(analyzer)(NoMethodErrorReport, analyzer, sv, info, arginfo.argtypes, atype)
+    elseif isa(info, MethodMatchInfo)
+        ReportPass(analyzer)(NoMethodErrorReport, analyzer, sv, info, arginfo.argtypes, atype)
+    end
+    return ret
+end
+else # @static if IS_AFTER_42529
 function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer, @nospecialize(f),
                                      fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes, @nospecialize(atype),
                                      sv::InferenceState, max_methods::Int = InferenceParams(analyzer).MAX_METHODS)
     ret = @invoke CC.abstract_call_gf_by_type(analyzer::AbstractAnalyzer, @nospecialize(f),
                                               fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes, @nospecialize(atype),
                                               sv::InferenceState, max_methods::Int)
-
     info = ret.info
     if isa(info, ConstCallInfo)
         info = info.call # unwrap to `MethodMatchInfo` or `UnionSplitInfo`
@@ -322,9 +341,9 @@ function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer, @nospecialize(f),
     elseif isa(info, MethodMatchInfo)
         ReportPass(analyzer)(NoMethodErrorReport, analyzer, sv, info, argtypes, atype)
     end
-
     return ret
 end
+end # @static if IS_AFTER_42529
 
 function (rp::BasicPass)(
     ::Type{NoMethodErrorReport}, analyzer::JETAnalyzer, sv::InferenceState,
@@ -466,13 +485,19 @@ function (::SoundBasicPass)(::Type{InvalidReturnTypeCall}, analyzer::AbstractAna
     return false
 end
 
-function CC.abstract_invoke(analyzer::JETAnalyzer, argtypes::Argtypes, sv::InferenceState)
-    ret = @invoke CC.abstract_invoke(analyzer::AbstractAnalyzer, argtypes::Argtypes, sv::InferenceState)
-
-    ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret, argtypes)
-
+@static if IS_AFTER_42529
+function CC.abstract_invoke(analyzer::JETAnalyzer, arginfo::ArgInfo, sv::InferenceState)
+    ret = @invoke CC.abstract_invoke(analyzer::AbstractAnalyzer, arginfo::ArgInfo, sv::InferenceState)
+    ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret, arginfo.argtypes)
     return ret
 end
+else # @static if IS_AFTER_42529
+function CC.abstract_invoke(analyzer::JETAnalyzer, argtypes::Argtypes, sv::InferenceState)
+    ret = @invoke CC.abstract_invoke(analyzer::AbstractAnalyzer, argtypes::Argtypes, sv::InferenceState)
+    ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret, argtypes)
+    return ret
+end
+end # @static if IS_AFTER_42529
 
 @reportdef struct InvalidInvokeErrorReport <: InferenceErrorReport
     argtypes::Argtypes

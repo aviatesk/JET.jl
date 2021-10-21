@@ -191,13 +191,13 @@ end
 end
 
 function CC.abstract_call_method_with_const_args(analyzer::AbstractAnalyzer, result::MethodCallResult,
-                                                 @nospecialize(f), argtypes::Argtypes, match::MethodMatch,
+                                                 @nospecialize(f), arginfo::(@static IS_AFTER_42529 ? ArgInfo : Argtypes), match::MethodMatch,
                                                  sv::InferenceState, va_override::Bool)
     set_cacher!(analyzer, :abstract_call_method_with_const_args => sv.result)
 
     const_result =
         @invoke CC.abstract_call_method_with_const_args(analyzer::AbstractInterpreter, result::MethodCallResult,
-                                                        @nospecialize(f), argtypes::Argtypes, match::MethodMatch,
+                                                        @nospecialize(f), arginfo::(@static IS_AFTER_42529 ? ArgInfo : Argtypes), match::MethodMatch,
                                                         sv::InferenceState, va_override::Bool)
 
     # we should make sure we reset the cacher because at this point we may have not hit
@@ -212,16 +212,24 @@ function CC.abstract_call_method_with_const_args(analyzer::AbstractAnalyzer, res
     return const_result
 end
 
+@static if IS_AFTER_42529
+function CC.abstract_call(analyzer::AbstractAnalyzer, arginfo::ArgInfo,
+                          sv::InferenceState, max_methods::Int = InferenceParams(analyzer).MAX_METHODS)
+    ret = @invoke CC.abstract_call(analyzer::AbstractInterpreter, arginfo::ArgInfo,
+                                   sv::InferenceState, max_methods::Int)
+    analyze_task_parallel_code!(analyzer, arginfo.argtypes, sv)
+    return ret
+end
+else # @static if IS_AFTER_42529
 function CC.abstract_call(analyzer::AbstractAnalyzer, fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes,
                           sv::InferenceState, max_methods::Int = InferenceParams(analyzer).MAX_METHODS)
     ret = @invoke CC.abstract_call(analyzer::AbstractInterpreter, fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes,
                                    sv::InferenceState, max_methods::Int)
-
     analyze_task_parallel_code!(analyzer, argtypes, sv)
-
     return ret
 end
-
+end # @static if IS_AFTER_42529
+    
 """
     analyze_task_parallel_code!(analyzer::AbstractAnalyzer, argtypes::Argtypes, sv::InferenceState)
 

@@ -224,6 +224,9 @@ __init__() = foreach(@nospecialize(f)->f(), INIT_HOOKS)
 # branch on https://github.com/JuliaLang/julia/pull/42082
 const IS_AFTER_42082 = hasmethod(InferenceState, (InferenceResult, Symbol, AbstractInterpreter))
 
+const IS_AFTER_42529 = isdefined(CC, :ArgInfo)
+IS_AFTER_42529 && import .CC: ArgInfo
+
 # branch on https://github.com/JuliaLang/julia/pull/42125
 @static if isdefined(Base, Symbol("@constprop"))
     import Base: @constprop
