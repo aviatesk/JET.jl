@@ -615,7 +615,7 @@ CC.verbose_stmt_info(analyzer::AbstractAnalyzer) = false
 @doc """
     inlining_policy(
         analyzer::AbstractAnalyzer, @nospecialize(src), stmt_flag::UInt8,
-        mi::MethodInstance, argtypes::Vector{Any}) -> source::Any
+        mi::MethodInstance, argtypes::Argtypes) -> source::Any
 
 Implements inlining policy for `AbstractAnalyzer`.
 Since `AbstractAnalyzer` works on `InferenceResult` whose `src` field keeps
@@ -624,7 +624,7 @@ their wrapped source to `inlining_policy(::AbstractInterpreter, ::Any, ::UInt8)`
 """
 function CC.inlining_policy(
     analyzer::AbstractAnalyzer, @nospecialize(src), stmt_flag::UInt8,
-    mi::MethodInstance, argtypes::Vector{Any})
+    mi::MethodInstance, argtypes::Argtypes)
     if isa(src, JETResult)
         src = get_source(src)
     elseif isa(src, JETCachedResult)
@@ -632,7 +632,7 @@ function CC.inlining_policy(
     end
     return @invoke CC.inlining_policy(
         analyzer::AbstractInterpreter, @nospecialize(src), stmt_flag::UInt8,
-        mi::MethodInstance, argtypes::Vector{Any})
+        mi::MethodInstance, argtypes::Argtypes)
 end
 else # @static if IS_AFTER_42082
 @doc """

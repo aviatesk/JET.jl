@@ -205,6 +205,8 @@ import Test:
 # common
 # ======
 
+const Argtypes = Vector{Any}
+
 const JET_DEV_MODE = parse(Bool, get(ENV, "JET_DEV_MODE", "false"))
 
 const CONFIG_FILE_NAME = ".JET.toml"
@@ -267,7 +269,7 @@ This could be used to call down to `NativeInterpreter`'s abstract interpretation
 functions overloaded against `AbstractAnalyzer` can be called from the native method of `f`.
 E.g. `@invoke` can be used to call down to `NativeInterpreter`'s `abstract_call_gf_by_type`:
 ```julia
-@invoke abstract_call_gf_by_type(analyzer::AbstractInterpreter, f, argtypes::Vector{Any}, atype, sv::InferenceState,
+@invoke abstract_call_gf_by_type(analyzer::AbstractInterpreter, f, argtypes::Argtypes, atype, sv::InferenceState,
                                  max_methods::Int)
 ```
 """

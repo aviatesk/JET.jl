@@ -191,17 +191,17 @@ end
 end
 
 function CC.abstract_call_method_with_const_args(analyzer::AbstractAnalyzer, result::MethodCallResult,
-                                                 @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch,
+                                                 @nospecialize(f), argtypes::Argtypes, match::MethodMatch,
                                                  sv::InferenceState, va_override::Bool)
     set_cacher!(analyzer, :abstract_call_method_with_const_args => sv.result)
 
     const_result =
         @invoke CC.abstract_call_method_with_const_args(analyzer::AbstractInterpreter, result::MethodCallResult,
-                                                        @nospecialize(f), argtypes::Vector{Any}, match::MethodMatch,
+                                                        @nospecialize(f), argtypes::Argtypes, match::MethodMatch,
                                                         sv::InferenceState, va_override::Bool)
 
     # we should make sure we reset the cacher because at this point we may have not hit
-    # `CC.cache_lookup(linfo::MethodInstance, given_argtypes::Vector{Any}, cache::JETLocalCache)`
+    # `CC.cache_lookup(linfo::MethodInstance, given_argtypes::Argtypes, cache::JETLocalCache)`
     set_cacher!(analyzer, nothing)
 
     if const_result !== nothing
@@ -212,9 +212,9 @@ function CC.abstract_call_method_with_const_args(analyzer::AbstractAnalyzer, res
     return const_result
 end
 
-function CC.abstract_call(analyzer::AbstractAnalyzer, fargs::Union{Nothing,Vector{Any}}, argtypes::Vector{Any},
+function CC.abstract_call(analyzer::AbstractAnalyzer, fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes,
                           sv::InferenceState, max_methods::Int = InferenceParams(analyzer).MAX_METHODS)
-    ret = @invoke CC.abstract_call(analyzer::AbstractInterpreter, fargs::Union{Nothing,Vector{Any}}, argtypes::Vector{Any},
+    ret = @invoke CC.abstract_call(analyzer::AbstractInterpreter, fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes,
                                    sv::InferenceState, max_methods::Int)
 
     analyze_task_parallel_code!(analyzer, argtypes, sv)
@@ -223,7 +223,7 @@ function CC.abstract_call(analyzer::AbstractAnalyzer, fargs::Union{Nothing,Vecto
 end
 
 """
-    analyze_task_parallel_code!(analyzer::AbstractAnalyzer, argtypes::Vector{Any}, sv::InferenceState)
+    analyze_task_parallel_code!(analyzer::AbstractAnalyzer, argtypes::Argtypes, sv::InferenceState)
 
 Adds special cased analysis pass for task parallelism.
 In Julia's task parallelism implementation, parallel code is represented as closure and it's
@@ -239,7 +239,7 @@ See also: <https://github.com/aviatesk/JET.jl/issues/114>
     track <https://github.com/JuliaLang/julia/pull/39773> for the changes in native abstract
     interpretation routine.
 """
-function analyze_task_parallel_code!(analyzer::AbstractAnalyzer, argtypes::Vector{Any}, sv::InferenceState)
+function analyze_task_parallel_code!(analyzer::AbstractAnalyzer, argtypes::Argtypes, sv::InferenceState)
     f = singleton_type(argtypes[1])
 
     # TODO we should analyze a closure wrapped in a `Task` only when it's `schedule`d
@@ -284,12 +284,12 @@ end
 # `return_type_tfunc` internally uses `abstract_call` to model `Core.Compiler.return_type`
 # and here we should NOT catch error reports detected within the simulated call
 # because it is really not any abstraction of actual execution
-function CC.return_type_tfunc(analyzer::AbstractAnalyzer, argtypes::Vector{Any}, sv::InferenceState)
+function CC.return_type_tfunc(analyzer::AbstractAnalyzer, argtypes::Argtypes, sv::InferenceState)
     # stash and discard the result from the simulated call, and keep the original result (`result0`)
     result = sv.result
     result0 = result.src::JETResult
     set_result!(result)
-    ret = @invoke return_type_tfunc(analyzer::AbstractInterpreter, argtypes::Vector{Any}, sv::InferenceState)
+    ret = @invoke return_type_tfunc(analyzer::AbstractInterpreter, argtypes::Argtypes, sv::InferenceState)
     set_result!(sv.result, result0)
     return ret
 end
@@ -440,7 +440,7 @@ end
 
 CC.get_inference_cache(analyzer::AbstractAnalyzer) = JETLocalCache(analyzer, get_inference_cache(get_native(analyzer)))
 
-function CC.cache_lookup(linfo::MethodInstance, given_argtypes::Vector{Any}, cache::JETLocalCache)
+function CC.cache_lookup(linfo::MethodInstance, given_argtypes::Argtypes, cache::JETLocalCache)
     # XXX the very dirty analyzer state observation again
     # this method should only be called from the single context i.e. `abstract_call_method_with_const_args`,
     # and so we should reset the cacher immediately we reach here

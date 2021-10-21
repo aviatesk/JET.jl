@@ -306,10 +306,10 @@ get_msg(::Type{NoMethodErrorReport}, sv::InferenceState, ts::Vector{Type}) =
     "for $(length(ts)) of union split cases, no matching method found for call signatures ($(join(ts, ", "))))"
 
 function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer, @nospecialize(f),
-                                     fargs::Union{Nothing,Vector{Any}}, argtypes::Vector{Any}, @nospecialize(atype),
+                                     fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes, @nospecialize(atype),
                                      sv::InferenceState, max_methods::Int = InferenceParams(analyzer).MAX_METHODS)
     ret = @invoke CC.abstract_call_gf_by_type(analyzer::AbstractAnalyzer, @nospecialize(f),
-                                              fargs::Union{Nothing,Vector{Any}}, argtypes::Vector{Any}, @nospecialize(atype),
+                                              fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes, @nospecialize(atype),
                                               sv::InferenceState, max_methods::Int)
 
     info = ret.info
@@ -328,7 +328,7 @@ end
 
 function (rp::BasicPass)(
     ::Type{NoMethodErrorReport}, analyzer::JETAnalyzer, sv::InferenceState,
-    info::UnionSplitInfo, argtypes::Vector{Any}, @nospecialize(_))
+    info::UnionSplitInfo, argtypes::Argtypes, @nospecialize(_))
     basic_filter(analyzer, sv) || return false
     ft = widenconst(first(argtypes))
     rp.function_filter(ft) || return false
@@ -336,11 +336,11 @@ function (rp::BasicPass)(
 end
 function (::SoundPass)(
     ::Type{NoMethodErrorReport}, analyzer::JETAnalyzer, sv::InferenceState,
-    info::UnionSplitInfo, argtypes::Vector{Any}, @nospecialize(_))
+    info::UnionSplitInfo, argtypes::Argtypes, @nospecialize(_))
     return report_no_method_error_for_union_split!(analyzer, sv, info, argtypes)
 end
 function report_no_method_error_for_union_split!(
-    analyzer::JETAnalyzer, sv::InferenceState, info::UnionSplitInfo, argtypes::Vector{Any})
+    analyzer::JETAnalyzer, sv::InferenceState, info::UnionSplitInfo, argtypes::Argtypes)
     # check each match for union-split signature
     split_argtypes = nothing
     ts = nothing
@@ -361,7 +361,7 @@ end
 
 function (rp::BasicPass)(
     ::Type{NoMethodErrorReport}, analyzer::JETAnalyzer, sv::InferenceState,
-    info::MethodMatchInfo, argtypes::Vector{Any}, @nospecialize(atype))
+    info::MethodMatchInfo, argtypes::Argtypes, @nospecialize(atype))
     basic_filter(analyzer, sv) || return false
     ft = widenconst(first(argtypes))
     rp.function_filter(ft) || return false
@@ -369,7 +369,7 @@ function (rp::BasicPass)(
 end
 function (::SoundPass)(
     ::Type{NoMethodErrorReport}, analyzer::JETAnalyzer, sv::InferenceState,
-    info::MethodMatchInfo, argtypes::Vector{Any}, @nospecialize(atype))
+    info::MethodMatchInfo, argtypes::Argtypes, @nospecialize(atype))
     return report_no_method_error!(analyzer, sv, info, atype)
 end
 function report_no_method_error!(
@@ -443,17 +443,17 @@ must-reachable `throw` calls.
 """
 CC.const_prop_entry_heuristic(::JETAnalyzer, result::MethodCallResult, sv::InferenceState) = true
 
-function CC.return_type_tfunc(analyzer::JETAnalyzer, argtypes::Vector{Any}, sv::InferenceState)
+function CC.return_type_tfunc(analyzer::JETAnalyzer, argtypes::Argtypes, sv::InferenceState)
     # report pass for invalid `Core.Compiler.return_type` call
     ReportPass(analyzer)(InvalidReturnTypeCall, analyzer, sv, argtypes)
 
-    return @invoke CC.return_type_tfunc(analyzer::AbstractAnalyzer, argtypes::Vector{Any}, sv::InferenceState)
+    return @invoke CC.return_type_tfunc(analyzer::AbstractAnalyzer, argtypes::Argtypes, sv::InferenceState)
 end
 
 @reportdef struct InvalidReturnTypeCall <: InferenceErrorReport end
 get_msg(::Type{InvalidReturnTypeCall}, sv::InferenceState) = "invalid `Core.Compiler.return_type` call"
 
-function (::SoundBasicPass)(::Type{InvalidReturnTypeCall}, analyzer::AbstractAnalyzer, sv::InferenceState, argtypes::Vector{Any})
+function (::SoundBasicPass)(::Type{InvalidReturnTypeCall}, analyzer::AbstractAnalyzer, sv::InferenceState, argtypes::Argtypes)
     # here we make a very simple analysis to check if the call of `return_type` is clearly
     # invalid or not by just checking the # of call arguments
     # we don't take a (very unexpected) possibility of its overload into account here,
@@ -466,8 +466,8 @@ function (::SoundBasicPass)(::Type{InvalidReturnTypeCall}, analyzer::AbstractAna
     return false
 end
 
-function CC.abstract_invoke(analyzer::JETAnalyzer, argtypes::Vector{Any}, sv::InferenceState)
-    ret = @invoke CC.abstract_invoke(analyzer::AbstractAnalyzer, argtypes::Vector{Any}, sv::InferenceState)
+function CC.abstract_invoke(analyzer::JETAnalyzer, argtypes::Argtypes, sv::InferenceState)
+    ret = @invoke CC.abstract_invoke(analyzer::AbstractAnalyzer, argtypes::Argtypes, sv::InferenceState)
 
     ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret, argtypes)
 
@@ -475,9 +475,9 @@ function CC.abstract_invoke(analyzer::JETAnalyzer, argtypes::Vector{Any}, sv::In
 end
 
 @reportdef struct InvalidInvokeErrorReport <: InferenceErrorReport
-    argtypes::Vector{Any}
+    argtypes::Argtypes
 end
-function get_msg(::Type{InvalidInvokeErrorReport}, sv::InferenceState, argtypes::Vector{Any})
+function get_msg(::Type{InvalidInvokeErrorReport}, sv::InferenceState, argtypes::Argtypes)
     fallback_msg = "invalid invoke" # mostly because of runtime unreachable
 
     ft = widenconst(argtype_by_index(argtypes, 2))
@@ -498,7 +498,7 @@ function get_msg(::Type{InvalidInvokeErrorReport}, sv::InferenceState, argtypes:
     return "actual argument type (`$argtype`) doesn't intersect with specified argument type (`$types`)"
 end
 
-function (::SoundBasicPass)(::Type{InvalidInvokeErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, ret::CallMeta, argtypes::Vector{Any})
+function (::SoundBasicPass)(::Type{InvalidInvokeErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, ret::CallMeta, argtypes::Argtypes)
     if ret.rt === Bottom
         # here we report error that happens at the call of `invoke` itself.
         # if the error type (`Bottom`) is propagated from the `invoke`d call, the error has
@@ -697,11 +697,11 @@ get_msg(T::Type{SeriousExceptionReport}, state, @nospecialize(err), loc::LineInf
     string(first(split(sprint(showerror, err), '\n')))
 print_error_report(io, report::SeriousExceptionReport) = printlnstyled(io, "│ ", report.msg; color = ERROR_COLOR)
 
-(::BasicPass)(::Type{SeriousExceptionReport}, analyzer::JETAnalyzer, sv::InferenceState, argtypes::Vector{Any}) =
+(::BasicPass)(::Type{SeriousExceptionReport}, analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes) =
     basic_filter(analyzer, sv) && report_serious_exception!(analyzer, sv, argtypes)
-(::SoundPass)(::Type{SeriousExceptionReport}, analyzer::JETAnalyzer, sv::InferenceState, argtypes::Vector{Any}) =
+(::SoundPass)(::Type{SeriousExceptionReport}, analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes) =
     report_serious_exception!(analyzer, sv, argtypes) # any (non-serious) `throw` calls will be caught by the report pass for `UncaughtExceptionReport`
-function report_serious_exception!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Vector{Any})
+function report_serious_exception!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes)
     if length(argtypes) ≥ 1
         a = first(argtypes)
         if isa(a, Const)
@@ -744,7 +744,7 @@ end
 print_error_report(io, report::DivideErrorReport) = printlnstyled(io, "│ ", report.msg; color = ERROR_COLOR)
 
 @reportdef struct InvalidBuiltinCallErrorReport <: BuiltinErrorReport
-    argtypes::Vector{Any}
+    argtypes::Argtypes
 end
 get_msg(::Type{InvalidBuiltinCallErrorReport}, sv::InferenceState, @nospecialize(args...)) =
     "invalid builtin function call"
@@ -753,7 +753,7 @@ get_msg(::Type{InvalidBuiltinCallErrorReport}, sv::InferenceState, @nospecialize
 # XXX for general case JET just relies on the (maybe too permissive) return type from native
 # tfuncs to report invalid builtin calls and probably there're lots of false negatives
 
-function (::BasicPass)(::Type{BuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Vector{Any}, @nospecialize(ret))
+function (::BasicPass)(::Type{BuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(ret))
     @assert !(f === throw) "`throw` calls shuold be handled either by the report pass of `SeriousExceptionReport` or `UncaughtExceptionReport`"
     if f === getfield
         maybe_report_getfield!(analyzer, sv, argtypes, ret) && return true
@@ -771,14 +771,14 @@ function (::BasicPass)(::Type{BuiltinErrorReport}, analyzer::JETAnalyzer, sv::In
     return handle_invalid_builtins!(analyzer, sv, argtypes, ret)
 end
 
-function (::TypoPass)(::Type{BuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Vector{Any}, @nospecialize(ret))
+function (::TypoPass)(::Type{BuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(ret))
     if f === getfield
         maybe_report_getfield!(analyzer, sv, argtypes, ret) && return true
     end
     return false
 end
 
-function maybe_report_getfield!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Vector{Any}, @nospecialize(ret))
+function maybe_report_getfield!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes, @nospecialize(ret))
     if 2 ≤ length(argtypes) ≤ 3
         obj, fld = argtypes
         if isa(fld, Const)
@@ -802,7 +802,7 @@ function maybe_report_getfield!(analyzer::JETAnalyzer, sv::InferenceState, argty
 end
 
 # TODO this check might be better in its own report pass, say `NumericalPass`
-function maybe_report_devide_error!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Vector{Any}, @nospecialize(ret))
+function maybe_report_devide_error!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes, @nospecialize(ret))
     a = argtypes[2]
     t = widenconst(a)
     if isprimitivetype(t) && t <: Number
@@ -814,7 +814,7 @@ function maybe_report_devide_error!(analyzer::JETAnalyzer, sv::InferenceState, a
     return false
 end
 
-function handle_invalid_builtins!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Vector{Any}, @nospecialize(ret))
+function handle_invalid_builtins!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes, @nospecialize(ret))
     # we don't bail out using `basic_filter` here because the native tfuncs are already very permissive
     if ret === Bottom
         add_new_report!(sv.result, InvalidBuiltinCallErrorReport(sv, argtypes))
@@ -823,7 +823,7 @@ function handle_invalid_builtins!(analyzer::JETAnalyzer, sv::InferenceState, arg
     return false
 end
 
-function (::SoundPass)(::Type{BuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Vector{Any}, @nospecialize(ret))
+function (::SoundPass)(::Type{BuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(ret))
     return BasicPass()(BuiltinErrorReport, analyzer, sv, f, argtypes, ret)
 
     # TODO enable this sound pass:
