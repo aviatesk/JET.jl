@@ -700,7 +700,7 @@ function CC.finish(me::InferenceState, analyzer::AbstractAnalyzer)
         empty!(edges)
     end
     if me.src.edges !== nothing
-        append!(s_edges, me.src.edges)
+        append!(s_edges, me.src.edges::Vector{MethodInstance})
         me.src.edges = nothing
     end
     # inspect whether our inference had a limited result accuracy,
