@@ -229,7 +229,7 @@ function CC.abstract_call(analyzer::AbstractAnalyzer, fargs::Union{Nothing,Vecto
     return ret
 end
 end # @static if IS_AFTER_42529
-    
+
 """
     analyze_task_parallel_code!(analyzer::AbstractAnalyzer, argtypes::Argtypes, sv::InferenceState)
 
@@ -700,7 +700,7 @@ function CC.finish(me::InferenceState, analyzer::AbstractAnalyzer)
         empty!(edges)
     end
     if me.src.edges !== nothing
-        append!(s_edges, me.src.edges::Vector{Any})
+        append!(s_edges, me.src.edges)
         me.src.edges = nothing
     end
     # inspect whether our inference had a limited result accuracy,
