@@ -700,7 +700,15 @@ function CC.finish(me::InferenceState, analyzer::AbstractAnalyzer)
         empty!(edges)
     end
     if me.src.edges !== nothing
-        append!(s_edges, me.src.edges::Vector{MethodInstance})
+        edges = me.src.edges
+        if isa(edges, Vector{Any})
+            append!(s_edges, edges)
+        else
+            # this pass should never happen in ordinal code, but some external 
+            # code generator like IRTools.jl may produce this case
+            # see https://github.com/aviatesk/JET.jl/issues/271
+            append!(s_edges, edges::Vector{MethodInstance})
+        end
         me.src.edges = nothing
     end
     # inspect whether our inference had a limited result accuracy,
