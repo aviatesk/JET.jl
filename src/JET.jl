@@ -422,7 +422,7 @@ const LineTable = Union{Vector{Any},Vector{LineInfoNode}}
 
 get_stmt((sv, pc)::StateAtPC)         = @inbounds sv.src.code[pc]
 get_lin((sv, pc)::StateAtPC)          = begin
-    if 1 <= sv.src.codelocs[pc] <= length(sv.src.codelocs)
+    if 1 <= sv.src.codelocs[pc] <= length(sv.src.linetable::LineTable)
         @inbounds (sv.src.linetable::LineTable)[sv.src.codelocs[pc]]::LineInfoNode
     else
         # Packages might dynamically generate code, which does not reference
