@@ -704,7 +704,7 @@ function CC.finish(me::InferenceState, analyzer::AbstractAnalyzer)
         if isa(edges, Vector{Any})
             append!(s_edges, edges)
         else
-            # this pass should never happen in ordinal code, but some external 
+            # this pass should never happen in ordinal code, but some external
             # code generator like IRTools.jl may produce this case
             # see https://github.com/aviatesk/JET.jl/issues/271
             append!(s_edges, edges::Vector{MethodInstance})

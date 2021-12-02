@@ -86,6 +86,19 @@ end
     end
 end
 
+@testset "test to_simple_module_usages" begin
+    @test JET.to_simple_module_usages(:(using A, B; export a, b)) ==
+        Expr[quote using A, B end, quote export a, b end]
+    @test JET.to_simple_module_usages(:(export a)) ==
+        Expr[:(export a)]
+    @test JET.to_simple_module_usages(:(import Pkg as P)) ==
+        Expr[:(import Pkg as P)]
+    @test JET.to_simple_module_usages(:(using A)) ==
+        Expr[:(using A)]
+    @test JET.to_simple_module_usages(:(using A: sym1, sym2)) ==
+        Expr[:(using A: sym1), :(using A: sym2)]
+end
+
 @testset "fix self-reference of virtual module" begin
     let
         res = @analyze_toplevel begin
