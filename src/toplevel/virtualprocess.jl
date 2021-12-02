@@ -997,6 +997,10 @@ function to_simple_module_usages(x::Expr)
             # export a
             return [x]
         else
+            # import a as b
+            if arg.head === :as
+                arg = first(arg.args)
+            end
             if arg.head === :.
                 # using A
                 return [x]
