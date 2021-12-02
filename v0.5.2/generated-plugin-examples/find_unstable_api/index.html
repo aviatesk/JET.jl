@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>&quot;Unstable API&quot; Analysis · JET.jl</title><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.039/juliamono-regular.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.13.11/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../../">JET.jl</a></span></div><form class="docs-search" action="../../search/"><input class="docs-search-query" id="documenter-search-query" name="q" type="text" placeholder="Search docs"/></form><ul class="docs-menu"><li><a class="tocitem" href="../../">README</a></li><li><span class="tocitem">Analyses</span><ul><li><a class="tocitem" href="../../jetanalysis/">Error Analysis</a></li><li><a class="tocitem" href="../../optanalysis/">Optimization Analysis</a></li></ul></li><li><a class="tocitem" href="../../config/">Configurations</a></li><li><a class="tocitem" href="../../internals/">Internals</a></li><li><span class="tocitem"><code>AbstractAnalyzer</code> Framework</span><ul><li><a class="tocitem" href="../../generated-plugin-api/">API</a></li><li><input class="collapse-toggle" id="menuitem-5-2" type="checkbox" checked/><label class="tocitem" for="menuitem-5-2"><span class="docs-label">Examples</span><i class="docs-chevron"></i></label><ul class="collapsed"><li><a class="tocitem" href="../dispatch_analysis/">Dispatch Analysis</a></li><li class="is-active"><a class="tocitem" href>&quot;Unstable API&quot; Analysis</a><ul class="internal"><li><a class="tocitem" href="#Motivation"><span>Motivation</span></a></li><li><a class="tocitem" href="#Implementation"><span>Implementation</span></a></li><li><a class="tocitem" href="#Usages"><span>Usages</span></a></li></ul></li></ul></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled"><code>AbstractAnalyzer</code> Framework</a></li><li><a class="is-disabled">Examples</a></li><li class="is-active"><a href>&quot;Unstable API&quot; Analysis</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>&quot;Unstable API&quot; Analysis</a></li></ul></nav><div class="docs-right"><a class="docs-edit-link" href="https://github.com/aviatesk/JET.jl/blob/master/examples/find_unstable_api.jl" title="Edit on GitHub"><span class="docs-icon fab"></span><span class="docs-label is-hidden-touch">Edit on GitHub</span></a><a class="docs-settings-button fas fa-cog" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-sidebar-button fa fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a></div></header><article class="content" id="documenter-page"><h1 id="&quot;Unstable-API&quot;-Analysis"><a class="docs-heading-anchor" href="#&quot;Unstable-API&quot;-Analysis">&quot;Unstable API&quot; Analysis</a><a id="&quot;Unstable-API&quot;-Analysis-1"></a><a class="docs-heading-anchor-permalink" href="#&quot;Unstable-API&quot;-Analysis" title="Permalink"></a></h1><h2 id="Motivation"><a class="docs-heading-anchor" href="#Motivation">Motivation</a><a id="Motivation-1"></a><a class="docs-heading-anchor-permalink" href="#Motivation" title="Permalink"></a></h2><p>Julia doesn&#39;t have any facilities to truly hide module internals. This means, we can always access to whatever defined within a module and use it freely, but some of them may be considered as the module&#39;s &quot;internal&quot;s and subject to changes. When possible, we want to avoid their usages for better maintainability in the future. But the problem is, how can we automatically find them already used in an existing code ?</p><p>This analysis is motivated by <a href="https://github.com/JuliaLang/julia/pull/40745#issuecomment-850876150">this discussion</a>.</p><h2 id="Implementation"><a class="docs-heading-anchor" href="#Implementation">Implementation</a><a id="Implementation-1"></a><a class="docs-heading-anchor-permalink" href="#Implementation" title="Permalink"></a></h2><p>Let&#39;s define &quot;unstable API&quot; s such that, they&#39;re</p><ul><li>undefined binding, or</li><li>not <code>export</code>ed nor documented, if defined</li></ul><p>and now we can implement such analyzer that detects code that matches the definition above using JET.jl&#39;s pluggable-analysis framework.</p><p>The implementation below is <em>almost sound</em>, under the assumption that the bindings are resolved statically. One thing to note is that, the analysis implements an heuristic to avoid false positives from &quot;language intrinsics&quot;, for example, <code>Base.indexed_iterate</code> and <code>Base.Broadcast.broadcasted</code>. They&#39;re <em>usually</em> introduced into your code implicitly by Julia&#39;s iteration protocols and such, and we&#39;re not responsible for their details (thus not interested in their usages). But the problem is that the analyzer below doesn&#39;t distinguish those introduced by the language and those written by ourselves, and in the latter case we&#39;re certainly uses &quot;unstable API&quot; under the definition above.</p><pre><code class="language-julia hljs">using JET.JETInterface   # to load APIs of the pluggable analysis framework
+using JET                # to use analysis entry points
+const CC = Core.Compiler # to inject a customized report pass</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Core.Compiler</code></pre><p>First off, we define <code>UnstableAPIAnalyzer</code>, which is a new <a href="../../generated-plugin-api/#JET.AbstractAnalyzer"><code>AbstractAnalyzer</code></a> and will implement the customized report pass</p><pre><code class="language-julia hljs">struct UnstableAPIAnalyzer{T} &lt;: AbstractAnalyzer
+    state::AnalyzerState
+    is_target_module::T
+end
+function UnstableAPIAnalyzer(;
+    is_target_module = ==(@__MODULE__),
+    jetconfigs...)
+    return UnstableAPIAnalyzer(AnalyzerState(; jetconfigs...), is_target_module)
+end
+JETInterface.AnalyzerState(analyzer::UnstableAPIAnalyzer) = analyzer.state
+JETInterface.AbstractAnalyzer(analyzer::UnstableAPIAnalyzer, state::AnalyzerState) =
+    UnstableAPIAnalyzer(state, analyzer.is_target_module)
+JETInterface.ReportPass(analyzer::UnstableAPIAnalyzer) = UnstableAPIAnalysisPass()
+JETInterface.get_cache_key(analyzer::UnstableAPIAnalyzer) = AnalyzerState(analyzer).param_key</code></pre><p>Next, we overload some of <code>Core.Compiler</code>&#39;s <a href="../../internals/#abstractinterpret">abstract interpretation</a> methods, and inject a customized analysis pass (here we gonna name it <code>UnstableAPIAnalysisPass</code>). In this analysis, we are interested in whether a binding that appears in a target code is an &quot;unstable API&quot; or not, and we can simply check if each abstract element appeared during abstract interpretation meets our criteria of &quot;unstable API&quot;. For that purpose, it&#39;s suffice to overload <code>Core.Compiler.abstract_eval_special_value</code> and <code>Core.Compiler.builtin_tfunction</code>. To inject a report pass, we use <a href="../../generated-plugin-api/#JET.ReportPass"><code>ReportPass(::AbstractAnalyzer)</code></a> interface.</p><pre><code class="language-julia hljs">struct UnstableAPIAnalysisPass &lt;: ReportPass end
+
+function CC.abstract_eval_special_value(analyzer::UnstableAPIAnalyzer, @nospecialize(e), vtypes::CC.VarTable, sv::CC.InferenceState)
+    if analyzer.is_target_module(sv.mod) # we care only about what we wrote
+        ReportPass(analyzer)(UnstableAPI, analyzer, sv, e)
+    end
+
+    # recurse into JET&#39;s default abstract interpretation routine
+    return Base.@invoke CC.abstract_eval_special_value(analyzer::AbstractAnalyzer, e, vtypes::CC.VarTable, sv::CC.InferenceState)
+end
+
+function CC.builtin_tfunction(analyzer::UnstableAPIAnalyzer, @nospecialize(f), argtypes::Vector{Any}, sv::CC.InferenceState)
+    if f === getfield
+        if length(argtypes) ≥ 2
+            a1, a2 = argtypes[1:2]
+            if isa(a1, Core.Const) &amp;&amp; (v1 = a1.val; isa(v1, Module))
+                if isa(a2, Core.Const) &amp;&amp; (v2 = a2.val; isa(v2, Symbol))
+                    if analyzer.is_target_module(sv.mod) || # we care only about what we wrote, but with relaxed filter
+                       (parent = sv.parent; isa(parent, CC.InferenceState) &amp;&amp; analyzer.is_target_module(parent.mod))
+                        ReportPass(analyzer)(UnstableAPI, analyzer, sv, GlobalRef(v1, v2))
+                    end
+                end
+            end
+        end
+    end
+
+    # recurse into JET&#39;s default abstract interpretation routine
+    return Base.@invoke CC.builtin_tfunction(analyzer::AbstractAnalyzer, f, argtypes::Vector{Any}, sv::CC.InferenceState)
+end</code></pre><p>Additionally, we can cut off the performance cost involved with Julia&#39;s native compiler&#39;s optimizations passes:</p><pre><code class="language-julia hljs">CC.may_optimize(analyzer::UnstableAPIAnalyzer) = return false</code></pre><p>Now we implement the body of our analysis. We define &quot;unstable API&quot;s such that they&#39;re:</p><ol><li>undefined binding, or</li><li>not <code>export</code>ed nor documented, if defined</li></ol><p>and we&#39;re not interested in any other program properties other than whether our code contains &quot;unstable API&quot;s or not.</p><p>So in our report pass, we would like to ignore all the reports implemented by JET.jl by default</p><pre><code class="language-julia hljs">(::UnstableAPIAnalysisPass)(T::Type{&lt;:InferenceErrorReport}, analyzer, state, @nospecialize(spec_args...)) = return</code></pre><p>but except the report of undefined global references (i.e. <code>GlobalUndefVarErrorReport</code>). This overload allow us to find code that falls into the category 1.</p><pre><code class="language-julia hljs">function (::UnstableAPIAnalysisPass)(T::Type{JET.GlobalUndefVarErrorReport}, analyzer, state, @nospecialize(spec_args...))
+    JET.BasicPass()(T, analyzer, state, spec_args...) # forward to JET&#39;s default report pass
+end</code></pre><p>And now we will define new <a href="../../generated-plugin-api/#JET.InferenceErrorReport"><code>InferenceErrorReport</code></a> report type <code>UnstableAPI</code>, which represents the category 2, and implement a report pass to detect it.</p><pre><code class="language-julia hljs">@reportdef struct UnstableAPI &lt;: InferenceErrorReport
+    g::GlobalRef
+end
+function JETInterface.get_msg(::Type{UnstableAPI}, sv, g::GlobalRef)
+    (; mod, name) = Base.resolve(g) # resolve to original name
+    return &quot;$mod.$name is unstable !&quot;
+end
+
+function (::UnstableAPIAnalysisPass)(::Type{UnstableAPI}, analyzer::UnstableAPIAnalyzer, sv, @nospecialize(e))
+    if isa(e, GlobalRef)
+        isdefined(e.mod, e.name) || return false # this global reference falls into the category 1, should be caught by `GlobalUndefVarErrorReport` instead
+
+        (; mod, name) = Base.resolve(e) # this reference will be safely resolved
+        analyzer.is_target_module(mod) &amp;&amp; return # we don&#39;t care about what we defined ourselves
+
+        if isunstable(mod, name)
+            add_new_report!(sv.result, UnstableAPI(sv, e))
+        end
+    end
+end</code></pre><p>In the report pass above, <code>isunstable</code> will take the heavy lifting to find &quot;unstable API&quot;s. Here we will implement <code>isunstable</code> according to the definition above but with some heuristics to exclude language intrinsics, which can automatically be included into our code and aren&#39;t usually of our interest.</p><pre><code class="language-julia hljs">function isunstable(mod, name)
+    # exclude language intrinsics
+    mod === Core &amp;&amp; return false
+    x = getfield(mod, name)
+    x isa Core.Builtin &amp;&amp; return false
+    (x === Base.indexed_iterate || x === Base.SizeUnknown) &amp;&amp; return false # iteration protocol
+    (x === Base.Iterators.Filter || x === Base.Iterators.Flatten) &amp;&amp; return false # iterator protocol
+    x === Base.Broadcast.broadcasted &amp;&amp; return false # broadcase protocol
+    x === Base.kwerr &amp;&amp; return false # ignore keyword lowering
+
+    return !isexported(mod, name) &amp;&amp; !hasdoc(mod, name)
+end
+
+function isexported(mod, name)
+    (; mod, name) = Base.resolve(GlobalRef(mod, name))
+    return Base.isexported(mod, name)
+end
+
+# adapted from https://github.com/JunoLab/CodeTools.jl/blob/56e7f0b514a7476864c27523bcf9d4bc04699ce1/src/summaries.jl#L24-L34
+
+using Base.Docs
+function hasdoc(mod, name)
+    binding = Docs.Binding(mod, name)
+    for m in Docs.modules
+        meta = Docs.meta(m)
+        haskey(meta, binding) &amp;&amp; return true
+        (; mod, var) = binding
+        isdefined(mod, var) &amp;&amp; haskey(meta, getfield(mod, var)) &amp;&amp; return true
+    end
+    return false
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">hasdoc (generic function with 1 method)</code></pre><h2 id="Usages"><a class="docs-heading-anchor" href="#Usages">Usages</a><a id="Usages-1"></a><a class="docs-heading-anchor-permalink" href="#Usages" title="Permalink"></a></h2><p>Now we find &quot;unstable API&quot;s in your code using <a href="../../jetanalysis/#jetanalysis-entry">JET&#39;s analysis entry points</a> with passing <code>UnstableAPIAnalyzer</code> as the <code>analyzer</code> configuration.</p><h3 id="Simple-cases"><a class="docs-heading-anchor" href="#Simple-cases">Simple cases</a><a id="Simple-cases-1"></a><a class="docs-heading-anchor-permalink" href="#Simple-cases" title="Permalink"></a></h3><p>Let&#39;s first use the <a href="../../jetanalysis/#jetanalysis-interactive-entry">interactive analysis entries</a> and try simple test cases.</p><p><code>UnstableAPIAnalyzer</code> can find an &quot;unstable&quot; function:</p><pre><code class="language-julia hljs">function some_reflection_code(@nospecialize(f))
+    return any(Base.hasgenerator, methods(f)) # Base.hasgenerator is unstable
+end
+@report_call analyzer=UnstableAPIAnalyzer some_reflection_code(sin)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi"><span class="sgr7">═════ 1 possible error found ═════</span>
+<span class="sgr91">┌ @ find_unstable_api.md:212 </span>Base.hasgenerator
+<span class="sgr91">│ Base.hasgenerator is unstable !: </span><span class="sgr1">Base.hasgenerator</span>
+<span class="sgr91">└────────────────────────────</span>
+</code></pre><p><code>UnstableAPIAnalyzer</code> can find an &quot;unstable&quot; global variable:</p><pre><code class="language-julia hljs">module foo; bar = 1 end
+report_call((Any,); analyzer=UnstableAPIAnalyzer) do a
+    foo.bar + a # foo.bar is unstable
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi"><span class="sgr7">═════ 1 possible error found ═════</span>
+<span class="sgr91">┌ @ find_unstable_api.md:222 </span>Main.foo.bar
+<span class="sgr91">│ Main.foo.bar is unstable !: </span><span class="sgr1">Main.foo.bar</span>
+<span class="sgr91">└────────────────────────────</span>
+</code></pre><p><code>UnstableAPIAnalyzer</code> can detect &quot;unstable API&quot;s even if they&#39;re imported binding or nested reference (, which will be resolve to <code>getproperty</code>)</p><pre><code class="language-julia hljs">import Base: hasgenerator
+report_call((Any,); analyzer=UnstableAPIAnalyzer) do mi
+    # NOTE every function call appearing here is unstable
+    ci = hasgenerator(mi) ? Core.Compiler.get_staged(mi) : Base.uncompressed_ast(mi)
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi"><span class="sgr7">═════ 3 possible errors found ═════</span>
+<span class="sgr91">┌ @ find_unstable_api.md:233 </span>Main.hasgenerator(mi)
+<span class="sgr91">│ Base.hasgenerator is unstable !: </span><span class="sgr1">Main.hasgenerator(mi<span class="sgr96">::Any</span>)</span>
+<span class="sgr91">└────────────────────────────</span>
+<span class="sgr35">┌ @ find_unstable_api.md:233 </span>Base.getproperty(Core.Compiler, :get_staged)
+<span class="sgr35">│</span><span class="sgr91">┌ @ Base.jl:31 </span>Base.getfield(x, f)
+<span class="sgr35">│</span><span class="sgr91">│ Core.Compiler.get_staged is unstable !: </span><span class="sgr1">Base.getfield(x<span class="sgr96">::Module</span>, f<span class="sgr96">::Symbol</span>)</span>
+<span class="sgr35">│</span><span class="sgr91">└──────────────</span>
+<span class="sgr91">┌ @ find_unstable_api.md:233 </span>Base.uncompressed_ast
+<span class="sgr91">│ Base.uncompressed_ast is unstable !: </span><span class="sgr1">Base.uncompressed_ast</span>
+<span class="sgr91">└────────────────────────────</span>
+</code></pre><h3 id="Analyze-a-real-world-package"><a class="docs-heading-anchor" href="#Analyze-a-real-world-package">Analyze a real-world package</a><a id="Analyze-a-real-world-package-1"></a><a class="docs-heading-anchor-permalink" href="#Analyze-a-real-world-package" title="Permalink"></a></h3><p>Finally we can use <a href="../../jetanalysis/#jetanalysis-toplevel-entry">JET&#39;s top-level analysis entry points</a> to analyze a whole script or package.</p><p>Here we will run <code>UnstableAPIAnalyzer</code> on <a href="https://github.com/FluxML/IRTools.jl">IRTools.jl</a>, which uses <code>Base.isgenerated</code>, which is renamed to <code>Base.hasgenerator</code> in Julia v1.7 and invoked the discussion at <a href="https://github.com/JuliaLang/julia/pull/40745#issuecomment-850876150">https://github.com/JuliaLang/julia/pull/40745#issuecomment-850876150</a>. Especially, it uses <code>Base.isgenerator</code> <a href="https://github.com/FluxML/IRTools.jl/blob/1f3f43be654a41d0db154fd16b31fdf40f30748c/src/reflection/reflection.jl#L49">here</a>, and you can see the analyzer correctly detects it if you run the following code with IRTools@v0.4.2 installed.</p><pre><code class="language- hljs">is_irtools(mod) = occursin(&quot;IRTools&quot;, string(Symbol(mod))) # module context will be virtualized by `report_package`, thus use string match
+report_package(&quot;IRTools&quot;; analyzer=UnstableAPIAnalyzer, is_target_module=is_irtools)</code></pre><pre><code class="nohighlight hljs">═════ 59 possible errors found ═════
+┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:39 Core.kwfunc(IRTools.Inner.invoke_meta)(Core.apply_type(Core.NamedTuple, (:world,))(Core.tuple(world)), IRTools.Inner.invoke_meta, T)
+│┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:69 IRTools.Inner.#invoke_meta#6(world, _3, T)
+││┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:74 Core.kwfunc(IRTools.Inner.meta)(Core.apply_type(Core.NamedTuple, (:types, :world))(Core.tuple(S, world)), IRTools.Inner.meta, T)
+│││┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:38 IRTools.Inner.#meta#1(types, world, _3, T)
+││││┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:43 Base._methods_by_ftype
+│││││ Base._methods_by_ftype is unstable !: Base._methods_by_ftype
+││││└─────────────────────────────────────────────────────────────────────────────────
+││││┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:49 Base.isgenerated
+│││││ variable Base.isgenerated is not defined: Base.isgenerated
+││││└─────────────────────────────────────────────────────────────────────────────────
+││││┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:49 Base.uncompressed_ast
+│││││ Base.uncompressed_ast is unstable !: Base.uncompressed_ast
+││││└─────────────────────────────────────────────────────────────────────────────────
+││││┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:54
+... # many other &quot;unstable API&quot;s detected</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../dispatch_analysis/">« Dispatch Analysis</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.10 on <span class="colophon-date" title="Thursday 2 December 2021 06:27">Thursday 2 December 2021</span>. Using Julia version 1.8.0-DEV.1091.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
