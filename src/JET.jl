@@ -422,12 +422,14 @@ const LineTable = Union{Vector{Any},Vector{LineInfoNode}}
 
 get_stmt((sv, pc)::StateAtPC)         = @inbounds sv.src.code[pc]
 get_lin((sv, pc)::StateAtPC)          = begin
-    if 1 <= sv.src.codelocs[pc] <= length(sv.src.linetable::LineTable)
-        @inbounds (sv.src.linetable::LineTable)[sv.src.codelocs[pc]]::LineInfoNode
+    codeloc = sv.src.codelocs[pc]
+    linetable = sv.src.linetable::LineTable
+    if 1 <= codeloc <= length(linetable)
+        return @inbounds linetable[codeloc]::LineInfoNode
     else
         # Packages might dynamically generate code, which does not reference
         # a source, see https://github.com/aviatesk/JET.jl/issues/273
-        LineInfoNode(sv.mod, :unknown, Symbol("unknown"), 0, 0)
+        return LineInfoNode(sv.mod, :unknown, :unknown, 0, 0)
     end
 end
 get_ssavaluetype((sv, pc)::StateAtPC) = @inbounds sv.src.ssavaluetypes[pc]
