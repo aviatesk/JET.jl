@@ -427,7 +427,7 @@ get_lin((sv, pc)::StateAtPC)          = begin
     else
         # Packages might dynamically generate code, which does not reference
         # a source, see https://github.com/aviatesk/JET.jl/issues/273
-        LineInfoNode(sv.mod, :unknown, Symbol("dynamically generated?"), 0, 0)
+        LineInfoNode(sv.mod, :unknown, Symbol("unknown"), 0, 0)
     end
 end
 get_ssavaluetype((sv, pc)::StateAtPC) = @inbounds sv.src.ssavaluetypes[pc]
