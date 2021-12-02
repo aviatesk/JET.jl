@@ -421,7 +421,17 @@ const StateAtPC = Tuple{State,Int}
 const LineTable = Union{Vector{Any},Vector{LineInfoNode}}
 
 get_stmt((sv, pc)::StateAtPC)         = @inbounds sv.src.code[pc]
-get_lin((sv, pc)::StateAtPC)          = @inbounds (sv.src.linetable::LineTable)[sv.src.codelocs[pc]]::LineInfoNode
+get_lin((sv, pc)::StateAtPC)          = begin
+    codeloc = sv.src.codelocs[pc]
+    linetable = sv.src.linetable::LineTable
+    if 1 <= codeloc <= length(linetable)
+        return @inbounds linetable[codeloc]::LineInfoNode
+    else
+        # Packages might dynamically generate code, which does not reference
+        # a source, see https://github.com/aviatesk/JET.jl/issues/273
+        return LineInfoNode(sv.mod, :unknown, :unknown, 0, 0)
+    end
+end
 get_ssavaluetype((sv, pc)::StateAtPC) = @inbounds sv.src.ssavaluetypes[pc]
 
 get_slottype(s::Union{StateAtPC,State}, slot)      = get_slottype(s, slot_id(slot))
