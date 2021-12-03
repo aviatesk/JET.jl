@@ -997,6 +997,10 @@ function to_simple_module_usages(x::Expr)
             # export a
             return [x]
         else
+            # import Pkg as P
+            if arg.head === :as
+                arg = first(arg.args)
+            end
             if arg.head === :.
                 # using A
                 return [x]
