@@ -99,6 +99,8 @@ end
         Expr[:(using A)]
     @test JET.to_simple_module_usages(:(using A: sym1, sym2)) ==
         Expr[:(using A: sym1), :(using A: sym2)]
+    @test JET.to_simple_module_usages(:(import Pkg: status as s, gc as g)) ==
+        Expr[:(import Pkg: status as s), :(import Pkg: gc as g)]
 end
 
 @testset "fix self-reference of virtual module" begin
