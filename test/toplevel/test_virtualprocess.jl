@@ -87,8 +87,10 @@ end
 end
 
 @testset "test to_simple_module_usages" begin
-    @test JET.to_simple_module_usages(:(using A, B; export a, b)) ==
-        Expr[quote using A, B end, quote export a, b end]
+    @test JET.to_simple_module_usages(:(using A, B)) ==
+        Expr[:(using A), :(using B)]
+    @test JET.to_simple_module_usages(:(export a, b)) ==
+        Expr[:(export a), :(export b)]
     @test JET.to_simple_module_usages(:(export a)) ==
         Expr[:(export a)]
     @test JET.to_simple_module_usages(:(import Pkg as P)) ==
