@@ -627,7 +627,10 @@ function _virtual_process!(toplevelex::Expr,
                                      config,
                                      res,
                                      )
-        concretized = partially_interpret!(interp, context, src)
+        # Generate optimized code to support foreign calls,
+        # see https://github.com/JuliaDebug/JuliaInterpreter.jl/issues/13
+        frame = Frame(context, src)
+        concretized = partially_interpret!(interp, frame)
 
         # bail out if nothing to analyze (just a performance optimization)
         all(concretized) && continue
@@ -777,9 +780,9 @@ struct ConcreteInterpreter{Analyzer<:AbstractAnalyzer,CP}
 end
 
 """
-    partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::CodeInfo)
+    partially_interpret!(interp::ConcreteInterpreter, frame::Frame)
 
-Partially interprets statements in `src` using JuliaInterpreter.jl:
+Partially interprets statements in `frame.framecode.src` using JuliaInterpreter.jl:
 - concretizes "toplevel definitions", i.e. `:method`, `:struct_type`, `:abstract_type` and
   `:primitive_type` expressions and their dependencies
 - concretizes user-specified toplevel code (see [`ToplevelConfig`](@ref))
@@ -787,20 +790,15 @@ Partially interprets statements in `src` using JuliaInterpreter.jl:
   (TODO: enter into the loaded module and keep JET analysis)
 - special-cases `include` calls so that top-level analysis recursively enters the included file
 """
-function partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::CodeInfo)
-    concretize = select_statements(src)
+function partially_interpret!(interp::ConcreteInterpreter, frame::Frame)
+    concretize = select_statements(frame.framecode.src)
 
     with_toplevel_logger(interp.analyzer, ≥(DEBUG_LOGGER_LEVEL)) do @nospecialize(io)
         line, file = interp.lnn.line, interp.lnn.file
         println(io, "concretization plan at $file:$line:")
-        print_with_code(io, src, concretize)
+        print_with_code(io, frame.framecode.src, concretize)
     end
 
-    # NOTE if `JuliaInterpreter.optimize!` may modify `src`, `src` and `concretize` can be inconsistent
-    # here we create `JuliaInterpreter.Frame` by ourselves disabling the optimization (#277)
-    framecode = JuliaInterpreter.FrameCode(mod, src, optimize=false)
-    @assert length(framecode.src.code) == length(concretize)
-    frame = Frame(framecode, JuliaInterpreter.prepare_framedata(framecode, Any[]))
     selective_eval_fromstart!(interp, frame, concretize, #= istoplevel =# true)
 
     return concretize
