@@ -796,7 +796,12 @@ function partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::Cod
         print_with_code(io, src, concretize)
     end
 
-    selective_eval_fromstart!(interp, Frame(mod, src), concretize, #= istoplevel =# true)
+    # NOTE if `JuliaInterpreter.optimize!` may modify `src`, `src` and `concretize` can be inconsistent
+    # here we create `JuliaInterpreter.Frame` by ourselves disabling the optimization (#277)
+    framecode = JuliaInterpreter.FrameCode(mod, src, optimize=false)
+    @assert length(framecode.src.code) == length(concretize)
+    frame = Frame(framecode, JuliaInterpreter.prepare_framedata(framecode, Any[]))
+    selective_eval_fromstart!(interp, frame, concretize, #= istoplevel =# true)
 
     return concretize
 end
