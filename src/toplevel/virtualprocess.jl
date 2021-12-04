@@ -627,7 +627,7 @@ function _virtual_process!(toplevelex::Expr,
                                      config,
                                      res,
                                      )
-        # Generate optimized code to support foreign calls,
+        # generate optimized code to support foreign calls,
         # see https://github.com/JuliaDebug/JuliaInterpreter.jl/issues/13
         frame = Frame(context, src)
         concretized = partially_interpret!(interp, frame)
@@ -635,8 +635,11 @@ function _virtual_process!(toplevelex::Expr,
         # bail out if nothing to analyze (just a performance optimization)
         all(concretized) && continue
 
-        analyzer = AbstractAnalyzer(analyzer, concretized, context)
+        # concretize the unoptimized source for the analyzer
+        concretize = select_statements(src)
 
+        analyzer = AbstractAnalyzer(analyzer, concretized, context)
+        
         _, result = analyze_toplevel!(analyzer, src)
 
         append!(res.inference_error_reports, get_reports(result)) # collect error reports
