@@ -56,7 +56,7 @@ import JET:
     JET,
     @invoke,
     get_source,
-    @isexpr
+    isexpr
 
 struct DispatchAnalyzer{T} <: AbstractAnalyzer
     state::AnalyzerState
@@ -155,7 +155,7 @@ JETInterface.get_msg(::Type{RuntimeDispatchReport}, _) =
 function (::DispatchAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::DispatchAnalyzer, caller::CC.InferenceResult, opt::CC.OptimizationState)
     (; sptypes, slottypes) = opt
     for (pc, x) in enumerate(opt.src.code)
-        if @isexpr(x, :call)
+        if isexpr(x, :call)
             ft = CC.widenconst(CC.argextype(first(x.args), opt.src, sptypes, slottypes))
             ft <: Core.Builtin && continue # ignore `:call`s of language intrinsics
             add_new_report!(caller, RuntimeDispatchReport((opt, pc)))

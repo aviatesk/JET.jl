@@ -370,7 +370,7 @@ macro reportdef(ex)
     @assert Core.eval(__module__, S) <: InferenceErrorReport
 
     spec_decls = map(spec_sigs) do x
-        if @isexpr(x, :macrocall) && x.args[1] === Symbol("@nospecialize")
+        if isexpr(x, :macrocall) && x.args[1] === Symbol("@nospecialize")
             return x.args[3]
         end
         return x
@@ -421,5 +421,5 @@ macro reportdef(ex)
     end
 end
 
-extract_decl_name(@nospecialize(x)) = (@isexpr(x, :(::)) ? first(x.args) : x)::Symbol
-extract_decl_type(@nospecialize(x)) = @isexpr(x, :(::)) ? last(x.args) : GlobalRef(Core, :Any)
+extract_decl_name(@nospecialize(x)) = (isexpr(x, :(::)) ? first(x.args) : x)::Symbol
+extract_decl_type(@nospecialize(x)) = isexpr(x, :(::)) ? last(x.args) : GlobalRef(Core, :Any)

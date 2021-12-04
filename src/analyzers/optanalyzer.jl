@@ -202,7 +202,7 @@ function (::OptAnalysisPass)(::Type{CapturedVariableReport}, analyzer::OptAnalyz
     for (pc, typ) in enumerate(frame.src.ssavaluetypes::Vector{Any})
         if typ === Core.Box
             stmt = frame.src.code[pc]
-            if @isexpr(stmt, :(=))
+            if isexpr(stmt, :(=))
                 lhs = first(stmt.args)
                 if isa(lhs, SlotNumber)
                     name = frame.src.slotnames[slot_id(lhs)]
@@ -278,7 +278,7 @@ function (::OptAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::OptAnalyze
                 CC.in(pc, throw_blocks) && continue
             end
         end
-        if @isexpr(x, :call)
+        if isexpr(x, :call)
             ft = widenconst(argextype(first(x.args), src, sptypes, slottypes))
             ft <: Builtin && continue # ignore `:call`s of language intrinsics
             if analyzer.function_filter(ft)

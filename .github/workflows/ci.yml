@@ -14,8 +14,8 @@ jobs:
       fail-fast: false # don't stop CI even when one of them fails
       matrix:
         version:
+          - '1'
           - 'nightly'
-          - '1.7-nightly'
         os:
           - ubuntu-latest
           - macOS-latest

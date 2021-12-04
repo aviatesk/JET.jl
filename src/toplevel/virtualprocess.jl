@@ -423,7 +423,7 @@ function _virtual_process!(s::AbstractString,
 
     toplevelex = parse_input_line(s; filename)
 
-    if @isexpr(toplevelex, (:error, :incomplete))
+    if isexpr(toplevelex, (:error, :incomplete))
         # if there's any syntax error, try to identify all the syntax error location
         append!(res.toplevel_error_reports, collect_syntax_errors(s, filename))
     elseif isnothing(toplevelex)
@@ -447,7 +447,7 @@ function _virtual_process!(toplevelex::Expr,
                            context::Module,
                            res::VirtualProcessResult,
                            )
-    @assert @isexpr(toplevelex, :toplevel)
+    @assert isexpr(toplevelex, :toplevel)
 
     local lnn::LineNumberNode = LineNumberNode(0, filename)
 
@@ -488,7 +488,7 @@ function _virtual_process!(toplevelex::Expr,
         lwr = lower(mod, x)
 
         # here we should capture syntax errors found during lowering
-        if @isexpr(lwr, :error)
+        if isexpr(lwr, :error)
             msg = first(lwr.args)
             push!(res.toplevel_error_reports, SyntaxErrorReport("syntax: $msg", filename, lnn.line))
             return nothing
@@ -532,7 +532,7 @@ function _virtual_process!(toplevelex::Expr,
                 lwr = lower_with_err_handling(context, blk)
 
                 isnothing(lwr) && break # error happened during lowering
-                @isexpr(lwr, :thunk) || break # literal
+                isexpr(lwr, :thunk) || break # literal
 
                 src = first((lwr::Expr).args)::CodeInfo
 
@@ -554,7 +554,7 @@ function _virtual_process!(toplevelex::Expr,
 
         # we will end up lowering `x` later, but special case `macrocall`s and expand it here
         # this is because macros can arbitrarily generate `:toplevel` and `:module` expressions
-        if @isexpr(x, :macrocall)
+        if isexpr(x, :macrocall)
             newx = macroexpand_with_err_handling(context, x)
 
             # if any error happened during macro expansion, bail out now and continue
@@ -566,7 +566,7 @@ function _virtual_process!(toplevelex::Expr,
             if first(x.args) === GlobalRef(Core, Symbol("@doc"))
                 # `@doc` macro usually produces :block expression, but may also produce :toplevel
                 # one when attached to a module expression
-                @assert @isexpr(newx, :block) || @isexpr(newx, :toplevel)
+                @assert isexpr(newx, :block) || isexpr(newx, :toplevel)
                 append!(exs, reverse!((newx::Expr).args))
             else
                 push!(exs, newx)
@@ -576,7 +576,7 @@ function _virtual_process!(toplevelex::Expr,
         end
 
         # flatten container expression
-        if @isexpr(x, :toplevel)
+        if isexpr(x, :toplevel)
             append!(exs, reverse(x.args))
             continue
         end
@@ -586,9 +586,9 @@ function _virtual_process!(toplevelex::Expr,
         # "toplevel definitions" inside of the loaded modules shouldn't be evaluated in a
         # context of `context` module
 
-        if @isexpr(x, :module)
+        if isexpr(x, :module)
             newblk = x.args[3]
-            @assert @isexpr(newblk, :block)
+            @assert isexpr(newblk, :block)
             newtoplevelex = Expr(:toplevel, newblk.args...)
 
             x.args[3] = Expr(:block) # empty module's code body
@@ -604,7 +604,7 @@ function _virtual_process!(toplevelex::Expr,
         end
 
         # can't wrap `:global` declaration into a block
-        if @isexpr(x, :global)
+        if isexpr(x, :global)
             eval_with_err_handling(context, x)
             continue
         end
@@ -613,7 +613,7 @@ function _virtual_process!(toplevelex::Expr,
         lwr = lower_with_err_handling(context, blk)
 
         isnothing(lwr) && continue # error happened during lowering
-        @isexpr(lwr, :thunk) || continue # literal
+        isexpr(lwr, :thunk) || continue # literal
 
         src = first((lwr::Expr).args)::CodeInfo
 
@@ -831,11 +831,11 @@ function select_direct_requirement!(concretize, stmts, edges)
             continue
         end
 
-        if @isexpr(stmt, :(=))
+        if isexpr(stmt, :(=))
             lhs, rhs = stmt.args
             stmt = rhs
         end
-        if @isexpr(stmt, :call)
+        if isexpr(stmt, :call)
             f = stmt.args[1]
 
             # special case `include` calls
@@ -976,7 +976,7 @@ function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, 
 end
 
 function collect_toplevel_signature!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node))
-    if @isexpr(node, :method, 3)
+    if isexpr(node, :method, 3)
         sigs = node.args[2]
         atype_params, sparams, _ = @lookup(moduleof(frame), frame, sigs)::SimpleVector
         # t = atype_params[1]
@@ -989,7 +989,7 @@ function collect_toplevel_signature!(interp::ConcreteInterpreter, frame::Frame, 
     end
 end
 
-ismoduleusage(@nospecialize(x)) = @isexpr(x, (:import, :using, :export))
+ismoduleusage(@nospecialize(x)) = isexpr(x, (:import, :using, :export))
 
 # assuming `ismoduleusage(x)` holds
 function to_simple_module_usages(x::Expr)
@@ -1011,7 +1011,7 @@ function to_simple_module_usages(x::Expr)
                 return [x]
             else
                 # using A: sym1, sym2, ...
-                @assert @isexpr(arg, :(:))
+                @assert isexpr(arg, :(:))
                 a, as... = arg.args
                 return Expr.(x.head, Expr.(arg.head, Ref(a), as))::Vector{Expr}
             end
@@ -1158,8 +1158,8 @@ function collect_syntax_errors(s, filename)
             !isnothing(ex)
         end
         line += count(==('\n'), s[index:nextindex-1])
-        report = @isexpr(ex, :error) ? SyntaxErrorReport(string("syntax: ", first(ex.args)), filename, line) :
-                 @isexpr(ex, :incomplete) ? SyntaxErrorReport(first(ex.args), filename, line) :
+        report = isexpr(ex, :error) ? SyntaxErrorReport(string("syntax: ", first(ex.args)), filename, line) :
+                 isexpr(ex, :incomplete) ? SyntaxErrorReport(first(ex.args), filename, line) :
                  nothing
         isnothing(report) || push!(reports, report)
         index = nextindex
