@@ -1520,7 +1520,7 @@ end
         slice = JET.select_statements(src)
 
         for (i, stmt) in enumerate(src.code)
-            if JET.@isexpr(stmt, :(=))
+            if JET.isexpr(stmt, :(=))
                 lhs, rhs = stmt.args
                 if isa(lhs, Core.SlotNumber)
                     if src.slotnames[lhs.id] === :w || src.slotnames[lhs.id] === :sum
