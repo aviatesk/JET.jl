@@ -636,7 +636,7 @@ function _virtual_process!(toplevelex::Expr,
         all(concretized) && continue
 
         # concretize the unoptimized source for the analyzer
-        concretize = select_statements(src, false)
+        concretized = select_statements(src, false)
 
         analyzer = AbstractAnalyzer(analyzer, concretized, context)
 
