@@ -848,8 +848,7 @@ function select_direct_requirement!(concretize, stmts, edges)
             # - https://github.com/timholy/Revise.jl/blob/266ed68d7dd3bea67c39f96513cda30bbcd7d441/src/lowered.jl#L53
             # - https://github.com/timholy/Revise.jl/blob/266ed68d7dd3bea67c39f96513cda30bbcd7d441/src/lowered.jl#L87-L88
             if begin
-                    f === :eval ||
-                    (callee_matches(f, Base, :getproperty) && is_quotenode_egal(stmt.args[end], :eval)) ||
+                    is_quotenode_egal(f, Core.eval) ||
                     isa(f, GlobalRef) && f.name === :eval
                 end
                 # statement `i` may be the equivalent of `f = Core.eval`, so require each
