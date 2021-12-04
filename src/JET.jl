@@ -158,7 +158,8 @@ import Base:
 
 import Base.Meta:
     _parse_string,
-    lower
+    lower,
+    isexpr
 
 using LoweredCodeUtils, JuliaInterpreter
 
@@ -237,23 +238,10 @@ end
 # macros
 # ------
 
-# to circumvent https://github.com/JuliaLang/julia/issues/37342, we inline these `isa`
-# condition checks at surface AST level
-macro isexpr(ex, args...)
-    ex   = esc(ex)
-    args = map(esc, args)
-    return :($(GlobalRef(Core, :isa))($(ex), $(GlobalRef(Core, :Expr))) && $(_isexpr_check)($(ex), $(args...)))
-end
-
-_isexpr_check(ex::Expr, head::Symbol)         = ex.head === head
-_isexpr_check(ex::Expr, heads)                = in(ex.head, heads)
-_isexpr_check(ex::Expr, head::Symbol, n::Int) = ex.head === head && length(ex.args) == n
-_isexpr_check(ex::Expr, heads, n::Int)        = in(ex.head, heads) && length(ex.args) == n
-
 islnn(@nospecialize(_)) = false
 islnn(::LineNumberNode) = true
 
-iskwarg(@nospecialize(x)) = @isexpr(x, :(=))
+iskwarg(@nospecialize(x)) = isexpr(x, :(=))
 
 # for inspection
 macro lwr(ex) QuoteNode(lower(__module__, ex)) end
@@ -279,10 +267,10 @@ E.g. `@invoke` can be used to call down to `NativeInterpreter`'s `abstract_call_
 macro invoke(ex)
     f, args, kwargs = destructure_callex(ex)
     arg2typs = map(args) do x
-        if @isexpr(x, :macrocall) && first(x.args) === Symbol("@nospecialize")
+        if isexpr(x, :macrocall) && first(x.args) === Symbol("@nospecialize")
             x = last(x.args)
         end
-        @isexpr(x, :(::)) ? (x.args...,) : (x, GlobalRef(Core, :Any))
+        isexpr(x, :(::)) ? (x.args...,) : (x, GlobalRef(Core, :Any))
     end
     args, argtypes = first.(arg2typs), last.(arg2typs)
     return esc(:($(GlobalRef(Core, :invoke))($(f), Tuple{$(argtypes...)}, $(args...); $(kwargs...))))
@@ -324,10 +312,10 @@ end
 ```
 """
 macro withmixedhash(typedef)
-    @assert @isexpr(typedef, :struct) "struct definition should be given"
+    @assert isexpr(typedef, :struct) "struct definition should be given"
     name = esc(typedef.args[2])
     fld2typs = filter(!isnothing, map(filter(!islnn, typedef.args[3].args)) do x
-        if @isexpr(x, :(::))
+        if isexpr(x, :(::))
             fld, typex = x.args
             typ = Core.eval(__module__, typex)
             fld, typ
@@ -378,15 +366,15 @@ This macro also adds a dummy splat keyword arguments (`jetconfigs...`) to the fu
 so that any configuration of other `@jetconfigurable` functions can be passed on to it.
 """
 macro jetconfigurable(funcdef)
-    @assert @isexpr(funcdef, :(=)) || @isexpr(funcdef, :function) "function definition should be given"
+    @assert isexpr(funcdef, :(=)) || isexpr(funcdef, :function) "function definition should be given"
 
     defsig = funcdef.args[1]
-    if @isexpr(defsig, :where)
+    if isexpr(defsig, :where)
         defsig = first(defsig.args)
     end
     args = defsig.args::Vector{Any}
     thisname = first(args)
-    i = findfirst(a->@isexpr(a, :parameters), args)
+    i = findfirst(a->isexpr(a, :parameters), args)
     if isnothing(i)
         @warn "no JET configurations are defined for `$thisname`"
         insert!(args, 2, Expr(:parameters, :(jetconfigs...)))
@@ -394,12 +382,12 @@ macro jetconfigurable(funcdef)
         kwargs = args[i]
         found = false
         for kwarg in kwargs.args
-            if @isexpr(kwarg, :...)
+            if isexpr(kwarg, :...)
                 found = true
                 continue
             end
             kwargex = first(kwarg.args)
-            kwargname = (@isexpr(kwargex, :(::)) ? first(kwargex.args) : kwargex)::Symbol
+            kwargname = (isexpr(kwargex, :(::)) ? first(kwargex.args) : kwargex)::Symbol
             othername = get!(_JET_CONFIGURATIONS, kwargname, thisname)
             # allows same configurations for same generic function or function refinement
             @assert thisname == othername "`$thisname` uses `$kwargname` JET configuration name which is already used by `$othername`"
@@ -916,7 +904,7 @@ end
 
 function trymetaparse(s)
     ret = Meta.parse(strip(s); raise = true)
-    @isexpr(ret, :incomplete) && error(first(ret.args))
+    isexpr(ret, :incomplete) && error(first(ret.args))
     return ret
 end
 
@@ -1185,7 +1173,7 @@ function transform_abstract_global_symbols!(analyzer::AbstractAnalyzer, src::Cod
     # linear scan, and find assignments of abstract global variables
     for (i, stmt) in enumerate(src.code::Vector{Any})
         if !(concretized[i])
-            if @isexpr(stmt, :(=))
+            if isexpr(stmt, :(=))
                 lhs = first(stmt.args)
                 if isa(lhs, Symbol)
                     if !haskey(abstrct_global_variables, lhs)

@@ -760,7 +760,7 @@ function CC.finish(me::InferenceState, analyzer::AbstractAnalyzer)
         cfg = compute_basic_blocks(stmts)
         assigns = Dict{Int,Bool}() # slot id => is this deterministic
         for (pc, stmt) in enumerate(stmts)
-            if @isexpr(stmt, :(=))
+            if isexpr(stmt, :(=))
                 lhs = first(stmt.args)
                 if isa(lhs, Slot)
                     slot = slot_id(lhs)
@@ -823,7 +823,7 @@ function collect_slottypes(sv::InferenceState)
         stmt = stmts[i]
         state = states[i]
         # find all reachable assignments to locals
-        if isa(state, VarTable) && @isexpr(stmt, :(=))
+        if isa(state, VarTable) && isexpr(stmt, :(=))
             lhs = first(stmt.args)
             if isa(lhs, Slot)
                 vt = ssavaluetypes[i] # don't widen const
@@ -938,7 +938,7 @@ get_msg(::Type{InvalidConstantDeclaration}, sv::InferenceState, mod::Module, nam
 
 function is_constant_declared(name::Symbol, sv::InferenceState)
     return any(sv.src.code) do @nospecialize(x)
-        if @isexpr(x, :const)
+        if isexpr(x, :const)
             arg = first(x.args)
             # `transform_abstract_global_symbols!` replaces all the global symbols in this toplevel frame with `Slot`s
             if isa(arg, Slot)
