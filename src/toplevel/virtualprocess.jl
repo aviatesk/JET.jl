@@ -446,6 +446,7 @@ function _virtual_process!(toplevelex::Expr,
                            config::ToplevelConfig,
                            context::Module,
                            res::VirtualProcessResult,
+                           force_concretize::Bool = false,
                            )
     @assert isexpr(toplevelex, :toplevel)
 
@@ -499,9 +500,9 @@ function _virtual_process!(toplevelex::Expr,
 
     # transform, and then analyze sequentially
     # IDEA the following code has some of duplicated work with `JuliaInterpreter.ExprSpliter` and we may want to factor them out
-    exs = reverse(toplevelex.args)
+    exs = push_vex_stack!(VExpr[], toplevelex, force_concretize)
     while !isempty(exs)
-        x = pop!(exs)
+        (; x, force_concretize) = pop!(exs)
 
         # with_toplevel_logger(analyzer, ≥(DEBUG_LOGGER_LEVEL)) do @nospecialize(io)
         #     println(io, "analyzing ", x)
@@ -518,39 +519,17 @@ function _virtual_process!(toplevelex::Expr,
         # patterns matches `x`, JET just concretizes everything involved with it
         # since patterns are expected to work on surface level AST, we should configure it
         # here before macro expansion and lowering
-        local force_concretize = false
         for pat in config.concretization_patterns
             if @capture(x, $pat)
-                force_concretize = true
                 with_toplevel_logger(analyzer, ≥(DEBUG_LOGGER_LEVEL)) do @nospecialize(io)
                     line, file = lnn.line, lnn.file
                     x′ = striplines(normalise(x))
                     println(io, "concretization pattern `$pat` matched `$x′` at $file:$line")
                 end
-
-                blk = Expr(:block, lnn, x) # attach current line number info
-                lwr = lower_with_err_handling(context, blk)
-
-                isnothing(lwr) && break # error happened during lowering
-                isexpr(lwr, :thunk) || break # literal
-
-                src = first((lwr::Expr).args)::CodeInfo
-
-                fix_self_references!(res.actual2virtual, src)
-
-                interp = ConcreteInterpreter(filename,
-                                             lnn,
-                                             eval_with_err_handling,
-                                             context,
-                                             analyzer,
-                                             config,
-                                             res,
-                                             )
-                JuliaInterpreter.finish!(interp, Frame(context, src), true)
+                force_concretize = true
                 break
             end
         end
-        force_concretize && continue
 
         # we will end up lowering `x` later, but special case `macrocall`s and expand it here
         # this is because macros can arbitrarily generate `:toplevel` and `:module` expressions
@@ -567,9 +546,9 @@ function _virtual_process!(toplevelex::Expr,
                 # `@doc` macro usually produces :block expression, but may also produce :toplevel
                 # one when attached to a module expression
                 @assert isexpr(newx, :block) || isexpr(newx, :toplevel)
-                append!(exs, reverse!((newx::Expr).args))
+                push_vex_stack!(exs, newx::Expr, force_concretize)
             else
-                push!(exs, newx)
+                push!(exs, VExpr(newx, force_concretize))
             end
 
             continue
@@ -577,7 +556,7 @@ function _virtual_process!(toplevelex::Expr,
 
         # flatten container expression
         if isexpr(x, :toplevel)
-            append!(exs, reverse(x.args))
+            push_vex_stack!(exs, x, force_concretize)
             continue
         end
 
@@ -598,7 +577,7 @@ function _virtual_process!(toplevelex::Expr,
 
             newmod = newcontext::Module
             push!(res.defined_modules, newmod)
-            _virtual_process!(newtoplevelex, filename, analyzer, config, newmod, res)
+            _virtual_process!(newtoplevelex, filename, analyzer, config, newmod, res, force_concretize)
 
             continue
         end
@@ -627,6 +606,10 @@ function _virtual_process!(toplevelex::Expr,
                                      config,
                                      res,
                                      )
+        if force_concretize
+            JuliaInterpreter.finish!(interp, Frame(context, src), true)
+            continue
+        end
         concretized = partially_interpret!(interp, context, src)
 
         # bail out if nothing to analyze (just a performance optimization)
@@ -645,6 +628,20 @@ function _virtual_process!(toplevelex::Expr,
     end
 
     return res
+end
+
+struct VExpr
+    x
+    force_concretize::Bool
+    VExpr(@nospecialize(x), force_concretize::Bool) = new(x, force_concretize)
+end
+
+function push_vex_stack!(exs::Vector{VExpr}, newex::Expr, force_concretize::Bool)
+    nargs = length(newex.args)
+    for i in 0:(nargs-1)
+        push!(exs, VExpr(newex.args[nargs-i], force_concretize))
+    end
+    return exs
 end
 
 split_module_path(::Type{String}, m::Module) = split(string(m), '.')
