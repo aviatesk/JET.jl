@@ -929,9 +929,9 @@ This function configures analysis with the following configurations:
 - `analyze_from_definitions = true`: allows JET to enter analysis without top-level call sites;
   this is useful for package analysis since a package itself usually has only definitions
   but not usages (i.e. call sites)
-- `concretization_patterns = [:(x_ = y_), :(const x_ = y_)]`: concretizes every global variable instantiations;
+- `concretization_patterns = [:(x_)]`: concretizes every top-level code in a given `package`;
   concretizations are generally preferred for successful analysis as far as they're cheap,
-  and global variable instantiations that occur in a package definition are _usually_ very cheap
+  and a package definition doesn't contain heavy computations in general cases
 See [`ToplevelConfig`](@ref) for more details.
 
 ---
@@ -945,7 +945,7 @@ See also: [`report_file`](@ref)
 """
 function report_package(package::Union{AbstractString,Module,Nothing} = nothing;
                         analyze_from_definitions::Bool = true,
-                        concretization_patterns = [:(x_ = y_), :(const x_ = y_)],
+                        concretization_patterns = [:(x_)], # concretize all top-level code
                         jetconfigs...)
     filename = get_package_file(package)
     __default_configs = ( # allow a configuration file to overwrite these configurations
