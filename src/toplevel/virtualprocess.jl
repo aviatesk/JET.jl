@@ -627,15 +627,14 @@ function _virtual_process!(toplevelex::Expr,
                                      config,
                                      res,
                                      )
-        # generate optimized code to support foreign calls,
-        # see https://github.com/JuliaDebug/JuliaInterpreter.jl/issues/13
-        frame = Frame(context, src)
-        concretized = partially_interpret!(interp, frame)
+        concretized = partially_interpret!(interp, context, src)
 
         # bail out if nothing to analyze (just a performance optimization)
         all(concretized) && continue
 
-        # concretize the unoptimized source for the analyzer
+        # recalculate concretizations for the original unoptimized source for abstract interpretation
+        # NOTE JuliaInterpreter might have produced "optimized" expressions that
+        # can't be handled by Julia's native abstract interpretation routine
         concretized = select_statements(src, false)
 
         analyzer = AbstractAnalyzer(analyzer, concretized, context)
@@ -783,9 +782,9 @@ struct ConcreteInterpreter{Analyzer<:AbstractAnalyzer,CP}
 end
 
 """
-    partially_interpret!(interp::ConcreteInterpreter, frame::Frame)
+    partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::CodeInfo)
 
-Partially interprets statements in `frame.framecode.src` using JuliaInterpreter.jl:
+Partially interprets statements in `src` using JuliaInterpreter.jl:
 - concretizes "toplevel definitions", i.e. `:method`, `:struct_type`, `:abstract_type` and
   `:primitive_type` expressions and their dependencies
 - concretizes user-specified toplevel code (see [`ToplevelConfig`](@ref))
@@ -793,7 +792,10 @@ Partially interprets statements in `frame.framecode.src` using JuliaInterpreter.
   (TODO: enter into the loaded module and keep JET analysis)
 - special-cases `include` calls so that top-level analysis recursively enters the included file
 """
-function partially_interpret!(interp::ConcreteInterpreter, frame::Frame)
+function partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::CodeInfo)
+    # generate optimized code to support foreign calls,
+    # see https://github.com/JuliaDebug/JuliaInterpreter.jl/issues/13
+    frame = Frame(mod, src)
     concretize = select_statements(frame.framecode.src, true)
 
     with_toplevel_logger(interp.analyzer, ≥(DEBUG_LOGGER_LEVEL)) do @nospecialize(io)

@@ -1026,16 +1026,18 @@ end
     @testset "https://github.com/aviatesk/JET.jl/issues/280" begin
         res = @analyze_toplevel begin
             using Libdl
-            llvmpaths = filter(lib -> occursin(r"LLVM\b", basename(lib)), Libdl.dllist())
-            if length(llvmpaths) != 1
-                throw(ArgumentError("Found one or multiple LLVM libraries"))
+            let
+                llvmpaths = filter(lib -> occursin(r"LLVM\b", basename(lib)), Libdl.dllist())
+                if length(llvmpaths) != 1
+                    throw(ArgumentError("Found one or multiple LLVM libraries"))
+                end
+                libllvm = Libdl.dlopen(llvmpaths[1])
+                gethostcpufeatures = Libdl.dlsym(libllvm, :LLVMGetHostCPUFeatures)
+                ccall(gethostcpufeatures, Cstring, ())
             end
-            libllvm = Libdl.dlopen(llvmpaths[1])
-            gethostcpufeatures = Libdl.dlsym(libllvm, :LLVMGetHostCPUFeatures)
-            ccall(gethostcpufeatures, Cstring, ())
         end
 
-        @test isempty(res.toplevel_error_reports) 
+        @test isempty(res.toplevel_error_reports)
     end
 end
 
