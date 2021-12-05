@@ -793,6 +793,7 @@ function partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::Cod
     # generate optimized code to support foreign calls,
     # see https://github.com/JuliaDebug/JuliaInterpreter.jl/issues/13
     frame = Frame(mod, src)
+    @assert length(frame.framecode.src.code) == length(src.code)
     concretize = select_statements(frame.framecode.src, true)
 
     with_toplevel_logger(interp.analyzer, ≥(DEBUG_LOGGER_LEVEL)) do @nospecialize(io)
