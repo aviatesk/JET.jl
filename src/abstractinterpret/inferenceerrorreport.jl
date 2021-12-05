@@ -126,9 +126,9 @@ end
 
 @inline function show_tuple_as_call(io::IO, name::Symbol, @nospecialize(sig::Type))
     @static if hasmethod(Base.show_tuple_as_call, (IO, Symbol, Type), (:demangle, :kwargs, :argnames, :qualified))
-        Base.show_tuple_as_call(io, name, sig; qualified = true)
+        @invokelatest Base.show_tuple_as_call(io, name, sig; qualified = true)
     else
-        Base.show_tuple_as_call(io, name, sig, false, nothing, nothing, true)
+        @invokelatest Base.show_tuple_as_call(io, name, sig, false, nothing, nothing, true)
     end
 end
 
