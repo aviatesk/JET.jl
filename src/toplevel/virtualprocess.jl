@@ -795,6 +795,7 @@ function partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::Cod
 
     # NOTE if `JuliaInterpreter.optimize!` may modify `src`, `src` and `concretize` can be inconsistent
     # here we create `JuliaInterpreter.Frame` by ourselves disabling the optimization (#277)
+    # TODO: change to a better Frame constructor when available
     framecode = JuliaInterpreter.FrameCode(mod, src, optimize=false)
     @assert length(framecode.src.code) == length(concretize)
     frame = Frame(framecode, JuliaInterpreter.prepare_framedata(framecode, Any[]))
