@@ -1534,7 +1534,7 @@ end
             @eval global getsum() = $sum # concretization is forced
             write(product) # should NOT be selected
         end
-        slice = JET.select_statements(src, false)
+        slice = JET.select_statements(src)
 
         for (i, stmt) in enumerate(src.code)
             if JET.isexpr(stmt, :(=))

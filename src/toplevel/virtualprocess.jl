@@ -615,11 +615,6 @@ function _virtual_process!(toplevelex::Expr,
         # bail out if nothing to analyze (just a performance optimization)
         all(concretized) && continue
 
-        # recalculate concretizations for the original unoptimized source for abstract interpretation
-        # NOTE JuliaInterpreter might have produced "optimized" expressions that
-        # can't be handled by Julia's native abstract interpretation routine
-        concretized = select_statements(src, false)
-
         analyzer = AbstractAnalyzer(analyzer, concretized, context)
 
         _, result = analyze_toplevel!(analyzer, src)
@@ -790,10 +785,7 @@ Partially interprets statements in `src` using JuliaInterpreter.jl:
 - special-cases `include` calls so that top-level analysis recursively enters the included file
 """
 function partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::CodeInfo)
-    # generate optimized code to support foreign calls,
-    # see https://github.com/JuliaDebug/JuliaInterpreter.jl/issues/13
-    frame = Frame(mod, src)
-    concretize = select_statements(frame.framecode.src, true)
+    concretize = select_statements(src)
 
     with_toplevel_logger(interp.analyzer, ≥(DEBUG_LOGGER_LEVEL)) do @nospecialize(io)
         line, file = interp.lnn.line, interp.lnn.file
@@ -801,26 +793,32 @@ function partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::Cod
         print_with_code(io, frame.framecode.src, concretize)
     end
 
+    # generate unoptimized JuliaInterpreter code
+    # see https://github.com/JuliaDebug/JuliaInterpreter.jl/issues/13
+    # TODO: change to a better Frame constructor when available
+    framecode = JuliaInterpreter.FrameCode(mod, src, optimize=false)
+    @assert length(framecode.src.code) == length(src.code)
+    frame = Frame(framecode, JuliaInterpreter.prepare_framedata(framecode, Any[]))
     selective_eval_fromstart!(interp, frame, concretize, #= istoplevel =# true)
 
     return concretize
 end
 
 # select statements that should be concretized, and actually interpreted rather than abstracted
-function select_statements(src::CodeInfo, optimized::Bool)
+function select_statements(src::CodeInfo)
     stmts = src.code
     edges = CodeEdges(src)
 
     concretize = fill(false, length(stmts))
 
-    select_direct_requirement!(concretize, stmts, edges, optimized)
+    select_direct_requirement!(concretize, stmts, edges)
 
     select_dependencies!(concretize, src, edges)
 
     return concretize
 end
 
-function select_direct_requirement!(concretize, stmts, edges, optimized)
+function select_direct_requirement!(concretize, stmts, edges)
     for (i, stmt) in enumerate(stmts)
         if begin
                 ismethod(stmt)      || # don't abstract away method definitions
@@ -850,12 +848,9 @@ function select_direct_requirement!(concretize, stmts, edges, optimized)
             # - https://github.com/timholy/Revise.jl/blob/266ed68d7dd3bea67c39f96513cda30bbcd7d441/src/lowered.jl#L53
             # - https://github.com/timholy/Revise.jl/blob/266ed68d7dd3bea67c39f96513cda30bbcd7d441/src/lowered.jl#L87-L88
             if begin
-                    optimized ?
-                        (is_quotenode_egal(f, Core.eval) ||
-                         isa(f, GlobalRef) && f.name === :eval) :
-                        (f === :eval ||
-                         (callee_matches(f, Base, :getproperty) && is_quotenode_egal(stmt.args[end], :eval)) ||
-                         isa(f, GlobalRef) && f.name === :eval)
+                    f === :eval ||
+                    (callee_matches(f, Base, :getproperty) && is_quotenode_egal(stmt.args[end], :eval)) ||
+                    isa(f, GlobalRef) && f.name === :eval
                 end
                 # statement `i` may be the equivalent of `f = Core.eval`, so require each
                 # stmt that calls `eval` via `f(expr)`
