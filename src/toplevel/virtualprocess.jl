@@ -790,14 +790,14 @@ function partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::Cod
     with_toplevel_logger(interp.analyzer, ≥(DEBUG_LOGGER_LEVEL)) do @nospecialize(io)
         line, file = interp.lnn.line, interp.lnn.file
         println(io, "concretization plan at $file:$line:")
-        print_with_code(io, frame.framecode.src, concretize)
+        print_with_code(io, src, concretize)
     end
 
-    # generate unoptimized JuliaInterpreter code
-    # see https://github.com/JuliaDebug/JuliaInterpreter.jl/issues/13
+    # NOTE if `JuliaInterpreter.optimize!` may modify `src`, `src` and `concretize` can be inconsistent
+    # here we create `JuliaInterpreter.Frame` by ourselves disabling the optimization (#277)
     # TODO: change to a better Frame constructor when available
     framecode = JuliaInterpreter.FrameCode(mod, src, optimize=false)
-    @assert length(framecode.src.code) == length(src.code)
+    @assert length(framecode.src.code) == length(concretize)
     frame = Frame(framecode, JuliaInterpreter.prepare_framedata(framecode, Any[]))
     selective_eval_fromstart!(interp, frame, concretize, #= istoplevel =# true)
 
