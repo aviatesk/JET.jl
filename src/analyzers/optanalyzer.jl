@@ -7,16 +7,17 @@ any of [general JET configurations](@ref JET-configurations) as well as
 the following additional configurations that are specific to the optimization analysis.
 
 ---
-- `skip_nonconcrete_calls::Bool = true`:\\
+- `skip_noncompileable_calls::Bool = true`:\\
   Julia's runtime dispatch is "powerful" because it can always compile code with concrete
   runtime arguments so that [a "kernel" function](https://docs.julialang.org/en/v1/manual/performance-tips/#kernel-functions)
   runs very effectively even if it's called from a type-instable call site.
   This means, we (really) often accept that some parts of our code are not inferred statically,
   and rather we want to just rely on information that is only available at runtime.
-  To model this programming style, the optimization analyzer does NOT report any optimization
-  failures or runtime dispatches detected within non-concrete calls under the default configuration.
-  We can turn off this `skip_nonconcrete_calls` configuration to get type-instabilities
-  within non-concrete calls.
+  To model this programming style, the optimization analyzer by default does NOT report any
+  optimization failures or runtime dispatches detected within non-concrete calls
+  (more correctly, "non-compileable" calls are ignored: see also the note below).
+  We can turn off this `skip_noncompileable_calls` configuration to get type-instabilities
+  within those calls.
   ```julia-repl
   # the following examples are adapted from https://docs.julialang.org/en/v1/manual/performance-tips/#kernel-functions
   julia> function fill_twos!(a)
@@ -43,8 +44,8 @@ the following additional configurations that are specific to the optimization an
   └─────────────
   Vector (alias for Array{_A, 1} where _A)
 
-  # we can get reports from non-concrete calls with `skip_nonconcrete_calls=false`
-  julia> @report_opt skip_nonconcrete_calls=false strange_twos(3)
+  # we can get reports from non-concrete calls with `skip_noncompileable_calls=false`
+  julia> @report_opt skip_noncompileable_calls=false strange_twos(3)
   ═════ 4 possible errors found ═════
   ┌ @ REPL[2]:3 Main.fill_twos!(a)
   │┌ @ REPL[1]:3 Base.setindex!(a, 2, %14)
@@ -62,6 +63,54 @@ the following additional configurations that are specific to the optimization an
   └─────────────
   Vector (alias for Array{_A, 1} where _A)
   ```
+
+  !!! note "Non-compileable calls"
+      Julia runtime system sometimes generate and execute native code of an abstract call.
+      More technically, when some of call arguments are annotated as `@nospecialize`,
+      Julia compiles the call even if those `@nospecialize`d arguments aren't fully concrete.
+      `skip_noncompileable_calls = true` also respects this behavior, i.e. doesn't skip
+      compileable abstract calls:
+
+          julia> function maybesin(@nospecialize x)
+               if isa(x, Number)
+                   return sin(x) # this call is dynamically dispatched
+               else
+                   return 0
+               end
+           end
+           maybesin (generic function with 1 method)
+
+           julia> report_opt((Vector{Any},)) do xs
+               for x in xs
+                   s = maybesin(x) # this call is resolved statically and compiled
+                   s !== 0 && return s
+               end
+           end
+           ═════ 1 possible error found ═════
+           ┌ @ none:3 s = Main.maybesin(x)
+           │┌ @ none:3 Main.sin(%3)
+           ││ runtime dispatch detected: Main.sin(%3::Number)
+           │└──────────
+
+           julia> function maybesin(x)  # now `maybesin` is always called with concrete `x`
+                      if isa(x, Number)
+                          return sin(x) # this call is dynamically dispatched
+                      else
+                          return 0
+                      end
+                  end
+                  maybesin (generic function with 1 method)
+
+           julia> report_opt((Vector{Any},)) do xs
+                      for x in xs
+                          s = maybesin(x) # this call is dynamically dispatched
+                          s !== 0 && return s
+                      end
+                  end
+           ═════ 1 possible error found ═════
+           ┌ @ none:3 Main.maybesin(%21)
+           │ runtime dispatch detected: Main.maybesin(%21::Any)
+           └──────────
 
 ---
 - `function_filter = @nospecialize(ft)->true`:\\
@@ -120,7 +169,7 @@ the following additional configurations that are specific to the optimization an
 struct OptAnalyzer{RP,FF} <: AbstractAnalyzer
     state::AnalyzerState
     report_pass::RP
-    skip_nonconcrete_calls::Bool
+    skip_noncompileable_calls::Bool
     function_filter::FF
     skip_unoptimized_throw_blocks::Bool
     __frame_checks::BitVector # temporary stash to keep per-frame analysis-skip configuration
@@ -128,20 +177,20 @@ struct OptAnalyzer{RP,FF} <: AbstractAnalyzer
 end
 function OptAnalyzer(;
     report_pass = OptAnalysisPass(),
-    skip_nonconcrete_calls::Bool = true,
+    skip_noncompileable_calls::Bool = true,
     function_filter = @nospecialize(ft)->true,
     skip_unoptimized_throw_blocks::Bool = true,
     jetconfigs...)
     state = AnalyzerState(; jetconfigs...)
     # we want to run different analysis with a different filter, so include its hash into the cache key
     cache_key = state.param_key
-    cache_key = hash(skip_nonconcrete_calls, cache_key)
+    cache_key = hash(skip_noncompileable_calls, cache_key)
     cache_key = @invoke hash(function_filter::Any, cache_key::UInt) # HACK avoid dynamic dispatch
     cache_key = hash(skip_unoptimized_throw_blocks, cache_key)
     return OptAnalyzer(
         state,
         report_pass,
-        skip_nonconcrete_calls,
+        skip_noncompileable_calls,
         function_filter,
         skip_unoptimized_throw_blocks,
         #=__frame_checks=# BitVector(),
@@ -155,7 +204,7 @@ function JETInterface.AbstractAnalyzer(analyzer::OptAnalyzer, state::AnalyzerSta
     return OptAnalyzer(
         state,
         analyzer.report_pass,
-        analyzer.skip_nonconcrete_calls,
+        analyzer.skip_noncompileable_calls,
         analyzer.function_filter,
         analyzer.skip_unoptimized_throw_blocks,
         analyzer.__frame_checks,
@@ -173,8 +222,8 @@ function CC.finish(frame::InferenceState, analyzer::OptAnalyzer)
     ret = @invoke CC.finish(frame::InferenceState, analyzer::AbstractAnalyzer)
 
     skip = false
-    if !skip && analyzer.skip_nonconcrete_calls
-        if !isconcreteframe(frame)
+    if !skip && analyzer.skip_noncompileable_calls
+        if !(is_compileable_frame(frame) || get_entry(analyzer) === get_linfo(frame))
             skip |= true
         end
     end

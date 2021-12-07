@@ -293,7 +293,7 @@ end
         let r = first(get_reports(result))
             @test r isa NonBooleanCondErrorReport
             @test r.t == [Nothing]
-            @test occursin("for 1 of union split cases", r.msg)
+            @test occursin("for 1 of 2 union split cases", r.msg)
         end
     end
 

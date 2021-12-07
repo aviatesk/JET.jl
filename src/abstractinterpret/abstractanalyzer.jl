@@ -139,9 +139,9 @@ Logging configurations for JET analysis.
 """
 struct JETLogger
     # logger to track toplevel interpretation
-    toplevel_logger::Union{Nothing,IO}
+    toplevel_logger # ::Union{Nothing,IO}
     # logger to track abstract interpretation routine
-    inference_logger::Union{Nothing,IO}
+    inference_logger # ::Union{Nothing,IO}
     @jetconfigurable function JETLogger(; toplevel_logger::Union{Nothing,IO} = nothing,
                                           inference_logger::Union{Nothing,IO} = nothing,
                                           )
@@ -715,9 +715,9 @@ ignores the identity of error point's `MethodInstance`, under the assumption tha
 identical as far as they're collected at the same file and line.
 """
 aggregation_policy(::AbstractAnalyzer) = default_aggregation_policy
-function default_aggregation_policy(@nospecialize(report::InferenceErrorReport))
+function default_aggregation_policy(@nospecialize(report#=::InferenceErrorReport=#))
     return DefaultReportIdentity(
-        typeof(report),
+        typeof(report)::DataType,
         report.sig,
         # VirtualFrameNoLinfo(first(report.vst)),
         VirtualFrameNoLinfo(last(report.vst)),
