@@ -923,8 +923,8 @@ This may fail, cause incorrect analysis, or produce unexpected errors.
 @reportdef struct InvalidConstantRedefinition <: InferenceErrorReport
     mod::Module
     name::Symbol
-    @nospecialize(t′::Any)
-    @nospecialize(t::Any)
+    @nospecialize t′
+    @nospecialize t
 end
 get_msg(::Type{InvalidConstantRedefinition}, sv::InferenceState, mod::Module, name::Symbol, @nospecialize(t′::Any), @nospecialize(t::Any)) =
     "invalid redefinition of constant $(mod).$(name) (from $(t′) to $(t))"

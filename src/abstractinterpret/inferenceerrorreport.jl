@@ -345,24 +345,25 @@ get_spec_args(T::Type{<:InferenceErrorReport}) =                error("`get_spec
 # -----
 
 @eval struct InferenceErrorReportCache
-    T::Type{<:InferenceErrorReport}
+    T::DataType
     $(INFERENCE_ERROR_REPORT_FIELD_DECLS...)
-    spec_args::NTuple{N,Any} where N
+    spec_args::Vector{Any}
 end
 
-function cache_report!(cache, @nospecialize(report::InferenceErrorReport))
+function cache_report!(cache, @nospecialize(report#=::InferenceErrorReport=#))
     vst = copy(report.vst)
-    new = InferenceErrorReportCache(typeof(report), vst, report.msg, report.sig, get_spec_args(report))
+    new = InferenceErrorReportCache(typeof(report)::DataType, vst, report.msg, report.sig, get_spec_args(report))
     return push!(cache, new)
 end
 
-restore_cached_report(cache::InferenceErrorReportCache) =
-    return cache.T(copy(cache.vst), cache.msg, cache.sig, cache.spec_args)::InferenceErrorReport
+restore_cached_report(cache::InferenceErrorReportCache) = _restore_cached_report(
+    cache.T, copy(cache.vst), cache.msg, cache.sig, cache.spec_args)::InferenceErrorReport
+function _restore_cached_report end
 
 # utility
 # -------
 
-# TODO parametric definition
+# TODO parametric definition?
 
 # a simple utility macro to define `InferenceErrorReport` w/o code duplications
 macro reportdef(ex)
@@ -381,14 +382,11 @@ macro reportdef(ex)
     T, S = esc(T), esc(S)
 
     # cache constructor
-    cache_constructor_sig = :($T(vst::VirtualStackTrace,
-                                 msg::String,
-                                 sig::Signature,
-                                 @nospecialize(spec_args::Tuple),
-                                 ))
+    cache_constructor_sig = :($(GlobalRef(JET, :_restore_cached_report))(
+        ::Type{$T}, vst::VirtualStackTrace, msg::String, sig::Signature, spec_args::Vector{Any}))
     cache_constructor_call = :($T(vst, msg, sig))
     for (i, spec_type) in enumerate(spec_types)
-        push!(cache_constructor_call.args, :($(esc(:spec_args))[$i]::$spec_type)) # needs escape since `@nospecialize`d
+        push!(cache_constructor_call.args, :(spec_args[$i]::$spec_type))
     end
     cache_constructor = Expr(:function, cache_constructor_sig, Expr(:block, __source__,
         :(return @inbounds $cache_constructor_call),
@@ -396,14 +394,15 @@ macro reportdef(ex)
 
     # cache helper
     spec_getter_sig = :($(GlobalRef(JET, :get_spec_args))(report::$T))
-    spec_getter_tuple = Expr(:tuple)
-    for spec_name in spec_names
-        getter = Expr(:call, GlobalRef(Base, :getproperty), :report, QuoteNode(spec_name))
-        push!(spec_getter_tuple.args, getter)
+    spec_getter_body = Expr(:block, __source__)
+    nspecs = length(spec_names)
+    push!(spec_getter_body.args, :(spec_args = Vector{Any}(undef, $nspecs)))
+    for i in 1:nspecs
+        spec_name = spec_names[i]
+        push!(spec_getter_body.args, :(spec_args[$i] = getproperty(report, $(QuoteNode(spec_name)))))
     end
-    spec_getter = Expr(:function, spec_getter_sig, Expr(:block, __source__,
-        :(return $spec_getter_tuple::Tuple{$(spec_types...)}),
-    ))
+    push!(spec_getter_body.args, :(return spec_args))
+    spec_getter = Expr(:function, spec_getter_sig, spec_getter_body)
 
     return quote
         Base.@__doc__ struct $T <: $S
