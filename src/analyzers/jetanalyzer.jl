@@ -104,7 +104,7 @@ _**TODO**_: elaborate the definitions of "error"s.
 struct SoundPass <: ReportPass end
 
 basic_filter(analyzer::JETAnalyzer, sv) =
-    isconcreteframe(sv) || get_entry(analyzer) === get_linfo(sv) # `report_call` may start analysis with abstract signature
+    is_compileable_frame(sv) || get_entry(analyzer) === get_linfo(sv) # `report_call` may start analysis with abstract signature
 
 # `SoundPass` is still WIP, we may use it to implement both passes at once for the meantime
 const SoundBasicPass = Union{SoundPass,BasicPass}

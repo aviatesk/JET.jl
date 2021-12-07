@@ -153,28 +153,53 @@ end
         end
     end
 
-    @testset "skip_nonconcrete_calls" begin
-        M = Module()
-        @eval M begin
-            with_runtime_dispatch(::UInt8)  = :UInt8
-            with_runtime_dispatch(::UInt16) = :UInt16
-            with_runtime_dispatch(::UInt32) = :UInt32
-            with_runtime_dispatch(::UInt64) = :UInt64
-            with_runtime_dispatch(::UInt128) = :UInt128
-        end
-        @assert JET.OptimizationParams(JET.OptAnalyzer()).MAX_UNION_SPLITTING < 5
+    @testset "skip_noncompileable_calls" begin
+        let M = Module()
+            CALLF_DEFINITION_LINE = (@__LINE__)+1
+            @eval M callf(f, a) = f(a)
 
-        let
-            result = @eval M $report_opt((Any,); skip_nonconcrete_calls=false) do x
-                with_runtime_dispatch(x)
+            let # by default, we only report the runtime dispatch within the lambda function,
+                # and ignore error reports from `callf` calls
+                result = @eval M $report_opt((Vector{Any},)) do ary
+                    callf(sin, ary[1]) # runtime dispatch !
+                end
+                @test length(get_reports(result)) == 1
+                @test any(get_reports(result)) do r
+                    isa(r, RuntimeDispatchReport) &&
+                    last(r.vst).file === Symbol(@__FILE__) && last(r.vst).line == (@__LINE__) - 5 # report for the lambda function
+                end
             end
-            @test !isempty(get_reports(result))
-            @test any(r->isa(r,RuntimeDispatchReport), get_reports(result))
+
+            let # when the `skip_noncompileable_calls` configuration is turned off,
+                # we will get error reports from `callsin` as well
+                result = @eval M $report_opt((Vector{Any},); skip_noncompileable_calls=false) do ary
+                    callf(sin, ary[1]) # runtime dispatch !
+                end
+                @test length(get_reports(result)) == 2
+                @test any(get_reports(result)) do r
+                    isa(r, RuntimeDispatchReport) &&
+                    last(r.vst).file === Symbol(@__FILE__) && last(r.vst).line == (@__LINE__) - 5 # report for the lambda function
+                end
+                @test any(get_reports(result)) do r
+                    isa(r, RuntimeDispatchReport) &&
+                    last(r.vst).file === Symbol(@__FILE__) && last(r.vst).line == CALLF_DEFINITION_LINE # report for `f(a::Any)`
+                end
+            end
         end
 
-        let
-            @eval M $test_opt((Any,); skip_nonconcrete_calls=true) do x
-                with_runtime_dispatch(x)
+        let M = Module()
+            CALLG_DEFINITION_LINE = (@__LINE__)+1
+            @eval M callg(g, @nospecialize a) = g(a)
+
+            let # `skip_noncompileable_calls` shouldn't ignore `@nospecialize` annotation
+                result = @eval M $report_opt((Vector{Any},)) do ary
+                    callg(sin, ary[1]) # no runtime dispatch here, but `g(a)` is runtime dispatch
+                end
+                @test length(get_reports(result)) == 1
+                @test any(get_reports(result)) do r
+                    isa(r, RuntimeDispatchReport) &&
+                    last(r.vst).file === Symbol(@__FILE__) && last(r.vst).line == CALLG_DEFINITION_LINE # report for `g(a::Any)`
+                end
             end
         end
     end
@@ -206,31 +231,6 @@ end
 
         let # if we use different `target_modules`, the reports from `println` should get filtered out
             @test_opt target_modules=(@__MODULE__,) M.compute(30)
-        end
-    end
-
-    @testset "skip_nonconcrete_calls" begin
-        M = Module()
-        F1_DEFINITION_LINE = @__LINE__
-        @eval M begin
-            callsin(@nospecialize a) = sin(a)
-        end
-
-        # by default, we'd ignore error reports from `f1` calls
-        @eval M $test_opt((Vector{Any},)) do ary
-            callsin(ary[1]) # runtime dispatch !
-        end
-
-        let # when the `skip_nonconcrete_calls` configuration is turned off, we will get error reports
-            # from those non-concrete call inside of `callsin`
-            result = @eval M $report_opt((Vector{Any},); skip_nonconcrete_calls=false) do ary
-                callsin(ary[1]) # runtime dispatch !
-            end
-            @test length(get_reports(result)) ≥ 1
-            @test any(get_reports(result)) do r
-                isa(r, RuntimeDispatchReport) &&
-                last(r.vst).file === Symbol(@__FILE__) && last(r.vst).line == F1_DEFINITION_LINE + 2 # report for `sin(a::Any)`
-            end
         end
     end
 end
