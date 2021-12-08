@@ -614,14 +614,15 @@ function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
         # finalize and record the linfo result
         caller.inferred = true
     end
-    # collect results for the new expanded frame
-    results = Tuple{InferenceState, Vector{Any}, Bool}[
-            ( frames[i],
-              frames[i].stmt_edges[1]::Vector{Any},
-              frames[i].cached )
-        for i in 1:length(frames) ]
-    empty!(frames)
-    for (frame, _, _) in results
+    # NOTE we don't discard `InferenceState`s here so that some analyzers can use them in `finish!`
+    # # collect results for the new expanded frame
+    # results = Tuple{InferenceResult, Vector{Any}, Bool}[
+    #         ( frames[i].result,
+    #           frames[i].stmt_edges[1]::Vector{Any},
+    #           frames[i].cached )
+    #     for i in 1:length(frames) ]
+    # empty!(frames)
+    for frame in frames
         caller = frame.result
         opt = get_source(caller)
         if opt isa OptimizationState # implies `may_optimize(analyzer) === true`
@@ -646,8 +647,10 @@ function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
         end
     end
 
-    for (frame, edges, cached) in results
+    for frame in frames
         caller = frame.result
+        edges = frame.stmt_edges[1]::Vector{Any}
+        cached = frame.cached
         valid_worlds = caller.valid_worlds
         if CC.last(valid_worlds) >= get_world_counter()
             # if we aren't cached, we don't need this edge
@@ -923,8 +926,8 @@ This may fail, cause incorrect analysis, or produce unexpected errors.
 @reportdef struct InvalidConstantRedefinition <: InferenceErrorReport
     mod::Module
     name::Symbol
-    @nospecialize(t′::Any)
-    @nospecialize(t::Any)
+    @nospecialize t′
+    @nospecialize t
 end
 get_msg(::Type{InvalidConstantRedefinition}, sv::InferenceState, mod::Module, name::Symbol, @nospecialize(t′::Any), @nospecialize(t::Any)) =
     "invalid redefinition of constant $(mod).$(name) (from $(t′) to $(t))"

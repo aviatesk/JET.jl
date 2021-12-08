@@ -104,7 +104,7 @@ _**TODO**_: elaborate the definitions of "error"s.
 struct SoundPass <: ReportPass end
 
 basic_filter(analyzer::JETAnalyzer, sv) =
-    isconcreteframe(sv) || get_entry(analyzer) === get_linfo(sv) # `report_call` may start analysis with abstract signature
+    is_compileable_frame(sv) || get_entry(analyzer) === get_linfo(sv) # `report_call` may start analysis with abstract signature
 
 # `SoundPass` is still WIP, we may use it to implement both passes at once for the meantime
 const SoundBasicPass = Union{SoundPass,BasicPass}
@@ -129,7 +129,7 @@ function CC.InferenceState(result::InferenceResult, cache::CACHE_ARG_TYPE, analy
 end
 
 @reportdef struct GeneratorErrorReport <: InferenceErrorReport
-    @nospecialize(err) # actual error wrapped
+    @nospecialize err # actual error wrapped
 end
 get_msg(::Type{GeneratorErrorReport}, linfo::MethodInstance, @nospecialize(err)) =
     return sprint(showerror, err)
@@ -298,12 +298,19 @@ function report_uncaught_exceptions!(frame::InferenceState, stmts::Vector{Any})
 end
 
 @reportdef struct NoMethodErrorReport <: InferenceErrorReport
-    @nospecialize(t::Union{Type,Vector{Type}})
+    @nospecialize t # ::Union{Type, Vector{Type}}
+    union_split::Int
 end
-get_msg(::Type{NoMethodErrorReport}, sv::InferenceState, @nospecialize(t::Type)) =
-    "no matching method found for call signature ($t)"
-get_msg(::Type{NoMethodErrorReport}, sv::InferenceState, ts::Vector{Type}) =
-    "for $(length(ts)) of union split cases, no matching method found for call signatures ($(join(ts, ", "))))"
+function get_msg(::Type{NoMethodErrorReport}, sv::InferenceState, @nospecialize(t), union_split::Int)
+    if union_split == 0
+        "no matching method found for call signature ($t)"
+    else
+        ts = t::Vector{Any}
+        nts = length(ts)
+        tss = join(ts, ", ")
+        "for $nts of $union_split union split cases, no matching method found for call signatures ($tss))"
+    end
+end
 
 @static if IS_AFTER_42529
 function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer, @nospecialize(f),
@@ -362,17 +369,19 @@ function report_no_method_error_for_union_split!(
     analyzer::JETAnalyzer, sv::InferenceState, info::UnionSplitInfo, argtypes::Argtypes)
     # check each match for union-split signature
     split_argtypes = nothing
-    ts = nothing
+    rinfo = nothing
     for (i, matchinfo) in enumerate(info.matches)
         if is_empty_match(matchinfo)
             isnothing(split_argtypes) && (split_argtypes = switchtupleunion(argtypes))
-            isnothing(ts) && (ts = Type[])
+            if rinfo === nothing
+                rinfo = Any[], length(info.matches)
+            end
             sig_n = argtypes_to_type(split_argtypes[i]::Vector{Any})
-            push!(ts, sig_n)
+            push!(rinfo[1], sig_n)
         end
     end
-    if !isnothing(ts)
-        add_new_report!(sv.result, NoMethodErrorReport(sv, ts))
+    if rinfo !== nothing
+        add_new_report!(sv.result, NoMethodErrorReport(sv, rinfo...))
         return true
     end
     return false
@@ -394,7 +403,7 @@ end
 function report_no_method_error!(
     analyzer::JETAnalyzer, sv::InferenceState, info::MethodMatchInfo, @nospecialize(atype))
     if is_empty_match(info)
-        add_new_report!(sv.result, NoMethodErrorReport(sv, atype))
+        add_new_report!(sv.result, NoMethodErrorReport(sv, atype, 0))
         return true
     end
     return false
@@ -623,28 +632,39 @@ function CC.abstract_eval_value(analyzer::JETAnalyzer, @nospecialize(e), vtypes:
 end
 
 @reportdef struct NonBooleanCondErrorReport <: InferenceErrorReport
-    @nospecialize(t::Union{Type,Vector{Type}})
+    @nospecialize t # ::Union{Type, Vector{Type}}
+    union_split::Int
 end
-get_msg(::Type{NonBooleanCondErrorReport}, sv::InferenceState, @nospecialize(t::Type)) =
-    "non-boolean ($t) used in boolean context"
-get_msg(::Type{NonBooleanCondErrorReport}, sv::InferenceState, ts::Vector{Type}) =
-    "for $(length(ts)) of union split cases, non-boolean ($(join(ts, ", "))) used in boolean context"
+function get_msg(::Type{NonBooleanCondErrorReport}, sv::InferenceState, @nospecialize(t), union_split::Int)
+    if union_split == 0
+        return "non-boolean ($t) used in boolean context"
+    else
+        ts = t::Vector{Any}
+        nt = length(ts)
+        tss = join(ts, ", ")
+        return "for $nt of $union_split union split cases, non-boolean ($tss) used in boolean context"
+    end
+end
 
 function (::SoundPass)(::Type{NonBooleanCondErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(t))
     if isa(t, Union)
-        ts = Type[]
-        for t in Base.uniontypes(t)
+        rinfo = nothing
+        uts = Base.uniontypes(t)
+        for t in uts
             if !(t ⊑ Bool)
-                push!(ts, t)
+                if rinfo === nothing
+                    rinfo = Any[], length(uts)
+                end
+                push!(rinfo[1], t)
             end
         end
-        if !isempty(ts)
-            add_new_report!(sv.result, NonBooleanCondErrorReport(sv, ts))
+        if rinfo !== nothing
+            add_new_report!(sv.result, NonBooleanCondErrorReport(sv, rinfo...))
             return true
         end
     else
         if !(t ⊑ Bool)
-            add_new_report!(sv.result, NonBooleanCondErrorReport(sv, t))
+            add_new_report!(sv.result, NonBooleanCondErrorReport(sv, t, 0))
             return true
         end
     end
@@ -654,19 +674,23 @@ end
 function (::BasicPass)(::Type{NonBooleanCondErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(t))
     if basic_filter(analyzer, sv)
         if isa(t, Union)
-            ts = Type[]
-            for t in Base.uniontypes(t)
+            info = nothing
+            uts = Base.uniontypes(t)
+            for t in uts
                 if typeintersect(Bool, t) !== Bool
-                    push!(ts, t)
+                    if info === nothing
+                        info = Any[], length(uts)
+                    end
+                    push!(info[1], t)
                 end
             end
-            if !isempty(ts)
-                add_new_report!(sv.result, NonBooleanCondErrorReport(sv, ts))
+            if info !== nothing
+                add_new_report!(sv.result, NonBooleanCondErrorReport(sv, info...))
                 return true
             end
         else
             if typeintersect(Bool, t) !== Bool
-                add_new_report!(sv.result, NonBooleanCondErrorReport(sv, t))
+                add_new_report!(sv.result, NonBooleanCondErrorReport(sv, t, 0))
                 return true
             end
         end
@@ -712,7 +736,7 @@ This is reported regardless of whether it's caught by control flow or not, as op
 [`UncaughtExceptionReport`](@ref).
 """
 @reportdef struct SeriousExceptionReport <: InferenceErrorReport
-    @nospecialize(err)
+    @nospecialize err
     # keeps the location where this exception is raised
     # this information will be used later when collecting `UncaughtExceptionReport`s
     # in order to avoid duplicated reports from the same `throw` call
@@ -755,7 +779,7 @@ Technically they're defined as those error points that can be caught within `Cor
 abstract type BuiltinErrorReport <: InferenceErrorReport end
 
 @reportdef struct NoFieldErrorReport <: BuiltinErrorReport
-    @nospecialize(typ::Type)
+    @nospecialize typ # ::Type
     name::Symbol
 end
 get_msg(::Type{NoFieldErrorReport}, sv::InferenceState, @nospecialize(typ::Type), name::Symbol) =

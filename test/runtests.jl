@@ -83,11 +83,20 @@ include("setup.jl")
         # optimization analysis
         # =====================
 
+        # ignore some dynamically-designed functions
+        # TODO implement `signature_filter` and limit the ignorance scope
         function function_filter(@nospecialize ft)
             if ft === typeof(JET.widenconst) ||
                ft === typeof(JET.print) ||
                ft === typeof(Base.CoreLogging.handle_message) ||
-               ft == Type{<:JET.InferenceErrorReport} # the constructor used in `restore_cached_report` is very dynamic
+               ft === typeof(get) ||
+               ft === typeof(sprint) ||
+               ft === typeof(string) ||
+               ft === typeof(zero) ||
+               ft === typeof(JET._restore_cached_report) ||
+               # requires https://github.com/JuliaLang/julia/pull/43113
+               @static VERSION < v"1.8.0-DEV.1053" ? ft === typeof(isprimitivetype) : false ||
+               false
                 return false
             end
             return true
