@@ -951,6 +951,9 @@ end
 
 function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node), istoplevel::Bool)
     @assert istoplevel "JET.ConcreteInterpreter can only work for top-level code"
+    with_toplevel_logger(interp.analyzer) do @nospecialize(io)
+        println(io, "JuliaInterpreter.step_expr! ", frame)
+    end
 
     # TODO:
     # - support package analysis
@@ -1022,6 +1025,10 @@ end
 # cases for JET analysis
 function JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)
     # @assert !enter_generated
+    with_toplevel_logger(interp.analyzer) do @nospecialize(io)
+        println(io, "JuliaInterpreter.evaluate_call_recurse! ", frame)
+    end
+
     pc = frame.pc
     ret = bypass_builtins(frame, call_expr, pc)
     isa(ret, Some{Any}) && return ret.value
@@ -1088,6 +1095,10 @@ end
 
 # handle errors from toplevel user code
 function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame, err)
+    with_toplevel_logger(interp.analyzer) do @nospecialize(io)
+        println(io, "JuliaInterpreter.handle_err ", frame)
+    end
+
     # catch stack trace
     bt = catch_backtrace()
     st = stacktrace(bt)
