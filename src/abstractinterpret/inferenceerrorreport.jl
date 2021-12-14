@@ -125,10 +125,22 @@ function get_sig(l::MethodInstance)
 end
 
 @inline function show_tuple_as_call(io::IO, name::Symbol, @nospecialize(sig::Type))
-    @static if hasmethod(Base.show_tuple_as_call, (IO, Symbol, Type), (:demangle, :kwargs, :argnames, :qualified))
-        @invokelatest Base.show_tuple_as_call(io, name, sig; qualified = true)
+        @static if hasmethod(Base.show_tuple_as_call, (IO, Symbol, Type), (:demangle, :kwargs, :argnames, :qualified))
+        try
+            Base.show_tuple_as_call(io, name, sig; qualified = true)
+        catch err
+            # Fix for https://github.com/aviatesk/JET.jl/issues/225.
+            isa(err, MethodError) && @invokelatest Base.show_tuple_as_call(io, name, sig; qualified = true)
+            rethrow(err)
+        end
     else
-        @invokelatest Base.show_tuple_as_call(io, name, sig, false, nothing, nothing, true)
+        try
+            Base.show_tuple_as_call(io, name, sig, false, nothing, nothing, true)
+        catch err
+            # Fix for https://github.com/aviatesk/JET.jl/issues/225.
+            isa(err, MethodError) && @invokelatest Base.show_tuple_as_call(io, name, sig, false, nothing, nothing, true)
+            rethrow(err)
+        end
     end
 end
 
