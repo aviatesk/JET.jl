@@ -646,7 +646,7 @@ split_module_path(::Type{Symbol}, m::Module) = Symbol.(split_module_path(String,
 split_module_path(m::Module)                 = split_module_path(Symbol, m)
 
 # if virtualized, replace self references of `actualmod` with `virtualmod` (as is)
-fix_self_references!(::Nothing, x) = return
+fix_self_references!(::Nothing, x) = return nothing
 function fix_self_references!((actualmod, virtualmod)::Actual2Virtual, x)
     actualmodsym   = Symbol(actualmod)
     virtualmodsyms = split_module_path(virtualmod)
@@ -968,7 +968,7 @@ function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, 
 
             interp.eval_with_err_handling(interp.context, ex)
         end
-        return nothing
+        return frame.pc += 1
     end
 
     res = @invoke JuliaInterpreter.step_expr!(interp, frame, node, true::Bool)
@@ -1157,7 +1157,7 @@ function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame, err)
              ActualErrorWrapped(err, st, interp.filename, interp.lnn.line)
     push!(interp.res.toplevel_error_reports, report)
 
-    return nothing
+    return nothing # stop further interpretation
 end
 
 function with_err_handling(f, err_handler, scrub_offset)
