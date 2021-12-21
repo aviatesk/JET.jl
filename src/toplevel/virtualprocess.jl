@@ -742,16 +742,12 @@ struct ActualErrorWrapped <: ToplevelErrorReport
     file::String
     line::Int
 
-    # default constructor
-    ActualErrorWrapped(err, st, file, line) = new(err, st, file, line)
-
-    # forward syntax error
-    function ActualErrorWrapped(err::ErrorException, st, file, line)
-        return if startswith(err.msg, "syntax: ")
-            SyntaxErrorReport(err.msg, file, line)
-        else
-            new(err, st, file, line)
+    function ActualErrorWrapped(@nospecialize(err), st, file, line)
+        if isa(err, ErrorException) && startswith(err.msg, "syntax: ")
+            # forward syntax error
+            return SyntaxErrorReport(err.msg, file, line)
         end
+        return new(err, st, file, line)
     end
 end
 
@@ -1182,10 +1178,10 @@ function with_err_handling(f, err_handler, scrub_offset)
     end
 end
 
-function is_missing_concretization(@nospecialize(err))
+@eval function is_missing_concretization(@nospecialize(err))
     io = IOBuffer()
     showerror(io, err)
-    occursin(string(AbstractGlobal), String(take!(io)))
+    occursin($(string(AbstractGlobal)), String(take!(io)))
 end
 
 function collect_syntax_errors(s, filename)
