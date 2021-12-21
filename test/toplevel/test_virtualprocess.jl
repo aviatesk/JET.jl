@@ -444,7 +444,7 @@ end
 @testset "handle `include`" begin
     let
         f1 = normpath(FIXTURE_DIR, "include1.jl")
-        f2 = normpath(FIXTURE_DIR, "include1.jl")
+        f2 = normpath(FIXTURE_DIR, "include2.jl")
 
         context = gen_virtual_module(@__MODULE__)
         res = report_file2(f1; context, virtualize = false).res
@@ -492,6 +492,77 @@ end
             @test f2 in report.files
             @test report.file == f2
             @test report.line == 1
+        end
+    end
+
+    let
+        modf = normpath(FIXTURE_DIR, "modinclude.jl")
+        inc2 = normpath(FIXTURE_DIR, "include2.jl")
+
+        context = gen_virtual_module(@__MODULE__)
+        res = report_file2(modf; context, virtualize=false).res
+
+        @test modf in res.included_files
+        @test inc2 in res.included_files
+        @test isempty(res.toplevel_error_reports)
+        @test isempty(res.inference_error_reports)
+        @test is_concrete(context.Outer, :foo)
+    end
+
+    # bad includes
+    # ------------
+
+    let res = @analyze_toplevel begin
+            include(Symbol("somefile.jl"))
+        end
+        @test length(res.toplevel_error_reports) == 1
+        report = res.toplevel_error_reports[1]
+        @test report isa ActualErrorWrapped
+        err = report.err
+        @test err isa MethodError
+    end
+    let res = @analyze_toplevel begin
+            module __xxx__ end
+            Base.include("somefile.jl", __xxx__)
+        end
+        @test length(res.toplevel_error_reports) == 1
+        report = res.toplevel_error_reports[1]
+        @test report isa ActualErrorWrapped
+        err = report.err
+        @test err isa MethodError
+        @test err.f === Base.include
+    end
+    let res = @analyze_toplevel begin
+            module __xxx__ end
+            Core.include("somefile.jl", __xxx__)
+        end
+        @test length(res.toplevel_error_reports) == 1
+        report = res.toplevel_error_reports[1]
+        @test report isa ActualErrorWrapped
+        err = report.err
+        @test err isa MethodError
+        @test err.f === Core.include
+    end
+    let res = @analyze_toplevel begin
+            module __xxx__ end
+            Base.include(__xxx__, Symbol("somefile.jl"))
+        end
+        @test length(res.toplevel_error_reports) == 1
+        report = res.toplevel_error_reports[1]
+        @test report isa ActualErrorWrapped
+        err = report.err
+        @test err isa MethodError
+    end
+
+    # unsupported features
+    # --------------------
+
+    let res = @test_logs (:warn,) @analyze_toplevel begin
+            function mymapexpr(x::Expr)
+                println(x)
+                nothing
+            end
+            include(mymapexpr, "somefile.jl")
         end
     end
 end

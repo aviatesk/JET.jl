@@ -452,7 +452,7 @@ function _virtual_process!(toplevelex::Expr,
 
     local lnn::LineNumberNode = LineNumberNode(0, filename)
 
-    function macroexpand_err_handler(err, st)
+    function macroexpand_err_handler(@nospecialize(err), st)
         report = is_missing_concretization(err) ?
                  MissingConcretization(err, st, filename, lnn.line) :
                  ActualErrorWrapped(err, st, filename, lnn.line)
@@ -466,7 +466,7 @@ function _virtual_process!(toplevelex::Expr,
         # but it can lead to invalid macro hygiene escaping because of https://github.com/JuliaLang/julia/issues/20241
         return macroexpand(mod, x; recursive = true #= but want to use `false` here =#)
     end
-    function eval_err_handler(err, st)
+    function eval_err_handler(@nospecialize(err), st)
         report = is_missing_concretization(err) ?
                  MissingConcretization(err, st, filename, lnn.line) :
                  ActualErrorWrapped(err, st, filename, lnn.line)
@@ -477,7 +477,7 @@ function _virtual_process!(toplevelex::Expr,
     eval_with_err_handling(mod, x) = with_err_handling(eval_err_handler, #= scrub_offset =# 3) do
         return Core.eval(mod, x)
     end
-    function lower_err_handler(err, st)
+    function lower_err_handler(@nospecialize(err), st)
         report = is_missing_concretization(err) ?
                  MissingConcretization(err, st, filename, lnn.line) :
                  ActualErrorWrapped(err, st, filename, lnn.line)
@@ -836,31 +836,38 @@ function select_direct_requirement!(concretize, stmts, edges)
             stmt = rhs
         end
         if isexpr(stmt, :call)
-            f = stmt.args[1]
-
-            # special case `include` calls
-            if f === :include
-                concretize[i] = true
+            if is_known_call(stmt, :include)
+                # `include` calls are special cased
+                select_stmt_requirement!(concretize, i, edges)
                 continue
-            end
-
-            # analysis of `eval` calls are difficult, let's give up it and just evaluate
-            # toplevel `eval` calls; they may contain toplevel definitions
-            # adapted from
-            # - https://github.com/timholy/Revise.jl/blob/266ed68d7dd3bea67c39f96513cda30bbcd7d441/src/lowered.jl#L53
-            # - https://github.com/timholy/Revise.jl/blob/266ed68d7dd3bea67c39f96513cda30bbcd7d441/src/lowered.jl#L87-L88
-            if begin
-                    f === :eval ||
-                    (callee_matches(f, Base, :getproperty) && is_quotenode_egal(stmt.args[end], :eval)) ||
-                    isa(f, GlobalRef) && f.name === :eval
-                end
-                # statement `i` may be the equivalent of `f = Core.eval`, so require each
-                # stmt that calls `eval` via `f(expr)`
-                concretize[edges.succs[i]] .= true
-                concretize[i] = true
+            elseif is_known_call(stmt, :eval)
+                # analysis of `eval` calls are difficult, let's give up it and just evaluate
+                # toplevel `eval` calls; they may contain toplevel definitions
+                select_stmt_requirement!(concretize, i, edges)
+                continue
             end
         end
     end
+end
+
+# adapted from
+# - https://github.com/timholy/Revise.jl/blob/266ed68d7dd3bea67c39f96513cda30bbcd7d441/src/lowered.jl#L53
+# - https://github.com/timholy/Revise.jl/blob/266ed68d7dd3bea67c39f96513cda30bbcd7d441/src/lowered.jl#L87-L88
+function is_known_call(stmt::Expr, func::Symbol)
+    f = stmt.args[1]
+    isa(f, Symbol) && f === func && return true
+    isa(f, GlobalRef) && f.name === :eval && return true
+    callee_matches(f, Base, :getproperty) && is_quotenode_egal(stmt.args[end], func) && return true
+    callee_matches(f, Core, :getproperty) && is_quotenode_egal(stmt.args[end], func) && return true
+    callee_matches(f, Core.Compiler, :getproperty) && is_quotenode_egal(stmt.args[end], func) && return true
+    return false
+end
+
+# statement `idx` may be the equivalent of `f = known_call`, so require each
+# stmt that calls `known_call` via `f(expr)`
+function select_stmt_requirement!(concretize, idx, edges)
+    concretize[edges.succs[idx]] .= true
+    concretize[idx] = true
 end
 
 # TODO implement these prototypes and support a following pattern:
@@ -1029,34 +1036,59 @@ function JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, fr
     isa(ret, Some{Any}) && return ret.value
     ret = @invokelatest maybe_evaluate_builtin(frame, call_expr, false)
     isa(ret, Some{Any}) && return ret.value
-    fargs = collect_args(frame, call_expr)
-    f = popfirst!(fargs)  # now it's really just `args`
-
+    args = collect_args(frame, call_expr)
+    f = first(args)
     if isinclude(f)
-        return handle_include(interp, fargs)
+        return handle_include(interp, args)
     else
+        popfirst!(args)  # now it's really just `args`
         # `_virtual_process!` iteratively interpret toplevel expressions but it doesn't hit toplevel
         # we may want to make `_virtual_process!` hit the toplevel on each interation rather than
         # using `invokelatest` here, but assuming concretized calls are supposed only to be
         # used for other toplevel definitions and as such not so computational heavy,
         # I'd like to go with this simplest way
-        return @invokelatest f(fargs...)
+        return @invokelatest f(args...)
     end
 end
 
-isinclude(@nospecialize(_))           = false
-isinclude(@nospecialize(f::Function)) = nameof(f) === :include
+isinclude(@nospecialize f) = isa(f, Function) && nameof(f) === :include
 
-function handle_include(interp, fargs)
+function handle_include(interp, args)
     filename = interp.filename
     res = interp.res
     lnn = interp.lnn
-    eval_with_err_handling = interp.eval_with_err_handling
     context = interp.context
 
-    # TODO: maybe find a way to handle two args `include` calls
-    include_file = normpath(dirname(filename), first(fargs))
+    function handle_actual_method_error!(args)
+        err = MethodError(args[1], args[2:end])
+        report = ActualErrorWrapped(err, [], filename, lnn.line)
+        push!(res.toplevel_error_reports, report)
+    end
 
+    nargs = length(args)
+    if nargs == 2
+        fname = args[2]
+    elseif nargs == 3
+        x = args[2]
+        fname = args[3]
+        if isa(x, Module)
+            context = x
+        elseif isa(x, Function)
+            @warn "JET is unable to analyze `include(mapexpr::Function, filename::String)` call currently."
+        else
+            handle_actual_method_error!(args)
+            return nothing
+        end
+    else
+        handle_actual_method_error!(args)
+        return nothing
+    end
+    if !isa(fname, AbstractString)
+        handle_actual_method_error!(args)
+        return nothing
+    end
+
+    include_file = normpath(dirname(filename), fname)
     # handle recursive `include`s
     if include_file in res.included_files
         report = RecursiveIncludeErrorReport(include_file, res.included_files, filename, lnn.line)
@@ -1064,9 +1096,15 @@ function handle_include(interp, fargs)
         return nothing
     end
 
-    read_ex      = :(read($(include_file), String))
-    include_text = eval_with_err_handling(context, read_ex)
-
+    function read_err_handler(@nospecialize(err), st)
+        report = ActualErrorWrapped(err, st, filename, lnn.line)
+        push!(res.toplevel_error_reports, report)
+        return nothing
+    end
+    # `scrub_offset = 3` corresponds to `with_err_handling` -> `f`
+    include_text = with_err_handling(read_err_handler, #= scrub_offset =# 2) do
+        read(include_file, String)
+    end
     isnothing(include_text) && return nothing # typically no file error
 
     _virtual_process!(include_text::String, include_file, interp.analyzer, interp.config, context, interp.res)
