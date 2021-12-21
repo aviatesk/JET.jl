@@ -519,15 +519,17 @@ function _virtual_process!(toplevelex::Expr,
         # patterns matches `x`, JET just concretizes everything involved with it
         # since patterns are expected to work on surface level AST, we should configure it
         # here before macro expansion and lowering
-        for pat in config.concretization_patterns
-            if @capture(x, $pat)
-                with_toplevel_logger(analyzer, ≥(DEBUG_LOGGER_LEVEL)) do @nospecialize(io)
-                    line, file = lnn.line, lnn.file
-                    x′ = striplines(normalise(x))
-                    println(io, "concretization pattern `$pat` matched `$x′` at $file:$line")
+        if !force_concretize
+            for pat in config.concretization_patterns
+                if @capture(x, $pat)
+                    with_toplevel_logger(analyzer, ≥(DEBUG_LOGGER_LEVEL)) do @nospecialize(io)
+                        line, file = lnn.line, lnn.file
+                        x′ = striplines(normalise(x))
+                        println(io, "concretization pattern `$pat` matched `$x′` at $file:$line")
+                    end
+                    force_concretize = true
+                    break
                 end
-                force_concretize = true
-                break
             end
         end
 
