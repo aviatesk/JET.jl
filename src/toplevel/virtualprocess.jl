@@ -1178,10 +1178,12 @@ function with_err_handling(f, err_handler, scrub_offset)
     end
 end
 
-@eval function is_missing_concretization(@nospecialize(err))
-    io = IOBuffer()
-    showerror(io, err)
-    occursin($(string(AbstractGlobal)), String(take!(io)))
+let s = string(nameof(AbstractGlobal))
+    global function is_missing_concretization(@nospecialize(err))
+        io = IOBuffer()
+        showerror(io, err)
+        occursin(s, String(take!(io)))
+    end
 end
 
 function collect_syntax_errors(s, filename)
