@@ -193,7 +193,7 @@ end
     end
 end
 
-@testset "\"toplevel definitions\"" begin
+@testset "'toplevel definitions'" begin
     let
         vmod, = @analyze_toplevel2 begin
             # function
@@ -287,41 +287,80 @@ end
         @test is_abstract(vmod, :uc)
     end
 
-    # a toplevel definition within a block
-    let
-        vmod, res = @analyze_toplevel2 begin
-            begin
-                struct Foo
-                    bar
+    @testset "toplevel definitions within a block" begin
+        let
+            vmod, res = @analyze_toplevel2 begin
+                begin
+                    struct Foo
+                        bar
+                    end
+
+                    foo = Foo(:bar)
+                    println(foo)
                 end
-
-                foo = Foo(:bar)
-                println(foo)
             end
+            @test is_concrete(vmod, :Foo)
+            @test is_analyzed(vmod, :foo)
+            @test isa_analyzed(vmod.foo, vmod.Foo)
         end
-        @test is_concrete(vmod, :Foo)
-        @test is_analyzed(vmod, :foo)
-        @test isa_analyzed(vmod.foo, vmod.Foo)
-    end
 
-    # toplevel definitions within a block
-    # somewhat related upstream issue: https://github.com/JuliaDebug/LoweredCodeUtils.jl/issues/47
-    # well, the actual error here is world age error ...
-    let
-        vmod, res = @analyze_toplevel2 begin
-            begin
-                abstract type Foo end
-                struct Foo1 <: Foo
-                    foo
+        let
+            vmod, res = @analyze_toplevel2 begin
+                begin
+                    abstract type Foo end
+                    struct Foo1 <: Foo
+                        foo
+                    end
+
+                    foo = Foo1(:foo)
+                    println(foo)
                 end
-
-                foo = Foo1(:foo)
-                println(foo)
             end
+            @test isempty(res.toplevel_error_reports)
+            @test is_analyzed(vmod, :foo)
+            @test isa_analyzed(vmod.foo, vmod.Foo1)
         end
-        @test isempty(res.toplevel_error_reports)
-        @test is_analyzed(vmod, :foo)
-        @test isa_analyzed(vmod.foo, vmod.Foo1)
+
+        let
+            vmod, res = @analyze_toplevel2 begin
+                begin
+                    import Base: getproperty
+                    struct Foo
+                        bar
+                    end
+                    getproperty(foo::Foo, sym::Symbol) =
+                        sym === :baz ? getfield(foo, :bar) : getfield(foo, :bar)
+                end
+                bar = Foo(gensym()).baz
+            end
+
+            @test isempty(res.toplevel_error_reports)
+            @test is_analyzed(vmod, :Foo)
+            @test is_abstract(vmod, :bar)
+        end
+
+        let
+            vmod, res = mktemp() do path, io
+                write(io, quote
+                    struct Foo
+                        bar
+                    end
+                end |> string)
+                flush(io)
+
+                @eval @analyze_toplevel2 begin
+                    begin
+                        include($path)
+                        getbar(foo::Foo) = foo.bar
+                    end
+                    bar = getbar(Foo(gensym()))
+                end
+            end
+
+            @test isempty(res.toplevel_error_reports)
+            @test is_analyzed(vmod, :Foo)
+            @test is_analyzed(vmod, :bar)
+        end
     end
 end
 
