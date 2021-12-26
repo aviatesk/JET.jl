@@ -793,10 +793,8 @@ function partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::Cod
 
     # NOTE if `JuliaInterpreter.optimize!` may modify `src`, `src` and `concretize` can be inconsistent
     # here we create `JuliaInterpreter.Frame` by ourselves disabling the optimization (#277)
-    # TODO: change to a better Frame constructor when available
-    framecode = JuliaInterpreter.FrameCode(mod, src, optimize=false)
-    @assert length(framecode.src.code) == length(concretize)
-    frame = Frame(framecode, JuliaInterpreter.prepare_framedata(framecode, Any[]))
+    frame = Frame(mod, src; optimize=false)
+    @assert length(frame.framecode.src.code) == length(concretize)
     selective_eval_fromstart!(interp, frame, concretize, #= istoplevel =# true)
 
     return concretize
@@ -1028,11 +1026,11 @@ end
 function JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)
     # @assert !enter_generated
     pc = frame.pc
-    ret = bypass_builtins(frame, call_expr, pc)
+    ret = bypass_builtins(interp, frame, call_expr, pc)
     isa(ret, Some{Any}) && return ret.value
     ret = @invokelatest maybe_evaluate_builtin(frame, call_expr, false)
     isa(ret, Some{Any}) && return ret.value
-    args = collect_args(frame, call_expr)
+    args = collect_args(interp, frame, call_expr)
     f = first(args)
     if isinclude(f)
         return handle_include(interp, args)
