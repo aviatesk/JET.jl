@@ -176,7 +176,7 @@ function print_reports(io::IO,
     n = length(reports)
     if n == 0
         if config.print_toplevel_success
-            printlnstyled(io, "No toplevel errors !"; color = NOERROR_COLOR)
+            printlnstyled(io, "No toplevel errors detected"; color = NOERROR_COLOR)
         end
         return 0
     end
@@ -243,7 +243,7 @@ function print_reports(io::IO,
 
     if n == 0
         if config.print_inference_success
-            printlnstyled(io, "No errors !"; color = NOERROR_COLOR)
+            printlnstyled(io, "No errors detected"; color = NOERROR_COLOR)
         end
         return 0
     end

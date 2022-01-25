@@ -1,9 +1,9 @@
+# JET.jl
+
 [![](https://img.shields.io/badge/docs-stable-blue.svg)](https://aviatesk.github.io/JET.jl/stable/)
 [![](https://img.shields.io/badge/docs-dev-blue.svg)](https://aviatesk.github.io/JET.jl/dev/)
 ![CI](https://github.com/aviatesk/JET.jl/workflows/CI/badge.svg)
 [![codecov](https://codecov.io/gh/aviatesk/JET.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/aviatesk/JET.jl)
-
-### behind the moar for performance ...
 
 JET.jl employs Julia's type inference to detect potential bugs.
 
@@ -192,12 +192,12 @@ If you apply the diff (i.e. update and save the demo.jl), JET will automatically
 [toplevel-info] virtualized the context of Main (took 0.004 sec)
 [toplevel-info] entered into demo.jl
 [toplevel-info]  exited from demo.jl (took 3.061 sec)
-No errors !
+No errors detected
 ```
 
 ## Limitations
 
-JET explores the functions you call directly as well as their *inferrable* callees. However, if the argument-types for a call cannot be inferred, JET does not analyze the callee. Consequently, a report of `No errors!` does not imply that your entire codebase is free of errors.
+JET explores the functions you call directly as well as their *inferrable* callees. However, if the argument-types for a call cannot be inferred, JET does not analyze the callee. Consequently, a report of `No errors detected` does not imply that your entire codebase is free of errors.
 
 JET integrates with [SnoopCompile](https://github.com/timholy/SnoopCompile.jl), and you can sometimes use SnoopCompile to collect the data to perform more comprehensive analyses. SnoopCompile's limitation is that it only collects data for calls that have not been previously inferred, so you must perform this type of analysis in a fresh session.
 
