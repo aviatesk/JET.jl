@@ -258,7 +258,7 @@ function (::OptAnalysisPass)(::Type{CapturedVariableReport}, analyzer::OptAnalyz
                 else
                     name = nothing
                 end
-                add_new_report!(frame.result, CapturedVariableReport((frame, pc), name))
+                add_new_report!(analyzer, frame.result, CapturedVariableReport((frame, pc), name))
                 reported |= true
             end
         end
@@ -269,8 +269,8 @@ end
 @reportdef struct OptimizationFailureReport <: InferenceErrorReport end
 get_msg(::Type{OptimizationFailureReport}, args...) = "failed to optimize"
 function (::OptAnalysisPass)(::Type{OptimizationFailureReport}, analyzer::OptAnalyzer, caller::InferenceResult)
-    if !isa(get_source(caller), OptimizationState)
-        add_new_report!(caller, OptimizationFailureReport(caller.linfo))
+    if !isa(caller.src, OptimizationState)
+        add_new_report!(analyzer, caller, OptimizationFailureReport(caller.linfo))
         return true
     end
     return false
@@ -280,7 +280,7 @@ function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState)
     caller = frame.result
 
     # get the source before running `finish!` to keep the reference to `OptimizationState`
-    src = get_source(caller)
+    src = caller.src
 
     ret = @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
 
@@ -331,7 +331,7 @@ function (::OptAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::OptAnalyze
             ft = widenconst(argextype(first(x.args), src, sptypes, slottypes))
             ft <: Builtin && continue # ignore `:call`s of language intrinsics
             if analyzer.function_filter(ft)
-                add_new_report!(caller, RuntimeDispatchReport((opt, pc)))
+                add_new_report!(analyzer, caller, RuntimeDispatchReport((opt, pc)))
                 reported |= true
             end
         end

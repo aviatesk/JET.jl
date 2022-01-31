@@ -393,7 +393,7 @@ function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProce
                     analyzer, (first(mms)::MethodMatch).method;
                     # JETAnalyzer{BasicPass}: don't report errors unless this frame is concrete
                     set_entry = false)
-                append!(res.inference_error_reports, get_reports(result))
+                append!(res.inference_error_reports, get_reports(analyzer, result))
                 continue
             end
         end
@@ -621,7 +621,7 @@ function _virtual_process!(toplevelex::Expr,
 
         _, result = analyze_toplevel!(analyzer, src)
 
-        append!(res.inference_error_reports, get_reports(result)) # collect error reports
+        append!(res.inference_error_reports, get_reports(analyzer, result)) # collect error reports
     end
 
     return res
