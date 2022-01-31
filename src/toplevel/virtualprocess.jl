@@ -641,9 +641,20 @@ function push_vex_stack!(exs::Vector{VExpr}, newex::Expr, force_concretize::Bool
     return exs
 end
 
-split_module_path(::Type{String}, m::Module) = split(string(m), '.')
-split_module_path(::Type{Symbol}, m::Module) = Symbol.(split_module_path(String, m))
-split_module_path(m::Module)                 = split_module_path(Symbol, m)
+function split_module_path(m::Module)
+    ret = Symbol[]
+    split_module_path!(m, ret)
+    return ret
+end
+function split_module_path!(m::Module, ret)
+    mp = parentmodule(m)
+    if m === Main || m === Base || m === Core || mp === m
+        push!(ret, nameof(m))
+        return
+    end
+    split_module_path!(mp, ret)
+    push!(ret, nameof(m))
+end
 
 # if virtualized, replace self references of `actualmod` with `virtualmod` (as is)
 fix_self_references!(::Nothing, x) = return nothing

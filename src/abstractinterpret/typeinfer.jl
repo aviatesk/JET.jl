@@ -626,9 +626,13 @@ function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
         caller = frame.result
         opt = get_source(caller)
         if opt isa OptimizationState # implies `may_optimize(analyzer) === true`
-            result_type = caller.result
-            @assert !(result_type isa LimitedAccuracy)
-            CC.optimize(analyzer, opt, OptimizationParams(analyzer), result_type)
+            @static if VERSION ≥ v"1.8.0-DEV.1425"
+                CC.optimize(analyzer, opt, OptimizationParams(analyzer), caller)
+            else
+                result_type = caller.result
+                @assert !(result_type isa LimitedAccuracy)
+                CC.optimize(analyzer, opt, OptimizationParams(analyzer), result_type)
+            end
             # # COMBAK we may want to enable inlining ?
             # if opt.const_api
             #     # XXX: The work in ir_to_codeinf! is essentially wasted. The only reason
