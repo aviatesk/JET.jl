@@ -557,16 +557,15 @@ JETCallResult(result::InferenceResult, analyzer::AbstractAnalyzer, source::Abstr
 @eval Base.iterate(res::JETCallResult, state=1) =
     return state > $(fieldcount(JETCallResult)) ? nothing : (getfield(res, state), state+1)
 
-get_result(result::JETCallResult) = get_result(result.result)
-function get_result(result::InferenceResult)
+function get_result(result::JETCallResult)
     if any(r->isa(r, GeneratorErrorReport), get_reports(result))
         return Bottom
     else
-        return result.result
+        return result.result.result
     end
 end
 function get_reports(result::JETCallResult)
-    reports = get_reports(result.result)
+    reports = get_reports(result.analyzer, result.result)
     return _get_configured_reports(reports; result.jetconfigs...)
 end
 
@@ -747,7 +746,7 @@ end
 const CACHE_ARG_TYPE = IS_AFTER_42082 ? Symbol : Bool
 
 function InferenceState(result::InferenceResult, cache::CACHE_ARG_TYPE, analyzer::AbstractAnalyzer)
-    set_result!(result) # modify `result` for succeeding JET analysis
+    init_result!(analyzer, result) # set `JETResult` for succeeding JET analysis
     return @invoke InferenceState(result::InferenceResult, cache::CACHE_ARG_TYPE, analyzer::AbstractInterpreter)
 end
 
@@ -1156,7 +1155,7 @@ function analyze_toplevel!(analyzer::AbstractAnalyzer, src::CodeInfo;
     mi.uninferred = src
 
     result = InferenceResult(mi);
-    set_result!(result) # modify `result::InferenceResult` for succeeding JET analysis
+    init_result!(analyzer, result) # set `JETResult` for succeeding JET analysis
     # toplevel frames don't really need to be cached, but still better to be optimized
     # in order to get reasonable `LocalUndefVarErrorReport` and `UncaughtExceptionReport`
     # NOTE and also, otherwise `typeinf_edge` won't add "toplevel-to-callee" edges

@@ -25,4 +25,4 @@ function test_sum_over_string(ers)
     end
 end
 test_sum_over_string(res::JET.VirtualProcessResult) = test_sum_over_string(res.inference_error_reports)
-test_sum_over_string(res::JET.JETCallResult) = test_sum_over_string(get_reports(res.result))
+test_sum_over_string(res::JET.JETCallResult) = test_sum_over_string(get_reports(res))

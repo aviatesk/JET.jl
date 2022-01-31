@@ -55,7 +55,6 @@ const CC = Core.Compiler
 import JET:
     JET,
     @invoke,
-    get_source,
     isexpr
 
 struct DispatchAnalyzer{T} <: AbstractAnalyzer
@@ -106,7 +105,7 @@ function CC.finish(frame::CC.InferenceState, analyzer::DispatchAnalyzer)
     if !analyzer.frame_filter(frame)
         push!(analyzer.opts, false)
     else
-        if isa(get_source(frame.result), CC.OptimizationState)
+        if isa(frame.result, CC.OptimizationState)
             push!(analyzer.opts, true)
         else # means, compiler decides not to do optimization
             ReportPass(analyzer)(OptimizationFailureReport, analyzer, frame.result)
@@ -129,7 +128,7 @@ function CC.finish!(analyzer::DispatchAnalyzer, frame::CC.InferenceState)
     caller = frame.result
 
     ## get the source before running `finish!` to keep the reference to `OptimizationState`
-    src = get_source(caller)
+    src = caller.src
 
     ## run `finish!(::AbstractAnalyzer, ::CC.InferenceState)` first to convert the optimized `IRCode` into optimized `CodeInfo`
     ret = @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::CC.InferenceState)
