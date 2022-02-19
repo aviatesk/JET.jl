@@ -405,7 +405,7 @@ function CC.cache_result!(analyzer::AbstractAnalyzer, result::InferenceResult)
     # TODO: also don't store inferred code if we've previously decided to interpret this function
     if !already_inferred
         inferred_result = transform_result_for_cache(analyzer, linfo, valid_worlds, result)
-        @static if VERSION ≥ v"1.8.0-DEV.1434"
+        @static if v"1.8.0-DEV.1484" ≥ VERSION ≥ v"1.8.0-DEV.1434"
             relocatability = isa(inferred_result, Vector{UInt8}) ? inferred_result[end] : UInt8(0)
             CC.setindex!(code_cache(analyzer), CodeInstance(result, inferred_result, valid_worlds, relocatability), linfo)
         else
