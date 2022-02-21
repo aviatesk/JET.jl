@@ -190,27 +190,43 @@ end
     end
 end
 
+@static if IS_V18
 function CC.abstract_call_method_with_const_args(analyzer::AbstractAnalyzer, result::MethodCallResult,
-                                                 @nospecialize(f), arginfo::(@static IS_AFTER_42529 ? ArgInfo : Argtypes), match::MethodMatch,
-                                                 sv::InferenceState, va_override::Bool)
+                                                 @nospecialize(f), arginfo::ArgInfo, match::MethodMatch,
+                                                 sv::InferenceState)
     set_cacher!(analyzer, :abstract_call_method_with_const_args => sv.result)
-
     const_result =
         @invoke CC.abstract_call_method_with_const_args(analyzer::AbstractInterpreter, result::MethodCallResult,
-                                                        @nospecialize(f), arginfo::(@static IS_AFTER_42529 ? ArgInfo : Argtypes), match::MethodMatch,
-                                                        sv::InferenceState, va_override::Bool)
-
+                                                        @nospecialize(f), arginfo::ArgInfo, match::MethodMatch,
+                                                        sv::InferenceState)
     # we should make sure we reset the cacher because at this point we may have not hit
     # `CC.cache_lookup(linfo::MethodInstance, given_argtypes::Argtypes, cache::JETLocalCache)`
     set_cacher!(analyzer, nothing)
-
     if const_result !== nothing
         # successful constant prop', we also need to update reports
         collect_callee_reports!(analyzer, sv)
     end
-
     return const_result
 end
+else # @static if IS_V18
+function CC.abstract_call_method_with_const_args(analyzer::AbstractAnalyzer, result::MethodCallResult,
+                                                 @nospecialize(f), arginfo::(@static IS_AFTER_42529 ? ArgInfo : Argtypes), match::MethodMatch,
+                                                 sv::InferenceState, va_override::Bool)
+    set_cacher!(analyzer, :abstract_call_method_with_const_args => sv.result)
+    const_result =
+        @invoke CC.abstract_call_method_with_const_args(analyzer::AbstractInterpreter, result::MethodCallResult,
+                                                        @nospecialize(f), arginfo::(@static IS_AFTER_42529 ? ArgInfo : Argtypes), match::MethodMatch,
+                                                        sv::InferenceState, va_override::Bool)
+    # we should make sure we reset the cacher because at this point we may have not hit
+    # `CC.cache_lookup(linfo::MethodInstance, given_argtypes::Argtypes, cache::JETLocalCache)`
+    set_cacher!(analyzer, nothing)
+    if const_result !== nothing
+        # successful constant prop', we also need to update reports
+        collect_callee_reports!(analyzer, sv)
+    end
+    return const_result
+end
+end # @static if IS_V18
 
 @static if IS_AFTER_42529
 function CC.abstract_call(analyzer::AbstractAnalyzer, arginfo::ArgInfo,
@@ -405,12 +421,7 @@ function CC.cache_result!(analyzer::AbstractAnalyzer, result::InferenceResult)
     # TODO: also don't store inferred code if we've previously decided to interpret this function
     if !already_inferred
         inferred_result = transform_result_for_cache(analyzer, linfo, valid_worlds, result)
-        @static if VERSION ≥ v"1.8.0-DEV.1434"
-            relocatability = isa(inferred_result, Vector{UInt8}) ? inferred_result[end] : UInt8(0)
-            CC.setindex!(code_cache(analyzer), CodeInstance(result, inferred_result, valid_worlds, relocatability), linfo)
-        else
-            CC.setindex!(code_cache(analyzer), CodeInstance(result, inferred_result, valid_worlds), linfo)
-        end
+        CC.setindex!(code_cache(analyzer), CodeInstance(result, inferred_result, valid_worlds), linfo)
     end
     unlock_mi_inference(analyzer, linfo)
     nothing
