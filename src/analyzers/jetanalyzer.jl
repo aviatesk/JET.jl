@@ -455,12 +455,12 @@ function CC.add_call_backedges!(analyzer::JETAnalyzer, @nospecialize(rettype), e
 end
 
 @static if IS_V18
-# just fallback to the constant-prop' handling
+# just fallback to the constant-prop' handling for now
+# TODO make ConstError behave like UncaughtExceptionReport
 function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
     @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
     return false
 end
-# # TODO make ConstError behave like UncaughtExceptionReport
 # function CC.concrete_eval_call(analyzer::JETAnalyzer,
 #     @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
 #     CC.concrete_eval_eligible(analyzer, f, result, arginfo, sv) || return nothing
