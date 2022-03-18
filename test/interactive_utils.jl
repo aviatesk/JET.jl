@@ -18,8 +18,7 @@ import JET:
     InferenceErrorReport,
     print_reports,
     get_reports,
-    get_result,
-    iskwarg
+    get_result
 
 get_cache(analyzer::AbstractAnalyzer) = JET.get_native(analyzer).cache
 
@@ -50,6 +49,8 @@ end
 
 import Base.Meta:
     isexpr
+
+iskwarg(@nospecialize(x)) = isexpr(x, :(=))
 
 """
     @fixturedef

@@ -241,10 +241,7 @@ end
 # macros
 # ------
 
-islnn(@nospecialize(_)) = false
-islnn(::LineNumberNode) = true
-
-iskwarg(@nospecialize(x)) = isexpr(x, :(=))
+islnn(@nospecialize(x)) = isa(x, LineNumberNode)
 
 # for inspection
 macro lwr(ex) QuoteNode(lower(__module__, ex)) end
@@ -1393,7 +1390,7 @@ macro test_call(ex0...)
     local skip   = nothing
     idx = Int[]
     for (i,x) in enumerate(ex0)
-        if iskwarg(x)
+        if isexpr(x, :(=))
             key, val = x.args
             if key === :broken
                 if !isnothing(broken)
