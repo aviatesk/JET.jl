@@ -292,6 +292,7 @@ function print_error_frame(io, report, config, depth)
     len = print_frame(io, frame, config, depth, true)
     print_rails(io, depth-1)
     print_error_report(io, report)
+    println(io)
 
     print_rails(io, depth-1)
     printlnstyled(io, '└', '─'^len; color = ERROR_COLOR)
@@ -304,6 +305,7 @@ function print_frame(io, frame, config, depth, is_err)
     s = string("┌ @ ", (config.fullpath ? tofullpath : identity)(string(frame.file)), ':', frame.line)
     printstyled(io, s, ' '; color)
     print_signature(io, frame.sig, config)
+    println(io)
 
     return length(s) # the length of frame info string
 end
@@ -312,7 +314,6 @@ function print_signature(io, sig::Signature, config; kwargs...)
     for a in sig
         _print_signature(io, a, config; kwargs...)
     end
-    println(io)
 end
 function _print_signature(io, @nospecialize(x), config; kwargs...)
     if isa(x, AbstractChar)
