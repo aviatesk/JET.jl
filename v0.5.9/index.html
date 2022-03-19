@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>README · JET.jl</title><script data-outdated-warner src="assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.039/juliamono-regular.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.13.11/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="assets/documenter.js"></script><script src="siteinfo.js"></script><script src="../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href>JET.jl</a></span></div><form class="docs-search" action="search/"><input class="docs-search-query" id="documenter-search-query" name="q" type="text" placeholder="Search docs"/></form><ul class="docs-menu"><li class="is-active"><a class="tocitem" href>README</a><ul class="internal"><li><a class="tocitem" href="#Demo"><span>Demo</span></a></li><li><a class="tocitem" href="#Limitations"><span>Limitations</span></a></li><li><a class="tocitem" href="#Roadmap"><span>Roadmap</span></a></li><li><a class="tocitem" href="#Acknowledgement"><span>Acknowledgement</span></a></li></ul></li><li><span class="tocitem">Analyses</span><ul><li><a class="tocitem" href="jetanalysis/">Error Analysis</a></li><li><a class="tocitem" href="optanalysis/">Optimization Analysis</a></li></ul></li><li><a class="tocitem" href="config/">Configurations</a></li><li><a class="tocitem" href="internals/">Internals</a></li><li><span class="tocitem"><code>AbstractAnalyzer</code> Framework</span><ul><li><a class="tocitem" href="generated-plugin-api/">API</a></li><li><input class="collapse-toggle" id="menuitem-5-2" type="checkbox"/><label class="tocitem" for="menuitem-5-2"><span class="docs-label">Examples</span><i class="docs-chevron"></i></label><ul class="collapsed"><li><a class="tocitem" href="generated-plugin-examples/dispatch_analysis/">Dispatch Analysis</a></li><li><a class="tocitem" href="generated-plugin-examples/find_unstable_api/">&quot;Unstable API&quot; Analysis</a></li></ul></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href>README</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>README</a></li></ul></nav><div class="docs-right"><a class="docs-edit-link" href="https://github.com/aviatesk/JET.jl/blob/master/docs/src/index.md" title="Edit on GitHub"><span class="docs-icon fab"></span><span class="docs-label is-hidden-touch">Edit on GitHub</span></a><a class="docs-settings-button fas fa-cog" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-sidebar-button fa fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a></div></header><article class="content" id="documenter-page"><h1 id="JET.jl"><a class="docs-heading-anchor" href="#JET.jl">JET.jl</a><a id="JET.jl-1"></a><a class="docs-heading-anchor-permalink" href="#JET.jl" title="Permalink"></a></h1><p><a href="https://aviatesk.github.io/JET.jl/stable/"><img src="https://img.shields.io/badge/docs-stable-blue.svg" alt/></a> <a href="https://aviatesk.github.io/JET.jl/dev/"><img src="https://img.shields.io/badge/docs-dev-blue.svg" alt/></a> <img src="https://github.com/aviatesk/JET.jl/workflows/CI/badge.svg" alt="CI"/> <a href="https://codecov.io/gh/aviatesk/JET.jl"><img src="https://codecov.io/gh/aviatesk/JET.jl/branch/master/graph/badge.svg" alt="codecov"/></a></p><p>JET.jl employs Julia&#39;s type inference to detect potential bugs.</p><div class="admonition is-info"><header class="admonition-header">Note</header><div class="admonition-body"><p>The latest version of JET requires Julia versions <strong>1.7 and higher</strong>; JET is tested against <a href="https://julialang.org/downloads/#current_stable_release">the current stable release</a> as well as <a href="https://julialang.org/downloads/nightlies/">nightly version</a>.  Also note that JET deeply relies on the type inference routine implemented in <a href="https://github.com/JuliaLang/julia/tree/master/base/compiler">the Julia compiler</a>, and so the analysis result can vary depending on your Julia version. In general, the newer your Julia version is, more accurately and quickly your can expect JET to analyze your code, assuming the Julia compiler keeps evolving all the time from now on.</p></div></div><div class="admonition is-success"><header class="admonition-header">Tip</header><div class="admonition-body"><p>Hold on tight and fasten your seatbelt while JET is analyzing your code for the first time. Once the caches get accumulated, subsequent analysis will run at ✈ speed.</p></div></div><h2 id="Demo"><a class="docs-heading-anchor" href="#Demo">Demo</a><a id="Demo-1"></a><a class="docs-heading-anchor-permalink" href="#Demo" title="Permalink"></a></h2><p>Say you have this strange and buggy file and want to know where to fix:</p><blockquote><p>demo.jl</p></blockquote><pre><code class="language-julia hljs"># demo
+# ====
+
+# fibonacci
+# ---------
+
+fib(n) = n ≤ 2 ? n : fib(n-1) + fib(n-2)
+
+fib(1000)   # never terminates in ordinal execution
+fib(m)      # undef var
+fib(&quot;1000&quot;) # obvious type error
+
+
+# language features
+# -----------------
+
+# user-defined types, macros
+struct Ty{T}
+    fld::T
+end
+
+function foo(a)
+    v = Ty(a)
+    return bar(v)
+end
+
+# macros will be expanded
+@inline bar(n::T)     where {T&lt;:Number} = n &lt; 0 ? zero(T) : one(T)
+@inline bar(v::Ty{T}) where {T&lt;:Number} = bar(v.fdl) # typo &quot;fdl&quot;
+@inline bar(v::Ty)                      = bar(convert(Number, v.fld))
+
+foo(1.2)
+foo(&quot;1&quot;) # `String` can&#39;t be converted to `Number`
+
+# even staged programming
+# adapted from https://github.com/JuliaLang/julia/blob/9f665c19e076ab37cbca2d0cc99283b82e99c26f/base/namedtuple.jl#L253-L264
+@generated function badmerge(a::NamedTuple{an}, b::NamedTuple{bn}) where {an, bn}
+    names = Base.merge_names(an, bn)
+    types = Base.merge_types(names, a, b)
+    vals = Any[ :(getfield($(Base.sym_in(names[n], bn) ? :b : :a), $(names[n]))) for n in 1:length(names) ] # missing quote, just ends up with under vars
+    :( NamedTuple{$names,$types}(($(vals...),)) )
+end
+
+badmerge((x=1,y=2), (y=3,z=1))</code></pre><p>You can have JET.jl detect possible errors:</p><pre><code class="language-julia hljs">julia&gt; using JET
+
+julia&gt; report_and_watch_file(&quot;demo.jl&quot;; annotate_types = true)
+[toplevel-info] virtualized the context of Main (took 0.013 sec)
+[toplevel-info] entered into demo.jl
+[toplevel-info]  exited from demo.jl (took 3.254 sec)
+═════ 7 possible errors found ═════
+┌ @ demo.jl:10 fib(m)
+│ variable m is not defined: fib(m)
+└──────────────
+┌ @ demo.jl:11 fib(&quot;1000&quot;)
+│┌ @ demo.jl:7 ≤(n::String, 2)
+││┌ @ operators.jl:401 Base.&lt;(x::String, y::Int64)
+│││┌ @ operators.jl:352 Base.isless(x::String, y::Int64)
+││││ no matching method found for call signature (Tuple{typeof(isless), String, Int64}): Base.isless(x::String, y::Int64)
+│││└────────────────────
+┌ @ demo.jl:32 foo(1.2)
+│┌ @ demo.jl:24 bar(v::Ty{Float64})
+││┌ @ demo.jl:29 Base.getproperty(v::Ty{Float64}, :fdl::Symbol)
+│││┌ @ Base.jl:33 Base.getfield(x::Ty{Float64}, f::Symbol)
+││││ type Ty{Float64} has no field fdl
+│││└──────────────
+┌ @ demo.jl:33 foo(&quot;1&quot;)
+│┌ @ demo.jl:24 bar(v::Ty{String})
+││┌ @ demo.jl:30 convert(Number, Base.getproperty(v::Ty{String}, :fld::Symbol)::String)
+│││ no matching method found for call signature (Tuple{typeof(convert), Type{Number}, String}): convert(Number, Base.getproperty(v::Ty{String}, :fld::Symbol)::String)
+││└──────────────
+┌ @ demo.jl:44 badmerge(Core.apply_type(Core.NamedTuple, Core.tuple(:x::Symbol, :y::Symbol)::Tuple{Symbol, Symbol})::Type{NamedTuple{(:x, :y)}}(Core.tuple(1, 2)::Tuple{Int64, Int64})::NamedTuple{(:x, :y), Tuple{Int64, Int64}}, Core.apply_type(Core.NamedTuple, Core.tuple(:y::Symbol, :z::Symbol)::Tuple{Symbol, Symbol})::Type{NamedTuple{(:y, :z)}}(Core.tuple(3, 1)::Tuple{Int64, Int64})::NamedTuple{(:y, :z), Tuple{Int64, Int64}})
+│┌ @ demo.jl:37 getfield(a::NamedTuple{(:x, :y), Tuple{Int64, Int64}}, x)
+││ variable x is not defined: getfield(a::NamedTuple{(:x, :y), Tuple{Int64, Int64}}, x)
+│└──────────────
+│┌ @ demo.jl:37 getfield(b::NamedTuple{(:y, :z), Tuple{Int64, Int64}}, y)
+││ variable y is not defined: getfield(b::NamedTuple{(:y, :z), Tuple{Int64, Int64}}, y)
+│└──────────────
+│┌ @ demo.jl:37 getfield(b::NamedTuple{(:y, :z), Tuple{Int64, Int64}}, z)
+││ variable z is not defined: getfield(b::NamedTuple{(:y, :z), Tuple{Int64, Int64}}, z)
+│└──────────────</code></pre><p>Hooray ! JET.jl found possible error points (e.g. <code>MethodError: no method matching isless(::String, ::Int64)</code>) given toplevel call signatures of generic functions (e.g. <code>fib(&quot;1000&quot;)</code>).</p><p>Note that JET can find these errors while demo.jl is so inefficient (especially the <code>fib</code> implementation) that it would never terminate in actual execution. That is possible because JET analyzes code only on <em>type level</em>. This technique is often called &quot;abstract interpretation&quot; and JET internally uses Julia&#39;s native type inference implementation, so it can analyze code as fast/correctly as Julia&#39;s code generation.</p><p>Lastly let&#39;s apply the following diff to demo.jl so that it works nicely:</p><blockquote><p>fix-demo.jl.diff</p></blockquote><pre><code class="language-diff hljs">diff --git a/demo.jl b/demo.jl
+index f868d2f..634e130 100644
+--- a/demo.jl
++++ b/demo.jl
+@@ -4,11 +4,21 @@
+ # fibonacci
+ # ---------
+
+-fib(n) = n ≤ 2 ? n : fib(n-1) + fib(n-2)
++# cache, cache, cache
++function fib(n::T) where {T&lt;:Number}
++    cache = Dict(zero(T)=&gt;zero(T), one(T)=&gt;one(T))
++    return _fib(n, cache)
++end
++_fib(n, cache) = if haskey(cache, n)
++    cache[n]
++else
++    cache[n] = _fib(n-1, cache) + _fib(n-2, cache)
++end
+
+-fib(1000)   # never terminates in ordinal execution
+-fib(m)      # undef var
+-fib(&quot;1000&quot;) # obvious type error
++fib(BigInt(1000)) # will terminate in ordinal execution as well
++m = 1000          # define m
++fib(m)
++fib(parse(Int, &quot;1000&quot;))
+
+
+ # language features
+@@ -26,19 +36,19 @@ end
+
+ # macros will be expanded
+ @inline bar(n::T)     where {T&lt;:Number} = n &lt; 0 ? zero(T) : one(T)
+-@inline bar(v::Ty{T}) where {T&lt;:Number} = bar(v.fdl) # typo &quot;fdl&quot;
++@inline bar(v::Ty{T}) where {T&lt;:Number} = bar(v.fld) # typo fixed
+ @inline bar(v::Ty)                      = bar(convert(Number, v.fld))
+
+ foo(1.2)
+-foo(&quot;1&quot;) # `String` can&#39;t be converted to `Number`
++foo(&#39;1&#39;) # `Char` will be converted to `UInt32`
+
+ # even staged programming
+ # adapted from https://github.com/JuliaLang/julia/blob/9f665c19e076ab37cbca2d0cc99283b82e99c26f/base/namedtuple.jl#L253-L264
+-@generated function badmerge(a::NamedTuple{an}, b::NamedTuple{bn}) where {an, bn}
++@generated function goodmerge(a::NamedTuple{an}, b::NamedTuple{bn}) where {an, bn}
+     names = Base.merge_names(an, bn)
+     types = Base.merge_types(names, a, b)
+-    vals = Any[ :(getfield($(Base.sym_in(names[n], bn) ? :b : :a), $(names[n]))) for n in 1:length(names) ] # missing quote, just ends up with under vars
++    vals = Any[ :(getfield($(Base.sym_in(names[n], bn) ? :b : :a), $(QuoteNode(names[n])))) for n in 1:length(names) ] # names quoted, should work as expected
+     :( NamedTuple{$names,$types}(($(vals...),)) )
+ end
+
+-badmerge((x=1,y=2), (y=3,z=1))
++goodmerge((x=1,y=2), (y=3,z=1))</code></pre><p>If you apply the diff (i.e. update and save the demo.jl), JET will automatically re-trigger analysis, and this time, won&#39;t complain anything:</p><blockquote><p><code>git apply fix-demo.jl.diff</code></p></blockquote><pre><code class="language-julia hljs">[toplevel-info] virtualized the context of Main (took 0.004 sec)
+[toplevel-info] entered into demo.jl
+[toplevel-info]  exited from demo.jl (took 3.061 sec)
+No errors detected</code></pre><h2 id="Limitations"><a class="docs-heading-anchor" href="#Limitations">Limitations</a><a id="Limitations-1"></a><a class="docs-heading-anchor-permalink" href="#Limitations" title="Permalink"></a></h2><p>JET explores the functions you call directly as well as their <em>inferrable</em> callees. However, if the argument-types for a call cannot be inferred, JET does not analyze the callee. Consequently, a report of <code>No errors detected</code> does not imply that your entire codebase is free of errors.</p><p>JET integrates with <a href="https://github.com/timholy/SnoopCompile.jl">SnoopCompile</a>, and you can sometimes use SnoopCompile to collect the data to perform more comprehensive analyses. SnoopCompile&#39;s limitation is that it only collects data for calls that have not been previously inferred, so you must perform this type of analysis in a fresh session.</p><p>See <a href="https://timholy.github.io/SnoopCompile.jl/stable/jet/">SnoopCompile&#39;s JET-integration documentation</a> for further details.</p><h2 id="Roadmap"><a class="docs-heading-anchor" href="#Roadmap">Roadmap</a><a id="Roadmap-1"></a><a class="docs-heading-anchor-permalink" href="#Roadmap" title="Permalink"></a></h2><ul><li><p><strong>more accuracy</strong>: abstract interpretation can be improved yet more</p><ul><li>switch to new type lattice design: to simplify the addition of further improvements</li><li>design and introduce a more proper backward-analysis pass, e.g. effect and escape analysis: to enable further constraint propagation</li></ul></li><li><p><strong>more performance</strong>: JET should be much faster</p><ul><li>aggregate similar errors more smartly and aggressively</li><li>introduce parallelism to Julia&#39;s native type inference routine</li></ul></li><li><p><strong>better documentation</strong>: especially JET needs a specification of its error reports</p></li><li><p><strong>editor/IDE integration</strong>: GUI would definitely be more appropriate for showing JET&#39;s analysis result</p><ul><li><strong>smarter code dependency tracking</strong>: the watch mode currently re-analyzes the whole code on each update, which is the most robust and least efficient option. When integrated with an IDE, fancier incremental analysis based on smarter code dependency tracking like what <a href="https://github.com/timholy/Revise.jl">Revise.jl</a> does would be needed</li><li><strong>LSP support</strong>: ideally I hope to extend JET to provide some of LSP features other than diagnostics, e.g. auto-completions, rename refactor, taking type-level information into account</li></ul></li></ul><h2 id="Acknowledgement"><a class="docs-heading-anchor" href="#Acknowledgement">Acknowledgement</a><a id="Acknowledgement-1"></a><a class="docs-heading-anchor-permalink" href="#Acknowledgement" title="Permalink"></a></h2><p>This project started as my undergrad thesis project at Kyoto University, supervised by Prof. Takashi Sakuragawa. We were heavily inspired by <a href="https://github.com/ruby/typeprof">ruby/typeprof</a>, an experimental type understanding/checking tool for Ruby. The grad thesis about this project is published at <a href="https://github.com/aviatesk/grad-thesis">https://github.com/aviatesk/grad-thesis</a>, but currently it&#39;s only available in Japanese.</p></article><nav class="docs-footer"><a class="docs-footer-nextpage" href="jetanalysis/">Error Analysis »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.14 on <span class="colophon-date" title="Saturday 19 March 2022 04:20">Saturday 19 March 2022</span>. Using Julia version 1.9.0-DEV.213.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
