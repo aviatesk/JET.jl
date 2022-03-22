@@ -181,7 +181,7 @@ end
 end
 get_msg(T::Type{LocalUndefVarErrorReport}, state, name::Symbol) =
     return "local variable $(name) is not defined"
-print_error_report(io, report::LocalUndefVarErrorReport) = printlnstyled(io, "│ ", report.msg; color = ERROR_COLOR)
+print_error_report(io, report::LocalUndefVarErrorReport) = printstyled(io, "│ ", report.msg; color = ERROR_COLOR)
 
 # these report passes use `:throw_undef_if_not` and `:(unreachable)` introduced by the native
 # optimization pass, and thus supposed to only work on post-optimization code
@@ -780,7 +780,7 @@ This is reported regardless of whether it's caught by control flow or not, as op
 end
 get_msg(T::Type{SeriousExceptionReport}, state, @nospecialize(err), loc::LineInfoNode) =
     string(first(split(sprint(showerror, err), '\n')))
-print_error_report(io, report::SeriousExceptionReport) = printlnstyled(io, "│ ", report.msg; color = ERROR_COLOR)
+print_error_report(io, report::SeriousExceptionReport) = printstyled(io, "│ ", report.msg; color = ERROR_COLOR)
 
 (::BasicPass)(::Type{SeriousExceptionReport}, analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes) =
     basic_filter(analyzer, sv) && report_serious_exception!(analyzer, sv, argtypes)
@@ -820,13 +820,13 @@ abstract type BuiltinErrorReport <: InferenceErrorReport end
 end
 get_msg(::Type{NoFieldErrorReport}, sv::InferenceState, @nospecialize(typ::Type), name::Symbol) =
     "type $(typ) has no field $(name)"
-print_error_report(io, report::NoFieldErrorReport) = printlnstyled(io, "│ ", report.msg; color = ERROR_COLOR)
+print_error_report(io, report::NoFieldErrorReport) = printstyled(io, "│ ", report.msg; color = ERROR_COLOR)
 
 @reportdef struct DivideErrorReport <: BuiltinErrorReport end
 let s = sprint(showerror, DivideError())
     global get_msg(::Type{DivideErrorReport}, sv::InferenceState) = s
 end
-print_error_report(io, report::DivideErrorReport) = printlnstyled(io, "│ ", report.msg; color = ERROR_COLOR)
+print_error_report(io, report::DivideErrorReport) = printstyled(io, "│ ", report.msg; color = ERROR_COLOR)
 
 @reportdef struct InvalidBuiltinCallErrorReport <: BuiltinErrorReport
     argtypes::Argtypes

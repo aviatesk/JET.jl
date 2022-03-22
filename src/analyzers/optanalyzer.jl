@@ -245,7 +245,7 @@ end
 end
 get_msg(::Type{CapturedVariableReport}, _, name::Union{Nothing,Symbol}) =
     isnothing(name) ? "captured variable detected" : "captured variable `$name` detected"
-print_error_report(io, report::CapturedVariableReport) = printlnstyled(io, "│ ", report.msg; color = ERROR_COLOR)
+print_error_report(io, report::CapturedVariableReport) = printstyled(io, "│ ", report.msg; color = ERROR_COLOR)
 function (::OptAnalysisPass)(::Type{CapturedVariableReport}, analyzer::OptAnalyzer, frame::InferenceState)
     local reported = false
     for (pc, typ) in enumerate(frame.src.ssavaluetypes::Vector{Any})
