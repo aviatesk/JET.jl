@@ -119,7 +119,7 @@ end
 end
 function JETInterface.get_msg(::Type{UnstableAPI}, sv, g::GlobalRef)
     (; mod, name) = Base.resolve(g) # resolve to original name
-    return "$mod.$name is unstable !"
+    return "usage of unstable API `$mod.$name` found"
 end
 
 function (::UnstableAPIAnalysisPass)(::Type{UnstableAPI}, analyzer::UnstableAPIAnalyzer, sv, @nospecialize(e))
@@ -130,7 +130,7 @@ function (::UnstableAPIAnalysisPass)(::Type{UnstableAPI}, analyzer::UnstableAPIA
         analyzer.is_target_module(mod) && return # we don't care about what we defined ourselves
 
         if isunstable(mod, name)
-            add_new_report!(sv.result, UnstableAPI(sv, e))
+            add_new_report!(analyzer, sv.result, UnstableAPI(sv, e))
         end
     end
 end

@@ -222,7 +222,7 @@ function CC.finish(frame::InferenceState, analyzer::OptAnalyzer)
     ret = @invoke CC.finish(frame::InferenceState, analyzer::AbstractAnalyzer)
 
     skip = false
-    if !skip && analyzer.skip_noncompileable_calls
+    if analyzer.skip_noncompileable_calls
         if !(is_compileable_frame(frame) || get_entry(analyzer) === get_linfo(frame))
             skip |= true
         end
@@ -294,15 +294,13 @@ get_msg(::Type{RuntimeDispatchReport}, _) = "runtime dispatch detected"
 function (::OptAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::OptAnalyzer, caller::InferenceResult, @nospecialize(src))
     if isa(src, Const) # the optimization was very successful, nothing to report
         return false
-    elseif isnothing(src) # the optimization didn't happen, `OptAnalyzer` should have reported `OptimizationFailureReport` for this frame
+    elseif isnothing(src) # the optimization didn't happen, `OptAnalyzer` should have reported `OptimizationFailureReport` for this
         return false
-    elseif isa(src, OptimizationState) # compiler cached the optimized IR, just analyze it
+    elseif isa(src, OptimizationState) # the compiler optimized it, analyze it
         opt = src
-    else
-        # we should already report `OptimizationFailureReport` for this case,
-        # and thus this pass should never happen
+    else # and this pass should never happen
         Core.eval(@__MODULE__, :(src = $src))
-        throw("unexpected state happened, inspect `$(@__MODULE__).src`") # this pass should never happen
+        throw("unexpected state happened, inspect `$(@__MODULE__).src`")
     end
 
     (; src, sptypes, slottypes) = opt

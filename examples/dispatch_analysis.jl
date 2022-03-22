@@ -65,20 +65,13 @@ struct DispatchAnalyzer{T} <: AbstractAnalyzer
 end
 function DispatchAnalyzer(;
     ## a predicate, which takes `CC.InfernceState` and returns whether we want to analyze the call or not
-    frame_filter = x::CC.InferenceState->true,
+    frame_filter = x::Core.MethodInstance->true,
     jetconfigs...)
     state = AnalyzerState(; jetconfigs...)
     ## we want to run different analysis with a different filter, so include its hash into the cache key
     cache_key = state.param_key
     cache_key = hash(frame_filter, cache_key)
     return DispatchAnalyzer(state, BitVector(), frame_filter, cache_key)
-end
-
-## maybe filtering by module would be most useful
-function module_filter(m)
-    return function (frame::CC.InferenceState)
-        frame.mod === m
-    end
 end
 
 ## AbstractAnalyzer API requirements
@@ -92,38 +85,6 @@ struct DispatchAnalysisPass <: ReportPass end
 ## ignore all reports defined by JET, since we'll just define our own reports
 (::DispatchAnalysisPass)(T::Type{<:InferenceErrorReport}, @nospecialize(_...)) = return
 
-function CC._typeinf(analyzer::DispatchAnalyzer, frame::CC.InferenceState)
-    @assert isempty(analyzer.opts)
-    ret = @invoke CC._typeinf(analyzer::AbstractAnalyzer, frame::CC.InferenceState)
-    @assert isempty(analyzer.opts)
-    return ret
-end
-
-function CC.finish(frame::CC.InferenceState, analyzer::DispatchAnalyzer)
-    ret = @invoke CC.finish(frame::CC.InferenceState, analyzer::AbstractAnalyzer)
-
-    if !analyzer.frame_filter(frame)
-        push!(analyzer.opts, false)
-    else
-        if isa(frame.result, CC.OptimizationState)
-            push!(analyzer.opts, true)
-        else # means, compiler decides not to do optimization
-            ReportPass(analyzer)(OptimizationFailureReport, analyzer, frame.result)
-            push!(analyzer.opts, false)
-        end
-    end
-
-    return ret
-end
-
-@reportdef struct OptimizationFailureReport <: InferenceErrorReport end
-JETInterface.get_msg(::Type{OptimizationFailureReport}, args...) =
-    return "failed to optimize" #: signature of this MethodInstance
-
-function (::DispatchAnalysisPass)(::Type{OptimizationFailureReport}, analyzer::DispatchAnalyzer, result::CC.InferenceResult)
-    add_new_report!(result, OptimizationFailureReport(result.linfo))
-end
-
 function CC.finish!(analyzer::DispatchAnalyzer, frame::CC.InferenceState)
     caller = frame.result
 
@@ -133,18 +94,26 @@ function CC.finish!(analyzer::DispatchAnalyzer, frame::CC.InferenceState)
     ## run `finish!(::AbstractAnalyzer, ::CC.InferenceState)` first to convert the optimized `IRCode` into optimized `CodeInfo`
     ret = @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::CC.InferenceState)
 
-    if popfirst!(analyzer.opts) # optimization happened
+    if analyzer.frame_filter(frame.linfo)
         if isa(src, Core.Const) # the optimization was very successful, nothing to report
-        elseif isa(src, CC.OptimizationState) # the compiler cached the optimized IR, just analyze it
+        elseif isnothing(src) # means, compiler decides not to do optimization
+            ReportPass(analyzer)(OptimizationFailureReport, analyzer, caller, src)
+        elseif isa(src, CC.OptimizationState) # the compiler optimized it, analyze it
             ReportPass(analyzer)(RuntimeDispatchReport, analyzer, caller, src)
-        else
-            ## we should already report `OptimizationFailureReport` for this case,
-            ## and thus this pass should never happen
+        else # and thus this pass should never happen
+            ## as we should already report `OptimizationFailureReport` for this case
             throw("got $src, unexpected source found")
         end
     end
 
     return ret
+end
+
+@reportdef struct OptimizationFailureReport <: InferenceErrorReport end
+JETInterface.get_msg(::Type{OptimizationFailureReport}, args...) =
+    return "failed to optimize" #: signature of this MethodInstance
+function (::DispatchAnalysisPass)(::Type{OptimizationFailureReport}, analyzer::DispatchAnalyzer, result::CC.InferenceResult)
+    add_new_report!(analyzer, result, OptimizationFailureReport(result.linfo))
 end
 
 @reportdef struct RuntimeDispatchReport <: InferenceErrorReport end
@@ -156,8 +125,8 @@ function (::DispatchAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::Dispa
     for (pc, x) in enumerate(opt.src.code)
         if isexpr(x, :call)
             ft = CC.widenconst(CC.argextype(first(x.args), opt.src, sptypes, slottypes))
-            ft <: Core.Builtin && continue # ignore `:call`s of language intrinsics
-            add_new_report!(caller, RuntimeDispatchReport((opt, pc)))
+            ft <: Core.Builtin && continue # ignore `:call`s of the builtin intrinsics
+            add_new_report!(analyzer, caller, RuntimeDispatchReport((opt, pc)))
         end
     end
 end
@@ -206,50 +175,58 @@ report_dispatch((Integer,)) do a
 end
 
 # Ok, working nicely so far. Let's move on to a bit more complicated examples.
-# If we annotate `@noinline` to a function, then its call won't be inlined and will be
-# dispatched runtime. We will confirm this:
+# When working on inherently-untyped code base, which typically needs to deal with
+# arbitrarily-typed objects at runtime (as like Julia's high-level compiler),
+# the `@nospecialize` annotation can be very useful -- it helps us avoids excessive code
+# specialization by _suppressing_ runtime dispatches with runtime object types.
+# For example, let's assume we have a vector of arbitrary untyped objects given by user-program
+# and need to check if its element is `Type`-object or not.
+# The core logic for this check would be something like `isa(t, DataType) && t.name === Type.body.name`.
+# In this setup we gonna see runtime dispatches if we abuse the dispatch semantics to
+# implement the `isa(t, DataType)` branching. Rather, we can eliminte runtime dispatch
+# and achieve a best performance by using `@nospecialize` annotation in this kind of situation.
+# We can confirm the effect of `@nospecialize` with `DispatchAnalyzer` like this:
 
-@inline   g1(a) = return a # WARNING use `@inline` just for demonstrative purpose, usually we really don't need to use it for a very trivial function like this
-@noinline g2(a) = return a
-report_dispatch((Any,)) do a
-    r1 = g1(a) # this call should be statically resolved and inlined
-    r2 = g2(a) # this call should be statically resolved but not inlined, and will be dispatched
-    return (r1, r2)
+isType1(::Any) = false
+isType1(t::DataType) = t.name === Type.body.name
+isType2(@nospecialize t) = isa(t, DataType) && t.name === Type.body.name
+report_dispatch((Vector{Any},)) do xs
+    x = xs[1]
+    r1 = isType1(x) # this call will be runtime-dispatched
+    r2 = isType2(x) # this call will be statically resolved (not runtime-dispatched)
+    return r1, r2
 end
 
-# We can assert this report by looking at the output of `code_typed`, where `g1(a)` has been
-# just disappeared by inlining and optimizations, but `g2(a)` still remains as a `:call` expression:
-code_typed((Any,)) do a
-    r1 = g1(a) # this call should be statically resolved and inlined
-    r2 = g2(a) # this call should be statically resolved but not inlined, and will be dispatched
-    return (r1, r2)
-end |> first
+# We can assert this report by looking at the output of `code_typed`, where `isTyped1(x)`
+# remains as `:call` expression (meaning it will be dispatched at runtime) while `isType2(x)`
+# has been statically resolved and even inlined:
+code_typed((Vector{Any},)) do xs
+    x = xs[1]
+    r1 = isType1(x) # this call will be runtime-dispatched
+    r2 = isType2(x) # this call will be statically resolved (not runtime-dispatched)
+    return r1, r2
+end
 
 # ### Real-world targets
 #
 # Let's run `DispatchAnalyzer` on real-world code and check how it works.
 # Here we will test with Julia's `Base` module.
 
-# Numerical computations are usually written to be very type-stable, and so we expects e.g.
-# `sin(10)` to be dispatch-free and run fast. Let's check it.
-@report_dispatch sin(10)
+# Random number generation might be one of the most important feature for numerical computations,
+# and so Julia's `rand` function should run fast. Let's see if it is free from runtime-dispatch.
+@report_dispatch rand(1:1000)
 
-# Oh no, so runtime dispatch happens there even in `Base`. Well, actually, this specific dispatch
+# Oh no, runtime dispatch happens there even in `Base`. Well, actually, this specific dispatch
 # is expected. Especially, <https://github.com/JuliaLang/julia/pull/35982> implements an
-# heuristic to intentionally disable inference (and so succeeding optimizations too) in
+# heuristic to intentionally _disable_ inference (and so succeeding optimizations too) in
 # order to ease [the latency problem, a.k.a. "first-time-to-plot"](https://julialang.org/blog/2020/08/invalidations/).
-# The report trace certainly suggests a dispatch was detected where `DomainError` can be thrown.
+# The report trace certainly suggests a dispatch was detected where `ArgumentError` can be thrown.
 # We can turn off the heuristic by turning off [the `unoptimize_throw_blocks::Bool` configuration](@ref abstractinterpret-config),
 # and this time any runtime dispatch won't be reported:
-@report_dispatch unoptimize_throw_blocks=false sin(10)
-
-# We can also confirm that the same thing would happen for `rand(1:1000)`:
-@report_dispatch rand(1:1000) # an runtiem dispatch will be detected within a `throw` block
-#
 @report_dispatch unoptimize_throw_blocks=false rand(1:1000) # nothing should be reported
 
 # Finally, let's see an example of very "type-instable" code maintained within `Base`.
-# Typically, anything involved with I/O is written in a very dynamic way for good reasons,
+# Typically, anything involving I/O is written in a very dynamic way for good reasons,
 # and certainly, e.g. `println(QuoteNode(nothing))` will yield bunch of runtime dispatches:
 # ```julia
 # @report_dispatch println(QuoteNode(nothing))
@@ -264,10 +241,6 @@ end |> first
 # But what if your code contains a single `println` call, which you're absolutely okay with
 # the type instabilities involved with it (e.g. it's only called once or only in debug mode,
 # or such), but still you want to assert that any other part of code is type-stable and dispatch-free ?
-# `DispatchAnalyzer`'s `frame_filter` option can be useful for this, by allowing us to
-# specificy where it should and shouldn't run analysis.
-# For example, we can check type-stabilities of anything in the current module like this:
-
 ## problem: when ∑1/n exceeds 30 ?
 function compute(x)
     r = 1
@@ -282,6 +255,16 @@ function compute(x)
         n += 1
     end
     return n, s
+end
+
+# `DispatchAnalyzer`'s `frame_filter` option can be useful for this, by allowing us to
+# specify where it should and shouldn't run analysis.
+# For example, we can limit the scope of analysis to the current module like this:
+function module_filter(m) # fiter by module
+    return function (linfo::Core.MethodInstance)
+        def = linfo.def
+        isa(def, Method) ? def.module === m : def === m
+    end
 end
 
 ## NOTE:
