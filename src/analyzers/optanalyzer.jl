@@ -218,6 +218,7 @@ JETInterface.vscode_diagnostics_order(analyzer::OptAnalyzer) = false
 
 struct OptAnalysisPass <: ReportPass end
 
+# TODO better to work only `finish!`
 function CC.finish(frame::InferenceState, analyzer::OptAnalyzer)
     ret = @invoke CC.finish(frame::InferenceState, analyzer::AbstractAnalyzer)
 
@@ -229,13 +230,7 @@ function CC.finish(frame::InferenceState, analyzer::OptAnalyzer)
     end
 
     push!(analyzer.__frame_checks, skip)
-    if !skip
-        # report pass for captured variables
-        ReportPass(analyzer)(CapturedVariableReport, analyzer, frame)
-
-        # report pass for optimization failure due to recursive calls, etc.
-        ReportPass(analyzer)(OptimizationFailureReport, analyzer, frame.result)
-    end
+    skip || ReportPass(analyzer)(CapturedVariableReport, analyzer, frame) # report pass for captured variables
 
     return ret
 end
@@ -266,6 +261,30 @@ function (::OptAnalysisPass)(::Type{CapturedVariableReport}, analyzer::OptAnalyz
     return reported
 end
 
+function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState)
+    caller = frame.result
+
+    # get the source before running `finish!` to keep the reference to `OptimizationState`
+    src = caller.src
+
+    ret = @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
+
+    if !popfirst!(analyzer.__frame_checks)
+        if isa(src, Const) # the optimization was very successful, nothing to report
+        elseif isnothing(src) # the optimization didn't happen, report it
+            ReportPass(analyzer)(OptimizationFailureReport, analyzer, caller)
+        elseif isa(src, OptimizationState) # the compiler optimized it, analyze it
+            ReportPass(analyzer)(RuntimeDispatchReport, analyzer, caller, src)
+        else # and this pass should never happen
+            Core.eval(@__MODULE__, :(src = $src))
+            throw("unexpected state happened, inspect `$(@__MODULE__).src`")
+        end
+    end
+
+    return ret
+end
+
+# report optimization failure due to recursive calls, etc.
 @reportdef struct OptimizationFailureReport <: InferenceErrorReport end
 get_msg(::Type{OptimizationFailureReport}, args...) = "failed to optimize"
 function (::OptAnalysisPass)(::Type{OptimizationFailureReport}, analyzer::OptAnalyzer, caller::InferenceResult)
@@ -276,33 +295,9 @@ function (::OptAnalysisPass)(::Type{OptimizationFailureReport}, analyzer::OptAna
     return false
 end
 
-function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState)
-    caller = frame.result
-
-    # get the source before running `finish!` to keep the reference to `OptimizationState`
-    src = caller.src
-
-    ret = @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
-
-    popfirst!(analyzer.__frame_checks) || ReportPass(analyzer)(RuntimeDispatchReport, analyzer, caller, src)
-
-    return ret
-end
-
 @reportdef struct RuntimeDispatchReport <: InferenceErrorReport end
 get_msg(::Type{RuntimeDispatchReport}, _) = "runtime dispatch detected"
-function (::OptAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::OptAnalyzer, caller::InferenceResult, @nospecialize(src))
-    if isa(src, Const) # the optimization was very successful, nothing to report
-        return false
-    elseif isnothing(src) # the optimization didn't happen, `OptAnalyzer` should have reported `OptimizationFailureReport` for this
-        return false
-    elseif isa(src, OptimizationState) # the compiler optimized it, analyze it
-        opt = src
-    else # and this pass should never happen
-        Core.eval(@__MODULE__, :(src = $src))
-        throw("unexpected state happened, inspect `$(@__MODULE__).src`")
-    end
-
+function (::OptAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::OptAnalyzer, caller::InferenceResult, opt::OptimizationState)
     (; src, sptypes, slottypes) = opt
 
     # branch on https://github.com/JuliaLang/julia/pull/42149
@@ -312,6 +307,7 @@ function (::OptAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::OptAnalyze
             CC.find_throw_blocks(src.code) : nothing
     end
 
+    # TODO better to work on `opt.ir::IRCode` (with some updates on `_get_sig`)
     local reported = false
     for (pc, x) in enumerate(src.code)
         # branch on https://github.com/JuliaLang/julia/pull/42149
