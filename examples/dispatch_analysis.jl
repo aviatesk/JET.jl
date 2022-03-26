@@ -156,22 +156,25 @@ end
 # First, let's play with simple and factitious examples and check if `DispatchAnalyzer`
 # works as expected.
 
-f(a) = a
-f(a::Number) = a
+getsomething(x::Any) = x
+getsomething(x::Array) = x[]
+getsomething(::Nothing) = throw(ArgumentError("nothing is nothing"))
+getsomething(::Missing) = throw(ArgumentError("too philosophical"))
 
-# `f(::Int)` a concrete call and just type stable and anything shouldn't be reported:
-@report_dispatch f(10) # should be ok
+# If callsite is type-stable (i.e. dispatched with concretely-typed arguments),
+# any problem shouldn't be reported:
+@report_dispatch getsomething(42) # should be ok
 
-# But if the argument type isn't well typed, compiler can't determine which method to call,
+# But if the argument isn't well-typed, compiler can't determine which method to call,
 # and it will lead to runtime dispatch:
 report_dispatch((Any,)) do a
-    f(a) # runtime dispatch !
+    getsomething(a) # runtime dispatch !
 end
 
-# Note that even if a call is not "well-typed", i.e. it's not a concrete call, runtime
+# Note that even if a call is not "well-typed" (i.e. it's not a concrete call), runtime
 # dispatch won't happen as far as a single method can be resovled statically:
-report_dispatch((Integer,)) do a
-    f(a) # this isn't so good, but ok
+report_dispatch((AbstractString,)) do a
+    getsomething(a) # this call isn't very concrete, but ok, Julia can optimize it
 end
 
 # Ok, working nicely so far. Let's move on to a bit more complicated examples.
@@ -179,31 +182,51 @@ end
 # arbitrarily-typed objects at runtime (as like Julia's high-level compiler),
 # the `@nospecialize` annotation can be very useful -- it helps us avoids excessive code
 # specialization by _suppressing_ runtime dispatches with runtime object types.
-# For example, let's assume we have a vector of arbitrary untyped objects given by user-program
-# and need to check if its element is `Type`-object or not.
-# The core logic for this check would be something like `isa(t, DataType) && t.name === Type.body.name`.
-# In this setup we gonna see runtime dispatches if we abuse the dispatch semantics to
-# implement the `isa(t, DataType)` branching. Rather, we can eliminte runtime dispatch
-# and achieve a best performance by using `@nospecialize` annotation in this kind of situation.
-# We can confirm the effect of `@nospecialize` with `DispatchAnalyzer` like this:
+# For example, let's assume we have a vector of arbitrary untyped objects used within
+# an user-program and need to check if its element is `Type`-like object with the
+# following logic:
+function isTypelike(x)
+    if isa(x, DataType)
+        return isa(x, DataType) && x.name === Type.body.name
+    elseif isa(x, Union)
+        return isTypelike(x.a) && isTypelike(x.b)
+    elseif isa(x, UnionAll)
+        return isTypelike(x.body)
+    else
+        return false
+    end
+end
 
-isType1(::Any) = false
-isType1(t::DataType) = t.name === Type.body.name
-isType2(@nospecialize t) = isa(t, DataType) && t.name === Type.body.name
+# But without `@nospecialize`, we gonna see runtime dispatches at the recursive call sites as
+# they will be specialized at runtime. In this setup, we can suppress the runtime dipsatches
+# and achieve a best performance by applying `@nospecialize` annotation to the argument `x`:
+function isTypelike′(@nospecialize x)
+    if isa(x, DataType)
+        return isa(x, DataType) && x.name === Type.body.name
+    elseif isa(x, Union)
+        return isTypelike′(x.a) && isTypelike′(x.b)
+    elseif isa(x, UnionAll)
+        return isTypelike′(x.body)
+    else
+        return false
+    end
+end
+
+# We can confirm the effect of `@nospecialize` with `DispatchAnalyzer`:
 report_dispatch((Vector{Any},)) do xs
-    x = xs[1]
-    r1 = isType1(x) # this call will be runtime-dispatched
-    r2 = isType2(x) # this call will be statically resolved (not runtime-dispatched)
+    x  = xs[1]
+    r  = isTypelike(x)  # this call will be runtime-dispatched
+    r′ = isTypelike′(x) # this call will be statically resolved (not runtime-dispatched)
     return r1, r2
 end
 
-# We can assert this report by looking at the output of `code_typed`, where `isTyped1(x)`
-# remains as `:call` expression (meaning it will be dispatched at runtime) while `isType2(x)`
+# We can assert this report by looking at the output of `code_typed`, where `isTypelike(x)`
+# remains as `:call` expression (meaning it will be dispatched at runtime) while `isTypelike′(x)`
 # has been statically resolved and even inlined:
 code_typed((Vector{Any},)) do xs
-    x = xs[1]
-    r1 = isType1(x) # this call will be runtime-dispatched
-    r2 = isType2(x) # this call will be statically resolved (not runtime-dispatched)
+    x  = xs[1]
+    r  = isTypelike(x)  # this call will be runtime-dispatched
+    r′ = isTypelike′(x) # this call will be statically resolved (not runtime-dispatched)
     return r1, r2
 end
 
