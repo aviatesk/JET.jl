@@ -75,6 +75,7 @@ function get_virtual_frame(state::StateAtPC)
     return VirtualFrame(file, line, sig, linfo)
 end
 get_virtual_frame(sv::InferenceState) = get_virtual_frame((sv, get_currpc(sv)))
+get_virtual_frame(caller::InferenceResult) = get_virtual_frame(get_linfo(caller))
 function get_virtual_frame(linfo::MethodInstance)
     sig = get_sig(linfo)
     file, line = get_file_line(linfo)

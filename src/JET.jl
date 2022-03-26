@@ -439,8 +439,8 @@ get_slottype(s::Tuple{InferenceState,Int}, slot::Int) = @inbounds (get_states(s)
 get_states((sv, pc)::Tuple{InferenceState,Int})       = @inbounds sv.stmt_types[pc]::VarTable
 get_currpc(sv::InferenceState) = min(sv.currpc, length(sv.src.code))
 
-function is_compileable_frame(sv::InferenceState)
-    linfo = get_linfo(sv)
+function is_compileable_frame(frame)
+    linfo = get_linfo(frame)
     def = linfo.def
     return isa(def, Method) && isa_compileable_sig(linfo.specTypes, def)
 end
