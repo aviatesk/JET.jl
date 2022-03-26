@@ -1278,7 +1278,7 @@ end
 Analyzes the generic function call with the given type signature with `analyzer`.
 And finally returns the analysis result as [`JETCallResult`](@ref).
 """
-function report_call(@nospecialize(f), @nospecialize(types = Tuple{}); jetconfigs...)
+function report_call(@nospecialize(f), @nospecialize(types = default_tt(f)); jetconfigs...)
     ft = Core.Typeof(f)
     if isa(types, Type)
         u = unwrap_unionall(types)
@@ -1288,6 +1288,22 @@ function report_call(@nospecialize(f), @nospecialize(types = Tuple{}); jetconfig
     end
     return report_call(tt; jetconfigs...)
 end
+
+@static if isdefined(Base, :default_tt)
+import Base: default_tt
+else
+# returns argument tuple type which is supposed to be used for `code_typed` and its family;
+# if there is a single method this functions returns the method argument signature,
+# otherwise returns `Tuple` that doesn't match with any signature
+function default_tt(@nospecialize(f))
+    ms = methods(f)
+    if length(ms) == 1
+        return Base.tuple_type_tail(only(ms).sig)
+    else
+        return Tuple
+    end
+end
+end # @static if !isdefined(Base, :default_tt)
 
 function report_call(@nospecialize(tt::Type{<:Tuple});
                      analyzer::Type{Analyzer} = JETAnalyzer,
