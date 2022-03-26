@@ -1,53 +1,81 @@
 # OptAnalyzer
 # ===========
 
+getsomething(x::Any) = x
+getsomething(x::Array) = x[]
+getsomething(::Nothing) = throw(ArgumentError("nothing is nothing"))
+getsomething(::Missing) = throw(ArgumentError("too philosophical"))
+
+# bad: will lead to excessive specializations via runtime dispatch
+function isType1(x)
+    if isa(x, DataType)
+        return isa(x, DataType) && x.name === Type.body.name
+    elseif isa(x, Union)
+        return isType1(x.a) && isType1(x.b)
+    elseif isa(x, UnionAll)
+        return isType1(x.body)
+    else
+        return false
+    end
+end
+
+# good: will be statically dispatched
+function isType2(@nospecialize x)
+    if isa(x, DataType)
+        return isa(x, DataType) && x.name === Type.body.name
+    elseif isa(x, Union)
+        return isType2(x.a) && isType2(x.b)
+    elseif isa(x, UnionAll)
+        return isType2(x.body)
+    else
+        return false
+    end
+end
+
 @testset "runtime dispatch" begin
-    let M = Module()
-        @eval M begin
-            f(a) = a
-            f(a::Number) = a
+    test_opt((Int, Vector{Any}, String,)) do a, b, c
+        return (
+            getsomething(a),
+            getsomething(b),
+            getsomething(c),
+            getsomething(nothing),
+            getsomething(missing))
+    end
+
+    # NOTE the following test is line-sensitive !
+    # if the argument type isn't well typed, compiler can't determine which method to call,
+    # and it will lead to runtime dispatch
+    let result = report_opt((Vector{Any},)) do xs
+            getsomething(xs[1]) # runtime dispatch !
         end
-
-        # `f(::Int)` a concrete call and just type stable and anything shouldn't be reported
-        @test_opt M.f(10)  # should be ok
-
-        let # if the argument type isn't well typed, compiler can't determine which method to call,
-            # and it will lead to runtime dispatch
-            result = @eval M begin
-                $report_opt((Vector{Any},)) do ary
-                    f(ary[1]) # runtime dispatch !
-                end
-            end
-            @test length(get_reports(result)) == 1
-            r = first(get_reports(result))
-            @test isa(r, RuntimeDispatchReport)
+        @test length(get_reports(result)) == 1
+        r = only(get_reports(result))
+        @test isa(r, RuntimeDispatchReport)
+        @test any(r.vst) do vf
+            vf.file === Symbol(@__FILE__) &&
+            vf.line == (@__LINE__) - 7
         end
     end
 
-    let M = Module()
-        @eval M begin
-            # if we annotate `@noinline` to a function, then its call won't be inlined and will be
-            # dispatched runtime
-            @inline   g1(a) = return a
-            @noinline g2(a) = return a
-        end
+    # union split might help
+    test_opt((Vector{Union{Int,String,Nothing}},)) do xs
+        getsomething(xs[1]) # runtime dispatch !
+    end
 
-        let
-            result = @eval M $report_opt((Vector{Any},)) do ary
-                a = ary[1]
-                g1(a) # this call should be statically resolved and inlined
-                g2(a) # this call should be statically resolved but not inlined, and will be dispatched
-            end
-
-            # NOTE the following test is line-sensitive !
-            @test length(get_reports(result)) == 1
-            r = first(get_reports(result))
-            @test isa(r, RuntimeDispatchReport)
-            @test any(r.vst) do vf
-                vf.file === Symbol(@__FILE__) &&
-                vf.line == (@__LINE__) - 9
-            end
+    # NOTE the following test is line-sensitive !
+    let result = report_opt((Vector{Any},)) do xs
+            isType1(xs[1])
         end
+        @test length(get_reports(result)) == 1
+        r = only(get_reports(result))
+        @test isa(r, RuntimeDispatchReport)
+        @test any(r.vst) do vf
+            vf.file === Symbol(@__FILE__) &&
+            vf.line == (@__LINE__) - 7
+        end
+    end
+    test_opt((Vector{Any},)) do xs
+        isType2(xs[1])
     end
 
     # real-world targets
