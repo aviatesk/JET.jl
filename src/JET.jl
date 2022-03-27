@@ -226,10 +226,10 @@ __init__() = foreach(@nospecialize(f)->f(), INIT_HOOKS)
 const IS_AFTER_42082 = hasmethod(InferenceState, (InferenceResult, Symbol, AbstractInterpreter))
 
 const IS_AFTER_42529 = isdefined(CC, :ArgInfo)
-IS_AFTER_42529 && import .CC: ArgInfo
+@static IS_AFTER_42529 && import .CC: ArgInfo
 
 const IS_V18 = VERSION ≥ v"1.8-"
-IS_V18 && import .CC: concrete_eval_eligible, concrete_eval_call
+@static IS_V18 && import .CC: concrete_eval_eligible, concrete_eval_call
 
 # branch on https://github.com/JuliaLang/julia/pull/42125
 @static if isdefined(Base, Symbol("@constprop"))
