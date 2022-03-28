@@ -243,9 +243,11 @@ get_msg(::Type{CapturedVariableReport}, _, name::Union{Nothing,Symbol}) =
 print_error_report(io, report::CapturedVariableReport) = printstyled(io, "│ ", report.msg; color = ERROR_COLOR)
 function (::OptAnalysisPass)(::Type{CapturedVariableReport}, analyzer::OptAnalyzer, frame::InferenceState)
     local reported = false
-    for (pc, typ) in enumerate(frame.src.ssavaluetypes::Vector{Any})
+    code = frame.src.code
+    for i = 1:length(code)
+        typ = (frame.src.ssavaluetypes::Vector{Any})[pc]
         if typ === Core.Box
-            stmt = frame.src.code[pc]
+            stmt = code[pc]
             if isexpr(stmt, :(=))
                 lhs = first(stmt.args)
                 if isa(lhs, SlotNumber)
@@ -270,14 +272,15 @@ function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState)
     ret = @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
 
     if !popfirst!(analyzer.__frame_checks)
-        if isa(src, Const) # the optimization was very successful, nothing to report
-        elseif isnothing(src) # the optimization didn't happen, report it
-            ReportPass(analyzer)(OptimizationFailureReport, analyzer, caller)
-        elseif isa(src, OptimizationState) # the compiler optimized it, analyze it
+        ReportPass(analyzer)(OptimizationFailureReport, analyzer, caller)
+
+        if isa(src, OptimizationState) # the compiler optimized it, analyze it
             ReportPass(analyzer)(RuntimeDispatchReport, analyzer, caller, src)
-        else # and this pass should never happen
-            Core.eval(@__MODULE__, :(src = $src))
-            throw("unexpected state happened, inspect `$(@__MODULE__).src`")
+        # elseif isa(src, Const) # the optimization was very successful, nothing to report
+        # elseif src === nothing # the optimization didn't happen
+        # else # and this pass should never happen
+        #     Core.eval(@__MODULE__, :(src = $src))
+        #     throw("unexpected state happened, inspect `$(@__MODULE__).src`")
         end
     end
 
@@ -288,7 +291,7 @@ end
 @reportdef struct OptimizationFailureReport <: InferenceErrorReport end
 get_msg(::Type{OptimizationFailureReport}, args...) = "failed to optimize"
 function (::OptAnalysisPass)(::Type{OptimizationFailureReport}, analyzer::OptAnalyzer, caller::InferenceResult)
-    if !isa(caller.src, OptimizationState)
+    if caller.src === nothing # the optimization didn't happen
         add_new_report!(analyzer, caller, OptimizationFailureReport(caller.linfo))
         return true
     end

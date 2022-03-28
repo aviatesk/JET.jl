@@ -216,7 +216,7 @@ function __get_sig_type((sv, _)::StateAtPC, ssa::SSAValue)
         typ = widenconst(ignorelimited(ignorenotfound(get_ssavaluetype(news))))
         sig = Any["%$(ssa.id)", typ]
     else
-        # XXX but the same problem _may_ happen for `InferenceState` too ?
+        # XXX the same problem may happen for `InferenceState` too ?
         sig, sig_typ = _get_sig_type(news, get_stmt(news))
         typ = widenconst(ignorelimited(ignorenotfound(get_ssavaluetype(news))))
         # NOTE this additional `typ` would print e.g. return type of an inner call, e.g. `f(getproperty(x, :y)::typ)`
