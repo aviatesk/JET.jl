@@ -437,8 +437,13 @@ function CC.transform_result_for_cache(analyzer::AbstractAnalyzer, linfo::Method
         end
         cache_report!(cache, report)
     end
-    inferred_result = @invoke transform_result_for_cache(analyzer::AbstractInterpreter,
-        linfo::MethodInstance, valid_worlds::WorldRange, result.src)
+    @static if VERSION ≥ v"1.9.0-DEV.256"
+        inferred_result = @invoke transform_result_for_cache(analyzer::AbstractInterpreter,
+            linfo::MethodInstance, valid_worlds::WorldRange, result.src, result.ipo_effects::CC.Effects)
+    else
+        inferred_result = @invoke transform_result_for_cache(analyzer::AbstractInterpreter,
+            linfo::MethodInstance, valid_worlds::WorldRange, result.src)
+    end
     return JETCachedResult(inferred_result, cache)
 end
 
