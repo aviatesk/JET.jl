@@ -533,7 +533,11 @@ end
 @static if IS_AFTER_42529
 function CC.abstract_invoke(analyzer::JETAnalyzer, arginfo::ArgInfo, sv::InferenceState)
     ret = @invoke CC.abstract_invoke(analyzer::AbstractAnalyzer, arginfo::ArgInfo, sv::InferenceState)
-    ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret, arginfo.argtypes)
+    @static if VERSION ≥ v"1.9.0-DEV.264"
+        ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret[1], arginfo.argtypes)
+    else
+        ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret, arginfo.argtypes)
+    end
     return ret
 end
 else # @static if IS_AFTER_42529

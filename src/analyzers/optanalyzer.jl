@@ -244,7 +244,7 @@ print_error_report(io, report::CapturedVariableReport) = printstyled(io, "│ ",
 function (::OptAnalysisPass)(::Type{CapturedVariableReport}, analyzer::OptAnalyzer, frame::InferenceState)
     local reported = false
     code = frame.src.code
-    for i = 1:length(code)
+    for pc = 1:length(code)
         typ = (frame.src.ssavaluetypes::Vector{Any})[pc]
         if typ === Core.Box
             stmt = code[pc]
