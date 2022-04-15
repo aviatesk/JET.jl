@@ -517,7 +517,7 @@ function CC.cache_lookup(linfo::MethodInstance, given_argtypes::Argtypes, cache:
     # cache hit, try to restore local report caches
 
     # corresponds to the throw-away logic in `_typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)`
-    filter!(!is_from_same_frame(caller.linfo, linfo), get_reports(analyzer, caller))
+    filter_lineages!(analyzer, caller, linfo)
 
     for cached in get_cached_reports(analyzer, inf_result)
         restored = add_cached_report!(analyzer, caller, cached)
@@ -570,7 +570,7 @@ function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
     # IDEA we may still want to keep some "serious" error reports like `GlobalUndefVarErrorReport`
     # even when constant prop' reveals it never happ∫ens given the current constant arguments
     if is_constant_propagated(frame) && !isentry
-        filter!(!is_from_same_frame(parent.linfo, linfo), get_reports(analyzer, parent.result))
+        filter_lineages!(analyzer, parent.result, linfo)
     end
 
     ret = @invoke typeinf(analyzer::AbstractInterpreter, frame::InferenceState)
@@ -601,43 +601,46 @@ function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
 end
 
 """
-    is_from_same_frame(parent_linfo::MethodInstance, current_linfo::MethodInstance) ->
+    islineage(parent::MethodInstance, current::MethodInstance) ->
         (report::InferenceErrorReport) -> Bool
 
-Returns a function that checks if a given `InferenceErrorReport` is generated from `current_linfo`.
-It also checks `current_linfo` is a "lineage" of `parent_linfo` (i.e. entered from it).
+Returns a function that checks if a given `InferenceErrorReport`
+- is generated from `current`, and
+- is "lineage" of `parent` (i.e. entered from it).
 
-This function is supposed to be used to filter out reports collected from analysis on `current_linfo`
-without using constants when entering into the constant analysis. As such, this function
-assumes that when a report should be filtered out, the first elment of its virtual stack
-frame `st` is for `parent_linfo` and the second element of that is for `current_linfo`.
+This function is supposed to be used when additional analysis with extended lattice information
+happens in order to filter out reports collected from `current` by analysis without
+using that extended information. When a report should be filtered out, the first virtual
+stack frame represents `parent` and the second does `current`.
 
-Example: Assume `linfo2` will produce a report for some reason.
+Example:
 ```
 entry
-└─ linfo1
+└─ linfo1 (report1: linfo1->linfo2)
    ├─ linfo2 (report1: linfo2)
-   ├─ linfo3 (report1: linfo1->linfo2, report2: linfo3->linfo2)
-   │  └─ linfo2 (report1: linfo1->linfo2, report2: linfo2)
-   └─ linfo3′ (report1: linfo1->linfo2, ~~report2: linfo1->linfo3->linfo2~~)
+   ├─ linfo3 (report2: linfo3->linfo2)
+   │  └─ linfo2 (report2: linfo2)
+   └─ linfo3′ (~~report2: linfo3->linfo2~~)
 ```
-In the example analysis above, `report2` will be filtered out on re-entering into `linfo3′`
-(i.e. we're analyzing `linfo3` with constants argument), because
-`is_from_same_frame(linfo1, linfo3)(report2)` returns `true`.
-Note that `report1` is still kept there because of the lineage check, i.e.
-`is_from_same_frame(linfo1, linfo3)(report1)` returns `false`.
+In the example analysis above, `report2` should be filtered out on re-entering into `linfo3′`
+(i.e. when we're analyzing `linfo3` with constant arguments), nevertheless `report1` shouldn't
+because it is not detected within `linfo3` but within `linfo1` (so it's not a "lineage of `linfo3`"):
+- `islineage(linfo1, linfo3)(report2) === true`
+- `islineage(linfo1, linfo3)(report1) === false`
 """
-function is_from_same_frame(parent_linfo::MethodInstance,
-                            current_linfo::MethodInstance,
-                            )
+function islineage(parent::MethodInstance, current::MethodInstance)
     function (report::InferenceErrorReport)
         @inbounds begin
             vst = report.vst
             length(vst) > 1 || return false
-            vst[1].linfo === parent_linfo || return false
-            return vst[2].linfo === current_linfo
+            vst[1].linfo === parent || return false
+            return vst[2].linfo === current
         end
     end
+end
+
+function filter_lineages!(analyzer::AbstractAnalyzer, caller::InferenceResult, current::MethodInstance)
+     filter!(!islineage(caller.linfo, current), get_reports(analyzer, caller))
 end
 
 # in this overload we can work on `frame.src::CodeInfo` (and also `frame::InferenceState`)

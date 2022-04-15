@@ -18,7 +18,7 @@ passing `AbstractAnalyzer` to the subsequent (maybe overloaded) callees (see [`J
 
 ```@docs
 JET.JETResult
-JET.is_from_same_frame
+JET.islineage
 JET.bail_out_toplevel_call
 JET.bail_out_call
 JET.add_call_backedges!
