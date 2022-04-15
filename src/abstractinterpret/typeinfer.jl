@@ -97,10 +97,12 @@ function CC.abstract_eval_statement(analyzer::AbstractAnalyzer, @nospecialize(e)
     return @invoke CC.abstract_eval_statement(analyzer::AbstractInterpreter, e, vtypes::VarTable, sv::InferenceState)
 end
 
-function CC.builtin_tfunction(analyzer::AbstractAnalyzer, @nospecialize(f), argtypes::Array{Any,1},
-                              sv::InferenceState) # `AbstractAnalyzer` isn't overloaded on `return_type`
-    ret = @invoke CC.builtin_tfunction(analyzer::AbstractInterpreter, f, argtypes::Array{Any,1},
-                                       sv::Union{InferenceState,Nothing})
+function CC.builtin_tfunction(analyzer::AbstractAnalyzer,
+    @nospecialize(f), argtypes::Array{Any,1},
+    sv::InferenceState) # `AbstractAnalyzer` isn't overloaded on `return_type`
+    ret = @invoke CC.builtin_tfunction(analyzer::AbstractInterpreter,
+        f, argtypes::Array{Any,1},
+        sv::Union{InferenceState,Nothing})
 
     if f === getfield && 2 ≤ length(argtypes) ≤ 3
         obj, fld = argtypes
@@ -166,8 +168,10 @@ function collect_callee_reports!(analyzer::AbstractAnalyzer, sv::InferenceState)
 end
 
 # works within inter-procedural context
-function CC.abstract_call_method(analyzer::AbstractAnalyzer, method::Method, @nospecialize(sig), sparams::SimpleVector, hardlimit::Bool, sv::InferenceState)
-    ret = @invoke CC.abstract_call_method(analyzer::AbstractInterpreter, method::Method, sig, sparams::SimpleVector, hardlimit::Bool, sv::InferenceState)
+function CC.abstract_call_method(analyzer::AbstractAnalyzer,
+    method::Method, @nospecialize(sig), sparams::SimpleVector, hardlimit::Bool, sv::InferenceState)
+    ret = @invoke CC.abstract_call_method(analyzer::AbstractInterpreter,
+        method::Method, sig, sparams::SimpleVector, hardlimit::Bool, sv::InferenceState)
 
     collect_callee_reports!(analyzer, sv)
 
@@ -191,14 +195,14 @@ end
 end
 
 @static if IS_V18
-function CC.abstract_call_method_with_const_args(analyzer::AbstractAnalyzer, result::MethodCallResult,
-                                                 @nospecialize(f), arginfo::ArgInfo, match::MethodMatch,
-                                                 sv::InferenceState)
+function CC.abstract_call_method_with_const_args(analyzer::AbstractAnalyzer,
+    result::MethodCallResult, @nospecialize(f), arginfo::ArgInfo, match::MethodMatch,
+    sv::InferenceState)
     set_cacher!(analyzer, :abstract_call_method_with_const_args => sv.result)
     const_result =
-        @invoke CC.abstract_call_method_with_const_args(analyzer::AbstractInterpreter, result::MethodCallResult,
-                                                        @nospecialize(f), arginfo::ArgInfo, match::MethodMatch,
-                                                        sv::InferenceState)
+        @invoke CC.abstract_call_method_with_const_args(analyzer::AbstractInterpreter,
+            result::MethodCallResult, @nospecialize(f), arginfo::ArgInfo, match::MethodMatch,
+            sv::InferenceState)
     # we should make sure we reset the cacher because at this point we may have not hit
     # `CC.cache_lookup(linfo::MethodInstance, given_argtypes::Argtypes, cache::JETLocalCache)`
     set_cacher!(analyzer, nothing)
@@ -209,14 +213,14 @@ function CC.abstract_call_method_with_const_args(analyzer::AbstractAnalyzer, res
     return const_result
 end
 else # @static if IS_V18
-function CC.abstract_call_method_with_const_args(analyzer::AbstractAnalyzer, result::MethodCallResult,
-                                                 @nospecialize(f), arginfo::(@static IS_AFTER_42529 ? ArgInfo : Argtypes), match::MethodMatch,
-                                                 sv::InferenceState, va_override::Bool)
+function CC.abstract_call_method_with_const_args(analyzer::AbstractAnalyzer,
+    result::MethodCallResult, @nospecialize(f), arginfo::(@static IS_AFTER_42529 ? ArgInfo : Argtypes), match::MethodMatch,
+    sv::InferenceState, va_override::Bool)
     set_cacher!(analyzer, :abstract_call_method_with_const_args => sv.result)
     const_result =
-        @invoke CC.abstract_call_method_with_const_args(analyzer::AbstractInterpreter, result::MethodCallResult,
-                                                        @nospecialize(f), arginfo::(@static IS_AFTER_42529 ? ArgInfo : Argtypes), match::MethodMatch,
-                                                        sv::InferenceState, va_override::Bool)
+        @invoke CC.abstract_call_method_with_const_args(analyzer::AbstractInterpreter,
+            result::MethodCallResult, @nospecialize(f), arginfo::(@static IS_AFTER_42529 ? ArgInfo : Argtypes), match::MethodMatch,
+            sv::InferenceState, va_override::Bool)
     # we should make sure we reset the cacher because at this point we may have not hit
     # `CC.cache_lookup(linfo::MethodInstance, given_argtypes::Argtypes, cache::JETLocalCache)`
     set_cacher!(analyzer, nothing)
@@ -229,18 +233,18 @@ end
 end # @static if IS_V18
 
 @static if IS_AFTER_42529
-function CC.abstract_call(analyzer::AbstractAnalyzer, arginfo::ArgInfo,
-                          sv::InferenceState, max_methods::Int = InferenceParams(analyzer).MAX_METHODS)
-    ret = @invoke CC.abstract_call(analyzer::AbstractInterpreter, arginfo::ArgInfo,
-                                   sv::InferenceState, max_methods::Int)
+function CC.abstract_call(analyzer::AbstractAnalyzer,
+    arginfo::ArgInfo, sv::InferenceState, max_methods::Int = InferenceParams(analyzer).MAX_METHODS)
+    ret = @invoke CC.abstract_call(analyzer::AbstractInterpreter,
+        arginfo::ArgInfo, sv::InferenceState, max_methods::Int)
     analyze_task_parallel_code!(analyzer, arginfo.argtypes, sv)
     return ret
 end
 else # @static if IS_AFTER_42529
-function CC.abstract_call(analyzer::AbstractAnalyzer, fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes,
-                          sv::InferenceState, max_methods::Int = InferenceParams(analyzer).MAX_METHODS)
-    ret = @invoke CC.abstract_call(analyzer::AbstractInterpreter, fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes,
-                                   sv::InferenceState, max_methods::Int)
+function CC.abstract_call(analyzer::AbstractAnalyzer,
+    fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes, sv::InferenceState, max_methods::Int = InferenceParams(analyzer).MAX_METHODS)
+    ret = @invoke CC.abstract_call(analyzer::AbstractInterpreter,
+        fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes, sv::InferenceState, max_methods::Int)
     analyze_task_parallel_code!(analyzer, argtypes, sv)
     return ret
 end
@@ -427,8 +431,8 @@ function CC.cache_result!(analyzer::AbstractAnalyzer, result::InferenceResult)
     nothing
 end
 
-function CC.transform_result_for_cache(analyzer::AbstractAnalyzer, linfo::MethodInstance,
-                                       valid_worlds::WorldRange, result::InferenceResult)
+function CC.transform_result_for_cache(analyzer::AbstractAnalyzer,
+    linfo::MethodInstance, valid_worlds::WorldRange, result::InferenceResult)
     cache = InferenceErrorReportCache[]
     for report in get_reports(analyzer, result)
         @static if JET_DEV_MODE
@@ -439,7 +443,7 @@ function CC.transform_result_for_cache(analyzer::AbstractAnalyzer, linfo::Method
     end
     @static if VERSION ≥ v"1.9.0-DEV.256"
         inferred_result = @invoke transform_result_for_cache(analyzer::AbstractInterpreter,
-            linfo::MethodInstance, valid_worlds::WorldRange, result.src, result.ipo_effects::CC.Effects)
+        linfo::MethodInstance, valid_worlds::WorldRange, result.src, result.ipo_effects::CC.Effects)
     else
         inferred_result = @invoke transform_result_for_cache(analyzer::AbstractInterpreter,
             linfo::MethodInstance, valid_worlds::WorldRange, result.src)

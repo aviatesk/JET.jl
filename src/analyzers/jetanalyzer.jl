@@ -313,12 +313,12 @@ function get_msg(::Type{NoMethodErrorReport}, sv::InferenceState, @nospecialize(
 end
 
 @static if IS_AFTER_42529
-function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer, @nospecialize(f),
-                                     arginfo::ArgInfo, @nospecialize(atype),
-                                     sv::InferenceState, max_methods::Int = InferenceParams(analyzer).MAX_METHODS)
-    ret = @invoke CC.abstract_call_gf_by_type(analyzer::AbstractAnalyzer, @nospecialize(f),
-                                              arginfo::ArgInfo, @nospecialize(atype),
-                                              sv::InferenceState, max_methods::Int)
+function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer,
+    @nospecialize(f), arginfo::ArgInfo, @nospecialize(atype),
+    sv::InferenceState, max_methods::Int = InferenceParams(analyzer).MAX_METHODS)
+    ret = @invoke CC.abstract_call_gf_by_type(analyzer::AbstractAnalyzer,
+        @nospecialize(f), arginfo::ArgInfo, @nospecialize(atype),
+        sv::InferenceState, max_methods::Int)
     info = ret.info
     if isa(info, ConstCallInfo)
         info = info.call # unwrap to `MethodMatchInfo` or `UnionSplitInfo`
@@ -332,12 +332,12 @@ function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer, @nospecialize(f),
     return ret
 end
 else # @static if IS_AFTER_42529
-function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer, @nospecialize(f),
-                                     fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes, @nospecialize(atype),
-                                     sv::InferenceState, max_methods::Int = InferenceParams(analyzer).MAX_METHODS)
-    ret = @invoke CC.abstract_call_gf_by_type(analyzer::AbstractAnalyzer, @nospecialize(f),
-                                              fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes, @nospecialize(atype),
-                                              sv::InferenceState, max_methods::Int)
+function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer,
+    @nospecialize(f), fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes, @nospecialize(atype),
+    sv::InferenceState, max_methods::Int = InferenceParams(analyzer).MAX_METHODS)
+    ret = @invoke CC.abstract_call_gf_by_type(analyzer::AbstractAnalyzer,
+        @nospecialize(f), fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes, @nospecialize(atype),
+        sv::InferenceState, max_methods::Int)
     info = ret.info
     if isa(info, ConstCallInfo)
         info = info.call # unwrap to `MethodMatchInfo` or `UnionSplitInfo`
@@ -433,9 +433,10 @@ An overload for `abstract_call_gf_by_type(analyzer::JETAnalyzer, ...)`, which al
 backedges (even if a new method can't refine the return type grew up to `Any`).
 This is because a new method definition always has a potential to change `JETAnalyzer`'s analysis result.
 """
-function CC.add_call_backedges!(analyzer::JETAnalyzer, @nospecialize(rettype), edges::Vector{MethodInstance},
-                                matches::Union{MethodMatches,UnionSplitMethodMatches}, @nospecialize(atype),
-                                sv::InferenceState)
+function CC.add_call_backedges!(analyzer::JETAnalyzer,
+    @nospecialize(rettype), edges::Vector{MethodInstance},
+    matches::Union{MethodMatches,UnionSplitMethodMatches}, @nospecialize(atype),
+    sv::InferenceState)
     # NOTE why we want to comment out the following lines:
     # a new method may refine analysis, so we always add backedges
     # # for `NativeInterpreter`, we don't add backedges when a new method couldn't refine (widen) this type
@@ -585,8 +586,10 @@ function (::SoundBasicPass)(::Type{InvalidInvokeErrorReport}, analyzer::JETAnaly
     return false
 end
 
-function CC.abstract_eval_special_value(analyzer::JETAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    ret = @invoke CC.abstract_eval_special_value(analyzer::AbstractAnalyzer, e, vtypes::VarTable, sv::InferenceState)
+function CC.abstract_eval_special_value(analyzer::JETAnalyzer,
+    @nospecialize(e), vtypes::VarTable, sv::InferenceState)
+    ret = @invoke CC.abstract_eval_special_value(analyzer::AbstractAnalyzer,
+        e, vtypes::VarTable, sv::InferenceState)
 
     if isa(e, GlobalRef)
         mod, name = e.mod, e.name
@@ -752,8 +755,8 @@ end
 
 function CC.builtin_tfunction(analyzer::JETAnalyzer, @nospecialize(f), argtypes::Array{Any,1},
                               sv::InferenceState) # `AbstractAnalyzer` isn't overloaded on `return_type`
-    ret = @invoke CC.builtin_tfunction(analyzer::AbstractAnalyzer, f, argtypes::Array{Any,1},
-                                       sv::InferenceState)
+    ret = @invoke CC.builtin_tfunction(analyzer::AbstractAnalyzer,
+        f, argtypes::Array{Any,1}, sv::InferenceState)
 
     if f === throw
         # here we only report a selection of "serious" exceptions, i.e. those that should be
