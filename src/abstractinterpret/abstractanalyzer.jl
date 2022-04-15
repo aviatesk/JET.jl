@@ -510,6 +510,7 @@ end
 # otherwise, it means malformed report pass call, and we should inform users of it
 function (rp::ReportPass)(T, @nospecialize(args...))
     if !(T === NativeRemark ||
+         T === ConcreteError ||
          T === InvalidConstantRedefinition ||
          T === InvalidConstantDeclaration)
         throw(MethodError(rp, (T, args...)))

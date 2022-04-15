@@ -252,8 +252,7 @@ end
 
 @testset "integration with global code cache" begin
     # analysis for `sum(::String)` is already cached, `sum′` and `sum′′` should use it
-    let
-        m = gen_virtual_module()
+    let m = Module()
         result = Core.eval(m, quote
             sum′(s) = sum(s)
             sum′′(s) = sum′(s)
@@ -265,8 +264,7 @@ end
     end
 
     # incremental setup
-    let
-        m = gen_virtual_module()
+    let m = Module()
 
         result = Core.eval(m, quote
             $report_call() do
@@ -566,6 +564,55 @@ end
         end
     end
 end
+
+@static if isdefined(Base, Symbol("@assume_effects"))
+Base.@assume_effects :terminates_locally function pow(x)
+    # this :terminates_locally allows `pow` to be constant-folded
+    res = 1
+    1 < x < 20 || error("bad pow")
+    while x > 1
+        res *= x
+        x -= 1
+    end
+    return res
+end
+function concretize_pow(n)
+    v = pow(n)
+    if v == 120
+        return v
+    else
+        return nothing
+    end
+end
+
+Base.@assume_effects :total_may_throw concretize(f, args...) = f(args...)
+
+@testset "concrete evaluation" begin
+    test_call((Int,)) do x
+        concretize_pow(5) + x
+    end
+
+    let result = report_call((Int,)) do x
+            concretize_pow(42) + x # `ErrorException` should be reported
+        end
+        report = only(get_reports(result))
+        @test report isa ConcreteError
+        @test report.err == ErrorException("bad pow")
+    end
+
+    # throw away errors found by previous abstract interpretation
+    # this case especially shouldn't report possible errors by `sum(::String)`
+    test_call() do
+        concretize("julia") do x
+            if hasmethod(length, (typeof(x),))
+                return length(x)
+            else
+                return sum(x)
+            end
+        end
+    end
+end
+end # @static if isdefined(Base, Symbol("@assume_effects"))
 
 @testset "additional analysis pass for task parallelism code" begin
     # general case with `schedule(::Task)` pattern

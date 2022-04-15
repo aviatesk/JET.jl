@@ -235,11 +235,41 @@ end # @static if IS_V18
 # TODO correctly reasons about error found by concrete evaluation
 # for now just always fallback to the constant-prop'
 @static if IS_V18
-function CC.concrete_eval_eligible(analyzer::AbstractAnalyzer,
+const ConcreteResult = isdefined(CC, :ConcreteResult) ? CC.ConcreteResult : CC.ConstResult
+function CC.concrete_eval_call(analyzer::AbstractAnalyzer,
     @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
-    return false
+    CC.concrete_eval_eligible(analyzer, f, result, arginfo, sv) || return nothing
+    # this frame is happily concretizable, now let's throw away reports collected from
+    # the previous abstract interpretation and just trust the concrete runtime evaluation
+    filter_lineages!(analyzer, sv.result, result.edge)
+    args = CC.collect_const_args(arginfo)
+    world = get_world_counter(analyzer)
+    value = try
+        Core._call_in_world_total(world, f, args...)
+    catch err
+        # NOTE this report pass allows analyzers to opt in to report concretized errors
+        ReportPass(analyzer)(ConcreteError, analyzer, sv, err)
+
+        # The evaulation threw. By :consistent-cy, we're guaranteed this would have happened at runtime
+        return CC.ConstCallResults(Union{}, ConcreteResult(result.edge, result.edge_effects), result.edge_effects)
+    end
+    if CC.is_inlineable_constant(value) || CC.call_result_unused(sv)
+        # If the constant is not inlineable, still do the const-prop, since the
+        # code that led to the creation of the Const may be inlineable in the same
+        # circumstance and may be optimizable.
+        return CC.ConstCallResults(Const(value), ConcreteResult(result.edge, CC.EFFECTS_TOTAL, value), CC.EFFECTS_TOTAL)
+    end
+    return nothing
 end
 end # @static if IS_V18
+
+@reportdef struct ConcreteError <: InferenceErrorReport
+    @nospecialize(err)
+end
+function print_report(io::IO, (; err, sig)::ConcreteError)
+    msg = lazy"may throw $(typeof(err))"
+    default_report_printer(io, msg, sig)
+end
 
 @static if IS_AFTER_42529
 function CC.abstract_call(analyzer::AbstractAnalyzer,
@@ -643,7 +673,12 @@ function islineage(parent::MethodInstance, current::MethodInstance)
             vst = report.vst
             length(vst) > 1 || return false
             vst[1].linfo === parent || return false
-            return vst[2].linfo === current
+            if vst[2].linfo === current
+                # @info "remove" report
+                return true
+            else
+                return false
+            end
         end
     end
 end

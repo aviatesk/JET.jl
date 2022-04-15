@@ -254,10 +254,16 @@ function (::BasicPass)(::Type{UncaughtExceptionReport}, analyzer::JETAnalyzer, f
         report_uncaught_exceptions!(analyzer, frame, stmts)
         return true
     else
-        # the non-`Bottom` result may mean `throw` calls from the children frames
-        # (if exists) are caught and not propagated here
-        # we don't want to cache the caught `UncaughtExceptionReport`s for this frame and
-        # its parents, and just filter them away now
+        # the non-`Bottom` result mean `throw` calls or concretized calls within child frames
+        # (if exists) can be caught or necessarily don't happen here:
+        # for `BasicPass` we don't want to cache such reports for this frame and not propagate
+        # them to parent frames, so just throw them away now
+        # TODO this is not best place to do this
+        filter!(get_reports(analyzer, frame.result)) do report
+            report isa UncaughtExceptionReport && return false
+            # report isa ConcreteError && return false
+            return true
+        end
         filter!(report->!isa(report, UncaughtExceptionReport), get_reports(analyzer, frame.result))
     end
     return false
@@ -478,6 +484,13 @@ false positive error reports by cutting off the unreachable control flow or dete
 must-reachable `throw` calls.
 """
 CC.const_prop_entry_heuristic(::JETAnalyzer, result::MethodCallResult, sv::InferenceState) = true
+
+@static if IS_V18
+function (::SoundBasicPass)(::Type{ConcreteError}, analyzer::AbstractAnalyzer, sv::InferenceState, @nospecialize(err))
+    add_new_report!(analyzer, sv.result, ConcreteError(sv, err))
+    return true
+end
+end # @static if IS_V18
 
 function CC.return_type_tfunc(analyzer::JETAnalyzer, argtypes::Argtypes, sv::InferenceState)
     # report pass for invalid `Core.Compiler.return_type` call
