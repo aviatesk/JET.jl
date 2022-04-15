@@ -445,44 +445,6 @@ function CC.add_call_backedges!(analyzer::JETAnalyzer,
 end
 struct __DummyAny__ end
 
-@static if IS_V18
-# just fallback to the constant-prop' handling for now
-# TODO make ConstError behave like UncaughtExceptionReport
-function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
-    @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
-    return false
-end
-# function CC.concrete_eval_call(analyzer::JETAnalyzer,
-#     @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
-#     CC.concrete_eval_eligible(analyzer, f, result, arginfo, sv) || return nothing
-#     empty!(get_reports(analyzer, sv.result))
-#     args = CC.collect_const_args(arginfo)
-#     try
-#         value = Core._call_in_world_total(get_world_counter(analyzer), f, args...)
-#         if CC.is_inlineable_constant(value) || CC.call_result_unused(sv)
-#             # If the constant is not inlineable, still do the const-prop, since the
-#             # code that led to the creation of the Const may be inlineable in the same
-#             # circumstance and may be optimizable.
-#             return CC.ConstCallResults(Const(value), CC.ConstResult(result.edge, value), CC.EFFECTS_TOTAL)
-#         end
-#     catch err
-#         ReportPass(analyzer)(ConstError, analyzer, sv, err)
-#         # The evaulation threw. By :consistent-cy, we're guaranteed this would have happened at runtime
-#         return CC.ConstCallResults(Union{}, CC.ConstResult(result.edge::MethodInstance), result.edge_effects)
-#     end
-# end
-# @reportdef struct ConstError <: InferenceErrorReport
-#     @nospecialize(err)
-# end
-# get_msg(::Type{ConstError}, sv::InferenceState, @nospecialize(err)) =
-#     "will throw `$(typeof(err))`"
-# function (::SoundBasicPass)(::Type{ConstError}, analyzer::AbstractAnalyzer, sv::InferenceState, @nospecialize(err))
-#     isa(err, ErrorException) && return false
-#     add_new_report!(analyzer, sv.result, ConstError(sv, err))
-#     return true
-# end
-end # @static if IS_V18
-
 @doc """
     const_prop_entry_heuristic(analyzer::JETAnalyzer, result::MethodCallResult, sv::InferenceState)
 

@@ -262,3 +262,10 @@ end
         end
     end
 end
+
+# https://github.com/aviatesk/JET.jl/issues/334
+# integration with concrete evaluation added in 1.8
+test_opt() do
+    Val(:ϵ)
+end
+@test_opt log(2.1)

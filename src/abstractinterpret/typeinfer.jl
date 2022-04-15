@@ -232,6 +232,15 @@ function CC.abstract_call_method_with_const_args(analyzer::AbstractAnalyzer,
 end
 end # @static if IS_V18
 
+# TODO correctly reasons about error found by concrete evaluation
+# for now just always fallback to the constant-prop'
+@static if IS_V18
+function CC.concrete_eval_eligible(analyzer::AbstractAnalyzer,
+    @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
+    return false
+end
+end # @static if IS_V18
+
 @static if IS_AFTER_42529
 function CC.abstract_call(analyzer::AbstractAnalyzer,
     arginfo::ArgInfo, sv::InferenceState, max_methods::Int = InferenceParams(analyzer).MAX_METHODS)
