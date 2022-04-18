@@ -1,140 +1,324 @@
 [
   {
-    "BenchmarkTools": "0.4.3"
+    "Julia": "1.9.0-DEV.405",
+    "BenchmarkTools": "1.0.0"
   },
   [
     [
       "BenchmarkGroup",
       {
         "data": {
-          "package loading": [
-            "BenchmarkTools.Parameters",
+          "JETAnalyzer{BasicPass} first-time": [
+            "BenchmarkGroup",
             {
-              "gctrial": true,
-              "time_tolerance": 0.05,
-              "samples": 10000,
-              "evals": 1,
-              "gcsample": false,
-              "seconds": 100.0,
-              "overhead": 0.0,
-              "memory_tolerance": 0.01
+              "data": {
+                "rand(Bool) (first time)": [
+                  "Parameters",
+                  {
+                    "gctrial": true,
+                    "time_tolerance": 0.05,
+                    "samples": 10000,
+                    "evals": 1,
+                    "gcsample": true,
+                    "seconds": 60.0,
+                    "overhead": 0.0,
+                    "memory_tolerance": 0.01
+                  }
+                ],
+                "sum(\"julia\") (first time)": [
+                  "Parameters",
+                  {
+                    "gctrial": true,
+                    "time_tolerance": 0.05,
+                    "samples": 10000,
+                    "evals": 1,
+                    "gcsample": true,
+                    "seconds": 60.0,
+                    "overhead": 0.0,
+                    "memory_tolerance": 0.01
+                  }
+                ],
+                "package loading": [
+                  "Parameters",
+                  {
+                    "gctrial": true,
+                    "time_tolerance": 0.05,
+                    "samples": 10000,
+                    "evals": 1,
+                    "gcsample": true,
+                    "seconds": 60.0,
+                    "overhead": 0.0,
+                    "memory_tolerance": 0.01
+                  }
+                ]
+              },
+              "tags": []
             }
           ],
-          "first time": [
-            "BenchmarkTools.Parameters",
+          "OptAnalyzer": [
+            "BenchmarkGroup",
             {
-              "gctrial": true,
-              "time_tolerance": 0.05,
-              "samples": 10000,
-              "evals": 1,
-              "gcsample": false,
-              "seconds": 100.0,
-              "overhead": 0.0,
-              "memory_tolerance": 0.01
+              "data": {
+                "sum(\"julia\") (cached)": [
+                  "Parameters",
+                  {
+                    "gctrial": true,
+                    "time_tolerance": 0.05,
+                    "samples": 10000,
+                    "evals": 1,
+                    "gcsample": true,
+                    "seconds": 5.0,
+                    "overhead": 0.0,
+                    "memory_tolerance": 0.01
+                  }
+                ],
+                "println(QuoteNode(nothing))": [
+                  "Parameters",
+                  {
+                    "gctrial": true,
+                    "time_tolerance": 0.05,
+                    "samples": 10000,
+                    "evals": 1,
+                    "gcsample": true,
+                    "seconds": 30.0,
+                    "overhead": 0.0,
+                    "memory_tolerance": 0.01
+                  }
+                ],
+                "sum(\"julia\")": [
+                  "Parameters",
+                  {
+                    "gctrial": true,
+                    "time_tolerance": 0.05,
+                    "samples": 10000,
+                    "evals": 1,
+                    "gcsample": true,
+                    "seconds": 5.0,
+                    "overhead": 0.0,
+                    "memory_tolerance": 0.01
+                  }
+                ],
+                "rand(Bool)": [
+                  "Parameters",
+                  {
+                    "gctrial": true,
+                    "time_tolerance": 0.05,
+                    "samples": 10000,
+                    "evals": 1,
+                    "gcsample": true,
+                    "seconds": 10.0,
+                    "overhead": 0.0,
+                    "memory_tolerance": 0.01
+                  }
+                ],
+                "identity(nothing)": [
+                  "Parameters",
+                  {
+                    "gctrial": true,
+                    "time_tolerance": 0.05,
+                    "samples": 10000,
+                    "evals": 1,
+                    "gcsample": true,
+                    "seconds": 5.0,
+                    "overhead": 0.0,
+                    "memory_tolerance": 0.01
+                  }
+                ]
+              },
+              "tags": []
             }
           ],
-          "easy": [
-            "BenchmarkTools.Parameters",
+          "JETAnalyzer{BasicPass}": [
+            "BenchmarkGroup",
             {
-              "gctrial": true,
-              "time_tolerance": 0.05,
-              "samples": 10000,
-              "evals": 1,
-              "gcsample": false,
-              "seconds": 100.0,
-              "overhead": 0.0,
-              "memory_tolerance": 0.01
+              "data": {
+                "sum(\"julia\") (cached)": [
+                  "Parameters",
+                  {
+                    "gctrial": true,
+                    "time_tolerance": 0.05,
+                    "samples": 10000,
+                    "evals": 1,
+                    "gcsample": true,
+                    "seconds": 5.0,
+                    "overhead": 0.0,
+                    "memory_tolerance": 0.01
+                  }
+                ],
+                "println(QuoteNode(nothing))": [
+                  "Parameters",
+                  {
+                    "gctrial": true,
+                    "time_tolerance": 0.05,
+                    "samples": 10000,
+                    "evals": 1,
+                    "gcsample": true,
+                    "seconds": 30.0,
+                    "overhead": 0.0,
+                    "memory_tolerance": 0.01
+                  }
+                ],
+                "sum(\"julia\")": [
+                  "Parameters",
+                  {
+                    "gctrial": true,
+                    "time_tolerance": 0.05,
+                    "samples": 10000,
+                    "evals": 1,
+                    "gcsample": true,
+                    "seconds": 5.0,
+                    "overhead": 0.0,
+                    "memory_tolerance": 0.01
+                  }
+                ],
+                "rand(Bool)": [
+                  "Parameters",
+                  {
+                    "gctrial": true,
+                    "time_tolerance": 0.05,
+                    "samples": 10000,
+                    "evals": 1,
+                    "gcsample": true,
+                    "seconds": 10.0,
+                    "overhead": 0.0,
+                    "memory_tolerance": 0.01
+                  }
+                ],
+                "identity(nothing)": [
+                  "Parameters",
+                  {
+                    "gctrial": true,
+                    "time_tolerance": 0.05,
+                    "samples": 10000,
+                    "evals": 1,
+                    "gcsample": true,
+                    "seconds": 5.0,
+                    "overhead": 0.0,
+                    "memory_tolerance": 0.01
+                  }
+                ]
+              },
+              "tags": []
             }
           ],
-          "cached easy": [
-            "BenchmarkTools.Parameters",
+          "JETAnalyzer{SoundPass}": [
+            "BenchmarkGroup",
             {
-              "gctrial": true,
-              "time_tolerance": 0.05,
-              "samples": 10000,
-              "evals": 1,
-              "gcsample": false,
-              "seconds": 100.0,
-              "overhead": 0.0,
-              "memory_tolerance": 0.01
+              "data": {
+                "sum(\"julia\") (cached)": [
+                  "Parameters",
+                  {
+                    "gctrial": true,
+                    "time_tolerance": 0.05,
+                    "samples": 10000,
+                    "evals": 1,
+                    "gcsample": true,
+                    "seconds": 5.0,
+                    "overhead": 0.0,
+                    "memory_tolerance": 0.01
+                  }
+                ],
+                "println(QuoteNode(nothing))": [
+                  "Parameters",
+                  {
+                    "gctrial": true,
+                    "time_tolerance": 0.05,
+                    "samples": 10000,
+                    "evals": 1,
+                    "gcsample": true,
+                    "seconds": 30.0,
+                    "overhead": 0.0,
+                    "memory_tolerance": 0.01
+                  }
+                ],
+                "sum(\"julia\")": [
+                  "Parameters",
+                  {
+                    "gctrial": true,
+                    "time_tolerance": 0.05,
+                    "samples": 10000,
+                    "evals": 1,
+                    "gcsample": true,
+                    "seconds": 5.0,
+                    "overhead": 0.0,
+                    "memory_tolerance": 0.01
+                  }
+                ],
+                "rand(Bool)": [
+                  "Parameters",
+                  {
+                    "gctrial": true,
+                    "time_tolerance": 0.05,
+                    "samples": 10000,
+                    "evals": 1,
+                    "gcsample": true,
+                    "seconds": 10.0,
+                    "overhead": 0.0,
+                    "memory_tolerance": 0.01
+                  }
+                ],
+                "identity(nothing)": [
+                  "Parameters",
+                  {
+                    "gctrial": true,
+                    "time_tolerance": 0.05,
+                    "samples": 10000,
+                    "evals": 1,
+                    "gcsample": true,
+                    "seconds": 5.0,
+                    "overhead": 0.0,
+                    "memory_tolerance": 0.01
+                  }
+                ]
+              },
+              "tags": []
             }
           ],
-          "a bit complex": [
-            "BenchmarkTools.Parameters",
+          "JETAnalyzer{BasicPass} top-level": [
+            "BenchmarkGroup",
             {
-              "gctrial": true,
-              "time_tolerance": 0.05,
-              "samples": 10000,
-              "evals": 1,
-              "gcsample": false,
-              "seconds": 100.0,
-              "overhead": 0.0,
-              "memory_tolerance": 0.01
-            }
-          ],
-          "invalidation": [
-            "BenchmarkTools.Parameters",
-            {
-              "gctrial": true,
-              "time_tolerance": 0.05,
-              "samples": 10000,
-              "evals": 1,
-              "gcsample": false,
-              "seconds": 100.0,
-              "overhead": 0.0,
-              "memory_tolerance": 0.01
-            }
-          ],
-          "self analysis": [
-            "BenchmarkTools.Parameters",
-            {
-              "gctrial": true,
-              "time_tolerance": 0.05,
-              "samples": 10000,
-              "evals": 1,
-              "gcsample": false,
-              "seconds": 100.0,
-              "overhead": 0.0,
-              "memory_tolerance": 0.01
-            }
-          ],
-          "top-level": [
-            "BenchmarkTools.Parameters",
-            {
-              "gctrial": true,
-              "time_tolerance": 0.05,
-              "samples": 10000,
-              "evals": 1,
-              "gcsample": false,
-              "seconds": 100.0,
-              "overhead": 0.0,
-              "memory_tolerance": 0.01
-            }
-          ],
-          "top-level first time": [
-            "BenchmarkTools.Parameters",
-            {
-              "gctrial": true,
-              "time_tolerance": 0.05,
-              "samples": 10000,
-              "evals": 1,
-              "gcsample": false,
-              "seconds": 100.0,
-              "overhead": 0.0,
-              "memory_tolerance": 0.01
-            }
-          ],
-          "end to end": [
-            "BenchmarkTools.Parameters",
-            {
-              "gctrial": true,
-              "time_tolerance": 0.05,
-              "samples": 10000,
-              "evals": 1,
-              "gcsample": false,
-              "seconds": 100.0,
-              "overhead": 0.0,
-              "memory_tolerance": 0.01
+              "data": {
+                "simple": [
+                  "Parameters",
+                  {
+                    "gctrial": true,
+                    "time_tolerance": 0.05,
+                    "samples": 10000,
+                    "evals": 1,
+                    "gcsample": true,
+                    "seconds": 10.0,
+                    "overhead": 0.0,
+                    "memory_tolerance": 0.01
+                  }
+                ],
+                "demo": [
+                  "Parameters",
+                  {
+                    "gctrial": true,
+                    "time_tolerance": 0.05,
+                    "samples": 10000,
+                    "evals": 1,
+                    "gcsample": true,
+                    "seconds": 60.0,
+                    "overhead": 0.0,
+                    "memory_tolerance": 0.01
+                  }
+                ],
+                "self analysis": [
+                  "Parameters",
+                  {
+                    "gctrial": true,
+                    "time_tolerance": 0.05,
+                    "samples": 10000,
+                    "evals": 1,
+                    "gcsample": true,
+                    "seconds": 40.0,
+                    "overhead": 0.0,
+                    "memory_tolerance": 0.01
+                  }
+                ]
+              },
+              "tags": []
             }
           ]
         },

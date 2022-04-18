@@ -184,6 +184,7 @@ function OptAnalyzer(;
     state = AnalyzerState(; jetconfigs...)
     # we want to run different analysis with a different filter, so include its hash into the cache key
     cache_key = state.param_key
+    cache_key = hash(report_pass, cache_key)
     cache_key = hash(skip_noncompileable_calls, cache_key)
     cache_key = @invoke hash(function_filter::Any, cache_key::UInt) # HACK avoid dynamic dispatch
     cache_key = hash(skip_unoptimized_throw_blocks, cache_key)
