@@ -291,7 +291,7 @@ function print_error_frame(io, report, config, depth)
 
     len = print_frame(io, frame, config, depth, true)
     print_rails(io, depth-1)
-    print_error_report(io, report)
+    print_report(io, report)
     println(io)
 
     print_rails(io, depth-1)
@@ -325,13 +325,4 @@ function _print_signature(io, @nospecialize(x), config; kwargs...)
             printstyled(io, "::", string(x); color = TYPE_ANNOTATION_COLOR, kwargs...)
         end
     end
-end
-
-# default error report printer
-function print_error_report(io, report::InferenceErrorReport)
-    printstyled(io, "│ ", report.msg, ": "; color = ERROR_COLOR)
-    print_signature(io, report.sig,
-                    (; annotate_types = true); # always annotate types for errored signatures
-                    bold = true,
-                    )
 end

@@ -16,13 +16,16 @@ const ERROR_REPORTS_FROM_SUM_OVER_STRING = let
     get_reports(result)
 end
 
+get_msg(report::JET.InferenceErrorReport) = sprint(JET.print_report, report)
+
 function test_sum_over_string(ers)
     @test !isempty(ers)
     for target in ERROR_REPORTS_FROM_SUM_OVER_STRING
         @test any(ers) do er
-            return er.msg == target.msg && er.sig == target.sig
+            return get_msg(er) == get_msg(target) && er.sig == target.sig
         end
     end
+    return true
 end
 test_sum_over_string(res::JET.VirtualProcessResult) = test_sum_over_string(res.inference_error_reports)
 test_sum_over_string(res::JET.JETCallResult) = test_sum_over_string(get_reports(res))

@@ -236,6 +236,8 @@ else
     macro constprop(_, ex); esc(ex); end
 end
 
+@static @isdefined(LazyString) || include("strings/lazy.jl")
+
 # macros
 # ------
 
@@ -1602,8 +1604,9 @@ reexport_as_api!(JETInterface,
                  InferenceErrorReport,
                  aggregation_policy,
                  add_new_report!,
-                 get_msg,
-                 print_error_report,
+                 print_report,
+                 default_report_printer,
+                 print_error,
                  get_spec_args,
                  var"@reportdef",
                  VSCode.vscode_source,

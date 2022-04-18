@@ -63,7 +63,6 @@ const VirtualStackTrace = Vector{VirtualFrame}
 
 const INFERENCE_ERROR_REPORT_FIELD_DECLS = [
     :(vst::VirtualStackTrace),
-    :(msg::String),
     :(sig::Signature),
 ]
 
@@ -82,13 +81,11 @@ function get_virtual_frame(linfo::MethodInstance)
     return VirtualFrame(file, line, sig, linfo)
 end
 
-get_file_line(s::StateAtPC)          = get_file_line(get_lin(s))
-get_file_line(lin::LineInfoNode)     = lin.file, lin.line
-get_file_line(linfo::MethodInstance) = begin
+get_file_line(s::StateAtPC) = get_file_line(get_lin(s))
+get_file_line(lin::LineInfoNode) = lin.file, lin.line
+function get_file_line(linfo::MethodInstance)
     def = linfo.def
-
     isa(def, Method) && return def.file, Int(def.line)
-
     # top-level
     src = linfo.uninferred::CodeInfo
     return get_file_line(first(src.linetable::LineTable)::LineInfoNode)
@@ -278,45 +275,38 @@ If `T` implements this interface, the following requirements should be satisfied
 
 ---
 - **Required fields** \\
-  `T` should have the following fields, which explains _where_ and _why_ this error is reported:
+  `T` should have the following fields, which explains _where_ and _how_ this error is reported:
   * `vst::VirtualStackTrace`: a virtual stack trace of the error
-  * `msg::String`: explains why this error is reported
   * [`sig::Signature`](@ref Signature): a signature of the error point
 
-  Note that `T` can still have additional, specific fields.
+  Note that `T` can still have arbitrary additional fields other than `vst` and `sig`
+  to explain _why_ this error is reported (mostly used for `print_report`).
 ---
-- **A constructor interface to create `T` from abstraction interpretation** \\
+- **A constructor to create `T` from abstraction interpretation** \\
   `T<:InferenceErrorReport` has the default constructor
 
-      T(::AbstractAnalyzer, sv::InferenceState, spec_args...)
+      T(::AbstractAnalyzer, state, spec_args...)
 
-  which works when `T` is reported when `sv`'s program counter (`sv.currpc`) points to that
-  of statement where the error may happen. If so `T` just needs to overload
-
-      JET.get_msg(::Type{T}, ::InferenceState, spec_args...) -> msg::String
-
-  to provide the message that describes why this error is reported (otherwise the senseless
-  default message will be used).
-
-  ---
-
-  If `T` is reported when `sv`'s program counter (`sv.currpc`) may not point to the error
-  location or even `sv::InferenceState` isn't available, `T` can implement its own constructor method.
+  which can take following `state`s:
+  where `state` can be either of:
+  - `state::$StateAtPC`: a state with the current program counter specified
+  - `state::InferenceState`: a state with the current program counter set to `state.currpc`
+  - `state::InferenceResult`: a state with the current program counter unknown
+  - `state::MethodInstance`: a state with the current program counter unknown
 ---
-- **A contructor interface to create `T` from the global report cache** \\
+- **A contructor to create `T` from the global report cache** \\
   In order to be cached and restored from [`JET_CACHE`](@ref), `T` _**must**_ implement
   the following interfaces:
-  * `JET.get_spec_args(::T) -> Tuple{...}`:
-    returns fields that are specific to `T`, which is internally used by the caching logic
-  * `T(vst::VirtualStackTrace, msg::String, sig::Signature spec_args::Tuple{...}) -> T`:
-    constructor to create `T` from the cache, which should expand `spec_args` into each specific field
+  * `JET.get_spec_args(::T) -> Vector{Any}`: returns additional fields that are specific to `T`
+  * `_restore_cached_report(::Type{T}, vst::VirtualStackTrace, sig::Signature spec_args::Vector{Any}) -> T`:
+    constructor to create `T` from the cache, which _should_ copy `vst` and expand `spec_args` into each specific field
+---
+- **A error message printer** \\
+  `T` should also implement `print_report(io::IO, report::T)`,
+  which prints to `io` and describes _why_ it is reported.
 ---
 
-To satisfy these requirements manually will be very tedious.
-JET internally uses `@reportdef` utility macro, which takes the `struct` definition of
-`InferenceErrorReport` and automatically defines the `struct` itself and the cache interfaces.
-
-See also: [`VirtualStackTrace`](@ref), [`VirtualFrame`](@ref)
+See also: [@reportdef](@ref), [`VirtualStackTrace`](@ref), [`VirtualFrame`](@ref)
 """
 abstract type InferenceErrorReport end
 
@@ -324,8 +314,6 @@ abstract type InferenceErrorReport end
 function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
     return if sym === :vst
         getfield(er, sym)::VirtualStackTrace
-    elseif sym === :msg
-        getfield(er, sym)::String
     elseif sym === :sig
         getfield(er, sym)::Signature
     else
@@ -335,9 +323,7 @@ end
 
 function Base.show(io::IO, report::InferenceErrorReport)
     print(io, typeof(report).name.name, '(')
-    for a in report.sig
-        _print_signature(io, a, (; annotate_types = true); bold = true)
-    end
+    print_report(io, report)
     print(io, ')')
 end
 Base.show(io::IO, ::MIME"application/prs.juno.inline", report::InferenceErrorReport) =
@@ -346,12 +332,21 @@ Base.show(io::IO, ::MIME"application/prs.juno.inline", report::InferenceErrorRep
 # the default constructor to create a report from abstract interpretation
 function (T::Type{<:InferenceErrorReport})(state, @nospecialize(spec_args...))
     vf = get_virtual_frame(state)
-    msg = get_msg(T, state, spec_args...)
-    return T([vf], msg, vf.sig, spec_args...)
+    return T([vf], vf.sig, spec_args...)
 end
 
-get_msg(T::Type{<:InferenceErrorReport}, @nospecialize(_...)) = error("`get_msg` is not implemented for $T")
-get_spec_args(T::Type{<:InferenceErrorReport}) =                error("`get_spec_args` is not implemented for $T")
+get_spec_args(T::Type{<:InferenceErrorReport}) = error(lazy"`get_spec_args` is not implemented for $T")
+print_report(io::IO, report::InferenceErrorReport) = error(lazy"`print_report` is not implemented for $(typeof(report))")
+
+# default error report printer
+function default_report_printer(io::IO, msg::AbstractString, sig::Signature)
+    print_error(io, msg)
+    printstyled(io, ": "; color = ERROR_COLOR)
+    print_signature(io, sig,  (; annotate_types = true); bold = true)
+end
+function print_error(io::IO, msg::AbstractString)
+    printstyled(io, "│ ", msg; color = ERROR_COLOR)
+end
 
 # cache
 # -----
@@ -364,12 +359,12 @@ end
 
 function cache_report!(cache, @nospecialize(report#=::InferenceErrorReport=#))
     vst = copy(report.vst)
-    new = InferenceErrorReportCache(typeof(report)::DataType, vst, report.msg, report.sig, get_spec_args(report))
+    new = InferenceErrorReportCache(typeof(report)::DataType, vst, report.sig, get_spec_args(report))
     return push!(cache, new)
 end
 
 restore_cached_report(cache::InferenceErrorReportCache) = _restore_cached_report(
-    cache.T, copy(cache.vst), cache.msg, cache.sig, cache.spec_args)::InferenceErrorReport
+    cache.T, copy(cache.vst), cache.sig, cache.spec_args)::InferenceErrorReport
 function _restore_cached_report end
 
 # utility
@@ -377,7 +372,39 @@ function _restore_cached_report end
 
 # TODO parametric definition?
 
-# a simple utility macro to define `InferenceErrorReport` w/o code duplications
+"""
+    @reportdef struct T <: InferenceErrorReport
+        ...
+    end
+
+An utilitiy macro to define [`InferenceErrorReport`](@ref).
+It can be very tedious to manually satisfy the `InferenceErrorReport` interfaces.
+JET internally uses this `@reportdef` utility macro, which takes a `struct` definition of
+`InferenceErrorReport` without the required fields specified, and automatically defines
+the `struct` as well as constructor definitions.
+If the report `T <: InferenceErrorReport` is defined using `@reportdef`,
+then `T` just needs to implement the [`print_report`](@ref) interface.
+
+For example, [`JETAnalyzer`](@ref)'s `NoMethodErrorReport` is defined as follows:
+```julia
+@reportdef struct NoMethodErrorReport <: InferenceErrorReport
+    @nospecialize t # ::Union{Type, Vector{Type}}
+    union_split::Int
+end
+function print_report(io::IO, (; t, union_split, sig)::NoMethodErrorReport)
+    if union_split == 0
+        msg = lazy"no matching method found for call signature (\$t)"
+    else
+        ts = t::Vector{Any}
+        nts = length(ts)
+        tss = join(ts, ", ")
+        msg = lazy"for \$nts of \$union_split union split cases, no matching method found for call signatures (\$tss))"
+    end
+    default_report_printer(io, msg, sig)
+end
+```
+and constructed as like `NoMethodErrorReport(sv::InferenceState, atype::Any, 0)`.
+"""
 macro reportdef(ex)
     @assert @capture(ex, struct T_ <: S_; spec_sigs__; end)
     @assert Core.eval(__module__, S) <: InferenceErrorReport
@@ -395,8 +422,8 @@ macro reportdef(ex)
 
     # cache constructor
     cache_constructor_sig = :($(GlobalRef(JET, :_restore_cached_report))(
-        ::Type{$T}, vst::VirtualStackTrace, msg::String, sig::Signature, spec_args::Vector{Any}))
-    cache_constructor_call = :($T(vst, msg, sig))
+        ::Type{$T}, vst::VirtualStackTrace, sig::Signature, spec_args::Vector{Any}))
+    cache_constructor_call = :($T(vst, sig))
     for (i, spec_type) in enumerate(spec_types)
         push!(cache_constructor_call.args, :(spec_args[$i]::$spec_type))
     end

@@ -109,7 +109,8 @@ function vscode_diagnostics(analyzer::Analyzer,
     return (; source = vscode_source(analyzer, source),
               items = map(reports) do report
                   showpoint = (order ? first : last)(report.vst)
-                  return (; msg = postprocess(report.msg),
+                  msg = sprint(print_report, report)
+                  return (; msg = postprocess(msg),
                             path = tovscodepath(showpoint.file),
                             line = showpoint.line,
                             severity = 1, # 0: Error, 1: Warning, 2: Information, 3: Hint
