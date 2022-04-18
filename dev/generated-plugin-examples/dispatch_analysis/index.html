@@ -125,7 +125,7 @@ end</code></pre><pre class="documenter-example-output"><code class="nohighlight 
     x  = xs[1]
     r  = isTypelike(x)  # this call will be runtime-dispatched
     r′ = isTypelike′(x) # this call will be statically resolved (not runtime-dispatched)
-    return r1, r2
+    return r, r′
 end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi"><span class="sgr7">═════ 4 possible errors found ═════</span>
 <span class="sgr35">┌ @ dispatch_analysis.md:245 </span>r = Main.isTypelike(x)
 <span class="sgr35">│</span><span class="sgr91">┌ @ dispatch_analysis.md:213 </span>Main.isTypelike(%11)
@@ -144,37 +144,40 @@ end</code></pre><pre class="documenter-example-output"><code class="nohighlight 
     x  = xs[1]
     r  = isTypelike(x)  # this call will be runtime-dispatched
     r′ = isTypelike′(x) # this call will be statically resolved (not runtime-dispatched)
-    return r1, r2
+    return r, r′
 end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">1-element Vector{Any}:
  CodeInfo(
 <span class="sgr90">1 ──</span> %1  = Base.arrayref(true, xs, 1)<span class="sgr36">::Any</span>
-<span class="sgr90">│   </span>       Main.isTypelike(%1)<span class="sgr90">::Bool</span>
+<span class="sgr90">│   </span> %2  = Main.isTypelike(%1)<span class="sgr36">::Bool</span>
 <span class="sgr90">│   </span> %3  = (%1 isa Main.DataType)<span class="sgr36">::Bool</span>
 <span class="sgr90">└───</span>       goto #3 if not %3
-<span class="sgr90">2 ──</span>       goto #10
-<span class="sgr90">3 ──</span> %6  = (%1 isa Main.Union)<span class="sgr36">::Bool</span>
-<span class="sgr90">└───</span>       goto #7 if not %6
-<span class="sgr90">4 ──</span> %8  = π (%1, <span class="sgr36">Union</span>)
-<span class="sgr90">│   </span> %9  = Base.getfield(%8, :a)<span class="sgr36">::Any</span>
-<span class="sgr90">│   </span> %10 = invoke Main.isTypelike′(%9::Any)<span class="sgr36">::Bool</span>
-<span class="sgr90">└───</span>       goto #6 if not %10
-<span class="sgr90">5 ──</span> %12 = π (%1, <span class="sgr36">Union</span>)
-<span class="sgr90">│   </span> %13 = Base.getfield(%12, :b)<span class="sgr36">::Any</span>
-<span class="sgr90">│   </span>       invoke Main.isTypelike′(%13::Any)<span class="sgr90">::Bool</span>
+<span class="sgr90">2 ──</span> %5  = π (%1, <span class="sgr36">DataType</span>)
+<span class="sgr90">│   </span> %6  = Base.getfield(%5, :name)<span class="sgr36">::Core.TypeName</span>
+<span class="sgr90">│   </span> %7  = Base.getfield(Type{T}, :name)<span class="sgr36">::Core.TypeName</span>
+<span class="sgr90">│   </span> %8  = (%6 === %7)<span class="sgr36">::Bool</span>
+<span class="sgr90">└───</span>       goto #10
+<span class="sgr90">3 ──</span> %10 = (%1 isa Main.Union)<span class="sgr36">::Bool</span>
+<span class="sgr90">└───</span>       goto #7 if not %10
+<span class="sgr90">4 ──</span> %12 = π (%1, <span class="sgr36">Union</span>)
+<span class="sgr90">│   </span> %13 = Base.getfield(%12, :a)<span class="sgr36">::Any</span>
+<span class="sgr90">│   </span> %14 = invoke Main.isTypelike′(%13::Any)<span class="sgr36">::Bool</span>
+<span class="sgr90">└───</span>       goto #6 if not %14
+<span class="sgr90">5 ──</span> %16 = π (%1, <span class="sgr36">Union</span>)
+<span class="sgr90">│   </span> %17 = Base.getfield(%16, :b)<span class="sgr36">::Any</span>
+<span class="sgr90">│   </span> %18 = invoke Main.isTypelike′(%17::Any)<span class="sgr36">::Bool</span>
 <span class="sgr90">└───</span>       goto #10
 <span class="sgr90">6 ──</span>       goto #10
-<span class="sgr90">7 ──</span> %17 = (%1 isa Main.UnionAll)<span class="sgr36">::Bool</span>
-<span class="sgr90">└───</span>       goto #9 if not %17
-<span class="sgr90">8 ──</span> %19 = π (%1, <span class="sgr36">UnionAll</span>)
-<span class="sgr90">│   </span> %20 = Base.getfield(%19, :body)<span class="sgr36">::Any</span>
-<span class="sgr90">│   </span>       invoke Main.isTypelike′(%20::Any)<span class="sgr90">::Bool</span>
+<span class="sgr90">7 ──</span> %21 = (%1 isa Main.UnionAll)<span class="sgr36">::Bool</span>
+<span class="sgr90">└───</span>       goto #9 if not %21
+<span class="sgr90">8 ──</span> %23 = π (%1, <span class="sgr36">UnionAll</span>)
+<span class="sgr90">│   </span> %24 = Base.getfield(%23, :body)<span class="sgr36">::Any</span>
+<span class="sgr90">│   </span> %25 = invoke Main.isTypelike′(%24::Any)<span class="sgr36">::Bool</span>
 <span class="sgr90">└───</span>       goto #10
 <span class="sgr90">9 ──</span>       goto #10
-<span class="sgr90">10 ┄</span> %24 = Main.r1<span class="sgr36">::Any</span>
-<span class="sgr90">│   </span> %25 = Main.r2<span class="sgr36">::Any</span>
-<span class="sgr90">│   </span> %26 = Core.tuple(%24, %25)<span class="sgr36">::Tuple{Any, Any}</span>
-<span class="sgr90">└───</span>       return %26
-) =&gt; Tuple{Any, Any}</code></pre><h3 id="Real-world-targets"><a class="docs-heading-anchor" href="#Real-world-targets">Real-world targets</a><a id="Real-world-targets-1"></a><a class="docs-heading-anchor-permalink" href="#Real-world-targets" title="Permalink"></a></h3><p>Let&#39;s run <code>DispatchAnalyzer</code> on real-world code and check how it works. Here we will test with Julia&#39;s <code>Base</code> module.</p><p>Random number generation might be one of the most important feature for numerical computations, and so Julia&#39;s <code>rand</code> function should run fast. Let&#39;s see if it is free from runtime-dispatch.</p><pre><code class="language-julia hljs">@report_dispatch rand(1:1000)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi"><span class="sgr92">No errors detected</span>
+<span class="sgr90">10 ┄</span> %28 = φ (#2 =&gt; %8, #5 =&gt; %18, #6 =&gt; false, #8 =&gt; %25, #9 =&gt; false)<span class="sgr36">::Bool</span>
+<span class="sgr90">│   </span> %29 = Core.tuple(%2, %28)<span class="sgr36">::Tuple{Bool, Bool}</span>
+<span class="sgr90">└───</span>       return %29
+) =&gt; Tuple{Bool, Bool}</code></pre><h3 id="Real-world-targets"><a class="docs-heading-anchor" href="#Real-world-targets">Real-world targets</a><a id="Real-world-targets-1"></a><a class="docs-heading-anchor-permalink" href="#Real-world-targets" title="Permalink"></a></h3><p>Let&#39;s run <code>DispatchAnalyzer</code> on real-world code and check how it works. Here we will test with Julia&#39;s <code>Base</code> module.</p><p>Random number generation might be one of the most important feature for numerical computations, and so Julia&#39;s <code>rand</code> function should run fast. Let&#39;s see if it is free from runtime-dispatch.</p><pre><code class="language-julia hljs">@report_dispatch rand(1:1000)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi"><span class="sgr92">No errors detected</span>
 </code></pre><p>Oh no, runtime dispatch happens there even in <code>Base</code>. Well, actually, this specific dispatch is expected. Especially, <a href="https://github.com/JuliaLang/julia/pull/35982">https://github.com/JuliaLang/julia/pull/35982</a> implements an heuristic to intentionally <em>disable</em> inference (and so succeeding optimizations too) in order to ease <a href="https://julialang.org/blog/2020/08/invalidations/">the latency problem, a.k.a. &quot;first-time-to-plot&quot;</a>. The report trace certainly suggests a dispatch was detected where <code>ArgumentError</code> can be thrown. We can turn off the heuristic by turning off <a href="../../config/#abstractinterpret-config">the <code>unoptimize_throw_blocks::Bool</code> configuration</a>, and this time any runtime dispatch won&#39;t be reported:</p><pre><code class="language-julia hljs">@report_dispatch unoptimize_throw_blocks=false rand(1:1000) # nothing should be reported</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi"><span class="sgr92">No errors detected</span>
 </code></pre><p>Finally, let&#39;s see an example of very &quot;type-instable&quot; code maintained within <code>Base</code>. Typically, anything involving I/O is written in a very dynamic way for good reasons, and certainly, e.g. <code>println(QuoteNode(nothing))</code> will yield bunch of runtime dispatches:</p><pre><code class="language-julia hljs">@report_dispatch println(QuoteNode(nothing))
 ═════ 585 possible errors found ═════
@@ -207,4 +210,4 @@ end
 # `compute(30)` will take more than hours in actual execution, according to https://twitter.com/genkuroki/status/1401332946707963909,
 # but `@report_dispatch` will just do abstract interpretation of the call, so will finish instantly
 @report_dispatch frame_filter=module_filter(@__MODULE__) compute(30)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi"><span class="sgr92">No errors detected</span>
-</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../generated-plugin-api/">« API</a><a class="docs-footer-nextpage" href="../find_unstable_api/">&quot;Unstable API&quot; Analysis »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.14 on <span class="colophon-date" title="Monday 18 April 2022 08:27">Monday 18 April 2022</span>. Using Julia version 1.9.0-DEV.405.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../generated-plugin-api/">« API</a><a class="docs-footer-nextpage" href="../find_unstable_api/">&quot;Unstable API&quot; Analysis »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.14 on <span class="colophon-date" title="Monday 18 April 2022 10:20">Monday 18 April 2022</span>. Using Julia version 1.9.0-DEV.405.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
