@@ -178,9 +178,10 @@ report_dispatch((AbstractString,)) do a
 end
 
 # Ok, working nicely so far. Let's move on to a bit more complicated examples.
-# When working on inherently-untyped code base, which typically needs to deal with
+# When working on inherently-untyped code base where we somehow need to deal with
 # arbitrarily-typed objects at runtime (as like Julia's high-level compiler),
-# the `@nospecialize` annotation can be very useful -- it helps us avoids excessive code
+# the [`@nospecialize`](https://docs.julialang.org/en/v1/base/base/#Base.@nospecialize)
+# annotation can be very useful -- it helps us avoids excessive code
 # specialization by _suppressing_ runtime dispatches with runtime object types.
 # For example, let's assume we have a vector of arbitrary untyped objects used within
 # an user-program and need to check if its element is `Type`-like object with the
@@ -217,7 +218,7 @@ report_dispatch((Vector{Any},)) do xs
     x  = xs[1]
     r  = isTypelike(x)  # this call will be runtime-dispatched
     r′ = isTypelike′(x) # this call will be statically resolved (not runtime-dispatched)
-    return r1, r2
+    return r, r′
 end
 
 # We can assert this report by looking at the output of `code_typed`, where `isTypelike(x)`
@@ -227,7 +228,7 @@ code_typed((Vector{Any},)) do xs
     x  = xs[1]
     r  = isTypelike(x)  # this call will be runtime-dispatched
     r′ = isTypelike′(x) # this call will be statically resolved (not runtime-dispatched)
-    return r1, r2
+    return r, r′
 end
 
 # ### Real-world targets
