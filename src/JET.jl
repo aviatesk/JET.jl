@@ -138,8 +138,6 @@ import .CC:
     argtype_tail,
     _methods_by_ftype,
     specialize_method,
-    add_backedge!,
-    add_mt_backedge!,
     compute_basic_blocks,
     may_invoke_generator,
     inlining_enabled,

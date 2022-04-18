@@ -437,23 +437,13 @@ function CC.add_call_backedges!(analyzer::JETAnalyzer,
     @nospecialize(rettype), edges::Vector{MethodInstance},
     matches::Union{MethodMatches,UnionSplitMethodMatches}, @nospecialize(atype),
     sv::InferenceState)
-    # NOTE why we want to comment out the following lines:
-    # a new method may refine analysis, so we always add backedges
-    # # for `NativeInterpreter`, we don't add backedges when a new method couldn't refine (widen) this type
-    # rettype === Any && return
-    for edge in edges
-        add_backedge!(edge, sv)
-    end
-    # also need an edge to the method table in case something gets
-    # added that did not intersect with any existing method
-    if isa(matches, MethodMatches)
-        matches.fullmatch || add_mt_backedge!(matches.mt, atype, sv)
-    else
-        for (thisfullmatch, mt) in zip(matches.fullmatches, matches.mts)
-            thisfullmatch || add_mt_backedge!(mt, atype, sv)
-        end
-    end
+    return @invoke CC.add_call_backedges!(analyzer::AbstractInterpreter,
+        # NOTE this `__DummyAny__` hack forces `add_call_backedges!(::AbstractInterpreter,...)` to add backedges
+        __DummyAny__::Any, edges::Vector{MethodInstance},
+        matches::Union{MethodMatches,UnionSplitMethodMatches}, atype::Any,
+        sv::InferenceState)
 end
+struct __DummyAny__ end
 
 @static if IS_V18
 # just fallback to the constant-prop' handling for now
