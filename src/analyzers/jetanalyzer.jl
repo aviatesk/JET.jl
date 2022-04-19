@@ -449,6 +449,19 @@ function CC.add_call_backedges!(analyzer::JETAnalyzer,
         matches::Union{MethodMatches,UnionSplitMethodMatches}, atype::Any,
         sv::InferenceState)
 end
+# overload after https://github.com/JuliaLang/julia/pull/45017/
+@static if isdefined(CC, :Effects)
+function CC.add_call_backedges!(analyzer::JETAnalyzer,
+    @nospecialize(rettype), effects::CC.Effects,
+    edges::Vector{MethodInstance}, matches::Union{MethodMatches,UnionSplitMethodMatches}, @nospecialize(atype),
+    sv::InferenceState)
+    return @invoke CC.add_call_backedges!(analyzer::AbstractInterpreter,
+        # NOTE this `__DummyAny__` hack forces `add_call_backedges!(::AbstractInterpreter,...)` to add backedges
+        __DummyAny__::Any, effects::CC.Effects,
+        edges::Vector{MethodInstance}, matches::Union{MethodMatches,UnionSplitMethodMatches}, atype::Any,
+        sv::InferenceState)
+end
+end
 struct __DummyAny__ end
 
 @doc """
