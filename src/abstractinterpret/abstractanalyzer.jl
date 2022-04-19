@@ -424,7 +424,7 @@ function AbstractAnalyzer(analyzer::T) where {T<:AbstractAnalyzer}
                              depth      = get_depth(analyzer),
                              )
     newanalyzer = AbstractAnalyzer(analyzer, newstate)
-    maybe_initialize_caches!(newanalyzer)
+    may_init_cache!(newanalyzer)
     return newanalyzer
 end
 
@@ -440,7 +440,7 @@ function AbstractAnalyzer(analyzer::T, concretized, toplevelmod) where {T<:Abstr
                              logger      = JETLogger(analyzer),
                              )
     newanalyzer = AbstractAnalyzer(analyzer, newstate)
-    maybe_initialize_caches!(newanalyzer)
+    may_init_cache!(newanalyzer)
     return newanalyzer
 end
 
@@ -659,7 +659,7 @@ function get_param_key(inf_params::InferenceParams)
     return h
 end
 
-function maybe_initialize_caches!(analyzer::AbstractAnalyzer)
+function may_init_cache!(analyzer::AbstractAnalyzer)
     cache_key = get_cache_key(analyzer)
     if !haskey(JET_CACHE, cache_key)
         JET_CACHE[cache_key] = IdDict{MethodInstance,CodeInstance}()
