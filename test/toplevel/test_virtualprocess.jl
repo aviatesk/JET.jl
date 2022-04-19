@@ -637,9 +637,9 @@ end
         end
 
         @test isempty(res.toplevel_error_reports)
-        @test !isempty(res.inference_error_reports)
-        @test first(res.inference_error_reports) isa GlobalUndefVarErrorReport
-        @test occursin("isexpr2", first(res.inference_error_reports).msg)
+        report = only(res.inference_error_reports)
+        @test report isa GlobalUndefVarErrorReport
+        @test occursin("isexpr2", get_msg(report))
     end
 
     # error handling for module usages

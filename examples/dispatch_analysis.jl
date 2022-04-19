@@ -110,15 +110,17 @@ function CC.finish!(analyzer::DispatchAnalyzer, frame::CC.InferenceState)
 end
 
 @reportdef struct OptimizationFailureReport <: InferenceErrorReport end
-JETInterface.get_msg(::Type{OptimizationFailureReport}, args...) =
-    return "failed to optimize" #: signature of this MethodInstance
+function JETInterface.print_report(io::IO, (; sig)::OptimizationFailureReport)
+    JET.default_report_printer(io, "failed to optimize", sig)
+end
 function (::DispatchAnalysisPass)(::Type{OptimizationFailureReport}, analyzer::DispatchAnalyzer, result::CC.InferenceResult)
     add_new_report!(analyzer, result, OptimizationFailureReport(result.linfo))
 end
 
 @reportdef struct RuntimeDispatchReport <: InferenceErrorReport end
-JETInterface.get_msg(::Type{RuntimeDispatchReport}, _) =
-    return "runtime dispatch detected" #: call signature
+function JETInterface.print_report(io::IO, (; sig)::RuntimeDispatchReport)
+    JET.default_report_printer(io, "runtime dispatch detected", sig)
+end
 
 function (::DispatchAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::DispatchAnalyzer, caller::CC.InferenceResult, opt::CC.OptimizationState)
     (; sptypes, slottypes) = opt

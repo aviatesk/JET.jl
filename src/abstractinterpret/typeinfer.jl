@@ -936,15 +936,19 @@ This may fail, cause incorrect analysis, or produce unexpected errors.
     @nospecialize t′
     @nospecialize t
 end
-get_msg(::Type{InvalidConstantRedefinition}, sv::InferenceState, mod::Module, name::Symbol, @nospecialize(t′::Any), @nospecialize(t::Any)) =
-    "invalid redefinition of constant $(mod).$(name) (from $(t′) to $(t))"
+function print_report(io::IO, report::InvalidConstantRedefinition)
+    msg = "invalid redefinition of constant $(report.mod).$(report.name) (from $(t′) to $(t))"
+    print_error(io, msg)
+end
 
 @reportdef struct InvalidConstantDeclaration <: InferenceErrorReport
     mod::Module
     name::Symbol
 end
-get_msg(::Type{InvalidConstantDeclaration}, sv::InferenceState, mod::Module, name::Symbol) =
-    "cannot declare a constant $(mod).$(name); it already has a value"
+function print_msg(io::IO, report::InvalidConstantDeclaration)
+    msg = "cannot declare a constant $(mod).$(name); it already has a value"
+    print_error(io, msg)
+end
 
 function is_constant_declared(name::Symbol, sv::InferenceState)
     return any(sv.src.code) do @nospecialize(x)
