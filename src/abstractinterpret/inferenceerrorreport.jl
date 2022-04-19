@@ -335,8 +335,10 @@ function (T::Type{<:InferenceErrorReport})(state, @nospecialize(spec_args...))
     return T([vf], vf.sig, spec_args...)
 end
 
-get_spec_args(T::Type{<:InferenceErrorReport}) = error(lazy"`get_spec_args` is not implemented for $T")
-print_report(io::IO, report::InferenceErrorReport) = error(lazy"`print_report` is not implemented for $(typeof(report))")
+get_spec_args(report::InferenceErrorReport) = (@nospecialize;
+    error(lazy"`get_spec_args(::$(typeof(report)))` is not implemented"))
+print_report(io::IO, report::InferenceErrorReport) = (@nospecialize;
+    error(lazy"`print_report(::IO, ::$(typeof(report)))` is not implemented"))
 
 # default error report printer
 function default_report_printer(io::IO, msg::AbstractString, sig::Signature)

@@ -812,7 +812,7 @@ end
 
 @reportdef struct DivideErrorReport <: BuiltinErrorReport end
 let msg = sprint(showerror, DivideError())
-    function print_report(io::IO, ::DivideErrorReport)
+    global function print_report(io::IO, ::DivideErrorReport)
         print_error(io, msg)
     end
 end
