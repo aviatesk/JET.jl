@@ -408,8 +408,8 @@ const State     = Union{InferenceState,OptimizationState}
 const StateAtPC = Tuple{State,Int}
 const LineTable = Union{Vector{Any},Vector{LineInfoNode}}
 
-get_stmt((sv, pc)::StateAtPC)         = @inbounds sv.src.code[pc]
-get_lin((sv, pc)::StateAtPC)          = begin
+get_stmt((sv, pc)::StateAtPC) = sv.src.code[pc]
+get_lin((sv, pc)::StateAtPC) = begin
     codeloc = sv.src.codelocs[pc]
     linetable = sv.src.linetable::LineTable
     if 1 <= codeloc <= length(linetable)
@@ -417,27 +417,48 @@ get_lin((sv, pc)::StateAtPC)          = begin
     else
         # Packages might dynamically generate code, which does not reference
         # a source, see https://github.com/aviatesk/JET.jl/issues/273
-        return LineInfoNode(sv.mod, :unknown, :unknown, 0, 0)
+        @static if fieldtype(LineInfoNode, :line) === Int32
+            return LineInfoNode(sv.mod, :unknown, :unknown, Int32(0), Int32(0))
+        else
+            return LineInfoNode(sv.mod, :unknown, :unknown, 0, 0)
+        end
     end
 end
-get_ssavaluetype((sv, pc)::StateAtPC) = @inbounds sv.src.ssavaluetypes[pc]
+get_ssavaluetype((sv, pc)::StateAtPC) = sv.src.ssavaluetypes[pc]
 
-get_slottype(s::Union{StateAtPC,State}, slot)      = get_slottype(s, slot_id(slot))
-get_slottype((sv, pc)::StateAtPC,       slot::Int) = get_slottype(sv, slot)
-get_slottype(sv::State,                 slot::Int) = @inbounds sv.slottypes[slot]
+get_slottype(s::Union{StateAtPC,State}, slot) = get_slottype(s, slot_id(slot))
+get_slottype((sv, pc)::StateAtPC, slot::Int) = get_slottype(sv, slot)
+get_slottype(sv::State, slot::Int) = sv.slottypes[slot]
 
-get_slotname(s::Union{StateAtPC,State}, slot)      = get_slotname(s, slot_id(slot))
-get_slotname((sv, pc)::StateAtPC,       slot::Int) = @inbounds sv.src.slotnames[slot]
-get_slotname(sv::State,                 slot::Int) = @inbounds sv.src.slotnames[slot]
+get_slotname(s::Union{StateAtPC,State}, slot) = get_slotname(s, slot_id(slot))
+get_slotname((sv, pc)::StateAtPC, slot::Int) = sv.src.slotnames[slot]
+get_slotname(sv::State, slot::Int) = sv.src.slotnames[slot]
 
 # check if we're in a toplevel module
-istoplevel(sv::State)             = istoplevel(sv.linfo)
+istoplevel(sv::State) = istoplevel(sv.linfo)
 istoplevel(linfo::MethodInstance) = isa(linfo.def, Module)
 
 # we can retrieve program-counter-level slottype during inference
-get_slottype(s::Tuple{InferenceState,Int}, slot::Int) = @inbounds (get_states(s)[slot]::VarState).typ
-get_states((sv, pc)::Tuple{InferenceState,Int})       = @inbounds sv.stmt_types[pc]::VarTable
+get_slottype(s::Tuple{InferenceState,Int}, slot::Int) = (get_states(s)[slot]::VarState).typ
+get_states((sv, pc)::Tuple{InferenceState,Int}) = stmt_types(sv)[pc]::VarTable
 get_currpc(sv::InferenceState) = min(sv.currpc, length(sv.src.code))
+
+struct StmtTypes
+    sv::InferenceState
+end
+function stmt_types(sv::InferenceState)
+    @static if hasfield(InferenceState, :bb_vartables)
+        return StmtTypes(sv)
+    else
+        return sv.stmt_types
+    end
+end
+@static if hasfield(InferenceState, :bb_vartables)
+function Base.getindex(st::StmtTypes, pc::Int)
+    block = CC.block_for_inst(st.sv.cfg, pc)
+    return st.sv.bb_vartables[block]::VarTable
+end
+end
 
 function is_compileable_frame(frame)
     linfo = get_linfo(frame)
@@ -451,9 +472,9 @@ else
         !iszero(ccall(:jl_isa_compileable_sig, Int32, (Any, Any), atype, method))
 end
 
-get_linfo(sv::State)               = sv.linfo
+get_linfo(sv::State) = sv.linfo
 get_linfo(result::InferenceResult) = result.linfo
-get_linfo(linfo::MethodInstance)   = linfo
+get_linfo(linfo::MethodInstance) = linfo
 
 is_constant_propagated(frame::InferenceState) =
     return !frame.cached && # const-prop'ed frame is never cached globally
