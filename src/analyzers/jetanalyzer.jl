@@ -507,7 +507,9 @@ end
 @static if IS_AFTER_42529
 function CC.abstract_invoke(analyzer::JETAnalyzer, arginfo::ArgInfo, sv::InferenceState)
     ret = @invoke CC.abstract_invoke(analyzer::AbstractAnalyzer, arginfo::ArgInfo, sv::InferenceState)
-    @static if VERSION ≥ v"1.9.0-DEV.264"
+    @static if hasfield(CallMeta, :effects)
+        ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret, arginfo.argtypes)
+    elseif VERSION ≥ v"1.9.0-DEV.264"
         ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret[1], arginfo.argtypes)
     else
         ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret, arginfo.argtypes)

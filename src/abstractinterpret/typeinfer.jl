@@ -824,6 +824,7 @@ end
 # assignment of the slot (the type of assignment statement is available as SSA value type)
 # the implementation is mostly same as `record_slot_assign!(sv::InferenceState)`, but
 # we don't `widenconst` each SSA value type
+@static if hasfield(InferenceState, :stmt_types)
 function collect_slottypes(sv::InferenceState)
     states = sv.stmt_types
     ssavaluetypes = sv.src.ssavaluetypes::Vector{Any}
@@ -846,6 +847,37 @@ function collect_slottypes(sv::InferenceState)
         end
     end
     return slottypes
+end
+else
+function collect_slottypes(sv::InferenceState)
+    body = sv.src.code::Vector{Any}
+    slottypes = copy(sv.slottypes)
+    ssavaluetypes = sv.ssavaluetypes
+    for i = 1:length(body)
+        expr = body[i]
+        # find all reachable assignments to locals
+        if CC.was_reached(sv, i) && isexpr(expr, :(=))
+            lhs = expr.args[1]
+            if isa(lhs, SlotNumber)
+                typ = ssavaluetypes[i]
+                @assert typ !== NOT_FOUND "active slot in unreached region"
+                vt = typ
+                if vt !== Bottom
+                    id = slot_id(lhs)
+                    otherTy = slottypes[id]
+                    if otherTy === Bottom
+                        slottypes[id] = vt
+                    elseif otherTy === Any
+                        slottypes[id] = Any
+                    else
+                        slottypes[id] = tmerge(otherTy, vt)
+                    end
+                end
+            end
+        end
+    end
+    return slottypes
+end
 end
 
 function set_abstract_global!(analyzer::AbstractAnalyzer, mod::Module, name::Symbol, @nospecialize(t), isnd::Bool, sv::InferenceState)
