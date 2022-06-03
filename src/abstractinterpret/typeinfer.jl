@@ -450,7 +450,8 @@ function CC.transform_result_for_cache(analyzer::AbstractAnalyzer,
         end
         cache_report!(cache, report)
     end
-    @static if VERSION ≥ v"1.9.0-DEV.256"
+    @static if isdefined(CC, :Effects) && hasmethod(CC.transform_result_for_cache, (
+        AbstractInterpreter, MethodInstance, WorldRange, Any, CC.Effects))
         inferred_result = @invoke transform_result_for_cache(analyzer::AbstractInterpreter,
         linfo::MethodInstance, valid_worlds::WorldRange, result.src, result.ipo_effects::CC.Effects)
     else

@@ -509,10 +509,12 @@ function CC.abstract_invoke(analyzer::JETAnalyzer, arginfo::ArgInfo, sv::Inferen
     ret = @invoke CC.abstract_invoke(analyzer::AbstractAnalyzer, arginfo::ArgInfo, sv::InferenceState)
     @static if hasfield(CallMeta, :effects)
         ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret, arginfo.argtypes)
-    elseif VERSION ≥ v"1.9.0-DEV.264"
-        ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret[1], arginfo.argtypes)
     else
-        ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret, arginfo.argtypes)
+        if isa(ret, CallMeta)
+            ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret, arginfo.argtypes)
+        else # otherwise https://github.com/JuliaLang/julia/pull/44764 is active
+            ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret[1], arginfo.argtypes)
+        end
     end
     return ret
 end
