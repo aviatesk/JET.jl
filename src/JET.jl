@@ -610,7 +610,7 @@ These configurations should be active always.
          end;
 
   # by default, JET will print all the collected reports:
-  julia> @report_call foo("juila")
+  julia> @report_call foo("julia")
   ════ 3 possible errors found ═════
   ┌ @ none:2 r1 = Main.sum(a)
   │┌ @ reduce.jl:544 Base.#sum#258(Base.pairs(Core.NamedTuple()), #self#, a)
@@ -641,7 +641,7 @@ These configurations should be active always.
   └──────────
 
   # with `target_modules=(@__MODULE__,)`, JET will ignore the errors detected within the `Base` module:
-  julia> @report_call target_modules=(@__MODULE__,) foo("juila")
+  julia> @report_call target_modules=(@__MODULE__,) foo("julia")
   ════ 1 possible error found ═════
   ┌ @ none:3 r2 = Main.undefsum(a)
   │ variable Main.undefsum is not defined: r2 = Main.undefsum(a::String)
