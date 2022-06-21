@@ -8,6 +8,40 @@
       "BenchmarkGroup",
       {
         "data": {
+          "show": [
+            "BenchmarkGroup",
+            {
+              "data": {
+                "@report_call sum(\"julia\")": [
+                  "Parameters",
+                  {
+                    "gctrial": true,
+                    "time_tolerance": 0.05,
+                    "samples": 10000,
+                    "evals": 1,
+                    "gcsample": true,
+                    "seconds": 15.0,
+                    "overhead": 0.0,
+                    "memory_tolerance": 0.01
+                  }
+                ],
+                "report_opt(Core.Compiler.typeinf, (Core.Compiler.NativeInterpreter, Core.Compiler.InferenceState))": [
+                  "Parameters",
+                  {
+                    "gctrial": true,
+                    "time_tolerance": 0.05,
+                    "samples": 10000,
+                    "evals": 1,
+                    "gcsample": true,
+                    "seconds": 15.0,
+                    "overhead": 0.0,
+                    "memory_tolerance": 0.01
+                  }
+                ]
+              },
+              "tags": []
+            }
+          ],
           "JETAnalyzer{BasicPass} first-time": [
             "BenchmarkGroup",
             {
