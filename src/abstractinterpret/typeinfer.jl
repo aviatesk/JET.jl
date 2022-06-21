@@ -969,19 +969,19 @@ This may fail, cause incorrect analysis, or produce unexpected errors.
     @nospecialize t′
     @nospecialize t
 end
-function print_report(io::IO, report::InvalidConstantRedefinition)
-    msg = "invalid redefinition of constant $(report.mod).$(report.name) (from $(t′) to $(t))"
-    print_error(io, msg)
+function print_report_message(io::IO, report::InvalidConstantRedefinition)
+    print(io, "invalid redefinition of constant `", report.mod, '.', report.name, "` (from `", report.t′, "` to `", report.t, "`)")
 end
+print_signature(::InvalidConstantRedefinition) = false
 
 @reportdef struct InvalidConstantDeclaration <: InferenceErrorReport
     mod::Module
     name::Symbol
 end
-function print_msg(io::IO, report::InvalidConstantDeclaration)
-    msg = "cannot declare a constant $(mod).$(name); it already has a value"
-    print_error(io, msg)
+function print_report_message(io::IO, report::InvalidConstantDeclaration)
+    print(io, "cannot declare a constant `", report.mod, '.', report.name, "`; it already has a value")
 end
+print_signature(::InvalidConstantDeclaration) = false
 
 function is_constant_declared(name::Symbol, sv::InferenceState)
     return any(sv.src.code) do @nospecialize(x)

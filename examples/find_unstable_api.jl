@@ -117,11 +117,12 @@ end
 @reportdef struct UnstableAPI <: InferenceErrorReport
     g::GlobalRef
 end
-function JETInterface.print_report(io::IO, (; g, sig)::UnstableAPI)
+function JETInterface.print_report_message(io::IO, (; g)::UnstableAPI)
     (; mod, name) = Base.resolve(g) # resolve to original name
     msg = lazy"usage of unstable API `$mod.$name` found"
-    default_report_printer(io, msg, sig)
+    print(io, "usage of unstable API `", mod, '.', name, "` found")
 end
+JETInterface.report_color(::UnstableAPI) = :yellow
 
 function (::UnstableAPIAnalysisPass)(::Type{UnstableAPI}, analyzer::UnstableAPIAnalyzer, sv, @nospecialize(e))
     if isa(e, GlobalRef)
