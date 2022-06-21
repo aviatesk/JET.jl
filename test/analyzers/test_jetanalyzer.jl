@@ -56,19 +56,19 @@
         result = @eval m $report_call((Int,); max_methods=3) do a
             foo(Val(a))
         end
-        @test isempty(get_reports(result))
+        @test isempty(get_reports_with_test(result))
 
         # should use the cached result
         result = @eval m $report_call((Int,); max_methods=3) do a
             foo(Val(a))
         end
-        @test isempty(get_reports(result))
+        @test isempty(get_reports_with_test(result))
 
         # should re-run analysis, and should get a report
         result = @eval m $report_call((Int,); max_methods=4) do a
             foo(Val(a))
         end
-        @test any(get_reports(result)) do r
+        @test any(get_reports_with_test(result)) do r
             isa(r, GlobalUndefVarErrorReport) &&
             r.name === :undefvar
         end
@@ -77,7 +77,7 @@
         result = @eval m $report_call((Int,); max_methods=4) do a
             foo(Val(a))
         end
-        @test any(get_reports(result)) do r
+        @test any(get_reports_with_test(result)) do r
             isa(r, GlobalUndefVarErrorReport) &&
             r.name === :undefvar
         end
@@ -95,16 +95,16 @@ end
                 foo(a)
             end
         end)
-        @test length(get_reports(result)) === 1
-        report = first(get_reports(result))
+        @test length(get_reports_with_test(result)) === 1
+        report = first(get_reports_with_test(result))
         @test report isa NoMethodErrorReport
         @test report.t === Tuple{typeof(m.foo), AbstractString}
     end
 
     let
         result = report_call(()->sum([]))
-        @test length(get_reports(result)) === 1
-        report = first(get_reports(result))
+        @test length(get_reports_with_test(result)) === 1
+        report = first(get_reports_with_test(result))
         @test report isa SeriousExceptionReport
         @test report.err isa MethodError
         @test report.err.f === zero
@@ -120,8 +120,8 @@ end
             $report_call(a->foo(a), (Union{Nothing,Int},))
         end)
 
-        @test length(get_reports(result)) === 1
-        report = first(get_reports(result))
+        @test length(get_reports_with_test(result)) === 1
+        report = first(get_reports_with_test(result))
         @test report isa NoMethodErrorReport
         @test report.t == Any[Tuple{typeof(m.foo), Nothing}]
     end
@@ -136,8 +136,8 @@ end
             end
             return bar # undefined in this pass
         end
-        @test length(get_reports(result)) === 1
-        r = first(get_reports(result))
+        @test length(get_reports_with_test(result)) === 1
+        r = first(get_reports_with_test(result))
         @test r isa LocalUndefVarErrorReport
         @test r.name === :bar
         @test last(r.vst).line == (@__LINE__)-6
@@ -157,16 +157,16 @@ end
         end
 
         result = Core.eval(m, :($report_call(baz, (Bool,))))
-        @test length(get_reports(result)) === 1
-        r = first(get_reports(result))
+        @test length(get_reports_with_test(result)) === 1
+        r = first(get_reports_with_test(result))
         @test r isa LocalUndefVarErrorReport
         @test r.name === :bar
         @test last(r.vst).line == (@__LINE__)-10
 
         # works when cached
         result = Core.eval(m, :($report_call(baz, (Bool,))))
-        @test length(get_reports(result)) === 1
-        r = first(get_reports(result))
+        @test length(get_reports_with_test(result)) === 1
+        r = first(get_reports_with_test(result))
         @test r isa LocalUndefVarErrorReport
         @test r.name === :bar
         @test last(r.vst).line == (@__LINE__)-18
@@ -185,7 +185,7 @@ end
                 return nothing
             end
         end
-        @test isempty(get_reports(result))
+        @test isempty(get_reports_with_test(result))
     end
 
     let
@@ -202,9 +202,9 @@ end
                 return bar
             end
         end
-        @test_broken length(get_reports(result)) === 1 &&
-            first(get_reports(result)) isa LocalUndefVarErrorReport &&
-            first(get_reports(result)).name === :bar
+        @test_broken length(get_reports_with_test(result)) === 1 &&
+            first(get_reports_with_test(result)) isa LocalUndefVarErrorReport &&
+            first(get_reports_with_test(result)).name === :bar
     end
 
     let
@@ -217,7 +217,7 @@ end
             inner(rand(Int))
             return a
         end
-        @test isempty(get_reports(result))
+        @test isempty(get_reports_with_test(result))
     end
 
     let # should work for top-level analysis
@@ -239,9 +239,9 @@ end
 @testset "report undefined (global) variables" begin
     let
         result = report_call(()->foo)
-        @test length(get_reports(result)) === 1
-        @test first(get_reports(result)) isa GlobalUndefVarErrorReport
-        @test first(get_reports(result)).name === :foo
+        @test length(get_reports_with_test(result)) === 1
+        @test first(get_reports_with_test(result)) isa GlobalUndefVarErrorReport
+        @test first(get_reports_with_test(result)).name === :foo
     end
 
     # deeper level
@@ -252,15 +252,15 @@ end
         end
 
         result = Core.eval(m, :($report_call(qux, (Int,))))
-        @test length(get_reports(result)) === 1
-        @test first(get_reports(result)) isa GlobalUndefVarErrorReport
-        @test first(get_reports(result)).name === :baz
+        @test length(get_reports_with_test(result)) === 1
+        @test first(get_reports_with_test(result)) isa GlobalUndefVarErrorReport
+        @test first(get_reports_with_test(result)).name === :baz
 
         # works when cached
         result = Core.eval(m, :($report_call(qux, (Int,))))
-        @test length(get_reports(result)) === 1
-        @test first(get_reports(result)) isa GlobalUndefVarErrorReport
-        @test first(get_reports(result)).name === :baz
+        @test length(get_reports_with_test(result)) === 1
+        @test first(get_reports_with_test(result)) isa GlobalUndefVarErrorReport
+        @test first(get_reports_with_test(result)).name === :baz
     end
 end
 
@@ -270,8 +270,8 @@ end
         result = report_call((Int,)) do a
             a ? a : nothing
         end
-        @test length(get_reports(result)) === 1
-        er = first(get_reports(result))
+        @test length(get_reports_with_test(result)) === 1
+        er = first(get_reports_with_test(result))
         @test er isa NonBooleanCondErrorReport
         @test er.t === Int
     end
@@ -281,7 +281,7 @@ end
         result = report_call((Integer,)) do a
             a ? a : nothing
         end
-        @test isempty(get_reports(result))
+        @test isempty(get_reports_with_test(result))
     end
 
     # report union split case
@@ -289,8 +289,8 @@ end
         result = report_call((Union{Nothing,Bool},)) do a
             a ? a : false
         end
-        @test length(get_reports(result)) === 1
-        let r = first(get_reports(result))
+        @test length(get_reports_with_test(result)) === 1
+        let r = first(get_reports_with_test(result))
             @test r isa NonBooleanCondErrorReport
             @test r.t == [Nothing]
             @test occursin("(1/2 union split)", get_msg(r))
@@ -302,7 +302,7 @@ end
             anyary = Any[1,2,3]
             first(anyary) ? first(anyary) : nothing
         end
-        @test isempty(get_reports(result)) # very untyped, we can't report on this ...
+        @test isempty(get_reports_with_test(result)) # very untyped, we can't report on this ...
     end
 end
 
@@ -314,14 +314,14 @@ end
             foo(a; #= can be undef =# kw) =  a, kw
             $report_call(foo, (Any,))
         end)
-        @test !isempty(get_reports(result))
-        @test any(get_reports(result)) do r
+        @test !isempty(get_reports_with_test(result))
+        @test any(get_reports_with_test(result)) do r
             r isa SeriousExceptionReport || return false
             err = r.err
             err isa UndefKeywordError && err.var === :kw
         end
         # there shouldn't be duplicated report for the `throw` call
-        @test !any(isa2(UncaughtExceptionReport), get_reports(result))
+        @test !any(isa2(UncaughtExceptionReport), get_reports_with_test(result))
     end
 end
 
@@ -333,20 +333,20 @@ end
         result = report_call() do
             apply(div, 1, 0)
         end
-        @test !isempty(get_reports(result))
-        @test any(isa2(DivideErrorReport), get_reports(result))
+        @test !isempty(get_reports_with_test(result))
+        @test any(isa2(DivideErrorReport), get_reports_with_test(result))
 
         result = report_call() do
             apply(rem, 1, 0)
         end
-        @test !isempty(get_reports(result))
-        @test any(isa2(DivideErrorReport), get_reports(result))
+        @test !isempty(get_reports_with_test(result))
+        @test any(isa2(DivideErrorReport), get_reports_with_test(result))
 
         # JET analysis isn't sound
         result = report_call((Int,Int)) do a, b
             apply(div, a, b)
         end
-        @test isempty(get_reports(result))
+        @test isempty(get_reports_with_test(result))
     end
 end
 
@@ -354,31 +354,31 @@ end
     # simplest case
     let
         result = report_call(()->throw("foo"))
-        @test !isempty(get_reports(result))
-        @test first(get_reports(result)) isa UncaughtExceptionReport
+        @test !isempty(get_reports_with_test(result))
+        @test first(get_reports_with_test(result)) isa UncaughtExceptionReport
     end
 
     # throws in deep level
     let
         foo(a) = throw(a)
         result = report_call(()->foo("foo"))
-        @test !isempty(get_reports(result))
-        @test first(get_reports(result)) isa UncaughtExceptionReport
+        @test !isempty(get_reports_with_test(result))
+        @test first(get_reports_with_test(result)) isa UncaughtExceptionReport
     end
 
     # don't report possibly false negative `throw`s
     let
         foo(a) = a ≤ 0 ? throw("a is $(a)") : a
         result = report_call(foo, (Int,))
-        @test isempty(get_reports(result))
+        @test isempty(get_reports_with_test(result))
     end
 
     # constant prop sometimes helps exclude false negatives
     let
         foo(a) = a ≤ 0 ? throw("a is $(a)") : a
         result = report_call(()->foo(0))
-        @test !isempty(get_reports(result))
-        @test first(get_reports(result)) isa UncaughtExceptionReport
+        @test !isempty(get_reports_with_test(result))
+        @test first(get_reports_with_test(result)) isa UncaughtExceptionReport
     end
 
     # report even if there're other "critical" error exist
@@ -392,25 +392,25 @@ end
                 bar(s)
             end
         end)
-        @test length(get_reports(result)) === 3
-        test_sum_over_string(get_reports(result))
+        @test length(get_reports_with_test(result)) === 3
+        test_sum_over_string(get_reports_with_test(result))
     end
 
     # end to end
     let
         # this should report `throw(ArgumentError("Sampler for this object is not defined")`
         result = report_call(rand, (Char,))
-        @test !isempty(get_reports(result))
-        @test first(get_reports(result)) isa UncaughtExceptionReport
+        @test !isempty(get_reports_with_test(result))
+        @test first(get_reports_with_test(result)) isa UncaughtExceptionReport
 
         # this should not report `throw(DomainError(x, "sin(x) is only defined for finite x."))`
         result = report_call(sin, (Int,))
-        @test isempty(get_reports(result))
+        @test isempty(get_reports_with_test(result))
 
         # again, constant prop sometimes can exclude false negatives
         result = report_call(()->sin(Inf))
-        @test !isempty(get_reports(result))
-        @test first(get_reports(result)) isa UncaughtExceptionReport
+        @test !isempty(get_reports_with_test(result))
+        @test first(get_reports_with_test(result)) isa UncaughtExceptionReport
     end
 end
 
@@ -421,7 +421,7 @@ end
             f(1; b)
         end
     end)
-    @test isempty(get_reports(result))
+    @test isempty(get_reports_with_test(result))
 end
 
 @testset "don't early escape if type grows up to `Any`" begin
@@ -463,16 +463,16 @@ end
     result = report_call() do
         invoke(sin, :this_should_be_type, 1.0)
     end
-    @test length(get_reports(result)) == 1
-    r = first(get_reports(result))
+    @test length(get_reports_with_test(result)) == 1
+    r = first(get_reports_with_test(result))
     @test isa(r, InvalidInvokeErrorReport)
 
     # invalid `argtype`
     result = report_call() do
         Base.@invoke sin(1.0::Int)
     end
-    @test length(get_reports(result)) == 1
-    r = first(get_reports(result))
+    @test length(get_reports_with_test(result)) == 1
+    r = first(get_reports_with_test(result))
     @test isa(r, InvalidInvokeErrorReport)
 
     # don't report errors collected in `invoke`d functions
@@ -482,8 +482,8 @@ end
             Base.@invoke foo(a::Integer)
         end
     end
-    @test !isempty(get_reports(result))
-    @test !any(r->isa(r, InvalidInvokeErrorReport), get_reports(result))
+    @test !isempty(get_reports_with_test(result))
+    @test !any(r->isa(r, InvalidInvokeErrorReport), get_reports_with_test(result))
 
     #== LINE SENSITIVITY START ===#
     BAR_LINE = (@__LINE__) + 3
@@ -497,12 +497,12 @@ end
         $report_call(baz, (Any,))
     end
     #== LINE SENSITIVITY END ===#
-    @test !isempty(get_reports(result))
-    @test !any(r->isa(r, InvalidInvokeErrorReport), get_reports(result))
+    @test !isempty(get_reports_with_test(result))
+    @test !any(r->isa(r, InvalidInvokeErrorReport), get_reports_with_test(result))
     # virtual stack trace should include frames of both `bar` and `baz`
     # we already `@assert` it within `typeinf` when `JET_DEV_MODE` is enabled,
     # but test it explicitly here just to make sure it's working
-    @test all(get_reports(result)) do r
+    @test all(get_reports_with_test(result)) do r
         any(r.vst) do vf
             vf.file === Symbol(@__FILE__) &&
             vf.line == BAR_LINE && # `bar`
@@ -533,28 +533,28 @@ end
 
     let # successful code generation, valid code
         result = report_call(m.foo, (Int,))
-        @test isempty(get_reports(result))
+        @test isempty(get_reports_with_test(result))
     end
 
     let # successful code generation, invalid code
         result = report_call(m.foo, (Float64,))
-        @test length(get_reports(result)) == 1
-        r = first(get_reports(result))
+        @test length(get_reports_with_test(result)) == 1
+        r = first(get_reports_with_test(result))
         @test isa(r, GlobalUndefVarErrorReport)
         @test r.name === :undefvar
     end
 
     let # unsuccessful code generation
         result = report_call(m.foo, (String,))
-        @test length(get_reports(result)) == 1
-        r = first(get_reports(result))
+        @test length(get_reports_with_test(result)) == 1
+        r = first(get_reports_with_test(result))
         @test isa(r, GeneratorErrorReport) && r.err == "invalid argument"
     end
 
     let # should work if cached
         result = report_call(m.bar, (String,))
-        @test length(get_reports(result)) == 1
-        r = first(get_reports(result))
+        @test length(get_reports_with_test(result)) == 1
+        r = first(get_reports_with_test(result))
         @test isa(r, GeneratorErrorReport) && r.err == "invalid argument"
     end
 end
@@ -563,8 +563,8 @@ end
     result = report_call((Int, Type{Int}, Any)) do a, b, c
         isa(a, b, c)
     end
-    @test length(get_reports(result)) === 1
-    report = first(get_reports(result))
+    @test length(get_reports_with_test(result)) === 1
+    report = first(get_reports_with_test(result))
     @test report isa InvalidBuiltinCallErrorReport &&
         widenconst.(report.argtypes) == [Int, Type{Int}, Any]
 
@@ -580,13 +580,13 @@ end
         result = Core.eval(m, quote
             $report_call(t->access_field(t,:v), (T,))
         end)
-        @test isempty(get_reports(result))
+        @test isempty(get_reports_with_test(result))
 
         result = Core.eval(m, quote
             $report_call(t->access_field(t,:w), (T,))
         end)
-        @test length(get_reports(result)) === 1
-        er = first(get_reports(result))
+        @test length(get_reports_with_test(result)) === 1
+        er = first(get_reports_with_test(result))
         @test er isa NoFieldErrorReport
         @test er.typ === m.T
         @test er.name === :w
@@ -594,7 +594,7 @@ end
         result = Core.eval(m, quote
             $report_call(t->access_field(t,:v), (T,))
         end)
-        @test isempty(get_reports(result))
+        @test isempty(get_reports_with_test(result))
     end
 end
 
@@ -604,8 +604,8 @@ end
         result = report_call((Any,)) do a
             getfield(a)
         end
-        @test length(get_reports(result)) == 1
-        @test first(get_reports(result)) isa InvalidBuiltinCallErrorReport
+        @test length(get_reports_with_test(result)) == 1
+        @test first(get_reports_with_test(result)) isa InvalidBuiltinCallErrorReport
     end
 end
 
@@ -613,14 +613,14 @@ end
     # don't report invalid method calls simulated in `return_type_tfunc`
     let
         result = report_call(()->CC.return_type(sum, Tuple{String}))
-        @test isempty(get_reports(result))
+        @test isempty(get_reports_with_test(result))
     end
 
     # report invalid call of `return_type` itself
     let
         result = report_call(()->CC.return_type(sum))
-        @test length(get_reports(result)) == 1
-        @test isa(first(get_reports(result)), InvalidReturnTypeCall)
+        @test length(get_reports_with_test(result)) == 1
+        @test isa(first(get_reports_with_test(result)), InvalidReturnTypeCall)
     end
 
     # end to end
@@ -628,7 +628,7 @@ end
         # this shouldn't report "no matching method found for call signature: Base.iterate(itr::DataType)",
         # which otherwise will be caught in `abstract_cal` in `return_type_tfunc`
         result = report_call(() -> Dict('a' => 1, :b => 2))
-        @test isempty(get_reports(result))
+        @test isempty(get_reports_with_test(result))
     end
 end
 
@@ -646,15 +646,15 @@ end
 
     let
         result = @report_call M.foo("julia")
-        @test length(get_reports(result)) == 3
-        @test any(get_reports(result)) do report
+        @test length(get_reports_with_test(result)) == 3
+        @test any(get_reports_with_test(result)) do report
             isa(report, GlobalUndefVarErrorReport) && report.name === :undefsum
         end
     end
 
     let
         result = @report_call target_modules=(M,) M.foo("julia")
-        report = only(get_reports(result))
+        report = only(get_reports_with_test(result))
         @test isa(report, GlobalUndefVarErrorReport) && report.name === :undefsum
     end
 end
@@ -679,8 +679,8 @@ end
                     foo(a)
                 end
             end
-            @test !isempty(get_reports(res))
-            @test any(r->isa(r,NoMethodErrorReport), get_reports(res))
+            @test !isempty(get_reports_with_test(res))
+            @test any(r->isa(r,NoMethodErrorReport), get_reports_with_test(res))
         end
 
         # skip errors on abstract entry frame entered by `analyze_from_definitions!`
@@ -707,12 +707,12 @@ end
         result = @eval m $report_call((Any,Symbol)) do a, b
             foo(a, b)
         end
-        @test isempty(get_reports(result))
+        @test isempty(get_reports_with_test(result))
 
         result = report_call((Any,Symbol); mode = :sound) do a, b
             a == b ? 0 : 1
         end
-        @test any(get_reports(result)) do r
+        @test any(get_reports_with_test(result)) do r
             isa(r, NonBooleanCondErrorReport) &&
             r.t == Type[Missing]
         end
@@ -722,12 +722,12 @@ end
         basic = report_call((Integer,)) do cond
             cond ? 0 : 1
         end
-        @test isempty(get_reports(basic))
+        @test isempty(get_reports_with_test(basic))
 
         sound = report_call((Integer,); mode=:sound) do cond
             cond ? 0 : 1
         end
-        @test any(get_reports(sound)) do r
+        @test any(get_reports_with_test(sound)) do r
             isa(r, NonBooleanCondErrorReport) &&
             r.t == Integer
         end
@@ -740,9 +740,9 @@ end
     @testset "global undef var" begin
         let
             result = report_call(()->foo; mode=:typo)
-            @test length(get_reports(result)) === 1
-            @test first(get_reports(result)) isa GlobalUndefVarErrorReport
-            @test first(get_reports(result)).name === :foo
+            @test length(get_reports_with_test(result)) === 1
+            @test first(get_reports_with_test(result)) isa GlobalUndefVarErrorReport
+            @test first(get_reports_with_test(result)).name === :foo
         end
 
         let # deeper level
@@ -752,15 +752,15 @@ end
             end
 
             result = Core.eval(m, :($report_call(qux, (Int,); mode=:typo)))
-            @test length(get_reports(result)) === 1
-            @test first(get_reports(result)) isa GlobalUndefVarErrorReport
-            @test first(get_reports(result)).name === :baz
+            @test length(get_reports_with_test(result)) === 1
+            @test first(get_reports_with_test(result)) isa GlobalUndefVarErrorReport
+            @test first(get_reports_with_test(result)).name === :baz
 
             # works when cached
             result = Core.eval(m, :($report_call(qux, (Int,); mode=:typo)))
-            @test length(get_reports(result)) === 1
-            @test first(get_reports(result)) isa GlobalUndefVarErrorReport
-            @test first(get_reports(result)).name === :baz
+            @test length(get_reports_with_test(result)) === 1
+            @test first(get_reports_with_test(result)) isa GlobalUndefVarErrorReport
+            @test first(get_reports_with_test(result)).name === :baz
         end
     end
 
@@ -773,8 +773,8 @@ end
         end
 
         result = Core.eval(m, :($report_call(t->access_field(t,:w), (T,); mode=:typo)))
-        @test length(get_reports(result)) === 1
-        er = first(get_reports(result))
+        @test length(get_reports_with_test(result)) === 1
+        er = first(get_reports_with_test(result))
         @test er isa NoFieldErrorReport
         @test er.typ === m.T
         @test er.name === :w

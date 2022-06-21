@@ -48,8 +48,8 @@ end
     let result = report_opt((Vector{Any},)) do xs
             getsomething(xs[1]) # runtime dispatch !
         end
-        @test length(get_reports(result)) == 1
-        r = only(get_reports(result))
+        @test length(get_reports_with_test(result)) == 1
+        r = only(get_reports_with_test(result))
         @test isa(r, RuntimeDispatchReport)
         @test any(r.vst) do vf
             vf.file === Symbol(@__FILE__) &&
@@ -66,8 +66,8 @@ end
     let result = report_opt((Vector{Any},)) do xs
             isType1(xs[1])
         end
-        @test length(get_reports(result)) == 1
-        r = only(get_reports(result))
+        @test length(get_reports_with_test(result)) == 1
+        r = only(get_reports_with_test(result))
         @test isa(r, RuntimeDispatchReport)
         @test any(r.vst) do vf
             vf.file === Symbol(@__FILE__) &&
@@ -99,7 +99,7 @@ end
             end
             $report_opt(foo, (Int, Int))
         end
-        @test any(get_reports(result)) do report
+        @test any(get_reports_with_test(result)) do report
             return isa(report, CapturedVariableReport) &&
                    report.name === :a
         end
@@ -137,13 +137,13 @@ end
         end
 
         let result = @report_opt M.abmult(42)
-            @test any(get_reports(result)) do report
+            @test any(get_reports_with_test(result)) do report
                 return isa(report, CapturedVariableReport) &&
                        report.name === :r
             end
         end
         let result = @report_opt M.abmult2(42)
-            @test any(get_reports(result)) do report
+            @test any(get_reports_with_test(result)) do report
                 return isa(report, CapturedVariableReport) &&
                        report.name === :r
             end
@@ -169,8 +169,8 @@ end
             result = @eval M $report_opt((Vector{Any},)) do xs
                 with_runtime_dispatch(xs[1])
             end
-            @test !isempty(get_reports(result))
-            @test any(r->isa(r,RuntimeDispatchReport), get_reports(result))
+            @test !isempty(get_reports_with_test(result))
+            @test any(r->isa(r,RuntimeDispatchReport), get_reports_with_test(result))
         end
 
         let
@@ -191,8 +191,8 @@ end
                 result = @eval M $report_opt((Vector{Any},)) do ary
                     callf(sin, ary[1]) # runtime dispatch !
                 end
-                @test length(get_reports(result)) == 1
-                @test any(get_reports(result)) do r
+                @test length(get_reports_with_test(result)) == 1
+                @test any(get_reports_with_test(result)) do r
                     isa(r, RuntimeDispatchReport) &&
                     last(r.vst).file === Symbol(@__FILE__) && last(r.vst).line == (@__LINE__) - 5 # report for the lambda function
                 end
@@ -203,12 +203,12 @@ end
                 result = @eval M $report_opt((Vector{Any},); skip_noncompileable_calls=false) do ary
                     callf(sin, ary[1]) # runtime dispatch !
                 end
-                @test length(get_reports(result)) == 2
-                @test any(get_reports(result)) do r
+                @test length(get_reports_with_test(result)) == 2
+                @test any(get_reports_with_test(result)) do r
                     isa(r, RuntimeDispatchReport) &&
                     last(r.vst).file === Symbol(@__FILE__) && last(r.vst).line == (@__LINE__) - 5 # report for the lambda function
                 end
-                @test any(get_reports(result)) do r
+                @test any(get_reports_with_test(result)) do r
                     isa(r, RuntimeDispatchReport) &&
                     last(r.vst).file === Symbol(@__FILE__) && last(r.vst).line == CALLF_DEFINITION_LINE # report for `f(a::Any)`
                 end
@@ -223,8 +223,8 @@ end
                 result = @eval M $report_opt((Vector{Any},)) do ary
                     callg(sin, ary[1]) # no runtime dispatch here, but `g(a)` is runtime dispatch
                 end
-                @test length(get_reports(result)) == 1
-                @test any(get_reports(result)) do r
+                @test length(get_reports_with_test(result)) == 1
+                @test any(get_reports_with_test(result)) do r
                     isa(r, RuntimeDispatchReport) &&
                     last(r.vst).file === Symbol(@__FILE__) && last(r.vst).line == CALLG_DEFINITION_LINE # report for `g(a::Any)`
                 end
@@ -254,7 +254,7 @@ end
 
         let # we will get bunch of reports from the `println` call
             result = @report_opt M.compute(30)
-            @test !isempty(get_reports(result))
+            @test !isempty(get_reports_with_test(result))
         end
 
         let # if we use different `target_modules`, the reports from `println` should get filtered out

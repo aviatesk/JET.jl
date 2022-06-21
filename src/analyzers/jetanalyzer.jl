@@ -831,7 +831,7 @@ print_signature(::NoFieldErrorReport) = false
 
 @reportdef struct DivideErrorReport <: BuiltinErrorReport end
 let msg = sprint(showerror, DivideError())
-    global function print_report_message(io::IO, ::DivideError)
+    global function print_report_message(io::IO, ::DivideErrorReport)
         print(io, msg)
     end
 end

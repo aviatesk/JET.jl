@@ -8,12 +8,20 @@ include("interactive_utils.jl")
 # stuff used across tests
 using Test
 
+function get_reports_with_test(args...)
+    reports = get_reports(args...)
+    buf = IOBuffer()
+    print_reports(IOContext(buf, :color=>true), reports)
+    @test !isempty(String(take!(buf)))
+    return reports
+end
+
 const FIXTURE_DIR = normpath(@__DIR__, "fixtures")
 
 const ERROR_REPORTS_FROM_SUM_OVER_STRING = let
     result = report_call(sum, (String,))
-    @test !isempty(get_reports(result))
-    get_reports(result)
+    @test !isempty(get_reports_with_test(result))
+    get_reports_with_test(result)
 end
 
 get_msg(report::JET.InferenceErrorReport) = sprint(JET.print_report, report)
@@ -28,4 +36,4 @@ function test_sum_over_string(ers)
     return true
 end
 test_sum_over_string(res::JET.VirtualProcessResult) = test_sum_over_string(res.inference_error_reports)
-test_sum_over_string(res::JET.JETCallResult) = test_sum_over_string(get_reports(res))
+test_sum_over_string(res::JET.JETCallResult) = test_sum_over_string(get_reports_with_test(res))

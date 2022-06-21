@@ -9,7 +9,6 @@ import JET:
     AbstractAnalyzer,
     JETAnalyzer,
     AbstractGlobal,
-    get_result,
     ToplevelConfig,
     virtual_process,
     virtualize_module_context,
