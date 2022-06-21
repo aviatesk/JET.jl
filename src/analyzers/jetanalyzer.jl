@@ -307,15 +307,23 @@ end
     union_split::Int
 end
 function print_report_message(io::IO, (; t, union_split)::NoMethodErrorReport)
+    print(io, "no matching method found for ")
     if union_split == 0
-        print(io, "no matching method found for call signature (", t, ')')
+        print_callsig(io, t)
     else
         ts = t::Vector{Any}
         nts = length(ts)
-        print(io, "for ", nts, " of ", union_split, " union split cases, no matching method found for call signatures(")
-        join(io, ts, ", ")
-        print(io, ')')
+        for i = 1:nts
+            print_callsig(io, ts[i])
+            i == nts || print(io, ", ")
+        end
+        print(io, " (", nts, '/', union_split, " union split)")
     end
+end
+function print_callsig(io, @nospecialize(t))
+    print(io, '`')
+    Base.show_tuple_as_call(io, Symbol(""), t)
+    print(io, '`')
 end
 
 @static if IS_AFTER_42529
@@ -666,13 +674,16 @@ end
 end
 function print_report_message(io::IO, (; t, union_split)::NonBooleanCondErrorReport)
     if union_split == 0
-        print(io, "non-boolean (", t, ") used in boolean context")
+        print(io, "non-boolean `", t, "` found in boolean context")
     else
         ts = t::Vector{Any}
-        nt = length(ts)
-        print(io, "for ", nt, " of ", union_split, " union split cases, non-boolean (")
-        join(io, ts, ", ")
-        print(io, ") used in boolean context")
+        nts = length(ts)
+        print(io, "non-boolean ")
+        for i = 1:nts
+            print(io, '`', ts[i], '`')
+            i == nts || print(io, ", ")
+        end
+        print(io, " found in boolean context (", nts, '/', union_split, " union split)")
     end
 end
 

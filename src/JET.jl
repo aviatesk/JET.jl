@@ -1412,7 +1412,7 @@ check errors: JET-test failed at none:3
   Expression: #= none:3 =# JET.@test_call f(ref)
   ═════ 1 possible error found ═════
   ┌ @ none:1 Main.sin(Base.getindex(ref))
-  │ for 1 of union split cases, no matching method found for call signatures (Tuple{typeof(sin), Nothing})): Main.sin(Base.getindex(ref::Base.RefValue{Union{Nothing, Int64}})::Union{Nothing, Int64})
+  │ no matching method found for `sin(::Nothing)` (1/2 union split): Main.sin(Base.getindex(ref::Base.RefValue{Union{Nothing, Int64}})::Union{Nothing, Int64})
   └──────────
 
 Test Summary: | Pass  Fail  Broken  Total

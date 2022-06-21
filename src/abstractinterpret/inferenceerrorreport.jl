@@ -391,14 +391,17 @@ For example, [`JETAnalyzer`](@ref)'s `NoMethodErrorReport` is defined as follows
     union_split::Int
 end
 function print_report_message(io::IO, (; t, union_split)::NoMethodErrorReport)
+    print(io, "no matching method found for ")
     if union_split == 0
-        print(io, "no matching method found for call signature (", t, ')')
+        print_callsig(io, t)
     else
         ts = t::Vector{Any}
         nts = length(ts)
-        print(io, "for ", nts, " of ", union_split, " union split cases, no matching method found for call signatures(")
-        join(io, ts, ", ")
-        print(io, ')')
+        for i = 1:nts
+            print_callsig(io, ts[i])
+            i == nts || print(io, ", ")
+        end
+        print(io, " (", nts, '/', union_split, " union split)")
     end
 end
 ```

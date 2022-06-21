@@ -358,7 +358,7 @@ end
             foo(p, i) = p.i = i
         end
 
-        # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)" should be threw away
+        # report for `Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)` should be threw away
         result = Core.eval(m, :($report_call(foo, (P, Int))))
         @test isempty(get_reports(result))
 
@@ -378,7 +378,7 @@ end
             bar(args...) = foo(args...)
         end
 
-        # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)" should be threw away
+        # report for `Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)` should be threw away
         result = Core.eval(m, :($report_call(bar, (P, Int))))
         @test isempty(get_reports(result))
 
@@ -403,8 +403,8 @@ end
             $report_call(foo, (P, Int, #= invalid =# Int))
         end)
 
-        # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)" should be threw away, while
-        # "no matching method found for call signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{String}, v::Int64)" should be kept
+        # report for `Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)` should be threw away, while
+        # report for `Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{String}, v::Int64)` should be kept
         @test length(get_reports(result)) === 1
         er = first(get_reports(result))
         @test er isa NoMethodErrorReport
@@ -427,13 +427,14 @@ end
             $report_call(foo, (P, String, Int))
         end)
 
-        # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::String)" should be narrowed down to "no matching method found for call signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{Int}, v::String)"
+        # report for `Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::String)` should be narrowed down to
+        # report for `Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{Int}, v::String)`
         @test !isempty(get_reports(result))
         @test any(get_reports(result)) do report
             report isa NoMethodErrorReport &&
             report.t === Tuple{typeof(convert), Type{Int}, String}
         end
-        # "no matching method found for call signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{String}, v::Int)"
+        # report for `Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{String}, v::Int)`
         # won't be reported since `typeinf` early escapes on `Bottom`-annotated statement
     end
 
