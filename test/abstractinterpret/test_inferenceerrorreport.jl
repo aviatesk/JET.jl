@@ -22,8 +22,8 @@ end
     result = report_call((Char,Char)) do a, b
         a + b
     end
-    @test length(get_reports(result)) == 1
-    r = first(get_reports(result))
+    @test length(get_reports_with_test(result)) == 1
+    r = first(get_reports_with_test(result))
     @test isa(r, NoMethodErrorReport)
     @test Any['(', 'a', Char, ", ", 'b', Char, ')'] ⫇ r.sig._sig
 end
@@ -33,8 +33,8 @@ end
         foo(s::AbstractString) = throw(ArgumentError(s))
     end
     result = report_call(m.foo, (String,))
-    @test length(get_reports(result)) == 1
-    r = first(get_reports(result))
+    @test length(get_reports_with_test(result)) == 1
+    r = first(get_reports_with_test(result))
     @test isa(r, UncaughtExceptionReport)
     @test Any['(', 's', String, ')', ArgumentError] ⫇ r.sig._sig
 end

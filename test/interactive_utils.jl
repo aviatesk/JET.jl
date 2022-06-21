@@ -9,7 +9,6 @@ import JET:
     AbstractAnalyzer,
     JETAnalyzer,
     AbstractGlobal,
-    get_result,
     ToplevelConfig,
     virtual_process,
     virtualize_module_context,
@@ -60,7 +59,7 @@ Creates a virtual module and defines fixtures from toplevel expression `ex`
 macro fixturedef(ex)
     @assert isexpr(ex, :block)
     return quote let
-        vmod = $gen_virtual_module()
+        vmod = Module()
         for x in $(ex.args)
             Core.eval(vmod, x)
         end

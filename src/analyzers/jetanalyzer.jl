@@ -131,9 +131,8 @@ end
 @reportdef struct GeneratorErrorReport <: InferenceErrorReport
     @nospecialize err # actual error wrapped
 end
-function print_report(io::IO, (; err, sig)::GeneratorErrorReport)
-    msg = sprint(showerror, err)
-    default_report_printer(io, msg, sig)
+function print_report_message(io::IO, (; err)::GeneratorErrorReport)
+    showerror(io, err)
 end
 
 # XXX what's the "soundness" of a `@generated` function ?
@@ -181,9 +180,10 @@ end
 @reportdef struct LocalUndefVarErrorReport <: InferenceErrorReport
     name::Symbol
 end
-function print_report(io::IO, (; name)::LocalUndefVarErrorReport)
-    print_error(io, "local variable $(name) is not defined")
+function print_report_message(io::IO, (; name)::LocalUndefVarErrorReport)
+    print(io, "local variable $(name) is not defined")
 end
+print_signature(::LocalUndefVarErrorReport) = false
 
 # these report passes use `:throw_undef_if_not` and `:(unreachable)` introduced by the native
 # optimization pass, and thus supposed to only work on post-optimization code
@@ -241,9 +241,9 @@ function UncaughtExceptionReport(sv::InferenceState, throw_calls::Vector{Tuple{I
     end
     return UncaughtExceptionReport([vf], Signature(sig), throw_calls)
 end
-function print_report(io::IO, (; throw_calls, sig)::UncaughtExceptionReport)
+function print_report_message(io::IO, (; throw_calls)::UncaughtExceptionReport)
     msg = length(throw_calls) == 1 ? "may throw" : "may throw either of"
-    default_report_printer(io, msg, sig)
+    print(io, msg)
 end
 
 # report `throw` calls "appropriately"
@@ -306,16 +306,24 @@ end
     @nospecialize t # ::Union{Type, Vector{Type}}
     union_split::Int
 end
-function print_report(io::IO, (; t, union_split, sig)::NoMethodErrorReport)
+function print_report_message(io::IO, (; t, union_split)::NoMethodErrorReport)
+    print(io, "no matching method found for ")
     if union_split == 0
-        msg = lazy"no matching method found for call signature ($t)"
+        print_callsig(io, t)
     else
         ts = t::Vector{Any}
         nts = length(ts)
-        tss = join(ts, ", ")
-        msg = lazy"for $nts of $union_split union split cases, no matching method found for call signatures ($tss))"
+        for i = 1:nts
+            print_callsig(io, ts[i])
+            i == nts || print(io, ", ")
+        end
+        print(io, " (", nts, '/', union_split, " union split)")
     end
-    default_report_printer(io, msg, sig)
+end
+function print_callsig(io, @nospecialize(t))
+    print(io, '`')
+    Base.show_tuple_as_call(io, Symbol(""), t)
+    print(io, '`')
 end
 
 @static if IS_AFTER_42529
@@ -487,8 +495,8 @@ function CC.return_type_tfunc(analyzer::JETAnalyzer, argtypes::Argtypes, sv::Inf
 end
 
 @reportdef struct InvalidReturnTypeCall <: InferenceErrorReport end
-function print_report(io::IO, (; sig)::InvalidReturnTypeCall)
-    default_report_printer(io, "invalid `Core.Compiler.return_type` call", sig)
+function print_report_message(io::IO, ::InvalidReturnTypeCall)
+    print(io, "invalid `Core.Compiler.return_type` call")
 end
 
 function (::SoundBasicPass)(::Type{InvalidReturnTypeCall}, analyzer::AbstractAnalyzer, sv::InferenceState, argtypes::Argtypes)
@@ -529,29 +537,32 @@ end # @static if IS_AFTER_42529
 @reportdef struct InvalidInvokeErrorReport <: InferenceErrorReport
     argtypes::Argtypes
 end
-function print_report(io::IO, (; argtypes, sig)::InvalidInvokeErrorReport)
-    default_report_printer(io, invalid_invoke_error_msg(argtypes), sig)
-end
-function invalid_invoke_error_msg(argtypes::Argtypes)
+function print_report_message(io::IO, (; argtypes)::InvalidInvokeErrorReport)
     fallback_msg = "invalid invoke" # mostly because of runtime unreachable
 
     ft = widenconst(argtype_by_index(argtypes, 2))
-    ft === Bottom && return fallback_msg
+    if ft === Bottom
+        print(io, "invalid invoke") # mostly because of runtime unreachable
+        return
+    end
 
     t = argtype_by_index(argtypes, 3)
     (types, isexact, isconcrete, istype) = instanceof_tfunc(t)
     if types === Bottom
         if isa(t, Const)
             type = typeof(t.val)
-            return lazy"argument type should be `Type`-object (given `$type`)"
+            print(io, "argument type should be `Type`-object (given `", type, "`)")
+        else
+            print(io, "invalid invoke") # mostly because of runtime unreachable
         end
-        return fallback_msg
+        return
     end
 
     argtype = argtypes_to_type(argtype_tail(argtypes, 4))
     nargtype = typeintersect(types, argtype)
     @assert nargtype === Bottom
-    return lazy"actual argument type (`$argtype`) doesn't intersect with specified argument type (`$types`)"
+    print(io, "actual argument type `", argtype, "` doesn't intersect with specified argument type `", types, '`')
+    return
 end
 
 function (::SoundBasicPass)(::Type{InvalidInvokeErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, ret::CallMeta, argtypes::Argtypes)
@@ -592,9 +603,10 @@ end
     mod::Module
     name::Symbol
 end
-function print_report(io::IO, (; mod, name)::GlobalUndefVarErrorReport)
-    print_error(io, lazy"variable $(mod).$(name) is not defined")
+function print_report_message(io::IO, (; mod, name)::GlobalUndefVarErrorReport)
+    print(io, "variable ", mod, '.', name, " is not defined")
 end
+print_signature(::GlobalUndefVarErrorReport) = false
 
 (::SoundPass)(::Type{GlobalUndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, mod::Module, name::Symbol) =
     report_undef_var!(analyzer, sv, mod, name, true)
@@ -660,16 +672,19 @@ end
     @nospecialize t # ::Union{Type, Vector{Type}}
     union_split::Int
 end
-function print_report(io::IO, (; t, union_split, sig)::NonBooleanCondErrorReport)
+function print_report_message(io::IO, (; t, union_split)::NonBooleanCondErrorReport)
     if union_split == 0
-        msg = lazy"non-boolean ($t) used in boolean context"
+        print(io, "non-boolean `", t, "` found in boolean context")
     else
         ts = t::Vector{Any}
-        nt = length(ts)
-        tss = join(ts, ", ")
-        msg = lazy"for $nt of $union_split union split cases, non-boolean ($tss) used in boolean context"
+        nts = length(ts)
+        print(io, "non-boolean ")
+        for i = 1:nts
+            print(io, '`', ts[i], '`')
+            i == nts || print(io, ", ")
+        end
+        print(io, " found in boolean context (", nts, '/', union_split, " union split)")
     end
-    default_report_printer(io, msg, sig)
 end
 
 function (::SoundPass)(::Type{NonBooleanCondErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(t))
@@ -768,9 +783,9 @@ This is reported regardless of whether it's caught by control flow or not, as op
     # in order to avoid duplicated reports from the same `throw` call
     loc::LineInfoNode
 end
-function print_report(io::IO, (; err, sig)::SeriousExceptionReport)
-    msg = string(first(split(sprint(showerror, err), '\n')))
-    default_report_printer(io, msg, sig)
+function print_report_message(io::IO, (; err)::SeriousExceptionReport)
+    s = with_bufferring(io->showerror(io, err))
+    print(io, first(split(s, '\n')))
 end
 
 (::BasicPass)(::Type{SeriousExceptionReport}, analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes) =
@@ -809,24 +824,26 @@ abstract type BuiltinErrorReport <: InferenceErrorReport end
     @nospecialize typ # ::Type
     name::Symbol
 end
-function print_report(io::IO, (; typ, name)::NoFieldErrorReport)
-    msg = lazy"type $(typ) has no field $(name)"
-    print_error(io, msg)
+function print_report_message(io::IO, (; typ, name)::NoFieldErrorReport)
+    print(io, "type ", typ, " has no field ", name)
 end
+print_signature(::NoFieldErrorReport) = false
 
 @reportdef struct DivideErrorReport <: BuiltinErrorReport end
 let msg = sprint(showerror, DivideError())
-    global function print_report(io::IO, ::DivideErrorReport)
-        print_error(io, msg)
+    global function print_report_message(io::IO, ::DivideErrorReport)
+        print(io, msg)
     end
 end
+print_signature(::DivideErrorReport) = false
 
 @reportdef struct InvalidBuiltinCallErrorReport <: BuiltinErrorReport
     argtypes::Argtypes
 end
-function print_report(io::IO, ::InvalidBuiltinCallErrorReport)
-    print_error(io, "invalid builtin function call")
+function print_report_message(io::IO, ::InvalidBuiltinCallErrorReport)
+    print(io, "invalid builtin function call")
 end
+print_signature(::InvalidBuiltinCallErrorReport) = false
 
 # TODO we do need sound versions of these functions
 # XXX for general case JET just relies on the (maybe too permissive) return type from native

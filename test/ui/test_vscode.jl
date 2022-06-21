@@ -50,7 +50,7 @@ end
 
     # basic case
     let res = @report_call sum("julia")
-        reports = get_reports(res)
+        reports = get_reports_with_test(res)
         diagnostics = vscode_diagnostics(res.analyzer,
                                          reports,
                                          res.source,
@@ -64,7 +64,7 @@ end
 
     # no error case
     let res = @report_call sum(1:100)
-        reports = get_reports(res)
+        reports = get_reports_with_test(res)
         diagnostics = vscode_diagnostics(res.analyzer,
                                          reports,
                                          res.source,
@@ -84,7 +84,7 @@ end
             write(path, s)
             report_file2(path)
         end
-        reports = get_reports(res)
+        reports = get_reports_with_test(res)
         diagnostics = vscode_diagnostics(res.analyzer,
                                          reports,
                                          res.source,
@@ -105,7 +105,7 @@ end
             write(path, s)
             report_file2(path)
         end
-        reports = get_reports(res)
+        reports = get_reports_with_test(res)
         diagnostics = vscode_diagnostics(res.analyzer,
                                          reports,
                                          res.source,

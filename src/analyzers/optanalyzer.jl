@@ -239,10 +239,14 @@ end
 @reportdef struct CapturedVariableReport <: InferenceErrorReport
     name::Union{Nothing,Symbol}
 end
-function print_report(io::IO, (; name)::CapturedVariableReport)
-    msg = isnothing(name) ? "captured variable detected" : "captured variable `$name` detected"
-    print_error(io, msg)
+function print_report_message(io::IO, (; name)::CapturedVariableReport)
+    if isnothing(name)
+        print(io, "captured variable detected")
+    else
+        print(io, "captured variable `", name, "` detected")
+    end
 end
+print_signature(::CapturedVariableReport) = false
 function (::OptAnalysisPass)(::Type{CapturedVariableReport}, analyzer::OptAnalyzer, frame::InferenceState)
     local reported = false
     code = frame.src.code
@@ -291,8 +295,8 @@ end
 
 # report optimization failure due to recursive calls, etc.
 @reportdef struct OptimizationFailureReport <: InferenceErrorReport end
-function print_report(io::IO, (; sig)::OptimizationFailureReport)
-    default_report_printer(io, "failed to optimize", sig)
+function print_report_message(io::IO, ::OptimizationFailureReport)
+    print(io, "failed to optimize")
 end
 function (::OptAnalysisPass)(::Type{OptimizationFailureReport}, analyzer::OptAnalyzer, caller::InferenceResult)
     if caller.src === nothing # the optimization didn't happen
@@ -303,8 +307,8 @@ function (::OptAnalysisPass)(::Type{OptimizationFailureReport}, analyzer::OptAna
 end
 
 @reportdef struct RuntimeDispatchReport <: InferenceErrorReport end
-function print_report(io::IO, (; sig)::RuntimeDispatchReport)
-    default_report_printer(io, "runtime dispatch detected", sig)
+function print_report_message(io::IO, ::RuntimeDispatchReport)
+    print(io, "runtime dispatch detected")
 end
 function (::OptAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::OptAnalyzer, caller::InferenceResult, opt::OptimizationState)
     (; src, sptypes, slottypes) = opt

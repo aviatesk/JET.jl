@@ -302,13 +302,22 @@ If `T` implements this interface, the following requirements should be satisfied
     constructor to create `T` from the cache, which _should_ copy `vst` and expand `spec_args` into each specific field
 ---
 - **A error message printer** \\
-  `T` should also implement `print_report(io::IO, report::T)`,
+  `T` should also implement `print_report_message(io::IO, report::T)`,
   which prints to `io` and describes _why_ it is reported.
+  `T` can optionally overload:
+  - `print_signature(::T) -> Bool` to configure whether or not to print the report signature
+     (defaults to `true`)
+  - `report_color(::T) -> Symbol` to configure the printed color for `T` (defaults to `:red`)
 ---
 
 See also: [@reportdef](@ref), [`VirtualStackTrace`](@ref), [`VirtualFrame`](@ref)
 """
 abstract type InferenceErrorReport end
+
+print_report_message(io::IO, report::InferenceErrorReport) = (@nospecialize;
+    error(lazy"`print_report_message(::IO, ::$(typeof(report)))` is not implemented"))
+print_signature(::InferenceErrorReport) = true
+report_color(::InferenceErrorReport) = ERROR_COLOR
 
 # to help inference
 function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
@@ -337,18 +346,6 @@ end
 
 get_spec_args(report::InferenceErrorReport) = (@nospecialize;
     error(lazy"`get_spec_args(::$(typeof(report)))` is not implemented"))
-print_report(io::IO, report::InferenceErrorReport) = (@nospecialize;
-    error(lazy"`print_report(::IO, ::$(typeof(report)))` is not implemented"))
-
-# default error report printer
-function default_report_printer(io::IO, msg::AbstractString, sig::Signature)
-    print_error(io, msg)
-    printstyled(io, ": "; color = ERROR_COLOR)
-    print_signature(io, sig,  (; annotate_types = true); bold = true)
-end
-function print_error(io::IO, msg::AbstractString)
-    printstyled(io, "│ ", msg; color = ERROR_COLOR)
-end
 
 # cache
 # -----
@@ -385,7 +382,7 @@ JET internally uses this `@reportdef` utility macro, which takes a `struct` defi
 `InferenceErrorReport` without the required fields specified, and automatically defines
 the `struct` as well as constructor definitions.
 If the report `T <: InferenceErrorReport` is defined using `@reportdef`,
-then `T` just needs to implement the [`print_report`](@ref) interface.
+then `T` just needs to implement the `print_report_message` interface.
 
 For example, [`JETAnalyzer`](@ref)'s `NoMethodErrorReport` is defined as follows:
 ```julia
@@ -393,16 +390,19 @@ For example, [`JETAnalyzer`](@ref)'s `NoMethodErrorReport` is defined as follows
     @nospecialize t # ::Union{Type, Vector{Type}}
     union_split::Int
 end
-function print_report(io::IO, (; t, union_split, sig)::NoMethodErrorReport)
+function print_report_message(io::IO, (; t, union_split)::NoMethodErrorReport)
+    print(io, "no matching method found for ")
     if union_split == 0
-        msg = lazy"no matching method found for call signature (\$t)"
+        print_callsig(io, t)
     else
         ts = t::Vector{Any}
         nts = length(ts)
-        tss = join(ts, ", ")
-        msg = lazy"for \$nts of \$union_split union split cases, no matching method found for call signatures (\$tss))"
+        for i = 1:nts
+            print_callsig(io, ts[i])
+            i == nts || print(io, ", ")
+        end
+        print(io, " (", nts, '/', union_split, " union split)")
     end
-    default_report_printer(io, msg, sig)
 end
 ```
 and constructed as like `NoMethodErrorReport(sv::InferenceState, atype::Any, 0)`.

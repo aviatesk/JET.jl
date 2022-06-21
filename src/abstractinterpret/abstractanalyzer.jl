@@ -600,8 +600,8 @@ pre-defined report passes doesn't make any use of `NativeRemark`.
 @reportdef struct NativeRemark <: InferenceErrorReport
     s::String
 end
-function print_report(io::IO, (; s, sig)::NativeRemark)
-    default_report_printer(io, s, sig)
+function print_report_message(io::IO, (; s)::NativeRemark)
+    print(io, s)
 end
 CC.add_remark!(analyzer::AbstractAnalyzer, sv::InferenceState, s) = ReportPass(analyzer)(NativeRemark, sv, s) # ignored by default
 

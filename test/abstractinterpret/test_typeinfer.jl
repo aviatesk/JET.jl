@@ -145,7 +145,7 @@ end
         result = report_call((Nothing,)) do a
             a.field
         end
-        @test length(get_reports(result)) === 1
+        @test length(get_reports_with_test(result)) === 1
     end
 end
 
@@ -156,7 +156,7 @@ end
         # analyze the first definition
         @eval m foo(a, b) = (sum(a), b)
         result = @report_call m.foo([1,2,3], "julia")
-        @test isempty(get_reports(result))
+        @test isempty(get_reports_with_test(result))
 
         # renew the definition and invalidate it
         @eval m foo(a, b) = (a, sum(b))
@@ -171,7 +171,7 @@ end
         # analyze the first definition
         @eval m foo(a, b) = (sum(a), b)
         result = @report_call m.callf(m.foo, [1,2,3], "julia")
-        @test isempty(get_reports(result))
+        @test isempty(get_reports_with_test(result))
 
         # renew the definition and invalidate it
         @eval m foo(a, b) = (a, sum(b))
@@ -261,7 +261,7 @@ end
                 sum′′("julia")
             end
         end)
-        test_sum_over_string(get_reports(result))
+        test_sum_over_string(get_reports_with_test(result))
     end
 
     # incremental setup
@@ -273,7 +273,7 @@ end
                 sum("julia")
             end
         end)
-        test_sum_over_string(get_reports(result))
+        test_sum_over_string(get_reports_with_test(result))
 
         result = Core.eval(m, quote
             sum′(s) = sum(s)
@@ -281,7 +281,7 @@ end
                 sum′("julia")
             end
         end)
-        test_sum_over_string(get_reports(result))
+        test_sum_over_string(get_reports_with_test(result))
 
         result = Core.eval(m, quote
             sum′′(s) = sum′(s)
@@ -289,7 +289,7 @@ end
                 sum′′("julia")
             end
         end)
-        test_sum_over_string(get_reports(result))
+        test_sum_over_string(get_reports_with_test(result))
     end
 
     # should not error for virtual stacktrace traversing with a frame for inner constructor
@@ -315,7 +315,7 @@ end
             end
         end)
 
-        @test !isempty(get_reports(result))
+        @test !isempty(get_reports_with_test(result))
         @test !isempty(get_cache(result.analyzer))
         @test any(get_cache(result.analyzer)) do analysis_result
             analysis_result.argtypes==Any[CC.Const(getproperty),m.Foo{Int},CC.Const(:baz)]
@@ -336,7 +336,7 @@ end
         end)
 
         # there should be local cache for each errorneous constant analysis
-        @test !isempty(get_reports(result))
+        @test !isempty(get_reports_with_test(result))
         @test !isempty(get_cache(result.analyzer))
         @test any(get_cache(result.analyzer)) do analysis_result
             analysis_result.argtypes==Any[CC.Const(m.getter),m.Foo{Int},CC.Const(:baz)]
@@ -358,13 +358,13 @@ end
             foo(p, i) = p.i = i
         end
 
-        # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)" should be threw away
+        # report for `Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)` should be threw away
         result = Core.eval(m, :($report_call(foo, (P, Int))))
-        @test isempty(get_reports(result))
+        @test isempty(get_reports_with_test(result))
 
         # works for cache
         result = Core.eval(m, :($report_call(foo, (P, Int))))
-        @test isempty(get_reports(result))
+        @test isempty(get_reports_with_test(result))
     end
 
     # more cache test, constant prop should re-run in deeper level
@@ -378,13 +378,13 @@ end
             bar(args...) = foo(args...)
         end
 
-        # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)" should be threw away
+        # report for `Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)` should be threw away
         result = Core.eval(m, :($report_call(bar, (P, Int))))
-        @test isempty(get_reports(result))
+        @test isempty(get_reports_with_test(result))
 
         # works for cache
         result = Core.eval(m, :($report_call(bar, (P, Int))))
-        @test isempty(get_reports(result))
+        @test isempty(get_reports_with_test(result))
     end
 
     # constant prop should not exclude those are not related
@@ -403,10 +403,10 @@ end
             $report_call(foo, (P, Int, #= invalid =# Int))
         end)
 
-        # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)" should be threw away, while
-        # "no matching method found for call signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{String}, v::Int64)" should be kept
-        @test length(get_reports(result)) === 1
-        er = first(get_reports(result))
+        # report for `Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)` should be threw away, while
+        # report for `Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{String}, v::Int64)` should be kept
+        @test length(get_reports_with_test(result)) === 1
+        er = first(get_reports_with_test(result))
         @test er isa NoMethodErrorReport
         @test er.t === Tuple{typeof(convert), Type{String}, Int}
     end
@@ -427,13 +427,14 @@ end
             $report_call(foo, (P, String, Int))
         end)
 
-        # "for one of the union split cases, no matching method found for signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::String)" should be narrowed down to "no matching method found for call signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{Int}, v::String)"
-        @test !isempty(get_reports(result))
-        @test any(get_reports(result)) do report
+        # report for `Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::String)` should be narrowed down to
+        # report for `Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{Int}, v::String)`
+        @test !isempty(get_reports_with_test(result))
+        @test any(get_reports_with_test(result)) do report
             report isa NoMethodErrorReport &&
             report.t === Tuple{typeof(convert), Type{Int}, String}
         end
-        # "no matching method found for call signature: Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{String}, v::Int)"
+        # report for `Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{String}, v::Int)`
         # won't be reported since `typeinf` early escapes on `Bottom`-annotated statement
     end
 
@@ -446,8 +447,8 @@ end
             bar() = foo(-1), foo(1) # constant analysis on `foo(1)` shouldn't throw away reports from `foo(-1)`
             $report_call(bar)
         end)
-        @test !isempty(get_reports(result))
-        @test any(r->isa(r,NoMethodErrorReport), get_reports(result))
+        @test !isempty(get_reports_with_test(result))
+        @test any(r->isa(r,NoMethodErrorReport), get_reports_with_test(result))
     end
 
     let
@@ -461,9 +462,9 @@ end
             end
             $report_call(bar, (Bool,))
         end)
-        @test !isempty(get_reports(result))
+        @test !isempty(get_reports_with_test(result))
         # FIXME our report uniquify logic might be wrong and it wrongly singlifies the different reports here
-        @test_broken count(isa(report, NoMethodErrorReport) for report in get_reports(result)) == 2
+        @test_broken count(isa(report, NoMethodErrorReport) for report in get_reports_with_test(result)) == 2
     end
 
     @testset "constant analysis throws away false positive reports" begin
@@ -475,19 +476,19 @@ end
 
             # constant propagation can reveal the error pass can't happen
             result = Core.eval(m, :($report_call(()->bar(10))))
-            @test isempty(get_reports(result))
+            @test isempty(get_reports_with_test(result))
 
             # for this case, no constant prop' doesn't happen, we can't throw away error pass
             result = Core.eval(m, :($report_call(bar, (Int,))))
-            @test length(get_reports(result)) === 1
-            er = first(get_reports(result))
+            @test length(get_reports_with_test(result)) === 1
+            er = first(get_reports_with_test(result))
             @test er isa NoMethodErrorReport
             @test er.t == [Tuple{typeof(+),String,Int}]
 
             # if we run constant prop' that leads to the error pass, we should get the reports
             result = Core.eval(m, :($report_call(()->bar(0))))
-            @test length(get_reports(result)) === 1
-            er = first(get_reports(result))
+            @test length(get_reports_with_test(result)) === 1
+            er = first(get_reports_with_test(result))
             @test er isa NoMethodErrorReport
             @test er.t === Tuple{typeof(+),String,Int}
         end
@@ -510,8 +511,8 @@ end
 
             # no constant prop, just report everything
             result = Core.eval(m, :($report_call(foo, (Int,))))
-            @test length(get_reports(result)) === 1
-            er = first(get_reports(result))
+            @test length(get_reports_with_test(result)) === 1
+            er = first(get_reports_with_test(result))
             @test er isa NonBooleanCondErrorReport &&
                 er.t === Int
 
@@ -521,7 +522,7 @@ end
                     foo(1)
                 end
             end)
-            @test isempty(get_reports(result))
+            @test isempty(get_reports_with_test(result))
 
             # constant prop'ed, still we want to have the non-boolean condition report from `baz1`
             result = Core.eval(m, quote
@@ -529,14 +530,14 @@ end
                     foo(0)
                 end
             end)
-            @test length(get_reports(result)) === 1
-            er = first(get_reports(result))
+            @test length(get_reports_with_test(result)) === 1
+            er = first(get_reports_with_test(result))
             @test er isa NonBooleanCondErrorReport &&
                 er.t === Int
 
             # so `Bool` is good for `foo` after all
             result = Core.eval(m, :($report_call(foo, (Bool,))))
-            @test isempty(get_reports(result))
+            @test isempty(get_reports_with_test(result))
         end
 
         # end to end
@@ -576,14 +577,14 @@ end
         schedule(t)
         fetch(t)
     end
-    test_sum_over_string(get_reports(result))
+    test_sum_over_string(get_reports_with_test(result))
 
     # handle `Threads.@spawn` (https://github.com/aviatesk/JET.jl/issues/114)
     result = report_call() do
         fetch(Threads.@spawn 1 + "foo")
     end
-    @test length(get_reports(result)) == 1
-    let r = first(get_reports(result))
+    @test length(get_reports_with_test(result)) == 1
+    let r = first(get_reports_with_test(result))
         @test isa(r, NoMethodErrorReport)
         @test r.t === Tuple{typeof(+), Int, String}
     end
@@ -596,8 +597,8 @@ end
         end
         return a
     end
-    @test !isempty(get_reports(result))
-    @test any(get_reports(result)) do r
+    @test !isempty(get_reports_with_test(result))
+    @test any(get_reports_with_test(result)) do r
         isa(r, NoMethodErrorReport) &&
         r.t === Tuple{typeof(convert), Type{String}, Int}
     end
@@ -608,12 +609,12 @@ end
         t2 = Threads.@spawn "foo" + 1
         fetch(t1), fetch(t2)
     end
-    @test length(get_reports(result)) == 2
-    let r = get_reports(result)[1]
+    @test length(get_reports_with_test(result)) == 2
+    let r = get_reports_with_test(result)[1]
         @test isa(r, NoMethodErrorReport)
         @test r.t === Tuple{typeof(+), Int, String}
     end
-    let r = get_reports(result)[2]
+    let r = get_reports_with_test(result)[2]
         @test isa(r, NoMethodErrorReport)
         @test r.t === Tuple{typeof(+), String, Int}
     end
@@ -627,7 +628,7 @@ end
         schedule(t0)
         fetch(t0)
     end
-    test_sum_over_string(get_reports(result))
+    test_sum_over_string(get_reports_with_test(result))
 
     # when `schedule` call is separated from `Task` definition
     make_task(s) = Task() do
@@ -642,8 +643,8 @@ end
 
         run_task(t)
     end
-    test_sum_over_string(get_reports(result))
-    let r = first(get_reports(result))
+    test_sum_over_string(get_reports_with_test(result))
+    let r = first(get_reports_with_test(result))
         # we want report to come from `run_task`, but currently we invoke JET analysis on `Task` construction
         @test_broken any(r.vst) do vf
             vf.linfo.def.name === :run_task
@@ -655,8 +656,8 @@ end
     result = report_call() do
         fetch(Threads.@spawn throw("foo"))
     end
-    @test_broken length(get_reports(result)) == 1
-    @test_broken isa(first(get_reports(result)), UncaughtExceptionReport)
+    @test_broken length(get_reports_with_test(result)) == 1
+    @test_broken isa(first(get_reports_with_test(result)), UncaughtExceptionReport)
 
     # don't fail into infinite loop (rather, don't spoil inference termination)
     m = @fixturedef begin

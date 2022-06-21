@@ -261,7 +261,7 @@ function print_reports(io::IO,
                 toplevel_linfo_hash = new_toplevel_linfo_hash
                 wrote_linfos = Set{UInt64}()
             end
-            print_report(io, report, config, wrote_linfos)
+            print_stack(io, report, config, wrote_linfos)
         end
     end |> postprocess |> (x->print(io::IO,x))
 
@@ -269,7 +269,7 @@ function print_reports(io::IO,
 end
 
 # traverse abstract call stack, print frames
-function print_report(io, report::InferenceErrorReport, config, wrote_linfos, depth = 1)
+function print_stack(io, report, config, wrote_linfos, depth = 1)
     if length(report.vst) == depth # error here
         return print_error_frame(io, report, config, depth)
     end
@@ -282,32 +282,45 @@ function print_report(io, report::InferenceErrorReport, config, wrote_linfos, de
     push!(wrote_linfos, linfo_hash)
 
     # print current frame and go into deeper
-    should_print && print_frame(io, frame, config, depth, false)
-    print_report(io, report, config, wrote_linfos, depth + 1)
+    should_print && print_frame(io, frame, config, depth)
+    print_stack(io, report, config, wrote_linfos, depth + 1)
 end
 
-function print_error_frame(io, report, config, depth)
-    frame = report.vst[depth]
-
-    len = print_frame(io, frame, config, depth, true)
-    print_rails(io, depth-1)
-    print_report(io, report)
-    println(io)
-
-    print_rails(io, depth-1)
-    printlnstyled(io, '└', '─'^len; color = ERROR_COLOR)
-end
-
-function print_frame(io, frame, config, depth, is_err)
+function print_frame(io, frame, config, depth, color = RAIL_COLORS[(depth)%N_RAILS+1])
     print_rails(io, depth-1)
 
-    color = is_err ? ERROR_COLOR : RAIL_COLORS[(depth)%N_RAILS+1]
     s = string("┌ @ ", (config.fullpath ? tofullpath : identity)(string(frame.file)), ':', frame.line)
     printstyled(io, s, ' '; color)
     print_signature(io, frame.sig, config)
     println(io)
 
     return length(s) # the length of frame info string
+end
+
+function print_error_frame(io, report, config, depth)
+    frame = report.vst[depth]
+
+    color = report_color(report)
+    len = print_frame(io, frame, config, depth, color)
+    print_rails(io, depth-1)
+    printstyled(io, "│ "; color)
+    print_report(io, report)
+    println(io)
+
+    print_rails(io, depth-1)
+    printlnstyled(io, '└', '─'^len; color)
+end
+
+function print_report(io::IO, report::InferenceErrorReport)
+    color = report_color(report)
+    msg = with_bufferring() do io
+        print_report_message(io, report)
+    end
+    printstyled(io, msg; color)
+    if print_signature(report)
+        printstyled(io, ": "; color)
+        print_signature(io, report.sig, (; annotate_types=true); bold=true)
+    end
 end
 
 function print_signature(io, sig::Signature, config; kwargs...)
