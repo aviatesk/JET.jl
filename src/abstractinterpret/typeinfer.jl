@@ -35,7 +35,7 @@ end
 An overload for `abstract_call_gf_by_type(analyzer::AbstractAnalyzer, ...)`, which keeps
 inference on non-concrete call sites in a toplevel frame created by [`virtual_process`](@ref).
 """
-CC.bail_out_toplevel_call(analyzer::AbstractAnalyzer, @nospecialize(sig), sv) = false
+CC.bail_out_toplevel_call(analyzer::AbstractAnalyzer, @nospecialize(sig), sv::InferenceState) = false
 
 function CC.abstract_eval_special_value(analyzer::AbstractAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
     if istoplevel(sv)

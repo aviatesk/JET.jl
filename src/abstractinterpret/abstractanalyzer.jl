@@ -603,7 +603,7 @@ end
 function print_report(io::IO, (; s, sig)::NativeRemark)
     default_report_printer(io, s, sig)
 end
-CC.add_remark!(analyzer::AbstractAnalyzer, sv, s) = ReportPass(analyzer)(NativeRemark, sv, s) # ignored by default
+CC.add_remark!(analyzer::AbstractAnalyzer, sv::InferenceState, s) = ReportPass(analyzer)(NativeRemark, sv, s) # ignored by default
 
 CC.may_optimize(analyzer::AbstractAnalyzer)      = true
 CC.may_compress(analyzer::AbstractAnalyzer)      = false

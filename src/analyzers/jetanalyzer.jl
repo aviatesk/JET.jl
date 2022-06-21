@@ -430,7 +430,7 @@ error points as possible.
 Of course this slows down inference performance, but hoopefully it stays to be "practical"
 speed since the number of matching methods are limited beforehand.
 """
-CC.bail_out_call(analyzer::JETAnalyzer, @nospecialize(t), sv) = false
+CC.bail_out_call(analyzer::JETAnalyzer, @nospecialize(t), sv::InferenceState) = false
 
 @doc """
     add_call_backedges!(analyzer::JETAnalyzer, ...)
