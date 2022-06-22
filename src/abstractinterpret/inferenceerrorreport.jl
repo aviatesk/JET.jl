@@ -283,9 +283,12 @@ it should satisfy the following requirements:
   _why_ this error is reported (mostly used for [`print_report_message`](@ref)).
 
 - **Required overloads** \\
+
   * [`copy_report(report::R) -> new::R`](@ref copy_report)
   * [`print_report_message(io::IO, report::R)`](@ref print_report_message)
+
 - **Optional overloads** \\
+
   * [`print_signature(::R) -> Bool`](@ref print_signature)
   * [`report_color(::R) -> Symbol`](@ref report_color)
 
