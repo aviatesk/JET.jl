@@ -163,12 +163,25 @@ function __get_sig_type(s::StateAtPC, expr::Expr)
         end
         return sigtyp
     elseif head === :static_parameter
-        typ = widenconst(first(s).sptypes[first(expr.args)::Int])
-        return SignatureType(Any['_', typ], typ)
+        i = first(expr.args)::Int
+        sv = first(s)
+        name = sparam_name((sv.linfo.def::Method).sig::UnionAll, i)
+        typ = widenconst(sv.sptypes[i])
+        return SignatureType(Any[String(name), typ], typ)
     else
         return SignatureType(Any[expr], nothing)
     end
 end
+
+function sparam_name(u::UnionAll, i::Int)
+    while true
+        i == 1 && break
+        u = u.body::UnionAll
+        i -= 1
+    end
+    return u.var.name
+end
+
 function __get_sig_type((sv, _)::StateAtPC, ssa::SSAValue)
     newstate = (sv, ssa.id)
     if isa(sv, OptimizationState)
@@ -185,6 +198,7 @@ function __get_sig_type((sv, _)::StateAtPC, ssa::SSAValue)
     end
     return SignatureType(sig, typ)
 end
+
 function __get_sig_type(s::StateAtPC, slot::SlotNumber)
     sv = first(s)
     name = get_slotname(sv, slot)
@@ -202,6 +216,7 @@ function __get_sig_type(s::StateAtPC, slot::SlotNumber)
         get_slottype(sv, slot) : get_slottype(s, slot)))
     return SignatureType(Any[repr, typ], typ)
 end
+
 # NOTE `Argument` is introduced by optimization, and so we don't need to handle abstract global variable here
 function __get_sig_type((sv, _)::StateAtPC, arg::Argument)
     name = get_slotname(sv, arg.n)
@@ -213,12 +228,12 @@ function __get_sig_type((sv, _)::StateAtPC, arg::Argument)
     typ = widenconst(ignorelimited(get_slottype(sv, arg))) # after optimization we shouldn't use `get_slottype(::StateAtPC, ::Any)`
     return SignatureType(Any[repr, typ], typ)
 end
-__get_sig_type(_::StateAtPC, gr::GlobalRef) = SignatureType(Any[gr], nothing)
-__get_sig_type(_::StateAtPC, name::Symbol) = SignatureType(Any[name], nothing)
+
 function __get_sig_type(s::StateAtPC, gotoifnot::GotoIfNot)
     sig = Any["goto ", SSAValue(gotoifnot.dest), " if not ", _get_sig(s, gotoifnot.cond)...]
     return SignatureType(sig, nothing)
 end
+
 function __get_sig_type(s::StateAtPC, rn::ReturnNode)
     if is_unreachable(rn)
         sig = Any["unreachable"]
@@ -227,6 +242,7 @@ function __get_sig_type(s::StateAtPC, rn::ReturnNode)
     end
     return SignatureType(sig, nothing)
 end
+
 function __get_sig_type(::StateAtPC, qn::QuoteNode)
     v = qn.value
     if isa(v, Symbol)
@@ -235,6 +251,8 @@ function __get_sig_type(::StateAtPC, qn::QuoteNode)
     typ = typeof(v)
     return SignatureType(Any[qn, typ], typ)
 end
+
+# fallback: Symbol, GlobalRef, literals...
 __get_sig_type(::StateAtPC, @nospecialize(x)) = SignatureType(Any[x], nothing)
 
 # new report
