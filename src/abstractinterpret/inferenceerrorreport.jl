@@ -271,53 +271,75 @@ end
     InferenceErrorReport
 
 An interface type of error reports that JET collects by abstract interpration.
-If `T` implements this interface, the following requirements should be satisfied:
+In order for `R<:InferenceErrorReport` to implement the interface,
+it should satisfy the following requirements:
 
----
 - **Required fields** \\
-  `T` should have the following fields, which explains _where_ and _how_ this error is reported:
+  `R` should have the following fields, which explains _where_ and _how_ this error is reported:
   * `vst::VirtualStackTrace`: a virtual stack trace of the error
   * [`sig::Signature`](@ref Signature): a signature of the error point
 
-  Note that `T` can still have arbitrary additional fields other than `vst` and `sig`
-  to explain _why_ this error is reported (mostly used for `print_report`).
----
-- **A constructor to create `T` from abstraction interpretation** \\
-  `T<:InferenceErrorReport` has the default constructor
+  Note that `R` can have additional fields other than `vst` and `sig` to explain
+  _why_ this error is reported (mostly used for [`print_report_message`](@ref)).
 
-      T(::AbstractAnalyzer, state, spec_args...)
+- **Required overloads** \\
+  * [`copy_report(report::R) -> new::R`](@ref copy_report)
+  * [`print_report_message(io::IO, report::R)`](@ref print_report_message)
+- **Optional overloads** \\
+  * [`print_signature(::R) -> Bool`](@ref print_signature)
+  * [`report_color(::R) -> Symbol`](@ref report_color)
 
-  which can take following `state`s:
-  where `state` can be either of:
-  - `state::$StateAtPC`: a state with the current program counter specified
-  - `state::InferenceState`: a state with the current program counter set to `state.currpc`
-  - `state::InferenceResult`: a state with the current program counter unknown
-  - `state::MethodInstance`: a state with the current program counter unknown
----
-- **A contructor to create `T` from the global report cache** \\
-  In order to be cached and restored from [`JET_CACHE`](@ref), `T` _**must**_ implement
-  the following interfaces:
-  * `JET.get_spec_args(::T) -> Vector{Any}`: returns additional fields that are specific to `T`
-  * `_restore_cached_report(::Type{T}, vst::VirtualStackTrace, sig::Signature spec_args::Vector{Any}) -> T`:
-    constructor to create `T` from the cache, which _should_ copy `vst` and expand `spec_args` into each specific field
----
-- **A error message printer** \\
-  `T` should also implement `print_report_message(io::IO, report::T)`,
-  which prints to `io` and describes _why_ it is reported.
-  `T` can optionally overload:
-  - `print_signature(::T) -> Bool` to configure whether or not to print the report signature
-     (defaults to `true`)
-  - `report_color(::T) -> Symbol` to configure the printed color for `T` (defaults to `:red`)
----
+`R<:InferenceErrorReport` is supposed to be constructed using the following constructor
 
-See also: [@reportdef](@ref), [`VirtualStackTrace`](@ref), [`VirtualFrame`](@ref)
+    R(::AbstractAnalyzer, state, spec_args...) -> R
+
+where `state` can be either of:
+- `state::$StateAtPC`: a state with the current program counter specified
+- `state::InferenceState`: a state with the current program counter set to `state.currpc`
+- `state::InferenceResult`: a state with the current program counter unknown
+- `state::MethodInstance`: a state with the current program counter unknown
+
+See also: [`@reportdef`](@ref), [`VirtualStackTrace`](@ref), [`VirtualFrame`](@ref)
 """
 abstract type InferenceErrorReport end
 
-print_report_message(io::IO, report::InferenceErrorReport) = (@nospecialize;
+# interfaces
+# ----------
+
+"""
+    copy_report(report::R) where R<:InferenceErrorReport -> new::R
+
+Returns new `new::R`, that should be identical to the original `report::R`, except
+that `new.vst` is copied from `report.vst` so that the further modifcation on `report.vst`
+that may happen in later abstract interpretation doesn't affect `new.vst`.
+"""
+@noinline copy_report(report::InferenceErrorReport) = (@nospecialize;
+    error(lazy"`copy_report(::$(typeof(report)))` is not implemented"))
+
+"""
+    print_report_message(io::IO, report::R) where R<:InferenceErrorReport
+
+Prints to `io` and describes _why_ `report` is reported.
+"""
+@noinline print_report_message(io::IO, report::InferenceErrorReport) = (@nospecialize;
     error(lazy"`print_report_message(::IO, ::$(typeof(report)))` is not implemented"))
+
+"""
+    print_signature(::R) where R<:InferenceErrorReport -> Bool
+
+Configures whether or not to print the report signature when printing `R` (defaults to `true`).
+"""
 print_signature(::InferenceErrorReport) = true
+
+"""
+    report_color(::R) where R<:InferenceErrorReport -> Symbol
+
+Configures the color for `R` (defaults to `:red`).
+"""
 report_color(::InferenceErrorReport) = ERROR_COLOR
+
+# common
+# ------
 
 # to help inference
 function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
@@ -327,6 +349,32 @@ function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
         getfield(er, sym)::Signature
     else
         getfield(er, sym) # fallback
+    end
+end
+
+# type stable version (assuming it satisfies the interface correctly)
+function copy_report′(@nospecialize report::InferenceErrorReport)
+    @static if JET_DEV_MODE
+        new = copy_report(report)
+        R = typeof(report)
+        if !isa(new, R)
+            error(lazy"""
+            bad `$InferenceErrorReport` interface:
+            `$copy_report(::$R)` should return new `$R`.
+            See the documentation of `$InferenceErrorReport` and `$copy_report`
+            """)
+        end
+        new = new::InferenceErrorReport
+        if report.vst === new.vst && (@static JET_DEV_MODE ? report.vst == new.vst : true)
+            error(lazy"""
+            bad `$InferenceErrorReport` interface:
+            `$copy_report(report::$R).vst` should be a copy of `report.vst`.
+            See the documentation of `$InferenceErrorReport` and `$copy_report`
+            """)
+        end
+        return new
+    else
+        return copy_report(report)::InferenceErrorReport
     end
 end
 
@@ -343,28 +391,6 @@ function (T::Type{<:InferenceErrorReport})(state, @nospecialize(spec_args...))
     vf = get_virtual_frame(state)
     return T([vf], vf.sig, spec_args...)
 end
-
-get_spec_args(report::InferenceErrorReport) = (@nospecialize;
-    error(lazy"`get_spec_args(::$(typeof(report)))` is not implemented"))
-
-# cache
-# -----
-
-@eval struct InferenceErrorReportCache
-    T::DataType
-    $(INFERENCE_ERROR_REPORT_FIELD_DECLS...)
-    spec_args::Vector{Any}
-end
-
-function cache_report!(cache, @nospecialize(report#=::InferenceErrorReport=#))
-    vst = copy(report.vst)
-    new = InferenceErrorReportCache(typeof(report)::DataType, vst, report.sig, get_spec_args(report))
-    return push!(cache, new)
-end
-
-restore_cached_report(cache::InferenceErrorReportCache) = _restore_cached_report(
-    cache.T, copy(cache.vst), cache.sig, cache.spec_args)::InferenceErrorReport
-function _restore_cached_report end
 
 # utility
 # -------
@@ -422,28 +448,15 @@ macro reportdef(ex)
 
     T, S = esc(T), esc(S)
 
-    # cache constructor
-    cache_constructor_sig = :($(GlobalRef(JET, :_restore_cached_report))(
-        ::Type{$T}, vst::VirtualStackTrace, sig::Signature, spec_args::Vector{Any}))
-    cache_constructor_call = :($T(vst, sig))
-    for (i, spec_type) in enumerate(spec_types)
-        push!(cache_constructor_call.args, :(spec_args[$i]::$spec_type))
+    # copy_report
+    copy_report = let
+        sig = :($(GlobalRef(JET, :copy_report))(report::$T))
+        call = :($T(copy(report.vst), report.sig))
+        for name in spec_names
+            push!(call.args, :(getproperty(report, $(QuoteNode(name)))))
+        end
+        Expr(:function, sig, Expr(:block, __source__, call))
     end
-    cache_constructor = Expr(:function, cache_constructor_sig, Expr(:block, __source__,
-        :(return @inbounds $cache_constructor_call),
-    ))
-
-    # cache helper
-    spec_getter_sig = :($(GlobalRef(JET, :get_spec_args))(report::$T))
-    spec_getter_body = Expr(:block, __source__)
-    nspecs = length(spec_names)
-    push!(spec_getter_body.args, :(spec_args = Vector{Any}(undef, $nspecs)))
-    for i in 1:nspecs
-        spec_name = spec_names[i]
-        push!(spec_getter_body.args, :(spec_args[$i] = getproperty(report, $(QuoteNode(spec_name)))))
-    end
-    push!(spec_getter_body.args, :(return spec_args))
-    spec_getter = Expr(:function, spec_getter_sig, spec_getter_body)
 
     return quote
         Base.@__doc__ struct $T <: $S
@@ -455,9 +468,7 @@ macro reportdef(ex)
             end
         end
 
-        $cache_constructor
-
-        $spec_getter
+        $copy_report
     end
 end
 

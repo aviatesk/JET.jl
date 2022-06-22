@@ -73,8 +73,7 @@ JETInterface.ReportPass(analyzer::APIValidator) = IgnoreAllPass()
 JETInterface.get_cache_key(analyzer::APIValidator) = AnalyzerState(analyzer).param_key
 
 # because `APIValidator` uses `IgnoreAllPass`, we won't get any reports
-let
-    result = @report_call analyzer=APIValidator compute_sins(10)
+let result = @report_call analyzer=APIValidator compute_sins(10)
     @test isempty(get_reports(result))
 end
 
