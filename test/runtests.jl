@@ -1,5 +1,7 @@
 include("setup.jl")
 
+@info "JET setup information:" JET.JET_DEV_MODE
+
 @testset "JET.jl" begin
     @testset "abstractinterpret" begin
         @testset "inferenceerrorreport.jl" begin
