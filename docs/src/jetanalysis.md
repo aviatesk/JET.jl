@@ -1,44 +1,51 @@
 # [Error Analysis](@id jetanalysis)
 
-Julia's type system is quite expressive and its type inference is strong enough to generate highly
-optimized code from its very concise and generic program.
-But as opposed to other statically-compiled languages, Julia by design does NOT error nor warn anything
-even if it detects possible errors during its compilation process no matter how serious they are.
-Julia delays all the errors and warnings to the runtime.
+Julia's type system is quite expressive and its type inference is strong enough to generate
+fairly optimized code from highly generic program written in a concise syntax.
+But as opposed to other statically-compiled languages, Julia by design does _not_ error nor
+warn anything even if it detects possible errors during its compilation process no matter
+how serious they are. In essence Julia achieves a highly generic and composable programming
+by delaying all the errors and warnings to the runtime.
 
-This is actually a core design choice of the language
-– on the one hand, Julia's dynamism allow it to work in places where data types are not fully decided
-ahead of runtime just because Julia doesn't require it
-– on the other hand, with Julia, it's not straightforward to have such modern development experiences
-that a typical static language can offer, including static type checking and very rich IDE features.
+This is actually a core design choice of the language. On the one hand, Julia's dynamism
+allows it to work in places where data types can not be fully decided ahead of runtime
+(e.g. when the program is duck-typed with generic pieces of code, or when the program
+consumes some data that is only known at runtime). On the other hand, with Julia, it's
+not straightforward to have such modern development experiences that a static language can
+typically offer, as like static type checking and rich IDE features.
 
-JET is a trial to get the best of both worlds: can we have a sufficiently useful static analysis
-without losing all the beauty of Julia's dynamism ?
-JET directly employs Julia's builtin type inference system to enable a static analysis, so in that
-sense its approach is very different from ["gradual typing"](https://en.wikipedia.org/wiki/Gradual_typing),
-which is a common technique to bring static analysis into a dynamic language, as used for
-[mypy](https://github.com/python/mypy) for Python and [TypeScript](https://www.typescriptlang.org/) for JavaScript.
-Rather, Julia's type inference system and JET are powered by the technique called ["abstract interpretation"](https://en.wikipedia.org/wiki/Abstract_interpretation).
-As like Julia can effectively optimize your simple and generic program, JET can also analyze
-_just a normal_ Julia program and smartly detect possible errors, but statically. So in other word,
-JET doesn't require any additional setups like scattering type annotations just for the sake of analysis.
+JET is a trial to get the best of both worlds: can we have a sufficiently useful static
+checking without losing all the beauty of Julia's dynamism and composability?
+JET's approach is very different from
+["gradual typing"](https://en.wikipedia.org/wiki/Gradual_typing),
+that is a common technique to bring static analysis into a dynamic language, as used for
+e.g. [mypy](https://github.com/python/mypy) for Python and
+[TypeScript](https://www.typescriptlang.org/) for JavaScript.
+Rather, JET's static analysis is powered by Julia's builtin type inference system, that
+based on a technique called
+["abstract interpretation"](https://en.wikipedia.org/wiki/Abstract_interpretation).
+This way JET can also analyze _just a normal_ Julia program and smartly detect possible
+errors statically, without requiring any additional setups like scattering type annotations
+just for the sake of analysis but preserving original polymorphism and composability of
+the program, as much effectively as the Julia compiler can optimize your Julia program.
 
 ## [Quick Start](@id jetanalysis-quick-start)
 
-First you need to install and load JET.
-JET is an ordinary Julia package, so you can install it via Julia's built-in package manager and use
-it as like other packages.
+First you need to install JET: JET is an ordinary Julia package, so you can install it via
+Julia's built-in package manager and use it as like other packages.
 ```@repl quickstart
 ; # ] add JET # install JET via the built-in package manager
 
 using JET
 ```
 
-Let's start with a simplest example: how JET can find anything wrong with `sum("julia")` ?
-[`@report_call`](@ref) and [`report_call`](@ref) analyzes a given function call and get back the
-detected problems. They can be used in a similar way as [`@code_typed`](https://docs.julialang.org/en/v1/stdlib/InteractiveUtils/#InteractiveUtils.@code_typed)
-and [`code_typed`](https://docs.julialang.org/en/v1/base/base/#Base.code_typed), and those
-[interactive entry points](@ref jetanalysis-interactive-entry) are the most easiest way to use JET:
+Let's start with a simplest example: how JET can find anything wrong with `sum("julia")`?
+[`@report_call`](@ref) and [`report_call`](@ref) analyzes a given function call and report
+back possible problems. They can be used in a similar way as
+[`@code_typed`](https://docs.julialang.org/en/v1/stdlib/InteractiveUtils/#InteractiveUtils.@code_typed)
+and [`code_typed`](https://docs.julialang.org/en/v1/base/base/#Base.code_typed).
+Those [interactive entry points](@ref jetanalysis-interactive-entry) are the most easiest
+way to use JET:
 ```@repl quickstart
 @report_call sum("julia")
 ```
@@ -49,12 +56,13 @@ sum("julia") # will lead to `MethodError: +(::Char, ::Char)`
 sum("") # will lead to `MethodError: zero(Type{Char})`
 ```
 
-We should note that `@report_call sum("julia")` could detect both of those two different errors that
-can happen at runtime. This is because `@report_call` does a static analysis – it analyzes the
-function call in a way that does NOT rely on runtime, and so it can reason about all the possible executions !
-This is one of the biggest advantages of static analysis, because other alternatives to check
-software qualities like "testing" usually rely on runtime and they can only represent a subset of
-all the possible executions.
+We should note that `@report_call sum("julia")` could detect both of those two different
+errors that can happen at runtime. This is because `@report_call` does a static analysis —
+it analyzes the function call in a way that does not rely on one instance of runtime
+execution, but rather it reasons about all the possible executions!
+This is one of the biggest advantages of static analysis, because other alternatives to
+check software qualities like "testing" usually rely on _some_ runtime execution and they
+can only cover a subset of all the possible executions.
 
 As mentioned above, JET is designed to work with _just a normal_ Julia program.
 Let's define new arbitrary functions and run JET on it:
@@ -73,17 +81,17 @@ bar(s::String) = parse(Int, s)
 ```
 
 Now let's fix this problematic code.
-Say, for some reason, we're not interested in errors that may happen in the context of `Base`
-– we want to focus on fixing the error that happens from the definition of `bar`.
-First, we can fix the definition of `bar` so that it can accept generic `AbstractString` input.
-JET's analysis result can be dynamically updated when we refine a function definition, and so we
-just need to add a new `bar(::AbstractString)` definition.
-As for the second error, we can use the [`target_modules`](@ref result-config) configuration to limit
-the analysis scope to the current module context to ignore the possible error that may happen within `sum(a)`[^1].
+First we can fix the definition of `bar` so that it accepts generic `AbstractString` input.
+JET's analysis result can be dynamically updated when we refine a function definition,
+and so we just need to add a new `bar(::AbstractString)` definition.
+As for the second error, let's assume, for some reason, we're not interested fixing it and
+we want to ignore errors that may happen within `Base`. Then we can use the
+[`target_modules`](@ref result-config) configuration to limit the analysis scope to
+the current module context to ignore the possible error that may happen within `sum(a)`[^1].
 
-[^1]: We used `target_modules` just for the sake of demonstration. To make it idiomatic, we can
-      initialize `a` as typed vector `a = Int[]`, and then we won't get any problem from `sum(a)`
-      even without the `target_modules` configuration.
+[^1]: We used `target_modules` just for the sake of demonstration. In order to make it more
+      idiomatic, we should initialize `a` as typed vector `a = Int[]`, and then we won't
+      get any problem from `sum(a)` even without the `target_modules` configuration.
 
 ```@repl quickstart
 # hot fix the definition of `bar`
@@ -93,10 +101,11 @@ bar(s::AbstractString) = parse(Int, s)
 @report_call target_modules=(@__MODULE__,) foo("1 2 3")
 ```
 
-So far, we have used the default error analysis pass, which collects problems according to one
-specific definition of "errors" (see the [`JET.BasicPass`](@ref) for more details). JET offers other
-error reporting passes, including the "sound" error detection ([`JET.SoundPass`](@ref)) as well as the
-"typo" detection pass ([`JET.TypoPass`](@ref))[^2]. They can be switched using the `mode` configuration:
+So far, we have used the default error analysis pass, which collects problems according to
+one specific (somewhat opinionated) definition of "errors" (see the [`JET.BasicPass`](@ref) for more details).
+JET offers other error reporting passes, including the "sound" error detection ([`JET.SoundPass`](@ref))
+as well as the simpler "typo" detection pass ([`JET.TypoPass`](@ref))[^2].
+They can be switched using the `mode` configuration:
 
 [^2]: Actually JET offers the framework to define your own abstract interpretation based analysis.
       See [`AbstractAnalyzer`-Framework](@ref) if interested.
@@ -134,8 +143,8 @@ end
 @report_call mode=:typo strange_sum([])
 ```
 
-We can use [`@test_call`](@ref) and [`test_call`](@ref) to assert that your program is free from
-problems that `@report_call` can detect.
+We can use [`@test_call`](@ref) and [`test_call`](@ref) to assert that your program is free
+from problems that `@report_call` can detect.
 They work nicely with [`Test` standard library](https://docs.julialang.org/en/v1/stdlib/Test/)'s
 unit-testing infrastructure:
 ```@repl quickstart
@@ -155,8 +164,8 @@ using Test
 end
 ```
 
-JET actually uses JET itself in its test pipeline.
-JET's static analysis has been proven to be very useful and helped its development a lot.
+JET actually uses JET itself in its test pipeline: JET's static analysis has been proven to
+be very useful and helped its development a lot.
 If interested, take a peek at [JET's `"self check !!!"` testset](https://github.com/aviatesk/JET.jl/blob/master/test/runtests.jl).
 
 Lastly, let's see the example that demonstrates JET can analyze "top-level" program.
@@ -196,10 +205,11 @@ JET.test_call
 JET can also analyze your "top-level" program: it can just take your Julia script or package
 and will report possible errors.
 
-Note that JET will analyze your code "half-statically": JET will selectively interpret "definitions"
-(like a function or struct definition) and try to simulate Julia's top-level code execution.
-While it tries to avoid executing any other parts of code like function calls, but analyzes them
-based on abstract interpretation instead (and this is a part where JET statically analyzes your code).
+Note that JET will analyze your top-level program "half-statically": JET will selectively
+interpret and actually load "definitions" (like a function or struct definition) and try to
+simulate Julia's top-level code execution process.
+While it tries to avoid executing any other parts of code like function calls and analyzes
+them based on abstract interpretation instead (and this is a part where JET statically analyzes your code).
 If you're interested in how JET selects "top-level definitions", please see [`JET.virtual_process`](@ref).
 
 !!! warning
