@@ -84,34 +84,34 @@ julia> report_and_watch_file("demo.jl"; annotate_types = true)
 [toplevel-info]  exited from demo.jl (took 3.254 sec)
 ═════ 7 possible errors found ═════
 ┌ @ demo.jl:10 fib(m)
-│ variable m is not defined: fib(m)
+│ variable m is not defined
 └──────────────
-┌ @ demo.jl:11 fib("1000")
-│┌ @ demo.jl:7 ≤(n::String, 2)
-││┌ @ operators.jl:401 Base.<(x::String, y::Int64)
-│││┌ @ operators.jl:352 Base.isless(x::String, y::Int64)
-││││ no matching method found for call signature (Tuple{typeof(isless), String, Int64}): Base.isless(x::String, y::Int64)
+┌ @ demo.jl:11 fib(1000)
+│┌ @ demo.jl:7 :≤(n::String, 2)
+││┌ @ operators.jl:392 Base.:<(x::String, y::Int64)
+│││┌ @ operators.jl:343 Base.isless(x::String, y::Int64)
+││││ no matching method found for `isless(::String, ::Int64)`: Base.isless(x::String, y::Int64)
 │││└────────────────────
 ┌ @ demo.jl:32 foo(1.2)
-│┌ @ demo.jl:24 bar(v::Ty{Float64})
-││┌ @ demo.jl:29 Base.getproperty(v::Ty{Float64}, :fdl::Symbol)
-│││┌ @ Base.jl:33 Base.getfield(x::Ty{Float64}, f::Symbol)
+│┌ @ demo.jl:24 bar(v::Union{})
+││┌ @ demo.jl:29 Base.getproperty(v::Ty{Float64}, :fdl)
+│││┌ @ Base.jl:37 Base.getfield(x::Ty{Float64}, f::Symbol)
 ││││ type Ty{Float64} has no field fdl
 │││└──────────────
-┌ @ demo.jl:33 foo("1")
-│┌ @ demo.jl:24 bar(v::Ty{String})
-││┌ @ demo.jl:30 convert(Number, Base.getproperty(v::Ty{String}, :fld::Symbol)::String)
-│││ no matching method found for call signature (Tuple{typeof(convert), Type{Number}, String}): convert(Number, Base.getproperty(v::Ty{String}, :fld::Symbol)::String)
+┌ @ demo.jl:33 foo(1)
+│┌ @ demo.jl:24 bar(v::Union{})
+││┌ @ demo.jl:30 convert(Number, Base.getproperty(v::Ty{String}, :fld)::String)
+│││ no matching method found for `convert(::Type{Number}, ::String)`: convert(Number, Base.getproperty(v::Ty{String}, :fld)::String)
 ││└──────────────
-┌ @ demo.jl:44 badmerge(Core.apply_type(Core.NamedTuple, Core.tuple(:x::Symbol, :y::Symbol)::Tuple{Symbol, Symbol})::Type{NamedTuple{(:x, :y)}}(Core.tuple(1, 2)::Tuple{Int64, Int64})::NamedTuple{(:x, :y), Tuple{Int64, Int64}}, Core.apply_type(Core.NamedTuple, Core.tuple(:y::Symbol, :z::Symbol)::Tuple{Symbol, Symbol})::Type{NamedTuple{(:y, :z)}}(Core.tuple(3, 1)::Tuple{Int64, Int64})::NamedTuple{(:y, :z), Tuple{Int64, Int64}})
+┌ @ demo.jl:44 badmerge(Core.apply_type(Core.NamedTuple, (:x, :y)::Tuple{Symbol, Symbol})::Type{NamedTuple{(:x, :y)}}(Core.tuple(1, 2)::Tuple{Int64, Int64})::NamedTuple{(:x, :y), Tuple{Int64, Int64}}, Core.apply_type(Core.NamedTuple, (:y, :z)::Tuple{Symbol, Symbol})::Type{NamedTuple{(:y, :z)}}(Core.tuple(3, 1)::Tuple{Int64, Int64})::NamedTuple{(:y, :z), Tuple{Int64, Int64}})
 │┌ @ demo.jl:37 getfield(a::NamedTuple{(:x, :y), Tuple{Int64, Int64}}, x)
-││ variable x is not defined: getfield(a::NamedTuple{(:x, :y), Tuple{Int64, Int64}}, x)
+││ variable x is not defined
 │└──────────────
 │┌ @ demo.jl:37 getfield(b::NamedTuple{(:y, :z), Tuple{Int64, Int64}}, y)
-││ variable y is not defined: getfield(b::NamedTuple{(:y, :z), Tuple{Int64, Int64}}, y)
+││ variable y is not defined
 │└──────────────
 │┌ @ demo.jl:37 getfield(b::NamedTuple{(:y, :z), Tuple{Int64, Int64}}, z)
-││ variable z is not defined: getfield(b::NamedTuple{(:y, :z), Tuple{Int64, Int64}}, z)
+││ variable z is not defined
 │└──────────────
 ```
 
@@ -191,7 +191,7 @@ If you apply the diff (i.e. update and save the demo.jl), JET will automatically
 ```julia
 [toplevel-info] virtualized the context of Main (took 0.004 sec)
 [toplevel-info] entered into demo.jl
-[toplevel-info]  exited from demo.jl (took 3.061 sec)
+[toplevel-info]  exited from demo.jl (took 1.375 sec)
 No errors detected
 ```
 
