@@ -95,7 +95,7 @@ include("setup.jl")
                ft === typeof(sprint) ||
                ft === typeof(string) ||
                ft === typeof(zero) ||
-               ft === typeof(JET._restore_cached_report) ||
+               ft === typeof(JET.copy_report) ||
                # requires https://github.com/JuliaLang/julia/pull/43113
                @static VERSION < v"1.8.0-DEV.1053" ? ft === typeof(isprimitivetype) : false ||
                false

@@ -64,8 +64,8 @@ abstract type AbstractAnalyzer <: AbstractInterpreter end
 # -----------
 # 1. `NewAnalyzer(; jetconfigs...) -> NewAnalyzer`
 
-function (::Type{Analyzer})(; jetconfigs...) where Analyzer<:AbstractAnalyzer
-    error("""
+@noinline function (::Type{Analyzer})(; jetconfigs...) where Analyzer<:AbstractAnalyzer
+    error(lazy"""
     missing `$AbstractAnalyzer` API:
     `$Analyzer` is required to implement the `$Analyzer(; jetconfigs...) -> $Analyzer` interface.
     See the documentation of `$AbstractAnalyzer`.
@@ -155,9 +155,6 @@ struct JETLogger
     end
 end
 
-const Reports = Vector{InferenceErrorReport}
-const CachedReports = Vector{InferenceErrorReportCache}
-
 """
     JETResult
 
@@ -167,7 +164,7 @@ associating it with `InferenceResult`.
 accessed with `get_reports(analyzer, result)`.
 """
 struct JETResult
-    reports::Reports
+    reports::Vector{InferenceErrorReport}
 end
 
 """
@@ -178,13 +175,13 @@ end
 When working with [`AbstractAnalyzer`](@ref), we can expect `codeinf` to have its field
 `codeinf.inferred::JETCachedResult` as far as it's managed by [`JET_CACHE`](@ref).
 
-[`InferenceErrorReportCache`](@ref)s found within already-analyzed `result::InferenceResult`
+[`InferenceErrorReport`](@ref)s found within already-analyzed `result::InferenceResult`
 can be accessed with `get_cached_reports(analyzer, result)`.
 """
 struct JETCachedResult
     src
-    reports::CachedReports
-    JETCachedResult(@nospecialize(src), reports::CachedReports) = new(src, reports)
+    reports::Vector{InferenceErrorReport}
+    JETCachedResult(@nospecialize(src), reports::Vector{InferenceErrorReport}) = new(src, reports)
 end
 
 const AnyJETResult = Union{JETResult,JETCachedResult}
@@ -394,10 +391,10 @@ end # @static if isdefined(CC, :mark_throw_blocks!)
 @assert JETInferenceParams() == InferenceParams()
 @assert JETOptimizationParams() == OptimizationParams()
 
-function AnalyzerState(analyzer::Analyzer) where Analyzer<:AbstractAnalyzer
-    error("""
+@noinline function AnalyzerState(analyzer::AbstractAnalyzer)
+    error(lazy"""
     missing `$AbstractAnalyzer` API:
-    `$Analyzer` is required to implement the `$AnalyzerState(analyzer::$Analyzer) -> $AnalyzerState` interface.
+    `$(typeof(analyzer))` is required to implement the `$AnalyzerState(analyzer::$(typeof(analyzer))) -> $AnalyzerState` interface.
     See the documentation of `$AbstractAnalyzer` and `$AnalyzerState`.
     """)
 end
@@ -406,10 +403,10 @@ end
 # -----------
 # 3. `AbstractAnalyzer(analyzer::NewAnalyzer, state::AnalyzerState) -> NewAnalyzer`
 
-function AbstractAnalyzer(analyzer::Analyzer, state::AnalyzerState) where Analyzer<:AbstractAnalyzer
-    error("""
+@noinline function AbstractAnalyzer(analyzer::AbstractAnalyzer, state::AnalyzerState)
+    error(lazy"""
     missing `$AbstractAnalyzer` API:
-    `$Analyzer` is required to implement the `$AbstractAnalyzer(analyzer::$Analyzer, state::$AnalyzerState) -> $Analyzer` interface.
+    `$(typeof(analyzer))` is required to implement the `$AbstractAnalyzer(analyzer::$(typeof(analyzer)), state::$AnalyzerState) -> $Analyzer` interface.
     See the documentation of `$AbstractAnalyzer`.
     """)
 end
@@ -497,10 +494,10 @@ end
 """
 abstract type ReportPass end
 
-function ReportPass(::Analyzer) where Analyzer<:AbstractAnalyzer
-    error("""
+@noinline function ReportPass(analyzer::AbstractAnalyzer)
+    error(lazy"""
     missing `$AbstractAnalyzer` API:
-    `$Analyzer` is required to implement the `$ReportPass(analyzer::$Analyzer) -> $ReportPass` interface.
+    `$(typeof(analyzer))` is required to implement the `$ReportPass(analyzer::$(typeof(analyzer))) -> $ReportPass` interface.
     See the documentation of `$AbstractAnalyzer` and `$ReportPass`.
     """)
 end
@@ -530,10 +527,10 @@ analysis results are completely separated.
 
 See also [`JET_CACHE`](@ref).
 """
-function get_cache_key(::Analyzer) where Analyzer<:AbstractAnalyzer
-    error("""
+@noinline function get_cache_key(analyzer::AbstractAnalyzer)
+    error(lazy"""
     missing `$AbstractAnalyzer` API:
-    `$Analyzer` is required to implement the `$get_cache_key(analyzer::$Analyzer) -> UInt` interface.
+    `$(typeof(analyzer))` is required to implement the `$get_cache_key(analyzer::$(typeof(analyzer))) -> UInt` interface.
     See the documentation of `$AbstractAnalyzer` and `$get_cache_key`.
     """)
 end
@@ -549,7 +546,7 @@ function init_result!(analyzer::AbstractAnalyzer, result::InferenceResult)
     analyzer[result] = JETResult(InferenceErrorReport[])
     return nothing
 end
-function set_cached_result!(analyzer::AbstractAnalyzer, result::InferenceResult, cache::CachedReports)
+function set_cached_result!(analyzer::AbstractAnalyzer, result::InferenceResult, cache::Vector{InferenceErrorReport})
     analyzer[result] = JETCachedResult(result.src, cache)
     return nothing
 end
@@ -568,10 +565,10 @@ function add_new_report!(analyzer::AbstractAnalyzer, result::InferenceResult, re
     return report
 end
 
-function add_cached_report!(analyzer::AbstractAnalyzer, caller::InferenceResult, cached::InferenceErrorReportCache)
-    restored = restore_cached_report(cached)
-    push!(get_reports(analyzer, caller), restored)
-    return restored
+function add_cached_report!(analyzer::AbstractAnalyzer, caller::InferenceResult, cached::InferenceErrorReport)
+    cached = copy_report′(cached)
+    push!(get_reports(analyzer, caller), cached)
+    return cached
 end
 
 add_caller_cache!(analyzer::AbstractAnalyzer, report::InferenceErrorReport) = push!(get_caller_cache(analyzer), report)

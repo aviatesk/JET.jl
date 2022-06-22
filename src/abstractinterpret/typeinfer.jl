@@ -334,6 +334,9 @@ end
 # cache
 # =====
 
+cache_report!(cache, @nospecialize(report::InferenceErrorReport)) =
+    push!(cache, copy_report′(report)::InferenceErrorReport)
+
 # global
 # ------
 
@@ -442,7 +445,7 @@ end
 
 function CC.transform_result_for_cache(analyzer::AbstractAnalyzer,
     linfo::MethodInstance, valid_worlds::WorldRange, result::InferenceResult)
-    cache = InferenceErrorReportCache[]
+    cache = InferenceErrorReport[]
     for report in get_reports(analyzer, result)
         @static if JET_DEV_MODE
             actual, expected = first(report.vst).linfo, linfo
@@ -742,7 +745,7 @@ function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
 
             # local cache management
             # TODO there are duplicated work here and `transform_result_for_cache`
-            cache = InferenceErrorReportCache[]
+            cache = InferenceErrorReport[]
             for report in reports
                 cache_report!(cache, report)
             end

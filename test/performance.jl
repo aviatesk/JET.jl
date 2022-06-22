@@ -6,11 +6,13 @@ using .JETBenchmarkUtils
     let ok = false
         for _ = 1:3 # try multiple times
             stats = @timed @report_call report_pass=FreshPass(JET.BasicPass()) println(QuoteNode(nothing))
-            if stats.time ≤ (get(ENV, "CI", nothing) == "true" ? 20 : 10) # a CI runner might be slow
+            allow = (get(ENV, "CI", nothing) == "true" ? 20 : 10) # a CI runner might be slow
+            # JET.JET_DEV_MODE && (allow += 5) # add extra nudge for assertion-related overhead?
+            if stats.time ≤ allow
                 ok = true
                 break
             else
-                @warn "bad performance detected: @report_call report_pass=FreshPass(JET.BasicPass()) println(QuoteNode(nothing))"
+                @warn "bad performance detected: @report_call report_pass=FreshPass(JET.BasicPass()) println(QuoteNode(nothing))" stats.time
             end
         end
         @test ok
@@ -18,11 +20,13 @@ using .JETBenchmarkUtils
     let ok = false
         for _ = 1:3 # try multiple times
             stats = @timed @report_call report_pass=FreshPass(JET.SoundPass()) println(QuoteNode(nothing))
-            if stats.time ≤ (get(ENV, "CI", nothing) == "true" ? 20 : 10) # a CI runner might be slow
+            allow = (get(ENV, "CI", nothing) == "true" ? 20 : 10) # a CI runner might be slow
+            # JET.JET_DEV_MODE && (allow += 5) # add extra nudge for assertion-related overhead?
+            if stats.time ≤ allow
                 ok = true
                 break
             else
-                @warn "bad performance detected: @report_call report_pass=FreshPass(JET.SoundPass()) println(QuoteNode(nothing))"
+                @warn "bad performance detected: @report_call report_pass=FreshPass(JET.SoundPass()) println(QuoteNode(nothing))" stats.time
             end
         end
         @test ok
