@@ -94,42 +94,7 @@ end
 # signature
 # ---------
 
-# adapted from https://github.com/JuliaLang/julia/blob/0f11a7bb07d2d0d8413da05dadd47441705bf0dd/base/show.jl#L989-L1011
-function get_sig(l::MethodInstance)
-    def = l.def
-    ret = if isa(def, Method)
-        if isdefined(def, :generator) && l === def.generator
-            # print(io, "MethodInstance generator for ")
-            # show(io, def)
-            sprint(show, def)
-        else
-            # print(io, "MethodInstance for ")
-            sprint(show_tuple_as_call, def.name, l.specTypes)
-        end
-    else
-        # print(io, "Toplevel MethodInstance thunk")
-        # # `thunk` is not very much information to go on. If this
-        # # MethodInstance is part of a stacktrace, it gets location info
-        # # added by other means.  But if it isn't, then we should try
-        # # to print a little more identifying information.
-        # if !from_stackframe
-        #     linetable = l.uninferred.linetable
-        #     line = isempty(linetable) ? "unknown" : (lt = linetable[1]; string(lt.file) * ':' * string(lt.line))
-        #     print(io, " from ", def, " starting at ", line)
-        # end
-        "toplevel"
-    end
-    return Signature(Any[ret])
-end
-
-@inline function show_tuple_as_call(io::IO, name::Symbol, @nospecialize(sig::Type))
-    @static if hasmethod(Base.show_tuple_as_call, (IO, Symbol, Type), (:demangle, :kwargs, :argnames, :qualified))
-        Base.show_tuple_as_call(io, name, sig; qualified = true)
-    else
-        Base.show_tuple_as_call(io, name, sig, false, nothing, nothing, true)
-    end
-end
-
+get_sig(mi::MethodInstance) = Signature(Any[mi])
 @inline get_sig(s::StateAtPC) = get_sig(s, get_stmt(s))
 @inline get_sig(s::StateAtPC, @nospecialize(x)) = Signature(_get_sig(s, x))
 @inline _get_sig(@nospecialize args...) = first(_get_sig_type(args...))
@@ -145,7 +110,7 @@ Base.iterate(sigtype::SignatureType, state=1) =
 # to help inference
 _get_sig_type(@nospecialize args...) = __get_sig_type(args...)::SignatureType
 
-function _get_callsig(s::StateAtPC, @nospecialize(f), args::Vector{Any};
+function _get_callsig(s::StateAtPC, @nospecialize(f), args::Vector{Any},
                       splat::Bool = false)
     sig = _get_sig(s, f)
     push!(sig, '(')
@@ -170,7 +135,6 @@ function __get_sig_type(s::StateAtPC, expr::Expr)
     if head === :call
         f = first(expr.args)
         args = expr.args[2:end]
-
         # special case splat call signature
         if isa(f, GlobalRef) && f.name === :_apply_iterate && begin
                 itf = first(args)
@@ -178,7 +142,7 @@ function __get_sig_type(s::StateAtPC, expr::Expr)
             end
             f = args[2]
             args = args[3:end]
-            return SignatureType(_get_callsig(s, f, args; splat = true), nothing)
+            return SignatureType(_get_callsig(s, f, args, #=splat=#true), nothing)
         else
             return SignatureType(_get_callsig(s, f, args), nothing)
         end
@@ -192,77 +156,104 @@ function __get_sig_type(s::StateAtPC, expr::Expr)
         if isa(sv, InferenceState)
             lhs = first(expr.args)
             if isa(lhs, SlotNumber)
-                name = sv.src.slotnames[slot_id(lhs)]
-                pushfirst!(first(sigtyp), string(name), " = ")
+                name = get_slotname(sv, lhs)
+                pushfirst!(first(sigtyp), String(name), " = ")
                 return sigtyp
             end
         end
         return sigtyp
     elseif head === :static_parameter
-        typ = widenconst(first(s).sptypes[first(expr.args)::Int])
-        return SignatureType(Any['_', typ], typ)
+        i = first(expr.args)::Int
+        sv = first(s)
+        name = sparam_name((sv.linfo.def::Method).sig::UnionAll, i)
+        typ = widenconst(sv.sptypes[i])
+        return SignatureType(Any[String(name), typ], typ)
     else
-        return SignatureType(Any[string(expr)], nothing)
+        return SignatureType(Any[expr], nothing)
     end
 end
+
+function sparam_name(u::UnionAll, i::Int)
+    while true
+        i == 1 && break
+        u = u.body::UnionAll
+        i -= 1
+    end
+    return u.var.name
+end
+
 function __get_sig_type((sv, _)::StateAtPC, ssa::SSAValue)
-    news = (sv, ssa.id)
+    newstate = (sv, ssa.id)
     if isa(sv, OptimizationState)
         # when working on `OptimizationState`, the SSA traverse could be really long because
         # of inlining, so just give up for such a case
-        typ = widenconst(ignorelimited(ignorenotfound(get_ssavaluetype(news))))
-        sig = Any["%$(ssa.id)", typ]
+        typ = widenconst(ignorelimited(ignorenotfound(get_ssavaluetype(newstate))))
+        sig = Any[ssa, typ]
     else
         # XXX the same problem may happen for `InferenceState` too ?
-        sig, sig_typ = _get_sig_type(news, get_stmt(news))
-        typ = widenconst(ignorelimited(ignorenotfound(get_ssavaluetype(news))))
+        sig, sig_typ = _get_sig_type(newstate, get_stmt(newstate))
+        typ = widenconst(ignorelimited(ignorenotfound(get_ssavaluetype(newstate))))
         # NOTE this additional `typ` would print e.g. return type of an inner call, e.g. `f(getproperty(x, :y)::typ)`
         sig_typ == typ || push!(sig, typ)
     end
     return SignatureType(sig, typ)
 end
+
 function __get_sig_type(s::StateAtPC, slot::SlotNumber)
     sv = first(s)
     name = get_slotname(sv, slot)
-    sig = string(name)
-    if isempty(sig)
-        sig = string(slot) # fallback if no explicit slotname
-    end
     if istoplevel(sv)
         # this is a abstract global variable, form the global reference
         return _get_sig_type(s, GlobalRef(sv.linfo.def::Module, name))
-    else
-        # we can use per-program counter type after inference
-        t = (isa(sv, InferenceState) && sv.inferred) ? get_slottype(sv, slot) : get_slottype(s, slot)
-        typ = widenconst(ignorelimited(t))
-        return SignatureType(Any[sig, typ], typ)
     end
+    if name === Symbol("")
+        repr = slot # fallback if no explicit slotname
+    else
+        repr = String(name)
+    end
+    # we can use per-program counter type after inference
+    typ = widenconst(ignorelimited((sv isa InferenceState && sv.inferred) ?
+        get_slottype(sv, slot) : get_slottype(s, slot)))
+    return SignatureType(Any[repr, typ], typ)
 end
-# NOTE `Argument` is introduced by optimization, and so we don't need to handle abstract global variable here, etc.
+
+# NOTE `Argument` is introduced by optimization, and so we don't need to handle abstract global variable here
 function __get_sig_type((sv, _)::StateAtPC, arg::Argument)
     name = get_slotname(sv, arg.n)
-    sig = string(name)
+    if name === Symbol("")
+        repr = SlotNumber(arg.n) # fallback if no explicit slotname
+    else
+        repr = String(name)
+    end
     typ = widenconst(ignorelimited(get_slottype(sv, arg))) # after optimization we shouldn't use `get_slottype(::StateAtPC, ::Any)`
-    return SignatureType(Any[sig, typ], typ)
+    return SignatureType(Any[repr, typ], typ)
 end
-__get_sig_type(_::StateAtPC, gr::GlobalRef) = SignatureType(Any[string(gr.mod, '.', gr.name)], nothing)
-__get_sig_type(_::StateAtPC, name::Symbol) = SignatureType(Any[repr(name; context = :compact => true)], nothing)
+
 function __get_sig_type(s::StateAtPC, gotoifnot::GotoIfNot)
-    sig  = Any[string("goto %", gotoifnot.dest, " if not "), _get_sig(s, gotoifnot.cond)...]
+    sig = Any["goto ", SSAValue(gotoifnot.dest), " if not ", _get_sig(s, gotoifnot.cond)...]
     return SignatureType(sig, nothing)
 end
+
 function __get_sig_type(s::StateAtPC, rn::ReturnNode)
-    sig = is_unreachable(rn) ? Any["unreachable"] : Any["return ", _get_sig(s, rn.val)...]
+    if is_unreachable(rn)
+        sig = Any["unreachable"]
+    else
+        sig = Any["return ", _get_sig(s, rn.val)...]
+    end
     return SignatureType(sig, nothing)
 end
+
 function __get_sig_type(::StateAtPC, qn::QuoteNode)
-    typ = typeof(qn.value)
-    return SignatureType(Any[string(qn), typ], typ)
+    v = qn.value
+    if isa(v, Symbol)
+        return SignatureType(Any[v], nothing)
+    end
+    typ = typeof(v)
+    return SignatureType(Any[qn, typ], typ)
 end
-# TODO don't use `repr` here -- only stringify safe primitives
-function __get_sig_type(::StateAtPC, @nospecialize(x))
-    return SignatureType(Any[repr(x; context = :compact => true)], nothing)
-end
+
+# fallback: Symbol, GlobalRef, literals...
+__get_sig_type(::StateAtPC, @nospecialize(x)) = SignatureType(Any[x], nothing)
 
 # new report
 # ----------

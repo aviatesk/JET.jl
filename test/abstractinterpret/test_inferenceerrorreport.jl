@@ -38,3 +38,30 @@ end
     @test isa(r, UncaughtExceptionReport)
     @test Any['(', 's', String, ')', ArgumentError] ⫇ r.sig._sig
 end
+
+sparams1(::Type{T}) where T = zero(T)
+sparams21(::Type{A}, ::Type{B}) where A where B = zero(A), zero(B)
+sparams22(::Type{A}, ::Type{B}) where B where A = zero(A), zero(B)
+
+@testset "static parameter name" begin
+    let result = report_call() do
+            sparams1(Char)
+        end
+        report = only(get_reports_with_test(result))
+        @test "T" in report.sig
+    end
+
+    let result = report_call() do
+            sparams21(Int, Char)
+        end
+        report = only(get_reports_with_test(result))
+        @test "B" in report.sig
+    end
+
+    let result = report_call() do
+            sparams22(Int, Char)
+        end
+        report = only(get_reports_with_test(result))
+        @test "B" in report.sig
+    end
+end

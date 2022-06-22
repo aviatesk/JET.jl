@@ -329,13 +329,51 @@ function print_signature(io, sig::Signature, config; kwargs...)
     end
 end
 function _print_signature(io, @nospecialize(x), config; kwargs...)
-    if isa(x, AbstractChar)
-        printstyled(io, x; kwargs...)
-    elseif isa(x, AbstractString)
-        printstyled(io, x; kwargs...)
-    else
+    if isa(x, Type)
         if config.annotate_types
-            printstyled(io, "::", string(x); color = TYPE_ANNOTATION_COLOR, kwargs...)
+            printstyled(io, "::", x; color = TYPE_ANNOTATION_COLOR, kwargs...)
         end
+    elseif isa(x, Symbol)
+        printstyled(io, sprint(show, x); kwargs...)
+    elseif isa(x, QuoteNode)
+        printstyled(io, "[quote]"; kwargs...)
+    elseif isa(x, MethodInstance)
+        printstyled(io, sprint(show_mi, x); kwargs...)
+    else
+        printstyled(io, x; kwargs...)
+    end
+end
+
+# adapted from https://github.com/JuliaLang/julia/blob/0f11a7bb07d2d0d8413da05dadd47441705bf0dd/base/show.jl#L989-L1011
+function show_mi(io::IO, l::MethodInstance)
+    def = l.def
+    if isa(def, Method)
+        if isdefined(def, :generator) && l === def.generator
+            # print(io, "MethodInstance generator for ")
+            show(io, def)
+        else
+            # print(io, "MethodInstance for ")
+            show_tuple_as_call(io, def.name, l.specTypes)
+        end
+    else
+        # print(io, "Toplevel MethodInstance thunk")
+        # # `thunk` is not very much information to go on. If this
+        # # MethodInstance is part of a stacktrace, it gets location info
+        # # added by other means.  But if it isn't, then we should try
+        # # to print a little more identifying information.
+        # if !from_stackframe
+        #     linetable = l.uninferred.linetable
+        #     line = isempty(linetable) ? "unknown" : (lt = linetable[1]; string(lt.file) * ':' * string(lt.line))
+        #     print(io, " from ", def, " starting at ", line)
+        # end
+        print(io, "toplevel")
+    end
+end
+
+@inline function show_tuple_as_call(io::IO, name::Symbol, @nospecialize(sig::Type))
+    @static if hasmethod(Base.show_tuple_as_call, (IO, Symbol, Type), (:demangle, :kwargs, :argnames, :qualified))
+        Base.show_tuple_as_call(io, name, sig; qualified = true)
+    else
+        Base.show_tuple_as_call(io, name, sig, false, nothing, nothing, true)
     end
 end
