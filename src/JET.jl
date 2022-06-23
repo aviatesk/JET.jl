@@ -238,6 +238,16 @@ end
 
 @static @isdefined(LazyString) || include("strings/lazy.jl")
 
+function anypush!(a::Vector{Any}, @nospecialize x...)
+    na = length(a)
+    nx = length(x)
+    Base._growend!(a, nx)
+    for i = 1:nx
+        Base.arrayset(true, a, x[i], na+i)
+    end
+    return a
+end
+
 # macros
 # ------
 

@@ -96,6 +96,7 @@ include("setup.jl")
                ft === typeof(string) ||
                ft === typeof(zero) ||
                ft === typeof(JET.copy_report) ||
+               ft === typeof(JET._get_sig!) ||
                # requires https://github.com/JuliaLang/julia/pull/43113
                @static VERSION < v"1.8.0-DEV.1053" ? ft === typeof(isprimitivetype) : false ||
                false
