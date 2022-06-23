@@ -70,10 +70,10 @@ end
 # -----------------
 
 let g = addgroup!(SUITE, "show(::IO, ::JETCallResult)")
-    g["@report_call sum(\"julia\")"] = @benchmarkable show(io, results) setup = (
+    g["report_call"] = @benchmarkable show(io, results) setup = (
         io = IOContext(IOBuffer(), :color=>true);
         results = @report_call sum("julia"))
-    g["report_opt(Core.Compiler.typeinf, (Core.Compiler.NativeInterpreter, Core.Compiler.InferenceState))"] = @benchmarkable show(io, results) setup = (
+    g["report_opt"] = @benchmarkable show(io, results) setup = (
         io = IOContext(IOBuffer(), :color=>true);
         results = report_opt(Core.Compiler.typeinf, (Core.Compiler.NativeInterpreter, Core.Compiler.InferenceState)))
     tune_benchmarks!(g; seconds=15.0)
