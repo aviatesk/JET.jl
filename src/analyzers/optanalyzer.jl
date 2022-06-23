@@ -320,7 +320,7 @@ function (::OptAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::OptAnalyze
             CC.find_throw_blocks(src.code) : nothing
     end
 
-    # TODO better to work on `opt.ir::IRCode` (with some updates on `_get_sig`)
+    # TODO better to work on `opt.ir::IRCode` (with some updates on `_get_sig_impl`)
     local reported = false
     for (pc, x) in enumerate(src.code)
         # branch on https://github.com/JuliaLang/julia/pull/42149

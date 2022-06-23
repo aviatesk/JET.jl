@@ -95,30 +95,21 @@ end
 # ---------
 
 get_sig(mi::MethodInstance) = Signature(Any[mi])
-@inline get_sig(s::StateAtPC) = get_sig(s, get_stmt(s))
-@inline get_sig(s::StateAtPC, @nospecialize(x)) = Signature(_get_sig(s, x))
-@inline _get_sig(@nospecialize args...) = first(_get_sig_type(args...))
+@inline get_sig(s::StateAtPC, @nospecialize(x=get_stmt(s))) = Signature(_get_sig(s, x))
 
-struct SignatureType
-    sig::Vector{Any}
-    typ
-    SignatureType(sig::Vector{Any}, @nospecialize typ) = new(sig, typ)
+function _get_sig(@nospecialize args...)
+    sig = Any[]
+    _get_sig!(sig, args...)
+    return sig
 end
-Base.iterate(sigtype::SignatureType, state=1) =
-    return state > 2 ? nothing : (getfield(sigtype, state), state+1)
 
-# to help inference
-_get_sig_type(@nospecialize args...) = __get_sig_type(args...)::SignatureType
-
-function _get_callsig(s::StateAtPC, @nospecialize(f), args::Vector{Any},
-                      splat::Bool = false)
-    sig = _get_sig(s, f)
+function _get_sig_call!(sig::Vector{Any}, s::StateAtPC,
+    @nospecialize(f), args::Vector{Any}, splat::Bool = false)
+    _get_sig!(sig, s, f)
     push!(sig, '(')
-
     nargs = length(args)
     for (i, arg) in enumerate(args)
-        arg_sig = _get_sig(s, arg)
-        append!(sig, arg_sig)
+        _get_sig!(sig, s, arg)
         if i ≠ nargs
             push!(sig, ", ")
         else
@@ -126,11 +117,10 @@ function _get_callsig(s::StateAtPC, @nospecialize(f), args::Vector{Any},
         end
     end
     push!(sig, ')')
-
     return sig
 end
 
-function __get_sig_type(s::StateAtPC, expr::Expr)
+function _get_sig!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
     head = expr.head
     if head === :call
         f = first(expr.args)
@@ -142,35 +132,34 @@ function __get_sig_type(s::StateAtPC, expr::Expr)
             end
             f = args[2]
             args = args[3:end]
-            return SignatureType(_get_callsig(s, f, args, #=splat=#true), nothing)
+            _get_sig_call!(sig, s, f, args, #=splat=#true)
         else
-            return SignatureType(_get_callsig(s, f, args), nothing)
+            _get_sig_call!(sig, s, f, args)
         end
     elseif head === :invoke
         f = expr.args[2]
         args = expr.args[3:end]
-        return SignatureType(_get_callsig(s, f, args), nothing)
+        _get_sig_call!(sig, s, f, args)
     elseif head === :(=)
-        sigtyp = _get_sig_type(s, last(expr.args))
         sv = first(s)
         if isa(sv, InferenceState)
             lhs = first(expr.args)
             if isa(lhs, SlotNumber)
                 name = get_slotname(sv, lhs)
-                pushfirst!(first(sigtyp), String(name), " = ")
-                return sigtyp
+                pushfirst!(sig, String(name), " = ")
             end
         end
-        return sigtyp
+        _get_sig!(sig, s, last(expr.args))
     elseif head === :static_parameter
         i = first(expr.args)::Int
         sv = first(s)
         name = sparam_name((sv.linfo.def::Method).sig::UnionAll, i)
         typ = widenconst(sv.sptypes[i])
-        return SignatureType(Any[String(name), typ], typ)
+        anypush!(sig, String(name), typ)
     else
-        return SignatureType(Any[expr], nothing)
+        push!(sig, expr)
     end
+    return sig
 end
 
 function sparam_name(u::UnionAll, i::Int)
@@ -182,29 +171,27 @@ function sparam_name(u::UnionAll, i::Int)
     return u.var.name
 end
 
-function __get_sig_type((sv, _)::StateAtPC, ssa::SSAValue)
+function _get_sig!(sig::Vector{Any}, (sv, _)::StateAtPC, ssa::SSAValue)
     newstate = (sv, ssa.id)
     if isa(sv, OptimizationState)
         # when working on `OptimizationState`, the SSA traverse could be really long because
         # of inlining, so just give up for such a case
         typ = widenconst(ignorelimited(ignorenotfound(get_ssavaluetype(newstate))))
-        sig = Any[ssa, typ]
+        anypush!(sig, ssa, typ)
     else
         # XXX the same problem may happen for `InferenceState` too ?
-        sig, sig_typ = _get_sig_type(newstate, get_stmt(newstate))
-        typ = widenconst(ignorelimited(ignorenotfound(get_ssavaluetype(newstate))))
-        # NOTE this additional `typ` would print e.g. return type of an inner call, e.g. `f(getproperty(x, :y)::typ)`
-        sig_typ == typ || push!(sig, typ)
+        _get_sig!(sig, newstate, get_stmt(newstate))
     end
-    return SignatureType(sig, typ)
+    return sig
 end
 
-function __get_sig_type(s::StateAtPC, slot::SlotNumber)
+function _get_sig!(sig::Vector{Any}, s::StateAtPC, slot::SlotNumber)
     sv = first(s)
     name = get_slotname(sv, slot)
     if istoplevel(sv)
         # this is a abstract global variable, form the global reference
-        return _get_sig_type(s, GlobalRef(sv.linfo.def::Module, name))
+        _get_sig!(sig, s, GlobalRef(sv.linfo.def::Module, name))
+        return sig
     end
     if name === Symbol("")
         repr = slot # fallback if no explicit slotname
@@ -214,11 +201,12 @@ function __get_sig_type(s::StateAtPC, slot::SlotNumber)
     # we can use per-program counter type after inference
     typ = widenconst(ignorelimited((sv isa InferenceState && sv.inferred) ?
         get_slottype(sv, slot) : get_slottype(s, slot)))
-    return SignatureType(Any[repr, typ], typ)
+    anypush!(sig, repr, typ)
+    return sig
 end
 
 # NOTE `Argument` is introduced by optimization, and so we don't need to handle abstract global variable here
-function __get_sig_type((sv, _)::StateAtPC, arg::Argument)
+function _get_sig!(sig::Vector{Any}, (sv, _)::StateAtPC, arg::Argument)
     name = get_slotname(sv, arg.n)
     if name === Symbol("")
         repr = SlotNumber(arg.n) # fallback if no explicit slotname
@@ -226,34 +214,39 @@ function __get_sig_type((sv, _)::StateAtPC, arg::Argument)
         repr = String(name)
     end
     typ = widenconst(ignorelimited(get_slottype(sv, arg))) # after optimization we shouldn't use `get_slottype(::StateAtPC, ::Any)`
-    return SignatureType(Any[repr, typ], typ)
+    push!(sig, repr, typ)
+    return sig
 end
 
-function __get_sig_type(s::StateAtPC, gotoifnot::GotoIfNot)
-    sig = Any["goto ", SSAValue(gotoifnot.dest), " if not ", _get_sig(s, gotoifnot.cond)...]
-    return SignatureType(sig, nothing)
+function _get_sig!(sig::Vector{Any}, s::StateAtPC, gotoifnot::GotoIfNot)
+    push!(sig, "goto ", SSAValue(gotoifnot.dest), " if not ")
+    _get_sig!(sig, s, gotoifnot.cond)
+    return sig
 end
 
-function __get_sig_type(s::StateAtPC, rn::ReturnNode)
+function _get_sig!(sig::Vector{Any}, s::StateAtPC, rn::ReturnNode)
     if is_unreachable(rn)
-        sig = Any["unreachable"]
+        push!(sig, "unreachable")
     else
-        sig = Any["return ", _get_sig(s, rn.val)...]
+        push!(sig, "return ")
+        _get_sig!(sig, s, rn.val)
     end
-    return SignatureType(sig, nothing)
+    return sig
 end
 
-function __get_sig_type(::StateAtPC, qn::QuoteNode)
+function _get_sig!(sig::Vector{Any}, ::StateAtPC, qn::QuoteNode)
     v = qn.value
     if isa(v, Symbol)
-        return SignatureType(Any[v], nothing)
+        push!(sig, v)
+        return sig
     end
     typ = typeof(v)
-    return SignatureType(Any[qn, typ], typ)
+    anypush!(sig, qn, typ)
+    return sig
 end
 
 # fallback: Symbol, GlobalRef, literals...
-__get_sig_type(::StateAtPC, @nospecialize(x)) = SignatureType(Any[x], nothing)
+_get_sig!(sig::Vector{Any}, ::StateAtPC, @nospecialize(x)) = (push!(sig, x); return sig)
 
 # new report
 # ----------
