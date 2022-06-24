@@ -61,3 +61,37 @@ end
         end #=== LINE SENSITIVITY END ===#
     end
 end
+
+test_print_callf(f, a) = f(a)
+@testset "simplified global references" begin
+    # exported names should not be canonicalized
+    let result = @report_call sum("julia")
+        buf = IOBuffer()
+        show(buf, result)
+        s = String(take!(buf))
+        @test occursin("+", s)
+        @test !occursin("Base.:+", s)
+        @test occursin("zero", s)
+        @test !occursin("Base.zero", s)
+    end
+
+    # `Main.`-prefix should be omitted
+    let result = report_call() do
+            sin("42")
+        end
+        buf = IOBuffer()
+        show(buf, result)
+        s = String(take!(buf))
+        @test occursin("sin", s)
+        @test !occursin(r"(Main|Base)\.sin", s)
+    end
+    let result = report_call() do
+            test_print_callf(sin, "42")
+        end
+        buf = IOBuffer()
+        show(buf, result)
+        s = String(take!(buf))
+        @test occursin("test_print_callf", s)
+        @test !occursin(r"(Main|Base)\.test_print_callf", s)
+    end
+end

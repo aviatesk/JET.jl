@@ -339,6 +339,8 @@ function _print_signature(io, @nospecialize(x), config; kwargs...)
         printstyled(io, "[quote]"; kwargs...)
     elseif isa(x, MethodInstance)
         printstyled(io, sprint(show_mi, x); kwargs...)
+    elseif isa(x, GlobalRef) && (x.mod === Main || Base.isexported(x.mod, x.name))
+        printstyled(io, x.name; kwargs...)
     else
         printstyled(io, x; kwargs...)
     end
