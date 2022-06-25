@@ -86,24 +86,24 @@ julia> report_and_watch_file("demo.jl"; annotate_types = true)
 ┌ @ demo.jl:10 fib(m)
 │ variable m is not defined
 └──────────────
-┌ @ demo.jl:11 fib(1000)
-│┌ @ demo.jl:7 :≤(n::String, 2)
-││┌ @ operators.jl:392 Base.:<(x::String, y::Int64)
-│││┌ @ operators.jl:343 Base.isless(x::String, y::Int64)
-││││ no matching method found for `isless(::String, ::Int64)`: Base.isless(x::String, y::Int64)
+┌ @ demo.jl:11 fib("1000")
+│┌ @ demo.jl:7 n::String :≤ 2
+││┌ @ operators.jl:392 x::String < y::Int64
+│││┌ @ operators.jl:343 isless(x::String, y::Int64)
+││││ no matching method found for `isless(::String, ::Int64)`: isless(x::String, y::Int64)
 │││└────────────────────
 ┌ @ demo.jl:32 foo(1.2)
 │┌ @ demo.jl:24 bar(v::Union{})
-││┌ @ demo.jl:29 Base.getproperty(v::Ty{Float64}, :fdl)
+││┌ @ demo.jl:29 (v::Ty{Float64}).fdl
 │││┌ @ Base.jl:37 Base.getfield(x::Ty{Float64}, f::Symbol)
 ││││ type Ty{Float64} has no field fdl
 │││└──────────────
-┌ @ demo.jl:33 foo(1)
+┌ @ demo.jl:33 foo("1")
 │┌ @ demo.jl:24 bar(v::Union{})
-││┌ @ demo.jl:30 convert(Number, Base.getproperty(v::Ty{String}, :fld)::String)
-│││ no matching method found for `convert(::Type{Number}, ::String)`: convert(Number, Base.getproperty(v::Ty{String}, :fld)::String)
+││┌ @ demo.jl:30 convert(Number, (v::Ty{String}).fld)
+│││ no matching method found for `convert(::Type{Number}, ::String)`: convert(Number, (v::Ty{String}).fld)
 ││└──────────────
-┌ @ demo.jl:44 badmerge(Core.apply_type(Core.NamedTuple, (:x, :y)::Tuple{Symbol, Symbol})::Type{NamedTuple{(:x, :y)}}(Core.tuple(1, 2)::Tuple{Int64, Int64})::NamedTuple{(:x, :y), Tuple{Int64, Int64}}, Core.apply_type(Core.NamedTuple, (:y, :z)::Tuple{Symbol, Symbol})::Type{NamedTuple{(:y, :z)}}(Core.tuple(3, 1)::Tuple{Int64, Int64})::NamedTuple{(:y, :z), Tuple{Int64, Int64}})
+┌ @ demo.jl:44 badmerge(NamedTuple{(:x, :y)}(tuple(1, 2)), NamedTuple{(:y, :z)}(tuple(3, 1)))
 │┌ @ demo.jl:37 getfield(a::NamedTuple{(:x, :y), Tuple{Int64, Int64}}, x)
 ││ variable x is not defined
 │└──────────────
@@ -115,7 +115,7 @@ julia> report_and_watch_file("demo.jl"; annotate_types = true)
 │└──────────────
 ```
 
-Hooray !
+Hooray!
 JET.jl found possible error points (e.g. `MethodError: no method matching isless(::String, ::Int64)`) given toplevel call signatures of generic functions (e.g. `fib("1000")`).
 
 Note that JET can find these errors while demo.jl is so inefficient (especially the `fib` implementation) that it would never terminate in actual execution.

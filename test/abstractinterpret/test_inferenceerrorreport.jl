@@ -52,6 +52,18 @@ end
     @test occursin("(r::Regex).nonexist", s)
 end
 
+@testset "Core.apply_type signature" begin
+    result = report_call() do
+        NamedTuple{(:x,:y)}(1,2)
+    end
+
+    buf = IOBuffer()
+    print_reports(buf, get_reports_with_test(result))
+    s = String(take!(buf))
+    @test !occursin("Core.apply_type", s)
+    @test occursin("NamedTuple{(:x, :y)}", s)
+end
+
 @testset ":invoke signature" begin
     m = @fixturedef begin
         foo(s::AbstractString) = throw(ArgumentError(s))

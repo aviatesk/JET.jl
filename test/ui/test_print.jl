@@ -62,6 +62,26 @@ end
     end
 end
 
+@testset "repr" begin
+    let result = report_call((Regex,)) do r
+            getfield(r, :nonexist)
+        end
+        buf = IOBuffer()
+        show(buf, result)
+        s = String(take!(buf))
+        @test occursin(":nonexist", s)
+    end
+
+    let result = report_call() do
+            sin("julia")
+        end
+        buf = IOBuffer()
+        show(buf, result)
+        s = String(take!(buf))
+        @test occursin("sin(\"julia\")", s)
+    end
+end
+
 test_print_callf(f, a) = f(a)
 @testset "simplified global references" begin
     # exported names should not be canonicalized

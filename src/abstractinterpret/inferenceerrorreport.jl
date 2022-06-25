@@ -116,6 +116,9 @@ function _get_sig!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
             elseif isgetproperty(f, args)
                 _get_sig_getproperty!(sig, s, f, args)
                 return sig
+            elseif is_const_apply_type(f, s)
+                push!(sig, ApplyTypeResult((get_ssavaluetype(s)::Const).val))
+                return sig
             elseif issplat(f, args)
                 f = args[2]
                 args = args[3:end]
@@ -183,6 +186,12 @@ function issplat(f::GlobalRef, args::Vector{Any})
     itf = first(args)
     isa(itf, GlobalRef) || return false
     return itf.name === :iterate
+end
+
+function is_const_apply_type(f::GlobalRef, s::StateAtPC)
+    f.name === :apply_type || return false
+    typ = get_ssavaluetype(s)
+    return isa(typ, Const)
 end
 
 function _get_sig_call!(sig::Vector{Any}, s::StateAtPC, @nospecialize(f), args::Vector{Any},

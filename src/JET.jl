@@ -434,7 +434,7 @@ get_lin((sv, pc)::StateAtPC) = begin
         end
     end
 end
-get_ssavaluetype((sv, pc)::StateAtPC) = sv.src.ssavaluetypes[pc]
+get_ssavaluetype((sv, pc)::StateAtPC) = (sv.src.ssavaluetypes::Vector{Any})[pc]
 
 get_slottype(s::Union{StateAtPC,State}, slot) = get_slottype(s, slot_id(slot))
 get_slottype((sv, pc)::StateAtPC, slot::Int) = get_slottype(sv, slot)

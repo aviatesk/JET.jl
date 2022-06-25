@@ -339,6 +339,8 @@ function _print_signature(io, @nospecialize(x), config; kwargs...)
         if config.annotate_types
             printstyled(io, x.switch ? '(' : ')'; kwargs...)
         end
+    elseif isa(x, ApplyTypeResult)
+        printstyled(io, x.typ; kwargs...)
     elseif isa(x, QuoteNode)
         printstyled(io, "[quote]"; kwargs...)
     elseif isa(x, MethodInstance)
@@ -358,6 +360,11 @@ end
 # for printing `x.y` -> `(x::T).y`
 struct GetpropertyCallMaker
     switch::Bool
+end
+# for printing `Core.apply_type(...)::Const(T)` -> `T`
+struct ApplyTypeResult
+    typ # ::Type
+    ApplyTypeResult(@nospecialize typ) = new(typ)
 end
 
 # adapted from https://github.com/JuliaLang/julia/blob/0f11a7bb07d2d0d8413da05dadd47441705bf0dd/base/show.jl#L989-L1011
