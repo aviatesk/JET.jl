@@ -89,6 +89,7 @@ include("setup.jl")
         # TODO implement `signature_filter` and limit the ignorance scope
         function function_filter(@nospecialize ft)
             if ft === typeof(JET.widenconst) ||
+               ft === typeof(JET.ignorelimited) ||
                ft === typeof(JET.print) ||
                ft === typeof(Base.CoreLogging.handle_message) ||
                ft === typeof(get) ||
@@ -96,7 +97,7 @@ include("setup.jl")
                ft === typeof(string) ||
                ft === typeof(zero) ||
                ft === typeof(JET.copy_report) ||
-               ft === typeof(JET._get_sig!) ||
+               ft === typeof(JET.handle_sig!) ||
                # requires https://github.com/JuliaLang/julia/pull/43113
                @static VERSION < v"1.8.0-DEV.1053" ? ft === typeof(isprimitivetype) : false ||
                false

@@ -95,51 +95,40 @@ end
 # ---------
 
 get_sig(mi::MethodInstance) = Signature(Any[mi])
-@inline get_sig(s::StateAtPC, @nospecialize(x=get_stmt(s))) = Signature(_get_sig(s, x))
+@inline get_sig(s::StateAtPC, @nospecialize(x=get_stmt(s))) = Signature(get_sig_nowrap(s, x))
 
-function _get_sig(@nospecialize args...)
+function get_sig_nowrap(@nospecialize args...)
     sig = Any[]
-    _get_sig!(sig, args...)
+    handle_sig!(sig, args...)
     return sig
 end
 
-function _get_sig_call!(sig::Vector{Any}, s::StateAtPC,
-    @nospecialize(f), args::Vector{Any}, splat::Bool = false)
-    _get_sig!(sig, s, f)
-    push!(sig, '(')
-    nargs = length(args)
-    for (i, arg) in enumerate(args)
-        _get_sig!(sig, s, arg)
-        if i ≠ nargs
-            push!(sig, ", ")
-        else
-            splat && push!(sig, "...")
-        end
-    end
-    push!(sig, ')')
-    return sig
-end
-
-function _get_sig!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
+function handle_sig!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
     head = expr.head
     if head === :call
         f = first(expr.args)
         args = expr.args[2:end]
-        # special case splat call signature
-        if isa(f, GlobalRef) && f.name === :_apply_iterate && begin
-                itf = first(args)
-                isa(itf, GlobalRef) && itf.name === :iterate
+        splat = false
+        if isa(f, GlobalRef)
+            maybe_handle_sig_binop!(sig, s, f, args) && return sig
+            maybe_handle_sig_getproperty!(sig, s, f, args) && return sig
+            maybe_handle_sig_setproperty!!(sig, s, f, args) && return sig
+            maybe_handle_sig_getindex!(sig, s, f, args) && return sig
+            maybe_handle_sig_setindex!!(sig, s, f, args) && return sig
+            maybe_handle_sig_const_apply_type!(sig, s, f, args) && return sig
+            if issplat(f, args)
+                f = args[2]
+                args = args[3:end]
+                splat = true
             end
-            f = args[2]
-            args = args[3:end]
-            _get_sig_call!(sig, s, f, args, #=splat=#true)
-        else
-            _get_sig_call!(sig, s, f, args)
         end
+        handle_sig_call!(sig, s, f, args, #=splat=#splat)
+        return sig
     elseif head === :invoke
         f = expr.args[2]
         args = expr.args[3:end]
-        _get_sig_call!(sig, s, f, args)
+        handle_sig_call!(sig, s, f, args)
+        return sig
     elseif head === :(=)
         sv = first(s)
         if isa(sv, InferenceState)
@@ -149,16 +138,134 @@ function _get_sig!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
                 pushfirst!(sig, String(name), " = ")
             end
         end
-        _get_sig!(sig, s, last(expr.args))
+        handle_sig!(sig, s, last(expr.args))
+        return sig
     elseif head === :static_parameter
         i = first(expr.args)::Int
         sv = first(s)
         name = sparam_name((sv.linfo.def::Method).sig::UnionAll, i)
         typ = widenconst(sv.sptypes[i])
         anypush!(sig, String(name), typ)
+        return sig
     else
         push!(sig, expr)
+        return sig
     end
+end
+
+function maybe_handle_sig_binop!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, args::Vector{Any})
+    (Base.isbinaryoperator(f.name) && length(args) == 2) || return false
+    handle_sig!(sig, s, AnnotationMaker(true))
+    handle_sig!(sig, s, args[1])
+    push!(sig, ' ')
+    handle_sig!(sig, s, f)
+    push!(sig, ' ')
+    handle_sig!(sig, s, args[2])
+    handle_sig!(sig, s, AnnotationMaker(false))
+    push!(sig, safewidenconst(get_ssavaluetype(s)))
+    return true
+end
+
+function maybe_handle_sig_getproperty!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, args::Vector{Any})
+    f.name === :getproperty || return false
+    length(args) == 2 || return false
+    sym = args[2]
+    isa(sym, QuoteNode) || return false
+    val = sym.value
+    isa(val, Symbol) || return false
+    handle_sig!(sig, s, AnnotationMaker(true))
+    handle_sig!(sig, s, args[1])
+    handle_sig!(sig, s, AnnotationMaker(false))
+    push!(sig, '.')
+    push!(sig, String(val))
+    push!(sig, safewidenconst(get_ssavaluetype(s)))
+    return true
+end
+
+function maybe_handle_sig_setproperty!!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, args::Vector{Any})
+    f.name === :setproperty! || return false
+    length(args) == 3 || return false
+    sym = args[2]
+    isa(sym, QuoteNode) || return false
+    val = sym.value
+    isa(val, Symbol) || return false
+    handle_sig!(sig, s, AnnotationMaker(true))
+    handle_sig!(sig, s, args[1])
+    handle_sig!(sig, s, AnnotationMaker(false))
+    push!(sig, '.')
+    push!(sig, String(val))
+    push!(sig, " = ")
+    handle_sig!(sig, s, args[3])
+    push!(sig, safewidenconst(get_ssavaluetype(s)))
+    return true
+end
+
+function maybe_handle_sig_getindex!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, args::Vector{Any})
+    f.name === :getindex || return false
+    length(args) ≥ 1 || return false
+    handle_sig!(sig, s, AnnotationMaker(true))
+    handle_sig!(sig, s, args[1])
+    handle_sig!(sig, s, AnnotationMaker(false))
+    push!(sig, '[')
+    na = length(args)
+    for i = 2:na
+        handle_sig!(sig, s, args[i])
+        i == na || push!(sig, ", ")
+    end
+    push!(sig, ']')
+    push!(sig, safewidenconst(get_ssavaluetype(s)))
+    return true
+end
+
+function maybe_handle_sig_setindex!!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, args::Vector{Any})
+    f.name === :setindex! || return false
+    length(args) ≥ 2 || return false
+    handle_sig!(sig, s, AnnotationMaker(true))
+    handle_sig!(sig, s, args[1])
+    handle_sig!(sig, s, AnnotationMaker(false))
+    push!(sig, '[')
+    na = length(args)
+    for i = 3:na
+        handle_sig!(sig, s, args[i])
+        i == na || push!(sig, ", ")
+    end
+    push!(sig, ']')
+    push!(sig, " = ")
+    handle_sig!(sig, s, args[2])
+    push!(sig, safewidenconst(get_ssavaluetype(s)))
+    return true
+end
+
+function maybe_handle_sig_const_apply_type!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, args::Vector{Any})
+    f.name === :apply_type || return false
+    typ = get_ssavaluetype(s)
+    isa(typ, Const) || return false
+    push!(sig, ApplyTypeResult(typ.val))
+    return true
+end
+
+function issplat(f::GlobalRef, args::Vector{Any})
+    f.name === :_apply_iterate || return false
+    itf = first(args)
+    isa(itf, GlobalRef) || return false
+    return itf.name === :iterate
+end
+
+function handle_sig_call!(sig::Vector{Any}, s::StateAtPC, @nospecialize(f), args::Vector{Any},
+    splat::Bool = false)
+    handle_sig!(sig, s, f)
+    push!(sig, '(')
+    nargs = length(args)
+    for (i, arg) in enumerate(args)
+        handle_sig!(sig, s, arg)
+        if i ≠ nargs
+            push!(sig, ", ")
+        else
+            splat && push!(sig, "...")
+        end
+    end
+    push!(sig, ')')
+    push!(sig, safewidenconst(get_ssavaluetype(s)))
     return sig
 end
 
@@ -171,26 +278,26 @@ function sparam_name(u::UnionAll, i::Int)
     return u.var.name
 end
 
-function _get_sig!(sig::Vector{Any}, (sv, _)::StateAtPC, ssa::SSAValue)
+function handle_sig!(sig::Vector{Any}, (sv, _)::StateAtPC, ssa::SSAValue)
     newstate = (sv, ssa.id)
     if isa(sv, OptimizationState)
         # when working on `OptimizationState`, the SSA traverse could be really long because
         # of inlining, so just give up for such a case
-        typ = widenconst(ignorelimited(ignorenotfound(get_ssavaluetype(newstate))))
+        typ = safewidenconst(get_ssavaluetype(newstate))
         anypush!(sig, ssa, typ)
     else
         # XXX the same problem may happen for `InferenceState` too ?
-        _get_sig!(sig, newstate, get_stmt(newstate))
+        handle_sig!(sig, newstate, get_stmt(newstate))
     end
     return sig
 end
 
-function _get_sig!(sig::Vector{Any}, s::StateAtPC, slot::SlotNumber)
+function handle_sig!(sig::Vector{Any}, s::StateAtPC, slot::SlotNumber)
     sv = first(s)
     name = get_slotname(sv, slot)
     if istoplevel(sv)
         # this is a abstract global variable, form the global reference
-        _get_sig!(sig, s, GlobalRef(sv.linfo.def::Module, name))
+        handle_sig!(sig, s, GlobalRef(sv.linfo.def::Module, name))
         return sig
     end
     if name === Symbol("")
@@ -199,45 +306,45 @@ function _get_sig!(sig::Vector{Any}, s::StateAtPC, slot::SlotNumber)
         repr = String(name)
     end
     # we can use per-program counter type after inference
-    typ = widenconst(ignorelimited((sv isa InferenceState && sv.inferred) ?
-        get_slottype(sv, slot) : get_slottype(s, slot)))
+    typ = safewidenconst((sv isa InferenceState && sv.inferred) ?
+        get_slottype(sv, slot) : get_slottype(s, slot))
     anypush!(sig, repr, typ)
     return sig
 end
 
 # NOTE `Argument` is introduced by optimization, and so we don't need to handle abstract global variable here
-function _get_sig!(sig::Vector{Any}, (sv, _)::StateAtPC, arg::Argument)
+function handle_sig!(sig::Vector{Any}, (sv, _)::StateAtPC, arg::Argument)
     name = get_slotname(sv, arg.n)
     if name === Symbol("")
         repr = SlotNumber(arg.n) # fallback if no explicit slotname
     else
         repr = String(name)
     end
-    typ = widenconst(ignorelimited(get_slottype(sv, arg))) # after optimization we shouldn't use `get_slottype(::StateAtPC, ::Any)`
+    typ = safewidenconst(get_slottype(sv, arg)) # after optimization we shouldn't use `get_slottype(::StateAtPC, ::Any)`
     push!(sig, repr, typ)
     return sig
 end
 
-function _get_sig!(sig::Vector{Any}, s::StateAtPC, gotoifnot::GotoIfNot)
+function handle_sig!(sig::Vector{Any}, s::StateAtPC, gotoifnot::GotoIfNot)
     push!(sig, "goto ", SSAValue(gotoifnot.dest), " if not ")
-    _get_sig!(sig, s, gotoifnot.cond)
+    handle_sig!(sig, s, gotoifnot.cond)
     return sig
 end
 
-function _get_sig!(sig::Vector{Any}, s::StateAtPC, rn::ReturnNode)
+function handle_sig!(sig::Vector{Any}, s::StateAtPC, rn::ReturnNode)
     if is_unreachable(rn)
         push!(sig, "unreachable")
     else
         push!(sig, "return ")
-        _get_sig!(sig, s, rn.val)
+        handle_sig!(sig, s, rn.val)
     end
     return sig
 end
 
-function _get_sig!(sig::Vector{Any}, ::StateAtPC, qn::QuoteNode)
+function handle_sig!(sig::Vector{Any}, ::StateAtPC, qn::QuoteNode)
     v = qn.value
     if isa(v, Symbol)
-        push!(sig, v)
+        push!(sig, Repr(v))
         return sig
     end
     typ = typeof(v)
@@ -245,8 +352,12 @@ function _get_sig!(sig::Vector{Any}, ::StateAtPC, qn::QuoteNode)
     return sig
 end
 
-# fallback: Symbol, GlobalRef, literals...
-_get_sig!(sig::Vector{Any}, ::StateAtPC, @nospecialize(x)) = (push!(sig, x); return sig)
+# reprs
+handle_sig!(sig::Vector{Any}, ::StateAtPC, x::Symbol) = (push!(sig, Repr(x)); return sig)
+handle_sig!(sig::Vector{Any}, ::StateAtPC, x::String) = (push!(sig, Repr(x)); return sig)
+
+# fallback: GlobalRef, literals...
+handle_sig!(sig::Vector{Any}, ::StateAtPC, @nospecialize(x)) = (push!(sig, x); return sig)
 
 # new report
 # ----------
