@@ -103,8 +103,8 @@ function _get_sig(@nospecialize args...)
     return sig
 end
 
-function _get_sig_call!(sig::Vector{Any}, s::StateAtPC,
-    @nospecialize(f), args::Vector{Any}, splat::Bool = false)
+function _get_sig_call!(sig::Vector{Any}, s::StateAtPC, @nospecialize(f), args::Vector{Any},
+    splat::Bool = false)
     _get_sig!(sig, s, f)
     push!(sig, '(')
     nargs = length(args)
@@ -120,26 +120,41 @@ function _get_sig_call!(sig::Vector{Any}, s::StateAtPC,
     return sig
 end
 
+function _get_sig_binop!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, args::Vector{Any})
+    _get_sig!(sig, s, args[1])
+    push!(sig, ' ')
+    _get_sig!(sig, s, f)
+    push!(sig, ' ')
+    _get_sig!(sig, s, args[2])
+    return sig
+end
+
 function _get_sig!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
     head = expr.head
     if head === :call
         f = first(expr.args)
         args = expr.args[2:end]
-        # special case splat call signature
-        if isa(f, GlobalRef) && f.name === :_apply_iterate && begin
-                itf = first(args)
-                isa(itf, GlobalRef) && itf.name === :iterate
+        splat = false
+        if isa(f, GlobalRef)
+            if Base.isbinaryoperator(f.name) && length(args) == 2
+                _get_sig_binop!(sig, s, f, args)
+                return sig
+            elseif f.name === :_apply_iterate && begin
+                    itf = first(args)
+                    isa(itf, GlobalRef) && itf.name === :iterate
+                end
+                f = args[2]
+                args = args[3:end]
+                splat = true
             end
-            f = args[2]
-            args = args[3:end]
-            _get_sig_call!(sig, s, f, args, #=splat=#true)
-        else
-            _get_sig_call!(sig, s, f, args)
         end
+        _get_sig_call!(sig, s, f, args, #=splat=#splat)
+        return sig
     elseif head === :invoke
         f = expr.args[2]
         args = expr.args[3:end]
         _get_sig_call!(sig, s, f, args)
+        return sig
     elseif head === :(=)
         sv = first(s)
         if isa(sv, InferenceState)
@@ -150,16 +165,18 @@ function _get_sig!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
             end
         end
         _get_sig!(sig, s, last(expr.args))
+        return sig
     elseif head === :static_parameter
         i = first(expr.args)::Int
         sv = first(s)
         name = sparam_name((sv.linfo.def::Method).sig::UnionAll, i)
         typ = widenconst(sv.sptypes[i])
         anypush!(sig, String(name), typ)
+        return sig
     else
         push!(sig, expr)
+        return sig
     end
-    return sig
 end
 
 function sparam_name(u::UnionAll, i::Int)

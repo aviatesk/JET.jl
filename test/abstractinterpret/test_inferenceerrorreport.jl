@@ -18,14 +18,24 @@ function ⫇(a, b)
     return false
 end
 
-@testset "error location signature" begin
-    result = report_call((Char,Char)) do a, b
-        a + b
+@testset "signature" begin
+    result = report_call((String,String)) do a, b
+        sin(a, b)
     end
-    @test length(get_reports_with_test(result)) == 1
-    r = first(get_reports_with_test(result))
+    r = only(get_reports_with_test(result))
     @test isa(r, NoMethodErrorReport)
-    @test Any['(', 'a', Char, ", ", 'b', Char, ')'] ⫇ r.sig._sig
+    @test Any['(', 'a', String, ", ", 'b', String, ')'] ⫇ r.sig._sig
+end
+
+@testset "binary signature" begin
+    let result = report_call((String,String)) do a, b
+            a + b
+        end
+        buf = IOBuffer()
+        print_reports(buf, get_reports_with_test(result))
+        s = String(take!(buf))
+        @test occursin("a + b", s)
+    end
 end
 
 @testset ":invoke signature" begin
@@ -33,8 +43,7 @@ end
         foo(s::AbstractString) = throw(ArgumentError(s))
     end
     result = report_call(m.foo, (String,))
-    @test length(get_reports_with_test(result)) == 1
-    r = first(get_reports_with_test(result))
+    r = only(get_reports_with_test(result))
     @test isa(r, UncaughtExceptionReport)
     @test Any['(', 's', String, ')', ArgumentError] ⫇ r.sig._sig
 end
