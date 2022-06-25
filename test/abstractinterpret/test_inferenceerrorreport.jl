@@ -94,6 +94,20 @@ end
     end
 end
 
+@testset "setproperty! signature" begin
+    let result = report_call((Base.RefValue{String},)) do r
+            r.x = nothing
+        end
+        buf = IOBuffer()
+        print_reports(buf, get_reports_with_test(result))
+        s = String(take!(buf))
+        @test occursin("r.x = nothing", s)
+        print_reports(buf, get_reports_with_test(result); annotate_types=true)
+        s = String(take!(buf))
+        @test occursin("(r::Base.RefValue{String}).x = nothing", s)
+    end
+end
+
 @testset "getindex signature" begin
     let result = report_call((String,)) do s
             sum(Ref(s)[])
@@ -118,6 +132,20 @@ end
         print_reports(buf, get_reports_with_test(result); annotate_types=true)
         s = String(take!(buf))
         @test occursin("sum(((Ref(Ref(r::Regex)::Base.RefValue{Regex})::Base.RefValue{Base.RefValue{Regex}})[]::Base.RefValue{Regex})[]::Regex)", s)
+    end
+end
+
+@testset "setindex! signature" begin
+    let result = report_call((Base.RefValue{String},)) do r
+            r[] = nothing
+        end
+        buf = IOBuffer()
+        print_reports(buf, get_reports_with_test(result))
+        s = String(take!(buf))
+        @test occursin("r[] = nothing", s)
+        print_reports(buf, get_reports_with_test(result); annotate_types=true)
+        s = String(take!(buf))
+        @test occursin("(r::Base.RefValue{String})[] = nothing", s)
     end
 end
 
