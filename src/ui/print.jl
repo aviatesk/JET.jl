@@ -335,7 +335,7 @@ function _print_signature(io, @nospecialize(x), config; kwargs...)
         end
     elseif isa(x, Repr)
         printstyled(io, sprint(show, x.val); kwargs...)
-    elseif isa(x, GetpropertyCallMaker)
+    elseif isa(x, AnnotationMaker)
         if config.annotate_types
             printstyled(io, x.switch ? '(' : ')'; kwargs...)
         end
@@ -357,8 +357,8 @@ struct Repr
     val
     Repr(@nospecialize val) = new(val)
 end
-# for printing `x.y` -> `(x::T).y`
-struct GetpropertyCallMaker
+# for printing `x.y` -> `(x::T).y`, `f(x + y)` -> `f((x + y)::T)`
+struct AnnotationMaker
     switch::Bool
 end
 # for printing `Core.apply_type(...)::Const(T)` -> `T`

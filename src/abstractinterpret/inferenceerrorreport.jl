@@ -152,11 +152,14 @@ end
 
 function maybe_handle_sig_binop!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, args::Vector{Any})
     (Base.isbinaryoperator(f.name) && length(args) == 2) || return false
+    handle_sig!(sig, s, AnnotationMaker(true))
     handle_sig!(sig, s, args[1])
     push!(sig, ' ')
     handle_sig!(sig, s, f)
     push!(sig, ' ')
     handle_sig!(sig, s, args[2])
+    handle_sig!(sig, s, AnnotationMaker(false))
+    push!(sig, safewidenconst(get_ssavaluetype(s)))
     return true
 end
 
@@ -167,11 +170,12 @@ function maybe_handle_sig_getproperty!(sig::Vector{Any}, s::StateAtPC, f::Global
     isa(sym, QuoteNode) || return false
     val = sym.value
     isa(val, Symbol) || return false
-    handle_sig!(sig, s, GetpropertyCallMaker(true))
+    handle_sig!(sig, s, AnnotationMaker(true))
     handle_sig!(sig, s, args[1])
-    handle_sig!(sig, s, GetpropertyCallMaker(false))
+    handle_sig!(sig, s, AnnotationMaker(false))
     push!(sig, '.')
     push!(sig, String(val))
+    push!(sig, safewidenconst(get_ssavaluetype(s)))
     return true
 end
 
@@ -204,6 +208,7 @@ function handle_sig_call!(sig::Vector{Any}, s::StateAtPC, @nospecialize(f), args
         end
     end
     push!(sig, ')')
+    push!(sig, safewidenconst(get_ssavaluetype(s)))
     return sig
 end
 

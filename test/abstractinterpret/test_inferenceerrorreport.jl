@@ -18,38 +18,81 @@ function ⫇(a, b)
     return false
 end
 
+onlystr(s::String) = length(s)
+
 @testset "signature" begin
-    result = report_call((String,String)) do a, b
-        sin(a, b)
+    let result = report_call((String,String)) do a, b
+            sin(a, b)
+        end
+        r = only(get_reports_with_test(result))
+        @test isa(r, NoMethodErrorReport)
+        @test Any['(', 'a', String, ", ", 'b', String, ')'] ⫇ r.sig._sig
     end
-    r = only(get_reports_with_test(result))
-    @test isa(r, NoMethodErrorReport)
-    @test Any['(', 'a', String, ", ", 'b', String, ')'] ⫇ r.sig._sig
+
+    # nested
+    let result = report_call((String,)) do s
+            onlystr(onlystr(s))
+        end
+        buf = IOBuffer()
+        print_reports(buf, get_reports_with_test(result))
+        s = String(take!(buf))
+        @test occursin("onlystr(onlystr(s))", s)
+        print_reports(buf, get_reports_with_test(result); annotate_types=true)
+        s = String(take!(buf))
+        @test occursin("onlystr(onlystr(s::String)::$Int)", s)
+    end
 end
 
 @testset "binary signature" begin
-    result = report_call((String,String)) do a, b
-        a + b
+    let result = report_call((String,String)) do a, b
+            a + b
+        end
+        buf = IOBuffer()
+        print_reports(buf, get_reports_with_test(result))
+        s = String(take!(buf))
+        @test occursin("a + b", s)
     end
-    buf = IOBuffer()
-    print_reports(buf, get_reports_with_test(result))
-    s = String(take!(buf))
-    @test occursin("a + b", s)
+
+    # nested
+    let result = report_call((Int, Int)) do a, b
+            onlystr(a + b)
+        end
+        buf = IOBuffer()
+        print_reports(buf, get_reports_with_test(result))
+        s = String(take!(buf))
+        @test occursin("onlystr(a + b)", s)
+        print_reports(buf, get_reports_with_test(result); annotate_types=true)
+        s = String(take!(buf))
+        @test occursin("onlystr((a::$Int + b::$Int)::$Int)", s)
+    end
 end
 
 @testset "getproperty signature" begin
-    result = report_call((Regex,)) do r
-        r.nonexist
+    let result = report_call((Regex,)) do r
+            r.nonexist
+        end
+        buf = IOBuffer()
+        print_reports(buf, get_reports_with_test(result))
+        s = String(take!(buf))
+        @test occursin("r.nonexist", s)
+        print_reports(buf, get_reports_with_test(result); annotate_types=true)
+        s = String(take!(buf))
+        @test occursin("(r::Regex).nonexist", s)
     end
 
-    buf = IOBuffer()
-    print_reports(buf, get_reports_with_test(result))
-    s = String(take!(buf))
-    @test occursin("r.nonexist", s)
+    # nested
+    let result = report_call((Regex,)) do r
+            Some(r).value.nonexist
+        end
 
-    print_reports(buf, get_reports_with_test(result); annotate_types=true)
-    s = String(take!(buf))
-    @test occursin("(r::Regex).nonexist", s)
+        buf = IOBuffer()
+        print_reports(buf, get_reports_with_test(result))
+        s = String(take!(buf))
+        @test occursin("Some(r).value.nonexist", s)
+        print_reports(buf, get_reports_with_test(result); annotate_types=true)
+        s = String(take!(buf))
+        @test occursin("((Some(r::Regex)::Some{Regex}).value::Regex).nonexist", s)
+    end
 end
 
 @testset "Core.apply_type signature" begin
