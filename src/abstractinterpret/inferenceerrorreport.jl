@@ -112,6 +112,7 @@ function handle_sig!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
         if isa(f, GlobalRef)
             maybe_handle_sig_binop!(sig, s, f, args) && return sig
             maybe_handle_sig_getproperty!(sig, s, f, args) && return sig
+            maybe_handle_sig_getindex!(sig, s, f, args) && return sig
             maybe_handle_sig_const_apply_type!(sig, s, f, args) && return sig
             if issplat(f, args)
                 f = args[2]
@@ -175,6 +176,23 @@ function maybe_handle_sig_getproperty!(sig::Vector{Any}, s::StateAtPC, f::Global
     handle_sig!(sig, s, AnnotationMaker(false))
     push!(sig, '.')
     push!(sig, String(val))
+    push!(sig, safewidenconst(get_ssavaluetype(s)))
+    return true
+end
+
+function maybe_handle_sig_getindex!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, args::Vector{Any})
+    f.name === :getindex || return false
+    length(args) ≥ 1 || return false
+    handle_sig!(sig, s, AnnotationMaker(true))
+    handle_sig!(sig, s, args[1])
+    handle_sig!(sig, s, AnnotationMaker(false))
+    push!(sig, '[')
+    na = length(args)
+    for i = 2:na
+        handle_sig!(sig, s, args[i])
+        i == na || push!(sig, ", ")
+    end
+    push!(sig, ']')
     push!(sig, safewidenconst(get_ssavaluetype(s)))
     return true
 end

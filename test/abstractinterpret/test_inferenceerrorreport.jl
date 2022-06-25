@@ -84,7 +84,6 @@ end
     let result = report_call((Regex,)) do r
             Some(r).value.nonexist
         end
-
         buf = IOBuffer()
         print_reports(buf, get_reports_with_test(result))
         s = String(take!(buf))
@@ -92,6 +91,33 @@ end
         print_reports(buf, get_reports_with_test(result); annotate_types=true)
         s = String(take!(buf))
         @test occursin("((Some(r::Regex)::Some{Regex}).value::Regex).nonexist", s)
+    end
+end
+
+@testset "getindex signature" begin
+    let result = report_call((String,)) do s
+            sum(Ref(s)[])
+        end
+        buf = IOBuffer()
+        print_reports(buf, get_reports_with_test(result))
+        s = String(take!(buf))
+        @test occursin("sum(Ref(s)[])", s)
+        print_reports(buf, get_reports_with_test(result); annotate_types=true)
+        s = String(take!(buf))
+        @test occursin("sum((Ref(s::String)::Base.RefValue{String})[]::String)", s)
+    end
+
+    # nested
+    let result = report_call((Regex,)) do r
+            sum(Ref(Ref(r))[][])
+        end
+        buf = IOBuffer()
+        print_reports(buf, get_reports_with_test(result))
+        s = String(take!(buf))
+        @test occursin("sum(Ref(Ref(r))[][])", s)
+        print_reports(buf, get_reports_with_test(result); annotate_types=true)
+        s = String(take!(buf))
+        @test occursin("sum(((Ref(Ref(r::Regex)::Base.RefValue{Regex})::Base.RefValue{Base.RefValue{Regex}})[]::Base.RefValue{Regex})[]::Regex)", s)
     end
 end
 
