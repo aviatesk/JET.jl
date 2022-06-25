@@ -165,7 +165,7 @@ function _get_sig_getproperty!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, arg
     _get_sig!(sig, s, args[1])
     _get_sig!(sig, s, GetpropertyCallMaker(false))
     push!(sig, '.')
-    _get_sig!(sig, s, String((args[2]::QuoteNode).value::Symbol))
+    push!(sig, String((args[2]::QuoteNode).value::Symbol))
     return sig
 end
 
@@ -277,7 +277,7 @@ end
 function _get_sig!(sig::Vector{Any}, ::StateAtPC, qn::QuoteNode)
     v = qn.value
     if isa(v, Symbol)
-        push!(sig, v)
+        push!(sig, Repr(v))
         return sig
     end
     typ = typeof(v)
@@ -285,7 +285,11 @@ function _get_sig!(sig::Vector{Any}, ::StateAtPC, qn::QuoteNode)
     return sig
 end
 
-# fallback: Symbol, GlobalRef, literals...
+# reprs
+_get_sig!(sig::Vector{Any}, ::StateAtPC, x::Symbol) = (push!(sig, Repr(x)); return sig)
+_get_sig!(sig::Vector{Any}, ::StateAtPC, x::String) = (push!(sig, Repr(x)); return sig)
+
+# fallback: GlobalRef, literals...
 _get_sig!(sig::Vector{Any}, ::StateAtPC, @nospecialize(x)) = (push!(sig, x); return sig)
 
 # new report

@@ -333,12 +333,12 @@ function _print_signature(io, @nospecialize(x), config; kwargs...)
         if config.annotate_types
             printstyled(io, "::", x; color = TYPE_ANNOTATION_COLOR, kwargs...)
         end
+    elseif isa(x, Repr)
+        printstyled(io, sprint(show, x.val); kwargs...)
     elseif isa(x, GetpropertyCallMaker)
         if config.annotate_types
             printstyled(io, x.switch ? '(' : ')'; kwargs...)
         end
-    elseif isa(x, Symbol)
-        printstyled(io, sprint(show, x); kwargs...)
     elseif isa(x, QuoteNode)
         printstyled(io, "[quote]"; kwargs...)
     elseif isa(x, MethodInstance)
@@ -350,6 +350,11 @@ function _print_signature(io, @nospecialize(x), config; kwargs...)
     end
 end
 
+# for printing Julia-representations
+struct Repr
+    val
+    Repr(@nospecialize val) = new(val)
+end
 # for printing `x.y` -> `(x::T).y`
 struct GetpropertyCallMaker
     switch::Bool
