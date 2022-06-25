@@ -333,6 +333,10 @@ function _print_signature(io, @nospecialize(x), config; kwargs...)
         if config.annotate_types
             printstyled(io, "::", x; color = TYPE_ANNOTATION_COLOR, kwargs...)
         end
+    elseif isa(x, GetpropertyCallMaker)
+        if config.annotate_types
+            printstyled(io, x.switch ? '(' : ')'; kwargs...)
+        end
     elseif isa(x, Symbol)
         printstyled(io, sprint(show, x); kwargs...)
     elseif isa(x, QuoteNode)
@@ -344,6 +348,11 @@ function _print_signature(io, @nospecialize(x), config; kwargs...)
     else
         printstyled(io, x; kwargs...)
     end
+end
+
+# for printing `x.y` -> `(x::T).y`
+struct GetpropertyCallMaker
+    switch::Bool
 end
 
 # adapted from https://github.com/JuliaLang/julia/blob/0f11a7bb07d2d0d8413da05dadd47441705bf0dd/base/show.jl#L989-L1011

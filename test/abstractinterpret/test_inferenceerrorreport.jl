@@ -28,14 +28,28 @@ end
 end
 
 @testset "binary signature" begin
-    let result = report_call((String,String)) do a, b
-            a + b
-        end
-        buf = IOBuffer()
-        print_reports(buf, get_reports_with_test(result))
-        s = String(take!(buf))
-        @test occursin("a + b", s)
+    result = report_call((String,String)) do a, b
+        a + b
     end
+    buf = IOBuffer()
+    print_reports(buf, get_reports_with_test(result))
+    s = String(take!(buf))
+    @test occursin("a + b", s)
+end
+
+@testset "getproperty signature" begin
+    result = report_call((Regex,)) do r
+        r.nonexist
+    end
+
+    buf = IOBuffer()
+    print_reports(buf, get_reports_with_test(result))
+    s = String(take!(buf))
+    @test occursin("r.nonexist", s)
+
+    print_reports(buf, get_reports_with_test(result); annotate_types=true)
+    s = String(take!(buf))
+    @test occursin("(r::Regex).nonexist", s)
 end
 
 @testset ":invoke signature" begin

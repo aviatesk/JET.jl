@@ -103,32 +103,6 @@ function _get_sig(@nospecialize args...)
     return sig
 end
 
-function _get_sig_call!(sig::Vector{Any}, s::StateAtPC, @nospecialize(f), args::Vector{Any},
-    splat::Bool = false)
-    _get_sig!(sig, s, f)
-    push!(sig, '(')
-    nargs = length(args)
-    for (i, arg) in enumerate(args)
-        _get_sig!(sig, s, arg)
-        if i ≠ nargs
-            push!(sig, ", ")
-        else
-            splat && push!(sig, "...")
-        end
-    end
-    push!(sig, ')')
-    return sig
-end
-
-function _get_sig_binop!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, args::Vector{Any})
-    _get_sig!(sig, s, args[1])
-    push!(sig, ' ')
-    _get_sig!(sig, s, f)
-    push!(sig, ' ')
-    _get_sig!(sig, s, args[2])
-    return sig
-end
-
 function _get_sig!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
     head = expr.head
     if head === :call
@@ -136,13 +110,13 @@ function _get_sig!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
         args = expr.args[2:end]
         splat = false
         if isa(f, GlobalRef)
-            if Base.isbinaryoperator(f.name) && length(args) == 2
+            if isbinop(f, args)
                 _get_sig_binop!(sig, s, f, args)
                 return sig
-            elseif f.name === :_apply_iterate && begin
-                    itf = first(args)
-                    isa(itf, GlobalRef) && itf.name === :iterate
-                end
+            elseif isgetproperty(f, args)
+                _get_sig_getproperty!(sig, s, f, args)
+                return sig
+            elseif issplat(f, args)
                 f = args[2]
                 args = args[3:end]
                 splat = true
@@ -177,6 +151,55 @@ function _get_sig!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
         push!(sig, expr)
         return sig
     end
+end
+
+function isgetproperty(f::GlobalRef, args::Vector{Any})
+    f.name === :getproperty || return false
+    length(args) == 2 || return false
+    sym = args[2]
+    isa(sym, QuoteNode) || return false
+    return isa(sym.value, Symbol)
+end
+function _get_sig_getproperty!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, args::Vector{Any})
+    _get_sig!(sig, s, GetpropertyCallMaker(true))
+    _get_sig!(sig, s, args[1])
+    _get_sig!(sig, s, GetpropertyCallMaker(false))
+    push!(sig, '.')
+    _get_sig!(sig, s, String((args[2]::QuoteNode).value::Symbol))
+    return sig
+end
+
+isbinop(f::GlobalRef, args::Vector{Any}) = Base.isbinaryoperator(f.name) && length(args) == 2
+function _get_sig_binop!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, args::Vector{Any})
+    _get_sig!(sig, s, args[1])
+    push!(sig, ' ')
+    _get_sig!(sig, s, f)
+    push!(sig, ' ')
+    _get_sig!(sig, s, args[2])
+    return sig
+end
+function issplat(f::GlobalRef, args::Vector{Any})
+    f.name === :_apply_iterate || return false
+    itf = first(args)
+    isa(itf, GlobalRef) || return false
+    return itf.name === :iterate
+end
+
+function _get_sig_call!(sig::Vector{Any}, s::StateAtPC, @nospecialize(f), args::Vector{Any},
+    splat::Bool = false)
+    _get_sig!(sig, s, f)
+    push!(sig, '(')
+    nargs = length(args)
+    for (i, arg) in enumerate(args)
+        _get_sig!(sig, s, arg)
+        if i ≠ nargs
+            push!(sig, ", ")
+        else
+            splat && push!(sig, "...")
+        end
+    end
+    push!(sig, ')')
+    return sig
 end
 
 function sparam_name(u::UnionAll, i::Int)
