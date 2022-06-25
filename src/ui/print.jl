@@ -343,18 +343,11 @@ function _print_signature(io, @nospecialize(x), config; kwargs...)
         printstyled(io, "[quote]"; kwargs...)
     elseif isa(x, MethodInstance)
         printstyled(io, sprint(show_mi, x); kwargs...)
-    elseif isa(x, GlobalRef) && (x.mod === Main || isexported(x.mod, x.name))
+    elseif isa(x, GlobalRef) && (x.mod === Main || Base.isexported(x.mod, x.name))
         printstyled(io, x.name; kwargs...)
     else
         printstyled(io, x; kwargs...)
     end
-end
-
-function isexported(mod::Module, name::Symbol)
-    Base.isexported(mod, name) && return true
-    isdefined(mod, name) || return false
-    v = (@static @isdefined(getglobal) ? getglobal : getfield)(mod, name)
-    return Base.isexported(parentmodule(v), name)
 end
 
 # for printing Julia-representations
