@@ -516,6 +516,7 @@ Base.show(io::IO, ::MIME"application/prs.juno.inline", frame::InferenceState) =
 # lattice
 
 ignorenotfound(@nospecialize(t)) = t === NOT_FOUND ? Bottom : t
+safewidenconst(@nospecialize t) = widenconst(ignorelimited(ignorenotfound(t)))
 
 # analysis core
 # =============

@@ -235,7 +235,7 @@ function UncaughtExceptionReport(sv::InferenceState, throw_calls::Vector{Tuple{I
     sig = Any[]
     ncalls = length(throw_calls)
     for (i, (pc, call)) in enumerate(throw_calls)
-        call_sig = _get_sig((sv, pc), call)
+        call_sig = get_sig_nowrap((sv, pc), call)
         append!(sig, call_sig)
         i ≠ ncalls && push!(sig, ", ")
     end
