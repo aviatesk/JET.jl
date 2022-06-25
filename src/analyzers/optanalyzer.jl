@@ -48,10 +48,10 @@ the following additional configurations that are specific to the optimization an
   julia> @report_opt skip_noncompileable_calls=false strange_twos(3)
   ═════ 4 possible errors found ═════
   ┌ @ REPL[2]:3 Main.fill_twos!(a)
-  │┌ @ REPL[1]:3 Base.setindex!(a, 2, %14)
+  │┌ @ REPL[1]:3 a[%14] = 2
   ││ runtime dispatch detected: Base.setindex!(a::Vector, 2, %14::Int64)
   │└─────────────
-  │┌ @ REPL[1]:3 Base.setindex!(a, 2, i)
+  │┌ @ REPL[1]:3 a[i] = 2
   ││┌ @ array.jl:877 Base.convert(_, x)
   │││ runtime dispatch detected: Base.convert(_::Any, x::Int64)
   ││└────────────────
@@ -87,9 +87,9 @@ the following additional configurations that are specific to the optimization an
                end
            end
            ═════ 1 possible error found ═════
-           ┌ @ none:3 s = Main.maybesin(x)
-           │┌ @ none:3 Main.sin(%3)
-           ││ runtime dispatch detected: Main.sin(%3::Number)
+           ┌ @ none:3 s = maybesin(x)
+           │┌ @ none:3 sin(%3)
+           ││ runtime dispatch detected: sin(%3::Number)::Any
            │└──────────
 
            julia> function maybesin(x)  # now `maybesin` is always called with concrete `x`
@@ -108,8 +108,8 @@ the following additional configurations that are specific to the optimization an
                       end
                   end
            ═════ 1 possible error found ═════
-           ┌ @ none:3 Main.maybesin(%21)
-           │ runtime dispatch detected: Main.maybesin(%21::Any)
+           ┌ @ none:3 maybesin(%21)
+           │ runtime dispatch detected: maybesin(%21::Any)::Any
            └──────────
 
 ---
@@ -153,7 +153,7 @@ the following additional configurations that are specific to the optimization an
     ┌ @ math.jl:1221 Base.Math.sin(xf)
     │┌ @ special/trig.jl:39 Base.Math.sin_domain_error(x)
     ││┌ @ special/trig.jl:28 Base.Math.DomainError(x, "sin(x) is only defined for finite x.")
-    │││ runtime dispatch detected: Base.Math.DomainError(x::Float64, "sin(x) is only defined for finite x.")
+    │││ runtime dispatch detected: Base.Math.DomainError(x::Float64, "sin(x) is only defined for finite x.")::Any
     ││└──────────────────────
 
   ERROR: There was an error during testing

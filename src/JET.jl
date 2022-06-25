@@ -622,41 +622,41 @@ These configurations should be active always.
 
   # by default, JET will print all the collected reports:
   julia> @report_call foo("julia")
-  ════ 3 possible errors found ═════
-  ┌ @ none:2 r1 = Main.sum(a)
-  │┌ @ reduce.jl:544 Base.#sum#258(Base.pairs(Core.NamedTuple()), #self#, a)
-  ││┌ @ reduce.jl:544 Base.sum(Base.identity, a)
-  │││┌ @ reduce.jl:515 Base.#sum#257(Base.pairs(Core.NamedTuple()), #self#, f, a)
-  ││││┌ @ reduce.jl:515 Base.mapreduce(f, Base.add_sum, a)
-  │││││┌ @ reduce.jl:289 Base.#mapreduce#254(Base.pairs(Core.NamedTuple()), #self#, f, op, itr)
-  ││││││┌ @ reduce.jl:289 Base.mapfoldl(f, op, itr)
-  │││││││┌ @ reduce.jl:162 Base.#mapfoldl#250(Base._InitialValue(), #self#, f, op, itr)
+  ═════ 3 possible errors found ═════
+  ┌ @ REPL[1]:2 r1 = sum(a)
+  │┌ @ reduce.jl:549 Base.:(var"#sum#281")(pairs(NamedTuple()), #self#, a)
+  ││┌ @ reduce.jl:549 sum(identity, a)
+  │││┌ @ reduce.jl:520 Base.:(var"#sum#280")(pairs(NamedTuple()), #self#, f, a)
+  ││││┌ @ reduce.jl:520 mapreduce(f, Base.add_sum, a)
+  │││││┌ @ reduce.jl:294 Base.:(var"#mapreduce#277")(pairs(NamedTuple()), #self#, f, op, itr)
+  ││││││┌ @ reduce.jl:294 mapfoldl(f, op, itr)
+  │││││││┌ @ reduce.jl:162 Base.:(var"#mapfoldl#273")(Base._InitialValue(), #self#, f, op, itr)
   ││││││││┌ @ reduce.jl:162 Base.mapfoldl_impl(f, op, init, itr)
   │││││││││┌ @ reduce.jl:44 Base.foldl_impl(op′, nt, itr′)
   ││││││││││┌ @ reduce.jl:48 v = Base._foldl_impl(op, nt, itr)
-  │││││││││││┌ @ reduce.jl:62 v = op(v, Base.getindex(y, 1))
-  ││││││││││││┌ @ reduce.jl:81 Base.getproperty(op, :rf)(acc, x)
-  │││││││││││││┌ @ reduce.jl:24 Base.+(x, y)
-  ││││││││││││││ no matching method found for call signature (Tuple{typeof(+), Char, Char}): Base.+(x::Char, y::Char)
+  │││││││││││┌ @ reduce.jl:62 v = op(v, y[1])
+  ││││││││││││┌ @ reduce.jl:81 op.rf(acc, x)
+  │││││││││││││┌ @ reduce.jl:24 x + y
+  ││││││││││││││ no matching method found for `+(::Char, ::Char)`: (x::Char + y::Char)::Union{}
   │││││││││││││└────────────────
   ││││││││││┌ @ reduce.jl:49 Base.reduce_empty_iter(op, itr)
-  │││││││││││┌ @ reduce.jl:365 Base.reduce_empty_iter(op, itr, Base.IteratorEltype(itr))
-  ││││││││││││┌ @ reduce.jl:366 Base.reduce_empty(op, Base.eltype(itr))
-  │││││││││││││┌ @ reduce.jl:342 Base.reduce_empty(Base.getproperty(op, :rf), _)
-  ││││││││││││││┌ @ reduce.jl:334 Base.reduce_empty(Base.+, _)
-  │││││││││││││││┌ @ reduce.jl:325 Base.zero(_)
-  ││││││││││││││││ no matching method found for call signature (Tuple{typeof(zero), Type{Char}}): Base.zero(_::Type{Char})
+  │││││││││││┌ @ reduce.jl:370 Base.reduce_empty_iter(op, itr, Base.IteratorEltype(itr))
+  ││││││││││││┌ @ reduce.jl:371 Base.reduce_empty(op, eltype(itr))
+  │││││││││││││┌ @ reduce.jl:347 Base.reduce_empty(op.rf, T)
+  ││││││││││││││┌ @ reduce.jl:339 Base.reduce_empty(+, T)
+  │││││││││││││││┌ @ reduce.jl:330 zero(T)
+  ││││││││││││││││ no matching method found for `zero(::Type{Char})`: zero(T::Type{Char})::Union{}
   │││││││││││││││└─────────────────
-  ┌ @ none:3 r2 = Main.undefsum(a)
-  │ variable Main.undefsum is not defined: r2 = Main.undefsum(a::String)
-  └──────────
+  ┌ @ REPL[1]:3 r2 = undefsum(a)
+  │ variable Main.undefsum is not defined
+  └─────────────
 
   # with `target_modules=(@__MODULE__,)`, JET will ignore the errors detected within the `Base` module:
   julia> @report_call target_modules=(@__MODULE__,) foo("julia")
   ════ 1 possible error found ═════
-  ┌ @ none:3 r2 = Main.undefsum(a)
-  │ variable Main.undefsum is not defined: r2 = Main.undefsum(a::String)
-  └──────────
+  ┌ @ REPL[1]:3 r2 = undefsum(a)
+  │ variable Main.undefsum is not defined
+  └─────────────
   ```
 ---
 """
@@ -1394,8 +1394,8 @@ julia> @test_call mode=:sound f(10)
 JET-test failed at none:1
   Expression: #= none:1 =# JET.@test_call mode = :sound f(10)
   ═════ 1 possible error found ═════
-  ┌ @ none:2 goto %4 if not Main.cond
-  │ non-boolean (Any) used in boolean context: goto %4 if not Main.cond
+  ┌ @ none:2 goto %4 if not cond
+  │ non-boolean (Any) used in boolean context: goto %4 if not cond
   └──────────
 
 ERROR: There was an error during testing
@@ -1419,12 +1419,12 @@ julia> @testset "check errors" begin
            @test_call g(ref)             # fail
            @test_call broken=true f(ref) # annotated as broken, thus still "pass"
        end
-check errors: JET-test failed at none:3
-  Expression: #= none:3 =# JET.@test_call f(ref)
+check errors: JET-test failed at REPL[9]:3
+  Expression: #= REPL[9]:3 =# JET.@test_call f(ref)
   ═════ 1 possible error found ═════
-  ┌ @ none:1 Main.sin(Base.getindex(ref))
-  │ no matching method found for `sin(::Nothing)` (1/2 union split): Main.sin(Base.getindex(ref::Base.RefValue{Union{Nothing, Int64}})::Union{Nothing, Int64})
-  └──────────
+  ┌ @ REPL[7]:1 sin(ref[])
+  │ no matching method found for `sin(::Nothing)` (1/2 union split): sin((ref::Base.RefValue{Union{Nothing, Int64}})[]::Union{Nothing, Int64})::Union{}
+  └─────────────
 
 Test Summary: | Pass  Fail  Broken  Total
 check errors  |    1     1       1      3
