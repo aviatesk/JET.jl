@@ -237,16 +237,14 @@ end
 end
 
 @testset "report undefined (global) variables" begin
-    let
-        result = report_call(()->foo)
+    let result = report_call(()->foo)
         @test length(get_reports_with_test(result)) === 1
         @test first(get_reports_with_test(result)) isa GlobalUndefVarErrorReport
         @test first(get_reports_with_test(result)).name === :foo
     end
 
     # deeper level
-    let
-        m = @fixturedef begin
+    let m = @fixturedef begin
             foo(bar) = bar + baz
             qux(a) = foo(a)
         end
@@ -261,6 +259,26 @@ end
         @test length(get_reports_with_test(result)) === 1
         @test first(get_reports_with_test(result)) isa GlobalUndefVarErrorReport
         @test first(get_reports_with_test(result)).name === :baz
+    end
+
+    let result = @eval Module() begin
+            $report_call() do
+                getfield(@__MODULE__, :undefvar)
+            end
+        end
+        report = only(get_reports_with_test(result))
+        @test report isa GlobalUndefVarErrorReport
+        @test report.name === :undefvar
+    end
+
+    @static @isdefined(getglobal) && let result = @eval Module() begin
+            $report_call() do
+                getglobal(@__MODULE__, :undefvar)
+            end
+        end
+        report = only(get_reports_with_test(result))
+        @test report isa GlobalUndefVarErrorReport
+        @test report.name === :undefvar
     end
 end
 

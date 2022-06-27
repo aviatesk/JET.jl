@@ -250,6 +250,12 @@ function anypush!(a::Vector{Any}, @nospecialize x...)
     return a
 end
 
+@static if isdefined(Core.Compiler, :hasintersect)
+    import .CC: hasintersect
+else
+    hasintersect(@nospecialize(a), @nospecialize(b)) = typeintersect(a, b) !== Bottom
+end
+
 # macros
 # ------
 

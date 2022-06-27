@@ -875,15 +875,9 @@ function (::BasicPass)(::Type{BuiltinErrorReport}, analyzer::JETAnalyzer, sv::In
     @assert !(f === throw) "`throw` calls shuold be handled either by the report pass of `SeriousExceptionReport` or `UncaughtExceptionReport`"
     if f === getfield
         maybe_report_getfield!(analyzer, sv, argtypes, ret) && return true
-    elseif length(argtypes) == 2 &&
-           f === Intrinsics.checked_sdiv_int ||
-           f === Intrinsics.checked_srem_int ||
-           f === Intrinsics.checked_udiv_int ||
-           f === Intrinsics.checked_urem_int ||
-           f === Intrinsics.sdiv_int ||
-           f === Intrinsics.srem_int ||
-           f === Intrinsics.udiv_int ||
-           f === Intrinsics.urem_int
+    elseif @static @isdefined(getglobal) ? (f === getglobal) : false
+        maybe_report_global_undefvar!(analyzer, sv, argtypes) && return true
+    elseif length(argtypes) == 2 && is_division_func(f)
         maybe_report_devide_error!(analyzer, sv, argtypes, ret) && return true
     end
     return handle_invalid_builtins!(analyzer, sv, argtypes, ret)
@@ -897,26 +891,50 @@ function (::TypoPass)(::Type{BuiltinErrorReport}, analyzer::JETAnalyzer, sv::Inf
 end
 
 function maybe_report_getfield!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes, @nospecialize(ret))
-    if 2 ≤ length(argtypes) ≤ 3
-        obj, fld = argtypes
-        if isa(fld, Const)
-            name = fld.val
-            if isa(name, Symbol)
-                if isa(obj, Const) && (mod = obj.val; isa(mod, Module))
-                    # forward to the report pass for undefined global reference
-                    if ReportPass(analyzer)(GlobalUndefVarErrorReport, analyzer, sv, mod, name)
-                        return true
-                    end
-                elseif ret === Bottom
-                    # report invalid field access detected by the native `getfield_tfunc`
-                    typ = widenconst(obj)
-                    add_new_report!(analyzer, sv.result, NoFieldErrorReport(sv, typ, name))
-                    return true
-                end
-            end
-        end
-    end
+    maybe_report_global_undefvar!(analyzer, sv, argtypes) && return true
+    maybe_report_nofield_error!(analyzer, sv, argtypes, ret) && return true
     return false
+end
+
+function maybe_report_global_undefvar!(analyzer::JETAnalyzer,
+    sv::InferenceState, argtypes::Argtypes)
+    2 ≤ length(argtypes) ≤ 3 || return false
+    mod = argtypes[1]
+    isa(mod, Const) || return false
+    mod = mod.val
+    isa(mod, Module) || return false
+    var = argtypes[2]
+    isa(var, Const) || return false
+    var = var.val
+    isa(var, Symbol) || return false
+    # forward to the report pass for undefined global reference
+    return ReportPass(analyzer)(GlobalUndefVarErrorReport, analyzer, sv, mod, var)
+end
+
+function maybe_report_nofield_error!(analyzer::JETAnalyzer,
+    sv::InferenceState, argtypes::Argtypes, @nospecialize(ret))
+    2 ≤ length(argtypes) ≤ 3 || return false
+    name = argtypes[2]
+    isa(name, Const) || return false
+    name = name.val
+    isa(name, Symbol) || return false
+    ret === Bottom || return false
+    # report invalid field access detected by the native `getfield_tfunc`
+    obj = argtypes[1]
+    typ = widenconst(obj)
+    add_new_report!(analyzer, sv.result, NoFieldErrorReport(sv, typ, name))
+    return true
+end
+
+function is_division_func(@nospecialize f)
+    return (f === Intrinsics.checked_sdiv_int ||
+            f === Intrinsics.checked_srem_int ||
+            f === Intrinsics.checked_udiv_int ||
+            f === Intrinsics.checked_urem_int ||
+            f === Intrinsics.sdiv_int ||
+            f === Intrinsics.srem_int ||
+            f === Intrinsics.udiv_int ||
+            f === Intrinsics.urem_int)
 end
 
 # TODO this check might be better in its own report pass, say `NumericalPass`
