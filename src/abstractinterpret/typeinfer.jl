@@ -966,7 +966,7 @@ This may fail, cause incorrect analysis, or produce unexpected errors.
 
 # IDEA we may want to hoist `InvalidConstXXX` errors into top-level errors
 
-@reportdef struct InvalidConstantRedefinition <: InferenceErrorReport
+@jetreport struct InvalidConstantRedefinition <: InferenceErrorReport
     mod::Module
     name::Symbol
     @nospecialize t′
@@ -977,7 +977,7 @@ function print_report_message(io::IO, report::InvalidConstantRedefinition)
 end
 print_signature(::InvalidConstantRedefinition) = false
 
-@reportdef struct InvalidConstantDeclaration <: InferenceErrorReport
+@jetreport struct InvalidConstantDeclaration <: InferenceErrorReport
     mod::Module
     name::Symbol
 end

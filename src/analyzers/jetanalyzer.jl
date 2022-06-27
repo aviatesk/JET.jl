@@ -128,7 +128,7 @@ function CC.InferenceState(result::InferenceResult, cache::CACHE_ARG_TYPE, analy
     return frame
 end
 
-@reportdef struct GeneratorErrorReport <: InferenceErrorReport
+@jetreport struct GeneratorErrorReport <: InferenceErrorReport
     @nospecialize err # actual error wrapped
 end
 function print_report_message(io::IO, (; err)::GeneratorErrorReport)
@@ -177,7 +177,7 @@ function CC.finish!(analyzer::JETAnalyzer, frame::InferenceState)
     end
 end
 
-@reportdef struct LocalUndefVarErrorReport <: InferenceErrorReport
+@jetreport struct LocalUndefVarErrorReport <: InferenceErrorReport
     name::Symbol
 end
 function print_report_message(io::IO, (; name)::LocalUndefVarErrorReport)
@@ -227,7 +227,7 @@ is_unreachable(@nospecialize(x)) = isa(x, ReturnNode) && !isdefined(x, :val)
 Represents general `throw` calls traced during inference.
 This is reported only when it's not caught by control flow.
 """
-@reportdef struct UncaughtExceptionReport <: InferenceErrorReport
+@jetreport struct UncaughtExceptionReport <: InferenceErrorReport
     throw_calls::Vector{Tuple{Int,Expr}} # (pc, call)
 end
 function UncaughtExceptionReport(sv::InferenceState, throw_calls::Vector{Tuple{Int,Expr}})
@@ -302,7 +302,7 @@ function report_uncaught_exceptions!(analyzer::JETAnalyzer, frame::InferenceStat
     return false
 end
 
-@reportdef struct NoMethodErrorReport <: InferenceErrorReport
+@jetreport struct NoMethodErrorReport <: InferenceErrorReport
     @nospecialize t # ::Union{Type, Vector{Type}}
     union_split::Int
 end
@@ -494,7 +494,7 @@ function CC.return_type_tfunc(analyzer::JETAnalyzer, argtypes::Argtypes, sv::Inf
     return @invoke CC.return_type_tfunc(analyzer::AbstractAnalyzer, argtypes::Argtypes, sv::InferenceState)
 end
 
-@reportdef struct InvalidReturnTypeCall <: InferenceErrorReport end
+@jetreport struct InvalidReturnTypeCall <: InferenceErrorReport end
 function print_report_message(io::IO, ::InvalidReturnTypeCall)
     print(io, "invalid `Core.Compiler.return_type` call")
 end
@@ -534,7 +534,7 @@ function CC.abstract_invoke(analyzer::JETAnalyzer, argtypes::Argtypes, sv::Infer
 end
 end # @static if IS_AFTER_42529
 
-@reportdef struct InvalidInvokeErrorReport <: InferenceErrorReport
+@jetreport struct InvalidInvokeErrorReport <: InferenceErrorReport
     argtypes::Argtypes
 end
 function print_report_message(io::IO, (; argtypes)::InvalidInvokeErrorReport)
@@ -599,7 +599,7 @@ function CC.abstract_eval_special_value(analyzer::JETAnalyzer,
     return ret
 end
 
-@reportdef struct GlobalUndefVarErrorReport <: InferenceErrorReport
+@jetreport struct GlobalUndefVarErrorReport <: InferenceErrorReport
     mod::Module
     name::Symbol
 end
@@ -668,7 +668,7 @@ function CC.abstract_eval_value(analyzer::JETAnalyzer, @nospecialize(e), vtypes:
     return ret
 end
 
-@reportdef struct NonBooleanCondErrorReport <: InferenceErrorReport
+@jetreport struct NonBooleanCondErrorReport <: InferenceErrorReport
     @nospecialize t # ::Union{Type, Vector{Type}}
     union_split::Int
 end
@@ -776,7 +776,7 @@ Represents a "serious" error that is manually thrown by a `throw` call.
 This is reported regardless of whether it's caught by control flow or not, as opposed to
 [`UncaughtExceptionReport`](@ref).
 """
-@reportdef struct SeriousExceptionReport <: InferenceErrorReport
+@jetreport struct SeriousExceptionReport <: InferenceErrorReport
     @nospecialize err
     # keeps the location where this exception is raised
     # this information will be used later when collecting `UncaughtExceptionReport`s
@@ -820,7 +820,7 @@ Technically they're defined as those error points that can be caught within `Cor
 """
 abstract type BuiltinErrorReport <: InferenceErrorReport end
 
-@reportdef struct NoFieldErrorReport <: BuiltinErrorReport
+@jetreport struct NoFieldErrorReport <: BuiltinErrorReport
     @nospecialize typ # ::Type
     name::Symbol
 end
@@ -829,7 +829,7 @@ function print_report_message(io::IO, (; typ, name)::NoFieldErrorReport)
 end
 print_signature(::NoFieldErrorReport) = false
 
-@reportdef struct DivideErrorReport <: BuiltinErrorReport end
+@jetreport struct DivideErrorReport <: BuiltinErrorReport end
 let msg = sprint(showerror, DivideError())
     global function print_report_message(io::IO, ::DivideErrorReport)
         print(io, msg)
@@ -837,7 +837,7 @@ let msg = sprint(showerror, DivideError())
 end
 print_signature(::DivideErrorReport) = false
 
-@reportdef struct InvalidBuiltinCallErrorReport <: BuiltinErrorReport
+@jetreport struct InvalidBuiltinCallErrorReport <: BuiltinErrorReport
     argtypes::Argtypes
 end
 function print_report_message(io::IO, ::InvalidBuiltinCallErrorReport)
@@ -919,7 +919,7 @@ function handle_invalid_builtins!(analyzer::JETAnalyzer, sv::InferenceState, arg
     return false
 end
 
-@reportdef struct UnsoundBuiltinCallErrorReport <: BuiltinErrorReport
+@jetreport struct UnsoundBuiltinCallErrorReport <: BuiltinErrorReport
     argtypes::Argtypes
 end
 function print_report_message(io::IO, ::UnsoundBuiltinCallErrorReport)

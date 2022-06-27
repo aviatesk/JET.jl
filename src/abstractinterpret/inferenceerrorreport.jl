@@ -397,7 +397,7 @@ where `state` can be either of:
 - `state::InferenceResult`: a state with the current program counter unknown
 - `state::MethodInstance`: a state with the current program counter unknown
 
-See also: [`@reportdef`](@ref), [`VirtualStackTrace`](@ref), [`VirtualFrame`](@ref)
+See also: [`@jetreport`](@ref), [`VirtualStackTrace`](@ref), [`VirtualFrame`](@ref)
 """
 abstract type InferenceErrorReport end
 
@@ -496,21 +496,21 @@ end
 # TODO parametric definition?
 
 """
-    @reportdef struct T <: InferenceErrorReport
+    @jetreport struct T <: InferenceErrorReport
         ...
     end
 
 An utilitiy macro to define [`InferenceErrorReport`](@ref).
 It can be very tedious to manually satisfy the `InferenceErrorReport` interfaces.
-JET internally uses this `@reportdef` utility macro, which takes a `struct` definition of
+JET internally uses this `@jetreport` utility macro, which takes a `struct` definition of
 `InferenceErrorReport` without the required fields specified, and automatically defines
 the `struct` as well as constructor definitions.
-If the report `T <: InferenceErrorReport` is defined using `@reportdef`,
+If the report `T <: InferenceErrorReport` is defined using `@jetreport`,
 then `T` just needs to implement the `print_report_message` interface.
 
 For example, [`JETAnalyzer`](@ref)'s `NoMethodErrorReport` is defined as follows:
 ```julia
-@reportdef struct NoMethodErrorReport <: InferenceErrorReport
+@jetreport struct NoMethodErrorReport <: InferenceErrorReport
     @nospecialize t # ::Union{Type, Vector{Type}}
     union_split::Int
 end
@@ -531,7 +531,7 @@ end
 ```
 and constructed as like `NoMethodErrorReport(sv::InferenceState, atype::Any, 0)`.
 """
-macro reportdef(ex)
+macro jetreport(ex)
     @assert @capture(ex, struct T_ <: S_; spec_sigs__; end)
     @assert Core.eval(__module__, S) <: InferenceErrorReport
 

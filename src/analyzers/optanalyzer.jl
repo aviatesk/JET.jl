@@ -236,7 +236,7 @@ function CC.finish(frame::InferenceState, analyzer::OptAnalyzer)
     return ret
 end
 
-@reportdef struct CapturedVariableReport <: InferenceErrorReport
+@jetreport struct CapturedVariableReport <: InferenceErrorReport
     name::Union{Nothing,Symbol}
 end
 function print_report_message(io::IO, (; name)::CapturedVariableReport)
@@ -294,7 +294,7 @@ function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState)
 end
 
 # report optimization failure due to recursive calls, etc.
-@reportdef struct OptimizationFailureReport <: InferenceErrorReport end
+@jetreport struct OptimizationFailureReport <: InferenceErrorReport end
 function print_report_message(io::IO, ::OptimizationFailureReport)
     print(io, "failed to optimize")
 end
@@ -306,7 +306,7 @@ function (::OptAnalysisPass)(::Type{OptimizationFailureReport}, analyzer::OptAna
     return false
 end
 
-@reportdef struct RuntimeDispatchReport <: InferenceErrorReport end
+@jetreport struct RuntimeDispatchReport <: InferenceErrorReport end
 function print_report_message(io::IO, ::RuntimeDispatchReport)
     print(io, "runtime dispatch detected")
 end

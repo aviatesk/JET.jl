@@ -114,7 +114,7 @@ end
 # And now we will define new [`InferenceErrorReport`](@ref) report type `UnstableAPI`,
 # which represents the category 2, and implement a report pass to detect it.
 
-@reportdef struct UnstableAPI <: InferenceErrorReport
+@jetreport struct UnstableAPI <: InferenceErrorReport
     g::GlobalRef
 end
 function JETInterface.print_report_message(io::IO, (; g)::UnstableAPI)

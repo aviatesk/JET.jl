@@ -594,7 +594,7 @@ This special `InferenceErrorReport` wraps remarks by `NativeInterpreter`.
 and those remarks are less interesting in term of "error checking", so currently any of JET's
 pre-defined report passes doesn't make any use of `NativeRemark`.
 """
-@reportdef struct NativeRemark <: InferenceErrorReport
+@jetreport struct NativeRemark <: InferenceErrorReport
     s::String
 end
 function print_report_message(io::IO, (; s)::NativeRemark)

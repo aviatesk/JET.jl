@@ -1640,7 +1640,7 @@ reexport_as_api!(JETInterface,
                  print_report_message,
                  print_signature,
                  report_color,
-                 var"@reportdef",
+                 var"@jetreport",
                  VSCode.vscode_source,
                  VSCode.vscode_diagnostics_order,
                  )
