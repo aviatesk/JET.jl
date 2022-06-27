@@ -718,19 +718,17 @@ end
 
 function get_single_method_match(@nospecialize(tt), lim, world)
     mms = _methods_by_ftype(tt, lim, world)
-    @assert !isa(mms, Bool) "unable to find matching method for $(tt)"
-
-    filter!(NospecializeEq(tt), mms)
-    @assert length(mms) == 1 "unable to find single target method for $(tt)"
-
-    return first(mms)::MethodMatch
+    isa(mms, Bool) && error(lazy"unable to find single target method for $tt")
+    local mm = nothing
+    for i = 1:length(mms)
+        mmᵢ = mms[i]::MethodMatch
+        if tt === mmᵢ.spec_types
+            mm === nothing || error(lazy"unable to find single target method for $tt")
+            mm = mmᵢ
+        end
+    end
+    return mm::MethodMatch
 end
-
-struct NospecializeEq
-    tt
-    NospecializeEq(@nospecialize tt) = new(tt)
-end
-(neq::NospecializeEq)(mm::MethodMatch) = mm.spec_types === neq.tt
 
 analyze_method!(analyzer::AbstractAnalyzer, m::Method; kwargs...) =
     analyze_method_signature!(analyzer, m, m.sig, method_sparams(m); kwargs...)
@@ -834,7 +832,7 @@ function report_file(filename::AbstractString;
         end
         toplevel_logger = get(jetconfigs, :toplevel_logger, nothing)
         with_toplevel_logger(toplevel_logger; filter=≥(JET_LOGGER_LEVEL_INFO)) do @nospecialize(io)
-            println(io, "applied JET configurations in $configfile")
+            println(io, lazy"applied JET configurations in $configfile")
         end
     end
 
@@ -982,19 +980,19 @@ end
 
 function get_package_file(package::AbstractString)
     filename = Base.find_package(package)
-    isnothing(filename) && throw(ErrorException("unknown package $package."))
+    isnothing(filename) && error(lazy"unknown package $package.")
     return filename
 end
 
 function get_package_file(package::Module)
     filename = pathof(package)
-    isnothing(filename) && throw(ErrorException("cannot analyze a module defined in the REPL."))
+    isnothing(filename) && error("cannot analyze a module defined in the REPL.")
     return filename
 end
 
 function get_package_file(::Nothing)
     project = Pkg.project()
-    project.ispackage || throw(ErrorException("active project at $(project.path) is not a package."))
+    project.ispackage || error(lazy"active project at $(project.path) is not a package.")
     return normpath(dirname(project.path), "src", project.name::String * ".jl")
 end
 
