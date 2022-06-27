@@ -138,6 +138,7 @@ import .CC:
     argtype_tail,
     _methods_by_ftype,
     specialize_method,
+    get_compileable_sig,
     compute_basic_blocks,
     may_invoke_generator,
     inlining_enabled,
@@ -445,13 +446,8 @@ end
 function is_compileable_frame(frame)
     linfo = get_linfo(frame)
     def = linfo.def
-    return isa(def, Method) && isa_compileable_sig(linfo.specTypes, def)
-end
-@static if isdefined(CC, :isa_compileable_sig)
-    import .CC: isa_compileable_sig
-else
-    isa_compileable_sig(@nospecialize(atype), method::Method) =
-        !iszero(ccall(:jl_isa_compileable_sig, Int32, (Any, Any), atype, method))
+    isa(def, Method) || return false
+    return get_compileable_sig(def, linfo.specTypes, linfo.sparam_vals) !== nothing
 end
 
 get_linfo(sv::State) = sv.linfo
@@ -489,6 +485,24 @@ Base.show(io::IO, ::MIME"application/prs.juno.inline", frame::InferenceState) =
 
 ignorenotfound(@nospecialize(t)) = t === NOT_FOUND ? Bottom : t
 safewidenconst(@nospecialize t) = widenconst(ignorelimited(ignorenotfound(t)))
+
+# logging
+
+const JET_LOGGER_LEVEL = :JET_LOGGER_LEVEL
+const JET_LOGGER_LEVEL_INFO = const DEFAULT_LOGGER_LEVEL = 0
+const JET_LOGGER_LEVEL_DEBUG = 1
+const JET_LOGGER_LEVELS = Dict(JET_LOGGER_LEVEL_INFO  => :info, JET_LOGGER_LEVEL_DEBUG => :debug)
+const JET_LOGGER_LEVELS_DESC = let
+    descs = map(collect(JET_LOGGER_LEVELS)) do (level, desc)
+        if level == DEFAULT_LOGGER_LEVEL
+            "`$level` (\"$desc\" level, default)"
+        else
+            "`$level` (\"$desc\" level)"
+        end
+    end
+    join(descs, ", ")
+end
+jet_logger_level(@nospecialize io::IO) = get(io, JET_LOGGER_LEVEL, DEFAULT_LOGGER_LEVEL)::Int
 
 # analysis core
 # =============
@@ -706,11 +720,17 @@ function get_single_method_match(@nospecialize(tt), lim, world)
     mms = _methods_by_ftype(tt, lim, world)
     @assert !isa(mms, Bool) "unable to find matching method for $(tt)"
 
-    filter!(mm::MethodMatch->mm.spec_types===tt, mms)
+    filter!(NospecializeEq(tt), mms)
     @assert length(mms) == 1 "unable to find single target method for $(tt)"
 
     return first(mms)::MethodMatch
 end
+
+struct NospecializeEq
+    tt
+    NospecializeEq(@nospecialize tt) = new(tt)
+end
+(neq::NospecializeEq)(mm::MethodMatch) = mm.spec_types === neq.tt
 
 analyze_method!(analyzer::AbstractAnalyzer, m::Method; kwargs...) =
     analyze_method_signature!(analyzer, m, m.sig, method_sparams(m); kwargs...)
@@ -793,7 +813,7 @@ See [JET's configuration file](@ref config-file) for more details.
                 toplevel_logger = nothing, # suppress toplevel logger
                 jetconfigs...) # other configurations
     ```
-    See [JET's logging configurations](@ref logging-config) for more details.
+    See [JET's top-level analysis configurations](@ref toplevel-config) for more details.
 """
 function report_file(filename::AbstractString;
                      __default_configs = (default_toplevel_logger_config(),),
@@ -813,10 +833,8 @@ function report_file(filename::AbstractString;
             jetconfigs = set_if_missing(jetconfigs, default)
         end
         toplevel_logger = get(jetconfigs, :toplevel_logger, nothing)
-        if isa(toplevel_logger, IO)
-            with_logger(toplevel_logger, :toplevel, ≥(INFO_LOGGER_LEVEL)) do @nospecialize(io)
-                println(io, "applied JET configurations in $configfile")
-            end
+        with_toplevel_logger(toplevel_logger; filter=≥(JET_LOGGER_LEVEL_INFO)) do @nospecialize(io)
+            println(io, "applied JET configurations in $configfile")
         end
     end
 
@@ -828,7 +846,7 @@ function report_file(filename::AbstractString;
 end
 
 default_toplevel_logger_config() =
-    return :toplevel_logger => IOContext(stdout::IO, LOGGER_LEVEL_KEY => DEFAULT_LOGGER_LEVEL)
+    return :toplevel_logger => IOContext(stdout::IO, JET_LOGGER_LEVEL => DEFAULT_LOGGER_LEVEL)
 
 function set_if_missing(@nospecialize(jetconfigs), (key, value))
     haskey(jetconfigs, key) && return jetconfigs
@@ -868,7 +886,6 @@ Note that the following configurations should be string(s) of valid Julia code:
 - `concretization_patterns`: vector of string of Julia code, which can be `parse`d into a
   Julia expression pattern expected by [`MacroTools.@capture` macro](https://fluxml.ai/MacroTools.jl/stable/pattern-matching/).
 - `toplevel_logger`: string of Julia code, which can be `parse`d and `eval`uated into `Union{IO,Nothing}`
-- `inference_logger`: string of Julia code, which can be `parse`d and `eval`uated into `Union{IO,Nothing}`
 
 E.g. the configurations below are equivalent:
 - configurations via keyword arguments
@@ -906,11 +923,6 @@ function process_config_dict!(config_dict)
     if !isnothing(toplevel_logger)
         @assert isa(toplevel_logger, String) "`toplevel_logger` should be string of Julia code"
         config_dict["toplevel_logger"] = Core.eval(Main, trymetaparse(toplevel_logger))
-    end
-    inference_logger = get(config_dict, "inference_logger", nothing)
-    if !isnothing(inference_logger)
-        @assert isa(inference_logger, String) "`inference_logger` should be string of Julia code"
-        config_dict["inference_logger"] = Core.eval(Main, trymetaparse(inference_logger))
     end
     return kwargs(config_dict)
 end

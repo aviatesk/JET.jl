@@ -659,11 +659,13 @@ end
     end
 end
 
+issue363(f, args...) = f(args...)
+
 @testset "BasicPass" begin
-    @testset "basicfilter" begin
+    @testset "basic_filter" begin
         # skip errors on abstract dispatch
-        let # https://github.com/aviatesk/JET.jl/issues/154
-            res = @analyze_toplevel analyze_from_definitions=true begin
+        # https://github.com/aviatesk/JET.jl/issues/154
+        let res = @analyze_toplevel analyze_from_definitions=true begin
                 struct Foo
                     x::AbstractVector{<:AbstractString}
                 end
@@ -671,9 +673,15 @@ end
             @test isempty(res.inference_error_reports)
         end
 
+        # https://github.com/aviatesk/JET.jl/issues/363
+        let res = report_call() do
+                issue363(sin, "42")
+            end
+            @test only(get_reports_with_test(res)) isa NoMethodErrorReport
+        end
+
         # should still report anything within entry frame
-        let
-            res = @eval Module() begin
+        let res = @eval Module() begin
                 foo(a::Int) = "hello"
                 $report_call((AbstractString,)) do a # this abstract call isn't concrete dispatch
                     foo(a)
@@ -684,8 +692,7 @@ end
         end
 
         # skip errors on abstract entry frame entered by `analyze_from_definitions!`
-        let
-            res = @analyze_toplevel analyze_from_definitions=true begin
+        let res = @analyze_toplevel analyze_from_definitions=true begin
                 struct Foo end
                 function isfoo(x)
                     # ==(::Missing, ::Foo) -> Missing will lead to `NonBooleanCondErrorReport` otherwise

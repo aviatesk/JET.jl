@@ -294,7 +294,7 @@ function analyze_task_parallel_code!(analyzer::AbstractAnalyzer, argtypes::Argty
         ft = (isa(v, Const) ? Core.Typeof(v.val) :
               isa(v, Core.PartialStruct) ? v.typ :
               isa(v, DataType) ? v :
-              return)::Type
+              return)
         analyze_additional_pass_by_type!(analyzer, Tuple{ft}, sv)
         return
     end
@@ -303,7 +303,7 @@ function analyze_task_parallel_code!(analyzer::AbstractAnalyzer, argtypes::Argty
 end
 
 # run additional interpretation with a new analyzer
-function analyze_additional_pass_by_type!(analyzer::AbstractAnalyzer, @nospecialize(tt::Type{<:Tuple}), sv::InferenceState)
+function analyze_additional_pass_by_type!(analyzer::AbstractAnalyzer, @nospecialize(tt), sv::InferenceState)
     newanalyzer = AbstractAnalyzer(analyzer)
 
     # in order to preserve the inference termination, we keep to use the current frame
@@ -555,21 +555,15 @@ function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
     isentry = isnothing(parent)
 
     #= logging stage1 start =#
-    local sec::Float64
-    logger_activated = isa(JETLogger(analyzer).inference_logger, IO)
-    depth = get_depth(analyzer)
-    if logger_activated
-        sec = time()
-        with_inference_logger(analyzer, ==(DEBUG_LOGGER_LEVEL)) do @nospecialize(io)
-            print_rails(io, depth)
-            printstyled(io, "┌ @ "; color = RAIL_COLORS[(depth+1)%N_RAILS+1])
-            print(io, linfo)
-            file, line = get_file_line(linfo)
-            print(io, ' ', file, ':', line)
-            println(io)
-            set_depth!(analyzer, get_depth(analyzer) + 1) # manipulate this only in debug mode
-        end
-    end
+    # sec = time()
+    # depth = get_depth(analyzer)
+    # print_rails(io, depth)
+    # printstyled(io, "┌ @ "; color = RAIL_COLORS[(depth+1)%N_RAILS+1])
+    # print(io, linfo)
+    # file, line = get_file_line(linfo)
+    # print(io, ' ', file, ':', line)
+    # println(io)
+    # set_depth!(analyzer, get_depth(analyzer) + 1) # manipulate this only in debug mode
     #= logging stage1 end =#
 
     # some methods like `getproperty` can't propagate accurate types without actual values,
@@ -589,25 +583,18 @@ function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
     ret = @invoke typeinf(analyzer::AbstractInterpreter, frame::InferenceState)
 
     #= logging stage2 start =#
-    if logger_activated
-        elapsed = round(time() - sec; digits = 3)
-        with_inference_logger(analyzer, ==(INFO_LOGGER_LEVEL)) do @nospecialize(io)
-            println(io, "inference on $linfo finished in $elapsed sec")
-        end
-        with_inference_logger(analyzer, ==(DEBUG_LOGGER_LEVEL)) do @nospecialize(io)
-            print_rails(io, depth)
-            printstyled(io, "└─→ "; color = RAIL_COLORS[(depth+1)%N_RAILS+1])
-            printstyled(io, frame.bestguess; color = TYPE_ANNOTATION_COLOR)
-            println(io, " (", join(filter(!isnothing, (
-                             linfo,
-                             ret ? nothing : "in cycle",
-                             string(length(get_any_reports(analyzer, result)), " reports"),
-                             string(elapsed, " sec"),
-                             )), ", "),
-                         ')')
-            set_depth!(analyzer, get_depth(analyzer) - 1) # manipulate this only in debug mode
-        end
-    end
+    # elapsed = round(time() - sec; digits = 3)
+    # print_rails(io, depth)
+    # printstyled(io, "└─→ "; color = RAIL_COLORS[(depth+1)%N_RAILS+1])
+    # printstyled(io, frame.bestguess; color = TYPE_ANNOTATION_COLOR)
+    # println(io, " (", join(filter(!isnothing, (
+    #                  linfo,
+    #                  ret ? nothing : "in cycle",
+    #                  string(length(get_any_reports(analyzer, result)), " reports"),
+    #                  string(elapsed, " sec"),
+    #                  )), ", "),
+    #              ')')
+    # set_depth!(analyzer, get_depth(analyzer) - 1) # manipulate this only in debug mode
     #= logging stage2 end =#
 
     return ret

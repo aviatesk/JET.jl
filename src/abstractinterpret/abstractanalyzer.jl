@@ -76,85 +76,6 @@ end
 # -----------
 # 2. `AnalyzerState(analyzer::NewAnalyzer) -> AnalyzerState`
 
-const LOGGER_LEVEL_KEY = :JET_LOGGER_LEVEL
-const INFO_LOGGER_LEVEL = 0
-const DEBUG_LOGGER_LEVEL = 1
-const LOGGER_LEVELS = Dict(INFO_LOGGER_LEVEL  => :info,
-                           DEBUG_LOGGER_LEVEL => :debug,
-                           )
-const DEFAULT_LOGGER_LEVEL = INFO_LOGGER_LEVEL
-const LOGGER_LEVELS_DESC = let
-    descs = map(collect(LOGGER_LEVELS)) do (level, desc)
-        if level == DEFAULT_LOGGER_LEVEL
-            "`$level` (\"$desc\" level, default)"
-        else
-            "`$level` (\"$desc\" level)"
-        end
-    end
-    join(descs, ", ")
-end
-get_logger_level(@nospecialize io::IO) = get(io, LOGGER_LEVEL_KEY, DEFAULT_LOGGER_LEVEL)::Int
-
-"""
-Logging configurations for JET analysis.
-
----
-- `toplevel_logger::Union{Nothing,IO} = nothing` \\
-  If `IO` object is given, it will track JET's toplevel analysis.
-  Logging level can be specified with `$(repr(LOGGER_LEVEL_KEY))` `IO` property.
-  Currently supported logging levels are either of $(LOGGER_LEVELS_DESC).
-
-  Examples:
-  * logs into `stdout`
-    ```julia-repl
-    julia> report_file(filename; toplevel_logger = stdout)
-    ```
-  * logs into `io::IOBuffer` with "debug" logger level
-    ```julia-repl
-    julia> report_file(filename; toplevel_logger = IOContext(io, $(repr(LOGGER_LEVEL_KEY)) => $DEBUG_LOGGER_LEVEL));
-    ```
----
-- `inference_logger::Union{Nothing,IO} = nothing` \\
-  If `IO` object is given, it will track JET's abstract interpretation routine.
-  Logging level can be specified with `$(repr(LOGGER_LEVEL_KEY))` `IO` property.
-  Currently supported logging levels are either of $(LOGGER_LEVELS_DESC).
-
-  Examples:
-  * logs into `stdout`
-    ```julia-repl
-    julia> report_call(f, args...; inference_logger = stdout)
-    ```
-  * logs into `io::IOBuffer` with "debug" logger level
-    ```julia-repl
-    julia> report_call(f, args...; inference_logger = IOContext(io, $(repr(LOGGER_LEVEL_KEY)) => $DEBUG_LOGGER_LEVEL))
-    ```
----
-!!! tip
-    Of course you can specify both `toplevel_logger` and `inference_logger` at the same time like below:
-    ```julia-repl
-    julia> report_and_watch_file(filename;
-                                 toplevel_logger = IOContext(logger_io, $(repr(LOGGER_LEVEL_KEY)) => $DEBUG_LOGGER_LEVEL),
-                                 inference_logger = inference_io)
-    ```
-"""
-struct JETLogger
-    # logger to track toplevel interpretation
-    toplevel_logger # ::Union{Nothing,IO}
-    # logger to track abstract interpretation routine
-    inference_logger # ::Union{Nothing,IO}
-    @jetconfigurable function JETLogger(; toplevel_logger::Union{Nothing,IO} = nothing,
-                                          inference_logger::Union{Nothing,IO} = nothing,
-                                          )
-        if isa(toplevel_logger, IO)
-            @assert get_logger_level(toplevel_logger) in keys(LOGGER_LEVELS) "toplevel_logger's $LOGGER_LEVEL_KEY should be either of $LOGGER_LEVELS_DESC"
-        end
-        if isa(inference_logger, IO)
-            @assert get_logger_level(inference_logger) in keys(LOGGER_LEVELS) "inference_logger's $LOGGER_LEVEL_KEY should be either of $LOGGER_LEVELS_DESC"
-        end
-        new(toplevel_logger, inference_logger)
-    end
-end
-
 """
     JETResult
 
@@ -247,8 +168,6 @@ mutable struct AnalyzerState
 
     ## debug ##
 
-    logger::JETLogger
-
     # records depth of call stack
     depth::Int
 end
@@ -269,12 +188,10 @@ end
                                         concretized  = _CONCRETIZED,
                                         toplevelmod  = _TOPLEVELMOD,
                                         global_slots = _GLOBAL_SLOTS,
-                                        logger       = nothing,
                                         depth        = 0,
                                         jetconfigs...)
     isnothing(inf_params) && (inf_params = JETInferenceParams(; jetconfigs...))
     isnothing(opt_params) && (opt_params = JETOptimizationParams(; jetconfigs...))
-    isnothing(logger)     && (logger     = JETLogger(; jetconfigs...))
 
     native       = NativeInterpreter(world; inf_params, opt_params)
     param_key    = get_param_key(inf_params)
@@ -289,7 +206,6 @@ end
                          #=toplevelmod::Module=# toplevelmod,
                          #=global_slots::Dict{Int,Symbol}=# global_slots,
                          #=entry::Union{Nothing,MethodInstance}=# nothing,
-                         #=logger::JETLogger=# logger,
                          #=depth::Int=# depth,
                          )
 end
@@ -417,7 +333,6 @@ function AbstractAnalyzer(analyzer::T) where {T<:AbstractAnalyzer}
                              results    = get_results(analyzer),
                              inf_params = InferenceParams(analyzer),
                              opt_params = OptimizationParams(analyzer),
-                             logger     = JETLogger(analyzer),
                              depth      = get_depth(analyzer),
                              )
     newanalyzer = AbstractAnalyzer(analyzer, newstate)
@@ -434,7 +349,6 @@ function AbstractAnalyzer(analyzer::T, concretized, toplevelmod) where {T<:Abstr
                              opt_params  = OptimizationParams(analyzer),
                              concretized = concretized, # or construct partial `CodeInfo` from remaining abstract statements ?
                              toplevelmod = toplevelmod,
-                             logger      = JETLogger(analyzer),
                              )
     newanalyzer = AbstractAnalyzer(analyzer, newstate)
     may_init_cache!(newanalyzer)
@@ -669,28 +583,6 @@ is_global_slot(analyzer::AbstractAnalyzer, slot::Int)   = slot in keys(get_globa
 is_global_slot(analyzer::AbstractAnalyzer, slot::Slot)  = is_global_slot(analyzer, slot_id(slot))
 is_global_slot(analyzer::AbstractAnalyzer, sym::Symbol) = sym in values(get_global_slots(analyzer))
 
-JETLogger(analyzer::AbstractAnalyzer) = get_logger(analyzer)
-
-@nospecialize
-
-@inline function with_toplevel_logger(f, analyzer::AbstractAnalyzer, args...; kwargs...)
-    io = JETLogger(analyzer).toplevel_logger
-    isa(io, IO) && with_logger(f, io, :toplevel, args...; kwargs...)
-end
-@inline function with_inference_logger(f, analyzer::AbstractAnalyzer, args...; kwargs...)
-    io = JETLogger(analyzer).inference_logger
-    isa(io, IO) && with_logger(f, io, :inference, args...; kwargs...)
-end
-function with_logger(f, io::IO, mode, filter = ≥(DEFAULT_LOGGER_LEVEL); pre = identity)
-    level = get_logger_level(io)
-    filter(level) || return
-    pre(io)
-    print(io, "[$mode-$(LOGGER_LEVELS[level])] ")
-    f(io)
-end
-
-@specialize
-
 """
     aggregation_policy(analyzer::AbstractAnalyzer)
 
@@ -710,7 +602,7 @@ identical as far as they're collected at the same file and line.
 aggregation_policy(::AbstractAnalyzer) = default_aggregation_policy
 function default_aggregation_policy(@nospecialize(report#=::InferenceErrorReport=#))
     return DefaultReportIdentity(
-        typeof(report)::DataType,
+        typeof(Base.inferencebarrier(report))::DataType,
         report.sig,
         # VirtualFrameNoLinfo(first(report.vst)),
         VirtualFrameNoLinfo(last(report.vst)),

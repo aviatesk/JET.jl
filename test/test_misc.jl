@@ -41,14 +41,12 @@ macro toml_str(s); TOML.parse(TOML.Parser(s)); end
         context = "Base"
         concretization_patterns = ["const x_ = y_"]
         toplevel_logger = "stdout"
-        inference_logger = "stdout"
         """
 
         config = process_config_dict!(config_dict)
         @test (:context => Base) in config
         @test (:concretization_patterns => [:(const x_ = y_)]) in config
         @test (:toplevel_logger => stdout) in config
-        @test (:inference_logger => stdout) in config
     end
 
     # error when invalid expression given
