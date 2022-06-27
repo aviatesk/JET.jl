@@ -112,7 +112,7 @@ These configurations will be active for all the top-level entries explained in t
 
   Although configuring `concretization_patterns` properly could be really tricky, we can
   effectively debug JET's top-level code concretization plan using [`toplevel_logger`](@ref JETLogger)
-  configuration with the logging level above than `$DEBUG_LOGGER_LEVEL` ("debug") level.
+  configuration with the logging level above than `$JET_LOGGER_LEVEL_DEBUG` ("debug") level.
   With the `toplevel_logger` configuration, we can see:
   - which code is matched with `concretization_patterns` and forcibly concretized
   - which code is selected to be concretized or not by JET's code selection logic:
@@ -168,7 +168,22 @@ These configurations will be active for all the top-level entries explained in t
   [toplevel-debug]  exited from test/fixtures/concretization_patterns.jl (took 0.032 sec)
   ```
 
-  Also see: [JET's logging configurations](@ref logging-config), [`virtual_process`](@ref).
+  Also see: the `toplevel_logger` section below, [`virtual_process`](@ref).
+---
+- `toplevel_logger::Union{Nothing,IO} = nothing` \\
+  If `IO` object is given, it will track JET's toplevel analysis.
+  Logging level can be specified with `$(repr(JET_LOGGER_LEVEL))` `IO` property.
+  Currently supported logging levels are either of $(JET_LOGGER_LEVELS_DESC).
+
+  Examples:
+  * logs into `stdout`
+  ```julia-repl
+  julia> report_file(filename; toplevel_logger = stdout)
+  ```
+  * logs into `io::IOBuffer` with "debug" logger level
+  ```julia-repl
+  julia> report_file(filename; toplevel_logger = IOContext(io, $(repr(JET_LOGGER_LEVEL)) => $JET_LOGGER_LEVEL_DEBUG));
+  ```
 ---
 - `virtualize::Bool = true` \\
   When `true`, JET will virtualize the given root module context.
@@ -182,10 +197,12 @@ struct ToplevelConfig{CP<:Any}
     analyze_from_definitions::Bool
     concretization_patterns::Vector{CP}
     virtualize::Bool
+    toplevel_logger # ::Union{Nothing,IO}
     @jetconfigurable function ToplevelConfig(; context::Module                    = Main,
                                                analyze_from_definitions::Bool     = false,
                                                concretization_patterns::Vector{T} = Expr[],
                                                virtualize::Bool                   = true,
+                                               toplevel_logger::Union{Nothing,IO} = nothing
                                                ) where {T<:Any}
         if typeintersect(T, Expr) === Bottom
             CP = tmerge(T, Expr)
@@ -204,13 +221,30 @@ struct ToplevelConfig{CP<:Any}
               :(@enum(args__)), :(Base.@enum(args__)),
               )
         concretization_patterns = CP[striplines(normalise(x)) for x in concretization_patterns]
+        if isa(toplevel_logger, IO)
+            @assert jet_logger_level(toplevel_logger) in keys(JET_LOGGER_LEVELS) "toplevel_logger's $JET_LOGGER_LEVEL should be either of $JET_LOGGER_LEVELS_DESC"
+        end
         return new{CP}(context,
                        analyze_from_definitions,
                        concretization_patterns,
                        virtualize,
+                       toplevel_logger,
                        )
     end
 end
+
+@nospecialize
+with_toplevel_logger(f, config::ToplevelConfig; kwargs...) =
+    with_toplevel_logger(f, config.toplevel_logger; kwargs...)
+function with_toplevel_logger(f, io; filter=≥(DEFAULT_LOGGER_LEVEL), pre=identity)
+    isa(io, IO) || return false
+    level = jet_logger_level(io)
+    filter(level) || return
+    pre(io)
+    print(io, "[toplevel-$(JET_LOGGER_LEVELS[level])] ")
+    f(io)
+end
+@specialize
 
 const Actual2Virtual = Pair{Module,Module}
 
@@ -286,7 +320,7 @@ function virtual_process(x::Union{AbstractString,Expr},
 
         start = time()
         virtual = virtualize_module_context(actual)
-        with_toplevel_logger(analyzer) do @nospecialize(io)
+        with_toplevel_logger(config) do @nospecialize(io)
             sec = round(time() - start; digits = 3)
             println(io, "virtualized the context of $actual (took $sec sec)")
         end
@@ -308,7 +342,7 @@ function virtual_process(x::Union{AbstractString,Expr},
 
     # analyze collected signatures unless critical error happened
     if config.analyze_from_definitions && isempty(res.toplevel_error_reports)
-        analyze_from_definitions!(analyzer, res)
+        analyze_from_definitions!(analyzer, res, config)
     end
 
     # TODO want to do in `analyze_from_definitions!` ?
@@ -376,7 +410,7 @@ gen_virtual_module(root = Main; name = VIRTUAL_MODULE_NAME) =
 # generator should have been collected, and we will just analyze them separately
 # if code generation has failed given the entry method signature, the overload of
 # `InferenceState(..., ::AbstractAnalyzer)` will collect `GeneratorErrorReport`
-function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProcessResult)
+function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProcessResult, config::ToplevelConfig)
     n = length(res.toplevel_signatures)
     succeeded = 0
     for (i, tt) in enumerate(res.toplevel_signatures)
@@ -385,7 +419,7 @@ function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProce
             filter!(mm::MethodMatch->mm.spec_types===tt, mms)
             if length(mms) == 1
                 succeeded += 1
-                with_toplevel_logger(analyzer; pre=clearline) do @nospecialize(io)
+                with_toplevel_logger(config; pre=clearline) do @nospecialize(io)
                     (i == n ? println : print)(io, "analyzing from top-level definitions ... $succeeded/$n")
                 end
                 analyzer = AbstractAnalyzer(analyzer, _CONCRETIZED, _TOPLEVELMOD)
@@ -398,7 +432,7 @@ function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProce
             end
         end
         # something went wrong
-        with_toplevel_logger(analyzer, ≥(DEBUG_LOGGER_LEVEL); pre=clearline) do @nospecialize(io)
+        with_toplevel_logger(config; filter=≥(JET_LOGGER_LEVEL_DEBUG), pre=clearline) do @nospecialize(io)
             println(io, "couldn't find a single method matching the signature `$tt`")
         end
     end
@@ -415,7 +449,7 @@ function _virtual_process!(s::AbstractString,
                            )
     start = time()
 
-    with_toplevel_logger(analyzer) do @nospecialize(io)
+    with_toplevel_logger(config) do @nospecialize(io)
         println(io, "entered into $filename")
     end
 
@@ -432,7 +466,7 @@ function _virtual_process!(s::AbstractString,
         res = _virtual_process!(toplevelex, filename, analyzer, config, context, res)
     end
 
-    with_toplevel_logger(analyzer) do @nospecialize(io)
+    with_toplevel_logger(config) do @nospecialize(io)
         sec = round(time() - start; digits = 3)
         println(io, " exited from $filename (took $sec sec)")
     end
@@ -504,7 +538,7 @@ function _virtual_process!(toplevelex::Expr,
     while !isempty(exs)
         (; x, force_concretize) = pop!(exs)
 
-        # with_toplevel_logger(analyzer, ≥(DEBUG_LOGGER_LEVEL)) do @nospecialize(io)
+        # with_toplevel_logger(config; filter=≥(JET_LOGGER_LEVEL_DEBUG)) do @nospecialize(io)
         #     println(io, "analyzing ", x)
         # end
 
@@ -522,7 +556,7 @@ function _virtual_process!(toplevelex::Expr,
         if !force_concretize
             for pat in config.concretization_patterns
                 if @capture(x, $pat)
-                    with_toplevel_logger(analyzer, ≥(DEBUG_LOGGER_LEVEL)) do @nospecialize(io)
+                    with_toplevel_logger(config; filter=≥(JET_LOGGER_LEVEL_DEBUG)) do @nospecialize(io)
                         line, file = lnn.line, lnn.file
                         x′ = striplines(normalise(x))
                         println(io, "concretization pattern `$pat` matched `$x′` at $file:$line")
@@ -796,7 +830,7 @@ Partially interprets statements in `src` using JuliaInterpreter.jl:
 function partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::CodeInfo)
     concretize = select_statements(src)
 
-    with_toplevel_logger(interp.analyzer, ≥(DEBUG_LOGGER_LEVEL)) do @nospecialize(io)
+    with_toplevel_logger(interp.config; filter=≥(JET_LOGGER_LEVEL_DEBUG)) do @nospecialize(io)
         line, file = interp.lnn.line, interp.lnn.file
         println(io, "concretization plan at $file:$line:")
         print_with_code(io, src, concretize)

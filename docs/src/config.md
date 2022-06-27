@@ -3,12 +3,10 @@
 JET analysis can be flexibly fine-tuned.
 Any entry point explained in [JET's default error analysis](@ref jetanalysis-entry) and [the optimization analysis](@ref optanalysis-entry)
 can accept any of the configuration parameters described below as keyword arguments (or optional parameters for the interactive macros).
-For example, if you want to analyze `path/to/file.jl` with specifying [`target_defined_modules` configuration](@ref toplevel-config)
-and also logs inference process into `stdout`, you can do:
+For example, you can analyze `path/to/file.jl` with specifying [`target_defined_modules` configuration](@ref toplevel-config) as follows:
 ```julia
 report_file("path/to/file.jl";
-            target_defined_modules = true,
-            inference_logger = stdout)
+            target_defined_modules = true)
 ```
 
 !!! note
@@ -22,13 +20,11 @@ report_file("path/to/file.jl";
 JET._get_configured_reports
 ```
 
-
 ## [Configurations for Top-level Analysis](@id toplevel-config)
 
 ```@docs
 JET.ToplevelConfig
 ```
-
 
 ## [Configurations for Abstract Interpretation](@id abstractinterpret-config)
 
@@ -36,13 +32,11 @@ JET.ToplevelConfig
 JET.JETInferenceParams
 ```
 
-
 ## [Print Configurations](@id print-config)
 
 ```@docs
 JET.PrintConfig
 ```
-
 
 ## [Configurations for VSCode Integration](@id vscode-config)
 
@@ -50,20 +44,11 @@ JET.PrintConfig
 JET.VSCode.VSCodeConfig
 ```
 
-
 ## [Watch Configurations](@id watch-config)
 
 ```@docs
 JET.WatchConfig
 ```
-
-
-## [Logging Configurations](@id logging-config)
-
-```@docs
-JET.JETLogger
-```
-
 
 ## [Configuration File](@id config-file)
 
