@@ -732,6 +732,13 @@ end
             r.t == Integer
         end
     end
+
+    let # https://github.com/aviatesk/JET.jl/issues/311
+        result = report_call((Vector{Any},); mode=:sound) do xs
+            xs[5]
+        end
+        @test only(get_reports_with_test(result)) isa UnsoundBuiltinCallErrorReport
+    end
 end
 
 @testset "TypoPass" begin

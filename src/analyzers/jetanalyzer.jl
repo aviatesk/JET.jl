@@ -919,15 +919,26 @@ function handle_invalid_builtins!(analyzer::JETAnalyzer, sv::InferenceState, arg
     return false
 end
 
-function (::SoundPass)(::Type{BuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(ret))
-    return BasicPass()(BuiltinErrorReport, analyzer, sv, f, argtypes, ret)
+@reportdef struct UnsoundBuiltinCallErrorReport <: BuiltinErrorReport
+    argtypes::Argtypes
+end
+function print_report_message(io::IO, ::UnsoundBuiltinCallErrorReport)
+    print(io, "this builtin function call may throw")
+end
+print_signature(::UnsoundBuiltinCallErrorReport) = false
 
+function (::SoundPass)(::Type{BuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(rt))
     # TODO enable this sound pass:
     # - make `stmt_effect_free` work on `InfernceState`
     # - sort out `argextype` interface to make it accept `InfernceState`
     @assert !(f === throw) "`throw` calls shuold be handled either by the report pass of `SeriousExceptionReport` or `UncaughtExceptionReport`"
-    stmt = get_stmt((sv, get_currpc(sv)))
-    if !CC.stmt_effect_free(stmt, ret, sv, sv.sptypes)
-        add_new_report!(analyzer, sv.result, UnsoundBuiltinCallErrorReport(sv, argtypes))
+    if isa(f, IntrinsicFunction)
+        if !Core.Compiler.intrinsic_nothrow(f, argtypes)
+            add_new_report!(analyzer, sv.result, UnsoundBuiltinCallErrorReport(sv, argtypes))
+        end
+    else
+        if !Core.Compiler.builtin_nothrow(f, argtypes, rt)
+            add_new_report!(analyzer, sv.result, UnsoundBuiltinCallErrorReport(sv, argtypes))
+        end
     end
 end
