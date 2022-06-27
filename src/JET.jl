@@ -138,6 +138,7 @@ import .CC:
     argtype_tail,
     _methods_by_ftype,
     specialize_method,
+    get_compileable_sig,
     compute_basic_blocks,
     may_invoke_generator,
     inlining_enabled,
@@ -445,13 +446,8 @@ end
 function is_compileable_frame(frame)
     linfo = get_linfo(frame)
     def = linfo.def
-    return isa(def, Method) && isa_compileable_sig(linfo.specTypes, def)
-end
-@static if isdefined(CC, :isa_compileable_sig)
-    import .CC: isa_compileable_sig
-else
-    isa_compileable_sig(@nospecialize(atype), method::Method) =
-        !iszero(ccall(:jl_isa_compileable_sig, Int32, (Any, Any), atype, method))
+    isa(def, Method) || return false
+    return get_compileable_sig(def, linfo.specTypes, linfo.sparam_vals) !== nothing
 end
 
 get_linfo(sv::State) = sv.linfo
