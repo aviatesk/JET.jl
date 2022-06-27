@@ -331,7 +331,7 @@ function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer,
     @nospecialize(f), arginfo::ArgInfo, @nospecialize(atype),
     sv::InferenceState, max_methods::Int = InferenceParams(analyzer).MAX_METHODS)
     ret = @invoke CC.abstract_call_gf_by_type(analyzer::AbstractAnalyzer,
-        @nospecialize(f), arginfo::ArgInfo, @nospecialize(atype),
+        f::Any, arginfo::ArgInfo, atype::Any,
         sv::InferenceState, max_methods::Int)
     info = ret.info
     if isa(info, ConstCallInfo)
@@ -350,7 +350,7 @@ function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer,
     @nospecialize(f), fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes, @nospecialize(atype),
     sv::InferenceState, max_methods::Int = InferenceParams(analyzer).MAX_METHODS)
     ret = @invoke CC.abstract_call_gf_by_type(analyzer::AbstractAnalyzer,
-        @nospecialize(f), fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes, @nospecialize(atype),
+        f::Any, fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes, atype::Any,
         sv::InferenceState, max_methods::Int)
     info = ret.info
     if isa(info, ConstCallInfo)
@@ -365,6 +365,28 @@ function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer,
     return ret
 end
 end # @static if IS_AFTER_42529
+
+function CC.abstract_apply(analyzer::JETAnalyzer,
+    argtypes::Argtypes, sv::InferenceState, max_methods::Int)
+    ret =  @invoke CC.abstract_apply(analyzer::AbstractInterpreter,
+        argtypes::Argtypes, sv::InferenceState, max_methods::Int)
+    return ret
+    retinfo = ret.info
+    if retinfo isa UnionSplitApplyCallInfo
+        for (; call) in retinfo.infos
+            if isa(call, ConstCallInfo)
+                call = call.call # unwrap to `MethodMatchInfo` or `UnionSplitInfo`
+            end
+            # report passes for no matching methods error
+            if isa(call, UnionSplitInfo)
+                ReportPass(analyzer)(NoMethodErrorReport, analyzer, sv, call, argtypes, atype)
+            elseif isa(call, MethodMatchInfo)
+                ReportPass(analyzer)(NoMethodErrorReport, analyzer, sv, call, argtypes, atype)
+            end
+        end
+    end
+    return ret
+end
 
 function (rp::BasicPass)(
     ::Type{NoMethodErrorReport}, analyzer::JETAnalyzer, sv::InferenceState,
@@ -581,7 +603,7 @@ end
 function CC.abstract_eval_special_value(analyzer::JETAnalyzer,
     @nospecialize(e), vtypes::VarTable, sv::InferenceState)
     ret = @invoke CC.abstract_eval_special_value(analyzer::AbstractAnalyzer,
-        e, vtypes::VarTable, sv::InferenceState)
+        e::Any, vtypes::VarTable, sv::InferenceState)
 
     if isa(e, GlobalRef)
         mod, name = e.mod, e.name
@@ -648,7 +670,7 @@ is_corecompiler_undefglobal(mod::Module, name::Symbol) =
            false
 
 function CC.abstract_eval_value(analyzer::JETAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    ret = @invoke CC.abstract_eval_value(analyzer::AbstractAnalyzer, e, vtypes::VarTable, sv::InferenceState)
+    ret = @invoke CC.abstract_eval_value(analyzer::AbstractAnalyzer, e::Any, vtypes::VarTable, sv::InferenceState)
 
     # report non-boolean condition error
     stmt = get_stmt((sv, get_currpc(sv)))
@@ -751,10 +773,10 @@ end
 # XXX tfunc implementations in Core.Compiler are really not enough to catch invalid calls
 # TODO set up our own checks and enable sound analysis
 
-function CC.builtin_tfunction(analyzer::JETAnalyzer, @nospecialize(f), argtypes::Array{Any,1},
-                              sv::InferenceState) # `AbstractAnalyzer` isn't overloaded on `return_type`
+function CC.builtin_tfunction(analyzer::JETAnalyzer,
+    @nospecialize(f), argtypes::Array{Any,1}, sv::InferenceState) # `AbstractAnalyzer` isn't overloaded on `return_type`
     ret = @invoke CC.builtin_tfunction(analyzer::AbstractAnalyzer,
-        f, argtypes::Array{Any,1}, sv::InferenceState)
+        f::Any, argtypes::Array{Any,1}, sv::InferenceState)
 
     if f === throw
         # here we only report a selection of "serious" exceptions, i.e. those that should be

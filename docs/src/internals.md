@@ -74,7 +74,6 @@ JET.ToplevelErrorReport
 ## Utilities
 
 ```@docs
-JET.@invoke
 JET.@withmixedhash
 JET.@jetconfigurable
 ```

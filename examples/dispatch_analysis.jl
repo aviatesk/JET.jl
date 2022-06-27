@@ -52,10 +52,7 @@
 
 using JET.JETInterface
 const CC = Core.Compiler
-import JET:
-    JET,
-    @invoke,
-    isexpr
+import JET: JET
 
 struct DispatchAnalyzer{T} <: AbstractAnalyzer
     state::AnalyzerState
@@ -92,7 +89,7 @@ function CC.finish!(analyzer::DispatchAnalyzer, frame::CC.InferenceState)
     src = caller.src
 
     ## run `finish!(::AbstractAnalyzer, ::CC.InferenceState)` first to convert the optimized `IRCode` into optimized `CodeInfo`
-    ret = @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::CC.InferenceState)
+    ret = Base.@invoke CC.finish!(analyzer::AbstractAnalyzer, frame::CC.InferenceState)
 
     if analyzer.frame_filter(frame.linfo)
         if isa(src, Core.Const) # the optimization was very successful, nothing to report
@@ -125,7 +122,7 @@ end
 function (::DispatchAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::DispatchAnalyzer, caller::CC.InferenceResult, opt::CC.OptimizationState)
     (; sptypes, slottypes) = opt
     for (pc, x) in enumerate(opt.src.code)
-        if isexpr(x, :call)
+        if Base.Meta.isexpr(x, :call)
             ft = CC.widenconst(CC.argextype(first(x.args), opt.src, sptypes, slottypes))
             ft <: Core.Builtin && continue # ignore `:call`s of the builtin intrinsics
             add_new_report!(analyzer, caller, RuntimeDispatchReport((opt, pc)))

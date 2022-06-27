@@ -50,7 +50,7 @@ function CC.abstract_eval_special_value(analyzer::AbstractAnalyzer, @nospecializ
         end
     end
 
-    ret = @invoke CC.abstract_eval_special_value(analyzer::AbstractInterpreter, e, vtypes::VarTable, sv::InferenceState)
+    ret = @invoke CC.abstract_eval_special_value(analyzer::AbstractInterpreter, e::Any, vtypes::VarTable, sv::InferenceState)
 
     if istoplevel(sv)
         if isa(e, GlobalRef)
@@ -71,7 +71,7 @@ function CC.abstract_eval_special_value(analyzer::AbstractAnalyzer, @nospecializ
 end
 
 function CC.abstract_eval_value(analyzer::AbstractAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    ret = @invoke CC.abstract_eval_value(analyzer::AbstractInterpreter, e, vtypes::VarTable, sv::InferenceState)
+    ret = @invoke CC.abstract_eval_value(analyzer::AbstractInterpreter, e::Any, vtypes::VarTable, sv::InferenceState)
 
     # HACK if we encounter `_INACTIVE_EXCEPTION`, it means `ConcreteInterpreter` tried to
     # concretize an exception which was not actually thrown – yet the actual error hasn't
@@ -94,14 +94,14 @@ function CC.abstract_eval_statement(analyzer::AbstractAnalyzer, @nospecialize(e)
         end
     end
 
-    return @invoke CC.abstract_eval_statement(analyzer::AbstractInterpreter, e, vtypes::VarTable, sv::InferenceState)
+    return @invoke CC.abstract_eval_statement(analyzer::AbstractInterpreter, e::Any, vtypes::VarTable, sv::InferenceState)
 end
 
 function CC.builtin_tfunction(analyzer::AbstractAnalyzer,
     @nospecialize(f), argtypes::Array{Any,1},
     sv::InferenceState) # `AbstractAnalyzer` isn't overloaded on `return_type`
     ret = @invoke CC.builtin_tfunction(analyzer::AbstractInterpreter,
-        f, argtypes::Array{Any,1},
+        f::Any, argtypes::Array{Any,1},
         sv::Union{InferenceState,Nothing})
 
     if f === getfield && 2 ≤ length(argtypes) ≤ 3
@@ -171,7 +171,7 @@ end
 function CC.abstract_call_method(analyzer::AbstractAnalyzer,
     method::Method, @nospecialize(sig), sparams::SimpleVector, hardlimit::Bool, sv::InferenceState)
     ret = @invoke CC.abstract_call_method(analyzer::AbstractInterpreter,
-        method::Method, sig, sparams::SimpleVector, hardlimit::Bool, sv::InferenceState)
+        method::Method, sig::Any, sparams::SimpleVector, hardlimit::Bool, sv::InferenceState)
 
     collect_callee_reports!(analyzer, sv)
 
@@ -201,7 +201,7 @@ function CC.abstract_call_method_with_const_args(analyzer::AbstractAnalyzer,
     set_cacher!(analyzer, :abstract_call_method_with_const_args => sv.result)
     const_result =
         @invoke CC.abstract_call_method_with_const_args(analyzer::AbstractInterpreter,
-            result::MethodCallResult, @nospecialize(f), arginfo::ArgInfo, match::MethodMatch,
+            result::MethodCallResult, f::Any, arginfo::ArgInfo, match::MethodMatch,
             sv::InferenceState)
     # we should make sure we reset the cacher because at this point we may have not hit
     # `CC.cache_lookup(linfo::MethodInstance, given_argtypes::Argtypes, cache::JETLocalCache)`
@@ -219,7 +219,7 @@ function CC.abstract_call_method_with_const_args(analyzer::AbstractAnalyzer,
     set_cacher!(analyzer, :abstract_call_method_with_const_args => sv.result)
     const_result =
         @invoke CC.abstract_call_method_with_const_args(analyzer::AbstractInterpreter,
-            result::MethodCallResult, @nospecialize(f), arginfo::(@static IS_AFTER_42529 ? ArgInfo : Argtypes), match::MethodMatch,
+            result::MethodCallResult, f::Any, arginfo::(@static IS_AFTER_42529 ? ArgInfo : Argtypes), match::MethodMatch,
             sv::InferenceState, va_override::Bool)
     # we should make sure we reset the cacher because at this point we may have not hit
     # `CC.cache_lookup(linfo::MethodInstance, given_argtypes::Argtypes, cache::JETLocalCache)`
@@ -376,7 +376,7 @@ CC.haskey(wvc::WorldView{<:JETGlobalCache}, mi::MethodInstance) = haskey(jet_cac
 function CC.typeinf_edge(analyzer::AbstractAnalyzer, method::Method, @nospecialize(atypes), sparams::SimpleVector, caller::InferenceState)
     # enable the report cache restoration at `code = get(code_cache(interp), mi, nothing)`
     set_cacher!(analyzer, :typeinf_edge => caller.result)
-    return @invoke typeinf_edge(analyzer::AbstractInterpreter, method::Method, @nospecialize(atypes), sparams::SimpleVector, caller::InferenceState)
+    return @invoke typeinf_edge(analyzer::AbstractInterpreter, method::Method, atypes::Any, sparams::SimpleVector, caller::InferenceState)
 end
 
 function CC.get(wvc::WorldView{<:JETGlobalCache}, mi::MethodInstance, default)
@@ -456,10 +456,10 @@ function CC.transform_result_for_cache(analyzer::AbstractAnalyzer,
     @static if isdefined(CC, :Effects) && hasmethod(CC.transform_result_for_cache, (
         AbstractInterpreter, MethodInstance, WorldRange, Any, CC.Effects))
         inferred_result = @invoke transform_result_for_cache(analyzer::AbstractInterpreter,
-        linfo::MethodInstance, valid_worlds::WorldRange, result.src, result.ipo_effects::CC.Effects)
+        linfo::MethodInstance, valid_worlds::WorldRange, result.src::Any, result.ipo_effects::CC.Effects)
     else
         inferred_result = @invoke transform_result_for_cache(analyzer::AbstractInterpreter,
-            linfo::MethodInstance, valid_worlds::WorldRange, result.src)
+            linfo::MethodInstance, valid_worlds::WorldRange, result.src::Any)
     end
     return JETCachedResult(inferred_result, cache)
 end

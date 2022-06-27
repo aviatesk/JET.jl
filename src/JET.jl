@@ -151,6 +151,7 @@ import Base:
     unwrap_unionall,
     rewrap_unionall,
     uniontypes,
+    @invoke,
     @invokelatest,
     destructure_callex
 
@@ -256,35 +257,6 @@ islnn(@nospecialize(x)) = isa(x, LineNumberNode)
 # for inspection
 macro lwr(ex) QuoteNode(lower(__module__, ex)) end
 macro src(ex) QuoteNode(first(lower(__module__, ex).args)) end
-
-"""
-    @invoke f(arg::T, ...; kwargs...)
-
-Provides a convenient way to call [`invoke`](https://docs.julialang.org/en/v1/base/base/#Core.invoke);
-`@invoke f(arg1::T1, arg2::T2; kwargs...)` will be expanded into `invoke(f, Tuple{T1,T2}, arg1, arg2; kwargs...)`.
-When an argument's type annotation is omitted, it's specified as `Any` argument, e.g.
-`@invoke f(arg1::T, arg2)` will be expanded into `invoke(f, Tuple{T,Any}, arg1, arg2)`.
-
-This could be used to call down to `NativeInterpreter`'s abstract interpretation method of
-`f` while passing `AbstractAnalyzer` so that subsequent calls of abstract interpretation
-functions overloaded against `AbstractAnalyzer` can be called from the native method of `f`.
-E.g. `@invoke` can be used to call down to `NativeInterpreter`'s `abstract_call_gf_by_type`:
-```julia
-@invoke abstract_call_gf_by_type(analyzer::AbstractInterpreter, f, argtypes::Argtypes, atype, sv::InferenceState,
-                                 max_methods::Int)
-```
-"""
-macro invoke(ex)
-    f, args, kwargs = destructure_callex(ex)
-    arg2typs = map(args) do x
-        if isexpr(x, :macrocall) && first(x.args) === Symbol("@nospecialize")
-            x = last(x.args)
-        end
-        isexpr(x, :(::)) ? (x.args...,) : (x, GlobalRef(Core, :Any))
-    end
-    args, argtypes = first.(arg2typs), last.(arg2typs)
-    return esc(:($(GlobalRef(Core, :invoke))($(f), Tuple{$(argtypes...)}, $(args...); $(kwargs...))))
-end
 
 """
     @withmixedhash (mutable) struct T

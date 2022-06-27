@@ -980,7 +980,7 @@ function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, 
         return frame.pc += 1
     end
 
-    res = @invoke JuliaInterpreter.step_expr!(interp, frame, node, true::Bool)
+    res = @invoke JuliaInterpreter.step_expr!(interp::Any, frame::Any, node::Any, true::Bool)
 
     interp.config.analyze_from_definitions && collect_toplevel_signature!(interp, frame, node)
 

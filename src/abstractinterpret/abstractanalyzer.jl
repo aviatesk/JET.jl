@@ -626,7 +626,7 @@ function CC.inlining_policy(
         src = src.src
     end
     return @invoke CC.inlining_policy(
-        analyzer::AbstractInterpreter, @nospecialize(src), stmt_flag::UInt8,
+        analyzer::AbstractInterpreter, src::Any, stmt_flag::UInt8,
         mi::MethodInstance, argtypes::Argtypes)
 end
 else # @static if IS_AFTER_42082
