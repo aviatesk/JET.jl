@@ -724,17 +724,26 @@ end
 
 function get_single_method_match(@nospecialize(tt), lim, world)
     mms = _methods_by_ftype(tt, lim, world)
-    isa(mms, Bool) && error(lazy"unable to find single target method for $tt")
+    isa(mms, Bool) && single_match_error(tt)
     local mm = nothing
     for i = 1:length(mms)
         mmᵢ = mms[i]::MethodMatch
         if tt === mmᵢ.spec_types
-            mm === nothing || error(lazy"unable to find single target method for $tt")
+            mm === nothing || single_match_error(tt)
             mm = mmᵢ
         end
     end
-    return mm::MethodMatch
+    mm isa MethodMatch || single_match_error(tt)
+    return mm
 end
+
+@noinline single_match_error(@nospecialize tt) =
+    error(lazy"unable to find single target method for `$(TTPrinter(tt))`")
+struct TTPrinter
+    tt
+    TTPrinter(@nospecialize tt) = new(tt)
+end
+Base.show(io::IO, ttp::TTPrinter) = Base.show_tuple_as_call(io, Symbol(""), ttp.tt)
 
 analyze_method!(analyzer::AbstractAnalyzer, m::Method; kwargs...) =
     analyze_method_signature!(analyzer, m, m.sig, method_sparams(m); kwargs...)

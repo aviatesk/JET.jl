@@ -1,3 +1,8 @@
+@testset "report_call entry" begin
+    @test_throws "unable to find single target method for `sin(::String)`" report_call(sin, (String,))
+    @test_throws "unable to find single target method for `sin(::String)`" @report_call sin("julia")
+end
+
 @testset "`get_package_file`" begin
     using Pkg, JET
     using JET: get_package_file
