@@ -11,16 +11,16 @@
             end
             """
 
-        res = report_text(s, @__FILE__).res
-        print_reports(io, res.toplevel_error_reports)
+        res = report_text(s, @__FILE__)
+        print_reports(io, res.res.toplevel_error_reports)
         let s = String(take!(io))
             @test occursin("1 toplevel error found", s)
             @test occursin(Regex("@ $(@__FILE__):\\d"), s)
             @test occursin("syntax: unexpected \"end\"", s)
         end
 
-        res = report_text(s, "foo").res
-        print_reports(io, res.toplevel_error_reports)
+        res = report_text(s, "foo")
+        print_reports(io, res.res.toplevel_error_reports)
         let s = String(take!(io))
             @test occursin("1 toplevel error found", s)
             @test occursin(r"@ foo:\d", s)
@@ -37,7 +37,7 @@ end
         end
 
         io = IOBuffer()
-        @test !iszero(print_reports(io, res.inference_error_reports))
+        @test !iszero(print_reports(io, res.res.inference_error_reports))
         let s = String(take!(io))
             @test occursin("2 possible errors found", s)
             @test occursin(Regex("@ $(escape_string(@__FILE__)):$((@__LINE__)-7)"), s) # toplevel call signature
@@ -52,7 +52,7 @@ end
             end
 
             io = IOBuffer()
-            @test !iszero(print_reports(io, res.inference_error_reports, JET.gen_postprocess(res.actual2virtual)))
+            @test !iszero(print_reports(io, res.res.inference_error_reports, JET.gen_postprocess(res.res.actual2virtual)))
             let s = String(take!(io))
                 @test occursin("1 possible error found", s)
                 @test occursin(Regex("@ $(escape_string(@__FILE__)):$((@__LINE__)-8)"), s) # toplevel call signature

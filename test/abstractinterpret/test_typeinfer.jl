@@ -6,7 +6,7 @@
             sum(s)
         end
 
-        @test is_concrete(vmod, :s)
+        @test isa_analyzed(vmod, :s, String)
         test_sum_over_string(res)
     end
 
@@ -22,12 +22,11 @@
                 end
             end
 
-            @test is_abstract(vmod, :globalvar)
+            @test isa_analyzed(vmod, :globalvar, Union{String,Symbol})
             @test vmod.globalvar.t === Union{String,Symbol}
         end
 
-        let
-            vmod = gen_virtual_module()
+        let vmod = gen_virtual_module()
             res = @analyze_toplevel context = vmod virtualize = false begin
                 if rand(Bool)
                     globalvar = "String"
@@ -39,17 +38,14 @@
                 foo(globalvar) # union-split no method matching error should be reported
             end
 
-            @test is_abstract(vmod, :globalvar)
-            @test vmod.globalvar.t === Union{String,Symbol}
-            @test length(res.inference_error_reports) === 1
-            er = first(res.inference_error_reports)
-            @test er isa NoMethodErrorReport
-            @test isa(er.t, Vector) # should be true
+            @test isa_analyzed(vmod, :globalvar, Union{String,Symbol})
+            report = only(get_reports_with_test(res))
+            @test report isa NoMethodErrorReport
+            @test isa(report.t, Vector) # should be true
         end
 
         # sequential
-        let
-            vmod = gen_virtual_module()
+        let vmod = gen_virtual_module()
             res = @analyze_toplevel context = vmod virtualize = false begin
                 if rand(Bool)
                     globalvar = "String"
@@ -64,15 +60,13 @@
                 foo(globalvar) # no method matching error should be reported
             end
 
-            @test is_concrete(vmod, :globalvar)
-            @test is_analyzed(vmod, :globalvar)
-            @test isa_analyzed(vmod.globalvar, Int)
-            @test length(res.inference_error_reports) === 2
-            let er = first(res.inference_error_reports)
+            @test isa_analyzed(vmod, :globalvar, Int)
+            @test length(get_reports_with_test(res)) === 2
+            let er = first(get_reports_with_test(res))
                 @test er isa NoMethodErrorReport
                 @test isa(er.t, Vector)
             end
-            let er = last(res.inference_error_reports)
+            let er = last(get_reports_with_test(res))
                 @test er isa NoMethodErrorReport
                 @test !isa(er.t, Vector)
             end
@@ -99,7 +93,7 @@ end
             end # module foo
         end
 
-        @test isempty(res.toplevel_error_reports)
+        @test isempty(res.res.toplevel_error_reports)
         test_sum_over_string(res)
     end
 
@@ -121,37 +115,27 @@ end
             end # module foo
         end
 
-        @test isempty(res.toplevel_error_reports)
+        @test isempty(res.res.toplevel_error_reports)
         test_sum_over_string(res)
     end
 end
 
+_badgetpropertycall(x) = x.field
+badgetpropertycall() = _badgetpropertycall(nothing)
+
 @testset "cache separation from native execution" begin
-    # we shouldn't use global code cache for native execution,
-    # since it has really not been analyzed by JET
+    # the native execution will generated the cache for `_badgetpropertycall(::Nothing)`
+    @test_throws ErrorException("type Nothing has no field field") badgetpropertycall()
 
-    let
-        # # check if the sysimg contains the cache for `getproperty(::Nothing, ::Symbol)`
-        # local found = false
-        # for mi in only(methods(getproperty, (Nothing,Symbol))).specializations
-        #     isnothing(mi) && continue
-        #     if mi.specTypes === Tuple{typeof(getproperty),Nothing,Symbol}
-        #         found |= true
-        #     end
-        # end
-        # @assert found
-
-        # we can still get error report from that frame
-        result = report_call((Nothing,)) do a
-            a.field
-        end
-        @test length(get_reports_with_test(result)) === 1
-    end
+    # but we shouldn't use the global code cache for the native execution,
+    # and we should still be able to get a report below
+    result = @report_call badgetpropertycall()
+    @test only(get_reports_with_test(result)) isa NoFieldErrorReport
 end
 
-@testset "simple invalidation" begin
-    let # simple invalidation
-        m = Module()
+@testset "invalidation" begin
+    # direct case
+    let m = Module()
 
         # analyze the first definition
         @eval m foo(a, b) = (sum(a), b)
@@ -164,8 +148,8 @@ end
         test_sum_over_string(result)
     end
 
-    let # backedge invalidation
-        m = Module()
+    # backedge invalidation
+    let m = Module()
         @eval m callf(f, args...) = f(args...)
 
         # analyze the first definition
@@ -251,45 +235,39 @@ end
 # end
 
 @testset "integration with global code cache" begin
+    test_sum_over_string(@report_call sum("julia"))
+
     # analysis for `sum(::String)` is already cached, `sum′` and `sum′′` should use it
-    let
-        m = gen_virtual_module()
-        result = Core.eval(m, quote
-            sum′(s) = sum(s)
-            sum′′(s) = sum′(s)
-            $report_call() do
-                sum′′("julia")
-            end
-        end)
-        test_sum_over_string(get_reports_with_test(result))
-    end
+    Core.eval(Module(), quote
+        sum′(s) = sum(s)
+        sum′′(s) = sum′(s)
+        $report_call() do
+            sum′′("julia")
+        end
+    end) |> test_sum_over_string
 
     # incremental setup
-    let
-        m = gen_virtual_module()
+    let m = Module()
 
-        result = Core.eval(m, quote
+        Core.eval(m, quote
             $report_call() do
                 sum("julia")
             end
-        end)
-        test_sum_over_string(get_reports_with_test(result))
+        end) |> test_sum_over_string
 
-        result = Core.eval(m, quote
+        Core.eval(m, quote
             sum′(s) = sum(s)
             $report_call() do
                 sum′("julia")
             end
-        end)
-        test_sum_over_string(get_reports_with_test(result))
+        end) |> test_sum_over_string
 
-        result = Core.eval(m, quote
+        Core.eval(m, quote
             sum′′(s) = sum′(s)
             $report_call() do
                 sum′′("julia")
             end
-        end)
-        test_sum_over_string(get_reports_with_test(result))
+        end) |> test_sum_over_string
     end
 
     # should not error for virtual stacktrace traversing with a frame for inner constructor
@@ -299,13 +277,13 @@ end
             struct Foo end
             println(Foo())
         end
-        @test isempty(res.inference_error_reports)
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
     end
 end
 
 @testset "integration with local code cache" begin
-    let
-        m = gen_virtual_module()
+    let m = Module()
         result = Core.eval(m, quote
             struct Foo{T}
                 bar::T
@@ -322,8 +300,7 @@ end
         end
     end
 
-    let
-        m = gen_virtual_module()
+    let m = Module()
         result = Core.eval(m, quote
             struct Foo{T}
                 bar::T
@@ -337,7 +314,6 @@ end
 
         # there should be local cache for each errorneous constant analysis
         @test !isempty(get_reports_with_test(result))
-        @test !isempty(get_cache(result.analyzer))
         @test any(get_cache(result.analyzer)) do analysis_result
             analysis_result.argtypes==Any[CC.Const(m.getter),m.Foo{Int},CC.Const(:baz)]
         end
@@ -358,7 +334,8 @@ end
             foo(p, i) = p.i = i
         end
 
-        # report for `Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)` should be threw away
+        # `convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)`
+        # should be threw away
         result = Core.eval(m, :($report_call(foo, (P, Int))))
         @test isempty(get_reports_with_test(result))
 
@@ -378,7 +355,8 @@ end
             bar(args...) = foo(args...)
         end
 
-        # report for `Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)` should be threw away
+        # `convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)`
+        # should be threw away
         result = Core.eval(m, :($report_call(bar, (P, Int))))
         @test isempty(get_reports_with_test(result))
 
@@ -388,9 +366,7 @@ end
     end
 
     # constant prop should not exclude those are not related
-    let
-        m = gen_virtual_module()
-        result = Core.eval(m, quote
+    let result = Core.eval(Module(), quote
             mutable struct P
                 i::Int
                 s::String
@@ -403,8 +379,10 @@ end
             $report_call(foo, (P, Int, #= invalid =# Int))
         end)
 
-        # report for `Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)` should be threw away, while
-        # report for `Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{String}, v::Int64)` should be kept
+        # `convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::Int64)`
+        # should be threw away, while
+        # `convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{String}, v::Int64)`
+        # should be kept
         @test length(get_reports_with_test(result)) === 1
         er = first(get_reports_with_test(result))
         @test er isa NoMethodErrorReport
@@ -412,9 +390,7 @@ end
     end
 
     # constant prop should narrow down union-split no method error to single no method matching error
-    let
-        m = gen_virtual_module()
-        result = Core.eval(m, quote
+    let result = Core.eval(Module(), quote
             mutable struct P
                 i::Int
                 s::String
@@ -427,22 +403,22 @@ end
             $report_call(foo, (P, String, Int))
         end)
 
-        # report for `Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::String)` should be narrowed down to
-        # report for `Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{Int}, v::String)`
+        # `convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Union{Type{Int64}, Type{String}}, v::String)`
+        # should be narrowed down to
+        # `convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{Int}, v::String)`
         @test !isempty(get_reports_with_test(result))
         @test any(get_reports_with_test(result)) do report
             report isa NoMethodErrorReport &&
             report.t === Tuple{typeof(convert), Type{Int}, String}
         end
-        # report for `Base.convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{String}, v::Int)`
+        # NOTE:
+        # report for `convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{String}, v::Int)`
         # won't be reported since `typeinf` early escapes on `Bottom`-annotated statement
     end
 
     # report-throw away with constant analysis shouldn't throw away reports from the same
     # frame but with the other constants
-    let
-        m = gen_virtual_module()
-        result = Core.eval(m, quote
+    let result = Core.eval(Module(), quote
             foo(a) = a<0 ? a+string(a) : a
             bar() = foo(-1), foo(1) # constant analysis on `foo(1)` shouldn't throw away reports from `foo(-1)`
             $report_call(bar)
@@ -451,9 +427,7 @@ end
         @test any(r->isa(r,NoMethodErrorReport), get_reports_with_test(result))
     end
 
-    let
-        m = gen_virtual_module()
-        result = Core.eval(m, quote
+    let result = Core.eval(Module(), quote
             foo(a) = a<0 ? a+string(a) : a
             function bar(b)
                 a = b ? foo(-1) : foo(1)
@@ -541,8 +515,7 @@ end
         end
 
         # end to end
-        let
-            res = @analyze_toplevel begin
+        let res = @analyze_toplevel begin
                 function foo(n)
                     if n < 10
                         return n
@@ -563,28 +536,26 @@ end
                 bar(10)
             end
 
-            @test isempty(res.inference_error_reports)
+            @test isempty(get_reports_with_test(res))
         end
     end
 end
 
 @testset "additional analysis pass for task parallelism code" begin
     # general case with `schedule(::Task)` pattern
-    result = report_call() do
+    report_call() do
         t = Task() do
             sum("julia")
         end
         schedule(t)
         fetch(t)
-    end
-    test_sum_over_string(get_reports_with_test(result))
+    end |> test_sum_over_string
 
     # handle `Threads.@spawn` (https://github.com/aviatesk/JET.jl/issues/114)
     result = report_call() do
         fetch(Threads.@spawn 1 + "foo")
     end
-    @test length(get_reports_with_test(result)) == 1
-    let r = first(get_reports_with_test(result))
+    let r = only(get_reports_with_test(result))
         @test isa(r, NoMethodErrorReport)
         @test r.t === Tuple{typeof(+), Int, String}
     end
@@ -620,15 +591,14 @@ end
     end
 
     # nested tasks
-    result = report_call() do
+    report_call() do
         t0 = Task() do
             t = Threads.@spawn sum("julia")
             fetch(t)
         end
         schedule(t0)
         fetch(t0)
-    end
-    test_sum_over_string(get_reports_with_test(result))
+    end |> test_sum_over_string
 
     # when `schedule` call is separated from `Task` definition
     make_task(s) = Task() do
@@ -640,10 +610,9 @@ end
     end
     result = report_call() do
         t = make_task("julia")
-
         run_task(t)
     end
-    test_sum_over_string(get_reports_with_test(result))
+    test_sum_over_string(result)
     let r = first(get_reports_with_test(result))
         # we want report to come from `run_task`, but currently we invoke JET analysis on `Task` construction
         @test_broken any(r.vst) do vf
@@ -721,5 +690,5 @@ end
     res = @analyze_toplevel begin
         @ccall strlen("foo"::Cstring)::Csize_t
     end
-    @test isempty(res.inference_error_reports)
+    @test isempty(get_reports_with_test(res))
 end

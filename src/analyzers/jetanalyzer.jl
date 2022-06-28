@@ -620,7 +620,10 @@ function report_undef_var!(analyzer::JETAnalyzer, sv::InferenceState, mod::Modul
         if sound
             report |= true
         else
-            if !is_corecompiler_undefglobal(mod, name)
+            if is_corecompiler_undefglobal(mod, name)
+            elseif mod === Base && name === :active_repl
+                # TODO remove this branch once merging https://github.com/JuliaLang/julia/pull/45838
+            else
                 report |= true
             end
         end
@@ -632,20 +635,16 @@ function report_undef_var!(analyzer::JETAnalyzer, sv::InferenceState, mod::Modul
     return false
 end
 
-"""
-    is_corecompiler_undefglobal
-
-Returns `true` if this global reference is undefined inside `Core.Compiler`, but the
-corresponding name exists in the `Base` module.
-`Core.Compiler` reuses the minimum amount of `Base` code and there're some of missing
-definitions, and `BasicPass` will exclude reports on those undefined names since they
-usually don't matter and `Core.Compiler`'s basic functionality is battle-tested and validated
-exhausively by its test suite and real-world usages
-"""
+# Returns `true` if this global reference is undefined inside `Core.Compiler`, but the
+# corresponding name exists in the `Base` module.
+# `Core.Compiler` reuses the minimum amount of `Base` code and there're some of missing
+# definitions, and `BasicPass` will exclude reports on those undefined names since they
+# usually don't matter and `Core.Compiler`'s basic functionality is battle-tested and
+# validated exhausively by its test suite and real-world usages.
 is_corecompiler_undefglobal(mod::Module, name::Symbol) =
-    return mod === CC ? isdefined(Base, name) :
-           mod === CC.Sort ? isdefined(Base.Sort, name) :
-           false
+    mod === CC ? isdefined(Base, name) :
+    mod === CC.Sort ? isdefined(Base.Sort, name) :
+    false
 
 function CC.abstract_eval_value(analyzer::JETAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
     ret = @invoke CC.abstract_eval_value(analyzer::AbstractAnalyzer, e::Any, vtypes::VarTable, sv::InferenceState)
@@ -877,16 +876,10 @@ end
 function maybe_report_global_undefvar!(analyzer::JETAnalyzer,
     sv::InferenceState, argtypes::Argtypes)
     2 ≤ length(argtypes) ≤ 3 || return false
-    mod = argtypes[1]
-    isa(mod, Const) || return false
-    mod = mod.val
-    isa(mod, Module) || return false
-    var = argtypes[2]
-    isa(var, Const) || return false
-    var = var.val
-    isa(var, Symbol) || return false
+    gr = constant_globalref(argtypes)
+    gr === nothing && return false
     # forward to the report pass for undefined global reference
-    return ReportPass(analyzer)(GlobalUndefVarErrorReport, analyzer, sv, mod, var)
+    return ReportPass(analyzer)(GlobalUndefVarErrorReport, analyzer, sv, gr.mod, gr.name)
 end
 
 function maybe_report_nofield_error!(analyzer::JETAnalyzer,

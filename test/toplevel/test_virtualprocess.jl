@@ -8,10 +8,8 @@
         end
         """
 
-        res = report_text(s).res
-
-        @test !isempty(res.toplevel_error_reports)
-        @test first(res.toplevel_error_reports) isa SyntaxErrorReport
+        res = report_text(s)
+        @test only(res.res.toplevel_error_reports) isa SyntaxErrorReport
     end
 end
 
@@ -64,8 +62,9 @@ end
             export bar
             end
         end
+
         # "cannot assign a value to variable orig.Foo from module orig" shouldn't be reported
-        @test isempty(res.toplevel_error_reports)
+        @test isempty(res.res.toplevel_error_reports)
     end
 
     # don't error if there is undefined export
@@ -78,8 +77,9 @@ end
         res = @analyze_toplevel context = actual begin
             println(undefined)
         end
-        @test isempty(res.toplevel_error_reports)
-        @test any(res.inference_error_reports) do err
+
+        @test isempty(res.res.toplevel_error_reports)
+        @test any(res.res.inference_error_reports) do err
             isa(err, GlobalUndefVarErrorReport) &&
             err.name === :undefined
         end
@@ -131,7 +131,8 @@ end
             using ..Main: X
             end
         end
-        @test isempty(res.toplevel_error_reports)
+
+        @test isempty(res.res.toplevel_error_reports)
     end
 
     let
@@ -161,7 +162,8 @@ end
             println(X)
             end
         end
-        @test isempty(res.toplevel_error_reports)
+
+        @test isempty(res.res.toplevel_error_reports)
     end
 end
 
@@ -189,7 +191,9 @@ end
                 throw("should be ignored")
             end
         end
-        @test isempty(res.inference_error_reports)
+
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
     end
 end
 
@@ -260,13 +264,11 @@ end
         end
 
         # global variables aren't evaluated but kept in `analyzer` instead
-        @test is_abstract(vmod, :gb)
-        @test isa_abstract(vmod.gb, Bool)
-        @test is_concrete(vmod, :Foo)
-        @test is_abstract(vmod, :foo)
-        @test isa_abstract(vmod.foo, vmod.Foo)
-        @test isempty(res.toplevel_error_reports)
-        @test isempty(res.inference_error_reports)
+        @test isa_abstract(vmod, :gb, Bool)
+        @test isa_concrete(vmod, :Foo, Type)
+        @test isa_abstract(vmod, :foo, vmod.Foo)
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
     end
 
     # definitions using type aliases
@@ -281,10 +283,11 @@ end
             const c = Foo(rand(Bool))
             uc = Foo(rand(Bool))
         end
+
         @test is_concrete(vmod, :BT)
-        @test is_concrete(vmod, :Foo)
-        @test is_abstract(vmod, :c)
-        @test is_abstract(vmod, :uc)
+        @test isa_concrete(vmod, :Foo, Type)
+        @test isa_abstract(vmod, :c, vmod.Foo)
+        @test isa_abstract(vmod, :uc, vmod.Foo)
     end
 
     @testset "toplevel definitions within a block" begin
@@ -299,9 +302,10 @@ end
                     println(foo)
                 end
             end
-            @test is_concrete(vmod, :Foo)
-            @test is_analyzed(vmod, :foo)
-            @test isa_analyzed(vmod.foo, vmod.Foo)
+
+            @test isempty(res.res.toplevel_error_reports)
+            @test isa_concrete(vmod, :Foo, Type)
+            @test isa_analyzed(vmod, :foo, vmod.Foo)
         end
 
         let
@@ -316,9 +320,11 @@ end
                     println(foo)
                 end
             end
-            @test isempty(res.toplevel_error_reports)
-            @test is_analyzed(vmod, :foo)
-            @test isa_analyzed(vmod.foo, vmod.Foo1)
+
+            @test isempty(res.res.toplevel_error_reports)
+            @test isa_concrete(vmod, :Foo, Type)
+            @test isa_concrete(vmod, :Foo1, Type)
+            @test isa_analyzed(vmod, :foo, vmod.Foo1)
         end
 
         let
@@ -334,8 +340,8 @@ end
                 bar = Foo(gensym()).baz
             end
 
-            @test isempty(res.toplevel_error_reports)
-            @test is_analyzed(vmod, :Foo)
+            @test isempty(res.res.toplevel_error_reports)
+            @test isa_concrete(vmod, :Foo, Type)
             @test is_abstract(vmod, :bar)
         end
 
@@ -357,9 +363,9 @@ end
                 end
             end
 
-            @test isempty(res.toplevel_error_reports)
-            @test is_analyzed(vmod, :Foo)
-            @test is_analyzed(vmod, :bar)
+            @test isempty(res.res.toplevel_error_reports)
+            @test isa_concrete(vmod, :Foo, Type)
+            @test is_abstract(vmod, :bar)
         end
     end
 end
@@ -372,8 +378,8 @@ end
         end
 
         @test is_concrete(vmod, :foo)
-        @test isempty(res.toplevel_error_reports)
-        @test isempty(res.inference_error_reports)
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
     end
 
     let
@@ -388,8 +394,8 @@ end
         end
 
         @test is_concrete(vmod, Symbol("@foo"))
-        @test isempty(res.toplevel_error_reports)
-        @test isempty(res.inference_error_reports)
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
     end
 
     # macro expansions with access to global variables will fail
@@ -407,16 +413,14 @@ end
         end
 
         @test is_concrete(vmod, Symbol("@foo"))
-        @test length(res.toplevel_error_reports) == 1
-        let r = first(res.toplevel_error_reports)
+        let r = only(res.res.toplevel_error_reports)
             @test isa(r, MissingConcretization) # this error should be considered as missing concretization
         end
-        @test isempty(res.inference_error_reports)
+        @test isempty(res.res.inference_error_reports)
     end
 
     # macros that can general :module or :toplevel expressions
-    let
-        # if we don't expand macros before we check `:toplevel` or `:module` expressions,
+    let # if we don't expand macros before we check `:toplevel` or `:module` expressions,
         # we may pass `:toplevel` or `:module` expressions to `partially_interpret!` and
         # eventually we will fail to concretize them and their toplevel definitions
         vmod, res = @analyze_toplevel2 begin
@@ -429,7 +433,8 @@ end
                 bar() = nothing
             end
         end
-        @test isdefined(vmod, :foo) && isdefined(vmod.foo, :bar)
+        @test is_concrete(vmod, :foo)
+        @test is_concrete(vmod.foo, :bar)
 
         vmod, res = @analyze_toplevel2 begin
             """
@@ -441,7 +446,8 @@ end
             bar() = nothing
             end
         end
-        @test isdefined(vmod, :foo) && isdefined(vmod.foo, :bar)
+        @test is_concrete(vmod, :foo)
+        @test is_concrete(vmod.foo, :bar)
     end
 end
 
@@ -452,7 +458,7 @@ end
             sum(s)
         end
 
-        @test isempty(res.toplevel_error_reports)
+        @test isempty(res.res.toplevel_error_reports)
         test_sum_over_string(res)
     end
 
@@ -464,20 +470,18 @@ end
             end
         end
 
-        @test !isempty(res.toplevel_error_reports)
-        @test first(res.toplevel_error_reports) isa SyntaxErrorReport
+        @test !isempty(res.res.toplevel_error_reports)
+        @test only(res.res.toplevel_error_reports) isa SyntaxErrorReport
     end
 end
 
 @testset "expression flattening" begin
-    let
-        @test (begin
-            # internal error shouldn't occur
-            res = @analyze_toplevel begin
-                r = rand(); s = sin(a); c = cos(b); tan(c)
-            end
-        end; true)
-    end
+    @test (let
+        # internal error shouldn't occur
+        res = @analyze_toplevel begin
+            r = rand(); s = sin(a); c = cos(b); tan(c)
+        end
+    end; true)
 end
 
 @testset "handle `include`" begin
@@ -486,45 +490,44 @@ end
         f2 = normpath(FIXTURE_DIR, "include2.jl")
 
         context = gen_virtual_module(@__MODULE__)
-        res = report_file2(f1; context, virtualize = false).res
+        res = report_file2(f1; context, virtualize = false)
 
-        @test f1 in res.included_files
-        @test f2 in res.included_files
+        @test f1 in res.res.included_files
+        @test f2 in res.res.included_files
         @test is_concrete(context, :foo)
-        @test isempty(res.toplevel_error_reports)
-        @test isempty(res.inference_error_reports)
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
     end
 
     let
         f = normpath(FIXTURE_DIR, "nonexistinclude.jl")
-        res = report_file2(f).res
+        res = report_file2(f)
 
-        @test f in res.included_files
-        @test !isempty(res.toplevel_error_reports)
-        @test first(res.toplevel_error_reports) isa ActualErrorWrapped
-        @test !isempty(res.inference_error_reports)
-        @test first(res.inference_error_reports) isa GlobalUndefVarErrorReport
+        @test f in res.res.included_files
+        @test !isempty(res.res.toplevel_error_reports)
+        @test first(res.res.toplevel_error_reports) isa ActualErrorWrapped
+        @test !isempty(res.res.inference_error_reports)
+        @test first(res.res.inference_error_reports) isa GlobalUndefVarErrorReport
     end
 
     let
         f = normpath(FIXTURE_DIR, "selfrecursiveinclude.jl")
-        res = report_file2(f).res
+        res = report_file2(f)
 
-        @test f in res.included_files
-        @test !isempty(res.toplevel_error_reports)
-        @test first(res.toplevel_error_reports) isa RecursiveIncludeErrorReport
+        @test f in res.res.included_files
+        @test !isempty(res.res.toplevel_error_reports)
+        @test first(res.res.toplevel_error_reports) isa RecursiveIncludeErrorReport
     end
 
     let
         f1 = normpath(FIXTURE_DIR, "chainrecursiveinclude1.jl")
         f2 = normpath(FIXTURE_DIR, "chainrecursiveinclude2.jl")
-        res = report_file2(f1).res
+        res = report_file2(f1)
 
-        @test f1 in res.included_files
-        @test f2 in res.included_files
-        @test !isempty(res.toplevel_error_reports)
-        let
-            report = first(res.toplevel_error_reports)
+        @test f1 in res.res.included_files
+        @test f2 in res.res.included_files
+        @test !isempty(res.res.toplevel_error_reports)
+        let report = only(res.res.toplevel_error_reports)
             @test report isa RecursiveIncludeErrorReport
             @test report.duplicated_file == f1
             @test f1 in report.files
@@ -539,12 +542,12 @@ end
         inc2 = normpath(FIXTURE_DIR, "include2.jl")
 
         context = gen_virtual_module(@__MODULE__)
-        res = report_file2(modf; context, virtualize=false).res
+        res = report_file2(modf; context, virtualize=false)
 
-        @test modf in res.included_files
-        @test inc2 in res.included_files
-        @test isempty(res.toplevel_error_reports)
-        @test isempty(res.inference_error_reports)
+        @test modf in res.res.included_files
+        @test inc2 in res.res.included_files
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
         @test is_concrete(context.Outer, :foo)
     end
 
@@ -554,8 +557,8 @@ end
     let res = @analyze_toplevel begin
             include(Symbol("somefile.jl"))
         end
-        @test length(res.toplevel_error_reports) == 1
-        report = res.toplevel_error_reports[1]
+        @test length(res.res.toplevel_error_reports) == 1
+        report = only(res.res.toplevel_error_reports)
         @test report isa ActualErrorWrapped
         err = report.err
         @test err isa MethodError
@@ -564,8 +567,7 @@ end
             module __xxx__ end
             Base.include("somefile.jl", __xxx__)
         end
-        @test length(res.toplevel_error_reports) == 1
-        report = res.toplevel_error_reports[1]
+        report = only(res.res.toplevel_error_reports)
         @test report isa ActualErrorWrapped
         err = report.err
         @test err isa MethodError
@@ -575,8 +577,7 @@ end
             module __xxx__ end
             Core.include("somefile.jl", __xxx__)
         end
-        @test length(res.toplevel_error_reports) == 1
-        report = res.toplevel_error_reports[1]
+        report = only(res.res.toplevel_error_reports)
         @test report isa ActualErrorWrapped
         err = report.err
         @test err isa MethodError
@@ -586,8 +587,7 @@ end
             module __xxx__ end
             Base.include(__xxx__, Symbol("somefile.jl"))
         end
-        @test length(res.toplevel_error_reports) == 1
-        report = res.toplevel_error_reports[1]
+        report = only(res.res.toplevel_error_reports)
         @test report isa ActualErrorWrapped
         err = report.err
         @test err isa MethodError
@@ -618,8 +618,8 @@ end
                                        end
                                        """
                                        )
-    res = report_text(s).res
-    @test isempty(res.toplevel_error_reports)
+    res = report_text(s)
+    @test isempty(res.res.toplevel_error_reports)
 end
 
 @testset "module usage" begin
@@ -636,8 +636,8 @@ end
             end
         end
 
-        @test isempty(res.toplevel_error_reports)
-        report = only(res.inference_error_reports)
+        @test isempty(res.res.toplevel_error_reports)
+        report = only(res.res.inference_error_reports)
         @test report isa GlobalUndefVarErrorReport
         @test occursin("isexpr2", get_msg(report))
     end
@@ -648,8 +648,8 @@ end
             using Base: foo
         end
 
-        @test !isempty(res.toplevel_error_reports)
-        er = first(res.toplevel_error_reports)
+        @test !isempty(res.res.toplevel_error_reports)
+        er = first(res.res.toplevel_error_reports)
         @test er isa ActualErrorWrapped
         @test er.err == UndefVarError(:foo)
         @test er.file == (@__FILE__) && er.line == (@__LINE__) - 7
@@ -673,9 +673,9 @@ end
             end # module foo
         end
 
-        @test isempty(res.toplevel_error_reports)
-        @test !isempty(res.inference_error_reports)
-        @test first(res.inference_error_reports) isa GlobalUndefVarErrorReport
+        @test isempty(res.res.toplevel_error_reports)
+        @test !isempty(res.res.inference_error_reports)
+        @test only(res.res.inference_error_reports) isa GlobalUndefVarErrorReport
     end
 
     # usage of global objects
@@ -696,7 +696,7 @@ end
             end # module foo
         end
 
-        @test isempty(res.toplevel_error_reports)
+        @test isempty(res.res.toplevel_error_reports)
         test_sum_over_string(res)
     end
 
@@ -717,7 +717,7 @@ end
             end # module foo
         end
 
-        @test isempty(res.toplevel_error_reports)
+        @test isempty(res.res.toplevel_error_reports)
         test_sum_over_string(res)
     end
 
@@ -740,7 +740,7 @@ end
             end # module foo
         end
 
-        @test isempty(res.toplevel_error_reports)
+        @test isempty(res.res.toplevel_error_reports)
         test_sum_over_string(res)
     end
 
@@ -762,7 +762,7 @@ end
                 end # module foo
             end
 
-            @test isempty(res.toplevel_error_reports)
+            @test isempty(res.res.toplevel_error_reports)
             test_sum_over_string(res)
         end
 
@@ -783,7 +783,7 @@ end
                 end # module foo
             end
 
-            @test isempty(res.toplevel_error_reports)
+            @test isempty(res.res.toplevel_error_reports)
             test_sum_over_string(res)
         end
 
@@ -801,7 +801,7 @@ end
                 sum(bar)
             end
 
-            @test isempty(res.toplevel_error_reports)
+            @test isempty(res.res.toplevel_error_reports)
             test_sum_over_string(res)
         end
     end
@@ -822,7 +822,7 @@ end
             bar("julia") # -> NoMethodErrorReports
         end
 
-        @test isempty(res.toplevel_error_reports)
+        @test isempty(res.res.toplevel_error_reports)
         test_sum_over_string(res)
     end
 end
@@ -834,8 +834,7 @@ end
 
             foo(a) = length(a)
         end
-        @test length(res.inference_error_reports) === 1
-        @test first(res.inference_error_reports) isa GlobalUndefVarErrorReport
+        @test only(res.res.inference_error_reports) isa GlobalUndefVarErrorReport
     end
 
     let
@@ -846,7 +845,7 @@ end
             foo(a) = sum(a)
             foo(1:1000)  # should not error too
         end
-        @test isempty(res.inference_error_reports)
+        @test isempty(res.res.inference_error_reports)
     end
 end
 
@@ -858,9 +857,9 @@ end
         end
 
         @test is_abstract(vmod, :var)
-        @test isa_abstract(vmod.var, Bool)
+        @test isa_abstract(vmod, :var, Bool)
         @test is_abstract(vmod, :constvar)
-        @test isa_abstract(vmod.constvar, Bool)
+        @test isa_abstract(vmod, :constvar, Bool)
     end
 
     @testset "scope" begin
@@ -875,9 +874,8 @@ end
                 end
             end
 
-            @test !isdefined(vmod, :localvar)
-            @test is_abstract(vmod, :globalvar)
-            @test isa_abstract(vmod.globalvar, Bool)
+            @test !is_analyzed(vmod, :localvar)
+            @test isa_abstract(vmod, :globalvar, Bool)
         end
 
         # blocks
@@ -890,8 +888,7 @@ end
                 end
             end
 
-            @test is_abstract(vmod, :globalvar)
-            @test isa_abstract(vmod.globalvar, Bool)
+            @test isa_abstract(vmod, :globalvar, Bool)
         end
 
         let
@@ -902,9 +899,8 @@ end
                 end
             end
 
-            @test !isdefined(vmod, :localvar)
-            @test is_abstract(vmod, :globalvar)
-            @test isa_abstract(vmod.globalvar, Bool)
+            @test !is_analyzed(vmod, :localvar)
+            @test isa_abstract(vmod, :globalvar, Bool)
         end
 
         let
@@ -916,9 +912,8 @@ end
                 end
             end
 
-            @test !isdefined(vmod, :localvar)
-            @test is_abstract(vmod, :globalvar)
-            @test isa_abstract(vmod.globalvar, Bool)
+            @test !is_analyzed(vmod, :localvar)
+            @test isa_abstract(vmod, :globalvar, Bool)
         end
 
         let
@@ -929,11 +924,9 @@ end
                 end
             end
 
-            @test !isdefined(vmod, :locbalvar)
-            @test is_abstract(vmod, :globalvar1)
-            @test isa_abstract(vmod.globalvar1, Bool)
-            @test is_abstract(vmod, :globalvar2)
-            @test isa_abstract(vmod.globalvar2, Bool)
+            @test !is_analyzed(vmod, :localvar)
+            @test isa_abstract(vmod, :globalvar1, Bool)
+            @test isa_abstract(vmod, :globalvar2, Bool)
         end
 
         let
@@ -943,7 +936,7 @@ end
                 end
             end
 
-            @test !isdefined(vmod, :localvar)
+            @test !is_analyzed(vmod, :localvar)
         end
 
         let
@@ -954,9 +947,8 @@ end
                 end
             end
 
-            @test !isdefined(vmod, :localvar)
-            @test is_abstract(vmod, :globalvar)
-            @test isa_abstract(vmod.globalvar, Bool)
+            @test !is_analyzed(vmod, :localvar)
+            @test isa_abstract(vmod, :globalvar, Bool)
         end
 
         # loops
@@ -969,7 +961,7 @@ end
                 end
             end
 
-            @test !isdefined(vmod, :localvar)
+            @test !is_analyzed(vmod, :localvar)
         end
 
         let
@@ -980,9 +972,8 @@ end
                 end
             end
 
-            @test !isdefined(vmod, :localvar)
-            @test is_abstract(vmod, :globalvar)
-            @test isa_abstract(vmod.globalvar, Bool)
+            @test !is_analyzed(vmod, :localvar)
+            @test isa_abstract(vmod, :globalvar, Bool)
         end
 
         let
@@ -992,7 +983,7 @@ end
                 end
             end
 
-            @test !isdefined(vmod, :localvar)
+            @test !is_analyzed(vmod, :localvar)
         end
 
         let
@@ -1003,9 +994,8 @@ end
                 end
             end
 
-            @test !isdefined(vmod, :localvar)
-            @test is_abstract(vmod, :globalvar)
-            @test isa_abstract(vmod.globalvar, Bool)
+            @test !is_analyzed(vmod, :localvar)
+            @test isa_abstract(vmod, :globalvar, Bool)
         end
     end
 
@@ -1015,10 +1005,8 @@ end
                 r1, r2 = rand(2)
             end
 
-            @test is_abstract(vmod, :r1)
-            @test isa_abstract(vmod.r1, Float64)
-            @test is_abstract(vmod, :r2)
-            @test isa_abstract(vmod.r2, Float64)
+            @test isa_abstract(vmod, :r1, Float64)
+            @test isa_abstract(vmod, :r2, Float64)
         end
 
         let
@@ -1029,8 +1017,8 @@ end
                 end
             end
 
-            @test !isdefined(vmod, :r1)
-            @test !isdefined(vmod, :r2)
+            @test !is_analyzed(vmod, :r1)
+            @test !is_analyzed(vmod, :r2)
         end
 
         let
@@ -1041,10 +1029,8 @@ end
                 end
             end
 
-            @test is_abstract(vmod, :r1)
-            @test isa_abstract(vmod.r1, Float64)
-            @test is_abstract(vmod, :r2)
-            @test isa_abstract(vmod.r2, Float64)
+            @test isa_abstract(vmod, :r1, Float64)
+            @test isa_abstract(vmod, :r2, Float64)
         end
 
         let
@@ -1054,12 +1040,10 @@ end
                 end
             end
 
-            @test !isdefined(vmod, :ri1)
-            @test !isdefined(vmod, :ri2)
-            @test is_abstract(vmod, :ro1)
-            @test isa_abstract(vmod.ro1, Float64)
-            @test is_abstract(vmod, :ro2)
-            @test isa_abstract(vmod.ro2, Float64)
+            @test !is_analyzed(vmod, :ri1)
+            @test !is_analyzed(vmod, :ri2)
+            @test isa_abstract(vmod, :ro1, Float64)
+            @test isa_abstract(vmod, :ro2, Float64)
         end
 
         let
@@ -1069,9 +1053,8 @@ end
                     l, g = rand(2)
                 end
             end
-            @test !isdefined(vmod, :l)
-            @test is_abstract(vmod, :g)
-            @test isa_abstract(vmod.g, Float64)
+            @test !is_analyzed(vmod, :l)
+            @test isa_abstract(vmod, :g, Float64)
         end
     end
 
@@ -1104,16 +1087,14 @@ end
                 a = rand(Int)
                 a = 0
             end
-            @test is_concrete(m, :a)
-            @test m.a == 0
+            @test is_concrete(m, :a) && m.a == 0
         end
         let
             m, = @analyze_toplevel2 begin
                 a = 0
                 a = rand(Int)
             end
-            @test is_abstract(m, :a)
-            @test isa_abstract(m.a, Int)
+            @test isa_abstract(m, :a, Int)
         end
     end
 
@@ -1130,7 +1111,7 @@ end
             area(Circle(2))
         end
 
-        @test isempty(res.toplevel_error_reports)
+        @test isempty(res.res.toplevel_error_reports)
     end
 
     @testset "https://github.com/aviatesk/JET.jl/issues/280" begin
@@ -1147,7 +1128,7 @@ end
             end
         end
 
-        @test isempty(res.toplevel_error_reports)
+        @test isempty(res.res.toplevel_error_reports)
     end
 end
 
@@ -1155,33 +1136,31 @@ let # global declaration
     res = @analyze_toplevel begin
         global var
     end
-    @test isempty(res.toplevel_error_reports)
+    @test isempty(res.res.toplevel_error_reports)
 end
 
 @testset "toplevel throw" begin
     res = @analyze_toplevel begin
         throw("throw me")
     end
-    @test length(res.inference_error_reports) == 1
-    @test first(res.inference_error_reports) isa UncaughtExceptionReport
+    @test only(res.res.inference_error_reports) isa UncaughtExceptionReport
 end
 
 @testset "error handling within ConcreteInterpreter" begin
+    # NOTE some of the tests below are line-number-sensitive
+
     let
         res = @analyze_toplevel begin
             struct A <: B end # UndefVarError(:B) should be handled into `res.toplevel_error_reports`
         end
 
-        @test !isempty(res.toplevel_error_reports)
-        er = first(res.toplevel_error_reports)
+        er = only(res.res.toplevel_error_reports)
         @test er isa ActualErrorWrapped
         @test er.err == UndefVarError(:B)
-        @test er.file == (@__FILE__) && er.line == (@__LINE__) - 7
+        @test er.file == (@__FILE__) && er.line == (@__LINE__) - 6
     end
 
     @testset "stacktrace scrubbing" begin
-        # NOTE some of the tests below are line-number-sensitive
-
         # scrub internal frames until (errored) user macro
         let
             res = @analyze_toplevel begin
@@ -1189,13 +1168,12 @@ end
                 @badmacro "hi"                 # L2
             end
 
-            @test !isempty(res.toplevel_error_reports)
-            er = first(res.toplevel_error_reports)
+            er = only(res.res.toplevel_error_reports)
             @test er isa ActualErrorWrapped
-            @test er.file == (@__FILE__) && er.line == (@__LINE__) - 6 # L2
+            @test er.file == (@__FILE__) && er.line == (@__LINE__) - 5 # L2
             @test length(er.st) == 1
             sf = first(er.st)
-            @test sf.file === Symbol(@__FILE__) && sf.line == (@__LINE__) - 10 # L1
+            @test sf.file === Symbol(@__FILE__) && sf.line == (@__LINE__) - 9 # L1
             @test sf.func === Symbol("@badmacro")
         end
 
@@ -1209,11 +1187,10 @@ end
                 end
             end
 
-            @test !isempty(res.toplevel_error_reports)
-            er = first(res.toplevel_error_reports)
+            er = only(res.res.toplevel_error_reports)
             @test er isa ActualErrorWrapped
             @test er.err == UndefVarError(:UndefinedType)
-            @test er.file == (@__FILE__) && er.line == (@__LINE__) - 9
+            @test er.file == (@__FILE__) && er.line == (@__LINE__) - 8
             @test isempty(er.st)
         end
 
@@ -1225,14 +1202,12 @@ end
                 struct A <: foo() end
             end
 
-            @test !isempty(res.toplevel_error_reports)
-            er = first(res.toplevel_error_reports)
+            er = only(res.res.toplevel_error_reports)
             @test er isa ActualErrorWrapped
             @test er.err == "don't call me, pal"
-            @test er.file == (@__FILE__) && er.line == (@__LINE__) - 7
-            @test length(er.st) == 1
-            sf = first(er.st)
-            @test sf.file === Symbol(@__FILE__) && sf.line == (@__LINE__) - 11
+            @test er.file == (@__FILE__) && er.line == (@__LINE__) - 6
+            sf = only(er.st)
+            @test sf.file === Symbol(@__FILE__) && sf.line == (@__LINE__) - 9
         end
     end
 end
@@ -1247,9 +1222,8 @@ end
             foo = fib(1000000000000.) # ::Float64
         end
 
-        @test is_abstract(vmod, :foo)
-        @test length(res.inference_error_reports) == 1
-        er = first(res.inference_error_reports)
+        @test is_analyzed(vmod, :foo)
+        er = only(res.res.inference_error_reports)
         @test er isa InvalidConstantRedefinition
         @test er.name === :foo
     end
@@ -1261,9 +1235,8 @@ end
             const foo = fib(1000000000000) # ::Int
         end
 
-        @test is_abstract(vmod, :foo)
-        @test length(res.inference_error_reports) == 1
-        er = first(res.inference_error_reports)
+        @test is_analyzed(vmod, :foo)
+        er = only(res.res.inference_error_reports)
         @test er isa InvalidConstantDeclaration
         @test er.name === :foo
     end
@@ -1277,9 +1250,8 @@ end
             T = Nothing
         end
 
-        @test is_concrete(vmod, :T) # wao, this is concretized
-        @test length(res.inference_error_reports) == 1
-        er = first(res.inference_error_reports)
+        @test is_analyzed(vmod, :T) # this can even be concretized
+        er = only(res.res.inference_error_reports)
         @test er isa InvalidConstantRedefinition
         @test er.name === :T
     end
@@ -1291,9 +1263,8 @@ end
             const T = typeof(fib(1000000000000)) # never terminates
         end
 
-        @test is_concrete(vmod, :T) # wao, this is concretized
-        @test length(res.inference_error_reports) == 1
-        er = first(res.inference_error_reports)
+        @test is_analyzed(vmod, :T) # this can even be concretized
+        er = only(res.res.inference_error_reports)
         @test er isa InvalidConstantDeclaration
         @test er.name === :T
     end
@@ -1304,8 +1275,7 @@ end
             a = 0
             const a = 1
         end
-        @test length(res.inference_error_reports) == 1
-        let er = first(res.inference_error_reports)
+        let er = only(res.res.inference_error_reports)
             @test er isa InvalidConstantDeclaration
             @test er.name === :a
         end
@@ -1318,32 +1288,28 @@ end
             v = '0'
             v = 0 # deterministic
         end
-        @test is_analyzed(vmod, :v)
-        @test isa_analyzed(vmod.v, Int)
+        @test isa_analyzed(vmod, :v, Int)
     end
     let
         vmod, res = @analyze_toplevel2 begin
             v = '0'
             v = rand(Int) # deterministic
         end
-        @test is_analyzed(vmod, :v)
-        @test isa_analyzed(vmod.v, Int)
+        @test isa_analyzed(vmod, :v, Int)
     end
     let
         vmod, res = @analyze_toplevel2 begin
             v = '0'
             rand(Bool) && (v = 0) # non-deterministic
         end
-        @test is_analyzed(vmod, :v)
-        @test isa_analyzed(vmod.v, Union{Char,Int})
+        @test isa_analyzed(vmod, :v, Union{Char,Int})
     end
     let
         vmod, res = @analyze_toplevel2 begin
             v = '0'
             rand(Bool) && (v = rand(Int)) # non-deterministic
         end
-        @test is_analyzed(vmod, :v)
-        @test isa_analyzed(vmod.v, Union{Char,Int})
+        @test isa_analyzed(vmod, :v, Union{Char,Int})
     end
 
     # end to end
@@ -1356,7 +1322,7 @@ end
             f(v) # no method error should NOT happen here
         end
 
-        @test isempty(res.inference_error_reports)
+        @test isempty(res.res.inference_error_reports)
     end
     let
         vmod, res = @analyze_toplevel2 begin
@@ -1367,8 +1333,7 @@ end
             f(v) # union-split no method error should happen here
         end
 
-        @test length(res.inference_error_reports) === 1
-        er = first(res.inference_error_reports)
+        er = only(res.res.inference_error_reports)
         @test er isa NoMethodErrorReport
         @test isa(er.t, Vector)
     end
@@ -1386,7 +1351,7 @@ end
             """
             :(foo)
         end
-        @test any(res.inference_error_reports) do r
+        let r = only(res.res.inference_error_reports)
             r isa GlobalUndefVarErrorReport &&
             r.name === :foo
         end
@@ -1408,29 +1373,28 @@ end
 
         @test_warn "foo" println(stderr, "foo")
     end
-    @test isempty(res.toplevel_error_reports)
+    @test isempty(res.res.toplevel_error_reports)
 end
 
 @testset "avoid too much bail out from `_virtual_process!`" begin
     let
         res = @analyze_toplevel begin
             sin′
-        end;
-        @test !isempty(res.inference_error_reports)
+        end
+        @test !isempty(res.res.inference_error_reports)
     end
 
     let
         res = @analyze_toplevel begin
             s = nothing
             sin′
-        end;
-        @test !isempty(res.inference_error_reports)
+        end
+        @test !isempty(res.res.inference_error_reports)
     end
 end
 
 # will be used in the following two testsets
-let
-    fixtures_dir = normpath(@__DIR__, "..", "fixtures")
+let fixtures_dir = normpath(@__DIR__, "..", "fixtures")
     global const CONCRETIZATION_PATTERNS_FILE   = normpath(fixtures_dir, "concretization_patterns.jl")
     global const CONCRETIZATION_PATTERNS_CONFIG = normpath(fixtures_dir, "..JET.toml")
 end
@@ -1453,9 +1417,8 @@ end
     # the analysis on `test/fixtures/concretization_patterns.jl` will produce inappropriate
     # top-level error report because of missing concretization
     let
-        res = report_file2(CONCRETIZATION_PATTERNS_FILE).res
-        @test length(res.toplevel_error_reports) == 1
-        let r = first(res.toplevel_error_reports)
+        res = report_file2(CONCRETIZATION_PATTERNS_FILE)
+        let r = only(res.res.toplevel_error_reports)
             @test isa(r, MissingConcretization)
         end
     end
@@ -1464,8 +1427,8 @@ end
     let
         res = report_file2(CONCRETIZATION_PATTERNS_FILE;
                            concretization_patterns = [:(const GLOBAL_CODE_STORE = Dict())],
-                           ).res
-        @test isempty(res.toplevel_error_reports)
+                           )
+        @test isempty(res.res.toplevel_error_reports)
     end
 
     # we can specify whatever pattern `@capture` can accept
@@ -1544,7 +1507,7 @@ end
         baz(a::Int) = return a
         qux(a::T) where T<:Integer = return a
     end
-    @test isempty(res.toplevel_signatures)
+    @test isempty(res.res.toplevel_signatures)
 
     vmod, res = @analyze_toplevel2 analyze_from_definitions=true begin
         foo() = return
@@ -1553,20 +1516,20 @@ end
         baz(a::Int) = return a
         qux(a::T) where T<:Integer = return a
     end
-    @test !isempty(res.toplevel_signatures)
-    @test any(res.toplevel_signatures) do sig
+    @test !isempty(res.res.toplevel_signatures)
+    @test any(res.res.toplevel_signatures) do sig
         sig === Tuple{typeof(vmod.foo)}
     end
-    @test any(res.toplevel_signatures) do sig
+    @test any(res.res.toplevel_signatures) do sig
         sig === Tuple{typeof(vmod.bar),Any}
     end
-    @test any(res.toplevel_signatures) do sig
+    @test any(res.res.toplevel_signatures) do sig
         sig === Tuple{typeof(vmod.baz),Any}
     end
-    @test any(res.toplevel_signatures) do sig
+    @test any(res.res.toplevel_signatures) do sig
         sig === Tuple{typeof(vmod.baz),Int}
     end
-    @test any(res.toplevel_signatures) do sig
+    @test any(res.res.toplevel_signatures) do sig
         sig <: Tuple{typeof(vmod.qux),Integer} # `Tuple{typeof(vmod.qux),TypeVar}`
     end
 end
@@ -1576,15 +1539,15 @@ end
         res = @analyze_toplevel analyze_from_definitions=false begin
             foo() = return undefvar
         end
-        @test isempty(res.inference_error_reports)
+        @test isempty(res.res.inference_error_reports)
 
         res = @analyze_toplevel analyze_from_definitions=true begin
             foo() = return undefvar
         end
-        @test !isempty(res.inference_error_reports)
-        @test any(res.inference_error_reports) do err
-            isa(err, GlobalUndefVarErrorReport) &&
-            err.name === :undefvar
+        @test !isempty(res.res.inference_error_reports)
+        let r = only(res.res.inference_error_reports)
+            isa(r, GlobalUndefVarErrorReport) &&
+            r.name === :undefvar
         end
     end
 
@@ -1593,12 +1556,12 @@ end
             foo(a) = b # typo
             bar() = foo("julia")
         end
-        @test length(res.inference_error_reports) ≥ 1
-        # @test_broken any(res.inference_error_reports) do err # report analyzed from `foo`
+        @test length(res.res.inference_error_reports) ≥ 1
+        # @test_broken any(res.res.inference_error_reports) do err # report analyzed from `foo`
         #     isa(err, GlobalUndefVarErrorReport) &&
         #     err.name === :b &&
         #     length(err.vst) == 1
-        # end &&       any(res.inference_error_reports) do err # report analyzed from `bar`
+        # end &&       any(res.res.inference_error_reports) do err # report analyzed from `bar`
         #     isa(err, GlobalUndefVarErrorReport) &&
         #     err.name === :b &&
         #     length(err.vst) == 2
@@ -1627,7 +1590,7 @@ end
         vmod, res = @analyze_toplevel2 analyze_from_definitions=true let
             foo(a) = a # should be concretized, and its signature should have been collected
         end
-        @test length(res.toplevel_signatures) == 1
+        @test length(res.res.toplevel_signatures) == 1
     end
 
     # simple negative case test, which checks we do NOT select statements not involved with any definition
@@ -1689,14 +1652,14 @@ end
                 s = undefvar # actual top-level error is better not to happen here
                 global foo() = return s
             end
-            @test_broken isempty(res.toplevel_error_reports)
+            @test_broken isempty(res.res.toplevel_error_reports)
 
             # more realistic example
             vmod, res = @analyze_toplevel2 let s = sprint(showerror, DivideError())
                 global errmsg(s = s) = string("error: ", s)
             end
             @test is_concrete(vmod, :errmsg)
-            @test isempty(res.toplevel_error_reports)
+            @test isempty(res.res.toplevel_error_reports)
         end
     end
 
@@ -1708,7 +1671,7 @@ end
                 throw("foo")
             end
             @test is_concrete(vmod, :foo)
-            @test isempty(res.toplevel_signatures)
+            @test isempty(res.res.toplevel_signatures)
         end
     end
 
@@ -1726,8 +1689,8 @@ end
                 err
             end
 
-            @test isempty(res.toplevel_error_reports)
-            @test length(res.toplevel_signatures) == 1
+            @test isempty(res.res.toplevel_error_reports)
+            @test length(res.res.toplevel_signatures) == 1
             test_sum_over_string(res)
         end
 
@@ -1741,8 +1704,8 @@ end
                 err
             end
 
-            @test isempty(res.toplevel_error_reports)
-            @test length(res.toplevel_signatures) == 1
+            @test isempty(res.res.toplevel_error_reports)
+            @test length(res.res.toplevel_signatures) == 1
             test_sum_over_string(res)
         end
 
@@ -1761,10 +1724,10 @@ end
                 shows() # shouldn't be concretized
             end
 
-            @test isempty(res.toplevel_error_reports)
-            @test length(res.toplevel_signatures) == 2
+            @test isempty(res.res.toplevel_error_reports)
+            @test length(res.res.toplevel_signatures) == 2
             test_sum_over_string(res)
-            @test any(res.inference_error_reports) do r
+            @test any(res.res.inference_error_reports) do r
                 isa(r, GlobalUndefVarErrorReport) &&
                 r.name === :err2
             end
@@ -1787,8 +1750,8 @@ end
             # thanks to JuliaInterpreter's implementation detail, the analysis above won't
             # report top-level errors and can concretize `geterr` even if the actual `err`
             # is not thrown and thus these first two test cases will pass
-            @test isempty(res.toplevel_error_reports)
-            @test is_concrete(vmod, :geterr) && length(methods(vmod.geterr)) == 1
+            @test isempty(res.res.toplevel_error_reports)
+            @test isa_concrete(vmod, :geterr, Function) && length(methods(vmod.geterr)) == 1
             # yet we still need to make `geterr` over-approximate an actual execution soundly;
             # currently JET's abstract interpretation special-cases `_INACTIVE_EXCEPTION`
             # and fix it to `Any`, and we test it here in the last test case
@@ -1849,7 +1812,7 @@ end
         res = @analyze_toplevel begin
             @enum Fruit apple orange
         end
-        @test isempty(res.toplevel_error_reports)
+        @test isempty(res.res.toplevel_error_reports)
     end
 end
 
@@ -1872,7 +1835,7 @@ end
             @test 2 + 2 == 5 skip=true
             @test 2 + 2 == 4 skip=false
         end
-        @test isempty(res.toplevel_error_reports)
+        @test isempty(res.res.toplevel_error_reports)
     end
 
     let # @test_skip
@@ -1880,7 +1843,7 @@ end
             @test_skip 1 == 2
             @test_skip 1 == 2 atol=0.1
         end
-        @test isempty(res.toplevel_error_reports)
+        @test isempty(res.res.toplevel_error_reports)
     end
 
     let # @test_broken
@@ -1888,7 +1851,7 @@ end
             @test_broken 1 == 2
             @test_broken 1 == 2 atol=0.1
         end
-        @test isempty(res.toplevel_error_reports)
+        @test isempty(res.res.toplevel_error_reports)
     end
 
     let # @test_throws
@@ -1896,7 +1859,7 @@ end
             @test_throws BoundsError [1, 2, 3][4]
             @test_throws DimensionMismatch [1, 2, 3] + [1, 2]
         end
-        @test isempty(res.toplevel_error_reports)
+        @test isempty(res.res.toplevel_error_reports)
     end
 
     let # @test_logs
@@ -1918,7 +1881,7 @@ end
             f() = return
             @test_logs min_level=Warn f()  # test `f` logs no messages when the logger level is warn.
         end
-        @test isempty(res.toplevel_error_reports)
+        @test isempty(res.res.toplevel_error_reports)
     end
 
     let # @test_warn, @test_nowarn
@@ -1931,7 +1894,7 @@ end
                 @test a === 1
             end
         end
-        @test isempty(res.toplevel_error_reports)
+        @test isempty(res.res.toplevel_error_reports)
     end
 
     let # @test_deprecated
@@ -1940,7 +1903,7 @@ end
             b() = 2
             @test_deprecated a()
         end
-        @test isempty(res.toplevel_error_reports)
+        @test isempty(res.res.toplevel_error_reports)
     end
 
     let # @testset
@@ -1953,7 +1916,7 @@ end
                 @test cos(2θ) ≈ cos(θ)^2 - sin(θ)^2
             end
         end
-        @test isempty(res.toplevel_error_reports)
+        @test isempty(res.res.toplevel_error_reports)
     end
 
     let # @testset with actual type-level errors
@@ -1962,7 +1925,7 @@ end
                 @test sum("julia") == "julia" # actual errors
             end
         end
-        @test isempty(res.toplevel_error_reports)
+        @test isempty(res.res.toplevel_error_reports)
         test_sum_over_string(res)
     end
 
@@ -1982,7 +1945,7 @@ end
                 d = @inferred IdDict{Any,Any}(i=>i for i=1:3)
             end
         end
-        @test isempty(res.toplevel_error_reports)
+        @test isempty(res.res.toplevel_error_reports)
     end
 end
 
@@ -1994,13 +1957,13 @@ end
     TARGET_DIR = normpath(FIXTURE_DIR, "targets")
 
     let
-        res = report_file2(normpath(TARGET_DIR, "error.jl")).res
-        @test isempty(res.toplevel_error_reports)
+        res = report_file2(normpath(TARGET_DIR, "error.jl"))
+        @test isempty(res.res.toplevel_error_reports)
     end
 
     let
-        res = report_file2(normpath(TARGET_DIR, "dict.jl")).res
-        @test isempty(res.toplevel_error_reports)
+        res = report_file2(normpath(TARGET_DIR, "dict.jl"))
+        @test isempty(res.res.toplevel_error_reports)
     end
 end
 
@@ -2020,7 +1983,7 @@ end
 
             foo(100) # generate valid code
         end
-        @test isempty(res.inference_error_reports)
+        @test isempty(res.res.inference_error_reports)
     end
 
     let
@@ -2029,8 +1992,7 @@ end
 
             foo(100.0) # generate invalid code
         end
-        @test length(res.inference_error_reports) == 1
-        r = first(res.inference_error_reports)
+        r = only(res.res.inference_error_reports)
         @test isa(r, GlobalUndefVarErrorReport)
     end
 
@@ -2040,8 +2002,7 @@ end
 
             foo("julia") # unsuccessful code generation
         end
-        @test length(res.inference_error_reports) == 1
-        r = first(res.inference_error_reports)
+        r = only(res.res.inference_error_reports)
         @test isa(r, GeneratorErrorReport) && r.err == "invalid argument"
     end
 
@@ -2052,7 +2013,7 @@ end
         res = @eval @analyze_toplevel analyze_from_definitions=true begin
             $genex
         end
-        @test isempty(res.inference_error_reports)
+        @test isempty(res.res.inference_error_reports)
     end
 
     # when `analyze_from_definitions = true`, we can analyze generator itself
@@ -2067,8 +2028,7 @@ end
                 throw("invalid argument")
             end
         end
-        @test length(res.inference_error_reports) == 1
-        r = first(res.inference_error_reports)
+        r = only(res.res.inference_error_reports)
         @test isa(r, GlobalUndefVarErrorReport) && r.name === :t
     end
 end

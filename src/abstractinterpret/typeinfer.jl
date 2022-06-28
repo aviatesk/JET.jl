@@ -38,7 +38,9 @@ inference on non-concrete call sites in a toplevel frame created by [`virtual_pr
 CC.bail_out_toplevel_call(analyzer::AbstractAnalyzer, @nospecialize(sig), sv::InferenceState) = false
 
 function CC.abstract_eval_special_value(analyzer::AbstractAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    if istoplevel(sv)
+    istoplevel = JET.istoplevel(sv)
+
+    if istoplevel
         if isa(e, Slot) && is_global_slot(analyzer, e)
             if get_slottype((sv, get_currpc(sv)), e) === Bottom
                 # if this abstract global variable is not initialized, form the global
@@ -52,16 +54,16 @@ function CC.abstract_eval_special_value(analyzer::AbstractAnalyzer, @nospecializ
 
     ret = @invoke CC.abstract_eval_special_value(analyzer::AbstractInterpreter, e::Any, vtypes::VarTable, sv::InferenceState)
 
-    if istoplevel(sv)
+    if istoplevel
         if isa(e, GlobalRef)
             mod, name = e.mod, e.name
             if isdefined(mod, name)
-                # here we eagerly propagate the type of this global variable:
+                # eagerly propagate the type of this global variable:
                 # of course the traced type might be difference from its type in actual execution
-                # e.g. we don't track global variable assignments that happen in a function,
-                # but it's highly possible this is a toplevel callsite and we take a risk here,
-                # otherwise we can't enter the analysis !
-                val = getfield(mod, name)
+                # e.g. we don't track global variable assignments that can happen somewhere
+                # in this call graph, but it's highly possible this is a toplevel callsite
+                # and we take a risk here since we can't enter the analysis otherwise
+                val = getglobal(mod, name)
                 ret = isa(val, AbstractGlobal) ? val.t : Const(val)
             end
         end
@@ -104,26 +106,13 @@ function CC.builtin_tfunction(analyzer::AbstractAnalyzer,
         f::Any, argtypes::Array{Any,1},
         sv::Union{InferenceState,Nothing})
 
-    if f === getfield && 2 ≤ length(argtypes) ≤ 3
-        obj, fld = argtypes
-        if isa(fld, Const)
-            name = fld.val
-            if isa(name, Symbol)
-                if isa(obj, Const)
-                    mod = obj.val
-                    if isa(mod, Module)
-                        if isdefined(mod, name)
-                            if istoplevel_globalref(analyzer, sv)
-                                # when accessing to a global variable in a module
-                                # concretized by `analyzer`, eagerly propagate its type
-                                # NOTE logic here should be synced with that of `abstract_eval_special_value(::AbstractAnalyzer, ::Any, ::VarTable, ::InferenceState)`
-                                val = getfield(mod, name)
-                                return isa(val, AbstractGlobal) ? val.t : Const(val)
-                            end
-                        end
-                    end
-                end
-            end
+    if f === getglobal
+        if istoplevel_getproperty(sv)
+            ret = maybe_narrow_toplevel_getglobal(argtypes, ret)
+        end
+    elseif (@static isdefined(Core, :get_binding_type) ? (f === Core.get_binding_type) : false)
+        if istoplevel(sv)
+            ret = maybe_narrow_toplevel_binding_type(argtypes, ret)
         end
     elseif f === fieldtype
         # the valid widest possible return type of `fieldtype_tfunc` is `Union{Type,TypeVar}`
@@ -135,21 +124,59 @@ function CC.builtin_tfunction(analyzer::AbstractAnalyzer,
         # trying hard to do sound and noisy analysis
         # xref: https://github.com/JuliaLang/julia/pull/38148
         if ret === Union{Type, TypeVar}
-            return Any
+            ret = Any
         end
     end
 
     return ret
 end
 
-# check if this frame is for `getproperty(::Module, ::Symbol)`, which accesses to a global
-# variable traced by `analyzer`
-function istoplevel_globalref(analyzer::AbstractAnalyzer, sv::InferenceState)
+# check if this frame is for `getproperty(::Module, ::Symbol)`,
+# that may access to abstract global variable traced by `analyzer`
+function istoplevel_getproperty(sv::InferenceState)
     def = sv.linfo.def
+    isa(def, Method) || return false
     def.name === :getproperty || return false
     def.sig === Tuple{typeof(getproperty), Module, Symbol} || return false
     parent = sv.parent
-    return !isnothing(parent) && istoplevel(parent)
+    parent === nothing && return false
+    return istoplevel(parent)
+end
+
+# if this `getglobal` access to a global variable in a module concretized by `AbstractAnalyzer`,
+# eargely propagate its type (NOTE the logic here should be synced with the implementation
+# of `abstract_eval_special_value(::AbstractAnalyzer, ...)`)
+function maybe_narrow_toplevel_getglobal(argtypes::Vector{Any}, @nospecialize ret)
+    (isa(ret, Const) || ret === Bottom) && return ret # i.e. constant or error
+    gr = constant_globalref(argtypes)
+    gr === nothing && return ret
+    isdefined(gr.mod, gr.name) || return ret
+    val = getglobal(gr.mod, gr.name)
+    return isa(val, AbstractGlobal) ? val.t : Const(val)
+end
+
+# if the type for a variable hasn't been declared explicitly, return the narrower type
+# declaration (`Const(Any)`) to allow JET to analyze the first assignment for the variable
+# (, that would follow most of the time as generated by the frontend) more precisely
+function maybe_narrow_toplevel_binding_type(argtypes::Vector{Any}, @nospecialize ret)
+    (isa(ret, Const) || ret === Bottom) && return ret # i.e. already declared or error
+    gr = constant_globalref(argtypes)
+    gr === nothing && return ret
+    @assert !isdefined(gr.mod, gr.name) "`get_binding_type` should resolve the already-defined variable type"
+    return Const(Any)
+end
+
+function constant_globalref(argtypes::Vector{Any})
+    length(argtypes) ≥ 2 || return nothing
+    mod = argtypes[1]
+    isa(mod, Const) || return nothing
+    mod = mod.val
+    isa(mod, Module) || return nothing
+    sym = argtypes[2]
+    isa(sym, Const) || return nothing
+    sym = sym.val
+    isa(sym, Symbol) || return nothing
+    return GlobalRef(mod, sym)
 end
 
 # inter-procedural
@@ -744,7 +771,7 @@ function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
 end
 
 function CC.finish(me::InferenceState, analyzer::AbstractAnalyzer)
-    @invoke CC.finish(me::InferenceState, analyzer::AbstractInterpreter)
+    ret = @invoke CC.finish(me::InferenceState, analyzer::AbstractInterpreter)
 
     if istoplevel(me)
         # find assignments of abstract global variables, and assign types to them,
@@ -782,6 +809,8 @@ function CC.finish(me::InferenceState, analyzer::AbstractAnalyzer)
             end
         end
     end
+
+    return ret
 end
 
 # by default, this overload just is forwarded to the AbstractInterpreter's implementation
@@ -820,7 +849,7 @@ function collect_slottypes(sv::InferenceState)
     states = sv.stmt_types
     ssavaluetypes = sv.src.ssavaluetypes::Vector{Any}
     stmts = sv.src.code::Vector{Any}
-    slottypes = Any[Bottom for _ in sv.src.slottypes::Vector{Any}]
+    slottypes = Any[Bottom for _ in 1:length(sv.slottypes)]
     for i = 1:length(stmts)
         stmt = stmts[i]
         state = states[i]
@@ -829,6 +858,7 @@ function collect_slottypes(sv::InferenceState)
             lhs = first(stmt.args)
             if isa(lhs, Slot)
                 vt = ssavaluetypes[i] # don't widen const
+                @assert vt !== NOT_FOUND "active slot in unreached region"
                 if vt !== Bottom
                     id = slot_id(lhs)
                     otherTy = slottypes[id]
@@ -842,7 +872,7 @@ end
 else
 function collect_slottypes(sv::InferenceState)
     body = sv.src.code::Vector{Any}
-    slottypes = copy(sv.slottypes)
+    slottypes = Any[Bottom for _ in 1:length(sv.slottypes)]
     ssavaluetypes = sv.ssavaluetypes
     for i = 1:length(body)
         expr = body[i]
@@ -924,13 +954,21 @@ function set_abstract_global!(analyzer::AbstractAnalyzer, mod::Module, name::Sym
         # constant statically, let's concretize it for good reasons;
         # we will be able to use it in concrete interpretation and so this allows to define
         # structs with type aliases, etc.
+        local v
         if isa(t, Const)
+            v = t.val
+        elseif isconstType(t)
+            v = t.parameters[1]
+        elseif issingletontype(t)
+            v = t.instance
+        end
+        if @isdefined v
             if iscd
                 @assert isnew # means, this is a valid constant declaration
-                return Core.eval(mod, :(const $name = $(QuoteNode(t.val))))
+                return Core.eval(mod, :(const $name = $(QuoteNode(v))))
             else
                 # we've checked `mod.name` wasn't declared as constant previously
-                return Core.eval(mod, :($name = $(QuoteNode(t.val))))
+                return Core.eval(mod, :($name = $(QuoteNode(v))))
             end
         end
     end

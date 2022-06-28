@@ -230,9 +230,10 @@ end
                 end
             end
         end
-        @test length(res.inference_error_reports) === 1 &&
-              first(res.inference_error_reports) isa LocalUndefVarErrorReport &&
-              first(res.inference_error_reports).name === :bar
+        let r = only(res.res.inference_error_reports)
+            @test r isa LocalUndefVarErrorReport
+            @test r.name === :bar
+        end
     end
 end
 
@@ -463,16 +464,16 @@ end
 
     # `bar(::Foo1)` is valid but its return type is `Any`, and so we can't collect possible
     # error points for `bar(::Foo2)` and `bar(::Foo3)` if we bail out on `Any`-grew return type
-    @test length(res.inference_error_reports) === 2
-    @test any(res.inference_error_reports) do er
+    @test length(res.res.inference_error_reports) === 2
+    @test any(res.res.inference_error_reports) do er
         return er isa NoFieldErrorReport &&
-            er.typ === vmod.Foo2 &&
-            er.name === :bar
+               er.typ === vmod.Foo2 &&
+               er.name === :bar
     end
-    @test any(res.inference_error_reports) do er
+    @test any(res.res.inference_error_reports) do er
         return er isa NoFieldErrorReport &&
-            er.typ === vmod.Foo3 &&
-            er.name === :bar
+               er.typ === vmod.Foo3 &&
+               er.name === :bar
     end
 end
 
@@ -688,7 +689,7 @@ issue363(f, args...) = f(args...)
                     x::AbstractVector{<:AbstractString}
                 end
             end
-            @test isempty(res.inference_error_reports)
+            @test isempty(res.res.inference_error_reports)
         end
 
         # https://github.com/aviatesk/JET.jl/issues/363
@@ -717,9 +718,7 @@ issue363(f, args...) = f(args...)
                     return x == Foo() ? :foo : :bar
                 end
             end
-            @test !any(res.inference_error_reports) do r
-                isa(r, NonBooleanCondErrorReport)
-            end
+            @test !any(r->isa(r,NonBooleanCondErrorReport), res.res.inference_error_reports)
         end
     end
 end
