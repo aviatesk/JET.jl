@@ -1,13 +1,7 @@
-include("JETBenchmarkUtils.jl")
+include("setup.jl")
 
 # benchmark body
 # ==============
-
-using BenchmarkTools, .JETBenchmarkUtils
-using JET
-include("../test/interactive_utils.jl")
-
-@info "JET setup information:" JET.JET_DEV_MODE
 
 const SUITE = BenchmarkGroup()
 function tune_benchmarks!(g::BenchmarkGroup;
