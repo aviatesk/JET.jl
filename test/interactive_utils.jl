@@ -31,8 +31,7 @@ function subtypes_recursive!(t, ts)
     return ts
 end
 
-let
-    ts = Type[]
+let ts = Type[]
     subtypes_recursive!(ToplevelErrorReport, ts)
     subtypes_recursive!(InferenceErrorReport, ts)
     for t in ts
@@ -59,7 +58,7 @@ Creates a virtual module and defines fixtures from toplevel expression `ex`
 macro fixturedef(ex)
     @assert isexpr(ex, :block)
     return quote let
-        vmod = Module()
+        vmod = $gen_virtual_module()
         for x in $(ex.args)
             Core.eval(vmod, x)
         end
@@ -111,24 +110,26 @@ function _analyze_toplevel(ex, lnn, jetconfigs)
     return :(let
         analyzer = $(GlobalRef(JET, :JETAnalyzer))(; $(map(esc, jetconfigs)...))
         config = ToplevelConfig(; $(map(esc, jetconfigs)...))
-        $virtual_process($toplevelex,
-                         $(string(lnn.file)),
-                         analyzer,
-                         config,
-                         )
+        res = $virtual_process($toplevelex,
+                               $(string(lnn.file)),
+                               analyzer,
+                               config,
+                               )
+        JET.JETToplevelResult(analyzer, res, "analyze_toplevel"; $(map(esc, jetconfigs)...))
     end)
 end
 
 # `report_file` with silent top-level logger
-report_file2(args...; kwargs...) =
-    report_file(args...; toplevel_logger = nothing, kwargs...)
+report_file2(args...; kwargs...) = report_file(args...; toplevel_logger = nothing, kwargs...)
 
-is_concrete(mod, sym) = isdefined(mod, sym) && !isa(getfield(mod, sym), AbstractGlobal)
-is_abstract(mod, sym) = isdefined(mod, sym) && isa(getfield(mod, sym), AbstractGlobal)
-isa_abstract(x, @nospecialize(typ)) = isa(x, AbstractGlobal) && x.t ⊑ typ
+is_concrete(mod::Module, sym::Symbol) = isdefined(mod, sym) && !isa(JET.getglobal(mod, sym), AbstractGlobal)
+isa_concrete(mod::Module, sym::Symbol, @nospecialize(typ)) = is_concrete(mod, sym) && isa(JET.getglobal(mod, sym), typ)
+
+is_abstract(mod::Module, sym::Symbol) = isdefined(mod, sym) && isa(JET.getglobal(mod, sym), AbstractGlobal)
+isa_abstract(mod::Module, sym::Symbol, @nospecialize(typ)) = is_abstract(mod, sym) && (JET.getglobal(mod, sym)::AbstractGlobal).t ⊑ typ
 
 # JET will try to concretize global variable when its type is a constant at analysis time,
 # but the starategy is a bit complicated right now and may change in the future
 # these utilities allow robust testing to check if a object is successfully analyzed by JET whichever it's concretized or abstracted
-is_analyzed(mod, sym) = isdefined(mod, sym) # essentially, `is_concrete(mod, sym) || is_abstract(mod, sym)`
-isa_analyzed(x, @nospecialize(typ)) = isa_abstract(x, typ) || isa(x, typ)
+is_analyzed(mod::Module, sym::Symbol) = isdefined(mod, sym) # essentially, `is_concrete(mod, sym) || is_abstract(mod, sym)`
+isa_analyzed(mod::Module, sym::Symbol, @nospecialize(typ)) = isa_abstract(mod, sym, typ) || isa_concrete(mod, sym, typ)

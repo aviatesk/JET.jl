@@ -144,7 +144,9 @@ import .CC:
     inlining_enabled,
     instanceof_tfunc,
     ignorelimited,
-    argextype
+    argextype,
+    isconstType,
+    issingletontype
 
 import Base:
     # @constprop,
@@ -254,6 +256,10 @@ end
     import .CC: hasintersect
 else
     hasintersect(@nospecialize(a), @nospecialize(b)) = typeintersect(a, b) !== Bottom
+end
+
+@static if !isdefined(@__MODULE__, :getglobal)
+    const getglobal = getfield
 end
 
 # macros
