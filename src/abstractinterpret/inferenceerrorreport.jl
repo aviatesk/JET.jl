@@ -30,7 +30,10 @@ function Base.hash(sig::Signature, h::UInt)
     end
     return h
 end
-@inline Base.iterate(sig::Signature, state...) = iterate(sig._sig, state...)
+Base.iterate(sig::Signature, state...) = iterate(sig._sig, state...)
+Base.getindex(sig::Signature, args...) = getindex(sig._sig, args...)
+Base.setindex!(sig::Signature, args...) = setindex!(sig._sig, args...)
+Base.lastindex(sig::Signature, args...) = lastindex(sig._sig, args...)
 
 """
     VirtualFrame

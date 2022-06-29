@@ -84,50 +84,90 @@
     end
 end
 
-@testset "report no method matching" begin
+@testset "MethodErrorReport" begin
+    # report no match case
+    # --------------------
+
     # if there is no method matching case, it should be reported
-    let
-        # NOTE: we can't just wrap them into `let`, closures can't be inferred correctly
-        m = Module()
+    let m = Module()
         result = Core.eval(m, quote
             foo(a::Integer) = :Integer
             $report_call((AbstractString,)) do a
                 foo(a)
             end
         end)
-        @test length(get_reports_with_test(result)) === 1
-        report = first(get_reports_with_test(result))
+        report = only(get_reports_with_test(result))
         @test report isa MethodErrorReport
         @test report.t === Tuple{typeof(m.foo), AbstractString}
     end
 
-    let
-        result = report_call(()->sum([]))
-        @test length(get_reports_with_test(result)) === 1
-        report = first(get_reports_with_test(result))
+    let result = report_call(()->sum([]))
+        report = only(get_reports_with_test(result))
         @test report isa SeriousExceptionReport
         @test report.err isa MethodError
         @test report.err.f === zero
     end
 
     # if there is no method matching case in union-split, it should be reported
-    let
-        m = Module()
+    let m = Module()
         result = Core.eval(m, quote
             foo(a::Integer) = :Integer
             foo(a::AbstractString) = "AbstractString"
-
             $report_call(a->foo(a), (Union{Nothing,Int},))
         end)
 
-        @test length(get_reports_with_test(result)) === 1
-        report = first(get_reports_with_test(result))
+        report = only(get_reports_with_test(result))
         @test report isa MethodErrorReport
         @test report.t == Any[Tuple{typeof(m.foo), Nothing}]
     end
+
+    # report uncovered match
+    # ----------------------
+
+    # only in :sound mode
+    let (basic, sound) = @eval Module() begin
+            onlyint(::Int) = :ok
+            basic = $report_call((Any,)) do x
+                onlyint(x)
+            end
+            sound = $report_call((Any,); mode=:sound) do x
+                onlyint(x)
+            end
+            basic, sound
+        end
+
+        @test isempty(get_reports_with_test(basic))
+        report = only(get_reports_with_test(sound))
+        @test report isa MethodErrorReport
+        @test report.uncovered
+        @test report.sig[end] === Symbol
+    end
+
+    # union split case
+    let result = @eval Module() begin
+            onlyint(::Int) = :ok
+            $report_call((Union{Integer,Nothing},); mode=:sound) do x
+                onlyint(x)
+            end
+        end
+
+        @test length(get_reports_with_test(result)) == 2
+        @test any(get_reports_with_test(result)) do report
+            # no match for `onlyint(::Nothing)`
+            report isa MethodErrorReport &&
+            !report.uncovered &&
+            report.sig[end] === Union{}
+        end
+        @test any(get_reports_with_test(result)) do report
+            # uncovered match for `onlyint(::Integer)`
+            report isa MethodErrorReport &&
+            report.uncovered &&
+            report.sig[end] === Symbol
+        end
+    end
 end
 
-@testset "report local undefined variables" begin
+@testset "LocalUndefVarErrorReport" begin
     let
         result = report_call((Bool,)) do b
             if b

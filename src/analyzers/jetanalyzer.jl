@@ -305,9 +305,15 @@ end
 @jetreport struct MethodErrorReport <: InferenceErrorReport
     @nospecialize t # ::Union{Type, Vector{Type}}
     union_split::Int
+    uncovered::Bool
 end
-function print_report_message(io::IO, (; t, union_split)::MethodErrorReport)
-    print(io, "no matching method found for ")
+function print_report_message(io::IO, report::MethodErrorReport)
+    (; t, union_split, uncovered) = report
+    if uncovered
+        print(io, "uncovered method match found ")
+    else
+        print(io, "no matching method found ")
+    end
     if union_split == 0
         print_callsig(io, t)
     else
@@ -339,9 +345,9 @@ function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer,
     end
     # report passes for no matching methods error
     if isa(info, UnionSplitInfo)
-        ReportPass(analyzer)(MethodErrorReport, analyzer, sv, info, arginfo.argtypes, atype)
+        ReportPass(analyzer)(MethodErrorReport, analyzer, sv, info, arginfo.argtypes, ret.rt)
     elseif isa(info, MethodMatchInfo)
-        ReportPass(analyzer)(MethodErrorReport, analyzer, sv, info, arginfo.argtypes, atype)
+        ReportPass(analyzer)(MethodErrorReport, analyzer, sv, info, arginfo.argtypes, atype, ret.rt)
     end
     return ret
 end
@@ -358,68 +364,88 @@ function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer,
     end
     # report passes for no matching methods error
     if isa(info, UnionSplitInfo)
-        ReportPass(analyzer)(MethodErrorReport, analyzer, sv, info, argtypes, atype)
+        ReportPass(analyzer)(MethodErrorReport, analyzer, sv, info, argtypes, ret.rt)
     elseif isa(info, MethodMatchInfo)
-        ReportPass(analyzer)(MethodErrorReport, analyzer, sv, info, argtypes, atype)
+        ReportPass(analyzer)(MethodErrorReport, analyzer, sv, info, argtypes, atype, ret.rt)
     end
     return ret
 end
 end # @static if IS_AFTER_42529
 
 function (rp::BasicPass)(::Type{MethodErrorReport}, analyzer::JETAnalyzer,
-    sv::InferenceState, info::UnionSplitInfo, argtypes::Argtypes, @nospecialize(_))
+    sv::InferenceState, info::UnionSplitInfo, argtypes::Argtypes, @nospecialize(rt))
     basic_filter(analyzer, sv) || return false
     ft = widenconst(first(argtypes))
     rp.function_filter(ft) || return false
-    return report_method_error_for_union_split!(analyzer, sv, info, argtypes)
+    return report_method_error_for_union_split!(analyzer, sv, info, argtypes, rt, #=sound=#false)
 end
 function (::SoundPass)(::Type{MethodErrorReport}, analyzer::JETAnalyzer,
-    sv::InferenceState, info::UnionSplitInfo, argtypes::Argtypes, @nospecialize(_))
-    return report_method_error_for_union_split!(analyzer, sv, info, argtypes)
+    sv::InferenceState, info::UnionSplitInfo, argtypes::Argtypes, @nospecialize(rt))
+    return report_method_error_for_union_split!(analyzer, sv, info, argtypes, rt, #=sound=#true)
 end
 function report_method_error_for_union_split!(analyzer::JETAnalyzer,
-    sv::InferenceState, info::UnionSplitInfo, argtypes::Argtypes)
+    sv::InferenceState, info::UnionSplitInfo, argtypes::Argtypes, @nospecialize(rt), sound::Bool)
     # check each match for union-split signature
     split_argtypes = nothing
-    rinfo = nothing
+    empty_matches = uncovered_matches = nothing
     for (i, matchinfo) in enumerate(info.matches)
         if is_empty_match(matchinfo)
             isnothing(split_argtypes) && (split_argtypes = switchtupleunion(argtypes))
-            if rinfo === nothing
-                rinfo = Any[], length(info.matches)
+            if empty_matches === nothing
+                empty_matches = (Any[], length(info.matches))
             end
             sig_n = argtypes_to_type(split_argtypes[i]::Vector{Any})
-            push!(rinfo[1], sig_n)
+            push!(empty_matches[1], sig_n)
+        elseif !is_fully_covered(matchinfo)
+            isnothing(split_argtypes) && (split_argtypes = switchtupleunion(argtypes))
+            if uncovered_matches === nothing
+                uncovered_matches = (Any[], length(info.matches))
+            end
+            sig_n = argtypes_to_type(split_argtypes[i]::Vector{Any})
+            push!(uncovered_matches[1], sig_n)
         end
     end
-    if rinfo !== nothing
-        add_new_report!(analyzer, sv.result, MethodErrorReport(sv, rinfo...))
-        return true
+    reported = false
+    if empty_matches !== nothing
+        add_new_report!(analyzer, sv.result, MethodErrorReport(sv, empty_matches..., #=uncovered=#false))
+        reported |= true
     end
-    return false
+    if uncovered_matches !== nothing
+        report = MethodErrorReport(sv, uncovered_matches..., #=uncovered=#true)
+        add_new_report!(analyzer, sv.result, report)
+        report.sig[end] = widenconst(ignorelimited(rt))
+        reported |= true
+    end
+    return reported
 end
 
 function (rp::BasicPass)(::Type{MethodErrorReport}, analyzer::JETAnalyzer,
-    sv::InferenceState, info::MethodMatchInfo, argtypes::Argtypes, @nospecialize(atype))
+    sv::InferenceState, info::MethodMatchInfo, argtypes::Argtypes, @nospecialize(atype), @nospecialize(rt))
     basic_filter(analyzer, sv) || return false
     ft = widenconst(first(argtypes))
     rp.function_filter(ft) || return false
-    return report_method_error!(analyzer, sv, info, atype)
+    return report_method_error!(analyzer, sv, info, atype, rt, #=sound=#false)
 end
 function (::SoundPass)(::Type{MethodErrorReport}, analyzer::JETAnalyzer,
-    sv::InferenceState, info::MethodMatchInfo, argtypes::Argtypes, @nospecialize(atype))
-    return report_method_error!(analyzer, sv, info, atype)
+    sv::InferenceState, info::MethodMatchInfo, argtypes::Argtypes, @nospecialize(atype), @nospecialize(rt))
+    return report_method_error!(analyzer, sv, info, atype, rt, #=sound=#true)
 end
 function report_method_error!(analyzer::JETAnalyzer,
-    sv::InferenceState, info::MethodMatchInfo, @nospecialize(atype))
+    sv::InferenceState, info::MethodMatchInfo, @nospecialize(atype), @nospecialize(rt), sound::Bool)
     if is_empty_match(info)
-        add_new_report!(analyzer, sv.result, MethodErrorReport(sv, atype, 0))
+        add_new_report!(analyzer, sv.result, MethodErrorReport(sv, atype, 0, #=uncovered=#false))
+        return true
+    elseif sound && !is_fully_covered(info)
+        report = MethodErrorReport(sv, atype, 0, #=uncovered=#true)
+        report.sig[end] = widenconst(ignorelimited(rt))
+        add_new_report!(analyzer, sv.result, report)
         return true
     end
     return false
 end
 
 is_empty_match(info::MethodMatchInfo) = CC.isempty(info.results)
+is_fully_covered(info::MethodMatchInfo) = CC._all(m->m.fully_covers, info.results)
 
 @doc """
     bail_out_call(analyzer::JETAnalyzer, ...)
