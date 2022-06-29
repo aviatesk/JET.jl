@@ -366,28 +366,6 @@ function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer,
 end
 end # @static if IS_AFTER_42529
 
-function CC.abstract_apply(analyzer::JETAnalyzer,
-    argtypes::Argtypes, sv::InferenceState, max_methods::Int)
-    ret =  @invoke CC.abstract_apply(analyzer::AbstractInterpreter,
-        argtypes::Argtypes, sv::InferenceState, max_methods::Int)
-    return ret
-    retinfo = ret.info
-    if retinfo isa UnionSplitApplyCallInfo
-        for (; call) in retinfo.infos
-            if isa(call, ConstCallInfo)
-                call = call.call # unwrap to `MethodMatchInfo` or `UnionSplitInfo`
-            end
-            # report passes for no matching methods error
-            if isa(call, UnionSplitInfo)
-                ReportPass(analyzer)(NoMethodErrorReport, analyzer, sv, call, argtypes, atype)
-            elseif isa(call, MethodMatchInfo)
-                ReportPass(analyzer)(NoMethodErrorReport, analyzer, sv, call, argtypes, atype)
-            end
-        end
-    end
-    return ret
-end
-
 function (rp::BasicPass)(
     ::Type{NoMethodErrorReport}, analyzer::JETAnalyzer, sv::InferenceState,
     info::UnionSplitInfo, argtypes::Argtypes, @nospecialize(_))
