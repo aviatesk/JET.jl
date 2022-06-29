@@ -117,7 +117,7 @@ function CC.builtin_tfunction(analyzer::AbstractAnalyzer,
     elseif f === fieldtype
         # the valid widest possible return type of `fieldtype_tfunc` is `Union{Type,TypeVar}`
         # because fields of unwrapped `DataType`s can legally be `TypeVar`s,
-        # but this will cause lots of false positive `NoMethodErrorReport`s for inference
+        # but this will lead to lots of false positive `MethodErrorReport`s for inference
         # with accessing to abstract fields since most methods don't expect `TypeVar`
         # (e.g. `@report_call readuntil(stdin, 'c')`)
         # JET.jl further widens this case to `Any` and give up further analysis rather than
