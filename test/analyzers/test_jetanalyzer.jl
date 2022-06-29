@@ -97,7 +97,7 @@ end
         end)
         @test length(get_reports_with_test(result)) === 1
         report = first(get_reports_with_test(result))
-        @test report isa NoMethodErrorReport
+        @test report isa MethodErrorReport
         @test report.t === Tuple{typeof(m.foo), AbstractString}
     end
 
@@ -122,7 +122,7 @@ end
 
         @test length(get_reports_with_test(result)) === 1
         report = first(get_reports_with_test(result))
-        @test report isa NoMethodErrorReport
+        @test report isa MethodErrorReport
         @test report.t == Any[Tuple{typeof(m.foo), Nothing}]
     end
 end
@@ -696,7 +696,7 @@ issue363(f, args...) = f(args...)
         let res = report_call() do
                 issue363(sin, "42")
             end
-            @test only(get_reports_with_test(res)) isa NoMethodErrorReport
+            @test only(get_reports_with_test(res)) isa MethodErrorReport
         end
 
         # should still report anything within entry frame
@@ -707,7 +707,7 @@ issue363(f, args...) = f(args...)
                 end
             end
             @test !isempty(get_reports_with_test(res))
-            @test any(r->isa(r,NoMethodErrorReport), get_reports_with_test(res))
+            @test any(r->isa(r,MethodErrorReport), get_reports_with_test(res))
         end
 
         # skip errors on abstract entry frame entered by `analyze_from_definitions!`

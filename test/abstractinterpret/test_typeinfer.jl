@@ -40,7 +40,7 @@
 
             @test isa_analyzed(vmod, :globalvar, Union{String,Symbol})
             report = only(get_reports_with_test(res))
-            @test report isa NoMethodErrorReport
+            @test report isa MethodErrorReport
             @test isa(report.t, Vector) # should be true
         end
 
@@ -63,11 +63,11 @@
             @test isa_analyzed(vmod, :globalvar, Int)
             @test length(get_reports_with_test(res)) === 2
             let er = first(get_reports_with_test(res))
-                @test er isa NoMethodErrorReport
+                @test er isa MethodErrorReport
                 @test isa(er.t, Vector)
             end
             let er = last(get_reports_with_test(res))
-                @test er isa NoMethodErrorReport
+                @test er isa MethodErrorReport
                 @test !isa(er.t, Vector)
             end
         end
@@ -86,7 +86,7 @@ end
 
             using ..foo
 
-            foo.bar("julia") # -> NoMethodErrorReports
+            foo.bar("julia") # -> MethodErrorReports
 
             end # module bar
 
@@ -108,7 +108,7 @@ end
 
             using ..foo
 
-            foo.bar("julia") # -> NoMethodErrorReports
+            foo.bar("julia") # -> MethodErrorReports
 
             end # module bar
 
@@ -385,7 +385,7 @@ end
         # should be kept
         @test length(get_reports_with_test(result)) === 1
         er = first(get_reports_with_test(result))
-        @test er isa NoMethodErrorReport
+        @test er isa MethodErrorReport
         @test er.t === Tuple{typeof(convert), Type{String}, Int}
     end
 
@@ -408,7 +408,7 @@ end
         # `convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{Int}, v::String)`
         @test !isempty(get_reports_with_test(result))
         @test any(get_reports_with_test(result)) do report
-            report isa NoMethodErrorReport &&
+            report isa MethodErrorReport &&
             report.t === Tuple{typeof(convert), Type{Int}, String}
         end
         # NOTE:
@@ -424,7 +424,7 @@ end
             $report_call(bar)
         end)
         @test !isempty(get_reports_with_test(result))
-        @test any(r->isa(r,NoMethodErrorReport), get_reports_with_test(result))
+        @test any(r->isa(r,MethodErrorReport), get_reports_with_test(result))
     end
 
     let result = Core.eval(Module(), quote
@@ -438,7 +438,7 @@ end
         end)
         @test !isempty(get_reports_with_test(result))
         # FIXME our report uniquify logic might be wrong and it wrongly singlifies the different reports here
-        @test_broken count(isa(report, NoMethodErrorReport) for report in get_reports_with_test(result)) == 2
+        @test_broken count(isa(report, MethodErrorReport) for report in get_reports_with_test(result)) == 2
     end
 
     @testset "constant analysis throws away false positive reports" begin
@@ -456,14 +456,14 @@ end
             result = Core.eval(m, :($report_call(bar, (Int,))))
             @test length(get_reports_with_test(result)) === 1
             er = first(get_reports_with_test(result))
-            @test er isa NoMethodErrorReport
+            @test er isa MethodErrorReport
             @test er.t == [Tuple{typeof(+),String,Int}]
 
             # if we run constant prop' that leads to the error pass, we should get the reports
             result = Core.eval(m, :($report_call(()->bar(0))))
             @test length(get_reports_with_test(result)) === 1
             er = first(get_reports_with_test(result))
-            @test er isa NoMethodErrorReport
+            @test er isa MethodErrorReport
             @test er.t === Tuple{typeof(+),String,Int}
         end
 
@@ -556,7 +556,7 @@ end
         fetch(Threads.@spawn 1 + "foo")
     end
     let r = only(get_reports_with_test(result))
-        @test isa(r, NoMethodErrorReport)
+        @test isa(r, MethodErrorReport)
         @test r.t === Tuple{typeof(+), Int, String}
     end
 
@@ -570,7 +570,7 @@ end
     end
     @test !isempty(get_reports_with_test(result))
     @test any(get_reports_with_test(result)) do r
-        isa(r, NoMethodErrorReport) &&
+        isa(r, MethodErrorReport) &&
         r.t === Tuple{typeof(convert), Type{String}, Int}
     end
 
@@ -582,11 +582,11 @@ end
     end
     @test length(get_reports_with_test(result)) == 2
     let r = get_reports_with_test(result)[1]
-        @test isa(r, NoMethodErrorReport)
+        @test isa(r, MethodErrorReport)
         @test r.t === Tuple{typeof(+), Int, String}
     end
     let r = get_reports_with_test(result)[2]
-        @test isa(r, NoMethodErrorReport)
+        @test isa(r, MethodErrorReport)
         @test r.t === Tuple{typeof(+), String, Int}
     end
 

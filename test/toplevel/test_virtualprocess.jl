@@ -689,7 +689,7 @@ end
 
             using ..foo
 
-            foo.bar("julia") # -> NoMethodErrorReports
+            foo.bar("julia") # -> MethodErrorReports
 
             end # module bar
 
@@ -710,7 +710,7 @@ end
 
             using ..foo: bar
 
-            bar("julia") # -> NoMethodErrorReports
+            bar("julia") # -> MethodErrorReports
 
             end # module bar
 
@@ -732,7 +732,7 @@ end
 
             begin
                 using ..foo: bar
-                bar("julia") # -> NoMethodErrorReports
+                bar("julia") # -> MethodErrorReports
             end
 
             end # module bar
@@ -819,7 +819,7 @@ end
 
             using .foo
 
-            bar("julia") # -> NoMethodErrorReports
+            bar("julia") # -> MethodErrorReports
         end
 
         @test isempty(res.res.toplevel_error_reports)
@@ -1334,7 +1334,7 @@ end
         end
 
         er = only(res.res.inference_error_reports)
-        @test er isa NoMethodErrorReport
+        @test er isa MethodErrorReport
         @test isa(er.t, Vector)
     end
 end

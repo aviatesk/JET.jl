@@ -25,7 +25,7 @@ onlystr(s::String) = length(s)
             sin(a, b)
         end
         r = only(get_reports_with_test(result))
-        @test isa(r, NoMethodErrorReport)
+        @test isa(r, MethodErrorReport)
         @test Any['(', 'a', String, ", ", 'b', String, ')'] ⫇ r.sig._sig
     end
 

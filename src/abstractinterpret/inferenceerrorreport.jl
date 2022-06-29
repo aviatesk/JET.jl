@@ -508,13 +508,13 @@ the `struct` as well as constructor definitions.
 If the report `T <: InferenceErrorReport` is defined using `@jetreport`,
 then `T` just needs to implement the `print_report_message` interface.
 
-For example, [`JETAnalyzer`](@ref)'s `NoMethodErrorReport` is defined as follows:
+For example, [`JETAnalyzer`](@ref)'s `MethodErrorReport` is defined as follows:
 ```julia
-@jetreport struct NoMethodErrorReport <: InferenceErrorReport
+@jetreport struct MethodErrorReport <: InferenceErrorReport
     @nospecialize t # ::Union{Type, Vector{Type}}
     union_split::Int
 end
-function print_report_message(io::IO, (; t, union_split)::NoMethodErrorReport)
+function print_report_message(io::IO, (; t, union_split)::MethodErrorReport)
     print(io, "no matching method found for ")
     if union_split == 0
         print_callsig(io, t)
@@ -529,7 +529,7 @@ function print_report_message(io::IO, (; t, union_split)::NoMethodErrorReport)
     end
 end
 ```
-and constructed as like `NoMethodErrorReport(sv::InferenceState, atype::Any, 0)`.
+and constructed as like `MethodErrorReport(sv::InferenceState, atype::Any, 0)`.
 """
 macro jetreport(ex)
     @assert @capture(ex, struct T_ <: S_; spec_sigs__; end)
