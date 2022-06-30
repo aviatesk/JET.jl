@@ -113,8 +113,8 @@ _**TODO**_: elaborate the definitions of "error"s.
 struct TypoPass <: ReportPass end
 (::TypoPass)(@nospecialize _...) = return false # ignore everything except GlobalUndefVarErrorReport and NoFieldErrorReport
 
-# analysis
-# ========
+# overloads
+# =========
 
 function CC.InferenceState(result::InferenceResult, cache::CACHE_ARG_TYPE, analyzer::JETAnalyzer)
     frame = @invoke CC.InferenceState(result::InferenceResult, cache::CACHE_ARG_TYPE, analyzer::AbstractAnalyzer)
@@ -123,6 +123,249 @@ function CC.InferenceState(result::InferenceResult, cache::CACHE_ARG_TYPE, analy
     end
     return frame
 end
+
+# TODO disable optimization for better performance, only do things necessary for JETAnalyzer
+function CC.finish!(analyzer::JETAnalyzer, frame::InferenceState)
+    src = @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
+
+    if isnothing(src)
+        # caught in cycle, similar error should have been reported where the source is available
+        return src
+    else
+        code = (src::CodeInfo).code
+        # report pass for (local) undef var error
+        ReportPass(analyzer)(LocalUndefVarErrorReport, analyzer, frame, code)
+        # report pass for uncaught `throw` calls
+        ReportPass(analyzer)(UncaughtExceptionReport, analyzer, frame, code)
+        return src
+    end
+end
+
+@static if IS_AFTER_42529
+function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer,
+    @nospecialize(f), arginfo::ArgInfo, @nospecialize(atype),
+    sv::InferenceState, max_methods::Int = InferenceParams(analyzer).MAX_METHODS)
+    ret = @invoke CC.abstract_call_gf_by_type(analyzer::AbstractAnalyzer,
+        f::Any, arginfo::ArgInfo, atype::Any,
+        sv::InferenceState, max_methods::Int)
+    info = ret.info
+    if isa(info, ConstCallInfo)
+        info = info.call # unwrap to `MethodMatchInfo` or `UnionSplitInfo`
+    end
+    # report passes for no matching methods error
+    if isa(info, UnionSplitInfo)
+        ReportPass(analyzer)(MethodErrorReport, analyzer, sv, info, arginfo.argtypes, ret.rt)
+    elseif isa(info, MethodMatchInfo)
+        ReportPass(analyzer)(MethodErrorReport, analyzer, sv, info, arginfo.argtypes, atype, ret.rt)
+    end
+    return ret
+end
+else # @static if IS_AFTER_42529
+function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer,
+    @nospecialize(f), fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes, @nospecialize(atype),
+    sv::InferenceState, max_methods::Int = InferenceParams(analyzer).MAX_METHODS)
+    ret = @invoke CC.abstract_call_gf_by_type(analyzer::AbstractAnalyzer,
+        f::Any, fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes, atype::Any,
+        sv::InferenceState, max_methods::Int)
+    info = ret.info
+    if isa(info, ConstCallInfo)
+        info = info.call # unwrap to `MethodMatchInfo` or `UnionSplitInfo`
+    end
+    # report passes for no matching methods error
+    if isa(info, UnionSplitInfo)
+        ReportPass(analyzer)(MethodErrorReport, analyzer, sv, info, argtypes, ret.rt)
+    elseif isa(info, MethodMatchInfo)
+        ReportPass(analyzer)(MethodErrorReport, analyzer, sv, info, argtypes, atype, ret.rt)
+    end
+    return ret
+end
+end # @static if IS_AFTER_42529
+
+@doc """
+    bail_out_call(analyzer::JETAnalyzer, ...)
+
+With this overload, `abstract_call_gf_by_type(analyzer::JETAnalyzer, ...)` doesn't bail
+out inference even after the current return type grows up to `Any` and collects as much
+error points as possible.
+Of course this slows down inference performance, but hoopefully it stays to be "practical"
+speed since the number of matching methods are limited beforehand.
+"""
+CC.bail_out_call(analyzer::JETAnalyzer, @nospecialize(t), sv::InferenceState) = false
+
+@doc """
+    add_call_backedges!(analyzer::JETAnalyzer, ...)
+
+An overload for `abstract_call_gf_by_type(analyzer::JETAnalyzer, ...)`, which always add
+backedges (even if a new method can't refine the return type grew up to `Any`).
+This is because a new method definition always has a potential to change `JETAnalyzer`'s analysis result.
+"""
+function CC.add_call_backedges!(analyzer::JETAnalyzer,
+    @nospecialize(rettype), edges::Vector{MethodInstance},
+    matches::Union{MethodMatches,UnionSplitMethodMatches}, @nospecialize(atype),
+    sv::InferenceState)
+    return @invoke CC.add_call_backedges!(analyzer::AbstractInterpreter,
+        # NOTE this `__DummyAny__` hack forces `add_call_backedges!(::AbstractInterpreter,...)` to add backedges
+        __DummyAny__::Any, edges::Vector{MethodInstance},
+        matches::Union{MethodMatches,UnionSplitMethodMatches}, atype::Any,
+        sv::InferenceState)
+end
+# overload after https://github.com/JuliaLang/julia/pull/45017/
+@static if isdefined(CC, :Effects)
+function CC.add_call_backedges!(analyzer::JETAnalyzer,
+    @nospecialize(rettype), effects::CC.Effects,
+    edges::Vector{MethodInstance}, matches::Union{MethodMatches,UnionSplitMethodMatches}, @nospecialize(atype),
+    sv::InferenceState)
+    return @invoke CC.add_call_backedges!(analyzer::AbstractInterpreter,
+        # NOTE this `__DummyAny__` hack forces `add_call_backedges!(::AbstractInterpreter,...)` to add backedges
+        __DummyAny__::Any, effects::CC.Effects,
+        edges::Vector{MethodInstance}, matches::Union{MethodMatches,UnionSplitMethodMatches}, atype::Any,
+        sv::InferenceState)
+end
+end
+struct __DummyAny__ end
+
+@static if VERSION < v"1.8.0-DEV.510"
+# manually take in https://github.com/JuliaLang/julia/pull/42195
+const ISEQUAL_ANY_ANY = let
+    ms = methods(isequal)
+    i = findfirst(m->m.sig===Tuple{typeof(isequal),Any,Any}, ms)::Int
+    ms[i]
+end
+
+function CC.abstract_call_method(analyzer::JETAnalyzer,
+    method::Method, @nospecialize(sig), sparams::SimpleVector, hardlimit::Bool, sv::InferenceState)
+    ret = @invoke CC.abstract_call_method(analyzer::AbstractAnalyzer,
+        method::Method, sig::Any, sparams::SimpleVector, hardlimit::Bool, sv::InferenceState)
+
+    # manually take in https://github.com/JuliaLang/julia/pull/42195
+    if method === ISEQUAL_ANY_ANY && ret.rt === Union{Bool,Missing}
+        ret = MethodCallResult(Bool, ret.edgecycle, ret.edgelimited, ret.edge)
+    end
+
+    return ret
+end
+end # @static if VERSION < v"1.8.0-DEV.510"
+
+@doc """
+    const_prop_entry_heuristic(analyzer::JETAnalyzer, result::MethodCallResult, sv::InferenceState)
+
+This overload for `abstract_call_method_with_const_args(analyzer::JETAnalyzer, ...)` forces
+constant prop' even if an inference result can't be improved anymore _with respect to the
+return type_, e.g. when `result.rt` is already `Const`.
+Especially, this overload implements an heuristic to force constant prop' when any error points
+have been reported while the previous abstract method call without constant arguments.
+The reason we want much more aggressive constant propagation by that heuristic is that it's
+highly possible constant prop' can produce more accurate analysis result, by throwing away
+false positive error reports by cutting off the unreachable control flow or detecting
+must-reachable `throw` calls.
+"""
+CC.const_prop_entry_heuristic(::JETAnalyzer, result::MethodCallResult, sv::InferenceState) = true
+
+function CC.return_type_tfunc(analyzer::JETAnalyzer, argtypes::Argtypes, sv::InferenceState)
+    # report pass for invalid `Core.Compiler.return_type` call
+    ReportPass(analyzer)(InvalidReturnTypeCall, analyzer, sv, argtypes)
+
+    return @invoke CC.return_type_tfunc(analyzer::AbstractAnalyzer, argtypes::Argtypes, sv::InferenceState)
+end
+
+@static if IS_AFTER_42529
+function CC.abstract_invoke(analyzer::JETAnalyzer, arginfo::ArgInfo, sv::InferenceState)
+    ret = @invoke CC.abstract_invoke(analyzer::AbstractAnalyzer, arginfo::ArgInfo, sv::InferenceState)
+    @static if hasfield(CallMeta, :effects)
+        ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret, arginfo.argtypes)
+    else
+        if isa(ret, CallMeta)
+            ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret, arginfo.argtypes)
+        else # otherwise https://github.com/JuliaLang/julia/pull/44764 is active
+            ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret[1], arginfo.argtypes)
+        end
+    end
+    return ret
+end
+else # @static if IS_AFTER_42529
+function CC.abstract_invoke(analyzer::JETAnalyzer, argtypes::Argtypes, sv::InferenceState)
+    ret = @invoke CC.abstract_invoke(analyzer::AbstractAnalyzer, argtypes::Argtypes, sv::InferenceState)
+    ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret, argtypes)
+    return ret
+end
+end # @static if IS_AFTER_42529
+
+function CC.abstract_eval_special_value(analyzer::JETAnalyzer,
+    @nospecialize(e), vtypes::VarTable, sv::InferenceState)
+    ret = @invoke CC.abstract_eval_special_value(analyzer::AbstractAnalyzer,
+        e::Any, vtypes::VarTable, sv::InferenceState)
+
+    if isa(e, GlobalRef)
+        mod, name = e.mod, e.name
+        # report pass for undefined global reference
+        ReportPass(analyzer)(GlobalUndefVarErrorReport, analyzer, sv, mod, name)
+
+        # NOTE `NativeInterpreter` should return `ret = Any` `ret` even if `mod.name`
+        # isn't defined and we just pass it as is to collect as much error points as possible
+        # we can change it to `Bottom` to suppress any further inference with this variable,
+        # but then we also need to make sure to invalidate the cache for the analysis on
+        # the future re-definition of this (currently) undefined binding
+        # return Bottom
+    end
+
+    return ret
+end
+
+function CC.abstract_eval_value(analyzer::JETAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
+    ret = @invoke CC.abstract_eval_value(analyzer::AbstractAnalyzer, e::Any, vtypes::VarTable, sv::InferenceState)
+
+    # report non-boolean condition error
+    stmt = get_stmt((sv, get_currpc(sv)))
+    if isa(stmt, GotoIfNot)
+        t = widenconst(ret)
+        if t !== Bottom
+            ReportPass(analyzer)(NonBooleanCondErrorReport, analyzer, sv, t)
+            # if this condition leads to an "non-boolean (t) used in boolean context" error,
+            # we can turn it into Bottom and bail out early
+            # TODO upstream this ?
+            if typeintersect(Bool, t) !== Bool
+                ret = Bottom
+            end
+        end
+    end
+
+    return ret
+end
+
+function CC.builtin_tfunction(analyzer::JETAnalyzer,
+    @nospecialize(f), argtypes::Array{Any,1}, sv::InferenceState) # `AbstractAnalyzer` isn't overloaded on `return_type`
+    ret = @invoke CC.builtin_tfunction(analyzer::AbstractAnalyzer,
+        f::Any, argtypes::Array{Any,1}, sv::InferenceState)
+
+    if f === fieldtype
+        # the valid widest possible return type of `fieldtype_tfunc` is `Union{Type,TypeVar}`
+        # because fields of unwrapped `DataType`s can legally be `TypeVar`s,
+        # but this will lead to lots of false positive `MethodErrorReport`s for inference
+        # with accessing to abstract fields since most methods don't expect `TypeVar`
+        # (e.g. `@report_call readuntil(stdin, 'c')`)
+        # JET.jl further widens this case to `Any` and give up further analysis rather than
+        # trying hard to do sound and noisy analysis
+        # xref: https://github.com/JuliaLang/julia/pull/38148
+        if ret === Union{Type, TypeVar}
+            ret = Any
+        end
+    end
+
+    if f === throw
+        # here we only report a selection of "serious" exceptions, i.e. those that should be
+        # reported even if they may be caught in actual execution;
+        ReportPass(analyzer)(SeriousExceptionReport, analyzer, sv, argtypes)
+
+        # other general `throw` calls will be handled within `_typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)`
+    else
+        ReportPass(analyzer)(BuiltinErrorReport, analyzer, sv, f, argtypes, ret)
+    end
+
+    return ret
+end
+
+# analysis
+# ========
 
 @jetreport struct GeneratorErrorReport <: InferenceErrorReport
     @nospecialize err # actual error wrapped
@@ -150,27 +393,6 @@ function (::SoundBasicPass)(::Type{GeneratorErrorReport}, analyzer::JETAnalyzer,
         end
     end
     return false
-end
-
-# TODO disable optimization for better performance, only do necessary analysis work by ourselves
-
-function CC.finish!(analyzer::JETAnalyzer, frame::InferenceState)
-    src = @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
-
-    if isnothing(src)
-        # caught in cycle, similar error should have been reported where the source is available
-        return src
-    else
-        code = (src::CodeInfo).code
-
-        # report pass for (local) undef var error
-        ReportPass(analyzer)(LocalUndefVarErrorReport, analyzer, frame, code)
-
-        # report pass for uncaught `throw` calls
-        ReportPass(analyzer)(UncaughtExceptionReport, analyzer, frame, code)
-
-        return src
-    end
 end
 
 @jetreport struct LocalUndefVarErrorReport <: InferenceErrorReport
@@ -328,46 +550,6 @@ function print_callsig(io, @nospecialize(t))
     print(io, '`')
 end
 
-@static if IS_AFTER_42529
-function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer,
-    @nospecialize(f), arginfo::ArgInfo, @nospecialize(atype),
-    sv::InferenceState, max_methods::Int = InferenceParams(analyzer).MAX_METHODS)
-    ret = @invoke CC.abstract_call_gf_by_type(analyzer::AbstractAnalyzer,
-        f::Any, arginfo::ArgInfo, atype::Any,
-        sv::InferenceState, max_methods::Int)
-    info = ret.info
-    if isa(info, ConstCallInfo)
-        info = info.call # unwrap to `MethodMatchInfo` or `UnionSplitInfo`
-    end
-    # report passes for no matching methods error
-    if isa(info, UnionSplitInfo)
-        ReportPass(analyzer)(MethodErrorReport, analyzer, sv, info, arginfo.argtypes, ret.rt)
-    elseif isa(info, MethodMatchInfo)
-        ReportPass(analyzer)(MethodErrorReport, analyzer, sv, info, arginfo.argtypes, atype, ret.rt)
-    end
-    return ret
-end
-else # @static if IS_AFTER_42529
-function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer,
-    @nospecialize(f), fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes, @nospecialize(atype),
-    sv::InferenceState, max_methods::Int = InferenceParams(analyzer).MAX_METHODS)
-    ret = @invoke CC.abstract_call_gf_by_type(analyzer::AbstractAnalyzer,
-        f::Any, fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes, atype::Any,
-        sv::InferenceState, max_methods::Int)
-    info = ret.info
-    if isa(info, ConstCallInfo)
-        info = info.call # unwrap to `MethodMatchInfo` or `UnionSplitInfo`
-    end
-    # report passes for no matching methods error
-    if isa(info, UnionSplitInfo)
-        ReportPass(analyzer)(MethodErrorReport, analyzer, sv, info, argtypes, ret.rt)
-    elseif isa(info, MethodMatchInfo)
-        ReportPass(analyzer)(MethodErrorReport, analyzer, sv, info, argtypes, atype, ret.rt)
-    end
-    return ret
-end
-end # @static if IS_AFTER_42529
-
 function (rp::BasicPass)(::Type{MethodErrorReport}, analyzer::JETAnalyzer,
     sv::InferenceState, info::UnionSplitInfo, argtypes::Argtypes, @nospecialize(rt))
     basic_filter(analyzer, sv) || return false
@@ -443,71 +625,6 @@ end
 is_empty_match(info::MethodMatchInfo) = CC.isempty(info.results)
 is_fully_covered(info::MethodMatchInfo) = CC._all(m->m.fully_covers, info.results)
 
-@doc """
-    bail_out_call(analyzer::JETAnalyzer, ...)
-
-With this overload, `abstract_call_gf_by_type(analyzer::JETAnalyzer, ...)` doesn't bail
-out inference even after the current return type grows up to `Any` and collects as much
-error points as possible.
-Of course this slows down inference performance, but hoopefully it stays to be "practical"
-speed since the number of matching methods are limited beforehand.
-"""
-CC.bail_out_call(analyzer::JETAnalyzer, @nospecialize(t), sv::InferenceState) = false
-
-@doc """
-    add_call_backedges!(analyzer::JETAnalyzer, ...)
-
-An overload for `abstract_call_gf_by_type(analyzer::JETAnalyzer, ...)`, which always add
-backedges (even if a new method can't refine the return type grew up to `Any`).
-This is because a new method definition always has a potential to change `JETAnalyzer`'s analysis result.
-"""
-function CC.add_call_backedges!(analyzer::JETAnalyzer,
-    @nospecialize(rettype), edges::Vector{MethodInstance},
-    matches::Union{MethodMatches,UnionSplitMethodMatches}, @nospecialize(atype),
-    sv::InferenceState)
-    return @invoke CC.add_call_backedges!(analyzer::AbstractInterpreter,
-        # NOTE this `__DummyAny__` hack forces `add_call_backedges!(::AbstractInterpreter,...)` to add backedges
-        __DummyAny__::Any, edges::Vector{MethodInstance},
-        matches::Union{MethodMatches,UnionSplitMethodMatches}, atype::Any,
-        sv::InferenceState)
-end
-# overload after https://github.com/JuliaLang/julia/pull/45017/
-@static if isdefined(CC, :Effects)
-function CC.add_call_backedges!(analyzer::JETAnalyzer,
-    @nospecialize(rettype), effects::CC.Effects,
-    edges::Vector{MethodInstance}, matches::Union{MethodMatches,UnionSplitMethodMatches}, @nospecialize(atype),
-    sv::InferenceState)
-    return @invoke CC.add_call_backedges!(analyzer::AbstractInterpreter,
-        # NOTE this `__DummyAny__` hack forces `add_call_backedges!(::AbstractInterpreter,...)` to add backedges
-        __DummyAny__::Any, effects::CC.Effects,
-        edges::Vector{MethodInstance}, matches::Union{MethodMatches,UnionSplitMethodMatches}, atype::Any,
-        sv::InferenceState)
-end
-end
-struct __DummyAny__ end
-
-@doc """
-    const_prop_entry_heuristic(analyzer::JETAnalyzer, result::MethodCallResult, sv::InferenceState)
-
-This overload for `abstract_call_method_with_const_args(analyzer::JETAnalyzer, ...)` forces
-constant prop' even if an inference result can't be improved anymore _with respect to the
-return type_, e.g. when `result.rt` is already `Const`.
-Especially, this overload implements an heuristic to force constant prop' when any error points
-have been reported while the previous abstract method call without constant arguments.
-The reason we want much more aggressive constant propagation by that heuristic is that it's
-highly possible constant prop' can produce more accurate analysis result, by throwing away
-false positive error reports by cutting off the unreachable control flow or detecting
-must-reachable `throw` calls.
-"""
-CC.const_prop_entry_heuristic(::JETAnalyzer, result::MethodCallResult, sv::InferenceState) = true
-
-function CC.return_type_tfunc(analyzer::JETAnalyzer, argtypes::Argtypes, sv::InferenceState)
-    # report pass for invalid `Core.Compiler.return_type` call
-    ReportPass(analyzer)(InvalidReturnTypeCall, analyzer, sv, argtypes)
-
-    return @invoke CC.return_type_tfunc(analyzer::AbstractAnalyzer, argtypes::Argtypes, sv::InferenceState)
-end
-
 @jetreport struct InvalidReturnTypeCall <: InferenceErrorReport end
 function print_report_message(io::IO, ::InvalidReturnTypeCall)
     print(io, "invalid `Core.Compiler.return_type` call")
@@ -525,28 +642,6 @@ function (::SoundBasicPass)(::Type{InvalidReturnTypeCall}, analyzer::AbstractAna
     end
     return false
 end
-
-@static if IS_AFTER_42529
-function CC.abstract_invoke(analyzer::JETAnalyzer, arginfo::ArgInfo, sv::InferenceState)
-    ret = @invoke CC.abstract_invoke(analyzer::AbstractAnalyzer, arginfo::ArgInfo, sv::InferenceState)
-    @static if hasfield(CallMeta, :effects)
-        ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret, arginfo.argtypes)
-    else
-        if isa(ret, CallMeta)
-            ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret, arginfo.argtypes)
-        else # otherwise https://github.com/JuliaLang/julia/pull/44764 is active
-            ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret[1], arginfo.argtypes)
-        end
-    end
-    return ret
-end
-else # @static if IS_AFTER_42529
-function CC.abstract_invoke(analyzer::JETAnalyzer, argtypes::Argtypes, sv::InferenceState)
-    ret = @invoke CC.abstract_invoke(analyzer::AbstractAnalyzer, argtypes::Argtypes, sv::InferenceState)
-    ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret, argtypes)
-    return ret
-end
-end # @static if IS_AFTER_42529
 
 @jetreport struct InvalidInvokeErrorReport <: InferenceErrorReport
     argtypes::Argtypes
@@ -590,27 +685,6 @@ function (::SoundBasicPass)(::Type{InvalidInvokeErrorReport}, analyzer::JETAnaly
         end
     end
     return false
-end
-
-function CC.abstract_eval_special_value(analyzer::JETAnalyzer,
-    @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    ret = @invoke CC.abstract_eval_special_value(analyzer::AbstractAnalyzer,
-        e::Any, vtypes::VarTable, sv::InferenceState)
-
-    if isa(e, GlobalRef)
-        mod, name = e.mod, e.name
-        # report pass for undefined global reference
-        ReportPass(analyzer)(GlobalUndefVarErrorReport, analyzer, sv, mod, name)
-
-        # NOTE `NativeInterpreter` should return `ret = Any` `ret` even if `mod.name`
-        # isn't defined and we just pass it as is to collect as much error points as possible
-        # we can change it to `Bottom` to suppress any further inference with this variable,
-        # but then we also need to make sure to invalidate the cache for the analysis on
-        # the future re-definition of this (currently) undefined binding
-        # return Bottom
-    end
-
-    return ret
 end
 
 @jetreport struct GlobalUndefVarErrorReport <: InferenceErrorReport
@@ -659,27 +733,6 @@ is_corecompiler_undefglobal(mod::Module, name::Symbol) =
     mod === CC ? isdefined(Base, name) :
     mod === CC.Sort ? isdefined(Base.Sort, name) :
     false
-
-function CC.abstract_eval_value(analyzer::JETAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    ret = @invoke CC.abstract_eval_value(analyzer::AbstractAnalyzer, e::Any, vtypes::VarTable, sv::InferenceState)
-
-    # report non-boolean condition error
-    stmt = get_stmt((sv, get_currpc(sv)))
-    if isa(stmt, GotoIfNot)
-        t = widenconst(ret)
-        if t !== Bottom
-            ReportPass(analyzer)(NonBooleanCondErrorReport, analyzer, sv, t)
-            # if this condition leads to an "non-boolean (t) used in boolean context" error,
-            # we can turn it into Bottom and bail out early
-            # TODO upstream this ?
-            if typeintersect(Bool, t) !== Bool
-                ret = Bottom
-            end
-        end
-    end
-
-    return ret
-end
 
 @jetreport struct NonBooleanCondErrorReport <: InferenceErrorReport
     @nospecialize t # ::Union{Type, Vector{Type}}
@@ -763,24 +816,6 @@ end
 
 # XXX tfunc implementations in Core.Compiler are really not enough to catch invalid calls
 # TODO set up our own checks and enable sound analysis
-
-function CC.builtin_tfunction(analyzer::JETAnalyzer,
-    @nospecialize(f), argtypes::Array{Any,1}, sv::InferenceState) # `AbstractAnalyzer` isn't overloaded on `return_type`
-    ret = @invoke CC.builtin_tfunction(analyzer::AbstractAnalyzer,
-        f::Any, argtypes::Array{Any,1}, sv::InferenceState)
-
-    if f === throw
-        # here we only report a selection of "serious" exceptions, i.e. those that should be
-        # reported even if they may be caught in actual execution;
-        ReportPass(analyzer)(SeriousExceptionReport, analyzer, sv, argtypes)
-
-        # other general `throw` calls will be handled within `_typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)`
-    else
-        ReportPass(analyzer)(BuiltinErrorReport, analyzer, sv, f, argtypes, ret)
-    end
-
-    return ret
-end
 
 """
     SeriousExceptionReport <: InferenceErrorReport

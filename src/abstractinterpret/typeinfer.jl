@@ -107,18 +107,6 @@ function CC.builtin_tfunction(analyzer::AbstractAnalyzer,
         if istoplevel(sv)
             ret = maybe_narrow_toplevel_binding_type(argtypes, ret)
         end
-    elseif f === fieldtype
-        # the valid widest possible return type of `fieldtype_tfunc` is `Union{Type,TypeVar}`
-        # because fields of unwrapped `DataType`s can legally be `TypeVar`s,
-        # but this will lead to lots of false positive `MethodErrorReport`s for inference
-        # with accessing to abstract fields since most methods don't expect `TypeVar`
-        # (e.g. `@report_call readuntil(stdin, 'c')`)
-        # JET.jl further widens this case to `Any` and give up further analysis rather than
-        # trying hard to do sound and noisy analysis
-        # xref: https://github.com/JuliaLang/julia/pull/38148
-        if ret === Union{Type, TypeVar}
-            ret = Any
-        end
     end
 
     return ret
@@ -187,7 +175,6 @@ function collect_callee_reports!(analyzer::AbstractAnalyzer, sv::InferenceState)
     end
 end
 
-# works within inter-procedural context
 function CC.abstract_call_method(analyzer::AbstractAnalyzer,
     method::Method, @nospecialize(sig), sparams::SimpleVector, hardlimit::Bool, sv::InferenceState)
     ret = @invoke CC.abstract_call_method(analyzer::AbstractInterpreter,
@@ -195,23 +182,7 @@ function CC.abstract_call_method(analyzer::AbstractAnalyzer,
 
     collect_callee_reports!(analyzer, sv)
 
-    @static if VERSION < v"1.8.0-DEV.510"
-        # manually take in https://github.com/JuliaLang/julia/pull/42195
-        if method === ISEQUAL_ANY_ANY && ret.rt === Union{Bool,Missing}
-            ret = MethodCallResult(Bool, ret.edgecycle, ret.edgelimited, ret.edge)
-        end
-    end
-
     return ret
-end
-
-@static if VERSION < v"1.8.0-DEV.510"
-    # manually take in https://github.com/JuliaLang/julia/pull/42195
-    const ISEQUAL_ANY_ANY = let
-        ms = methods(isequal)
-        i = findfirst(m->m.sig===Tuple{typeof(isequal),Any,Any}, ms)::Int
-        ms[i]
-    end
 end
 
 @static if IS_V18
