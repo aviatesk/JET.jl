@@ -214,7 +214,6 @@ function JETInterface.AbstractAnalyzer(analyzer::OptAnalyzer, state::AnalyzerSta
 end
 JETInterface.ReportPass(analyzer::OptAnalyzer) = analyzer.report_pass
 JETInterface.get_cache_key(analyzer::OptAnalyzer) = analyzer.__cache_key
-
 JETInterface.vscode_diagnostics_order(analyzer::OptAnalyzer) = false
 
 struct OptAnalysisPass <: ReportPass end

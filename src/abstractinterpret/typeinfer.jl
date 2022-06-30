@@ -19,14 +19,7 @@ analysis may refer to or alter its type on future load and store operations.
 mutable struct AbstractGlobal
     t::Any     # analyzed type
     iscd::Bool # is this abstract global variable declarared as constant or not
-
-    function AbstractGlobal(@nospecialize(t),
-                            iscd::Bool,
-                            )
-        return new(t,
-                   iscd,
-                   )
-    end
+    AbstractGlobal(@nospecialize(t), iscd::Bool) = new(t, iscd)
 end
 
 @doc """

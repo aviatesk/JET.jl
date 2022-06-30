@@ -68,14 +68,10 @@ end
     cache_key = hash(report_pass, cache_key)
     return JETAnalyzer(report_pass, state, cache_key)
 end
-JETInterface.AnalyzerState(analyzer::JETAnalyzer) =
-    return analyzer.state
-JETInterface.AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerState) =
-    return JETAnalyzer(ReportPass(analyzer), state, analyzer.__cache_key)
-JETInterface.ReportPass(analyzer::JETAnalyzer) =
-    return analyzer.report_pass
-JETInterface.get_cache_key(analyzer::JETAnalyzer) =
-    return analyzer.__cache_key
+JETInterface.AnalyzerState(analyzer::JETAnalyzer) = analyzer.state
+JETInterface.AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerState) = JETAnalyzer(ReportPass(analyzer), state, analyzer.__cache_key)
+JETInterface.ReportPass(analyzer::JETAnalyzer) = analyzer.report_pass
+JETInterface.get_cache_key(analyzer::JETAnalyzer) = analyzer.__cache_key
 
 """
 The basic (default) error analysis pass.

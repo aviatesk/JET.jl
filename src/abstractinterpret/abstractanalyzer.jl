@@ -39,6 +39,7 @@ JET.jl defines its default error analyzer `JETAnalyzer <: AbstractAnalyzer` as t
 struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
     report_pass::RP
     state::AnalyzerState
+    __cache_key::UInt
 end
 
 # AbstractAnalyzer API requirements
@@ -46,16 +47,14 @@ end
 function JETAnalyzer(;
     report_pass::ReportPass = BasicPass(),
     jetconfigs...)
-    return JETAnalyzer(report_pass,
-                       AnalyzerState(; jetconfigs...),
-                       )
+    state = AnalyzerState(; jetconfigs...)
+    cache_key = [...]
+    return JETAnalyzer(report_pass, state, cache_key)
 end
-AnalyzerState(analyzer::JETAnalyzer) =
-    return analyzer.state
-AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerState) =
-    return JETAnalyzer(ReportPass(analyzer), state)
-ReportPass(analyzer::JETAnalyzer) =
-    return analyzer.report_pass
+AnalyzerState(analyzer::JETAnalyzer) = analyzer.state
+AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerState) = JETAnalyzer(ReportPass(analyzer), state)
+ReportPass(analyzer::JETAnalyzer) = analyzer.report_pass
+get_cache_key(analyzer::JETAnalyzer) = analyzer.__cache_key
 ```
 """
 abstract type AbstractAnalyzer <: AbstractInterpreter end
