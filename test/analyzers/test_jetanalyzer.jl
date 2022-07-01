@@ -167,6 +167,25 @@ end
     end
 end
 
+@testset "UnanalyzedCallReport" begin
+    # only in :sound mode
+    @static if isdefined(Core.Compiler, :get_max_methods)
+        @test length(methods(*, (Any,Any))) > Core.Compiler.get_max_methods(@__MODULE__, JETAnalyzer())
+    end
+    let result = report_call((Any,Any)) do x, y
+            x * y
+        end
+        @test isempty(get_reports_with_test(result))
+    end
+    let result = report_call((Any,Any); mode=:sound) do x, y
+            x * y
+        end
+        report = only(get_reports_with_test(result))
+        @test report isa UnanalyzedCallReport
+        @test report.type === Tuple{typeof(*), Any, Any}
+    end
+end
+
 @testset "LocalUndefVarErrorReport" begin
     let
         result = report_call((Bool,)) do b
