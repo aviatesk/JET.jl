@@ -307,7 +307,7 @@ function CC.abstract_eval_value(analyzer::JETAnalyzer, @nospecialize(e), vtypes:
             # if this condition leads to an "non-boolean (t) used in boolean context" error,
             # we can turn it into Bottom and bail out early
             # TODO upstream this ?
-            if typeintersect(Bool, t) !== Bool
+            if !hasintersect(t, Bool)
                 ret = Bottom
             end
         end
@@ -752,10 +752,17 @@ is_corecompiler_undefglobal(mod::Module, name::Symbol) =
 @jetreport struct NonBooleanCondErrorReport <: InferenceErrorReport
     @nospecialize t # ::Union{Type, Vector{Type}}
     union_split::Int
+    uncovered::Bool
 end
-function print_report_message(io::IO, (; t, union_split)::NonBooleanCondErrorReport)
+function print_report_message(io::IO, report::NonBooleanCondErrorReport)
+    (; t, union_split, uncovered) = report
     if union_split == 0
-        print(io, "non-boolean `", t, "` found in boolean context")
+        print(io, "non-boolean `", t, "`")
+        if uncovered
+            print(io, " may be used in boolean context")
+        else
+            print(io, " found in boolean context")
+        end
     else
         ts = t::Vector{Any}
         nts = length(ts)
@@ -764,57 +771,44 @@ function print_report_message(io::IO, (; t, union_split)::NonBooleanCondErrorRep
             print(io, '`', ts[i], '`')
             i == nts || print(io, ", ")
         end
-        print(io, " found in boolean context (", nts, '/', union_split, " union split)")
+        if uncovered
+            print(io, " may be used in boolean context")
+        else
+            print(io, " found in boolean context")
+        end
+        print(io, " (", nts, '/', union_split, " union split)")
     end
 end
 
 function (::SoundPass)(::Type{NonBooleanCondErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(t))
-    if isa(t, Union)
-        rinfo = nothing
-        uts = Base.uniontypes(t)
-        for t in uts
-            if !(t ⊑ Bool)
-                if rinfo === nothing
-                    rinfo = Any[], length(uts)
-                end
-                push!(rinfo[1], t)
-            end
-        end
-        if rinfo !== nothing
-            add_new_report!(analyzer, sv.result, NonBooleanCondErrorReport(sv, rinfo...))
-            return true
-        end
-    else
-        if !(t ⊑ Bool)
-            add_new_report!(analyzer, sv.result, NonBooleanCondErrorReport(sv, t, 0))
-            return true
-        end
-    end
-    return false
+    return report_non_boolean_cond!(analyzer, sv, t, #=sound=#true)
 end
 
 function (::BasicPass)(::Type{NonBooleanCondErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(t))
-    if basic_filter(analyzer, sv)
-        if isa(t, Union)
-            info = nothing
-            uts = Base.uniontypes(t)
-            for t in uts
-                if typeintersect(Bool, t) !== Bool
-                    if info === nothing
-                        info = Any[], length(uts)
-                    end
-                    push!(info[1], t)
+    return basic_filter(analyzer, sv) && report_non_boolean_cond!(analyzer, sv, t, #=sound=#false)
+end
+
+function report_non_boolean_cond!(analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(t),
+    check_uncovered::Bool)
+    if isa(t, Union)
+        info = nothing
+        uts = Base.uniontypes(t)
+        for t in uts
+            if !(check_uncovered ? t ⊑ Bool : hasintersect(t, Bool))
+                if info === nothing
+                    info = Any[], length(uts)
                 end
+                push!(info[1], t)
             end
-            if info !== nothing
-                add_new_report!(analyzer, sv.result, NonBooleanCondErrorReport(sv, info...))
-                return true
-            end
-        else
-            if typeintersect(Bool, t) !== Bool
-                add_new_report!(analyzer, sv.result, NonBooleanCondErrorReport(sv, t, 0))
-                return true
-            end
+        end
+        if info !== nothing
+            add_new_report!(analyzer, sv.result, NonBooleanCondErrorReport(sv, info..., #=uncovered=#check_uncovered))
+            return true
+        end
+    else
+        if !(check_uncovered ? t ⊑ Bool : hasintersect(t, Bool))
+            add_new_report!(analyzer, sv.result, NonBooleanCondErrorReport(sv, t, 0, #=uncovered=#check_uncovered))
+            return true
         end
     end
     return false

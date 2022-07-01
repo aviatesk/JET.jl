@@ -167,25 +167,6 @@ end
     end
 end
 
-@testset "UnanalyzedCallReport" begin
-    # only in :sound mode
-    @static if isdefined(Core.Compiler, :get_max_methods)
-        @test length(methods(*, (Any,Any))) > Core.Compiler.get_max_methods(@__MODULE__, JETAnalyzer())
-    end
-    let result = report_call((Any,Any)) do x, y
-            x * y
-        end
-        @test isempty(get_reports_with_test(result))
-    end
-    let result = report_call((Any,Any); mode=:sound) do x, y
-            x * y
-        end
-        report = only(get_reports_with_test(result))
-        @test report isa UnanalyzedCallReport
-        @test report.type === Tuple{typeof(*), Any, Any}
-    end
-end
-
 @testset "LocalUndefVarErrorReport" begin
     let
         result = report_call((Bool,)) do b
@@ -344,8 +325,7 @@ end
 
 @testset "report non-boolean condition error" begin
     # simple case
-    let
-        result = report_call((Int,)) do a
+    let result = report_call((Int,)) do a
             a ? a : nothing
         end
         @test length(get_reports_with_test(result)) === 1
@@ -355,16 +335,14 @@ end
     end
 
     # don't report when a type can be `Bool` (Bool ⊑ type)
-    let
-        result = report_call((Integer,)) do a
+    let result = report_call((Integer,)) do a
             a ? a : nothing
         end
         @test isempty(get_reports_with_test(result))
     end
 
     # report union split case
-    let
-        result = report_call((Union{Nothing,Bool},)) do a
+    let result = report_call((Union{Nothing,Bool},)) do a
             a ? a : false
         end
         @test length(get_reports_with_test(result)) === 1
@@ -375,12 +353,22 @@ end
         end
     end
 
-    let
-        result = report_call() do
+    # sound mode
+    let result = report_call() do
             anyary = Any[1,2,3]
             first(anyary) ? first(anyary) : nothing
         end
-        @test isempty(get_reports_with_test(result)) # very untyped, we can't report on this ...
+        @test isempty(get_reports_with_test(result)) # very untyped, we don't report this by default
+    end
+    let result = report_call(; mode=:sound) do
+            anyary = Any[1,2,3]
+            first(anyary) ? first(anyary) : nothing
+        end
+        @test any(get_reports_with_test(result)) do @nospecialize report # very untyped, the sound mode should report this
+            report isa NonBooleanCondErrorReport &&
+            report.uncovered &&
+            report.t === Any
+        end
     end
 end
 
