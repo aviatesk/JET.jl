@@ -8,21 +8,18 @@ import JET: get_reports, BasicPass, GlobalUndefVarErrorReport
 
 struct IgnoreAllPass <: ReportPass end
 (::IgnoreAllPass)(::Type{<:InferenceErrorReport}, @nospecialize(_...)) = return
-let
-    result = @report_call report_pass=IgnoreAllPass() sum("julia")
+let result = @report_call report_pass=IgnoreAllPass() sum("julia")
     @test isempty(get_reports(result))
 end
 
 struct IgnoreAllExceptGlobalUndefVarPass <: ReportPass end
 (::IgnoreAllExceptGlobalUndefVarPass)(::Type{<:InferenceErrorReport}, @nospecialize(_...)) = return
 (::IgnoreAllExceptGlobalUndefVarPass)(::Type{GlobalUndefVarErrorReport}, @nospecialize(args...)) = BasicPass()(GlobalUndefVarErrorReport, args...)
-let
-    result = report_call(; report_pass=IgnoreAllExceptGlobalUndefVarPass()) do
+let result = report_call(; report_pass=IgnoreAllExceptGlobalUndefVarPass()) do
         sum("julia") # should be ignored
         undefvar
     end
-    @test length(get_reports(result)) == 1
-    let r = first(get_reports(result))
+    let r = only(get_reports(result))
         @test isa(r, GlobalUndefVarErrorReport)
         @test r.name === :undefvar
     end
@@ -47,27 +44,29 @@ function compute_sins(i)
     return out
 end
 
-@test_throws ErrorException @report_call analyzer=APIValidator compute_sins(10)
+const ERROR_MSG = @static VERSION ≥ v"1.8" ? "missing `$AbstractAnalyzer` API" : ErrorException
+
+@test_throws ERROR_MSG @report_call analyzer=APIValidator compute_sins(10)
 
 # interface 1: `APIValidator(; jetconfigs...) -> APIValidator`
 APIValidator(; jetconfigs...) = APIValidator(AnalyzerState(; jetconfigs...))
 
-@test_throws ErrorException @report_call analyzer=APIValidator compute_sins(10)
+@test_throws ERROR_MSG @report_call analyzer=APIValidator compute_sins(10)
 
 # interface 2: `AnalyzerState(analyzer::APIValidator) -> AnalyzerState`
 JETInterface.AnalyzerState(analyzer::APIValidator) = analyzer.state
 
-@test_throws ErrorException @report_call analyzer=APIValidator compute_sins(10)
+@test_throws ERROR_MSG @report_call analyzer=APIValidator compute_sins(10)
 
 # interface 3: `AbstractAnalyzer(analyzer::APIValidator, state::AnalyzerState) -> APIValidator`
 JETInterface.AbstractAnalyzer(analyzer::APIValidator, state::AnalyzerState) = APIValidator(state)
 
-@test_throws ErrorException @report_call analyzer=APIValidator compute_sins(10)
+@test_throws ERROR_MSG @report_call analyzer=APIValidator compute_sins(10)
 
 # interface 4: `ReportPass(analyzer::APIValidator) -> ReportPass`
 JETInterface.ReportPass(analyzer::APIValidator) = IgnoreAllPass()
 
-@test_throws ErrorException @report_call analyzer=APIValidator compute_sins(10)
+@test_throws ERROR_MSG @report_call analyzer=APIValidator compute_sins(10)
 
 # interface 5: `get_cache_key(analyzer::APIValidator) -> UInt`
 JETInterface.get_cache_key(analyzer::APIValidator) = AnalyzerState(analyzer).param_key

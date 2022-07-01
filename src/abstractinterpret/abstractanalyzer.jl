@@ -321,7 +321,7 @@ end
 @noinline function AbstractAnalyzer(analyzer::AbstractAnalyzer, state::AnalyzerState)
     error(lazy"""
     missing `$AbstractAnalyzer` API:
-    `$(typeof(analyzer))` is required to implement the `$AbstractAnalyzer(analyzer::$(typeof(analyzer)), state::$AnalyzerState) -> $Analyzer` interface.
+    `$(typeof(analyzer))` is required to implement the `$AbstractAnalyzer(analyzer::$(typeof(analyzer)), state::$AnalyzerState) -> $(typeof(analyzer))` interface.
     See the documentation of `$AbstractAnalyzer`.
     """)
 end
@@ -418,7 +418,7 @@ end
 # and ignore them by default (analyzer can opt-in to collect them by overloading this with
 # their own report pass)
 # otherwise, it means malformed report pass call, and we should inform users of it
-function (rp::ReportPass)(T, @nospecialize(args...))
+function (rp::ReportPass)(T#=::Type{<:InferenceErrorReport}=#, @nospecialize(args...))
     if !(T === NativeRemark ||
          T === InvalidConstantRedefinition ||
          T === InvalidConstantDeclaration)
