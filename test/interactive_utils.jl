@@ -3,21 +3,15 @@ using JET, InteractiveUtils
 const CC = JET.CC
 
 import .CC:
-    widenconst, ⊑, Bottom
+    Bottom, widenconst, ⊑
 
 import JET:
-    AbstractAnalyzer,
-    JETAnalyzer,
-    AbstractGlobal,
-    ToplevelConfig,
-    virtual_process,
-    virtualize_module_context,
-    gen_virtual_module,
-    ToplevelErrorReport,
-    InferenceErrorReport,
-    print_reports,
-    get_reports,
-    get_result
+    AbstractAnalyzer, AbstractGlobal, InferenceErrorReport, JETAnalyzer, ToplevelConfig,
+    ToplevelErrorReport, gen_virtual_module, get_reports, get_result, print_reports,
+    virtual_process, virtualize_module_context
+
+import Base.Meta:
+    isexpr
 
 get_cache(analyzer::AbstractAnalyzer) = JET.get_native(analyzer).cache
 
@@ -44,9 +38,6 @@ let ts = Type[]
         Core.eval(@__MODULE__, ex)
     end
 end
-
-import Base.Meta:
-    isexpr
 
 iskwarg(@nospecialize(x)) = isexpr(x, :(=))
 

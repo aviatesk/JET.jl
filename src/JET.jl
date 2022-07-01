@@ -1,7 +1,17 @@
 module JET
 
-let
-    README = normpath(dirname(@__DIR__), "README.md")
+# exports
+# =======
+
+export
+    # generic entries & default jetanalyzer
+    @report_call, report_call, @test_call, test_call,
+    # optanalyzer
+    @report_opt, report_opt, @test_opt, test_opt,
+    # toplevel entries
+    report_file, report_and_watch_file, report_package, report_text
+
+let README = normpath(dirname(@__DIR__), "README.md")
     include_dependency(README)
     @doc read(README, String) JET
 end
@@ -17,60 +27,31 @@ const CC = Core.Compiler
 # `AbstractAnalyzer`
 import .CC:
     #= cicache.jl =#
-    # haskey,
-    # get,
-    # getindex,
-    # setindex!,
-    # push!,
+    # get, getindex, haskey, push!, setindex!,
     #= types.jl =#
-    InferenceParams,
-    OptimizationParams,
-    get_world_counter,
-    get_inference_cache,
-    code_cache,
-    lock_mi_inference,
-    unlock_mi_inference,
-    add_remark!,
-    may_optimize,
-    may_compress,
-    may_discard_trees,
-    verbose_stmt_info,
-    bail_out_toplevel_call,
-    bail_out_call,
+    InferenceParams, OptimizationParams, add_remark!, bail_out_call, bail_out_toplevel_call,
+    code_cache, get_inference_cache, get_world_counter, lock_mi_inference, may_compress,
+    may_discard_trees, may_optimize, unlock_mi_inference, verbose_stmt_info,
     #= inferenceresult.jl =#
     cache_lookup,
     #= inferencestate.jl =#
     InferenceState,
     #= tfuncs.jl =#
-    builtin_tfunction,
-    return_type_tfunc,
+    builtin_tfunction, return_type_tfunc,
     #= abstractinterpretation.jl =#
-    abstract_call_gf_by_type,
-    add_call_backedges!,
-    abstract_call_method_with_const_args,
+    abstract_call, abstract_call_gf_by_type, abstract_call_method,
+    abstract_call_method_with_const_args, abstract_eval_special_value,
+    abstract_eval_statement, abstract_eval_value, abstract_invoke, add_call_backedges!,
     const_prop_entry_heuristic,
-    abstract_call_method,
-    abstract_invoke,
-    abstract_call,
-    abstract_eval_special_value,
-    abstract_eval_value,
-    abstract_eval_statement,
     #= typeinfer.jl =#
-    typeinf,
-    _typeinf,
-    finish,
-    transform_result_for_cache,
-    finish!,
-    typeinf_edge,
+    _typeinf, finish!, finish, transform_result_for_cache, typeinf, typeinf_edge,
     #= optimize.jl =#
     inlining_policy
 
 # `ConcreteInterpreter`
 import JuliaInterpreter:
     #= interpreter.jl =#
-    step_expr!,
-    evaluate_call_recurse!,
-    handle_err
+    evaluate_call_recurse!, handle_err, step_expr!
 
 # Test.jl integration
 import Test:
@@ -81,129 +62,49 @@ import Test:
 # TODO: really use `using` instead
 
 import Core:
-    Builtin,
-    Intrinsics,
-    IntrinsicFunction,
-    MethodMatch,
-    LineInfoNode,
-    CodeInfo,
-    CodeInstance,
-    MethodInstance,
-    NewvarNode,
-    GlobalRef,
-    GotoNode,
-    GotoIfNot,
-    Const,
-    SSAValue,
-    SlotNumber,
-    Argument,
-    Slot,
-    ReturnNode,
-    SimpleVector,
-    svec
+    Argument, Builtin, CodeInfo, CodeInstance, Const, GlobalRef, GotoIfNot, GotoNode,
+    IntrinsicFunction, Intrinsics, LineInfoNode, MethodInstance, MethodMatch, NewvarNode,
+    ReturnNode, SSAValue, SimpleVector, Slot, SlotNumber, svec
 
 import .CC:
-    AbstractInterpreter,
-    NativeInterpreter,
-    InferenceResult,
-    InternalCodeCache,
-    OptimizationState,
-    WorldRange,
-    WorldView,
-    Bottom,
-    LimitedAccuracy,
-    NOT_FOUND,
-    MethodCallResult,
-    MethodMatches,
-    UnionSplitMethodMatches,
-    MethodMatchInfo,
-    UnionSplitInfo,
-    ConstCallInfo,
-    InvokeCallInfo,
-    MethodLookupResult,
-    VarState,
-    VarTable,
-    CallMeta,
-    CFG,
-    BasicBlock,
-    slot_id,
-    widenconst,
-    ⊑,
-    is_throw_call,
-    tmerge,
-    switchtupleunion,
-    argtypes_to_type,
-    singleton_type,
-    argtype_by_index,
-    argtype_tail,
-    _methods_by_ftype,
-    specialize_method,
-    get_compileable_sig,
-    compute_basic_blocks,
-    may_invoke_generator,
-    inlining_enabled,
-    instanceof_tfunc,
-    ignorelimited,
-    argextype,
-    isconstType,
-    issingletontype
+    AbstractInterpreter, BasicBlock, Bottom, CFG, CallMeta, ConstCallInfo, InferenceResult,
+    InternalCodeCache, InvokeCallInfo, LimitedAccuracy, MethodCallResult,
+    MethodLookupResult, MethodMatchInfo, MethodMatches, NOT_FOUND, NativeInterpreter,
+    OptimizationState, UnionSplitInfo, UnionSplitMethodMatches, VarState, VarTable,
+    WorldRange, WorldView, _methods_by_ftype, argextype, argtype_by_index, argtype_tail,
+    argtypes_to_type, compute_basic_blocks, get_compileable_sig, ignorelimited,
+    inlining_enabled, instanceof_tfunc, is_throw_call, isconstType, issingletontype,
+    may_invoke_generator, singleton_type, slot_id, specialize_method, switchtupleunion,
+    tmerge, widenconst, ⊑
 
 import Base:
-    # @constprop,
-    parse_input_line,
-    unwrap_unionall,
-    rewrap_unionall,
-    uniontypes,
-    @invoke,
-    @invokelatest,
-    destructure_callex
+    @invoke, @invokelatest, destructure_callex, parse_input_line, rewrap_unionall,
+    uniontypes, unwrap_unionall
 
 import Base.Meta:
-    _parse_string,
-    lower,
-    isexpr
+    _parse_string, isexpr, lower
 
 using LoweredCodeUtils, JuliaInterpreter
 
 import LoweredCodeUtils:
-    istypedef,
-    ismethod,
-    callee_matches,
-    rng,
-    print_with_code,
-    pushall!,
-    # NamedVar,
-    # add_requests!,
-    add_ssa_preds!,
-    # add_named_dependencies!,
-    find_typedefs,
-    add_control_flow!,
-    add_typedefs!
+    #=NamedVar,=# add_control_flow!, #=add_named_dependencies!, add_requests!,=#
+    add_ssa_preds!, add_typedefs!, callee_matches, find_typedefs, ismethod, istypedef,
+    print_with_code, pushall!, rng
 
 import JuliaInterpreter:
-    _INACTIVE_EXCEPTION,
-    bypass_builtins,
-    maybe_evaluate_builtin,
-    collect_args,
-    # finish!,
-    is_return,
-    is_quotenode_egal,
-    moduleof,
-    @lookup
+    @lookup, _INACTIVE_EXCEPTION, bypass_builtins, collect_args, #=finish!,=#
+    is_quotenode_egal, is_return, maybe_evaluate_builtin, moduleof
 
-import MacroTools: MacroTools, @capture, normalise, striplines
+import MacroTools:
+    @capture, MacroTools, normalise, striplines
 
 using InteractiveUtils
 
 using Pkg, Pkg.TOML
 
 import Test:
-    Test,
-    Result, Pass, Fail, Broken, Error,
-    get_testset,
-    TESTSET_PRINT_ENABLE,
-    FallbackTestSet, DefaultTestSet,
-    FallbackTestSetException
+    Broken, DefaultTestSet, Error, Fail, FallbackTestSet, FallbackTestSetException, Pass,
+    Result, TESTSET_PRINT_ENABLE, Test, get_testset
 
 # common
 # ======
@@ -1032,11 +933,7 @@ function report_text(text::AbstractString,
     analyzer′ = Analyzer(; jetconfigs...)
     may_init_cache!(analyzer′)
     config = ToplevelConfig(; jetconfigs...)
-    res = virtual_process(text,
-                          filename,
-                          analyzer′,
-                          config,
-                          )
+    res = virtual_process(text, filename, analyzer′, config)
     if isnothing(source)
         source = string(nameof(var"#self#"), "(..., \"$filename\")")
     end
@@ -1632,45 +1529,18 @@ function reexport_as_api!(xs...)
 end
 
 reexport_as_api!(JETInterface,
-                 AbstractAnalyzer,
-                 AnalyzerState,
-                 ReportPass,
-                 get_cache_key,
-                 InferenceErrorReport,
-                 aggregation_policy,
-                 add_new_report!,
-                 copy_report,
-                 print_report_message,
-                 print_signature,
-                 report_color,
-                 var"@jetreport",
-                 VSCode.vscode_source,
-                 VSCode.vscode_diagnostics_order,
-                 )
+    # AbstractAnalyzer API
+    AbstractAnalyzer, AnalyzerState, ReportPass, get_cache_key,
+    VSCode.vscode_source, VSCode.vscode_diagnostics_order,
+    # InferenceErrorReport API
+    InferenceErrorReport, copy_report, print_report_message, print_signature, report_color,
+    # development utilities
+    aggregation_policy, add_new_report!, var"@jetreport")
 
 # builtin analyzers
 # =================
 
 include("analyzers/jetanalyzer.jl")
 include("analyzers/optanalyzer.jl")
-
-# exports
-# =======
-
-export
-    # generic entries & default jetanalyzer
-    report_file,
-    report_and_watch_file,
-    report_package,
-    report_text,
-    @report_call,
-    report_call,
-    @test_call,
-    test_call,
-    # optanalyzer
-    @report_opt,
-    report_opt,
-    @test_opt,
-    test_opt
 
 end
