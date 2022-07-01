@@ -277,7 +277,7 @@ end
     end
 end
 
-@testset "report undefined (global) variables" begin
+@testset "GlobalUndefVarErrorReport" begin
     let result = report_call(()->foo)
         @test length(get_reports_with_test(result)) === 1
         @test first(get_reports_with_test(result)) isa GlobalUndefVarErrorReport
@@ -320,6 +320,18 @@ end
         report = only(get_reports_with_test(result))
         @test report isa GlobalUndefVarErrorReport
         @test report.name === :undefvar
+    end
+end
+
+@static VERSION ≥ v"1.8" && @testset "InvalidGlobalAssignmentError" begin
+    global __int_globalvar__::Int
+    let result = report_call((Nothing,)) do x
+            setglobal!(@__MODULE__, :__int_globalvar__, x)
+        end
+        report = only(get_reports_with_test(result))
+        @test report isa InvalidGlobalAssignmentError
+        @test report.mod === @__MODULE__
+        @test report.name === :__int_globalvar__
     end
 end
 
