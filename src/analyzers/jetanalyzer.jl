@@ -697,11 +697,11 @@ end
 print_signature(::GlobalUndefVarErrorReport) = false
 
 (::SoundPass)(::Type{GlobalUndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, mod::Module, name::Symbol) =
-    report_undef_var!(analyzer, sv, mod, name, true)
+    report_undef_var!(analyzer, sv, mod, name, #=sound=#true)
 (::BasicPass)(::Type{GlobalUndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, mod::Module, name::Symbol) =
-    report_undef_var!(analyzer, sv, mod, name, false)
+    report_undef_var!(analyzer, sv, mod, name, #=sound=#false)
 (::TypoPass)(::Type{GlobalUndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, mod::Module, name::Symbol) =
-    report_undef_var!(analyzer, sv, mod, name, false)
+    report_undef_var!(analyzer, sv, mod, name, #=sound=#false)
 function report_undef_var!(analyzer::JETAnalyzer, sv::InferenceState, mod::Module, name::Symbol, sound::Bool)
     if !isdefined(mod, name)
         report = false
@@ -709,8 +709,6 @@ function report_undef_var!(analyzer::JETAnalyzer, sv::InferenceState, mod::Modul
             report |= true
         else
             if is_corecompiler_undefglobal(mod, name)
-            elseif mod === Base && name === :active_repl
-                # TODO remove this branch once merging https://github.com/JuliaLang/julia/pull/45838
             else
                 report |= true
             end
