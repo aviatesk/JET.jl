@@ -113,12 +113,12 @@ function handle_sig!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
         args = expr.args[2:end]
         splat = false
         if isa(f, GlobalRef)
-            maybe_handle_sig_binop!(sig, s, f, args) && return sig
-            maybe_handle_sig_getproperty!(sig, s, f, args) && return sig
-            maybe_handle_sig_setproperty!!(sig, s, f, args) && return sig
-            maybe_handle_sig_getindex!(sig, s, f, args) && return sig
-            maybe_handle_sig_setindex!!(sig, s, f, args) && return sig
-            maybe_handle_sig_const_apply_type!(sig, s, f, args) && return sig
+            handle_sig_binop!(sig, s, f, args) && return sig
+            handle_sig_getproperty!(sig, s, f, args) && return sig
+            handle_sig_setproperty!!(sig, s, f, args) && return sig
+            handle_sig_getindex!(sig, s, f, args) && return sig
+            handle_sig_setindex!!(sig, s, f, args) && return sig
+            handle_sig_const_apply_type!(sig, s, f, args) && return sig
             if issplat(f, args)
                 f = args[2]
                 args = args[3:end]
@@ -156,7 +156,7 @@ function handle_sig!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
     end
 end
 
-function maybe_handle_sig_binop!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, args::Vector{Any})
+function handle_sig_binop!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, args::Vector{Any})
     (Base.isbinaryoperator(f.name) && length(args) == 2) || return false
     handle_sig!(sig, s, AnnotationMaker(true))
     handle_sig!(sig, s, args[1])
@@ -169,7 +169,7 @@ function maybe_handle_sig_binop!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, a
     return true
 end
 
-function maybe_handle_sig_getproperty!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, args::Vector{Any})
+function handle_sig_getproperty!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, args::Vector{Any})
     f.name === :getproperty || return false
     length(args) == 2 || return false
     sym = args[2]
@@ -185,7 +185,7 @@ function maybe_handle_sig_getproperty!(sig::Vector{Any}, s::StateAtPC, f::Global
     return true
 end
 
-function maybe_handle_sig_setproperty!!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, args::Vector{Any})
+function handle_sig_setproperty!!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, args::Vector{Any})
     f.name === :setproperty! || return false
     length(args) == 3 || return false
     sym = args[2]
@@ -203,7 +203,7 @@ function maybe_handle_sig_setproperty!!(sig::Vector{Any}, s::StateAtPC, f::Globa
     return true
 end
 
-function maybe_handle_sig_getindex!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, args::Vector{Any})
+function handle_sig_getindex!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, args::Vector{Any})
     f.name === :getindex || return false
     length(args) ≥ 1 || return false
     handle_sig!(sig, s, AnnotationMaker(true))
@@ -220,7 +220,7 @@ function maybe_handle_sig_getindex!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef
     return true
 end
 
-function maybe_handle_sig_setindex!!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, args::Vector{Any})
+function handle_sig_setindex!!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, args::Vector{Any})
     f.name === :setindex! || return false
     length(args) ≥ 2 || return false
     handle_sig!(sig, s, AnnotationMaker(true))
@@ -239,7 +239,7 @@ function maybe_handle_sig_setindex!!(sig::Vector{Any}, s::StateAtPC, f::GlobalRe
     return true
 end
 
-function maybe_handle_sig_const_apply_type!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, args::Vector{Any})
+function handle_sig_const_apply_type!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, args::Vector{Any})
     f.name === :apply_type || return false
     typ = get_ssavaluetype(s)
     isa(typ, Const) || return false

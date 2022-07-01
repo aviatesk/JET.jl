@@ -909,29 +909,29 @@ print_signature(::InvalidBuiltinCallErrorReport) = false
 function (::BasicPass)(::Type{BuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(ret))
     @assert !(f === throw) "`throw` calls shuold be handled either by the report pass of `SeriousExceptionReport` or `UncaughtExceptionReport`"
     if f === getfield
-        maybe_report_getfield!(analyzer, sv, argtypes, ret) && return true
+        report_getfield!(analyzer, sv, argtypes, ret) && return true
     elseif @static @isdefined(getglobal) ? (f === getglobal) : false
-        maybe_report_global_undefvar!(analyzer, sv, argtypes) && return true
+        report_global_undefvar!(analyzer, sv, argtypes) && return true
     elseif length(argtypes) == 2 && is_division_func(f)
-        maybe_report_devide_error!(analyzer, sv, argtypes, ret) && return true
+        report_devide_error!(analyzer, sv, argtypes, ret) && return true
     end
     return handle_invalid_builtins!(analyzer, sv, argtypes, ret)
 end
 
 function (::TypoPass)(::Type{BuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(ret))
     if f === getfield
-        maybe_report_getfield!(analyzer, sv, argtypes, ret) && return true
+        report_getfield!(analyzer, sv, argtypes, ret) && return true
     end
     return false
 end
 
-function maybe_report_getfield!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes, @nospecialize(ret))
-    maybe_report_global_undefvar!(analyzer, sv, argtypes) && return true
-    maybe_report_nofield_error!(analyzer, sv, argtypes, ret) && return true
+function report_getfield!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes, @nospecialize(ret))
+    report_global_undefvar!(analyzer, sv, argtypes) && return true
+    report_nofield_error!(analyzer, sv, argtypes, ret) && return true
     return false
 end
 
-function maybe_report_global_undefvar!(analyzer::JETAnalyzer,
+function report_global_undefvar!(analyzer::JETAnalyzer,
     sv::InferenceState, argtypes::Argtypes)
     2 ≤ length(argtypes) ≤ 3 || return false
     gr = constant_globalref(argtypes)
@@ -940,7 +940,7 @@ function maybe_report_global_undefvar!(analyzer::JETAnalyzer,
     return ReportPass(analyzer)(GlobalUndefVarErrorReport, analyzer, sv, gr.mod, gr.name)
 end
 
-function maybe_report_nofield_error!(analyzer::JETAnalyzer,
+function report_nofield_error!(analyzer::JETAnalyzer,
     sv::InferenceState, argtypes::Argtypes, @nospecialize(ret))
     2 ≤ length(argtypes) ≤ 3 || return false
     name = argtypes[2]
@@ -967,7 +967,7 @@ function is_division_func(@nospecialize f)
 end
 
 # TODO this check might be better in its own report pass, say `NumericalPass`
-function maybe_report_devide_error!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes, @nospecialize(ret))
+function report_devide_error!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes, @nospecialize(ret))
     a = argtypes[2]
     t = widenconst(a)
     if isprimitivetype(t) && t <: Number
