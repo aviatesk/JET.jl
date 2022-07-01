@@ -295,6 +295,35 @@ function CC.abstract_eval_special_value(analyzer::JETAnalyzer,
     return ret
 end
 
+# N.B. this report pass won't be necessary as the frontend will generate code
+# that `typeassert`s the value type as the binding type beforehand
+@static VERSION ≥ v"1.8" && begin
+@static if isdefined(CC, :abstract_eval_basic_statement)
+@inline function CC.abstract_eval_basic_statement(analyzer::JETAnalyzer,
+    @nospecialize(stmt), pc_vartable::VarTable, frame::InferenceState)
+    ret = @invoke CC.abstract_eval_basic_statement(analyzer::AbstractAnalyzer,
+        stmt::Any, pc_vartable::VarTable, frame::InferenceState)
+    if isexpr(stmt, :(=)) && (lhs = stmt.args[1]; isa(lhs, GlobalRef))
+        ReportPass(analyzer)(InvalidGlobalAssignmentError, analyzer,
+            frame, lhs.mod, lhs.name, ret.type)
+    end
+    return ret
+end
+else # @static if isdefined(CC, :abstract_eval_basic_statement)
+function CC.abstract_eval_statement(analyzer::JETAnalyzer,
+    @nospecialize(e), vtypes::VarTable, sv::InferenceState)
+    ret = @invoke CC.abstract_eval_statement(analyzer::AbstractAnalyzer,
+        e::Any, vtypes::VarTable, sv::InferenceState)
+    stmt = get_stmt((sv, get_currpc(sv)))
+    if isexpr(stmt, :(=)) && (lhs = stmt.args[1]; isa(lhs, GlobalRef))
+        ReportPass(analyzer)(InvalidGlobalAssignmentError, analyzer,
+            sv, lhs.mod, lhs.name, ret)
+    end
+    return ret
+end
+end # @static if isdefined(CC, :abstract_eval_basic_statement)
+end # @static VERSION ≥ v"1.8" begin
+
 function CC.abstract_eval_value(analyzer::JETAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
     ret = @invoke CC.abstract_eval_value(analyzer::AbstractAnalyzer, e::Any, vtypes::VarTable, sv::InferenceState)
 
@@ -749,6 +778,44 @@ is_corecompiler_undefglobal(mod::Module, name::Symbol) =
     mod === CC.Sort ? isdefined(Base.Sort, name) :
     false
 
+@jetreport struct InvalidGlobalAssignmentError <: InferenceErrorReport
+    @nospecialize vtyp
+    @nospecialize btyp
+    mod::Module
+    name::Symbol
+end
+function print_report_message(io::IO, report::InvalidGlobalAssignmentError)
+    print(io, "found invalid assignment of an incompatible value")
+    print(io, " (`", report.vtyp, "`)")
+    print(io, " to the value global")
+    print(io, " `", GlobalRef(report.mod, report.name), "`")
+    print(io, " (`", report.btyp, "`)")
+end
+
+(::SoundPass)(::Type{InvalidGlobalAssignmentError}, analyzer::JETAnalyzer,
+    sv::InferenceState, mod::Module, name::Symbol, @nospecialize(vtyp)) =
+    report_global_assignment!(analyzer, sv, mod, name, vtyp,#=sound=#true)
+(::BasicPass)(::Type{InvalidGlobalAssignmentError}, analyzer::JETAnalyzer,
+    sv::InferenceState, mod::Module, name::Symbol, @nospecialize(vtyp)) =
+    report_global_assignment!(analyzer, sv, mod, name, vtyp,#=sound=#false)
+(::TypoPass)(::Type{InvalidGlobalAssignmentError}, analyzer::JETAnalyzer,
+    sv::InferenceState, mod::Module, name::Symbol, @nospecialize(vtyp)) =
+    report_global_assignment!(analyzer, sv, mod, name, vtyp, #=sound=#false)
+function report_global_assignment!(analyzer::JETAnalyzer,
+    sv::InferenceState, mod::Module, name::Symbol, @nospecialize(vtyp), sound::Bool)
+    btyp = ccall(:jl_binding_type, Any, (Any, Any), mod, name)
+    if btyp !== nothing
+        vtyp = widenconst(vtyp)
+        if !(sound ? vtyp ⊑ btyp : hasintersect(vtyp, btyp))
+            add_new_report!(analyzer, sv.result, InvalidGlobalAssignmentError(sv, vtyp, btyp, mod, name))
+            return true
+        end
+        return false
+    else # the binding type hasn't been declared yet
+        return false
+    end
+end
+
 @jetreport struct NonBooleanCondErrorReport <: InferenceErrorReport
     @nospecialize t # ::Union{Type, Vector{Type}}
     union_split::Int
@@ -911,7 +978,9 @@ function (::BasicPass)(::Type{BuiltinErrorReport}, analyzer::JETAnalyzer, sv::In
     if f === getfield
         report_getfield!(analyzer, sv, argtypes, ret) && return true
     elseif @static @isdefined(getglobal) ? (f === getglobal) : false
-        report_global_undefvar!(analyzer, sv, argtypes) && return true
+        report_getglobal!(analyzer, sv, argtypes) && return true
+    elseif @static @isdefined(setglobal!) ? (f === setglobal!) : false
+        report_setglobal!!(analyzer, sv, argtypes) && return true
     elseif length(argtypes) == 2 && is_division_func(f)
         report_devide_error!(analyzer, sv, argtypes, ret) && return true
     end
@@ -921,23 +990,34 @@ end
 function (::TypoPass)(::Type{BuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(ret))
     if f === getfield
         report_getfield!(analyzer, sv, argtypes, ret) && return true
+    elseif @static @isdefined(getglobal) ? (f === getglobal) : false
+        report_getglobal!(analyzer, sv, argtypes) && return true
+    elseif @static @isdefined(setglobal!) ? (f === setglobal!) : false
+        report_setglobal!!(analyzer, sv, argtypes) && return true
     end
     return false
 end
 
 function report_getfield!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes, @nospecialize(ret))
-    report_global_undefvar!(analyzer, sv, argtypes) && return true
+    report_getglobal!(analyzer, sv, argtypes) && return true
     report_nofield_error!(analyzer, sv, argtypes, ret) && return true
     return false
 end
 
-function report_global_undefvar!(analyzer::JETAnalyzer,
-    sv::InferenceState, argtypes::Argtypes)
+function report_getglobal!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes)
     2 ≤ length(argtypes) ≤ 3 || return false
     gr = constant_globalref(argtypes)
     gr === nothing && return false
     # forward to the report pass for undefined global reference
     return ReportPass(analyzer)(GlobalUndefVarErrorReport, analyzer, sv, gr.mod, gr.name)
+end
+
+function report_setglobal!!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes)
+    3 ≤ length(argtypes) ≤ 4 || return false
+    gr = constant_globalref(argtypes)
+    gr === nothing && return false
+    # forward to the report pass for invalid global assignemt
+    return ReportPass(analyzer)(InvalidGlobalAssignmentError, analyzer, sv, gr.mod, gr.name, argtypes[3])
 end
 
 function report_nofield_error!(analyzer::JETAnalyzer,
