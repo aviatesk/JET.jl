@@ -111,7 +111,7 @@ These configurations will be active for all the top-level entries explained in t
   at the macro expansion.
 
   Although configuring `concretization_patterns` properly could be really tricky, we can
-  effectively debug JET's top-level code concretization plan using [`toplevel_logger`](@ref JETLogger)
+  effectively debug JET's top-level code concretization plan using the `toplevel_logger`
   configuration with the logging level above than `$JET_LOGGER_LEVEL_DEBUG` ("debug") level.
   With the `toplevel_logger` configuration, we can see:
   - which code is matched with `concretization_patterns` and forcibly concretized
