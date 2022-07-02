@@ -109,51 +109,38 @@ end
 function handle_sig!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
     head = expr.head
     if head === :call
-        f = first(expr.args)
-        args = expr.args[2:end]
-        splat = false
-        if isa(f, GlobalRef)
-            handle_sig_binop!(sig, s, f, args) && return sig
-            handle_sig_getproperty!(sig, s, f, args) && return sig
-            handle_sig_setproperty!!(sig, s, f, args) && return sig
-            handle_sig_getindex!(sig, s, f, args) && return sig
-            handle_sig_setindex!!(sig, s, f, args) && return sig
-            handle_sig_const_apply_type!(sig, s, f, args) && return sig
-            if issplat(f, args)
-                f = args[2]
-                args = args[3:end]
-                splat = true
-            end
-        end
-        handle_sig_call!(sig, s, f, args, #=splat=#splat)
-        return sig
+        handle_sig_call!(sig, s, expr)
     elseif head === :invoke
-        f = expr.args[2]
-        args = expr.args[3:end]
-        handle_sig_call!(sig, s, f, args)
-        return sig
+        handle_sig_invoke!(sig, s, expr)
     elseif head === :(=)
-        sv = first(s)
-        if isa(sv, InferenceState)
-            lhs = first(expr.args)
-            if isa(lhs, SlotNumber)
-                name = get_slotname(sv, lhs)
-                pushfirst!(sig, String(name), " = ")
-            end
-        end
-        handle_sig!(sig, s, last(expr.args))
-        return sig
+        handle_sig_assignment!(sig, s, expr)
     elseif head === :static_parameter
-        i = first(expr.args)::Int
-        sv = first(s)
-        name = sparam_name((sv.linfo.def::Method).sig::UnionAll, i)
-        typ = widenconst(sv.sptypes[i])
-        anypush!(sig, String(name), typ)
-        return sig
+        handle_sig_static_parameter!(sig, s, expr)
     else
         push!(sig, expr)
-        return sig
     end
+    return sig
+end
+
+function handle_sig_call!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
+    f = first(expr.args)
+    args = expr.args[2:end]
+    splat = false
+    if isa(f, GlobalRef)
+        handle_sig_binop!(sig, s, f, args) && return sig
+        handle_sig_getproperty!(sig, s, f, args) && return sig
+        handle_sig_setproperty!!(sig, s, f, args) && return sig
+        handle_sig_getindex!(sig, s, f, args) && return sig
+        handle_sig_setindex!!(sig, s, f, args) && return sig
+        handle_sig_const_apply_type!(sig, s, f, args) && return sig
+        if issplat(f, args)
+            f = args[2]
+            args = args[3:end]
+            splat = true
+        end
+    end
+    handle_sig_call!(sig, s, f, args, #=splat=#splat)
+    return sig
 end
 
 function handle_sig_binop!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, args::Vector{Any})
@@ -269,6 +256,35 @@ function handle_sig_call!(sig::Vector{Any}, s::StateAtPC, @nospecialize(f), args
     end
     push!(sig, ')')
     push!(sig, safewidenconst(get_ssavaluetype(s)))
+    return sig
+end
+
+function handle_sig_invoke!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
+    f = expr.args[2]
+    args = expr.args[3:end]
+    handle_sig_call!(sig, s, f, args)
+    return sig
+end
+
+function handle_sig_assignment!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
+    sv = first(s)
+    if isa(sv, InferenceState)
+        lhs = first(expr.args)
+        if isa(lhs, SlotNumber)
+            name = get_slotname(sv, lhs)
+            pushfirst!(sig, String(name), " = ")
+        end
+    end
+    handle_sig!(sig, s, last(expr.args))
+    return sig
+end
+
+function handle_sig_static_parameter!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
+    i = first(expr.args)::Int
+    sv = first(s)
+    name = sparam_name((sv.linfo.def::Method).sig::UnionAll, i)
+    typ = widenconst(sv.sptypes[i])
+    anypush!(sig, String(name), typ)
     return sig
 end
 
