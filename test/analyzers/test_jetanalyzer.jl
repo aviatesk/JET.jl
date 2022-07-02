@@ -1,50 +1,42 @@
-@testset "cache per configuration" begin
+@testset "configurations" begin
+    @test_throws ArgumentError("`mode` configuration should be either of `:basic`, `:sound` or `:typo`") report_call(
+        function () end; mode=:badmode)
+    @test_throws ArgumentError("either of `report_pass` and `mode` configurations can be specified") report_call(
+        function () end; report_pass=JET.BasicPass(), mode=:sound)
+
     # cache key should be same for the same configurations
-    let
-        k1 = JET.get_cache_key(JETAnalyzer())
-
+    let k1 = JET.get_cache_key(JETAnalyzer()),
         k2 = JET.get_cache_key(JETAnalyzer())
-
         @test k1 == k2
     end
 
     # cache key should be different for different configurations
-    let
-        analyzer1 = JETAnalyzer(; max_methods=3)
-        k1 = JET.get_cache_key(analyzer1)
-
+    let analyzer1 = JETAnalyzer(; max_methods=3),
         analyzer2 = JETAnalyzer(; max_methods=4)
+        k1 = JET.get_cache_key(analyzer1)
         k2 = JET.get_cache_key(analyzer2)
-
         @test k1 ≠ k2
     end
 
     # configurations other than `InferenceParams` and `ReportPass`
     # shouldn't affect the cache key identity
-    let
-        analyzer1 = JETAnalyzer(; toplevel_logger=nothing)
-        k1 = JET.get_cache_key(analyzer1)
-
+    let analyzer1 = JETAnalyzer(; toplevel_logger=nothing),
         analyzer2 = JETAnalyzer(; toplevel_logger=IOBuffer())
+        k1 = JET.get_cache_key(analyzer1)
         k2 = JET.get_cache_key(analyzer2)
-
         @test k1 == k2
     end
 
     # cache key should be different for different report passes
-    let
-        analyzer1 = JETAnalyzer(; report_pass=JET.BasicPass())
-        k1 = JET.get_cache_key(analyzer1)
-
+    let analyzer1 = JETAnalyzer(; report_pass=JET.BasicPass()),
         analyzer2 = JETAnalyzer(; report_pass=JET.SoundPass())
+        k1 = JET.get_cache_key(analyzer1)
         k2 = JET.get_cache_key(analyzer2)
-
         @test k1 ≠ k2
     end
 
     # end to end test
-    let
-        m = Module()
+    let m = Module()
         @eval m begin
             foo(a::Val{1}) = 1
             foo(a::Val{2}) = 2

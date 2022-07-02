@@ -51,10 +51,17 @@ end
     jetconfigs...)
     if isnothing(report_pass)
         # if `report_pass` isn't passed explicitly, here we configure it according to `mode`
-        report_pass = mode === :basic ? BasicPass(; jetconfigs...) :
-                      mode === :sound ? SoundPass() :
-                      mode === :typo  ? TypoPass() :
-                      throw(ArgumentError("`mode` configuration should be either of `:basic`, `:sound` or `:typo`"))
+        if mode === :basic
+            report_pass = BasicPass(; jetconfigs...)
+        elseif mode === :sound
+            report_pass = SoundPass()
+        elseif mode === :typo
+            report_pass = TypoPass()
+        else
+            throw(ArgumentError("`mode` configuration should be either of `:basic`, `:sound` or `:typo`"))
+        end
+    elseif mode !== :basic
+        throw(ArgumentError("either of `report_pass` and `mode` configurations can be specified"))
     end
     # NOTE we always disable inlining, because:
     # - our current strategy to find undefined local variables and uncaught `throw` calls assumes un-inlined frames
