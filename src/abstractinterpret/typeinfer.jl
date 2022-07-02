@@ -223,12 +223,17 @@ function CC.abstract_call_method_with_const_args(analyzer::AbstractAnalyzer,
 end
 end # @static if IS_V18
 
-# TODO correctly reasons about error found by concrete evaluation
-# for now just always fallback to the constant-prop'
 @static if IS_V18
-function CC.concrete_eval_eligible(analyzer::AbstractAnalyzer,
+function CC.concrete_eval_call(analyzer::AbstractAnalyzer,
     @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
-    return false
+    ret = @invoke CC.concrete_eval_call(analyzer::AbstractInterpreter,
+        f::Any, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
+    if ret !== nothing
+        # this frame has been happily concretized, now we throw away reports collected
+        # during the previous abstract interpretation
+        filter_lineages!(analyzer, sv.result, result.edge::MethodInstance)
+    end
+    return ret
 end
 end # @static if IS_V18
 
@@ -546,6 +551,7 @@ function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
     isentry = isnothing(parent)
 
     #= logging stage1 start =#
+    # io = stdout
     # sec = time()
     # depth = get_depth(analyzer)
     # print_rails(io, depth)
