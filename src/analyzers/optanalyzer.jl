@@ -286,11 +286,16 @@ function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState)
 
         if isa(src, OptimizationState) # the compiler optimized it, analyze it
             ReportPass(analyzer)(RuntimeDispatchReport, analyzer, caller, src)
-        # elseif isa(src, Const) # the optimization was very successful, nothing to report
-        # elseif src === nothing # the optimization didn't happen
-        # else # and this pass should never happen
-        #     Core.eval(@__MODULE__, :(src = $src))
-        #     throw("unexpected state happened, inspect `$(@__MODULE__).src`")
+            # ReportPass(analyzer)(AllocationReport, analyzer, caller, src)
+        elseif (@static JET_DEV_MODE ? false : true)
+            if (@static isdefined(CC, :ConstAPI) ? isa(src, CC.ConstAPI) : isa(src, Const))
+                # the optimization was very successful (i.e. fully constant folded),
+                # nothing to report
+            elseif src === nothing # the optimization didn't happen
+            else # and this pass should never happen
+                Core.eval(@__MODULE__, :(src = $src))
+                throw("unexpected state happened, inspect `$(@__MODULE__).src`")
+            end
         end
     end
 
