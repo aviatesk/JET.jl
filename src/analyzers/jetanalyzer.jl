@@ -252,6 +252,15 @@ must-reachable `throw` calls.
 """
 CC.const_prop_entry_heuristic(::JETAnalyzer, result::MethodCallResult, sv::InferenceState) = true
 
+# TODO correctly reasons about error found by concrete evaluation
+# for now just always fallback to the constant-prop'
+@static if IS_V18
+function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
+    @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
+    return false
+end
+end # @static if IS_V18
+
 function CC.return_type_tfunc(analyzer::JETAnalyzer, argtypes::Argtypes, sv::InferenceState)
     # report pass for invalid `Core.Compiler.return_type` call
     ReportPass(analyzer)(InvalidReturnTypeCall, analyzer, sv, argtypes)
