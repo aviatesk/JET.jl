@@ -172,13 +172,13 @@ struct OptAnalyzer{RP,FF} <: AbstractAnalyzer
     skip_noncompileable_calls::Bool
     function_filter::FF
     skip_unoptimized_throw_blocks::Bool
-    __frame_checks::BitVector # temporary stash to keep per-frame analysis-skip configuration
+    __analyze_frame::BitVector # temporary stash to keep per-frame analysis-skip configuration
     __cache_key::UInt
 end
 function OptAnalyzer(;
     report_pass = OptAnalysisPass(),
     skip_noncompileable_calls::Bool = true,
-    function_filter = @nospecialize(ft)->true,
+    function_filter = optanalyzer_function_filter,
     skip_unoptimized_throw_blocks::Bool = true,
     jetconfigs...)
     state = AnalyzerState(; jetconfigs...)
@@ -194,7 +194,7 @@ function OptAnalyzer(;
         skip_noncompileable_calls,
         function_filter,
         skip_unoptimized_throw_blocks,
-        #=__frame_checks=# BitVector(),
+        #=__analyze_frame=# BitVector(),
         cache_key,
         )
 end
@@ -208,7 +208,7 @@ function JETInterface.AbstractAnalyzer(analyzer::OptAnalyzer, state::AnalyzerSta
         analyzer.skip_noncompileable_calls,
         analyzer.function_filter,
         analyzer.skip_unoptimized_throw_blocks,
-        analyzer.__frame_checks,
+        analyzer.__analyze_frame,
         analyzer.__cache_key,
         )
 end
@@ -218,19 +218,24 @@ JETInterface.vscode_diagnostics_order(analyzer::OptAnalyzer) = false
 
 struct OptAnalysisPass <: ReportPass end
 
+optanalyzer_function_filter(@nospecialize ft) = true
+
 # TODO better to work only `finish!`
 function CC.finish(frame::InferenceState, analyzer::OptAnalyzer)
     ret = @invoke CC.finish(frame::InferenceState, analyzer::AbstractAnalyzer)
 
-    skip = false
+    analyze = true
     if analyzer.skip_noncompileable_calls
         if !(is_compileable_frame(frame) || get_entry(analyzer) === get_linfo(frame))
-            skip |= true
+            analyze = false
         end
     end
 
-    push!(analyzer.__frame_checks, skip)
-    skip || ReportPass(analyzer)(CapturedVariableReport, analyzer, frame) # report pass for captured variables
+    push!(analyzer.__analyze_frame, analyze)
+    if analyze
+        # report pass for captured variables
+        ReportPass(analyzer)(CapturedVariableReport, analyzer, frame)
+    end
 
     return ret
 end
@@ -276,7 +281,7 @@ function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState)
 
     ret = @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
 
-    if !popfirst!(analyzer.__frame_checks)
+    if popfirst!(analyzer.__analyze_frame)
         ReportPass(analyzer)(OptimizationFailureReport, analyzer, caller)
 
         if isa(src, OptimizationState) # the compiler optimized it, analyze it

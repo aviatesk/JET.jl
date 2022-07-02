@@ -88,12 +88,13 @@ _**TODO**_: elaborate the definitions of "error"s.
 struct BasicPass{FF} <: ReportPass
     function_filter::FF
 end
-function BasicPass(; function_filter = basic_function_filter,
-                     __jetconfigs...)
+function BasicPass(;
+    function_filter = jetanalyzer_function_filter,
+    __jetconfigs...)
     return BasicPass(function_filter)
 end
 
-function basic_function_filter(@nospecialize ft)
+function jetanalyzer_function_filter(@nospecialize ft)
     ft === typeof(Base.mapreduce_empty) && return false
     ft === typeof(Base.reduce_empty) && return false
     return true
