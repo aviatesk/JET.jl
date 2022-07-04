@@ -640,7 +640,7 @@ function report_method_error_for_union_split!(analyzer::JETAnalyzer,
             end
             sig_n = argtypes_to_type(split_argtypes[i]::Vector{Any})
             push!(empty_matches[1], sig_n)
-        elseif !is_fully_covered(matchinfo)
+        elseif sound && !is_fully_covered(matchinfo)
             isnothing(split_argtypes) && (split_argtypes = switchtupleunion(argtypes))
             if uncovered_matches === nothing
                 uncovered_matches = (Any[], length(info.matches))

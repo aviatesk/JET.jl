@@ -133,6 +133,24 @@ end
         @test report isa MethodErrorReport
         @test report.uncovered
         @test report.sig[end] === Symbol
+
+        (basic, sound) = @eval Module() begin
+            integer_or_nothing(::Integer) = :ok1
+            integer_or_nothing(::Nothing) = :ok2
+            basic = $report_call((Union{Number,Nothing},)) do x
+                integer_or_nothing(x)
+            end
+            sound = $report_call((Union{Number,Nothing},); mode=:sound) do x
+                integer_or_nothing(x)
+            end
+            basic, sound
+        end
+
+        @test isempty(get_reports_with_test(basic))
+        report = only(get_reports_with_test(sound))
+        @test report isa MethodErrorReport
+        @test report.uncovered
+        @test report.sig[end] === Symbol
     end
 
     # union split case
