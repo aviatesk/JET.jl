@@ -9,7 +9,9 @@ export
     # optanalyzer
     @report_opt, report_opt, @test_opt, test_opt,
     # toplevel entries
-    report_file, report_and_watch_file, report_package, report_text
+    report_file, report_and_watch_file, report_package, report_text,
+    # configurations
+    LastFrameModule, AnyFrameModule
 
 let README = normpath(dirname(@__DIR__), "README.md")
     include_dependency(README)
@@ -463,8 +465,14 @@ function get_reports(result::JETToplevelResult)
         return res.toplevel_error_reports
     else
         reports = res.inference_error_reports
-        return _get_configured_reports(reports; res.defined_modules, result.jetconfigs...)
+        target_modules = get_toplevel_target_modules(res.defined_modules; result.jetconfigs...)
+        return configured_reports(reports; target_modules, result.jetconfigs...)
     end
+end
+
+@jetconfigurable function get_toplevel_target_modules(
+    defined_modules; target_defined_modules::Bool = false)
+    return target_defined_modules ? defined_modules : nothing
 end
 
 """
@@ -491,7 +499,7 @@ JETCallResult(result::InferenceResult, analyzer::AbstractAnalyzer, source::Abstr
     return state > $(fieldcount(JETCallResult)) ? nothing : (getfield(res, state), state+1)
 
 function get_result(result::JETCallResult)
-    if any(r->isa(r, GeneratorErrorReport), get_reports(result))
+    if any(@nospecialize(r) -> isa(r, GeneratorErrorReport), get_reports(result))
         return Bottom
     else
         return result.result.result
@@ -499,92 +507,151 @@ function get_result(result::JETCallResult)
 end
 function get_reports(result::JETCallResult)
     reports = get_reports(result.analyzer, result.result)
-    return _get_configured_reports(reports; result.jetconfigs...)
+    return configured_reports(reports; result.jetconfigs...)
 end
 
 """
 Configurations for [JET's analysis results](@ref analysis-result).
-These configurations should be active always.
+These configurations are always active.
 
 ---
 - `target_modules = nothing` \\
-  Filters out collected reports based on their module context.
-  By default (`target_modules = nothing`), JET prints any collected reports.
-  If specified `target_modules` should be an iterator of `Module`s, and then JET will ignore
-  whose error point is not in the specified module context.
+  A configuration to filter out reports by specifying module contexts where problems should be reported.
 
-  > Examples:
-  ```julia-repl
-  julia> function foo(a)
-             r1 = sum(a)       # => Base: MethodError(+(::Char, ::Char)), MethodError(zero(::Type{Any}))
-             r2 = undefsum(a)  # => @__MODULE__: UndefVarError(:undefsum)
-             return r1, r2
-         end;
+  By default (`target_modules = nothing`), JET reports all detected problems.
+  If specified, a problem is reported if its module context matches any of `target_modules`
+  settings and hidden otherwise. `target_modules` should be an iterator of whose element is
+  either of the data types below that match [`report::InferenceErrorReport`](@ref)'s
+  context module as follows:
+  - `m::Module` or `JET.LastFrameModule(m::Module)`: matches if the module context of  `report`'s innermost stack frame is `m`
+  - `JET.AnyFrameModule(m::Module)`: matches if module context of any of `report`'s stack frame is `m`
+  - user-type `T`: matches according to user-definition overload `match_module(::T, report::InferenceErrorReport)`
+---
+- `ignored_modules = nothing` \\
+  A configuration to filter out reports by specifying module contexts where problems should be ignored.
 
-  # by default, JET will print all the collected reports:
-  julia> @report_call foo("julia")
-  ═════ 3 possible errors found ═════
-  ┌ @ REPL[1]:2 r1 = sum(a)
-  │┌ @ reduce.jl:549 Base.:(var"#sum#281")(pairs(NamedTuple()), #self#, a)
-  ││┌ @ reduce.jl:549 sum(identity, a)
-  │││┌ @ reduce.jl:520 Base.:(var"#sum#280")(pairs(NamedTuple()), #self#, f, a)
-  ││││┌ @ reduce.jl:520 mapreduce(f, Base.add_sum, a)
-  │││││┌ @ reduce.jl:294 Base.:(var"#mapreduce#277")(pairs(NamedTuple()), #self#, f, op, itr)
-  ││││││┌ @ reduce.jl:294 mapfoldl(f, op, itr)
-  │││││││┌ @ reduce.jl:162 Base.:(var"#mapfoldl#273")(Base._InitialValue(), #self#, f, op, itr)
-  ││││││││┌ @ reduce.jl:162 Base.mapfoldl_impl(f, op, init, itr)
-  │││││││││┌ @ reduce.jl:44 Base.foldl_impl(op′, nt, itr′)
-  ││││││││││┌ @ reduce.jl:48 v = Base._foldl_impl(op, nt, itr)
-  │││││││││││┌ @ reduce.jl:62 v = op(v, y[1])
-  ││││││││││││┌ @ reduce.jl:81 op.rf(acc, x)
-  │││││││││││││┌ @ reduce.jl:24 x + y
-  ││││││││││││││ no matching method found for `+(::Char, ::Char)`: (x::Char + y::Char)::Union{}
-  │││││││││││││└────────────────
-  ││││││││││┌ @ reduce.jl:49 Base.reduce_empty_iter(op, itr)
-  │││││││││││┌ @ reduce.jl:370 Base.reduce_empty_iter(op, itr, Base.IteratorEltype(itr))
-  ││││││││││││┌ @ reduce.jl:371 Base.reduce_empty(op, eltype(itr))
-  │││││││││││││┌ @ reduce.jl:347 Base.reduce_empty(op.rf, T)
-  ││││││││││││││┌ @ reduce.jl:339 Base.reduce_empty(+, T)
-  │││││││││││││││┌ @ reduce.jl:330 zero(T)
-  ││││││││││││││││ no matching method found for `zero(::Type{Char})`: zero(T::Type{Char})::Union{}
-  │││││││││││││││└─────────────────
-  ┌ @ REPL[1]:3 r2 = undefsum(a)
-  │ variable Main.undefsum is not defined
-  └─────────────
+  By default (`ignored_modules = nothing`), JET reports all detected problems.
+  If specified, a problem is hidden if its module context matches any of `ignored_modules`
+  settings and reported otherwise. `ignored_modules` should be an iterator of whose element is
+  either of the data types below that match [`report::InferenceErrorReport`](@ref)'s
+  context module as follows:
+  - `m::Module` or `JET.LastFrameModule(m::Module)`: matches if the module context of  `report`'s innermost stack frame is `m`
+  - `JET.AnyFrameModule(m::Module)`: matches if module context of any of `report`'s stack frame is `m`
+  - user-type `T`: matches according to user-definition overload `match_module(::T, report::InferenceErrorReport)`
+---
+- `report_config = nothing` \\
+  Additional configuration layer to filter out reports with user-specified strategies.
+  By default (`report_config = nothing`), JET will use the module context based configurations
+  elaborated above and below. If user-type `T` is given, then JET will report problems based
+  on the logic according to an user-overload `configured_reports(::T, reports::Vector{InferenceErrorReport})`,
+  and the `target_modules` and `ignored_modules` configurations are not really active.
+---
 
-  # with `target_modules=(@__MODULE__,)`, JET will ignore the errors detected within the `Base` module:
-  julia> @report_call target_modules=(@__MODULE__,) foo("julia")
-  ════ 1 possible error found ═════
-  ┌ @ REPL[1]:3 r2 = undefsum(a)
-  │ variable Main.undefsum is not defined
-  └─────────────
-  ```
+# Examples
+
+```julia-repl
+julia> function foo(a)
+           r1 = sum(a)       # => Base: MethodError(+(::Char, ::Char)), MethodError(zero(::Type{Char}))
+           r2 = undefsum(a)  # => @__MODULE__: UndefVarError(:undefsum)
+           return r1, r2
+       end;
+
+# by default, JET will print all the collected reports:
+julia> @report_call foo("julia")
+═════ 3 possible errors found ═════
+┌ @ REPL[1]:2 r1 = sum(a)
+│┌ @ reduce.jl:549 Base.:(var"#sum#281")(pairs(NamedTuple()), #self#, a)
+││┌ @ reduce.jl:549 sum(identity, a)
+│││┌ @ reduce.jl:520 Base.:(var"#sum#280")(pairs(NamedTuple()), #self#, f, a)
+││││┌ @ reduce.jl:520 mapreduce(f, Base.add_sum, a)
+│││││┌ @ reduce.jl:294 Base.:(var"#mapreduce#277")(pairs(NamedTuple()), #self#, f, op, itr)
+││││││┌ @ reduce.jl:294 mapfoldl(f, op, itr)
+│││││││┌ @ reduce.jl:162 Base.:(var"#mapfoldl#273")(Base._InitialValue(), #self#, f, op, itr)
+││││││││┌ @ reduce.jl:162 Base.mapfoldl_impl(f, op, init, itr)
+│││││││││┌ @ reduce.jl:44 Base.foldl_impl(op′, nt, itr′)
+││││││││││┌ @ reduce.jl:48 v = Base._foldl_impl(op, nt, itr)
+│││││││││││┌ @ reduce.jl:62 v = op(v, y[1])
+││││││││││││┌ @ reduce.jl:81 op.rf(acc, x)
+│││││││││││││┌ @ reduce.jl:24 x + y
+││││││││││││││ no matching method found for `+(::Char, ::Char)`: (x::Char + y::Char)::Union{}
+│││││││││││││└────────────────
+││││││││││┌ @ reduce.jl:49 Base.reduce_empty_iter(op, itr)
+│││││││││││┌ @ reduce.jl:370 Base.reduce_empty_iter(op, itr, Base.IteratorEltype(itr))
+││││││││││││┌ @ reduce.jl:371 Base.reduce_empty(op, eltype(itr))
+│││││││││││││┌ @ reduce.jl:347 Base.reduce_empty(op.rf, T)
+││││││││││││││┌ @ reduce.jl:339 Base.reduce_empty(+, T)
+│││││││││││││││┌ @ reduce.jl:330 zero(T)
+││││││││││││││││ no matching method found for `zero(::Type{Char})`: zero(T::Type{Char})::Union{}
+│││││││││││││││└─────────────────
+┌ @ REPL[1]:3 r2 = undefsum(a)
+│ variable Main.undefsum is not defined
+└─────────────
+
+# with `target_modules=(@__MODULE__,)`, JET will only report the problems detected within the `@__MODULE__` module:
+julia> @report_call target_modules=(@__MODULE__,) foo("julia")
+════ 1 possible error found ═════
+┌ @ REPL[1]:3 r2 = undefsum(a)
+│ variable Main.undefsum is not defined
+└─────────────
+
+# with `ignored_modules=(Base,)`, JET will ignore the errors detected within the `Base` module:
+julia> @report_call ignored_modules=(Base,) foo("julia")
+════ 1 possible error found ═════
+┌ @ REPL[1]:3 r2 = undefsum(a)
+│ variable Main.undefsum is not defined
+└─────────────
 ---
 """
-@jetconfigurable function _get_configured_reports(
+@jetconfigurable function configured_reports(
     reports::Vector{InferenceErrorReport};
-    target_modules = nothing,
-    # only used for `JETToplevelResult`
-    target_defined_modules::Bool = false, defined_modules = nothing,
-    __jetconfigs...)
-    if target_defined_modules
-        target_modules = defined_modules
+    report_config = nothing,
+    target_modules = nothing, ignored_modules = nothing)
+    if report_config === nothing
+        report_config = ReportConfig(target_modules, ignored_modules)
     end
-    isnothing(target_modules) && return reports
-    return filter(reports) do report
-        def = last(report.vst).linfo.def
-        mod = isa(def, Method) ? def.module : def
-        mod in target_modules && return true
-        if isa(report, NoFieldErrorReport)
-            if length(report.vst) ≥ 2
-                def = report.vst[end-1].linfo.def
-                mod = isa(def, Method) ? def.module : def
-                mod in target_modules && return true
-            end
-        end
-        return false
-    end
+    return configured_reports(report_config, reports)
 end
+
+struct ReportConfig{S,T}
+    target_modules::S
+    ignored_modules::T
+end
+
+struct LastFrameModule mod::Module end
+struct AnyFrameModule mod::Module end
+
+match_module(mod::Module, @nospecialize(report::InferenceErrorReport)) = match_module(LastFrameModule(mod), report)
+function match_module(mod::LastFrameModule, @nospecialize(report::InferenceErrorReport))
+    if isa(report, NoFieldErrorReport) && length(report.vst) ≥ 2
+        vsf = report.vst[end-1]
+    else
+        vsf = last(report.vst)
+    end
+    return linfomod(vsf.linfo) === mod.mod
+end
+function match_module(mod::AnyFrameModule, @nospecialize(report::InferenceErrorReport))
+    return any(vsf->linfomod(vsf.linfo)===mod.mod, report.vst)
+end
+@noinline match_module(x::Any, @nospecialize(report::InferenceErrorReport)) =
+    error(lazy"`JET.match_module(::$x, ::InferenceErrorReport)` is not implemented")
+
+function configured_reports(config::ReportConfig, reports::Vector{InferenceErrorReport})
+    if config.target_modules !== nothing
+        reports = filter(reports) do @nospecialize report
+            return any(m->match_module(m,report), config.target_modules)
+        end
+    end
+    if config.ignored_modules !== nothing
+        reports = filter(reports) do @nospecialize report
+            return !any(m->match_module(m,report), config.ignored_modules)
+        end
+    end
+    return reports
+end
+@noinline configured_reports(x::Any, reports::Vector{InferenceErrorReport}) =
+    error(lazy"`JET.configured_reports(::$x, ::Vector{InferenceErrorReport})` is not implemented")
+
+linfomod(linfo::MethodInstance) = (def = linfo.def; isa(def, Method) ? def.module : def)
 
 # UIs
 # ===

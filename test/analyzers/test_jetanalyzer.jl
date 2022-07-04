@@ -718,9 +718,7 @@ end
     end
 end
 
-@testset "target_modules" begin
-    # from `PrintConfig` docstring
-
+@testset "configured_reports" begin
     M = Module()
     @eval M begin
         function foo(a)
@@ -730,18 +728,35 @@ end
         end
     end
 
-    let
-        result = @report_call M.foo("julia")
-        @test length(get_reports_with_test(result)) == 3
+    let result = @report_call M.foo("julia")
+        test_sum_over_string(result)
         @test any(get_reports_with_test(result)) do report
             isa(report, GlobalUndefVarErrorReport) && report.name === :undefsum
         end
     end
 
-    let
-        result = @report_call target_modules=(M,) M.foo("julia")
+    let result = @report_call target_modules=(M,) M.foo("julia")
         report = only(get_reports_with_test(result))
         @test isa(report, GlobalUndefVarErrorReport) && report.name === :undefsum
+    end
+
+    let result = @report_call target_modules=(AnyFrameModule(M),) M.foo("julia")
+        test_sum_over_string(result)
+        @test any(get_reports_with_test(result)) do report
+            isa(report, GlobalUndefVarErrorReport) && report.name === :undefsum
+        end
+    end
+
+    let result = @report_call ignored_modules=(Base,) M.foo("julia")
+        report = only(get_reports_with_test(result))
+        @test isa(report, GlobalUndefVarErrorReport) && report.name === :undefsum
+    end
+
+    let result = @report_call ignored_modules=(M,) M.foo("julia")
+        test_sum_over_string(result)
+        @test !any(get_reports_with_test(result)) do report
+            isa(report, GlobalUndefVarErrorReport) && report.name === :undefsum
+        end
     end
 end
 
