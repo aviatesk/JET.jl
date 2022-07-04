@@ -309,7 +309,9 @@ get_lin((sv, pc)::StateAtPC) = begin
     codeloc = sv.src.codelocs[pc]
     linetable = sv.src.linetable::LineTable
     if 1 <= codeloc <= length(linetable)
-        return @inbounds linetable[codeloc]::LineInfoNode
+        return linetable[codeloc]::LineInfoNode
+    elseif isa(sv, OptimizationState) && codeloc == 0
+        return nothing
     else
         # Packages might dynamically generate code, which does not reference
         # a source, see https://github.com/aviatesk/JET.jl/issues/273

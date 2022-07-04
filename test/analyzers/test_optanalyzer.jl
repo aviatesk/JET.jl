@@ -269,3 +269,30 @@ test_opt() do
     Val(:ϵ)
 end
 @test_opt log(2.1)
+
+# https://github.com/aviatesk/JET.jl/issues/335
+# don't report duplicated problems from inlined callees
+issue335_callf(f, args...) = f(args...)
+
+@inline function issue335_problematic_callee(val)
+    return issue335_undefined_call(val)
+end
+
+let result = @report_opt issue335_callf(issue335_problematic_callee, 42)
+    report = only(get_reports_with_test(result))
+    @test any(report.vst) do vsf
+        vsf.line == (@__LINE__)-6 &&
+        vsf.linfo.def.name === :issue335_problematic_callee
+    end
+end
+
+let result = report_opt() do
+        issue335_callf(42) do val
+            if val < 0
+                return issue335_problematic_callee(val)
+            end
+            return sin(val)
+        end
+    end
+    @test isempty(get_reports_with_test(result))
+end

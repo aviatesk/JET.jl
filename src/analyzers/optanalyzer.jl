@@ -331,6 +331,13 @@ function (::OptAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::OptAnalyze
     # TODO better to work on `opt.ir::IRCode` (with some updates on `handle_sig!`)
     local reported = false
     for (pc, x) in enumerate(src.code)
+        lin = get_lin((opt, pc))
+        lin === nothing && continue # dead statement, just ignore it
+        if lin.inlined_at ≠ 0
+            # this statement has been inlined, so ignore it as any problems within
+            # that callee should already have been reported
+            continue
+        end
         # branch on https://github.com/JuliaLang/julia/pull/42149
         @static if isdefined(CC, :mark_throw_blocks!)
             if analyzer.skip_unoptimized_throw_blocks

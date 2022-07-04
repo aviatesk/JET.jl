@@ -84,7 +84,7 @@ function get_virtual_frame(linfo::MethodInstance)
     return VirtualFrame(file, line, sig, linfo)
 end
 
-get_file_line(s::StateAtPC) = get_file_line(get_lin(s))
+get_file_line(s::StateAtPC) = get_file_line(get_lin(s)::LineInfoNode)
 get_file_line(lin::LineInfoNode) = lin.file, lin.line
 function get_file_line(linfo::MethodInstance)
     def = linfo.def
