@@ -679,9 +679,9 @@ function analyze_method_instance!(analyzer::AbstractAnalyzer, mi::MethodInstance
 
     @static if IS_AFTER_42082
         frame = InferenceState(result, #=cache=# :global, analyzer)
-    else # @static if IS_AFTER_42082
+    else
         frame = InferenceState(result, #=cached=# true, analyzer)
-    end # @static if IS_AFTER_42082
+    end
 
     isnothing(frame) && return analyzer, result
 
@@ -1237,7 +1237,7 @@ function default_tt(@nospecialize(f))
         return Tuple
     end
 end
-end # @static if !isdefined(Base, :default_tt)
+end
 
 function report_call(@nospecialize(tt::Type{<:Tuple});
                      analyzer::Type{Analyzer} = JETAnalyzer,

@@ -127,14 +127,14 @@ end
             end
             basic, sound
         end
-
         @test isempty(get_reports_with_test(basic))
         report = only(get_reports_with_test(sound))
         @test report isa MethodErrorReport
         @test report.uncovered
         @test report.sig[end] === Symbol
+    end
 
-        (basic, sound) = @eval Module() begin
+    let (basic, sound) = @eval Module() begin
             integer_or_nothing(::Integer) = :ok1
             integer_or_nothing(::Nothing) = :ok2
             basic = $report_call((Union{Number,Nothing},)) do x
@@ -145,7 +145,6 @@ end
             end
             basic, sound
         end
-
         @test isempty(get_reports_with_test(basic))
         report = only(get_reports_with_test(sound))
         @test report isa MethodErrorReport
@@ -153,14 +152,13 @@ end
         @test report.sig[end] === Symbol
     end
 
-    # union split case
+    # report both no match error and uncovered match error
     let result = @eval Module() begin
             onlyint(::Int) = :ok
             $report_call((Union{Integer,Nothing},); mode=:sound) do x
                 onlyint(x)
             end
         end
-
         @test length(get_reports_with_test(result)) == 2
         @test any(get_reports_with_test(result)) do report
             # no match for `onlyint(::Nothing)`
