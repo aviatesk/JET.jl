@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Dispatch Analysis · JET.jl</title><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.039/juliamono-regular.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.13.11/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../../">JET.jl</a></span></div><form class="docs-search" action="../../search/"><input class="docs-search-query" id="documenter-search-query" name="q" type="text" placeholder="Search docs"/></form><ul class="docs-menu"><li><a class="tocitem" href="../../">README</a></li><li><span class="tocitem">Analyses</span><ul><li><a class="tocitem" href="../../jetanalysis/">Error Analysis</a></li><li><a class="tocitem" href="../../optanalysis/">Optimization Analysis</a></li></ul></li><li><a class="tocitem" href="../../config/">Configurations</a></li><li><a class="tocitem" href="../../internals/">Internals</a></li><li><span class="tocitem"><code>AbstractAnalyzer</code> Framework</span><ul><li><a class="tocitem" href="../../generated-plugin-api/">API</a></li><li><input class="collapse-toggle" id="menuitem-5-2" type="checkbox" checked/><label class="tocitem" for="menuitem-5-2"><span class="docs-label">Examples</span><i class="docs-chevron"></i></label><ul class="collapsed"><li class="is-active"><a class="tocitem" href>Dispatch Analysis</a><ul class="internal"><li><a class="tocitem" href="#Motivation"><span>Motivation</span></a></li><li><a class="tocitem" href="#Implementation"><span>Implementation</span></a></li><li><a class="tocitem" href="#Usages"><span>Usages</span></a></li></ul></li><li><a class="tocitem" href="../find_unstable_api/">&quot;Unstable API&quot; Analysis</a></li></ul></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled"><code>AbstractAnalyzer</code> Framework</a></li><li><a class="is-disabled">Examples</a></li><li class="is-active"><a href>Dispatch Analysis</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Dispatch Analysis</a></li></ul></nav><div class="docs-right"><a class="docs-edit-link" href="https://github.com/aviatesk/JET.jl/blob/master/examples/dispatch_analysis.jl" title="Edit on GitHub"><span class="docs-icon fab"></span><span class="docs-label is-hidden-touch">Edit on GitHub</span></a><a class="docs-settings-button fas fa-cog" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-sidebar-button fa fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a></div></header><article class="content" id="documenter-page"><h1 id="Dispatch-Analysis"><a class="docs-heading-anchor" href="#Dispatch-Analysis">Dispatch Analysis</a><a id="Dispatch-Analysis-1"></a><a class="docs-heading-anchor-permalink" href="#Dispatch-Analysis" title="Permalink"></a></h1><h2 id="Motivation"><a class="docs-heading-anchor" href="#Motivation">Motivation</a><a id="Motivation-1"></a><a class="docs-heading-anchor-permalink" href="#Motivation" title="Permalink"></a></h2><p>When Julia compiles your code and type inference on it was not so successful, the compiler is likely to be unable to determine which method should be called at each generic function callsite, and then it will be looked up at runtime. That is called &quot;runtime dispatch&quot;, which is known as a common source of performance problem – the compiler can&#39;t do various kinds of optimizations including inlining when it can&#39;t determine a single matching method, and method lookup itself can also be a bottleneck if the call happens many times.</p><p>In order to avoid this problem, we usually use <code>code_typed</code>, inspect its output, and check if there is anywhere type is not well inferred (i.e. where is &quot;type-instable&quot;) and optimization was not successful. But the problem is that <code>code_typed</code> can only present the &quot;final&quot; output of inference or optimization, and we can&#39;t inspect an entire call graph and <em>may</em> not be able to find where a problem happened and how the &quot;type instability&quot; has been propagated.</p><p>There is a nice package called <a href="https://github.com/JuliaDebug/Cthulhu.jl">Cthulhu.jl</a>, which allows us to inspect the output of <code>code_typed</code> by <em>descending</em> into a call tree, recursively and interactively. The workflow with Cthulhu is much more powerful, but still, it&#39;s tedious.</p><p>So, why not automate it ? We can use JET&#39;s pluggable analysis framework and create such an analyzer that automatically analyzes your code and alarms you when it detects anywhere Julia can&#39;t determine matching method statically and thus runtime dispatch will happen at runtime.</p><h2 id="Implementation"><a class="docs-heading-anchor" href="#Implementation">Implementation</a><a id="Implementation-1"></a><a class="docs-heading-anchor-permalink" href="#Implementation" title="Permalink"></a></h2><p>In this analysis, the analyzer will be designed to detect:</p><ol><li>where Julia compiler gives up optimization</li><li>where a runtime dispatch will happen</li></ol><p>The case 1. will happen when there are (mutually) recursive calls and Julia compiler decided not to do inference in order to make sure the inference&#39;s termination. In such a case, optimization won&#39;t happen and method dispatches aren&#39;t resolved statically, so we will just report it (as <code>OptimizationFailureReport</code>). In order to detect the case 2., we will inspect the optimized IR and look for <code>:call</code> expressions. <code>:call</code> expressions are such calls that were not resolved statically and will be dispatched at runtime (as opposed to <a href="https://docs.julialang.org/en/v1/devdocs/ast/#Expr-types"><code>:invoke</code></a> expressions, that represent staticall resolved generic function calls).</p><p>We will define <code>DispatchAnalyzer &lt;: AbstractAnalyzer</code>, and overload some of <code>Core.Compiler</code> methods with it:</p><ul><li><code>Core.Compiler.finish(frame::CC.InferenceState, analyzer::DispatchAnalyzer)</code> to check if optimization will happen or not (the case 1.)</li><li><code>Core.Compiler.finish!(analyzer::DispatchAnalyzer, caller::CC.InferenceResult)</code> to inspect an optimized IR (the case 2.)</li></ul><pre><code class="language-julia hljs">using JET.JETInterface
+const CC = Core.Compiler
+import JET: JET
+
+struct DispatchAnalyzer{T} &lt;: AbstractAnalyzer
+    state::AnalyzerState
+    opts::BitVector
+    frame_filter::T
+    __cache_key::UInt
+end
+function DispatchAnalyzer(;
+    # a predicate, which takes `CC.InfernceState` and returns whether we want to analyze the call or not
+    frame_filter = x::Core.MethodInstance-&gt;true,
+    jetconfigs...)
+    state = AnalyzerState(; jetconfigs...)
+    # we want to run different analysis with a different filter, so include its hash into the cache key
+    cache_key = state.param_key
+    cache_key = hash(frame_filter, cache_key)
+    return DispatchAnalyzer(state, BitVector(), frame_filter, cache_key)
+end
+
+# AbstractAnalyzer API requirements
+JETInterface.AnalyzerState(analyzer::DispatchAnalyzer)                          = analyzer.state
+JETInterface.AbstractAnalyzer(analyzer::DispatchAnalyzer, state::AnalyzerState) = DispatchAnalyzer(state, analyzer.opts, analyzer.frame_filter, analyzer.__cache_key)
+JETInterface.ReportPass(analyzer::DispatchAnalyzer)                             = DispatchAnalysisPass()
+JETInterface.get_cache_key(analyzer::DispatchAnalyzer)                          = analyzer.__cache_key
+
+struct DispatchAnalysisPass &lt;: ReportPass end
+
+# ignore all reports defined by JET, since we&#39;ll just define our own reports
+(::DispatchAnalysisPass)(T::Type{&lt;:InferenceErrorReport}, @nospecialize(_...)) = return
+
+function CC.finish!(analyzer::DispatchAnalyzer, frame::CC.InferenceState)
+    caller = frame.result
+
+    # get the source before running `finish!` to keep the reference to `OptimizationState`
+    src = caller.src
+
+    # run `finish!(::AbstractAnalyzer, ::CC.InferenceState)` first to convert the optimized `IRCode` into optimized `CodeInfo`
+    ret = Base.@invoke CC.finish!(analyzer::AbstractAnalyzer, frame::CC.InferenceState)
+
+    if analyzer.frame_filter(frame.linfo)
+        if isa(src, Core.Const) # the optimization was very successful, nothing to report
+        elseif isnothing(src) # means, compiler decides not to do optimization
+            ReportPass(analyzer)(OptimizationFailureReport, analyzer, caller, src)
+        elseif isa(src, CC.OptimizationState) # the compiler optimized it, analyze it
+            ReportPass(analyzer)(RuntimeDispatchReport, analyzer, caller, src)
+        else # and thus this pass should never happen
+            # as we should already report `OptimizationFailureReport` for this case
+            throw(&quot;got $src, unexpected source found&quot;)
+        end
+    end
+
+    return ret
+end
+
+@jetreport struct OptimizationFailureReport &lt;: InferenceErrorReport end
+function JETInterface.print_report_message(io::IO, ::OptimizationFailureReport)
+    print(io, &quot;failed to optimize&quot;)
+end
+function (::DispatchAnalysisPass)(::Type{OptimizationFailureReport}, analyzer::DispatchAnalyzer, result::CC.InferenceResult)
+    add_new_report!(analyzer, result, OptimizationFailureReport(result.linfo))
+end
+
+@jetreport struct RuntimeDispatchReport &lt;: InferenceErrorReport end
+function JETInterface.print_report_message(io::IO, ::RuntimeDispatchReport)
+    print(io, &quot;runtime dispatch detected&quot;)
+end
+
+function (::DispatchAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::DispatchAnalyzer, caller::CC.InferenceResult, opt::CC.OptimizationState)
+    (; sptypes, slottypes) = opt
+    for (pc, x) in enumerate(opt.src.code)
+        if Base.Meta.isexpr(x, :call)
+            ft = CC.widenconst(CC.argextype(first(x.args), opt.src, sptypes, slottypes))
+            ft &lt;: Core.Builtin &amp;&amp; continue # ignore `:call`s of the builtin intrinsics
+            add_new_report!(analyzer, caller, RuntimeDispatchReport((opt, pc)))
+        end
+    end
+end</code></pre><h2 id="Usages"><a class="docs-heading-anchor" href="#Usages">Usages</a><a id="Usages-1"></a><a class="docs-heading-anchor-permalink" href="#Usages" title="Permalink"></a></h2><p>So we defined our analyzer. Let&#39;s setup utility analysis entries first:</p><pre><code class="language-julia hljs">using JET, InteractiveUtils # to use analysis entry points
+
+function report_dispatch(@nospecialize(f), @nospecialize(types = Tuple{});
+                         analyzer = DispatchAnalyzer,
+                         jetconfigs...)
+    @assert analyzer === DispatchAnalyzer &quot;analyzer is fixed to $DispatchAnalyzer&quot;
+    report_call(f, types; analyzer, jetconfigs...)
+end
+macro report_dispatch(ex0...)
+    return InteractiveUtils.gen_call_with_extracted_types_and_kwargs(__module__, :report_dispatch, ex0)
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">@report_dispatch (macro with 1 method)</code></pre><p>Now we can just call <code>@report_dispatch f(args...)</code> and check if there are any problematic part within the entire call tree of <code>f(args...)</code>.</p><h3 id="Simple-cases"><a class="docs-heading-anchor" href="#Simple-cases">Simple cases</a><a id="Simple-cases-1"></a><a class="docs-heading-anchor-permalink" href="#Simple-cases" title="Permalink"></a></h3><p>First, let&#39;s play with simple and factitious examples and check if <code>DispatchAnalyzer</code> works as expected.</p><pre><code class="language-julia hljs">getsomething(x::Any) = x
+getsomething(x::Array) = x[]
+getsomething(::Nothing) = throw(ArgumentError(&quot;nothing is nothing&quot;))
+getsomething(::Missing) = throw(ArgumentError(&quot;too philosophical&quot;))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">getsomething (generic function with 4 methods)</code></pre><p>If callsite is type-stable (i.e. dispatched with concretely-typed arguments), any problem shouldn&#39;t be reported:</p><pre><code class="language-julia hljs">@report_dispatch getsomething(42) # should be ok</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi"><span class="sgr92">No errors detected</span>
+</code></pre><p>But if the argument isn&#39;t well-typed, compiler can&#39;t determine which method to call, and it will lead to runtime dispatch:</p><pre><code class="language-julia hljs">report_dispatch((Any,)) do a
+    getsomething(a) # runtime dispatch !
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi"><span class="sgr7">═════ 1 possible error found ═════</span>
+<span class="sgr91">┌ @ dispatch_analysis.md:185 </span>Main.getsomething(a)
+<span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.getsomething(a<span class="sgr96">::Any</span>)<span class="sgr96">::Any</span></span>
+<span class="sgr91">└────────────────────────────</span>
+</code></pre><p>Note that even if a call is not &quot;well-typed&quot; (i.e. it&#39;s not a concrete call), runtime dispatch won&#39;t happen as far as a single method can be resovled statically:</p><pre><code class="language-julia hljs">report_dispatch((AbstractString,)) do a
+    getsomething(a) # this call isn&#39;t very concrete, but ok, Julia can optimize it
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi"><span class="sgr92">No errors detected</span>
+</code></pre><p>Ok, working nicely so far. Let&#39;s move on to a bit more complicated examples. When working on inherently-untyped code base where we somehow need to deal with arbitrarily-typed objects at runtime (as like Julia&#39;s high-level compiler), the <a href="https://docs.julialang.org/en/v1/base/base/#Base.@nospecialize"><code>@nospecialize</code></a> annotation can be very useful – it helps us avoids excessive code specialization by <em>suppressing</em> runtime dispatches with runtime object types. For example, let&#39;s assume we have a vector of arbitrary untyped objects used within an user-program and need to check if its element is <code>Type</code>-like object with the following logic:</p><pre><code class="language-julia hljs">function isTypelike(x)
+    if isa(x, DataType)
+        return isa(x, DataType) &amp;&amp; x.name === Type.body.name
+    elseif isa(x, Union)
+        return isTypelike(x.a) &amp;&amp; isTypelike(x.b)
+    elseif isa(x, UnionAll)
+        return isTypelike(x.body)
+    else
+        return false
+    end
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">isTypelike (generic function with 1 method)</code></pre><p>But without <code>@nospecialize</code>, we gonna see runtime dispatches at the recursive call sites as they will be specialized at runtime. In this setup, we can suppress the runtime dipsatches and achieve a best performance by applying <code>@nospecialize</code> annotation to the argument <code>x</code>:</p><pre><code class="language-julia hljs">function isTypelike′(@nospecialize x)
+    if isa(x, DataType)
+        return isa(x, DataType) &amp;&amp; x.name === Type.body.name
+    elseif isa(x, Union)
+        return isTypelike′(x.a) &amp;&amp; isTypelike′(x.b)
+    elseif isa(x, UnionAll)
+        return isTypelike′(x.body)
+    else
+        return false
+    end
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">isTypelike′ (generic function with 1 method)</code></pre><p>We can confirm the effect of <code>@nospecialize</code> with <code>DispatchAnalyzer</code>:</p><pre><code class="language-julia hljs">report_dispatch((Vector{Any},)) do xs
+    x  = xs[1]
+    r  = isTypelike(x)  # this call will be runtime-dispatched
+    r′ = isTypelike′(x) # this call will be statically resolved (not runtime-dispatched)
+    return r, r′
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi"><span class="sgr7">═════ 4 possible errors found ═════</span>
+<span class="sgr35">┌ @ dispatch_analysis.md:245 </span>r = Main.isTypelike(x)
+<span class="sgr35">│</span><span class="sgr91">┌ @ dispatch_analysis.md:213 </span>Main.isTypelike(%11)
+<span class="sgr35">│</span><span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.isTypelike(%11<span class="sgr96">::Any</span>)<span class="sgr96">::Bool</span></span>
+<span class="sgr35">│</span><span class="sgr91">└────────────────────────────</span>
+<span class="sgr35">│</span><span class="sgr91">┌ @ dispatch_analysis.md:213 </span>Main.isTypelike(%15)
+<span class="sgr35">│</span><span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.isTypelike(%15<span class="sgr96">::Any</span>)<span class="sgr96">::Bool</span></span>
+<span class="sgr35">│</span><span class="sgr91">└────────────────────────────</span>
+<span class="sgr35">│</span><span class="sgr91">┌ @ dispatch_analysis.md:215 </span>Main.isTypelike(%22)
+<span class="sgr35">│</span><span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.isTypelike(%22<span class="sgr96">::Any</span>)<span class="sgr96">::Bool</span></span>
+<span class="sgr35">│</span><span class="sgr91">└────────────────────────────</span>
+<span class="sgr91">┌ @ dispatch_analysis.md:245 </span>Main.isTypelike(%1)
+<span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.isTypelike(%1<span class="sgr96">::Any</span>)<span class="sgr96">::Bool</span></span>
+<span class="sgr91">└────────────────────────────</span>
+</code></pre><p>We can assert this report by looking at the output of <code>code_typed</code>, where <code>isTypelike(x)</code> remains as <code>:call</code> expression (meaning it will be dispatched at runtime) while <code>isTypelike′(x)</code> has been statically resolved and even inlined:</p><pre><code class="language-julia hljs">code_typed((Vector{Any},)) do xs
+    x  = xs[1]
+    r  = isTypelike(x)  # this call will be runtime-dispatched
+    r′ = isTypelike′(x) # this call will be statically resolved (not runtime-dispatched)
+    return r, r′
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">1-element Vector{Any}:
+ CodeInfo(
+<span class="sgr90">1 ──</span> %1  = Base.arrayref(true, xs, 1)<span class="sgr36">::Any</span>
+<span class="sgr90">│   </span> %2  = Main.isTypelike(%1)<span class="sgr36">::Bool</span>
+<span class="sgr90">│   </span> %3  = (%1 isa Main.DataType)<span class="sgr36">::Bool</span>
+<span class="sgr90">└───</span>       goto #3 if not %3
+<span class="sgr90">2 ──</span> %5  = π (%1, <span class="sgr36">DataType</span>)
+<span class="sgr90">│   </span> %6  = Base.getfield(%5, :name)<span class="sgr36">::Core.TypeName</span>
+<span class="sgr90">│   </span> %7  = Base.getfield(Type{T}, :name)<span class="sgr36">::Core.TypeName</span>
+<span class="sgr90">│   </span> %8  = (%6 === %7)<span class="sgr36">::Bool</span>
+<span class="sgr90">└───</span>       goto #10
+<span class="sgr90">3 ──</span> %10 = (%1 isa Main.Union)<span class="sgr36">::Bool</span>
+<span class="sgr90">└───</span>       goto #7 if not %10
+<span class="sgr90">4 ──</span> %12 = π (%1, <span class="sgr36">Union</span>)
+<span class="sgr90">│   </span> %13 = Base.getfield(%12, :a)<span class="sgr36">::Any</span>
+<span class="sgr90">│   </span> %14 = invoke Main.isTypelike′(%13::Any)<span class="sgr36">::Bool</span>
+<span class="sgr90">└───</span>       goto #6 if not %14
+<span class="sgr90">5 ──</span> %16 = π (%1, <span class="sgr36">Union</span>)
+<span class="sgr90">│   </span> %17 = Base.getfield(%16, :b)<span class="sgr36">::Any</span>
+<span class="sgr90">│   </span> %18 = invoke Main.isTypelike′(%17::Any)<span class="sgr36">::Bool</span>
+<span class="sgr90">└───</span>       goto #10
+<span class="sgr90">6 ──</span>       goto #10
+<span class="sgr90">7 ──</span> %21 = (%1 isa Main.UnionAll)<span class="sgr36">::Bool</span>
+<span class="sgr90">└───</span>       goto #9 if not %21
+<span class="sgr90">8 ──</span> %23 = π (%1, <span class="sgr36">UnionAll</span>)
+<span class="sgr90">│   </span> %24 = Base.getfield(%23, :body)<span class="sgr36">::Any</span>
+<span class="sgr90">│   </span> %25 = invoke Main.isTypelike′(%24::Any)<span class="sgr36">::Bool</span>
+<span class="sgr90">└───</span>       goto #10
+<span class="sgr90">9 ──</span>       goto #10
+<span class="sgr90">10 ┄</span> %28 = φ (#2 =&gt; %8, #5 =&gt; %18, #6 =&gt; false, #8 =&gt; %25, #9 =&gt; false)<span class="sgr36">::Bool</span>
+<span class="sgr90">│   </span> %29 = Core.tuple(%2, %28)<span class="sgr36">::Tuple{Bool, Bool}</span>
+<span class="sgr90">└───</span>       return %29
+) =&gt; Tuple{Bool, Bool}</code></pre><h3 id="Real-world-targets"><a class="docs-heading-anchor" href="#Real-world-targets">Real-world targets</a><a id="Real-world-targets-1"></a><a class="docs-heading-anchor-permalink" href="#Real-world-targets" title="Permalink"></a></h3><p>Let&#39;s run <code>DispatchAnalyzer</code> on real-world code and check how it works. Here we will test with Julia&#39;s <code>Base</code> module.</p><p>Random number generation might be one of the most important feature for numerical computations, and so Julia&#39;s <code>rand</code> function should run fast. Let&#39;s see if it is free from runtime-dispatch.</p><pre><code class="language-julia hljs">@report_dispatch rand(1:1000)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi"><span class="sgr92">No errors detected</span>
+</code></pre><p>Oh no, runtime dispatch happens there even in <code>Base</code>. Well, actually, this specific dispatch is expected. Especially, <a href="https://github.com/JuliaLang/julia/pull/35982">https://github.com/JuliaLang/julia/pull/35982</a> implements an heuristic to intentionally <em>disable</em> inference (and so succeeding optimizations too) in order to ease <a href="https://julialang.org/blog/2020/08/invalidations/">the latency problem, a.k.a. &quot;first-time-to-plot&quot;</a>. The report trace certainly suggests a dispatch was detected where <code>ArgumentError</code> can be thrown. We can turn off the heuristic by turning off <a href="../../config/#abstractinterpret-config">the <code>unoptimize_throw_blocks::Bool</code> configuration</a>, and this time any runtime dispatch won&#39;t be reported:</p><pre><code class="language-julia hljs">@report_dispatch unoptimize_throw_blocks=false rand(1:1000) # nothing should be reported</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi"><span class="sgr92">No errors detected</span>
+</code></pre><p>Finally, let&#39;s see an example of very &quot;type-instable&quot; code maintained within <code>Base</code>. Typically, anything involving I/O is written in a very dynamic way for good reasons, and certainly, e.g. <code>println(QuoteNode(nothing))</code> will yield bunch of runtime dispatches:</p><pre><code class="language-julia hljs">@report_dispatch println(QuoteNode(nothing))
+═════ 585 possible errors found ═════
+┌ @ coreio.jl:4 Base.println(Core.tuple(Core.typeassert(Base.stdout, Base.IO)), xs...)
+│┌ @ strings/io.jl:73 Base.print(Core.tuple(io), xs, Core.tuple(&quot;\n&quot;)...)
+││┌ @ strings/io.jl:43 Base.lock(io)
+│││┌ @ show.jl:334 Base.lock(Base.getproperty(io, :io))
+# so many reports follow ...</code></pre><p>But what if your code contains a single <code>println</code> call, which you&#39;re absolutely okay with the type instabilities involved with it (e.g. it&#39;s only called once or only in debug mode, or such), but still you want to assert that any other part of code is type-stable and dispatch-free ?</p><pre><code class="language-julia hljs"># problem: when ∑1/n exceeds 30 ?
+function compute(x)
+    r = 1
+    s = 0.0
+    n = 1
+    @time while r &lt; x
+        s += 1/n
+        if s ≥ r
+            println(&quot;round $r/$x has been finished&quot;) # we&#39;re not interested type-instabilities within this call
+            r += 1
+        end
+        n += 1
+    end
+    return n, s
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">compute (generic function with 1 method)</code></pre><p><code>DispatchAnalyzer</code>&#39;s <code>frame_filter</code> option can be useful for this, by allowing us to specify where it should and shouldn&#39;t run analysis. For example, we can limit the scope of analysis to the current module like this:</p><pre><code class="language-julia hljs">function module_filter(m) # fiter by module
+    return function (linfo::Core.MethodInstance)
+        def = linfo.def
+        isa(def, Method) ? def.module === m : def === m
+    end
+end
+
+# NOTE:
+# `compute(30)` will take more than hours in actual execution, according to https://twitter.com/genkuroki/status/1401332946707963909,
+# but `@report_dispatch` will just do abstract interpretation of the call, so will finish instantly
+@report_dispatch frame_filter=module_filter(@__MODULE__) compute(30)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi"><span class="sgr92">No errors detected</span>
+</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../generated-plugin-api/">« API</a><a class="docs-footer-nextpage" href="../find_unstable_api/">&quot;Unstable API&quot; Analysis »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.14 on <span class="colophon-date" title="Monday 4 July 2022 10:18">Monday 4 July 2022</span>. Using Julia version 1.9.0-DEV.875.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
