@@ -677,7 +677,7 @@ end
 fullbasepath(filename) = normpath(JULIA_DIR, "base", filename)
 
 # TODO make this configurable ?
-const JULIA_DIR = @static begin
+const JULIA_DIR = begin
     p1 = normpath(Sys.BINDIR, "..", "..", "..", "julia")
     p2 = normpath(Sys.BINDIR, Base.DATAROOTDIR, "julia")
     ispath(p1) ? p1 : p2
