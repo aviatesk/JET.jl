@@ -677,9 +677,11 @@ end
 fullbasepath(filename) = normpath(JULIA_DIR, "base", filename)
 
 # TODO make this configurable ?
-const JULIA_DIR = @static occursin("DEV", string(VERSION)) ?
-                  normpath(Sys.BINDIR, "..", "..", "..", "julia") :
-                  normpath(Sys.BINDIR, Base.DATAROOTDIR)
+const JULIA_DIR = begin
+    p1 = normpath(Sys.BINDIR, "..", "..")
+    p2 = normpath(Sys.BINDIR, Base.DATAROOTDIR, "julia")
+    ispath(p1) ? p1 : p2
+end
 
 # default UI (console)
 include("ui/print.jl")
