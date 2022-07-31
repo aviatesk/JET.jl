@@ -2,13 +2,13 @@
 
 ## [Abstract Interpretation](@id abstractinterpret)
 
-In order to perform type level program analysis, JET.jl uses
+In order to perform type-level program analysis, JET.jl uses
 [`Core.Compiler.AbstractInterpreter` interface](https://github.com/JuliaLang/julia/blob/master/base/compiler/types.jl),
-and customizes its abstract interpretation by overloading subset of `Core.Compiler` functions, that are originally
+and customizes its abstract interpretation by overloading a subset of `Core.Compiler` functions, that are originally
 developed for Julia compiler's type inference and optimizations that aim at generating efficient native code for CPU execution.
 
 [`JET.AbstractAnalyzer`](@ref) overloads a set of `Core.Compiler` functions to implement the "core" functionalities
-of JET's analysis, including inter-procedural error report propagation and caching of analysis result.
+of JET's analysis, including inter-procedural error report propagation and caching of the analysis result.
 And each plugin analyzer (e.g. [`JET.JETAnalyzer`](@ref)) will overload more `Core.Compiler` functions so that it can
 perform its own program analysis on top of the core `AbstractAnalyzer` infrastructure.
 
