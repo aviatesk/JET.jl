@@ -1,13 +1,13 @@
 # [Error Analysis](@id jetanalysis)
 
 Julia's type system is quite expressive and its type inference is strong enough to generate
-fairly optimized code from highly generic program written in a concise syntax.
+fairly optimized code from a highly generic program written in a concise syntax.
 But as opposed to other statically-compiled languages, Julia by design does _not_ error nor
 warn anything even if it detects possible errors during its compilation process no matter
-how serious they are. In essence Julia achieves a highly generic and composable programming
+how serious they are. In essence, Julia achieves highly generic and composable programming
 by delaying all the errors and warnings to the runtime.
 
-This is actually a core design choice of the language. On the one hand, Julia's dynamism
+This is a core design choice of the language. On the one hand, Julia's dynamism
 allows it to work in places where data types can not be fully decided ahead of runtime
 (e.g. when the program is duck-typed with generic pieces of code, or when the program
 consumes some data that is only known at runtime). On the other hand, with Julia, it's
@@ -27,11 +27,11 @@ based on a technique called
 This way JET can also analyze _just a normal_ Julia program and smartly detect possible
 errors statically, without requiring any additional setups like scattering type annotations
 just for the sake of analysis but preserving original polymorphism and composability of
-the program, as much effectively as the Julia compiler can optimize your Julia program.
+the program, as effectively as the Julia compiler can optimize your Julia program.
 
 ## [Quick Start](@id jetanalysis-quick-start)
 
-First you need to install JET: JET is an ordinary Julia package, so you can install it via
+First, you need to install JET: JET is an ordinary Julia package, so you can install it via
 Julia's built-in package manager and use it as like other packages.
 ```@repl quickstart
 ; # ] add JET # install JET via the built-in package manager
@@ -39,12 +39,12 @@ Julia's built-in package manager and use it as like other packages.
 using JET
 ```
 
-Let's start with a simplest example: how JET can find anything wrong with `sum("julia")`?
+Let's start with the simplest example: how JET can find anything wrong with `sum("julia")`?
 [`@report_call`](@ref) and [`report_call`](@ref) analyzes a given function call and report
 back possible problems. They can be used in a similar way as
 [`@code_typed`](https://docs.julialang.org/en/v1/stdlib/InteractiveUtils/#InteractiveUtils.@code_typed)
 and [`code_typed`](https://docs.julialang.org/en/v1/base/base/#Base.code_typed).
-Those [interactive entry points](@ref jetanalysis-interactive-entry) are the most easiest
+Those [interactive entry points](@ref jetanalysis-interactive-entry) are the easiest
 way to use JET:
 ```@repl quickstart
 @report_call sum("julia")
@@ -60,7 +60,7 @@ We should note that `@report_call sum("julia")` could detect both of those two d
 errors that can happen at runtime. This is because `@report_call` does a static analysis —
 it analyzes the function call in a way that does not rely on one instance of runtime
 execution, but rather it reasons about all the possible executions!
-This is one of the biggest advantages of static analysis, because other alternatives to
+This is one of the biggest advantages of static analysis because other alternatives to
 check software qualities like "testing" usually rely on _some_ runtime execution and they
 can only cover a subset of all the possible executions.
 
@@ -81,15 +81,15 @@ bar(s::String) = parse(Int, s)
 ```
 
 Now let's fix this problematic code.
-First we can fix the definition of `bar` so that it accepts generic `AbstractString` input.
+First, we can fix the definition of `bar` so that it accepts generic `AbstractString` input.
 JET's analysis result can be dynamically updated when we refine a function definition,
 and so we just need to add a new `bar(::AbstractString)` definition.
-As for the second error, let's assume, for some reason, we're not interested fixing it and
+As for the second error, let's assume, for some reason, we're not interested in fixing it and
 we want to ignore errors that may happen within `Base`. Then we can use the
 [`target_modules`](@ref result-config) configuration to limit the analysis scope to
 the current module context to ignore the possible error that may happen within `sum(a)`[^1].
 
-[^1]: We used `target_modules` just for the sake of demonstration. In order to make it more
+[^1]: We used `target_modules` just for the sake of demonstration. To make it more
       idiomatic, we should initialize `a` as typed vector `a = Int[]`, and then we won't
       get any problem from `sum(a)` even without the `target_modules` configuration.
 
@@ -107,7 +107,7 @@ JET offers other error reporting passes, including the "sound" error detection (
 as well as the simpler "typo" detection pass ([`JET.TypoPass`](@ref))[^2].
 They can be switched using the `mode` configuration:
 
-[^2]: Actually JET offers the framework to define your own abstract interpretation based analysis.
+[^2]: JET offers the framework to define your own abstract interpretation-based analysis.
       See [`AbstractAnalyzer`-Framework](@ref) if interested.
 
 ```@repl quickstart
@@ -120,10 +120,10 @@ function myifelse(cond, a, b)
 end
 
 # the default analysis pass doesn't report "non-boolean (T) used in boolean context" error
-# as far as there is possibility when the condition "can" be bool (NOTE: Bool <: Integer)
+# as far as there is a possibility when the condition "can" be bool (NOTE: Bool <: Integer)
 report_call(myifelse, (Integer, Int, Int))
 
-# the sound analyzer doens't permit such a case: it requires the type of a conditional value to be `Bool` strictly
+# the sound analyzer doesn't permit such a case: it requires the type of a conditional value to be `Bool` strictly
 report_call(myifelse, (Integer, Int, Int); mode=:sound)
 
 function strange_sum(a)
@@ -139,7 +139,7 @@ end
 # - `sum(a::Vector{Any})` can throw when `a` is empty
 @report_call strange_sum([])
 
-# the typo dection pass will only report the "typo"
+# the typo detection pass will only report the "typo"
 @report_call mode=:typo strange_sum([])
 ```
 
@@ -164,11 +164,11 @@ using Test
 end
 ```
 
-JET actually uses JET itself in its test pipeline: JET's static analysis has been proven to
+JET uses JET itself in its test pipeline: JET's static analysis has been proven to
 be very useful and helped its development a lot.
 If interested, take a peek at [JET's `"self check !!!"` testset](https://github.com/aviatesk/JET.jl/blob/master/test/runtests.jl).
 
-Lastly, let's see the example that demonstrates JET can analyze "top-level" program.
+Lastly, let's see the example that demonstrates JET can analyze a "top-level" program.
 The top-level analysis should be considered as a somewhat experimental feature, and at this moment
 you may need additional configurations to run it correctly. Please read the descriptions of
 [top-level entry points](@ref jetanalysis-toplevel-entry) and choose an appropriate entry point for
@@ -206,16 +206,16 @@ JET can also analyze your "top-level" program: it can just take your Julia scrip
 and will report possible errors.
 
 Note that JET will analyze your top-level program "half-statically": JET will selectively
-interpret and actually load "definitions" (like a function or struct definition) and try to
+interpret and load "definitions" (like a function or struct definition) and try to
 simulate Julia's top-level code execution process.
 While it tries to avoid executing any other parts of code like function calls and analyzes
 them based on abstract interpretation instead (and this is a part where JET statically analyzes your code).
 If you're interested in how JET selects "top-level definitions", please see [`JET.virtual_process`](@ref).
 
 !!! warning
-    Because JET will actually interpret "definitions" in your code, that part of top-level analysis
+    Because JET will interpret "definitions" in your code, that part of top-level analysis
     certainly _runs_ your code. So we should note that JET can cause some side effects from your code;
-    for example JET will try to expand all the macros used in your code, and so the side effects
+    for example, JET will try to expand all the macros used in your code, and so the side effects
     involved with macro expansions will also happen in JET's analysis process.
 
 ```@docs
