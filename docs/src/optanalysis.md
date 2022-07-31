@@ -1,29 +1,29 @@
 # [Optimization Analysis](@id optanalysis)
 
-Successful type inference and optimization is key to high-performing Julia programs.
+Successful type inference and optimization are key to high-performing Julia programs.
 But as mentioned in [the performance tips](https://docs.julialang.org/en/v1/manual/performance-tips/), there are some
 chances where Julia can not infer the types of your program very well and can not optimize it well accordingly.
 
 While there are many possibilities of "type-instabilities", like usage of non-constant global variable most notably,
 probably the most tricky one would be ["captured variable"](https://docs.julialang.org/en/v1/manual/performance-tips/#man-performance-captured)
 – Julia can not really well infer the type of variable that is observed and modified by both inner function and enclosing one.
-And such type instabilities can lead to various optimization failures. One of the most common barrier to the performance
+And such type instabilities can lead to various optimization failures. One of the most common barriers to performance
 is known as "runtime dispatch", which happens when a matching method can't be resolved by the compiler due to the lack
 of type information and it is looked up at runtime instead. Since runtime dispatch is caused by poor type information,
 it often indicates the compiler could not do other optimizations including inlining and scalar replacements of aggregates.
 
-In order to avoid such problems, we usually inspect output of [`code_typed`](https://docs.julialang.org/en/v1/base/base/#Base.code_typed)
+In order to avoid such problems, we usually inspect the output of [`code_typed`](https://docs.julialang.org/en/v1/base/base/#Base.code_typed)
 or its family, and check if there is anywhere type is not well inferred and optimization was not successful.
-But the problem is that one needs to have enough knowledge about the inference and optimization in order to interpret
+But the problem is that one needs to have enough knowledge about inference and optimization in order to interpret
 the output. Another problem is that they can only present the "final" output of the inference and optimization, and we
-can not inspect the entire call graph and may miss to find where a problem actually happened and how the type-instability
+can not inspect the entire call graph and may miss finding where a problem actually happened and how the type-instability
 has been propagated.
 There is a nice package called [Cthulhu.jl](https://github.com/JuliaDebug/Cthulhu.jl), which allows us to look at
 the outputs of `code_typed` by _descending_ into a call tree, recursively and interactively. The workflow with Cthulhu
-is much more efficient and powerful, but still, it requires much familiarity with Julia compiler and it tends to be tedious.
+is much more efficient and powerful, but still, it requires much familiarity with the Julia compiler and it tends to be tedious.
 
-So, why not automate it ?
-JET implements such an analyzer that investigates optimized representation of your program and _automatically_ detects
+So, why not automate it?
+JET implements such an analyzer that investigates the optimized representation of your program and _automatically_ detects
 anywhere the compiler failed in optimization. Especially, it can find where Julia creates captured variables, where
 runtime dispatch will happen, and where Julia gives up the optimization work due to unresolvable recursive function call.
 
@@ -73,7 +73,7 @@ end;
 ```
 [^1]: Technically, it's fully integrated with [Julia's method invalidation system](https://julialang.org/blog/2020/08/invalidations/).
 
-`@report_opt` can also report existence of captured variables, which are really better to be eliminated within
+`@report_opt` can also report the existence of captured variables, which are really better to be eliminated within
 performance-sensitive context:
 ```@repl quickstart
 # the examples below are all adapted from https://docs.julialang.org/en/v1/manual/performance-tips/#man-performance-captured
@@ -104,7 +104,7 @@ function abmult(r::Int)
         r = -r
     end
     # we can try to eliminate the capturing
-    # and now this function would be most high-performing
+    # and now this function would be the most performing
     f = let r = r
         x -> x * r
     end
@@ -125,7 +125,7 @@ function compute(x)
         if s ≥ r
             # `println` call is full of runtime dispatches for good reasons
             # and we're not interested in type-instabilities within this call
-            # since we know it's only called few times
+            # since we know it's only called a few times
             println("round $r/$x has been finished")
             r += 1
         end
@@ -139,11 +139,11 @@ end
 @report_opt target_modules=(@__MODULE__,) compute(30) # focus on what we wrote, and no error should be reported
 ```
 
-There is also [`function_filter`](@ref optanalysis-config), which can ignore specific function call.
+There is also [`function_filter`](@ref optanalysis-config), which can ignore specific function calls.
 
-[`@test_opt`](@ref) can be used to assert that a given function call is free from the performance pitfalls.
+[`@test_opt`](@ref) can be used to assert that a given function call is free from performance pitfalls.
 It is fully integrated with [`Test` standard library](https://docs.julialang.org/en/v1/stdlib/Test/)'s unit-testing infrastructure,
-and we can use it as like other `Test` macros e.g. `@test`:
+and we can use it like other `Test` macros e.g. `@test`:
 ```@repl quickstart
 @test_opt sumup(cos)
 
@@ -188,7 +188,7 @@ JET.test_opt
 By default, JET doesn't offer top-level entry points for the optimization analysis, because it's usually used for only a
 selective portion of your program.
 But if you want you can just use [`report_file`](@ref) or similar top-level entry points with specifying
-`analyzer = OptAnalyzer` configuration in order to apply the optimization analysis on top-level script,
+`analyzer = OptAnalyzer` configuration in order to apply the optimization analysis on a top-level script,
 e.g. `report_file("path/to/file.jl"; analyzer = OptAnalyzer)`.
 
 
