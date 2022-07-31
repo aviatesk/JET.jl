@@ -12,7 +12,7 @@ JET.jl employs Julia's type inference to detect potential bugs.
     JET is tested against [the current stable release](https://julialang.org/downloads/#current_stable_release) as well as [nightly version](https://julialang.org/downloads/nightlies/). \
     Also note that JET deeply relies on the type inference routine implemented in [the Julia compiler](https://github.com/JuliaLang/julia/tree/master/base/compiler),
     and so the analysis result can vary depending on your Julia version.
-    In general, the newer your Julia version is, more accurately and quickly your can expect JET to analyze your code,
+    In general, the newer your Julia version is, the more accurately and quickly you can expect JET to analyze your code,
     assuming the Julia compiler keeps evolving all the time from now on.
 
 !!! tip
@@ -116,13 +116,13 @@ julia> report_and_watch_file("demo.jl"; annotate_types = true)
 ```
 
 Hooray!
-JET.jl found possible error points (e.g. `MethodError: no method matching isless(::String, ::Int64)`) given toplevel call signatures of generic functions (e.g. `fib("1000")`).
+JET.jl found possible error points (e.g. `MethodError: no method matching isless(::String, ::Int64)`) given top-level call signatures of generic functions (e.g. `fib("1000")`).
 
 Note that JET can find these errors while demo.jl is so inefficient (especially the `fib` implementation) that it would never terminate in actual execution.
 That is possible because JET analyzes code only on _type level_.
 This technique is often called "abstract interpretation" and JET internally uses Julia's native type inference implementation, so it can analyze code as fast/correctly as Julia's code generation.
 
-Lastly let's apply the following diff to demo.jl so that it works nicely:
+Lastly, let's apply the following diff to demo.jl so that it works nicely:
 
 > fix-demo.jl.diff
 
@@ -197,7 +197,7 @@ No errors detected
 
 ## Limitations
 
-JET explores the functions you call directly as well as their *inferrable* callees. However, if the argument-types for a call cannot be inferred, JET does not analyze the callee. Consequently, a report of `No errors detected` does not imply that your entire codebase is free of errors.
+JET explores the functions you call directly as well as their *inferrable* callees. However, if the argument types for a call cannot be inferred, JET does not analyze the callee. Consequently, a report of `No errors detected` does not imply that your entire codebase is free of errors.
 
 JET integrates with [SnoopCompile](https://github.com/timholy/SnoopCompile.jl), and you can sometimes use SnoopCompile to collect the data to perform more comprehensive analyses. SnoopCompile's limitation is that it only collects data for calls that have not been previously inferred, so you must perform this type of analysis in a fresh session.
 
@@ -206,19 +206,19 @@ See [SnoopCompile's JET-integration documentation](https://timholy.github.io/Sno
 ## Roadmap
 
 - **more accuracy**: abstract interpretation can be improved yet more
-  * switch to new type lattice design: to simplify the addition of further improvements
-  * design and introduce a more proper backward-analysis pass, e.g. effect and escape analysis: to enable further constraint propagation
+  * switch to a new type of lattice design: to simplify the addition of further improvements
+  * design and introduce a more proper backwards-analysis pass, e.g. effect and escape analysis: to enable further constraint propagation
 - **more performance**: JET should be much faster
   * aggregate similar errors more smartly and aggressively
   * introduce parallelism to Julia's native type inference routine
 - **better documentation**: especially JET needs a specification of its error reports
-- **editor/IDE integration**: GUI would definitely be more appropriate for showing JET's analysis result
+- **editor/IDE integration**: GUI would be more appropriate for showing JET's analysis result
   * **smarter code dependency tracking**: the watch mode currently re-analyzes the whole code on each update, which is the most robust and least efficient option. When integrated with an IDE, fancier incremental analysis based on smarter code dependency tracking like what [Revise.jl](https://github.com/timholy/Revise.jl) does would be needed
-  * **LSP support**: ideally I hope to extend JET to provide some of LSP features other than diagnostics, e.g. auto-completions, rename refactor, taking type-level information into account
+  * **LSP support**: ideally, I hope to extend JET to provide some of LSP features other than diagnostics, e.g. auto-completion, rename refactor, taking type-level information into account
 
 
 ## Acknowledgement
 
 This project started as my undergrad thesis project at Kyoto University, supervised by Prof. Takashi Sakuragawa.
 We were heavily inspired by [ruby/typeprof](https://github.com/ruby/typeprof), an experimental type understanding/checking tool for Ruby.
-The grad thesis about this project is published at <https://github.com/aviatesk/grad-thesis>, but currently it's only available in Japanese.
+The grad thesis about this project is published at <https://github.com/aviatesk/grad-thesis>, but currently, it's only available in Japanese.
