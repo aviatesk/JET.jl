@@ -331,7 +331,7 @@ end
     end
 end
 
-@static VERSION ≥ v"1.8" && @testset "InvalidGlobalAssignmentError" begin
+@static isdefined(@__MODULE__, :setglobal!) && @testset "InvalidGlobalAssignmentError" begin
     global __int_globalvar__::Int
     let result = report_call((Nothing,)) do x
             setglobal!(@__MODULE__, :__int_globalvar__, x)
