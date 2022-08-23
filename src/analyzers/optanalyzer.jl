@@ -365,7 +365,7 @@ end
 # -------
 
 """
-    report_opt(f, types = Tuple{}; jetconfigs...) -> JETCallResult
+    report_opt(f, [types]; jetconfigs...) -> JETCallResult
     report_opt(tt::Type{<:Tuple}; jetconfigs...) -> JETCallResult
 
 Analyzes the generic function call with the given type signature with [the optimization analyzer](@ref optanalysis),
@@ -438,7 +438,7 @@ macro test_opt(ex0...)
 end
 
 """
-    test_opt(f, types = Tuple{}; broken::Bool = false, skip::Bool = false, jetconfigs...)
+    test_opt(f, [types]; broken::Bool = false, skip::Bool = false, jetconfigs...)
     test_opt(tt::Type{<:Tuple}; broken::Bool = false, skip::Bool = false, jetconfigs...)
 
 Tests the generic function call with the given type signature is free from runtime dispatch.

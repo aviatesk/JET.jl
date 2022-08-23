@@ -5,7 +5,7 @@
 ![CI](https://github.com/aviatesk/JET.jl/workflows/CI/badge.svg)
 [![codecov](https://codecov.io/gh/aviatesk/JET.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/aviatesk/JET.jl)
 
-JET.jl employs Julia's type inference to detect potential bugs.
+JET.jl employs Julia's type inference system to detect potential bugs.
 
 !!! note
     The latest version of JET requires Julia versions **1.7 and higher**;

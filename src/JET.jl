@@ -1271,7 +1271,7 @@ macro report_call(ex0...)
 end
 
 """
-    report_call(f, types = Tuple{};
+    report_call(f, [types];
                 analyzer::Type{<:AbstractAnalyzer} = JETAnalyzer,
                 jetconfigs...) -> JETCallResult
     report_call(tt::Type{<:Tuple};
@@ -1481,7 +1481,7 @@ function test_exs(ex0, m, source)
 end
 
 """
-    test_call(f, types = Tuple{}; broken::Bool = false, skip::Bool = false, jetconfigs...)
+    test_call(f, [types]; broken::Bool = false, skip::Bool = false, jetconfigs...)
     test_call(tt::Type{<:Tuple}; broken::Bool = false, skip::Bool = false, jetconfigs...)
 
 Runs [`report_call(f, types; jetconfigs...`](@ref report_call) and tests that the generic
