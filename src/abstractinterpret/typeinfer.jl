@@ -415,6 +415,8 @@ function CC.getindex(wvc::WorldView{<:JETGlobalCache}, mi::MethodInstance)
     return r::CodeInstance
 end
 
+@static if !hasmethod(CC.transform_result_for_cache, (
+    AbstractInterpreter, MethodInstance, WorldRange, InferenceResult))
 function CC.cache_result!(analyzer::AbstractAnalyzer, result::InferenceResult)
     valid_worlds = result.valid_worlds
     if CC.last(valid_worlds) == get_world_counter()
@@ -438,6 +440,7 @@ function CC.cache_result!(analyzer::AbstractAnalyzer, result::InferenceResult)
     unlock_mi_inference(analyzer, linfo)
     nothing
 end
+end # @static if hasmethod(CC.transform_result_for_cache, (...))
 
 function CC.transform_result_for_cache(analyzer::AbstractAnalyzer,
     linfo::MethodInstance, valid_worlds::WorldRange, result::InferenceResult)
@@ -449,7 +452,11 @@ function CC.transform_result_for_cache(analyzer::AbstractAnalyzer,
         end
         cache_report!(cache, report)
     end
-    @static if isdefined(CC, :Effects) && hasmethod(CC.transform_result_for_cache, (
+    @static if hasmethod(CC.transform_result_for_cache, (
+        AbstractInterpreter, MethodInstance, WorldRange, InferenceResult))
+        inferred_result = @invoke transform_result_for_cache(analyzer::AbstractInterpreter,
+        linfo::MethodInstance, valid_worlds::WorldRange, result::InferenceResult)
+    elseif isdefined(CC, :Effects) && hasmethod(CC.transform_result_for_cache, (
         AbstractInterpreter, MethodInstance, WorldRange, Any, CC.Effects))
         inferred_result = @invoke transform_result_for_cache(analyzer::AbstractInterpreter,
         linfo::MethodInstance, valid_worlds::WorldRange, result.src::Any, result.ipo_effects::CC.Effects)
