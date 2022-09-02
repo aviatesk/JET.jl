@@ -538,6 +538,16 @@ end
     end
 
     let
+        f1 = normpath(FIXTURE_DIR, "includetwice.jl")
+        f2 = normpath(FIXTURE_DIR, "include2.jl")
+        res = report_file2(f1)
+
+        @test f1 in res.res.included_files
+        @test f2 in res.res.included_files
+        @test isempty(res.res.toplevel_error_reports)
+    end
+
+    let
         modf = normpath(FIXTURE_DIR, "modinclude.jl")
         inc2 = normpath(FIXTURE_DIR, "include2.jl")
 
