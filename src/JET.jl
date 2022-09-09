@@ -809,7 +809,7 @@ See [JET's configuration file](@ref config-file) for more details.
 function report_file(filename::AbstractString;
                      __default_configs = (default_toplevel_logger_config(),),
                      source::Union{Nothing,AbstractString} = nothing,
-                     jetconfigs...) where T
+                     jetconfigs...)
     isfile(filename) || throw(ArgumentError("$filename doesn't exist"))
 
     configfile = find_config_file(dirname(abspath(filename)))
