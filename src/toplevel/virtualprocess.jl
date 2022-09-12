@@ -263,6 +263,7 @@ const Actual2Virtual = Pair{Module,Module}
 """
 struct VirtualProcessResult
     included_files::Set{String}
+    files_stack::Vector{String}
     defined_modules::Set{Module}
     toplevel_error_reports::Vector{ToplevelErrorReport}
     inference_error_reports::Vector{InferenceErrorReport}
@@ -272,6 +273,7 @@ end
 
 function VirtualProcessResult(actual2virtual, context)
     return VirtualProcessResult(Set{String}(),
+                                Vector{String}(),
                                 Set{Module}((context,)),
                                 ToplevelErrorReport[],
                                 InferenceErrorReport[],
@@ -454,6 +456,7 @@ function _virtual_process!(s::AbstractString,
     end
 
     push!(res.included_files, filename)
+    push!(res.files_stack, filename)
 
     toplevelex = parse_input_line(s; filename)
 
@@ -465,6 +468,7 @@ function _virtual_process!(s::AbstractString,
     else
         res = _virtual_process!(toplevelex, filename, analyzer, config, context, res)
     end
+    pop!(res.files_stack)
 
     with_toplevel_logger(config) do @nospecialize(io)
         sec = round(time() - start; digits = 3)
@@ -1092,7 +1096,7 @@ end
 
 isinclude(@nospecialize f) = isa(f, Function) && nameof(f) === :include
 
-function handle_include(interp, args)
+function handle_include(interp::ConcreteInterpreter, args)
     filename = interp.filename
     res = interp.res
     lnn = interp.lnn
@@ -1129,8 +1133,8 @@ function handle_include(interp, args)
 
     include_file = normpath(dirname(filename), fname)
     # handle recursive `include`s
-    if include_file in res.included_files
-        report = RecursiveIncludeErrorReport(include_file, res.included_files, filename, lnn.line)
+    if include_file in res.files_stack
+        report = RecursiveIncludeErrorReport(include_file, copy(res.files_stack), filename, lnn.line)
         push!(res.toplevel_error_reports, report)
         return nothing
     end
@@ -1154,7 +1158,7 @@ end
 
 struct RecursiveIncludeErrorReport <: ToplevelErrorReport
     duplicated_file::String
-    files::Set{String}
+    files::Vector{String}
     file::String
     line::Int
 end
