@@ -424,7 +424,7 @@ function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProce
                 end
                 analyzer = AbstractAnalyzer(analyzer, _CONCRETIZED, _TOPLEVELMOD)
                 analyzer, result = analyze_method!(
-                    analyzer, (first(mms)::MethodMatch).method;
+                    analyzer, (only(mms)::MethodMatch).method;
                     # JETAnalyzer{BasicPass}: don't report errors unless this frame is concrete
                     set_entry = false)
                 append!(res.inference_error_reports, get_reports(analyzer, result))
@@ -1043,7 +1043,7 @@ function to_simple_module_usages(x::Expr)
         # using A, B, export a, b
         return Expr.(x.head, x.args)
     else
-        arg = first(x.args)
+        arg = only(x.args)
         if isa(arg, Symbol)
             # export a
             return [x]
