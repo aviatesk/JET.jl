@@ -865,11 +865,9 @@ end
 
 function select_direct_requirement!(concretize, stmts, edges)
     for (i, stmt) in enumerate(stmts)
-        if begin
-                ismethod(stmt)      || # don't abstract away method definitions
-                istypedef(stmt)     || # don't abstract away type definitions
-                ismoduleusage(stmt)    # module usages are handled by `ConcreteInterpreter`
-            end
+        if ismethod(stmt)      || # don't abstract away method definitions
+           istypedef(stmt)     || # don't abstract away type definitions
+           ismoduleusage(stmt)    # module usages are handled by `ConcreteInterpreter`
             concretize[i] = true
             continue
         end
@@ -1042,7 +1040,7 @@ end
 ismoduleusage(@nospecialize(x)) = isexpr(x, (:import, :using, :export))
 
 # assuming `ismoduleusage(x)` holds
-function to_simple_module_usages(x::Expr)
+function to_simple_module_usages(x::Expr)::Vector{Expr}
     if length(x.args) != 1
         # using A, B, export a, b
         return Expr.(x.head, x.args)
@@ -1050,7 +1048,7 @@ function to_simple_module_usages(x::Expr)
         arg = only(x.args)
         if isa(arg, Symbol)
             # export a
-            return [x]
+            return Expr[x]
         else
             # import Pkg as P
             if arg.head === :as
@@ -1058,7 +1056,7 @@ function to_simple_module_usages(x::Expr)
             end
             if arg.head === :.
                 # using A
-                return [x]
+                return Expr[x]
             else
                 # using A: sym1, sym2, ...
                 @assert isexpr(arg, :(:))
