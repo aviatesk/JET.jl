@@ -253,12 +253,16 @@ must-reachable `throw` calls.
 """
 CC.const_prop_entry_heuristic(::JETAnalyzer, result::MethodCallResult, sv::InferenceState) = true
 
-# TODO correctly reasons about error found by concrete evaluation
+# TODO correctly reasons about error found by [semi-]concrete evaluation
 # for now just always fallback to the constant-prop'
 @static if IS_V18
 function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
     @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
-    return false
+    @static if isdefined(CC, :ir_abstract_constant_propagation)
+        return nothing # disables both concrete evaluation and semi-concrete interpretation
+    else
+        return false # disables concrete evaluation
+    end
 end
 end # @static if IS_V18
 
@@ -1103,7 +1107,10 @@ function (::SoundPass)(::Type{BuiltinErrorReport}, analyzer::JETAnalyzer, sv::In
             add_new_report!(analyzer, sv.result, UnsoundBuiltinCallErrorReport(sv, argtypes))
         end
     else
-        if !Core.Compiler.builtin_nothrow(f, argtypes, rt)
+        nothrow = !(@static isdefined(CC, :typeinf_lattice) ?
+            Core.Compiler.builtin_nothrow(CC.typeinf_lattice(analyzer), f, argtypes, rt) :
+            Core.Compiler.builtin_nothrow(f, argtypes, rt))
+        if nothrow
             add_new_report!(analyzer, sv.result, UnsoundBuiltinCallErrorReport(sv, argtypes))
         end
     end

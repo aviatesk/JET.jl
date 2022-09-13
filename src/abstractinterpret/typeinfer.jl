@@ -185,50 +185,59 @@ function CC.abstract_call_method(analyzer::AbstractAnalyzer,
     return ret
 end
 
-@static if IS_V18
-function CC.abstract_call_method_with_const_args(analyzer::AbstractAnalyzer,
-    result::MethodCallResult, @nospecialize(f), arginfo::ArgInfo, match::MethodMatch,
-    sv::InferenceState)
-    set_cacher!(analyzer, :abstract_call_method_with_const_args => sv.result)
-    const_result =
-        @invoke CC.abstract_call_method_with_const_args(analyzer::AbstractInterpreter,
+let
+    @static if hasmethod(CC.abstract_call_method_with_const_args, (AbstractInterpreter,
+        MethodCallResult, Any, ArgInfo, MethodMatch,
+        InferenceState, Any))
+        sigs_ex = :(analyzer::AbstractAnalyzer,
+            result::MethodCallResult, @nospecialize(f), arginfo::ArgInfo, match::MethodMatch,
+            sv::InferenceState, @nospecialize(invoketypes=nothing))
+        args_ex = :(analyzer::AbstractInterpreter,
+            result::MethodCallResult, f::Any, arginfo::ArgInfo, match::MethodMatch,
+            sv::InferenceState, invoketypes::Any)
+    elseif IS_V18
+        sigs_ex = :(analyzer::AbstractAnalyzer,
+            result::MethodCallResult, @nospecialize(f), arginfo::ArgInfo, match::MethodMatch,
+            sv::InferenceState)
+        args_ex = :(analyzer::AbstractInterpreter,
             result::MethodCallResult, f::Any, arginfo::ArgInfo, match::MethodMatch,
             sv::InferenceState)
-    # we should make sure we reset the cacher because at this point we may have not hit
-    # `CC.cache_lookup(linfo::MethodInstance, given_argtypes::Argtypes, cache::JETLocalCache)`
-    set_cacher!(analyzer, nothing)
-    if const_result !== nothing
-        # successful constant prop', we also need to update reports
-        collect_callee_reports!(analyzer, sv)
-    end
-    return const_result
-end
-else # @static if IS_V18
-function CC.abstract_call_method_with_const_args(analyzer::AbstractAnalyzer,
-    result::MethodCallResult, @nospecialize(f), arginfo::(@static IS_AFTER_42529 ? ArgInfo : Argtypes), match::MethodMatch,
-    sv::InferenceState, va_override::Bool)
-    set_cacher!(analyzer, :abstract_call_method_with_const_args => sv.result)
-    const_result =
-        @invoke CC.abstract_call_method_with_const_args(analyzer::AbstractInterpreter,
-            result::MethodCallResult, f::Any, arginfo::(@static IS_AFTER_42529 ? ArgInfo : Argtypes), match::MethodMatch,
+    elseif IS_AFTER_42529
+        sigs_ex = :(analyzer::AbstractAnalyzer,
+            result::MethodCallResult, @nospecialize(f), arginfo::ArgInfo, match::MethodMatch,
             sv::InferenceState, va_override::Bool)
-    # we should make sure we reset the cacher because at this point we may have not hit
-    # `CC.cache_lookup(linfo::MethodInstance, given_argtypes::Argtypes, cache::JETLocalCache)`
-    set_cacher!(analyzer, nothing)
-    if const_result !== nothing
-        # successful constant prop', we also need to update reports
-        collect_callee_reports!(analyzer, sv)
+        args_ex = :(analyzer::AbstractInterpreter,
+            result::MethodCallResult, f::Any, arginfo::ArgInfo, match::MethodMatch,
+            sv::InferenceState, va_override::Bool)
+    else
+        sigs_ex = :(analyzer::AbstractAnalyzer,
+            result::MethodCallResult, @nospecialize(f), argtypes::Argtypes, match::MethodMatch,
+            sv::InferenceState, va_override::Bool)
+        args_ex = :(analyzer::AbstractInterpreter,
+            result::MethodCallResult, f::Any, argtypes::Argtypes, match::MethodMatch,
+            sv::InferenceState, va_override::Bool)
     end
-    return const_result
+    @eval function CC.abstract_call_method_with_const_args($(sigs_ex.args...))
+        set_cacher!(analyzer, :abstract_call_method_with_const_args => sv.result)
+        const_result =
+            @invoke CC.abstract_call_method_with_const_args($(args_ex.args...))
+        # we should make sure we reset the cacher because at this point we may have not hit
+        # `CC.cache_lookup(linfo::MethodInstance, given_argtypes::Argtypes, cache::JETLocalCache)`
+        set_cacher!(analyzer, nothing)
+        if const_result !== nothing
+            # successful constant prop', we also need to update reports
+            collect_callee_reports!(analyzer, sv)
+        end
+        return const_result
+    end
 end
-end # @static if IS_V18
 
 @static if IS_V18
 function CC.concrete_eval_call(analyzer::AbstractAnalyzer,
     @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
     ret = @invoke CC.concrete_eval_call(analyzer::AbstractInterpreter,
         f::Any, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
-    if ret !== nothing
+    if @static isdefined(CC, :ConstCallResults) ? (ret isa CC.ConstCallResults) : (ret !== nothing)
         # this frame has been happily concretized, now we throw away reports collected
         # during the previous abstract interpretation
         filter_lineages!(analyzer, sv.result, result.edge::MethodInstance)
@@ -514,37 +523,46 @@ end
 
 CC.get_inference_cache(analyzer::AbstractAnalyzer) = JETLocalCache(analyzer, get_inference_cache(get_native(analyzer)))
 
-function CC.cache_lookup(linfo::MethodInstance, given_argtypes::Argtypes, cache::JETLocalCache)
-    # XXX the very dirty analyzer state observation again
-    # this method should only be called from the single context i.e. `abstract_call_method_with_const_args`,
-    # and so we should reset the cacher immediately we reach here
-    analyzer = cache.analyzer
-    setter, caller = get_cacher(analyzer)::Pair{Symbol,InferenceResult}
-    @assert setter === :abstract_call_method_with_const_args
-    set_cacher!(analyzer, nothing)
-
-    inf_result = cache_lookup(linfo, given_argtypes, cache.cache)
-
-    isa(inf_result, InferenceResult) || return inf_result
-
-    # constant prop' hits a cycle (recur into same non-constant analysis), we just bail out
-    isa(inf_result.result, InferenceState) && return inf_result
-
-    # cache hit, try to restore local report caches
-
-    # corresponds to the throw-away logic in `_typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)`
-    filter_lineages!(analyzer, caller, linfo)
-
-    for cached in get_cached_reports(analyzer, inf_result)
-        restored = add_cached_report!(analyzer, caller, cached)
-        @static if JET_DEV_MODE
-            actual, expected = first(restored.vst).linfo, linfo
-            @assert actual === expected "invalid local cache restoration, expected $expected but got $actual"
-        end
-        add_caller_cache!(analyzer, restored) # should be updated in `abstract_call_method_with_const_args`
+let
+    if isdefined(CC, :AbstractLattice)
+        sigs_ex = :(lattice::CC.AbstractLattice, linfo::MethodInstance, given_argtypes::Argtypes, cache::JETLocalCache)
+        args_ex = :(lattice, linfo, given_argtypes, cache.cache)
+    else
+        sigs_ex = :(linfo::MethodInstance, given_argtypes::Argtypes, cache::JETLocalCache)
+        args_ex = :(linfo, given_argtypes, cache.cache)
     end
+    @eval function CC.cache_lookup($(sigs_ex.args...))
+        # XXX the very dirty analyzer state observation again
+        # this method should only be called from the single context i.e. `abstract_call_method_with_const_args`,
+        # and so we should reset the cacher immediately we reach here
+        analyzer = cache.analyzer
+        setter, caller = get_cacher(analyzer)::Pair{Symbol,InferenceResult}
+        @assert setter === :abstract_call_method_with_const_args
+        set_cacher!(analyzer, nothing)
 
-    return inf_result
+        inf_result = cache_lookup($(args_ex.args...))
+
+        isa(inf_result, InferenceResult) || return inf_result
+
+        # constant prop' hits a cycle (recur into same non-constant analysis), we just bail out
+        isa(inf_result.result, InferenceState) && return inf_result
+
+        # cache hit, try to restore local report caches
+
+        # corresponds to the throw-away logic in `_typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)`
+        filter_lineages!(analyzer, caller, linfo)
+
+        for cached in get_cached_reports(analyzer, inf_result)
+            restored = add_cached_report!(analyzer, caller, cached)
+            @static if JET_DEV_MODE
+                actual, expected = first(restored.vst).linfo, linfo
+                @assert actual === expected "invalid local cache restoration, expected $expected but got $actual"
+            end
+            add_caller_cache!(analyzer, restored) # should be updated in `abstract_call_method_with_const_args`
+        end
+
+        return inf_result
+    end
 end
 
 CC.push!(cache::JETLocalCache, inf_result::InferenceResult) = CC.push!(cache.cache, inf_result)
