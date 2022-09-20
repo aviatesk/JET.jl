@@ -185,8 +185,16 @@ function CC.abstract_call_method(analyzer::AbstractAnalyzer,
     return ret
 end
 
-let
-    @static if hasmethod(CC.abstract_call_method_with_const_args, (AbstractInterpreter,
+let # overload `abstract_call_method_with_const_args`
+    @static if isdefined(CC, :InvokeCall)
+        # https://github.com/JuliaLang/julia/pull/46743
+        sigs_ex = :(analyzer::AbstractAnalyzer,
+            result::MethodCallResult, @nospecialize(f), arginfo::ArgInfo, match::MethodMatch,
+            sv::InferenceState, $(Expr(:kw, :(invokecall::Union{Nothing,CC.InvokeCall}), :nothing)))
+        args_ex = :(analyzer::AbstractInterpreter,
+            result::MethodCallResult, f::Any, arginfo::ArgInfo, match::MethodMatch,
+            sv::InferenceState, invokecall::Union{Nothing,CC.InvokeCall})
+    elseif hasmethod(CC.abstract_call_method_with_const_args, (AbstractInterpreter,
         MethodCallResult, Any, ArgInfo, MethodMatch,
         InferenceState, Any))
         sigs_ex = :(analyzer::AbstractAnalyzer,
@@ -232,19 +240,33 @@ let
     end
 end
 
-@static if IS_V18
-function CC.concrete_eval_call(analyzer::AbstractAnalyzer,
-    @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
-    ret = @invoke CC.concrete_eval_call(analyzer::AbstractInterpreter,
-        f::Any, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
-    if @static isdefined(CC, :ConstCallResults) ? (ret isa CC.ConstCallResults) : (ret !== nothing)
-        # this frame has been happily concretized, now we throw away reports collected
-        # during the previous abstract interpretation
-        filter_lineages!(analyzer, sv.result, result.edge::MethodInstance)
+let # overload `concrete_eval_call`
+    @static if isdefined(CC, :InvokeCall)
+        # https://github.com/JuliaLang/julia/pull/46743
+        sigs_ex = :(analyzer::AbstractAnalyzer,
+            @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
+            $(Expr(:kw, :(invokecall::Union{Nothing,CC.InvokeCall}), :nothing)))
+        args_ex = :(analyzer::AbstractInterpreter,
+            f::Any, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
+            invokecall::Union{Nothing,CC.InvokeCall})
+    elseif IS_V18
+        sigs_ex = :(analyzer::AbstractAnalyzer,
+            @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
+        args_ex = :(analyzer::AbstractInterpreter,
+            f::Any, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
+    else
+        return # `concrete_eval_call` isn't defined for this case
     end
-    return ret
+    @eval function CC.concrete_eval_call($(sigs_ex.args...))
+        ret = @invoke CC.concrete_eval_call($(args_ex.args...))
+        if @static isdefined(CC, :ConstCallResults) ? (ret isa CC.ConstCallResults) : (ret !== nothing)
+            # this frame has been happily concretized, now we throw away reports collected
+            # during the previous abstract-interpretation based analysis
+            filter_lineages!(analyzer, sv.result, result.edge::MethodInstance)
+        end
+        return ret
+    end
 end
-end # @static if IS_V18
 
 @static if IS_AFTER_42529
 function CC.abstract_call(analyzer::AbstractAnalyzer,
