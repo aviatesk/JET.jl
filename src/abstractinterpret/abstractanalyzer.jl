@@ -261,47 +261,52 @@ JETInferenceParams(; ipo_constant_propagation::Bool        = true,
                              tupletype_depth,
                              tuple_splat,
                              )
-@static if isdefined(CC, :mark_throw_blocks!)
-    JETOptimizationParams(; inlining::Bool                = inlining_enabled(),
-                            inline_cost_threshold::Int    = 100,
-                            inline_nonleaf_penalty::Int   = 1000,
-                            inline_tupleret_bonus::Int    = 250,
-                            inline_error_path_cost::Int   = 20,
-                            max_methods::Int              = 3,
-                            tuple_splat::Int              = 32,
-                            union_splitting::Int          = 4,
-                            __jetconfigs...) =
-        return OptimizationParams(; inlining,
-                                    inline_cost_threshold,
-                                    inline_nonleaf_penalty,
-                                    inline_tupleret_bonus,
-                                    inline_error_path_cost,
-                                    max_methods,
-                                    tuple_splat,
-                                    union_splitting,
-                                    )
-else # @static if isdefined(CC, :mark_throw_blocks!)
-    JETOptimizationParams(; inlining::Bool                = inlining_enabled(),
-                            inline_cost_threshold::Int    = 100,
-                            inline_nonleaf_penalty::Int   = 1000,
-                            inline_tupleret_bonus::Int    = 250,
-                            inline_error_path_cost::Int   = 20,
-                            max_methods::Int              = 3,
-                            tuple_splat::Int              = 32,
-                            union_splitting::Int          = 4,
-                            unoptimize_throw_blocks::Bool = true,
-                            __jetconfigs...) =
-        return OptimizationParams(; inlining,
-                                    inline_cost_threshold,
-                                    inline_nonleaf_penalty,
-                                    inline_tupleret_bonus,
-                                    inline_error_path_cost,
-                                    max_methods,
-                                    tuple_splat,
-                                    union_splitting,
-                                    unoptimize_throw_blocks,
-                                    )
-end # @static if isdefined(CC, :mark_throw_blocks!)
+let
+    @static if hasfield(OptimizationParams, :assume_fatal_throw)
+        kwargs = :(inlining::Bool              = inlining_enabled(),
+                   inline_cost_threshold::Int  = 100,
+                   inline_nonleaf_penalty::Int = 1000,
+                   inline_tupleret_bonus::Int  = 250,
+                   inline_error_path_cost::Int = 20,
+                   tuple_splat::Int            = 32,
+                   assume_fatal_throw::Bool    = false,
+                   )
+    elseif isdefined(CC, :mark_throw_blocks!)
+        kwargs = :(inlining::Bool              = inlining_enabled(),
+                   inline_cost_threshold::Int  = 100,
+                   inline_nonleaf_penalty::Int = 1000,
+                   inline_tupleret_bonus::Int  = 250,
+                   inline_error_path_cost::Int = 20,
+                   max_methods::Int            = 3,
+                   tuple_splat::Int            = 32,
+                   union_splitting::Int        = 4,
+                   )
+    else
+        kwargs = :(inlining::Bool                = inlining_enabled(),
+                   inline_cost_threshold::Int    = 100,
+                   inline_nonleaf_penalty::Int   = 1000,
+                   inline_tupleret_bonus::Int    = 250,
+                   inline_error_path_cost::Int   = 20,
+                   max_methods::Int              = 3,
+                   tuple_splat::Int              = 32,
+                   union_splitting::Int          = 4,
+                   unoptimize_throw_blocks::Bool = true,
+                   )
+    end
+    kwargs_exs = Expr[]
+    names = Symbol[]
+    for x::Expr in kwargs.args
+        @assert isexpr(x, :(=))
+        push!(kwargs_exs, Expr(:kw, x.args...))
+        lhs = first(x.args)
+        @assert isexpr(lhs, :(::))
+        push!(names, first(lhs.args)::Symbol)
+    end
+    push!(kwargs_exs, :(__jetconfigs...))
+    @eval global function JETOptimizationParams(; $(kwargs_exs...))
+        return OptimizationParams(; $(names...))
+    end
+end
 # # assert here that they create same objects as the original constructors
 @assert JETInferenceParams() == InferenceParams()
 @assert JETOptimizationParams() == OptimizationParams()
