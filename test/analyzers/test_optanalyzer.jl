@@ -163,7 +163,7 @@ end
             with_runtime_dispatch(::UInt64) = :UInt64
             with_runtime_dispatch(::UInt128) = :UInt128
         end
-        @assert JET.OptimizationParams(JET.OptAnalyzer()).MAX_UNION_SPLITTING < 5
+        @assert JET.InferenceParams(JET.OptAnalyzer()).MAX_UNION_SPLITTING < 5
 
         let
             result = @eval M $report_opt((Vector{Any},)) do xs
