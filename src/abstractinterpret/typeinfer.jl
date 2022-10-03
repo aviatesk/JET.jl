@@ -93,10 +93,10 @@ function CC.abstract_eval_statement(analyzer::AbstractAnalyzer, @nospecialize(e)
 end
 
 function CC.builtin_tfunction(analyzer::AbstractAnalyzer,
-    @nospecialize(f), argtypes::Array{Any,1},
+    @nospecialize(f), argtypes::Vector{Any},
     sv::InferenceState) # `AbstractAnalyzer` isn't overloaded on `return_type`
     ret = @invoke CC.builtin_tfunction(analyzer::AbstractInterpreter,
-        f::Any, argtypes::Array{Any,1},
+        f::Any, argtypes::Vector{Any},
         sv::Union{InferenceState,Nothing})
 
     if f === getglobal
@@ -175,18 +175,35 @@ function collect_callee_reports!(analyzer::AbstractAnalyzer, sv::InferenceState)
     end
 end
 
-function CC.abstract_call_method(analyzer::AbstractAnalyzer,
-    method::Method, @nospecialize(sig), sparams::SimpleVector, hardlimit::Bool, sv::InferenceState)
-    ret = @invoke CC.abstract_call_method(analyzer::AbstractInterpreter,
-        method::Method, sig::Any, sparams::SimpleVector, hardlimit::Bool, sv::InferenceState)
 
-    collect_callee_reports!(analyzer, sv)
-
-    return ret
+let # overload `abstract_call_method`
+    @static if @isdefined(StmtInfo)
+        sigs_ex = :(analyzer::AbstractAnalyzer,
+            method::Method, @nospecialize(sig), sparams::SimpleVector, hardlimit::Bool, si::StmtInfo, sv::InferenceState)
+        args_ex = :(analyzer::AbstractInterpreter,
+            method::Method, sig::Any, sparams::SimpleVector, hardlimit::Bool, si::StmtInfo, sv::InferenceState)
+    else
+        sigs_ex = :(analyzer::AbstractAnalyzer,
+            method::Method, @nospecialize(sig), sparams::SimpleVector, hardlimit::Bool, sv::InferenceState)
+        args_ex = :(analyzer::AbstractInterpreter,
+            method::Method, sig::Any, sparams::SimpleVector, hardlimit::Bool, sv::InferenceState)
+    end
+    @eval function CC.abstract_call_method($(sigs_ex.args...))
+        ret = @invoke CC.abstract_call_method($(args_ex.args...))
+        collect_callee_reports!(analyzer, sv)
+        return ret
+    end
 end
 
 let # overload `abstract_call_method_with_const_args`
-    @static if isdefined(CC, :InvokeCall)
+    @static if @isdefined(StmtInfo)
+        sigs_ex = :(analyzer::AbstractAnalyzer,
+            result::MethodCallResult, @nospecialize(f), arginfo::ArgInfo, si::StmtInfo, match::MethodMatch,
+            sv::InferenceState, $(Expr(:kw, :(invokecall::Union{Nothing,CC.InvokeCall}), :nothing)))
+        args_ex = :(analyzer::AbstractInterpreter,
+            result::MethodCallResult, f::Any, arginfo::ArgInfo, si::StmtInfo, match::MethodMatch,
+            sv::InferenceState, invokecall::Union{Nothing,CC.InvokeCall})
+    elseif isdefined(CC, :InvokeCall)
         # https://github.com/JuliaLang/julia/pull/46743
         sigs_ex = :(analyzer::AbstractAnalyzer,
             result::MethodCallResult, @nospecialize(f), arginfo::ArgInfo, match::MethodMatch,
@@ -241,7 +258,14 @@ let # overload `abstract_call_method_with_const_args`
 end
 
 let # overload `concrete_eval_call`
-    @static if isdefined(CC, :InvokeCall)
+    @static if @isdefined(StmtInfo)
+        sigs_ex = :(analyzer::AbstractAnalyzer,
+            @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, si::StmtInfo,
+            $(Expr(:kw, :(invokecall::Union{Nothing,CC.InvokeCall}), :nothing)))
+        args_ex = :(analyzer::AbstractInterpreter,
+            f::Any, result::MethodCallResult, arginfo::ArgInfo, si::StmtInfo,
+            invokecall::Union{Nothing,CC.InvokeCall})
+    elseif isdefined(CC, :InvokeCall)
         # https://github.com/JuliaLang/julia/pull/46743
         sigs_ex = :(analyzer::AbstractAnalyzer,
             @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
@@ -259,32 +283,43 @@ let # overload `concrete_eval_call`
     end
     @eval function CC.concrete_eval_call($(sigs_ex.args...))
         ret = @invoke CC.concrete_eval_call($(args_ex.args...))
-        if @static isdefined(CC, :ConstCallResults) ? (ret isa CC.ConstCallResults) : (ret !== nothing)
-            # this frame has been happily concretized, now we throw away reports collected
-            # during the previous abstract-interpretation based analysis
-            filter_lineages!(analyzer, sv.result, result.edge::MethodInstance)
+        @static if @isdefined(sv) # TODO remove me
+            if @static isdefined(CC, :ConstCallResults) ? (ret isa CC.ConstCallResults) : (ret !== nothing)
+                # this frame has been happily concretized, now we throw away reports collected
+                # during the previous abstract-interpretation based analysis
+                filter_lineages!(analyzer, sv.result, result.edge::MethodInstance)
+            end
         end
         return ret
     end
 end
 
-@static if IS_AFTER_42529
-function CC.abstract_call(analyzer::AbstractAnalyzer,
-    arginfo::ArgInfo, sv::InferenceState, max_methods::Int = InferenceParams(analyzer).MAX_METHODS)
-    ret = @invoke CC.abstract_call(analyzer::AbstractInterpreter,
-        arginfo::ArgInfo, sv::InferenceState, max_methods::Int)
-    analyze_task_parallel_code!(analyzer, arginfo.argtypes, sv)
-    return ret
+let # overload `abstract_call`
+    @static if @isdefined(StmtInfo)
+        sigs_ex = :(analyzer::AbstractAnalyzer, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState,
+            $(Expr(:kw, :(max_methods::Int), :(InferenceParams(analyzer).MAX_METHODS))))
+        args_ex = :(analyzer::AbstractInterpreter, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState,
+            max_methods::Int)
+        argtypes_ex = :(arginfo.argtypes)
+    elseif IS_AFTER_42529
+        sigs_ex = :(analyzer::AbstractAnalyzer, arginfo::ArgInfo, sv::InferenceState,
+            $(Expr(:kw, :(max_methods::Int), :(InferenceParams(analyzer).MAX_METHODS))))
+        args_ex = :(analyzer::AbstractInterpreter, arginfo::ArgInfo, sv::InferenceState,
+            max_methods::Int)
+        argtypes_ex = :(arginfo.argtypes)
+    else
+        sigs_ex = :(analyzer::AbstractAnalyzer, fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes, sv::InferenceState,
+            $(Expr(:kw, :(max_methods::Int), :(InferenceParams(analyzer).MAX_METHODS))))
+        args_ex = :(analyzer::AbstractInterpreter, fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes, sv::InferenceState,
+            max_methods::Int)
+        argtypes_ex = :argtypes
+    end
+    @eval function CC.abstract_call($(sigs_ex.args...))
+        ret = @invoke CC.abstract_call($(args_ex.args...))
+        analyze_task_parallel_code!(analyzer, $(argtypes_ex), sv)
+        return ret
+    end
 end
-else # @static if IS_AFTER_42529
-function CC.abstract_call(analyzer::AbstractAnalyzer,
-    fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes, sv::InferenceState, max_methods::Int = InferenceParams(analyzer).MAX_METHODS)
-    ret = @invoke CC.abstract_call(analyzer::AbstractInterpreter,
-        fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes, sv::InferenceState, max_methods::Int)
-    analyze_task_parallel_code!(analyzer, argtypes, sv)
-    return ret
-end
-end # @static if IS_AFTER_42529
 
 """
     analyze_task_parallel_code!(analyzer::AbstractAnalyzer, argtypes::Argtypes, sv::InferenceState)
@@ -340,22 +375,35 @@ function analyze_additional_pass_by_type!(analyzer::AbstractAnalyzer, @nospecial
     # the threaded code block as a usual code block, and thus the side-effects won't (hopefully)
     # confuse the abstract interpretation, which is supposed to terminate on any kind of code
     mm = get_single_method_match(tt, InferenceParams(newanalyzer).MAX_METHODS, get_world_counter(newanalyzer))
-    abstract_call_method(newanalyzer, mm.method, mm.spec_types, mm.sparams, false, sv)
+    @static if @isdefined(StmtInfo)
+        abstract_call_method(newanalyzer, mm.method, mm.spec_types, mm.sparams, #=hardlimit=#false, #=si=#StmtInfo(false), sv)
+    else
+        abstract_call_method(newanalyzer, mm.method, mm.spec_types, mm.sparams, #=hardlimit=#false, sv)
+    end
 
     return nothing
 end
 
-# `return_type_tfunc` internally uses `abstract_call` to model `Core.Compiler.return_type`
-# and here we should NOT catch error reports detected within the simulated call
-# because it is really not any abstraction of actual execution
-function CC.return_type_tfunc(analyzer::AbstractAnalyzer, argtypes::Argtypes, sv::InferenceState)
-    # stash and discard the result from the simulated call, and keep the original result (`result0`)
-    result = sv.result
-    oldresult = analyzer[result]
-    init_result!(analyzer, result)
-    ret = @invoke return_type_tfunc(AbstractAnalyzer(analyzer)::AbstractInterpreter, argtypes::Argtypes, sv::InferenceState)
-    analyzer[result] = oldresult
-    return ret
+let # overload `return_type_tfunc`
+    @static if @isdefined(StmtInfo)
+        sigs_ex = :(analyzer::AbstractAnalyzer, argtypes::Argtypes, si::StmtInfo, sv::InferenceState)
+        args_ex = :(AbstractAnalyzer(analyzer)::AbstractInterpreter, argtypes::Argtypes, si::StmtInfo, sv::InferenceState)
+    else
+        sigs_ex = :(analyzer::AbstractAnalyzer, argtypes::Argtypes, sv::InferenceState)
+        args_ex = :(AbstractAnalyzer(analyzer)::AbstractInterpreter, argtypes::Argtypes, sv::InferenceState)
+    end
+    # `return_type_tfunc` internally uses `abstract_call` to model `Core.Compiler.return_type`
+    # and here we should NOT catch error reports detected within the simulated call
+    # because it is really not any abstraction of actual execution
+    @eval function CC.return_type_tfunc($(sigs_ex.args...))
+        # stash and discard the result from the simulated call, and keep the original result (`result0`)
+        result = sv.result
+        oldresult = analyzer[result]
+        init_result!(analyzer, result)
+        ret = @invoke return_type_tfunc($(args_ex.args...))
+        analyzer[result] = oldresult
+        return ret
+    end
 end
 
 # cache
@@ -400,10 +448,10 @@ jet_cache(wvc::WorldView{<:JETGlobalCache}) = jet_cache(wvc.cache.analyzer)
 
 CC.haskey(wvc::WorldView{<:JETGlobalCache}, mi::MethodInstance) = haskey(jet_cache(wvc), mi)
 
-function CC.typeinf_edge(analyzer::AbstractAnalyzer, method::Method, @nospecialize(atypes), sparams::SimpleVector, caller::InferenceState)
+function CC.typeinf_edge(analyzer::AbstractAnalyzer, method::Method, @nospecialize(atype), sparams::SimpleVector, caller::InferenceState)
     # enable the report cache restoration at `code = get(code_cache(interp), mi, nothing)`
     set_cacher!(analyzer, :typeinf_edge => caller.result)
-    return @invoke typeinf_edge(analyzer::AbstractInterpreter, method::Method, atypes::Any, sparams::SimpleVector, caller::InferenceState)
+    return @invoke typeinf_edge(analyzer::AbstractInterpreter, method::Method, atype::Any, sparams::SimpleVector, caller::InferenceState)
 end
 
 function CC.get(wvc::WorldView{<:JETGlobalCache}, mi::MethodInstance, default)

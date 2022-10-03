@@ -528,24 +528,21 @@ CC.verbose_stmt_info(analyzer::AbstractAnalyzer) = false
 # branch on https://github.com/JuliaLang/julia/pull/41328 & https://github.com/JuliaLang/julia/pull/42082
 @static if IS_AFTER_42082
 @doc """
-    inlining_policy(
-        analyzer::AbstractAnalyzer, @nospecialize(src), stmt_flag::UInt8,
-        mi::MethodInstance, argtypes::Argtypes) -> source::Any
+    inlining_policy(analyzer::AbstractAnalyzer,
+        @nospecialize(src), stmt_flag::UInt8, mi::MethodInstance, argtypes::Argtypes) -> source::Any
 
 Implements inlining policy for `AbstractAnalyzer`.
 Since `AbstractAnalyzer` works on `InferenceResult` whose `src` field keeps
-[`JETResult`](@ref) or [`JETCachedResult`](@ref), this implementation just forwards
+[`JETResult`](@ref) or [`JETCachedResult`](@ref), this implementation needs to forward
 their wrapped source to `inlining_policy(::AbstractInterpreter, ::Any, ::UInt8)`.
 """
-function CC.inlining_policy(
-    analyzer::AbstractAnalyzer, @nospecialize(src), stmt_flag::UInt8,
-    mi::MethodInstance, argtypes::Argtypes)
+function CC.inlining_policy(analyzer::AbstractAnalyzer,
+    @nospecialize(src), stmt_flag::UInt8, mi::MethodInstance, argtypes::Argtypes)
     if isa(src, JETCachedResult)
         src = src.src
     end
-    return @invoke CC.inlining_policy(
-        analyzer::AbstractInterpreter, src::Any, stmt_flag::UInt8,
-        mi::MethodInstance, argtypes::Argtypes)
+    return @invoke CC.inlining_policy(analyzer::AbstractInterpreter,
+        src::Any, stmt_flag::UInt8, mi::MethodInstance, argtypes::Argtypes)
 end
 else # @static if IS_AFTER_42082
 @doc """

@@ -149,29 +149,37 @@ function CC.finish!(analyzer::JETAnalyzer, frame::InferenceState)
     end
 end
 
-@static if IS_AFTER_42529
-function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer,
-    @nospecialize(f), arginfo::ArgInfo, @nospecialize(atype),
-    sv::InferenceState, max_methods::Int = InferenceParams(analyzer).MAX_METHODS)
-    ret = @invoke CC.abstract_call_gf_by_type(analyzer::AbstractAnalyzer,
-        f::Any, arginfo::ArgInfo, atype::Any,
-        sv::InferenceState, max_methods::Int)
-    ReportPass(analyzer)(MethodErrorReport, analyzer, sv, ret, arginfo.argtypes, atype)
-    ReportPass(analyzer)(UnanalyzedCallReport, analyzer, sv, ret, atype)
-    return ret
+let # overload `abstract_call_gf_by_type`
+    @static if @isdefined(StmtInfo)
+        sigs_ex = :(analyzer::JETAnalyzer,
+            @nospecialize(f), arginfo::ArgInfo, si::StmtInfo, @nospecialize(atype), sv::InferenceState,
+            $(Expr(:kw, :(max_methods::Int), :(InferenceParams(analyzer).MAX_METHODS))))
+        args_ex = :(analyzer::AbstractAnalyzer, f::Any, arginfo::ArgInfo, si::StmtInfo, atype::Any,
+            sv::InferenceState, max_methods::Int)
+        argtypes_ex = :(arginfo.argtypes)
+    elseif IS_AFTER_42529
+        sigs_ex = :(analyzer::JETAnalyzer,
+            @nospecialize(f), arginfo::ArgInfo, @nospecialize(atype), sv::InferenceState,
+            $(Expr(:kw, :(max_methods::Int), :(InferenceParams(analyzer).MAX_METHODS))))
+        args_ex = :(analyzer::AbstractAnalyzer, f::Any, arginfo::ArgInfo, atype::Any,
+            sv::InferenceState, max_methods::Int)
+        argtypes_ex = :(arginfo.argtypes)
+    else
+        sigs_ex = :(analyzer::JETAnalyzer,
+            @nospecialize(f), fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes, @nospecialize(atype), sv::InferenceState,
+            $(Expr(:kw, :(max_methods::Int), :(InferenceParams(analyzer).MAX_METHODS))))
+        args_ex = :(analyzer::AbstractAnalyzer,
+            f::Any, fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes, atype::Any,
+            sv::InferenceState, max_methods::Int)
+        argtypes_ex = :argtypes
+    end
+    @eval function CC.abstract_call_gf_by_type($(sigs_ex.args...))
+        ret = @invoke CC.abstract_call_gf_by_type($(args_ex.args...))
+        ReportPass(analyzer)(MethodErrorReport, analyzer, sv, ret, $argtypes_ex, atype)
+        ReportPass(analyzer)(UnanalyzedCallReport, analyzer, sv, ret, atype)
+        return ret
+    end
 end
-else # @static if IS_AFTER_42529
-function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer,
-    @nospecialize(f), fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes, @nospecialize(atype),
-    sv::InferenceState, max_methods::Int = InferenceParams(analyzer).MAX_METHODS)
-    ret = @invoke CC.abstract_call_gf_by_type(analyzer::AbstractAnalyzer,
-        f::Any, fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes, atype::Any,
-        sv::InferenceState, max_methods::Int)
-    ReportPass(analyzer)(MethodErrorReport, analyzer, sv, ret, argtypes, atype)
-    ReportPass(analyzer)(UnanalyzedCallReport, analyzer, sv, ret, atype)
-    return ret
-end
-end # @static if IS_AFTER_42529
 
 @doc """
     bail_out_call(analyzer::JETAnalyzer, ...)
@@ -238,62 +246,91 @@ function CC.abstract_call_method(analyzer::JETAnalyzer,
 end
 end # @static if VERSION < v"1.8.0-DEV.510"
 
-@doc """
-    const_prop_entry_heuristic(analyzer::JETAnalyzer, result::MethodCallResult, sv::InferenceState)
-
-This overload for `abstract_call_method_with_const_args(analyzer::JETAnalyzer, ...)` forces
-constant prop' even if an inference result can't be improved anymore _with respect to the
-return type_, e.g. when `result.rt` is already `Const`.
-Especially, this overload implements an heuristic to force constant prop' when any error points
-have been reported while the previous abstract method call without constant arguments.
-The reason we want much more aggressive constant propagation by that heuristic is that it's
-highly possible constant prop' can produce more accurate analysis result, by throwing away
-false positive error reports by cutting off the unreachable control flow or detecting
-must-reachable `throw` calls.
-"""
-CC.const_prop_entry_heuristic(::JETAnalyzer, result::MethodCallResult, sv::InferenceState) = true
-
-# TODO correctly reasons about error found by [semi-]concrete evaluation
-# for now just always fallback to the constant-prop'
-@static if IS_V18
-function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
-    @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
-    @static if isdefined(CC, :ir_abstract_constant_propagation)
-        return nothing # disables both concrete evaluation and semi-concrete interpretation
+let # overload `const_prop_entry_heuristic`
+    @static if @isdefined(StmtInfo)
+        sigs_ex = :(::JETAnalyzer, result::MethodCallResult, si::StmtInfo, sv::InferenceState)
     else
-        return false # disables concrete evaluation
+        sigs_ex = :(::JETAnalyzer, result::MethodCallResult, sv::InferenceState)
+    end
+    @eval begin
+        @doc """
+            const_prop_entry_heuristic(analyzer::JETAnalyzer, result::MethodCallResult, sv::InferenceState)
+
+        This overload for `abstract_call_method_with_const_args(analyzer::JETAnalyzer, ...)` forces
+        constant prop' even if an inference result can't be improved anymore _with respect to the
+        return type_, e.g. when `result.rt` is already `Const`.
+        Especially, this overload implements an heuristic to force constant prop' when any error points
+        have been reported while the previous abstract method call without constant arguments.
+        The reason we want much more aggressive constant propagation by that heuristic is that it's
+        highly possible constant prop' can produce more accurate analysis result, by throwing away
+        false positive error reports by cutting off the unreachable control flow or detecting
+        must-reachable `throw` calls.
+        """
+        CC.const_prop_entry_heuristic($(sigs_ex.args...)) = true
     end
 end
-end # @static if IS_V18
 
-function CC.return_type_tfunc(analyzer::JETAnalyzer, argtypes::Argtypes, sv::InferenceState)
-    # report pass for invalid `Core.Compiler.return_type` call
-    ReportPass(analyzer)(InvalidReturnTypeCall, analyzer, sv, argtypes)
-
-    return @invoke CC.return_type_tfunc(analyzer::AbstractAnalyzer, argtypes::Argtypes, sv::InferenceState)
-end
-
-@static if IS_AFTER_42529
-function CC.abstract_invoke(analyzer::JETAnalyzer, arginfo::ArgInfo, sv::InferenceState)
-    ret = @invoke CC.abstract_invoke(analyzer::AbstractAnalyzer, arginfo::ArgInfo, sv::InferenceState)
-    @static if hasfield(CallMeta, :effects)
-        ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret, arginfo.argtypes)
+let # overload `concrete_eval_eligible`
+    @static if @isdefined(StmtInfo)
+        # https://github.com/JuliaLang/julia/pull/46966
+        sigs_ex = :(analyzer::JETAnalyzer,
+            @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo)
+    elseif IS_V18
+        sigs_ex = :(analyzer::JETAnalyzer,
+            @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
     else
-        if isa(ret, CallMeta)
-            ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret, arginfo.argtypes)
-        else # otherwise https://github.com/JuliaLang/julia/pull/44764 is active
-            ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret[1], arginfo.argtypes)
+        return
+    end
+    # TODO correctly reasons about error found by [semi-]concrete evaluation
+    # for now just always fallback to the constant-prop'
+    @eval function CC.concrete_eval_eligible($(sigs_ex.args...))
+        @static if isdefined(CC, :ir_abstract_constant_propagation)
+            return nothing # disables both concrete evaluation and semi-concrete interpretation
+        else
+            return false # disables concrete evaluation
         end
     end
-    return ret
 end
-else # @static if IS_AFTER_42529
-function CC.abstract_invoke(analyzer::JETAnalyzer, argtypes::Argtypes, sv::InferenceState)
-    ret = @invoke CC.abstract_invoke(analyzer::AbstractAnalyzer, argtypes::Argtypes, sv::InferenceState)
-    ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret, argtypes)
-    return ret
+
+let # overload `return_type_tfunc`
+    @static if @isdefined(StmtInfo)
+        sigs_ex = :(analyzer::JETAnalyzer, argtypes::Argtypes, si::StmtInfo, sv::InferenceState)
+        args_ex = :(analyzer::AbstractAnalyzer, argtypes::Argtypes, si::StmtInfo, sv::InferenceState)
+    else
+        sigs_ex = :(analyzer::JETAnalyzer, argtypes::Argtypes, sv::InferenceState)
+        args_ex = :(analyzer::AbstractAnalyzer, argtypes::Argtypes, sv::InferenceState)
+    end
+    @eval function CC.return_type_tfunc($(sigs_ex.args...))
+        # report pass for invalid `Core.Compiler.return_type` call
+        ReportPass(analyzer)(InvalidReturnTypeCall, analyzer, sv, argtypes)
+        return @invoke CC.return_type_tfunc($(args_ex.args...))
+    end
 end
-end # @static if IS_AFTER_42529
+
+let # overload `abstract_invoke`
+    @static if @isdefined(StmtInfo)
+        sigs_ex = :(analyzer::JETAnalyzer, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState)
+        args_ex = :(analyzer::AbstractAnalyzer, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState)
+        argtypes_ex = :(arginfo.argtypes)
+    elseif IS_AFTER_42529
+        sigs_ex = :(analyzer::JETAnalyzer, arginfo::ArgInfo, sv::InferenceState)
+        args_ex = :(analyzer::AbstractAnalyzer, arginfo::ArgInfo, sv::InferenceState)
+        argtypes_ex = :(arginfo.argtypes)
+    else
+        sigs_ex = :(analyzer::JETAnalyzer, argtypes::Argtypes, sv::InferenceState)
+        args_ex = :(analyzer::AbstractAnalyzer, argtypes::Argtypes, sv::InferenceState)
+        argtypes_ex = :argtypes
+    end
+    @eval function CC.abstract_invoke($(sigs_ex.args...))
+        ret = @invoke CC.abstract_invoke($(args_ex.args...))
+        if isa(ret, CallMeta)
+            ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret, $argtypes_ex)
+        else # otherwise https://github.com/JuliaLang/julia/pull/44764 is active
+            ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret[1], $argtypes_ex)
+        end
+        return ret
+    end
+end
 
 function CC.abstract_eval_special_value(analyzer::JETAnalyzer,
     @nospecialize(e), vtypes::VarTable, sv::InferenceState)
