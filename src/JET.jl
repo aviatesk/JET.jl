@@ -165,6 +165,8 @@ end
     const getglobal = getfield
 end
 
+@static isdefined(CC, :StmtInfo) && import .CC: StmtInfo
+
 # macros
 # ------
 
