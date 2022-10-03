@@ -1,12 +1,9 @@
-# FIXME: temporal patches to improve inferrability of Base methods
-include("patches.jl")
+# this file defines stuff used across JET's test suite
+using Test
 
 # test utilities are extracted into a separate file for easier interactive testing from REPL
 # i.e. julia -i test/interactive_utils.jl
 include("interactive_utils.jl")
-
-# stuff used across tests
-using Test
 
 function get_reports_with_test(args...)
     reports = get_reports(args...)

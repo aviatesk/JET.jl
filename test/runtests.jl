@@ -1,6 +1,11 @@
+using Test
+
 include("setup.jl")
 
 @info "JET setup information:" JET.JET_DEV_MODE
+
+# XXX temporal patches to improve inferrability of Base methods
+include("patches.jl")
 
 @testset "JET.jl" begin
     @testset "abstractinterpret" begin
