@@ -258,13 +258,22 @@ let # overload `abstract_call_method_with_const_args`
 end
 
 let # overload `concrete_eval_call`
-    @static if @isdefined(StmtInfo)
+    sv_available = true
+    @static if VERSION ≥ v"1.9.0-DEV.1502"
         sigs_ex = :(analyzer::AbstractAnalyzer,
-            @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, si::StmtInfo,
+            @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState,
             $(Expr(:kw, :(invokecall::Union{Nothing,CC.InvokeCall}), :nothing)))
         args_ex = :(analyzer::AbstractInterpreter,
-            f::Any, result::MethodCallResult, arginfo::ArgInfo, si::StmtInfo,
+            f::Any, result::MethodCallResult, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState,
             invokecall::Union{Nothing,CC.InvokeCall})
+    elseif @isdefined(StmtInfo)
+        sigs_ex = :(analyzer::AbstractAnalyzer,
+            @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState,
+            $(Expr(:kw, :(invokecall::Union{Nothing,CC.InvokeCall}), :nothing)))
+        args_ex = :(analyzer::AbstractInterpreter,
+            f::Any, result::MethodCallResult, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState,
+            invokecall::Union{Nothing,CC.InvokeCall})
+        sv_available = false
     elseif isdefined(CC, :InvokeCall)
         # https://github.com/JuliaLang/julia/pull/46743
         sigs_ex = :(analyzer::AbstractAnalyzer,
@@ -283,8 +292,8 @@ let # overload `concrete_eval_call`
     end
     @eval function CC.concrete_eval_call($(sigs_ex.args...))
         ret = @invoke CC.concrete_eval_call($(args_ex.args...))
-        @static if @isdefined(sv) # TODO remove me
-            if @static isdefined(CC, :ConstCallResults) ? (ret isa CC.ConstCallResults) : (ret !== nothing)
+        if $(sv_available)
+            if $(isdefined(CC, :ConstCallResults) ? :(ret isa CC.ConstCallResults) : :(ret !== nothing))
                 # this frame has been happily concretized, now we throw away reports collected
                 # during the previous abstract-interpretation based analysis
                 filter_lineages!(analyzer, sv.result, result.edge::MethodInstance)
