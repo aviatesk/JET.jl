@@ -525,24 +525,35 @@ CC.may_compress(analyzer::AbstractAnalyzer)      = false
 CC.may_discard_trees(analyzer::AbstractAnalyzer) = false
 CC.verbose_stmt_info(analyzer::AbstractAnalyzer) = false
 
-# branch on https://github.com/JuliaLang/julia/pull/41328 & https://github.com/JuliaLang/julia/pull/42082
 @static if IS_AFTER_42082
-@doc """
-    inlining_policy(analyzer::AbstractAnalyzer,
-        @nospecialize(src), stmt_flag::UInt8, mi::MethodInstance, argtypes::Argtypes) -> source::Any
-
-Implements inlining policy for `AbstractAnalyzer`.
-Since `AbstractAnalyzer` works on `InferenceResult` whose `src` field keeps
-[`JETResult`](@ref) or [`JETCachedResult`](@ref), this implementation needs to forward
-their wrapped source to `inlining_policy(::AbstractInterpreter, ::Any, ::UInt8)`.
-"""
-function CC.inlining_policy(analyzer::AbstractAnalyzer,
-    @nospecialize(src), stmt_flag::UInt8, mi::MethodInstance, argtypes::Argtypes)
-    if isa(src, JETCachedResult)
-        src = src.src
+let # overload `inlining_policy`
+    @static if isdefined(CC, :CallInfo)
+        sigs_ex = :(analyzer::AbstractAnalyzer,
+            @nospecialize(src), @nospecialize(info::CC.CallInfo), stmt_flag::UInt8, mi::MethodInstance, argtypes::Argtypes)
+        args_ex = :(analyzer::AbstractInterpreter,
+            src::Any, info::CC.CallInfo, stmt_flag::UInt8, mi::MethodInstance, argtypes::Argtypes)
+    else
+        sigs_ex = :(analyzer::AbstractAnalyzer,
+            @nospecialize(src), stmt_flag::UInt8, mi::MethodInstance, argtypes::Argtypes)
+        args_ex = :(analyzer::AbstractInterpreter,
+            src::Any, stmt_flag::UInt8, mi::MethodInstance, argtypes::Argtypes)
     end
-    return @invoke CC.inlining_policy(analyzer::AbstractInterpreter,
-        src::Any, stmt_flag::UInt8, mi::MethodInstance, argtypes::Argtypes)
+    @eval begin
+        @doc """
+            inlining_policy(analyzer::AbstractAnalyzer, @nospecialize(src), ...) -> source::Any
+
+        Implements inlining policy for `AbstractAnalyzer`.
+        Since `AbstractAnalyzer` works on `InferenceResult` whose `src` field keeps
+        [`JETResult`](@ref) or [`JETCachedResult`](@ref), this implementation needs to forward
+        their wrapped source to `inlining_policy(::AbstractInterpreter, ::Any, ::UInt8)`.
+        """
+        function CC.inlining_policy($(sigs_ex.args...))
+            if isa(src, JETCachedResult)
+                src = src.src
+            end
+            return @invoke CC.inlining_policy($(args_ex.args...))
+        end
+    end
 end
 else # @static if IS_AFTER_42082
 @doc """
