@@ -430,6 +430,7 @@ include("abstractinterpret/inferenceerrorreport.jl")
 include("abstractinterpret/abstractanalyzer.jl")
 include("abstractinterpret/typeinfer.jl")
 
+include("toplevel/toplevelanalyzer.jl")
 include("toplevel/graph.jl")
 include("toplevel/virtualprocess.jl")
 
@@ -1003,7 +1004,7 @@ function report_text(text::AbstractString,
                      analyzer::Type{Analyzer} = JETAnalyzer,
                      source::Union{Nothing,AbstractString} = nothing,
                      jetconfigs...) where {Analyzer<:AbstractAnalyzer}
-    analyzer′ = Analyzer(; jetconfigs...)
+    analyzer′ = ToplevelAnalyzer(Analyzer(; jetconfigs...))
     may_init_cache!(analyzer′)
     config = ToplevelConfig(; jetconfigs...)
     res = virtual_process(text, filename, analyzer′, config)
@@ -1147,7 +1148,7 @@ struct InsufficientWatches <: Exception
 end
 
 # we have to go on hacks; see `transform_abstract_global_symbols!` and `resolve_toplevel_symbols!`
-function analyze_toplevel!(analyzer::AbstractAnalyzer, src::CodeInfo;
+function analyze_toplevel!(analyzer::ToplevelAnalyzer, src::CodeInfo;
                            set_entry::Bool = true,
                            )
     # construct toplevel `MethodInstance`
@@ -1179,7 +1180,7 @@ end
 # NOTE that `transform_abstract_global_symbols!` will produce really invalid code for
 # actual interpretation or execution, but all the statements won't be interpreted anymore
 # by `ConcreteInterpreter` nor executed by the native compilation pipeline anyway
-function transform_abstract_global_symbols!(analyzer::AbstractAnalyzer, src::CodeInfo)
+function transform_abstract_global_symbols!(analyzer::ToplevelAnalyzer, src::CodeInfo)
     nslots = length(src.slotnames)
     abstrct_global_variables = Dict{Symbol,Int}()
     concretized = get_concretized(analyzer)

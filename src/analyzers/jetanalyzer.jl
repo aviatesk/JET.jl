@@ -942,15 +942,6 @@ function report_non_boolean_cond!(analyzer::JETAnalyzer, sv::InferenceState, @no
     return false
 end
 
-function (::SoundBasicPass)(::Type{InvalidConstantRedefinition}, analyzer::JETAnalyzer, sv::InferenceState, mod::Module, name::Symbol, @nospecialize(prev_t), @nospecialize(t))
-    add_new_report!(analyzer, sv.result, InvalidConstantRedefinition(sv, mod, name, prev_t, t))
-    return true
-end
-function (::SoundBasicPass)(::Type{InvalidConstantDeclaration}, analyzer::JETAnalyzer, sv::InferenceState, mod::Module, name::Symbol)
-    add_new_report!(analyzer, sv.result, InvalidConstantDeclaration(sv, mod, name))
-    return true
-end
-
 # XXX tfunc implementations in Core.Compiler are really not enough to catch invalid calls
 # TODO set up our own checks and enable sound analysis
 
