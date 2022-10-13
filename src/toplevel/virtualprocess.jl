@@ -285,7 +285,7 @@ end
 """
     virtual_process(s::AbstractString,
                     filename::AbstractString,
-                    analyzer::AbstractAnalyzer,
+                    analyzer::ToplevelAnalyzer,
                     config::ToplevelConfig,
                     ) -> res::VirtualProcessResult
 
@@ -314,7 +314,7 @@ following steps on each code block (`blk`) of `toplevelex`:
 """
 function virtual_process(x::Union{AbstractString,Expr},
                          filename::AbstractString,
-                         analyzer::AbstractAnalyzer,
+                         analyzer::ToplevelAnalyzer,
                          config::ToplevelConfig,
                          )
     if config.virtualize
@@ -412,7 +412,7 @@ gen_virtual_module(root = Main; name = VIRTUAL_MODULE_NAME) =
 # generator should have been collected, and we will just analyze them separately
 # if code generation has failed given the entry method signature, the overload of
 # `InferenceState(..., ::AbstractAnalyzer)` will collect `GeneratorErrorReport`
-function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProcessResult, config::ToplevelConfig)
+function analyze_from_definitions!(analyzer::ToplevelAnalyzer, res::VirtualProcessResult, config::ToplevelConfig)
     n = length(res.toplevel_signatures)
     succeeded = 0
     for (i, tt) in enumerate(res.toplevel_signatures)
@@ -444,7 +444,7 @@ clearline(io) = print(io, '\r')
 
 function _virtual_process!(s::AbstractString,
                            filename::AbstractString,
-                           analyzer::AbstractAnalyzer,
+                           analyzer::ToplevelAnalyzer,
                            config::ToplevelConfig,
                            context::Module,
                            res::VirtualProcessResult,
@@ -480,7 +480,7 @@ end
 
 function _virtual_process!(toplevelex::Expr,
                            filename::AbstractString,
-                           analyzer::AbstractAnalyzer,
+                           analyzer::ToplevelAnalyzer,
                            config::ToplevelConfig,
                            context::Module,
                            res::VirtualProcessResult,
@@ -810,12 +810,12 @@ The trait to inject code into JuliaInterpreter's interpretation process; JET.jl 
 - `JuliaInterpreter.handle_err` to wrap an error happened during interpretation into
   `ActualErrorWrapped`
 """
-struct ConcreteInterpreter{Analyzer<:AbstractAnalyzer,CP}
+struct ConcreteInterpreter{CP}
     filename::String
     lnn::LineNumberNode
     eval_with_err_handling::Function
     context::Module
-    analyzer::Analyzer
+    analyzer::ToplevelAnalyzer
     config::ToplevelConfig{CP}
     res::VirtualProcessResult
 end
