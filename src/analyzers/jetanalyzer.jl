@@ -831,10 +831,13 @@ end
 # definitions, and `BasicPass` will exclude reports on those undefined names since they
 # usually don't matter and `Core.Compiler`'s basic functionality is battle-tested and
 # validated exhausively by its test suite and real-world usages.
-is_corecompiler_undefglobal(mod::Module, name::Symbol) =
-    mod === CC ? isdefined(Base, name) :
-    mod === CC.Sort ? isdefined(Base.Sort, name) :
-    false
+function is_corecompiler_undefglobal(mod::Module, name::Symbol)
+    mod === CC && return isdefined(Base, name)
+    @static if isdefined(CC, :Sort)
+        mod === CC.Sort && return isdefined(Base.Sort, name)
+    end
+    return false
+end
 
 @jetreport struct InvalidGlobalAssignmentError <: InferenceErrorReport
     @nospecialize vtyp
