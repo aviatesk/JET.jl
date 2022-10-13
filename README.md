@@ -195,6 +195,7 @@ If you apply the diff (i.e. update and save the demo.jl), JET will automatically
 No errors detected
 ```
 
+
 ## Limitations
 
 JET explores the functions you call directly as well as their *inferrable* callees. However, if the argument types for a call cannot be inferred, JET does not analyze the callee. Consequently, a report of `No errors detected` does not imply that your entire codebase is free of errors.
@@ -202,19 +203,6 @@ JET explores the functions you call directly as well as their *inferrable* calle
 JET integrates with [SnoopCompile](https://github.com/timholy/SnoopCompile.jl), and you can sometimes use SnoopCompile to collect the data to perform more comprehensive analyses. SnoopCompile's limitation is that it only collects data for calls that have not been previously inferred, so you must perform this type of analysis in a fresh session.
 
 See [SnoopCompile's JET-integration documentation](https://timholy.github.io/SnoopCompile.jl/stable/jet/) for further details.
-
-## Roadmap
-
-- **more accuracy**: abstract interpretation can be improved yet more
-  * switch to a new type of lattice design: to simplify the addition of further improvements
-  * design and introduce a more proper backwards-analysis pass, e.g. effect and escape analysis: to enable further constraint propagation
-- **more performance**: JET should be much faster
-  * aggregate similar errors more smartly and aggressively
-  * introduce parallelism to Julia's native type inference routine
-- **better documentation**: especially JET needs a specification of its error reports
-- **editor/IDE integration**: GUI would be more appropriate for showing JET's analysis result
-  * **smarter code dependency tracking**: the watch mode currently re-analyzes the whole code on each update, which is the most robust and least efficient option. When integrated with an IDE, fancier incremental analysis based on smarter code dependency tracking like what [Revise.jl](https://github.com/timholy/Revise.jl) does would be needed
-  * **LSP support**: ideally, I hope to extend JET to provide some of LSP features other than diagnostics, e.g. auto-completion, rename refactor, taking type-level information into account
 
 
 ## Acknowledgement
