@@ -122,6 +122,7 @@ function JETInterface.print_report_message(io::IO, (; g)::UnstableAPI)
     msg = lazy"usage of unstable API `$mod.$name` found"
     print(io, "usage of unstable API `", mod, '.', name, "` found")
 end
+JETInterface.print_signature(::UnstableAPI) = false
 JETInterface.report_color(::UnstableAPI) = :yellow
 
 function (::UnstableAPIAnalysisPass)(::Type{UnstableAPI}, analyzer::UnstableAPIAnalyzer, sv, @nospecialize(e))
@@ -230,13 +231,13 @@ end #src
 # ││┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:74 Core.kwfunc(IRTools.Inner.meta)(Core.apply_type(Core.NamedTuple, (:types, :world))(Core.tuple(S, world)), IRTools.Inner.meta, T)
 # │││┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:38 IRTools.Inner.#meta#1(types, world, _3, T)
 # ││││┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:43 Base._methods_by_ftype
-# │││││ Base._methods_by_ftype is unstable !: Base._methods_by_ftype
+# │││││ usage of unstable API `Base._methods_by_ftype` found
 # ││││└─────────────────────────────────────────────────────────────────────────────────
 # ││││┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:49 Base.isgenerated
-# │││││ variable Base.isgenerated is not defined: Base.isgenerated
+# │││││ usage of unstable API `Base.isgenerated` found
 # ││││└─────────────────────────────────────────────────────────────────────────────────
 # ││││┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:49 Base.uncompressed_ast
-# │││││ Base.uncompressed_ast is unstable !: Base.uncompressed_ast
+# │││││ usage of unstable API `Base.uncompressed_ast` found
 # ││││└─────────────────────────────────────────────────────────────────────────────────
 # ││││┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:54
 # ... # many other "unstable API"s detected

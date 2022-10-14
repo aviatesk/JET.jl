@@ -405,7 +405,7 @@ report_call(; report_pass=IgnoreAllExceptGlobalUndefVar()) do
     if rand(Bool)
         return no_method_error()    # "no matching method found" error report won't be reported here
     else
-        return undef_global_error() # "variable undefvar is not defined" error report will be reported
+        return undef_global_error() # "`undefvar` is not defined" error report will be reported
     end
 end
 ```

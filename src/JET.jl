@@ -586,21 +586,21 @@ julia> @report_call foo("julia")
 ││││││││││││││││ no matching method found for `zero(::Type{Char})`: zero(T::Type{Char})::Union{}
 │││││││││││││││└─────────────────
 ┌ @ REPL[1]:3 r2 = undefsum(a)
-│ variable Main.undefsum is not defined
+│ `undefsum` is not defined
 └─────────────
 
 # with `target_modules=(@__MODULE__,)`, JET will only report the problems detected within the `@__MODULE__` module:
 julia> @report_call target_modules=(@__MODULE__,) foo("julia")
 ════ 1 possible error found ═════
 ┌ @ REPL[1]:3 r2 = undefsum(a)
-│ variable Main.undefsum is not defined
+│ `undefsum` is not defined
 └─────────────
 
 # with `ignored_modules=(Base,)`, JET will ignore the errors detected within the `Base` module:
 julia> @report_call ignored_modules=(Base,) foo("julia")
 ════ 1 possible error found ═════
 ┌ @ REPL[1]:3 r2 = undefsum(a)
-│ variable Main.undefsum is not defined
+│ `undefsum` is not defined
 └─────────────
 ---
 """

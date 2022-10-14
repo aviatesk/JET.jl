@@ -796,7 +796,7 @@ end
     name::Symbol
 end
 function print_report_message(io::IO, (; mod, name)::GlobalUndefVarErrorReport)
-    print(io, "variable ", mod, '.', name, " is not defined")
+    print(io, "`", mod, '.', name, "` is not defined")
 end
 print_signature(::GlobalUndefVarErrorReport) = false
 

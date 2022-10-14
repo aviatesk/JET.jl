@@ -84,7 +84,7 @@ julia> report_and_watch_file("demo.jl"; annotate_types = true)
 [toplevel-info]  exited from demo.jl (took 3.254 sec)
 ═════ 7 possible errors found ═════
 ┌ @ demo.jl:10 fib(m)
-│ variable m is not defined
+│ `m` is not defined
 └──────────────
 ┌ @ demo.jl:11 fib("1000")
 │┌ @ demo.jl:7 n::String :≤ 2
@@ -105,13 +105,13 @@ julia> report_and_watch_file("demo.jl"; annotate_types = true)
 ││└──────────────
 ┌ @ demo.jl:44 badmerge(NamedTuple{(:x, :y)}(tuple(1, 2)), NamedTuple{(:y, :z)}(tuple(3, 1)))
 │┌ @ demo.jl:37 getfield(a::NamedTuple{(:x, :y), Tuple{Int64, Int64}}, x)
-││ variable x is not defined
+││ `x` is not defined
 │└──────────────
 │┌ @ demo.jl:37 getfield(b::NamedTuple{(:y, :z), Tuple{Int64, Int64}}, y)
-││ variable y is not defined
+││ `y` is not defined
 │└──────────────
 │┌ @ demo.jl:37 getfield(b::NamedTuple{(:y, :z), Tuple{Int64, Int64}}, z)
-││ variable z is not defined
+││ `z` is not defined
 │└──────────────
 ```
 
