@@ -4,7 +4,7 @@
 """
     mutable struct AbstractGlobal
         t::Any     # analyzed type
-        iscd::Bool # is this abstract global variable declarared as constant or not
+        isconst::Bool # is this abstract global variable declarared as constant or not
     end
 
 Wraps a global variable whose type is analyzed by abtract interpretation.
@@ -17,9 +17,9 @@ analysis may refer to or alter its type on future load and store operations.
     wrapped global variable, since JET doesn't cache the toplevel frame.
 """
 mutable struct AbstractGlobal
-    t::Any     # analyzed type
-    iscd::Bool # is this abstract global variable declarared as constant or not
-    AbstractGlobal(@nospecialize(t), iscd::Bool) = new(t, iscd)
+    t::Any        # analyzed type
+    isconst::Bool # is this abstract global variable declarared as constant or not
+    AbstractGlobal(@nospecialize(t), isconst::Bool) = new(t, isconst)
 end
 
 @doc """
@@ -103,7 +103,7 @@ function CC.builtin_tfunction(analyzer::AbstractAnalyzer,
         if istoplevel_getproperty(sv)
             ret = narrow_toplevel_getglobal(argtypes, ret)
         end
-    elseif (@static isdefined(Core, :get_binding_type) ? (f === Core.get_binding_type) : false)
+    elseif (@static isdefined(Core, :get_binding_type) && (f === Core.get_binding_type))
         if istoplevel(sv)
             ret = narrow_toplevel_binding_type(argtypes, ret)
         end
@@ -978,14 +978,14 @@ end
 function set_abstract_global!(analyzer::AbstractAnalyzer, mod::Module, name::Symbol, @nospecialize(t), isnd::Bool, sv::InferenceState)
     prev_agv = nothing
     prev_t = nothing
-    iscd = is_constant_declared(name, sv)
+    isconst = is_constant_declared(name, sv)
 
     # check if this global variable is already assigned previously
     if isdefined(mod, name)
         val = getfield(mod, name)
         if isa(val, AbstractGlobal)
             prev_t = val.t
-            if val.iscd && (prev_t′ = widenconst(prev_t)) !== (t′ = widenconst(t))
+            if val.isconst && (prev_t′ = widenconst(prev_t)) !== (t′ = widenconst(t))
                 warn_invalid_const_global!(name)
                 ReportPass(analyzer)(InvalidConstantRedefinition, analyzer, sv, mod, name, prev_t′, t′)
                 return
@@ -993,7 +993,7 @@ function set_abstract_global!(analyzer::AbstractAnalyzer, mod::Module, name::Sym
             prev_agv = val
         else
             prev_t = Core.Typeof(val)
-            if isconst(mod, name)
+            if Base.isconst(mod, name)
                 invalid = prev_t !== (t′ = widenconst(t))
                 if invalid || !isa(t, Const)
                     warn_invalid_const_global!(name)
@@ -1003,7 +1003,7 @@ function set_abstract_global!(analyzer::AbstractAnalyzer, mod::Module, name::Sym
                     return
                 end
                 # otherwise, we can just redefine this constant, and Julia will warn it
-                ex = iscd ? :(const $name = $(QuoteNode(t.val))) : :($name = $(QuoteNode(t.val)))
+                ex = isconst ? :(const $name = $(QuoteNode(t.val))) : :($name = $(QuoteNode(t.val)))
                 return Core.eval(mod, ex)
             end
         end
@@ -1012,7 +1012,7 @@ function set_abstract_global!(analyzer::AbstractAnalyzer, mod::Module, name::Sym
     isnew = isnothing(prev_t)
 
     # if this constant declaration is invalid, just report it and bail out
-    if iscd && !isnew
+    if isconst && !isnew
         warn_invalid_const_global!(name)
         ReportPass(analyzer)(InvalidConstantDeclaration, analyzer, sv, mod, name) # ignored by default
         return
@@ -1037,7 +1037,7 @@ function set_abstract_global!(analyzer::AbstractAnalyzer, mod::Module, name::Sym
             v = t.instance
         end
         if @isdefined v
-            if iscd
+            if isconst
                 @assert isnew # means, this is a valid constant declaration
                 return Core.eval(mod, :(const $name = $(QuoteNode(v))))
             else
@@ -1054,7 +1054,7 @@ function set_abstract_global!(analyzer::AbstractAnalyzer, mod::Module, name::Sym
             name
         end))
     else
-        return Core.eval(mod, :($name = $(AbstractGlobal(t, iscd))))
+        return Core.eval(mod, :($name = $(AbstractGlobal(t, isconst))))
     end
 end
 
