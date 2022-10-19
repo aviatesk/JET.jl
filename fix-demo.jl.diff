@@ -1,13 +1,12 @@
 diff --git a/demo.jl b/demo.jl
-index f868d2f..634e130 100644
+index cc3fc4a7..9c76524b 100644
 --- a/demo.jl
 +++ b/demo.jl
-@@ -4,11 +4,21 @@
- # fibonacci
- # ---------
+@@ -3,11 +3,20 @@
+ 
+ # JET can find simple errors:
  
 -fib(n) = n ≤ 2 ? n : fib(n-1) + fib(n-2)
-+# cache, cache, cache
 +function fib(n::T) where {T<:Number}
 +    cache = Dict(zero(T)=>zero(T), one(T)=>one(T))
 +    return _fib(n, cache)
@@ -18,30 +17,31 @@ index f868d2f..634e130 100644
 +    cache[n] = _fib(n-1, cache) + _fib(n-2, cache)
 +end
  
--fib(1000)   # never terminates in ordinal execution
--fib(m)      # undef var
--fib("1000") # obvious type error
-+fib(BigInt(1000)) # will terminate in ordinal execution as well
-+m = 1000          # define m
+-fib(1000)   # => never terminates
+-fib(m)      # => ERROR: UndefVarError: `m` not defined
+-fib("1000") # => ERROR: MethodError: no method matching isless(::String, ::Int64)
++fib(BigInt(1000))       # will terminate
++m = 1000
 +fib(m)
 +fib(parse(Int, "1000"))
  
+ # JET supports all Julia language features:
  
- # language features
-@@ -26,19 +36,19 @@ end
+@@ -22,19 +31,19 @@ end
  
- # macros will be expanded
+ # it can analyze code with macros
  @inline bar(n::T)     where {T<:Number} = n < 0 ? zero(T) : one(T)
 -@inline bar(v::Ty{T}) where {T<:Number} = bar(v.fdl) # typo "fdl"
 +@inline bar(v::Ty{T}) where {T<:Number} = bar(v.fld) # typo fixed
  @inline bar(v::Ty)                      = bar(convert(Number, v.fld))
  
- foo(1.2)
--foo("1") # `String` can't be converted to `Number`
-+foo('1') # `Char` will be converted to `UInt32`
+-foo(1.2) # => ERROR: type Ty has no field fdl
+-foo("1") # => ERROR: MethodError: Cannot `convert` an object of type String to an object of type Number
++foo(1.2)
++foo('1') # `'1'::Char` can be converted to `0x00000031::UInt32`
  
- # even staged programming
- # adapted from https://github.com/JuliaLang/julia/blob/9f665c19e076ab37cbca2d0cc99283b82e99c26f/base/namedtuple.jl#L253-L264
+ # even staged code can be analyzed
+ # (adapted from https://github.com/JuliaLang/julia/blob/9f665c19e076ab37cbca2d0cc99283b82e99c26f/base/namedtuple.jl#L253-L264)
 -@generated function badmerge(a::NamedTuple{an}, b::NamedTuple{bn}) where {an, bn}
 +@generated function goodmerge(a::NamedTuple{an}, b::NamedTuple{bn}) where {an, bn}
      names = Base.merge_names(an, bn)
@@ -51,5 +51,5 @@ index f868d2f..634e130 100644
      :( NamedTuple{$names,$types}(($(vals...),)) )
  end
  
--badmerge((x=1,y=2), (y=3,z=1))
+-badmerge((x=1,y=2), (y=3,z=1)) # => ERROR: UndefVarError: `x` not defined
 +goodmerge((x=1,y=2), (y=3,z=1))

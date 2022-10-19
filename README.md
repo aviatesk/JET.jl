@@ -27,42 +27,38 @@ Say you have this strange and buggy file and want to know where to fix:
 > demo.jl
 
 ```julia
-# demo
-# ====
+# JET.jl demonstration
+# ====================
 
-# fibonacci
-# ---------
+# JET can find simple errors:
 
 fib(n) = n ≤ 2 ? n : fib(n-1) + fib(n-2)
 
-fib(1000)   # never terminates in ordinal execution
-fib(m)      # undef var
-fib("1000") # obvious type error
+fib(1000)   # => never terminates
+fib(m)      # => ERROR: UndefVarError: `m` not defined
+fib("1000") # => ERROR: MethodError: no method matching isless(::String, ::Int64)
 
+# JET supports all Julia language features:
 
-# language features
-# -----------------
-
-# user-defined types, macros
+# it supports user-defined types and functions
 struct Ty{T}
     fld::T
 end
-
 function foo(a)
     v = Ty(a)
     return bar(v)
 end
 
-# macros will be expanded
+# it can analyze code with macros
 @inline bar(n::T)     where {T<:Number} = n < 0 ? zero(T) : one(T)
 @inline bar(v::Ty{T}) where {T<:Number} = bar(v.fdl) # typo "fdl"
 @inline bar(v::Ty)                      = bar(convert(Number, v.fld))
 
-foo(1.2)
-foo("1") # `String` can't be converted to `Number`
+foo(1.2) # => ERROR: type Ty has no field fdl
+foo("1") # => ERROR: MethodError: Cannot `convert` an object of type String to an object of type Number
 
-# even staged programming
-# adapted from https://github.com/JuliaLang/julia/blob/9f665c19e076ab37cbca2d0cc99283b82e99c26f/base/namedtuple.jl#L253-L264
+# even staged code can be analyzed
+# (adapted from https://github.com/JuliaLang/julia/blob/9f665c19e076ab37cbca2d0cc99283b82e99c26f/base/namedtuple.jl#L253-L264)
 @generated function badmerge(a::NamedTuple{an}, b::NamedTuple{bn}) where {an, bn}
     names = Base.merge_names(an, bn)
     types = Base.merge_types(names, a, b)
@@ -70,7 +66,7 @@ foo("1") # `String` can't be converted to `Number`
     :( NamedTuple{$names,$types}(($(vals...),)) )
 end
 
-badmerge((x=1,y=2), (y=3,z=1))
+badmerge((x=1,y=2), (y=3,z=1)) # => ERROR: UndefVarError: `x` not defined
 ```
 
 You can have JET.jl detect possible errors:
@@ -79,38 +75,34 @@ You can have JET.jl detect possible errors:
 julia> using JET
 
 julia> report_and_watch_file("demo.jl"; annotate_types = true)
-[toplevel-info] virtualized the context of Main (took 0.013 sec)
-[toplevel-info] entered into demo.jl
-[toplevel-info]  exited from demo.jl (took 3.254 sec)
-═════ 7 possible errors found ═════
-┌ @ demo.jl:10 fib(m)
+@ demo.jl:9 fib(m)::Union{}
 │ `m` is not defined
-└──────────────
-┌ @ demo.jl:11 fib("1000")
-│┌ @ demo.jl:7 n::String :≤ 2
-││┌ @ operators.jl:392 x::String < y::Int64
-│││┌ @ operators.jl:343 isless(x::String, y::Int64)
-││││ no matching method found for `isless(::String, ::Int64)`: isless(x::String, y::Int64)
+└─────────────
+┌ @ demo.jl:10 fib("1000")::Union{}
+│┌ @ demo.jl:6 (n::String :≤ 2)::Union{}
+││┌ @ operators.jl:392 (x::String < y::Int64)::Union{}
+│││┌ @ operators.jl:343 isless(x::String, y::Int64)::Union{}
+││││ no matching method found `isless(::String, ::Int64)`: isless(x::String, y::Int64)::Union{}
 │││└────────────────────
-┌ @ demo.jl:32 foo(1.2)
-│┌ @ demo.jl:24 bar(v::Union{})
-││┌ @ demo.jl:29 (v::Ty{Float64}).fdl
-│││┌ @ Base.jl:37 Base.getfield(x::Ty{Float64}, f::Symbol)
+┌ @ demo.jl:28 foo(1.2)::Union{}
+│┌ @ demo.jl:20 bar(v::Union{})::Union{}
+││┌ @ demo.jl:25 (v::Ty{Float64}).fdl::Union{}
+│││┌ @ Base.jl:37 Base.getfield(x::Ty{Float64}, f::Symbol)::Union{}
 ││││ type Ty{Float64} has no field fdl
 │││└──────────────
-┌ @ demo.jl:33 foo("1")
-│┌ @ demo.jl:24 bar(v::Union{})
-││┌ @ demo.jl:30 convert(Number, (v::Ty{String}).fld)
-│││ no matching method found for `convert(::Type{Number}, ::String)`: convert(Number, (v::Ty{String}).fld)
+┌ @ demo.jl:29 foo("1")::Union{}
+│┌ @ demo.jl:20 bar(v::Union{})::Union{}
+││┌ @ demo.jl:26 convert(Number, (v::Ty{String}).fld::String)::Union{}
+│││ no matching method found `convert(::Type{Number}, ::String)`: convert(Number, (v::Ty{String}).fld::String)::Union{}
 ││└──────────────
-┌ @ demo.jl:44 badmerge(NamedTuple{(:x, :y)}(tuple(1, 2)), NamedTuple{(:y, :z)}(tuple(3, 1)))
-│┌ @ demo.jl:37 getfield(a::NamedTuple{(:x, :y), Tuple{Int64, Int64}}, x)
+┌ @ demo.jl:40 badmerge(NamedTuple{(:x, :y)}(tuple(1, 2)::Tuple{Int64, Int64})::NamedTuple{(:x, :y), Tuple{Int64, Int64}}, NamedTuple{(:y, :z)}(tuple(3, 1)::Tuple{Int64, Int64})::NamedTuple{(:y, :z), Tuple{Int64, Int64}})::Union{}
+│┌ @ demo.jl:33 getfield(a::NamedTuple{(:x, :y), Tuple{Int64, Int64}}, x)::Union{}
 ││ `x` is not defined
 │└──────────────
-│┌ @ demo.jl:37 getfield(b::NamedTuple{(:y, :z), Tuple{Int64, Int64}}, y)
+│┌ @ demo.jl:33 getfield(b::NamedTuple{(:y, :z), Tuple{Int64, Int64}}, y)::Union{}
 ││ `y` is not defined
 │└──────────────
-│┌ @ demo.jl:37 getfield(b::NamedTuple{(:y, :z), Tuple{Int64, Int64}}, z)
+│┌ @ demo.jl:33 getfield(b::NamedTuple{(:y, :z), Tuple{Int64, Int64}}, z)::Union{}
 ││ `z` is not defined
 │└──────────────
 ```
