@@ -329,7 +329,9 @@ end
 function _print_signature(io, @nospecialize(x), config; kwargs...)
     if isa(x, Type)
         if config.annotate_types
-            printstyled(io, "::", x; color = TYPE_ANNOTATION_COLOR, kwargs...)
+            if x !== Union{}
+                printstyled(io, "::", x; color = TYPE_ANNOTATION_COLOR, kwargs...)
+            end
         end
     elseif isa(x, Repr)
         printstyled(io, sprint(show, x.val); kwargs...)
@@ -339,6 +341,8 @@ function _print_signature(io, @nospecialize(x), config; kwargs...)
         end
     elseif isa(x, ApplyTypeResult)
         printstyled(io, x.typ; kwargs...)
+    elseif isa(x, IgnoreMarker)
+        return
     elseif isa(x, QuoteNode)
         printstyled(io, "[quote]"; kwargs...)
     elseif isa(x, MethodInstance)
@@ -364,6 +368,7 @@ struct ApplyTypeResult
     typ # ::Type
     ApplyTypeResult(@nospecialize typ) = new(typ)
 end
+struct IgnoreMarker end
 
 # adapted from https://github.com/JuliaLang/julia/blob/0f11a7bb07d2d0d8413da05dadd47441705bf0dd/base/show.jl#L989-L1011
 function show_mi(io::IO, l::MethodInstance)

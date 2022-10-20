@@ -143,15 +143,32 @@ function handle_sig_call!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
     return sig
 end
 
+# create a type-annotated signature for `([sig of ex]::T)`
+macro annotate_if_active(sig, ex)
+    sig, ex = esc(sig), esc(ex)
+    return quote
+        push!($sig, IgnoreMarker())
+        i = length($sig)
+        $ex
+        if last($sig) !== Union{}
+            $sig[i] = AnnotationMaker(true)
+            push!($sig, AnnotationMaker(false))
+        else
+            push!($sig, IgnoreMarker())
+        end
+        $sig
+    end
+end
+
 function handle_sig_binop!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, args::Vector{Any})
     (Base.isbinaryoperator(f.name) && length(args) == 2) || return false
-    handle_sig!(sig, s, AnnotationMaker(true))
-    handle_sig!(sig, s, args[1])
-    push!(sig, ' ')
-    handle_sig!(sig, s, f)
-    push!(sig, ' ')
-    handle_sig!(sig, s, args[2])
-    handle_sig!(sig, s, AnnotationMaker(false))
+    @annotate_if_active sig begin
+        handle_sig!(sig, s, args[1])
+        push!(sig, ' ')
+        handle_sig!(sig, s, f)
+        push!(sig, ' ')
+        handle_sig!(sig, s, args[2])
+    end
     push!(sig, safewidenconst(get_ssavaluetype(s)))
     return true
 end
@@ -163,9 +180,7 @@ function handle_sig_getproperty!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, a
     isa(sym, QuoteNode) || return false
     val = sym.value
     isa(val, Symbol) || return false
-    handle_sig!(sig, s, AnnotationMaker(true))
-    handle_sig!(sig, s, args[1])
-    handle_sig!(sig, s, AnnotationMaker(false))
+    @annotate_if_active sig handle_sig!(sig, s, args[1])
     push!(sig, '.')
     push!(sig, String(val))
     push!(sig, safewidenconst(get_ssavaluetype(s)))
@@ -179,23 +194,21 @@ function handle_sig_setproperty!!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, 
     isa(sym, QuoteNode) || return false
     val = sym.value
     isa(val, Symbol) || return false
-    handle_sig!(sig, s, AnnotationMaker(true))
-    handle_sig!(sig, s, args[1])
-    handle_sig!(sig, s, AnnotationMaker(false))
-    push!(sig, '.')
-    push!(sig, String(val))
-    push!(sig, " = ")
-    handle_sig!(sig, s, args[3])
-    push!(sig, safewidenconst(get_ssavaluetype(s)))
+    @annotate_if_active sig begin
+        @annotate_if_active sig handle_sig!(sig, s, args[1])
+        push!(sig, '.')
+        push!(sig, String(val))
+        push!(sig, " = ")
+        handle_sig!(sig, s, args[3])
+        push!(sig, safewidenconst(get_ssavaluetype(s)))
+    end
     return true
 end
 
 function handle_sig_getindex!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, args::Vector{Any})
     f.name === :getindex || return false
     length(args) ≥ 1 || return false
-    handle_sig!(sig, s, AnnotationMaker(true))
-    handle_sig!(sig, s, args[1])
-    handle_sig!(sig, s, AnnotationMaker(false))
+    @annotate_if_active sig handle_sig!(sig, s, args[1])
     push!(sig, '[')
     na = length(args)
     for i = 2:na
@@ -210,19 +223,19 @@ end
 function handle_sig_setindex!!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, args::Vector{Any})
     f.name === :setindex! || return false
     length(args) ≥ 2 || return false
-    handle_sig!(sig, s, AnnotationMaker(true))
-    handle_sig!(sig, s, args[1])
-    handle_sig!(sig, s, AnnotationMaker(false))
-    push!(sig, '[')
-    na = length(args)
-    for i = 3:na
-        handle_sig!(sig, s, args[i])
-        i == na || push!(sig, ", ")
+    @annotate_if_active sig begin
+        @annotate_if_active sig handle_sig!(sig, s, args[1])
+        push!(sig, '[')
+        na = length(args)
+        for i = 3:na
+            handle_sig!(sig, s, args[i])
+            i == na || push!(sig, ", ")
+        end
+        push!(sig, ']')
+        push!(sig, " = ")
+        handle_sig!(sig, s, args[2])
+        push!(sig, safewidenconst(get_ssavaluetype(s)))
     end
-    push!(sig, ']')
-    push!(sig, " = ")
-    handle_sig!(sig, s, args[2])
-    push!(sig, safewidenconst(get_ssavaluetype(s)))
     return true
 end
 
