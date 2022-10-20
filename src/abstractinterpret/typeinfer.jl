@@ -589,7 +589,7 @@ function invalidate_jet_cache!(replaced, max_world, depth = 0)
                 end
                 invalidate_jet_cache!(mi, max_world, depth+1)
             else
-                # might be `Type` object representing an `invoke` signatuture
+                # might be `Type` object representing an `invoke` signature
             end
         end
     end
