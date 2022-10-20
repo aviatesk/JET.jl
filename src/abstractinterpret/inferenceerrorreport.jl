@@ -554,11 +554,17 @@ macro jetreport(ex)
     @assert @capture(ex, struct T_ <: S_; spec_sigs__; end)
     @assert Core.eval(__module__, S) <: InferenceErrorReport
 
-    spec_decls = map(spec_sigs) do x
+    spec_decls = Any[]
+    for i in 1:length(spec_sigs)
+        x = spec_sigs[i]
         if isexpr(x, :macrocall) && x.args[1] === Symbol("@nospecialize")
-            return x.args[3]
+            push!(spec_decls, x.args[3])
+        elseif isexpr(x, :(=))
+            push!(spec_decls, x.args[1])
+            spec_sigs[i] = Expr(:kw, x.args[1], x.args[2])
+        else
+            push!(spec_decls, x)
         end
-        return x
     end
     spec_names = extract_decl_name.(spec_decls)
     spec_types = esc.(extract_decl_type.(spec_decls))

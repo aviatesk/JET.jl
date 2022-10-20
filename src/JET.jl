@@ -75,7 +75,7 @@ import .CC:
     OptimizationState, UnionSplitInfo, UnionSplitMethodMatches, VarState, VarTable,
     WorldRange, WorldView, _methods_by_ftype, argextype, argtype_by_index, argtype_tail,
     argtypes_to_type, compute_basic_blocks, get_compileable_sig, ignorelimited,
-    inlining_enabled, instanceof_tfunc, is_throw_call, isconstType, issingletontype,
+    inlining_enabled, instanceof_tfunc, is_throw_call, isType, isconstType, issingletontype,
     may_invoke_generator, singleton_type, slot_id, specialize_method, switchtupleunion,
     tmerge, widenconst, ⊑
 
@@ -624,12 +624,7 @@ struct AnyFrameModule mod::Module end
 
 match_module(mod::Module, @nospecialize(report::InferenceErrorReport)) = match_module(LastFrameModule(mod), report)
 function match_module(mod::LastFrameModule, @nospecialize(report::InferenceErrorReport))
-    if isa(report, NoFieldErrorReport) && length(report.vst) ≥ 2
-        vsf = report.vst[end-1]
-    else
-        vsf = last(report.vst)
-    end
-    return linfomod(vsf.linfo) === mod.mod
+    return linfomod(last(report.vst).linfo) === mod.mod
 end
 function match_module(mod::AnyFrameModule, @nospecialize(report::InferenceErrorReport))
     return any(vsf->linfomod(vsf.linfo)===mod.mod, report.vst)
