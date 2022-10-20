@@ -565,32 +565,26 @@ function add_jet_callback!(linfo)
         linfo.callbacks = Any[invalidate_jet_cache!]
     else
         callbacks = linfo.callbacks::Vector{Any}
-        if !any(function (@nospecialize(cb),)
-                    cb === invalidate_jet_cache!
-                end,
-                callbacks)
+        if !any(@nospecialize(cb)->cb===invalidate_jet_cache!, callbacks)
             push!(callbacks, invalidate_jet_cache!)
         end
     end
     return nothing
 end
 
-function invalidate_jet_cache!(replaced, max_world, depth = 0)
+function invalidate_jet_cache!(replaced::MethodInstance, max_world,
+    seen::IdSet{MethodInstance} = IdSet{MethodInstance}())
+    push!(seen, replaced)
     for cache in values(JET_CACHE)
         delete!(cache, replaced)
     end
 
     if isdefined(replaced, :backedges)
         for item in replaced.backedges
-            if isa(item, MethodInstance)
-                mi = item
-                if !any(cache->haskey(cache, mi), values(JET_CACHE))
-                    continue # otherwise fail into an infinite loop
-                end
-                invalidate_jet_cache!(mi, max_world, depth+1)
-            else
-                # might be `Type` object representing an `invoke` signature
-            end
+            isa(item, MethodInstance) || continue # might be `Type` object representing an `invoke` signature
+            mi = item
+            mi in seen && continue # otherwise fail into an infinite loop
+            invalidate_jet_cache!(mi, max_world, seen)
         end
     end
     return nothing
