@@ -133,36 +133,27 @@ badgetpropertycall() = _badgetpropertycall(nothing)
     @test only(get_reports_with_test(result)) isa NoFieldErrorReport
 end
 
-@testset "invalidation" begin
-    # direct case
-    let m = Module()
-
-        # analyze the first definition
-        @eval m foo(a, b) = (sum(a), b)
-        result = @report_call m.foo([1,2,3], "julia")
-        @test isempty(get_reports_with_test(result))
-
-        # renew the definition and invalidate it
-        @eval m foo(a, b) = (a, sum(b))
-        result = @report_call m.foo([1,2,3], "julia")
-        test_sum_over_string(result)
-    end
+@testset "invalidation" begin; let M = Module()
+    # renew a definition and re-analyze it
+    @eval M foo(a, b) = (sum(a), b)
+    @test isempty(get_reports_with_test(@report_call M.foo([1,2,3], "julia")))
+    @eval M foo(a, b) = (a, sum(b))
+    test_sum_over_string(@report_call M.foo([1,2,3], "julia"))
 
     # backedge invalidation
-    let m = Module()
-        @eval m callf(f, args...) = f(args...)
+    @eval M callf(f, args...) = f(args...)
+    @eval M bar(a, b) = (sum(a), b)
+    @test isempty(get_reports_with_test(@report_call M.callf(M.bar, [1,2,3], "julia")))
+    @eval M bar(a, b) = (a, sum(b))
+    test_sum_over_string(@report_call M.callf(M.foo, [1,2,3], "julia"))
 
-        # analyze the first definition
-        @eval m foo(a, b) = (sum(a), b)
-        result = @report_call m.callf(m.foo, [1,2,3], "julia")
-        @test isempty(get_reports_with_test(result))
-
-        # renew the definition and invalidate it
-        @eval m foo(a, b) = (a, sum(b))
-        result = @report_call m.callf(m.foo, [1,2,3], "julia")
-        test_sum_over_string(result)
-    end
-end
+    # `invoke`-backedge invalidation
+    @eval M baz(a, b) = sum(a), b
+    @eval M qux(a, b) = invoke(baz, Tuple{Any,Any}, a, b)
+    @test isempty(get_reports_with_test(@report_call M.qux([1,2,3], "julia")))
+    @eval M baz(a, b) = sum(b), a
+    test_sum_over_string(@report_call M.qux([1,2,3], "julia"))
+end; end
 
 # COMBAK this test is very fragile, think about the alternate tests
 # @testset "end to end invalidation" begin
