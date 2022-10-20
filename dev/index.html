@@ -40,35 +40,38 @@ end
 
 badmerge((x=1,y=2), (y=3,z=1)) # =&gt; ERROR: UndefVarError: `x` not defined</code></pre><p>You can have JET.jl detect possible errors:</p><pre><code class="language-julia hljs">julia&gt; using JET
 
-julia&gt; report_and_watch_file(&quot;demo.jl&quot;; annotate_types = true)
-@ demo.jl:9 fib(m)::Union{}
+julia&gt; report_and_watch_file(&quot;demo.jl&quot;; annotate_types=true)
+[toplevel-info] virtualized the context of Main (took 0.184 sec)
+[toplevel-info] entered into demo.jl
+[toplevel-info]  exited from demo.jl (took 7.523 sec)
+┌ @ demo.jl:9 fib(m)
 │ `m` is not defined
 └─────────────
-┌ @ demo.jl:10 fib(&quot;1000&quot;)::Union{}
-│┌ @ demo.jl:6 (n::String :≤ 2)::Union{}
-││┌ @ operators.jl:392 (x::String &lt; y::Int64)::Union{}
-│││┌ @ operators.jl:343 isless(x::String, y::Int64)::Union{}
-││││ no matching method found `isless(::String, ::Int64)`: isless(x::String, y::Int64)::Union{}
+┌ @ demo.jl:10 fib(&quot;1000&quot;)
+│┌ @ demo.jl:6 n::String :≤ 2
+││┌ @ operators.jl:392 x::String &lt; y::Int64
+│││┌ @ operators.jl:343 isless(x::String, y::Int64)
+││││ no matching method found `isless(::String, ::Int64)`: isless(x::String, y::Int64)
 │││└────────────────────
-┌ @ demo.jl:28 foo(1.2)::Union{}
-│┌ @ demo.jl:20 bar(v::Union{})::Union{}
-││┌ @ demo.jl:25 (v::Ty{Float64}).fdl::Union{}
-│││┌ @ Base.jl:37 Base.getfield(x::Ty{Float64}, f::Symbol)::Union{}
+┌ @ demo.jl:28 foo(1.2)
+│┌ @ demo.jl:20 bar(v)
+││┌ @ demo.jl:25 (v::Ty{Float64}).fdl
+│││┌ @ Base.jl:37 Base.getfield(x::Ty{Float64}, f::Symbol)
 ││││ type Ty{Float64} has no field fdl
 │││└──────────────
-┌ @ demo.jl:29 foo(&quot;1&quot;)::Union{}
-│┌ @ demo.jl:20 bar(v::Union{})::Union{}
-││┌ @ demo.jl:26 convert(Number, (v::Ty{String}).fld::String)::Union{}
-│││ no matching method found `convert(::Type{Number}, ::String)`: convert(Number, (v::Ty{String}).fld::String)::Union{}
+┌ @ demo.jl:29 foo(&quot;1&quot;)
+│┌ @ demo.jl:20 bar(v)
+││┌ @ demo.jl:26 convert(Number, (v::Ty{String}).fld::String)
+│││ no matching method found `convert(::Type{Number}, ::String)`: convert(Number, (v::Ty{String}).fld::String)
 ││└──────────────
-┌ @ demo.jl:40 badmerge(NamedTuple{(:x, :y)}(tuple(1, 2)::Tuple{Int64, Int64})::NamedTuple{(:x, :y), Tuple{Int64, Int64}}, NamedTuple{(:y, :z)}(tuple(3, 1)::Tuple{Int64, Int64})::NamedTuple{(:y, :z), Tuple{Int64, Int64}})::Union{}
-│┌ @ demo.jl:33 getfield(a::NamedTuple{(:x, :y), Tuple{Int64, Int64}}, x)::Union{}
+┌ @ demo.jl:40 badmerge(NamedTuple{(:x, :y)}(tuple(1, 2)::Tuple{Int64, Int64})::NamedTuple{(:x, :y), Tuple{Int64, Int64}}, NamedTuple{(:y, :z)}(tuple(3, 1)::Tuple{Int64, Int64})::NamedTuple{(:y, :z), Tuple{Int64, Int64}})
+│┌ @ demo.jl:33 getfield(a::NamedTuple{(:x, :y), Tuple{Int64, Int64}}, x)
 ││ `x` is not defined
 │└──────────────
-│┌ @ demo.jl:33 getfield(b::NamedTuple{(:y, :z), Tuple{Int64, Int64}}, y)::Union{}
+│┌ @ demo.jl:33 getfield(b::NamedTuple{(:y, :z), Tuple{Int64, Int64}}, y)
 ││ `y` is not defined
 │└──────────────
-│┌ @ demo.jl:33 getfield(b::NamedTuple{(:y, :z), Tuple{Int64, Int64}}, z)::Union{}
+│┌ @ demo.jl:33 getfield(b::NamedTuple{(:y, :z), Tuple{Int64, Int64}}, z)
 ││ `z` is not defined
 │└──────────────</code></pre><p>Hooray! JET.jl found possible error points (e.g. <code>MethodError: no method matching isless(::String, ::Int64)</code>) given top-level call signatures of generic functions (e.g. <code>fib(&quot;1000&quot;)</code>).</p><p>Note that JET can find these errors while demo.jl is so inefficient (especially the <code>fib</code> implementation) that it would never terminate in actual execution. That is possible because JET analyzes code only on <em>type level</em>. This technique is often called &quot;abstract interpretation&quot; and JET internally uses Julia&#39;s native type inference implementation, so it can analyze code as fast/correctly as Julia&#39;s code generation.</p><p>Lastly, let&#39;s apply the following diff to demo.jl so that it works nicely:</p><blockquote><p>fix-demo.jl.diff</p></blockquote><pre><code class="language-diff hljs">diff --git a/demo.jl b/demo.jl
 index f868d2f..634e130 100644
@@ -124,7 +127,7 @@ index f868d2f..634e130 100644
  end
 
 -badmerge((x=1,y=2), (y=3,z=1))
-+goodmerge((x=1,y=2), (y=3,z=1))</code></pre><p>If you apply the diff (i.e. update and save the demo.jl), JET will automatically re-trigger analysis, and this time, won&#39;t complain anything:</p><blockquote><p><code>git apply fix-demo.jl.diff</code></p></blockquote><pre><code class="language-julia hljs">[toplevel-info] virtualized the context of Main (took 0.004 sec)
++goodmerge((x=1,y=2), (y=3,z=1))</code></pre><p>If you apply the diff (i.e. update and save the demo.jl), JET will automatically re-trigger analysis, and this time, won&#39;t complain anything:</p><blockquote><p><code>git apply fix-demo.jl.diff</code></p></blockquote><pre><code class="language-julia hljs">[toplevel-info] virtualized the context of Main (took 0.002 sec)
 [toplevel-info] entered into demo.jl
-[toplevel-info]  exited from demo.jl (took 1.375 sec)
-No errors detected</code></pre><h2 id="Limitations"><a class="docs-heading-anchor" href="#Limitations">Limitations</a><a id="Limitations-1"></a><a class="docs-heading-anchor-permalink" href="#Limitations" title="Permalink"></a></h2><p>JET explores the functions you call directly as well as their <em>inferrable</em> callees. However, if the argument types for a call cannot be inferred, JET does not analyze the callee. Consequently, a report of <code>No errors detected</code> does not imply that your entire codebase is free of errors.</p><p>JET integrates with <a href="https://github.com/timholy/SnoopCompile.jl">SnoopCompile</a>, and you can sometimes use SnoopCompile to collect the data to perform more comprehensive analyses. SnoopCompile&#39;s limitation is that it only collects data for calls that have not been previously inferred, so you must perform this type of analysis in a fresh session.</p><p>See <a href="https://timholy.github.io/SnoopCompile.jl/stable/jet/">SnoopCompile&#39;s JET-integration documentation</a> for further details.</p><h2 id="Acknowledgement"><a class="docs-heading-anchor" href="#Acknowledgement">Acknowledgement</a><a id="Acknowledgement-1"></a><a class="docs-heading-anchor-permalink" href="#Acknowledgement" title="Permalink"></a></h2><p>This project started as my undergrad thesis project at Kyoto University, supervised by Prof. Takashi Sakuragawa. We were heavily inspired by <a href="https://github.com/ruby/typeprof">ruby/typeprof</a>, an experimental type understanding/checking tool for Ruby. The grad thesis about this project is published at <a href="https://github.com/aviatesk/grad-thesis">https://github.com/aviatesk/grad-thesis</a>, but currently, it&#39;s only available in Japanese.</p></article><nav class="docs-footer"><a class="docs-footer-nextpage" href="jetanalysis/">Error Analysis »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.14 on <span class="colophon-date" title="Thursday 20 October 2022 08:22">Thursday 20 October 2022</span>. Using Julia version 1.9.0-DEV.1612.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+[toplevel-info]  exited from demo.jl (took 1.004 sec)
+No errors detected</code></pre><h2 id="Limitations"><a class="docs-heading-anchor" href="#Limitations">Limitations</a><a id="Limitations-1"></a><a class="docs-heading-anchor-permalink" href="#Limitations" title="Permalink"></a></h2><p>JET explores the functions you call directly as well as their <em>inferrable</em> callees. However, if the argument types for a call cannot be inferred, JET does not analyze the callee. Consequently, a report of <code>No errors detected</code> does not imply that your entire codebase is free of errors.</p><p>JET integrates with <a href="https://github.com/timholy/SnoopCompile.jl">SnoopCompile</a>, and you can sometimes use SnoopCompile to collect the data to perform more comprehensive analyses. SnoopCompile&#39;s limitation is that it only collects data for calls that have not been previously inferred, so you must perform this type of analysis in a fresh session.</p><p>See <a href="https://timholy.github.io/SnoopCompile.jl/stable/jet/">SnoopCompile&#39;s JET-integration documentation</a> for further details.</p><h2 id="Acknowledgement"><a class="docs-heading-anchor" href="#Acknowledgement">Acknowledgement</a><a id="Acknowledgement-1"></a><a class="docs-heading-anchor-permalink" href="#Acknowledgement" title="Permalink"></a></h2><p>This project started as my undergrad thesis project at Kyoto University, supervised by Prof. Takashi Sakuragawa. We were heavily inspired by <a href="https://github.com/ruby/typeprof">ruby/typeprof</a>, an experimental type understanding/checking tool for Ruby. The grad thesis about this project is published at <a href="https://github.com/aviatesk/grad-thesis">https://github.com/aviatesk/grad-thesis</a>, but currently, it&#39;s only available in Japanese.</p></article><nav class="docs-footer"><a class="docs-footer-nextpage" href="jetanalysis/">Error Analysis »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.14 on <span class="colophon-date" title="Thursday 20 October 2022 08:32">Thursday 20 October 2022</span>. Using Julia version 1.9.0-DEV.1612.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
