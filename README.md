@@ -74,35 +74,38 @@ You can have JET.jl detect possible errors:
 ```julia
 julia> using JET
 
-julia> report_and_watch_file("demo.jl"; annotate_types = true)
-@ demo.jl:9 fib(m)::Union{}
+julia> report_and_watch_file("demo.jl"; annotate_types=true)
+[toplevel-info] virtualized the context of Main (took 0.184 sec)
+[toplevel-info] entered into demo.jl
+[toplevel-info]  exited from demo.jl (took 7.523 sec)
+┌ @ demo.jl:9 fib(m)
 │ `m` is not defined
 └─────────────
-┌ @ demo.jl:10 fib("1000")::Union{}
-│┌ @ demo.jl:6 (n::String :≤ 2)::Union{}
-││┌ @ operators.jl:392 (x::String < y::Int64)::Union{}
-│││┌ @ operators.jl:343 isless(x::String, y::Int64)::Union{}
-││││ no matching method found `isless(::String, ::Int64)`: isless(x::String, y::Int64)::Union{}
+┌ @ demo.jl:10 fib("1000")
+│┌ @ demo.jl:6 n::String :≤ 2
+││┌ @ operators.jl:392 x::String < y::Int64
+│││┌ @ operators.jl:343 isless(x::String, y::Int64)
+││││ no matching method found `isless(::String, ::Int64)`: isless(x::String, y::Int64)
 │││└────────────────────
-┌ @ demo.jl:28 foo(1.2)::Union{}
-│┌ @ demo.jl:20 bar(v::Union{})::Union{}
-││┌ @ demo.jl:25 (v::Ty{Float64}).fdl::Union{}
-│││┌ @ Base.jl:37 Base.getfield(x::Ty{Float64}, f::Symbol)::Union{}
+┌ @ demo.jl:28 foo(1.2)
+│┌ @ demo.jl:20 bar(v)
+││┌ @ demo.jl:25 (v::Ty{Float64}).fdl
+│││┌ @ Base.jl:37 Base.getfield(x::Ty{Float64}, f::Symbol)
 ││││ type Ty{Float64} has no field fdl
 │││└──────────────
-┌ @ demo.jl:29 foo("1")::Union{}
-│┌ @ demo.jl:20 bar(v::Union{})::Union{}
-││┌ @ demo.jl:26 convert(Number, (v::Ty{String}).fld::String)::Union{}
-│││ no matching method found `convert(::Type{Number}, ::String)`: convert(Number, (v::Ty{String}).fld::String)::Union{}
+┌ @ demo.jl:29 foo("1")
+│┌ @ demo.jl:20 bar(v)
+││┌ @ demo.jl:26 convert(Number, (v::Ty{String}).fld::String)
+│││ no matching method found `convert(::Type{Number}, ::String)`: convert(Number, (v::Ty{String}).fld::String)
 ││└──────────────
-┌ @ demo.jl:40 badmerge(NamedTuple{(:x, :y)}(tuple(1, 2)::Tuple{Int64, Int64})::NamedTuple{(:x, :y), Tuple{Int64, Int64}}, NamedTuple{(:y, :z)}(tuple(3, 1)::Tuple{Int64, Int64})::NamedTuple{(:y, :z), Tuple{Int64, Int64}})::Union{}
-│┌ @ demo.jl:33 getfield(a::NamedTuple{(:x, :y), Tuple{Int64, Int64}}, x)::Union{}
+┌ @ demo.jl:40 badmerge(NamedTuple{(:x, :y)}(tuple(1, 2)::Tuple{Int64, Int64})::NamedTuple{(:x, :y), Tuple{Int64, Int64}}, NamedTuple{(:y, :z)}(tuple(3, 1)::Tuple{Int64, Int64})::NamedTuple{(:y, :z), Tuple{Int64, Int64}})
+│┌ @ demo.jl:33 getfield(a::NamedTuple{(:x, :y), Tuple{Int64, Int64}}, x)
 ││ `x` is not defined
 │└──────────────
-│┌ @ demo.jl:33 getfield(b::NamedTuple{(:y, :z), Tuple{Int64, Int64}}, y)::Union{}
+│┌ @ demo.jl:33 getfield(b::NamedTuple{(:y, :z), Tuple{Int64, Int64}}, y)
 ││ `y` is not defined
 │└──────────────
-│┌ @ demo.jl:33 getfield(b::NamedTuple{(:y, :z), Tuple{Int64, Int64}}, z)::Union{}
+│┌ @ demo.jl:33 getfield(b::NamedTuple{(:y, :z), Tuple{Int64, Int64}}, z)
 ││ `z` is not defined
 │└──────────────
 ```
@@ -181,9 +184,9 @@ If you apply the diff (i.e. update and save the demo.jl), JET will automatically
 > `git apply fix-demo.jl.diff`
 
 ```julia
-[toplevel-info] virtualized the context of Main (took 0.004 sec)
+[toplevel-info] virtualized the context of Main (took 0.002 sec)
 [toplevel-info] entered into demo.jl
-[toplevel-info]  exited from demo.jl (took 1.375 sec)
+[toplevel-info]  exited from demo.jl (took 1.004 sec)
 No errors detected
 ```
 
