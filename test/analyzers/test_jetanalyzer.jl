@@ -412,25 +412,23 @@ end
 end
 
 @testset "DivideError" begin
-    isa2(t) = x -> isa(x, t)
-    let
-        apply(f, args...) = f(args...)
-
-        result = report_call() do
-            apply(div, 1, 0)
+    let result = report_call() do
+            div(1, 0)
         end
-        @test !isempty(get_reports_with_test(result))
-        @test any(isa2(DivideErrorReport), get_reports_with_test(result))
-
-        result = report_call() do
-            apply(rem, 1, 0)
+        report = only(get_reports_with_test(result))
+        @test report isa BuiltinErrorReport
+        @test report.msg == JET.DEVIDE_ERROR_MSG
+    end
+    let result = report_call() do
+            rem(1, 0)
         end
-        @test !isempty(get_reports_with_test(result))
-        @test any(isa2(DivideErrorReport), get_reports_with_test(result))
-
-        # JET analysis isn't sound
-        result = report_call((Int,Int)) do a, b
-            apply(div, a, b)
+        report = only(get_reports_with_test(result))
+        @test report isa BuiltinErrorReport
+        @test report.msg == JET.DEVIDE_ERROR_MSG
+    end
+    # JETAnalyzer isn't sound
+    let result = report_call((Int,Int)) do a, b
+            div(a, b)
         end
         @test isempty(get_reports_with_test(result))
     end
@@ -533,14 +531,16 @@ end
     # error points for `bar(::Foo2)` and `bar(::Foo3)` if we bail out on `Any`-grew return type
     @test length(res.res.inference_error_reports) === 2
     @test any(res.res.inference_error_reports) do er
-        return er isa NoFieldErrorReport &&
-               er.typ === vmod.Foo2 &&
-               er.name === :bar
+        return er isa BuiltinErrorReport &&
+               er.f === getfield &&
+               er.argtypes[1] === vmod.Foo2 &&
+               er.argtypes[2] === Core.Const(:bar)
     end
     @test any(res.res.inference_error_reports) do er
-        return er isa NoFieldErrorReport &&
-               er.typ === vmod.Foo3 &&
-               er.name === :bar
+        return er isa BuiltinErrorReport &&
+               er.f === getfield &&
+               er.argtypes[1] === vmod.Foo3 &&
+               er.argtypes[2] === Core.Const(:bar)
     end
 end
 
@@ -671,11 +671,11 @@ end
         result = Core.eval(m, quote
             $report_call(t->access_field(t,:w), (T,))
         end)
-        @test length(get_reports_with_test(result)) === 1
-        er = first(get_reports_with_test(result))
-        @test er isa NoFieldErrorReport
-        @test er.typ === m.T
-        @test er.name === :w
+        er = only(get_reports_with_test(result))
+        @test er isa BuiltinErrorReport
+        @test er.f === getfield
+        @test er.argtypes[1] === m.T
+        @test er.argtypes[2] === Core.Const(:w)
 
         result = Core.eval(m, quote
             $report_call(t->access_field(t,:v), (T,))
@@ -684,56 +684,101 @@ end
     end
 end
 
+function test_builtinerror_compatbility(@nospecialize(reproducer), result)
+    buf = IOBuffer()
+    try
+        reproducer()
+        @assert false "reproducer doesn't produce a target error"
+    catch err
+        Base.showerror(buf, err)
+    end
+    expected = String(take!(buf))
+    print(buf, result)
+    got = String(take!(buf))
+    @test occursin(expected, got)
+end
+
 mutable struct SingleField
     x
 end
-@testset "NoFieldErrorReport" begin
+@testset "no field error report" begin
     let result = report_call() do
             x = SingleField("foo")
             getfield(x, :y)
         end
-        @test only(get_reports_with_test(result)) isa NoFieldErrorReport
+        @test only(get_reports_with_test(result)) isa BuiltinErrorReport
+        test_builtinerror_compatbility(result) do
+            x = SingleField("foo")
+            getfield(x, :y)
+        end
     end
     let result = report_call() do
             x = SingleField("foo")
             getfield(x, 2)
         end
-        @test only(get_reports_with_test(result)) isa NoFieldErrorReport
+        @test only(get_reports_with_test(result)) isa BuiltinErrorReport
+        test_builtinerror_compatbility(result) do
+            x = SingleField("foo")
+            getfield(x, 2)
+        end
     end
     let result = report_call() do
             fieldtype(SingleField, :y)
         end
-        @test only(get_reports_with_test(result)) isa NoFieldErrorReport
+        @test only(get_reports_with_test(result)) isa BuiltinErrorReport
+        test_builtinerror_compatbility(result) do
+            fieldtype(SingleField, :y)
+        end
     end
     let result = report_call() do
             fieldtype(SingleField, 2)
         end
-        @test only(get_reports_with_test(result)) isa NoFieldErrorReport
+        @test only(get_reports_with_test(result)) isa BuiltinErrorReport
+        # XXX Julia doesn't render this error nicely
+        # test_builtinerror_compatbility(result) do
+        #     fieldtype(SingleField, 2)
+        # end
     end
     let result = report_call() do
             x = SingleField("foo")
             setfield!(x, :y, "bar")
         end
-        @test only(get_reports_with_test(result)) isa NoFieldErrorReport
+        @test only(get_reports_with_test(result)) isa BuiltinErrorReport
+        test_builtinerror_compatbility(result) do
+            x = SingleField("foo")
+            setfield!(x, :y, "bar")
+        end
     end
     let result = report_call() do
             x = SingleField("foo")
             setfield!(x, :y, 2)
         end
-        @test only(get_reports_with_test(result)) isa NoFieldErrorReport
+        @test only(get_reports_with_test(result)) isa BuiltinErrorReport
+        test_builtinerror_compatbility(result) do
+            x = SingleField("foo")
+            setfield!(x, :y, 2)
+        end
     end
 
     let result = report_call() do
             x = SingleField("foo")
             x.y
         end
-        @test only(get_reports_with_test(result)) isa NoFieldErrorReport
+        @test only(get_reports_with_test(result)) isa BuiltinErrorReport
+        test_builtinerror_compatbility(result) do
+            x = SingleField("foo")
+            x.y
+        end
     end
     let result = report_call() do
             x = SingleField("foo")
             x.y = "bar"
         end
-        @test only(get_reports_with_test(result)) isa NoFieldErrorReport
+        @test only(get_reports_with_test(result)) isa BuiltinErrorReport
+        test_builtinerror_compatbility(result) do
+            x = SingleField("foo")
+            x.y = "bar"
+        end
     end
 end
 
@@ -742,17 +787,18 @@ end
     let result = report_call((Any,)) do a
             getfield(a)
         end
-        @test only(get_reports_with_test(result)) isa BuiltinErrorReport
+        report = only(get_reports_with_test(result))
+        @test report.f === getfield
+        @test report isa BuiltinErrorReport
     end
 
     let result = report_call() do
             getfield((1,2,3), :x)
         end
-        @test only(get_reports_with_test(result)) isa NoFieldErrorReport
-        let buf = IOBuffer()
-            print(buf, result)
-            s = String(take!(buf))
-            @test occursin("type Tuple has no field x", s)
+        report = only(get_reports_with_test(result))
+        @test report isa BuiltinErrorReport
+        test_builtinerror_compatbility(result) do
+            getfield((1,2,3), :x)
         end
     end
 
@@ -761,17 +807,10 @@ end
         end
         report = only(get_reports_with_test(result))
         @test report isa BuiltinErrorReport
-        let buf = IOBuffer()
-            try
-                getfield(@__MODULE__, 42)
-            catch err
-                print(buf, result)
-            end
-            expected = String(take!(buf))
-            print(buf, result)
-            got = String(take!(buf))
-            @test occursin(expected, got)
-        end
+        # XXX Julia raises `BoundsError` when ran in the compiler
+        # test_builtinerror_compatbility(result) do
+        #     getfield(@__MODULE__, 42)
+        # end
     end
 end
 
@@ -780,7 +819,9 @@ end
     let result = report_call((Any,)) do a
             setfield!(a)
         end
-        @test only(get_reports_with_test(result)) isa BuiltinErrorReport
+        report = only(get_reports_with_test(result))
+        @test report isa BuiltinErrorReport
+        @test report.f === setfield!
     end
 
     # `setfield!` to a module raises an error
@@ -790,7 +831,9 @@ end
         report = only(get_reports_with_test(result))
         @test report isa BuiltinErrorReport
         @test report.f === setfield!
-        @test report.msg == JET.SETFIELD!_ON_MODULE_MSG
+        test_builtinerror_compatbility(result) do
+            setfield!(@__MODULE__, :___xxx___, 42)
+        end
     end
 
     # mutability check
@@ -997,8 +1040,9 @@ end
         result = Core.eval(m, :($report_call(t->access_field(t,:w), (T,); mode=:typo)))
         @test length(get_reports_with_test(result)) === 1
         er = first(get_reports_with_test(result))
-        @test er isa NoFieldErrorReport
-        @test er.typ === m.T
-        @test er.name === :w
+        @test er isa BuiltinErrorReport
+        @test er.f === getfield
+        @test er.argtypes[1] === m.T
+        @test er.argtypes[2] === Core.Const(:w)
     end
 end

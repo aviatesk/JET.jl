@@ -130,7 +130,7 @@ badgetpropertycall() = _badgetpropertycall(nothing)
     # but we shouldn't use the global code cache for the native execution,
     # and we should still be able to get a report below
     result = @report_call badgetpropertycall()
-    @test only(get_reports_with_test(result)) isa NoFieldErrorReport
+    @test only(get_reports_with_test(result)) isa BuiltinErrorReport
 end
 
 @testset "invalidation" begin; let M = Module()

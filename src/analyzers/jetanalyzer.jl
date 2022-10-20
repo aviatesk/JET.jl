@@ -119,7 +119,7 @@ A typo detection pass.
 _**TODO**_: elaborate the definitions of "error"s.
 """
 struct TypoPass <: ReportPass end
-(::TypoPass)(@nospecialize _...) = return false # ignore everything except GlobalUndefVarErrorReport and NoFieldErrorReport
+(::TypoPass)(@nospecialize _...) = return false # ignore everything except GlobalUndefVarErrorReport and field error report
 
 # overloads
 # =========
@@ -1006,39 +1006,15 @@ Technically they're defined as those error points that can be caught within `Cor
 abstract type AbstractBuiltinErrorReport <: InferenceErrorReport end
 
 # TODO: docs
-@jetreport struct NoFieldErrorReport <: AbstractBuiltinErrorReport
-    @nospecialize typ # ::Type
-    name::Union{Int,Symbol}
-end
-function print_report_message(io::IO, (; typ, name)::NoFieldErrorReport)
-    if name isa Symbol
-        if typ <: Tuple
-            typ = Tuple # reproduce base error message
-        end
-        print(io, "type ", typ, " has no field ", name)
-    else
-        print(io, "attempt to access ", typ, " at index [", name, ']')
-    end
-end
-print_signature(::NoFieldErrorReport) = false
-
-# TODO: docs
-@jetreport struct DivideErrorReport <: AbstractBuiltinErrorReport end
-let msg = sprint(showerror, DivideError())
-    global function print_report_message(io::IO, ::DivideErrorReport)
-        print(io, msg)
-    end
-end
-print_signature(::DivideErrorReport) = false
-
-# TODO: docs
 @jetreport struct BuiltinErrorReport <: AbstractBuiltinErrorReport
     @nospecialize(f)
     argtypes::Argtypes
-    msg::AbstractString = "invalid builtin function call"
+    msg::AbstractString
+    print_signature::Bool = false
 end
 print_report_message(io::IO, r::BuiltinErrorReport) = print(io, r.msg)
-print_signature(::BuiltinErrorReport) = true
+print_signature(r::BuiltinErrorReport) = r.print_signature
+const GENERAL_BUILTIN_ERROR_MSG = "invalid builtin function call"
 
 # TODO we do need sound versions of these functions
 # XXX for general case JET just relies on the (maybe too permissive) return type from native
@@ -1057,7 +1033,7 @@ function (::BasicPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer
     elseif @static @isdefined(setglobal!) ? (f === setglobal!) : false
         report_setglobal!!(analyzer, sv, argtypes) && return true
     elseif length(argtypes) == 2 && is_division_func(f)
-        report_devide_error!(analyzer, sv, argtypes) && return true
+        report_devide_error!(analyzer, sv, f, argtypes) && return true
     end
     return handle_invalid_builtins!(analyzer, sv, f, argtypes, ret)
 end
@@ -1077,7 +1053,7 @@ function report_getfield!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::A
     if ret === Any
         report_getglobal!(analyzer, sv, argtypes) && return true
     elseif ret === Bottom
-        report_fieldaccess!(analyzer, sv, argtypes) && return true
+        report_fieldaccess!(analyzer, sv, getfield, argtypes) && return true
     end
     return false
 end
@@ -1094,14 +1070,14 @@ end
 
 function report_setfield!!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes, @nospecialize(ret))
     if ret === Bottom
-        report_fieldaccess!(analyzer, sv, argtypes, #=setfield=#true) && return true
+        report_fieldaccess!(analyzer, sv, setfield!, argtypes) && return true
     end
     return false
 end
 
 function report_fieldtype!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes, @nospecialize(ret))
     if ret === Bottom
-        report_fieldaccess!(analyzer, sv, argtypes) && return true
+        report_fieldaccess!(analyzer, sv, fieldtype, argtypes) && return true
     end
     return false
 end
@@ -1126,23 +1102,29 @@ function _getfield_fieldindex(s::DataType, name::Const)
     return nothing
 end
 
-const SETFIELD!_ON_MODULE_MSG = let
-    err = try
-        setfield!(@__MODULE__, :___xxx___, 42)
-    catch err
-        err
+const MODULE_SETFIELD_MSG = "cannot assign variables in other modules"
+const DEVIDE_ERROR_MSG = sprint(showerror, DivideError())
+function type_error_msg(@nospecialize(f), @nospecialize(expected), @nospecialize(actual))
+    return lazy"TypeError: in $f, expected $expected, got a value of type $actual"
+end
+function nofield_msg(@nospecialize(typ), name::Symbol)
+    if typ <: Tuple
+        typ = Tuple # reproduce base error message
     end
-    err.msg
+    return lazy"type $typ has no field $name"
+end
+function boundserror_msg(@nospecialize(typ), name::Int)
+    return lazy"BoundsError: attempt to access $typ at index [$name]"
 end
 
-function report_fieldaccess!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes,
-    setfield::Bool = false)
+function report_fieldaccess!(analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes)
     2 ≤ length(argtypes) ≤ 3 || return false
 
+    issetfield! = f === setfield!
     obj, name = argtypes[1], argtypes[2]
     s00 = widenconst(obj)
 
-    if setfield
+    if issetfield!
         if !_mutability_errorcheck(s00)
             msg = lazy"setfield!: immutable struct of type $s00 cannot be changed"
             report = BuiltinErrorReport(sv, setfield!, argtypes, msg)
@@ -1154,7 +1136,10 @@ function report_fieldaccess!(analyzer::JETAnalyzer, sv::InferenceState, argtypes
     isa(name, Const) || return false
     s = unwrap_unionall(s00)
     if isType(s)
-        if isconstType(s)
+        if f === fieldtype
+            # XXX this is a hack to share more code between `getfield`/`setfield!`/`fieldtype`
+            s00 = s = s.parameters[1]
+        elseif isconstType(s)
             s = (s00::DataType).parameters[1]
         else
             return false
@@ -1163,14 +1148,14 @@ function report_fieldaccess!(analyzer::JETAnalyzer, sv::InferenceState, argtypes
     isa(s, DataType) || return false
     isabstracttype(s) && return false
     if s <: Module
-        if setfield
-            report = BuiltinErrorReport(sv, setfield!, argtypes, SETFIELD!_ON_MODULE_MSG)
+        if issetfield!
+            report = BuiltinErrorReport(sv, setfield!, argtypes, MODULE_SETFIELD_MSG)
             add_new_report!(analyzer, sv.result, report)
             return true
         end
         nametyp = widenconst(name)
         if !hasintersect(nametyp, Symbol)
-            msg = lazy"TypeError: in $(getglobal), expected Symbol, got a value of type $nametyp"
+            msg = type_error_msg(getglobal, Symbol, nametyp)
             report = BuiltinErrorReport(sv, getglobal, argtypes, msg)
             add_new_report!(analyzer, sv.result, report)
             return true
@@ -1185,9 +1170,15 @@ function report_fieldaccess!(analyzer::JETAnalyzer, sv::InferenceState, argtypes
 
     @label report_nofield_error
     namev = (name::Const).val
-    @assert namev isa Int || namev isa Symbol
     objtyp = s00
-    add_new_report!(analyzer, sv.result, NoFieldErrorReport(sv, objtyp, namev))
+    if namev isa Symbol
+        msg = nofield_msg(objtyp, namev)
+    elseif namev isa Int
+        msg = boundserror_msg(objtyp, namev)
+    else
+        @assert false "invalid field analysis"
+    end
+    add_new_report!(analyzer, sv.result, BuiltinErrorReport(sv, f, argtypes, msg))
     return true
 end
 
@@ -1217,12 +1208,13 @@ function is_division_func(@nospecialize f)
 end
 
 # TODO this check might be better in its own report pass, say `NumericalPass`
-function report_devide_error!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes)
+function report_devide_error!(analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes)
     a = argtypes[2]
     t = widenconst(a)
     if isprimitivetype(t) && t <: Number
         if isa(a, Const) && a.val === zero(t)
-            add_new_report!(analyzer, sv.result, DivideErrorReport(sv))
+            report = BuiltinErrorReport(sv, f, argtypes, DEVIDE_ERROR_MSG)
+            add_new_report!(analyzer, sv.result, report)
             return true
         end
     end
@@ -1232,7 +1224,9 @@ end
 function handle_invalid_builtins!(analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(ret))
     # we don't bail out using `basic_filter` here because the native tfuncs are already very permissive
     if ret === Bottom
-        add_new_report!(analyzer, sv.result, BuiltinErrorReport(sv, f, argtypes))
+        msg = GENERAL_BUILTIN_ERROR_MSG
+        report = BuiltinErrorReport(sv, f, argtypes, msg, #=print_signature=#true)
+        add_new_report!(analyzer, sv.result, report)
         return true
     end
     return false
