@@ -80,7 +80,7 @@ import .CC:
     tmerge, widenconst, ⊑
 
 import Base:
-    @invoke, @invokelatest, destructure_callex, parse_input_line, rewrap_unionall,
+    @invoke, @invokelatest, IdSet, destructure_callex, parse_input_line, rewrap_unionall,
     uniontypes, unwrap_unionall
 
 import Base.Meta:
