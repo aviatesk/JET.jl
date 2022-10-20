@@ -75,7 +75,7 @@ import .CC:
     OptimizationState, UnionSplitInfo, UnionSplitMethodMatches, VarState, VarTable,
     WorldRange, WorldView, _methods_by_ftype, argextype, argtype_by_index, argtype_tail,
     argtypes_to_type, compute_basic_blocks, get_compileable_sig, ignorelimited,
-    inlining_enabled, instanceof_tfunc, is_throw_call, isconstType, issingletontype,
+    inlining_enabled, instanceof_tfunc, is_throw_call, isType, isconstType, issingletontype,
     may_invoke_generator, singleton_type, slot_id, specialize_method, switchtupleunion,
     tmerge, widenconst, ⊑
 

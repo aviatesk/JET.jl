@@ -649,10 +649,10 @@ end
     result = report_call((Int, Type{Int}, Any)) do a, b, c
         isa(a, b, c)
     end
-    @test length(get_reports_with_test(result)) === 1
-    report = first(get_reports_with_test(result))
-    @test report isa InvalidBuiltinCallErrorReport &&
-        widenconst.(report.argtypes) == [Int, Type{Int}, Any]
+    report = only(get_reports_with_test(result))
+    @test report isa BuiltinErrorReport
+    @test report.f === isa
+    @test widenconst.(report.argtypes) == [Int, Type{Int}, Any]
 
     @testset "constant propagation" begin
         m = gen_virtual_module()
@@ -684,14 +684,123 @@ end
     end
 end
 
-@testset "malformed getfield" begin
-    let
-        # shouldn't error
-        result = report_call((Any,)) do a
+mutable struct SingleField
+    x
+end
+@testset "NoFieldErrorReport" begin
+    let result = report_call() do
+            x = SingleField("foo")
+            getfield(x, :y)
+        end
+        @test only(get_reports_with_test(result)) isa NoFieldErrorReport
+    end
+    let result = report_call() do
+            x = SingleField("foo")
+            getfield(x, 2)
+        end
+        @test only(get_reports_with_test(result)) isa NoFieldErrorReport
+    end
+    let result = report_call() do
+            fieldtype(SingleField, :y)
+        end
+        @test only(get_reports_with_test(result)) isa NoFieldErrorReport
+    end
+    let result = report_call() do
+            fieldtype(SingleField, 2)
+        end
+        @test only(get_reports_with_test(result)) isa NoFieldErrorReport
+    end
+    let result = report_call() do
+            x = SingleField("foo")
+            setfield!(x, :y, "bar")
+        end
+        @test only(get_reports_with_test(result)) isa NoFieldErrorReport
+    end
+    let result = report_call() do
+            x = SingleField("foo")
+            setfield!(x, :y, 2)
+        end
+        @test only(get_reports_with_test(result)) isa NoFieldErrorReport
+    end
+
+    let result = report_call() do
+            x = SingleField("foo")
+            x.y
+        end
+        @test only(get_reports_with_test(result)) isa NoFieldErrorReport
+    end
+    let result = report_call() do
+            x = SingleField("foo")
+            x.y = "bar"
+        end
+        @test only(get_reports_with_test(result)) isa NoFieldErrorReport
+    end
+end
+
+@testset "getfield analysis" begin
+    # analysis on malformed `getfield` shouldn't error
+    let result = report_call((Any,)) do a
             getfield(a)
         end
-        @test length(get_reports_with_test(result)) == 1
-        @test first(get_reports_with_test(result)) isa InvalidBuiltinCallErrorReport
+        @test only(get_reports_with_test(result)) isa BuiltinErrorReport
+    end
+
+    let result = report_call() do
+            getfield((1,2,3), :x)
+        end
+        @test only(get_reports_with_test(result)) isa NoFieldErrorReport
+        let buf = IOBuffer()
+            print(buf, result)
+            s = String(take!(buf))
+            @test occursin("type Tuple has no field x", s)
+        end
+    end
+
+    let result = report_call() do
+            getfield(@__MODULE__, 42)
+        end
+        report = only(get_reports_with_test(result))
+        @test report isa BuiltinErrorReport
+        let buf = IOBuffer()
+            try
+                getfield(@__MODULE__, 42)
+            catch err
+                print(buf, result)
+            end
+            expected = String(take!(buf))
+            print(buf, result)
+            got = String(take!(buf))
+            @test occursin(expected, got)
+        end
+    end
+end
+
+@testset "setfield! analysis" begin
+    # analysis on malformed `setfield!` shouldn't error
+    let result = report_call((Any,)) do a
+            setfield!(a)
+        end
+        @test only(get_reports_with_test(result)) isa BuiltinErrorReport
+    end
+
+    # `setfield!` to a module raises an error
+    let result = report_call() do
+            setfield!(@__MODULE__, :___xxx___, 42)
+        end
+        report = only(get_reports_with_test(result))
+        @test report isa BuiltinErrorReport
+        @test report.f === setfield!
+        @test report.msg == JET.SETFIELD!_ON_MODULE_MSG
+    end
+
+    # mutability check
+    let result = report_call((String,)) do s
+            x = Some("julia")
+            x.value = s
+        end
+        report = only(get_reports_with_test(result))
+        @test report isa BuiltinErrorReport
+        @test report.f === setfield!
     end
 end
 
@@ -843,7 +952,7 @@ end
         result = report_call((Vector{Any},); mode=:sound) do xs
             xs[5]
         end
-        @test only(get_reports_with_test(result)) isa UnsoundBuiltinCallErrorReport
+        @test only(get_reports_with_test(result)) isa UnsoundBuiltinErrorReport
     end
 end
 

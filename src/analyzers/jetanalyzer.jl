@@ -429,7 +429,7 @@ function CC.builtin_tfunction(analyzer::JETAnalyzer,
 
         # other general `throw` calls will be handled within `_typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)`
     else
-        ReportPass(analyzer)(BuiltinErrorReport, analyzer, sv, f, argtypes, ret)
+        ReportPass(analyzer)(AbstractBuiltinErrorReport, analyzer, sv, f, argtypes, ret)
     end
 
     return ret
@@ -998,23 +998,32 @@ function report_serious_exception!(analyzer::JETAnalyzer, sv::InferenceState, ar
 end
 
 """
-    BuiltinErrorReport
+    AbstractBuiltinErrorReport
 
 Represents errors caused by builtin-function calls.
 Technically they're defined as those error points that can be caught within `Core.Compiler.builtin_tfunction`.
 """
-abstract type BuiltinErrorReport <: InferenceErrorReport end
+abstract type AbstractBuiltinErrorReport <: InferenceErrorReport end
 
-@jetreport struct NoFieldErrorReport <: BuiltinErrorReport
+# TODO: docs
+@jetreport struct NoFieldErrorReport <: AbstractBuiltinErrorReport
     @nospecialize typ # ::Type
-    name::Symbol
+    name::Union{Int,Symbol}
 end
 function print_report_message(io::IO, (; typ, name)::NoFieldErrorReport)
-    print(io, "type ", typ, " has no field ", name)
+    if name isa Symbol
+        if typ <: Tuple
+            typ = Tuple # reproduce base error message
+        end
+        print(io, "type ", typ, " has no field ", name)
+    else
+        print(io, "attempt to access ", typ, " at index [", name, ']')
+    end
 end
 print_signature(::NoFieldErrorReport) = false
 
-@jetreport struct DivideErrorReport <: BuiltinErrorReport end
+# TODO: docs
+@jetreport struct DivideErrorReport <: AbstractBuiltinErrorReport end
 let msg = sprint(showerror, DivideError())
     global function print_report_message(io::IO, ::DivideErrorReport)
         print(io, msg)
@@ -1022,37 +1031,42 @@ let msg = sprint(showerror, DivideError())
 end
 print_signature(::DivideErrorReport) = false
 
-@jetreport struct InvalidBuiltinCallErrorReport <: BuiltinErrorReport
+# TODO: docs
+@jetreport struct BuiltinErrorReport <: AbstractBuiltinErrorReport
+    @nospecialize(f)
     argtypes::Argtypes
+    msg::AbstractString = "invalid builtin function call"
 end
-function print_report_message(io::IO, ::InvalidBuiltinCallErrorReport)
-    print(io, "invalid builtin function call")
-end
-print_signature(::InvalidBuiltinCallErrorReport) = false
+print_report_message(io::IO, r::BuiltinErrorReport) = print(io, r.msg)
+print_signature(::BuiltinErrorReport) = true
 
 # TODO we do need sound versions of these functions
 # XXX for general case JET just relies on the (maybe too permissive) return type from native
 # tfuncs to report invalid builtin calls and probably there're lots of false negatives
 
-function (::BasicPass)(::Type{BuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(ret))
+function (::BasicPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(ret))
     @assert !(f === throw) "`throw` calls shuold be handled either by the report pass of `SeriousExceptionReport` or `UncaughtExceptionReport`"
     if f === getfield
         report_getfield!(analyzer, sv, argtypes, ret) && return true
+    elseif f === setfield!
+        report_setfield!!(analyzer, sv, argtypes, ret) && return true
+    elseif f === fieldtype
+        report_fieldtype!(analyzer, sv, argtypes, ret) && return true
     elseif @static @isdefined(getglobal) ? (f === getglobal) : false
-        report_getglobal!(analyzer, sv, argtypes) && return true
+        report_getglobal!(analyzer, sv, argtypes, ret) && return true
     elseif @static @isdefined(setglobal!) ? (f === setglobal!) : false
         report_setglobal!!(analyzer, sv, argtypes) && return true
     elseif length(argtypes) == 2 && is_division_func(f)
-        report_devide_error!(analyzer, sv, argtypes, ret) && return true
+        report_devide_error!(analyzer, sv, argtypes) && return true
     end
-    return handle_invalid_builtins!(analyzer, sv, argtypes, ret)
+    return handle_invalid_builtins!(analyzer, sv, f, argtypes, ret)
 end
 
-function (::TypoPass)(::Type{BuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(ret))
+function (::TypoPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(ret))
     if f === getfield
         report_getfield!(analyzer, sv, argtypes, ret) && return true
     elseif @static @isdefined(getglobal) ? (f === getglobal) : false
-        report_getglobal!(analyzer, sv, argtypes) && return true
+        report_getglobal!(analyzer, sv, argtypes, ret) && return true
     elseif @static @isdefined(setglobal!) ? (f === setglobal!) : false
         report_setglobal!!(analyzer, sv, argtypes) && return true
     end
@@ -1060,17 +1074,36 @@ function (::TypoPass)(::Type{BuiltinErrorReport}, analyzer::JETAnalyzer, sv::Inf
 end
 
 function report_getfield!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes, @nospecialize(ret))
-    report_getglobal!(analyzer, sv, argtypes) && return true
-    report_nofield_error!(analyzer, sv, argtypes, ret) && return true
+    if ret === Any
+        report_getglobal!(analyzer, sv, argtypes) && return true
+    elseif ret === Bottom
+        report_fieldaccess!(analyzer, sv, argtypes) && return true
+    end
     return false
 end
 
+report_getglobal!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes, @nospecialize(ret)) =
+    ret === Any && report_getglobal!(analyzer, sv, argtypes)
 function report_getglobal!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes)
     2 ≤ length(argtypes) ≤ 3 || return false
     gr = constant_globalref(argtypes)
     gr === nothing && return false
     # forward to the report pass for undefined global reference
     return ReportPass(analyzer)(GlobalUndefVarErrorReport, analyzer, sv, gr.mod, gr.name)
+end
+
+function report_setfield!!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes, @nospecialize(ret))
+    if ret === Bottom
+        report_fieldaccess!(analyzer, sv, argtypes, #=setfield=#true) && return true
+    end
+    return false
+end
+
+function report_fieldtype!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes, @nospecialize(ret))
+    if ret === Bottom
+        report_fieldaccess!(analyzer, sv, argtypes) && return true
+    end
+    return false
 end
 
 function report_setglobal!!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes)
@@ -1081,18 +1114,94 @@ function report_setglobal!!(analyzer::JETAnalyzer, sv::InferenceState, argtypes:
     return ReportPass(analyzer)(InvalidGlobalAssignmentError, analyzer, sv, gr.mod, gr.name, argtypes[3])
 end
 
-function report_nofield_error!(analyzer::JETAnalyzer,
-    sv::InferenceState, argtypes::Argtypes, @nospecialize(ret))
+# TODO use Core.Compiler version when ported
+function _getfield_fieldindex(s::DataType, name::Const)
+    nv = name.val
+    if isa(nv, Symbol)
+        nv = Base.fieldindex(s, nv, false)
+    end
+    if isa(nv, Int)
+        return nv
+    end
+    return nothing
+end
+
+const SETFIELD!_ON_MODULE_MSG = let
+    err = try
+        setfield!(@__MODULE__, :___xxx___, 42)
+    catch err
+        err
+    end
+    err.msg
+end
+
+function report_fieldaccess!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes,
+    setfield::Bool = false)
     2 ≤ length(argtypes) ≤ 3 || return false
-    name = argtypes[2]
+
+    obj, name = argtypes[1], argtypes[2]
+    s00 = widenconst(obj)
+
+    if setfield
+        if !_mutability_errorcheck(s00)
+            msg = lazy"setfield!: immutable struct of type $s00 cannot be changed"
+            report = BuiltinErrorReport(sv, setfield!, argtypes, msg)
+            add_new_report!(analyzer, sv.result, report)
+            return true
+        end
+    end
+
     isa(name, Const) || return false
-    name = name.val
-    isa(name, Symbol) || return false
-    ret === Bottom || return false
-    # report invalid field access detected by the native `getfield_tfunc`
-    obj = argtypes[1]
-    typ = widenconst(obj)
-    add_new_report!(analyzer, sv.result, NoFieldErrorReport(sv, typ, name))
+    s = unwrap_unionall(s00)
+    if isType(s)
+        if isconstType(s)
+            s = (s00::DataType).parameters[1]
+        else
+            return false
+        end
+    end
+    isa(s, DataType) || return false
+    isabstracttype(s) && return false
+    if s <: Module
+        if setfield
+            report = BuiltinErrorReport(sv, setfield!, argtypes, SETFIELD!_ON_MODULE_MSG)
+            add_new_report!(analyzer, sv.result, report)
+            return true
+        end
+        nametyp = widenconst(name)
+        if !hasintersect(nametyp, Symbol)
+            msg = lazy"TypeError: in $(getglobal), expected Symbol, got a value of type $nametyp"
+            report = BuiltinErrorReport(sv, getglobal, argtypes, msg)
+            add_new_report!(analyzer, sv.result, report)
+            return true
+        end
+    end
+    fidx = _getfield_fieldindex(s, name)
+    fidx === Bottom && @goto report_nofield_error
+    ftypes = Base.datatype_fieldtypes(s)
+    nf = length(ftypes)
+    (fidx < 1 || fidx > nf) && @goto report_nofield_error
+    return false
+
+    @label report_nofield_error
+    namev = (name::Const).val
+    @assert namev isa Int || namev isa Symbol
+    objtyp = s00
+    add_new_report!(analyzer, sv.result, NoFieldErrorReport(sv, objtyp, namev))
+    return true
+end
+
+# TODO use Core.Compiler version when ported
+function _mutability_errorcheck(@nospecialize objt0)
+    objt = unwrap_unionall(objt0)
+    if isa(objt, Union)
+        return _mutability_errorcheck(rewrap_unionall(objt.a, objt0)) ||
+               _mutability_errorcheck(rewrap_unionall(objt.b, objt0))
+    elseif isa(objt, DataType)
+        # Can't say anything about abstract types
+        isabstracttype(objt) && return true
+        return ismutabletype(objt)
+    end
     return true
 end
 
@@ -1108,7 +1217,7 @@ function is_division_func(@nospecialize f)
 end
 
 # TODO this check might be better in its own report pass, say `NumericalPass`
-function report_devide_error!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes, @nospecialize(ret))
+function report_devide_error!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes)
     a = argtypes[2]
     t = widenconst(a)
     if isprimitivetype(t) && t <: Number
@@ -1120,38 +1229,38 @@ function report_devide_error!(analyzer::JETAnalyzer, sv::InferenceState, argtype
     return false
 end
 
-function handle_invalid_builtins!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes, @nospecialize(ret))
+function handle_invalid_builtins!(analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(ret))
     # we don't bail out using `basic_filter` here because the native tfuncs are already very permissive
     if ret === Bottom
-        add_new_report!(analyzer, sv.result, InvalidBuiltinCallErrorReport(sv, argtypes))
+        add_new_report!(analyzer, sv.result, BuiltinErrorReport(sv, f, argtypes))
         return true
     end
     return false
 end
 
-@jetreport struct UnsoundBuiltinCallErrorReport <: BuiltinErrorReport
+@jetreport struct UnsoundBuiltinErrorReport <: AbstractBuiltinErrorReport
+    @nospecialize(f)
     argtypes::Argtypes
+    msg::String = "this builtin function call may throw"
 end
-function print_report_message(io::IO, ::UnsoundBuiltinCallErrorReport)
-    print(io, "this builtin function call may throw")
-end
-print_signature(::UnsoundBuiltinCallErrorReport) = false
+print_report_message(io::IO, r::UnsoundBuiltinErrorReport) = print(io, r.msg)
+print_signature(::UnsoundBuiltinErrorReport) = true
 
-function (::SoundPass)(::Type{BuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(rt))
+function (::SoundPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(rt))
     # TODO enable this sound pass:
     # - make `stmt_effect_free` work on `InfernceState`
     # - sort out `argextype` interface to make it accept `InfernceState`
     @assert !(f === throw) "`throw` calls shuold be handled either by the report pass of `SeriousExceptionReport` or `UncaughtExceptionReport`"
     if isa(f, IntrinsicFunction)
         if !Core.Compiler.intrinsic_nothrow(f, argtypes)
-            add_new_report!(analyzer, sv.result, UnsoundBuiltinCallErrorReport(sv, argtypes))
+            add_new_report!(analyzer, sv.result, UnsoundBuiltinErrorReport(sv, f, argtypes))
         end
     else
         nothrow = !(@static isdefined(CC, :typeinf_lattice) ?
             Core.Compiler.builtin_nothrow(CC.typeinf_lattice(analyzer), f, argtypes, rt) :
             Core.Compiler.builtin_nothrow(f, argtypes, rt))
         if nothrow
-            add_new_report!(analyzer, sv.result, UnsoundBuiltinCallErrorReport(sv, argtypes))
+            add_new_report!(analyzer, sv.result, UnsoundBuiltinErrorReport(sv, f, argtypes))
         end
     end
 end
