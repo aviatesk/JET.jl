@@ -581,12 +581,16 @@ function invalidate_jet_cache!(replaced, max_world, depth = 0)
     end
 
     if isdefined(replaced, :backedges)
-        for mi in replaced.backedges
-            mi = mi::MethodInstance
-            if !any(cache->haskey(cache, mi), values(JET_CACHE))
-                continue # otherwise fall into infinite loop
+        for item in replaced.backedges
+            if isa(item, MethodInstance)
+                mi = item
+                if !any(cache->haskey(cache, mi), values(JET_CACHE))
+                    continue # otherwise fail into an infinite loop
+                end
+                invalidate_jet_cache!(mi, max_world, depth+1)
+            else
+                # might be `Type` object representing an `invoke` signature
             end
-            invalidate_jet_cache!(mi, max_world, depth+1)
         end
     end
     return nothing
