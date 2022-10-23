@@ -284,7 +284,9 @@ function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState)
     if popfirst!(analyzer.__analyze_frame)
         ReportPass(analyzer)(OptimizationFailureReport, analyzer, caller)
 
-        if isa(src, OptimizationState) # the compiler optimized it, analyze it
+        if (@static VERSION ≥ v"1.9.0-DEV.1636" ?
+            (src isa OptimizationState{typeof(analyzer)}) :
+            (src isa OptimizationState)) # the compiler optimized it, analyze it
             ReportPass(analyzer)(RuntimeDispatchReport, analyzer, caller, src)
         elseif (@static JET_DEV_MODE ? true : false)
             if (@static isdefined(CC, :ConstAPI) ? isa(src, CC.ConstAPI) : isa(src, Const))

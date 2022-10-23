@@ -773,7 +773,9 @@ function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
     for frame in frames
         caller = frame.result
         opt = caller.src
-        if opt isa OptimizationState # implies `may_optimize(analyzer) === true`
+        if (@static VERSION ≥ v"1.9.0-DEV.1636" ?
+            (opt isa OptimizationState{typeof(analyzer)}) :
+            (opt isa OptimizationState))
             @static if VERSION ≥ v"1.8.0-DEV.1425"
                 CC.optimize(analyzer, opt, OptimizationParams(analyzer), caller)
             else
