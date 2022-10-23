@@ -75,11 +75,15 @@ function CC.abstract_eval_value(analyzer::AbstractAnalyzer, @nospecialize(e), vt
     # `_INACTIVE_EXCEPTION.instance` – but it's obviously not a sound approximation of an
     # actual execution and so here we will fix it to `Any`, since we don't analyze types of
     # exceptions in general
-    if ret ⊑ _INACTIVE_EXCEPTION
+    if is_inactive_exception(ret)
         ret = Any
     end
 
     return ret
+end
+
+function is_inactive_exception(@nospecialize rt)
+    return isa(rt, Const) && rt.val === _INACTIVE_EXCEPTION()
 end
 
 function CC.abstract_eval_statement(analyzer::AbstractAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
