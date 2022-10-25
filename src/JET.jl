@@ -681,7 +681,7 @@ fullbasepath(filename) = normpath(JULIA_DIR, "base", filename)
 const JULIA_DIR = begin
     p1 = normpath(Sys.BINDIR, "..", "..")
     p2 = normpath(Sys.BINDIR, Base.DATAROOTDIR, "julia")
-    ispath(p1) ? p1 : p2
+    ispath(normpath(p1, "base")) ? p1 : p2
 end
 
 # default UI (console)
