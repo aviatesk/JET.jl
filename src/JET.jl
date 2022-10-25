@@ -33,7 +33,7 @@ import .CC:
     #= types.jl =#
     InferenceParams, OptimizationParams, add_remark!, bail_out_call, bail_out_toplevel_call,
     code_cache, get_inference_cache, get_world_counter, lock_mi_inference, may_compress,
-    may_discard_trees, may_optimize, unlock_mi_inference, verbose_stmt_info,
+    may_discard_trees, may_optimize, unlock_mi_inference, verbose_stmt_info, method_table,
     #= inferenceresult.jl =#
     cache_lookup,
     #= inferencestate.jl =#
@@ -73,11 +73,12 @@ import .CC:
     InternalCodeCache, InvokeCallInfo, LimitedAccuracy, MethodCallResult,
     MethodLookupResult, MethodMatchInfo, MethodMatches, NOT_FOUND, NativeInterpreter,
     OptimizationState, UnionSplitInfo, UnionSplitMethodMatches, VarState, VarTable,
-    WorldRange, WorldView, _methods_by_ftype, argextype, argtype_by_index, argtype_tail,
-    argtypes_to_type, compute_basic_blocks, get_compileable_sig, ignorelimited,
-    inlining_enabled, instanceof_tfunc, is_throw_call, isType, isconstType, issingletontype,
-    may_invoke_generator, singleton_type, slot_id, specialize_method, switchtupleunion,
-    tmerge, widenconst, ⊑
+    WorldRange, WorldView, InternalMethodTable, CachedMethodTable, OverlayMethodTable,
+    _methods_by_ftype, argextype, argtype_by_index, argtype_tail, argtypes_to_type,
+    compute_basic_blocks, get_compileable_sig, ignorelimited, inlining_enabled,
+    instanceof_tfunc, is_throw_call, isType, isconstType, issingletontype,
+    may_invoke_generator, singleton_type, slot_id, specialize_method,
+    switchtupleunion, tmerge, widenconst, ⊑
 
 import Base:
     @invoke, @invokelatest, IdSet, destructure_callex, parse_input_line, rewrap_unionall,
@@ -85,6 +86,9 @@ import Base:
 
 import Base.Meta:
     _parse_string, isexpr, lower
+
+import Base.Experimental:
+    @MethodTable, @overlay
 
 using LoweredCodeUtils, JuliaInterpreter
 

@@ -1046,3 +1046,12 @@ end
         @test er.argtypes[2] === Core.Const(:w)
     end
 end
+
+# https://github.com/aviatesk/JET.jl/issues/404
+function isssue_404(c::Bool)
+    x = c ? () : (1,)
+    for v in x
+        println(v)
+    end
+end
+test_call(isssue_404, (Bool,))
