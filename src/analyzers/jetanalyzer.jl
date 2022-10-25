@@ -34,6 +34,7 @@ struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
     report_pass::RP
     state::AnalyzerState
     __cache_key::UInt
+    method_table::CachedMethodTable
 end
 
 # AbstractAnalyzer API
@@ -73,10 +74,19 @@ end
                             jetconfigs...)
     cache_key = state.param_key
     cache_key = hash(report_pass, cache_key)
-    return JETAnalyzer(report_pass, state, cache_key)
+    world = CC.get_world_counter(state.native)
+    method_table = CachedMethodTable(OverlayMethodTable(world, JET_METHOD_TABLE))
+    analyzer = JETAnalyzer(report_pass, state, cache_key, method_table)
+    return analyzer
 end
 JETInterface.AnalyzerState(analyzer::JETAnalyzer) = analyzer.state
-JETInterface.AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerState) = JETAnalyzer(ReportPass(analyzer), state, analyzer.__cache_key)
+function JETInterface.AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerState)
+    report_pass = ReportPass(analyzer)
+    cache_key = analyzer.__cache_key
+    world = CC.get_world_counter(state.native)
+    method_table = CachedMethodTable(OverlayMethodTable(world, JET_METHOD_TABLE))
+    return JETAnalyzer(report_pass, state, cache_key, method_table)
+end
 JETInterface.ReportPass(analyzer::JETAnalyzer) = analyzer.report_pass
 JETInterface.get_cache_key(analyzer::JETAnalyzer) = analyzer.__cache_key
 
@@ -120,6 +130,25 @@ _**TODO**_: elaborate the definitions of "error"s.
 """
 struct TypoPass <: ReportPass end
 (::TypoPass)(@nospecialize _...) = return false # ignore everything except GlobalUndefVarErrorReport and field error report
+
+# overlay method table
+# ====================
+
+"""
+    JET_METHOD_TABLE
+
+This JET-specific method table keeps method definition overrides, that allow us to cut off
+false positive errors, while simulating the original semantics reasonably.
+This works as a temporal patch, and ideally we want to port it back to the Julia base or
+a package, or improve the accuracy of base abstract interpretation analysis.
+"""
+@MethodTable JET_METHOD_TABLE
+CC.method_table(analyzer::JETAnalyzer) = analyzer.method_table
+
+# https://github.com/aviatesk/JET.jl/issues/404
+# this definition makes it impossible to dispatch to `Base.iterate(()::Tuple, i::Int)`,
+# getting rid of the false positive error from `getindex((), i)`.
+@overlay JET_METHOD_TABLE Base.iterate(::Tuple{}, ::Int) = nothing
 
 # overloads
 # =========
