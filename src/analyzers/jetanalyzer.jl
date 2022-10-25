@@ -37,6 +37,8 @@ struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
     method_table::CachedMethodTable
 end
 
+CC.may_optimize(::JETAnalyzer) = false
+
 # AbstractAnalyzer API
 # ====================
 
@@ -161,7 +163,6 @@ function CC.InferenceState(result::InferenceResult, cache::CACHE_ARG_TYPE, analy
     return frame
 end
 
-# TODO disable optimization for better performance, only do things necessary for JETAnalyzer
 function CC.finish!(analyzer::JETAnalyzer, frame::InferenceState)
     src = @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
 
@@ -170,8 +171,6 @@ function CC.finish!(analyzer::JETAnalyzer, frame::InferenceState)
         return src
     else
         code = (src::CodeInfo).code
-        # report pass for (local) undef var error
-        ReportPass(analyzer)(LocalUndefVarErrorReport, analyzer, frame, code)
         # report pass for uncaught `throw` calls
         ReportPass(analyzer)(UncaughtExceptionReport, analyzer, frame, code)
         return src
@@ -377,6 +376,10 @@ function CC.abstract_eval_special_value(analyzer::JETAnalyzer,
         # but then we also need to make sure to invalidate the cache for the analysis on
         # the future re-definition of this (currently) undefined binding
         # return Bottom
+    # TODO enable this
+    # elseif isa(e, SlotNumber)
+    #     # report pass for (local) undef var error
+    #     ReportPass(analyzer)(LocalUndefVarErrorReport, analyzer, sv, e, vtypes, ret)
     end
 
     return ret
@@ -494,50 +497,6 @@ function (::SoundBasicPass)(::Type{GeneratorErrorReport}, analyzer::JETAnalyzer,
     end
     return false
 end
-
-@jetreport struct LocalUndefVarErrorReport <: InferenceErrorReport
-    name::Symbol
-end
-function print_report_message(io::IO, (; name)::LocalUndefVarErrorReport)
-    print(io, "local variable $(name) is not defined")
-end
-print_signature(::LocalUndefVarErrorReport) = false
-
-# these report passes use `:throw_undef_if_not` and `:(unreachable)` introduced by the native
-# optimization pass, and thus supposed to only work on post-optimization code
-(::SoundPass)(::Type{LocalUndefVarErrorReport}, analyzer::JETAnalyzer, frame::InferenceState, stmts::Vector{Any}) =
-    report_undefined_local_slots!(analyzer, frame, stmts, false)
-(::BasicPass)(::Type{LocalUndefVarErrorReport}, analyzer::JETAnalyzer, frame::InferenceState, stmts::Vector{Any}) =
-    report_undefined_local_slots!(analyzer, frame, stmts, true)
-
-function report_undefined_local_slots!(analyzer::JETAnalyzer, frame::InferenceState, stmts::Vector{Any}, unsound::Bool)
-    local reported = false
-    for (idx, stmt) in enumerate(stmts)
-        if isa(stmt, Expr) && stmt.head === :throw_undef_if_not
-            sym = stmt.args[1]::Symbol
-            # slots in toplevel frame may be a abstract global slot
-            istoplevel(frame) && is_global_slot(analyzer, sym) && continue
-            if unsound
-                next_idx = idx + 1
-                if checkbounds(Bool, stmts, next_idx) && is_unreachable(stmts[next_idx])
-                    # the optimization so far has found this statement is never "reachable";
-                    # JET reports it since it will invoke undef var error at runtime, or will just
-                    # be dead code otherwise
-                    add_new_report!(analyzer, frame.result, LocalUndefVarErrorReport((frame, idx), sym))
-                    reported |= true
-                else
-                    # by excluding this pass, this analysis accepts some false negatives and
-                    # some undefined variable error may happen in actual execution (thus unsound)
-                end
-            else
-                add_new_report!(analyzer, frame.result, LocalUndefVarErrorReport((frame, idx), sym))
-                reported |= true
-            end
-        end
-    end
-    return reported
-end
-is_unreachable(@nospecialize(x)) = isa(x, ReturnNode) && !isdefined(x, :val)
 
 """
     UncaughtExceptionReport <: InferenceErrorReport
@@ -866,6 +825,36 @@ function is_corecompiler_undefglobal(mod::Module, name::Symbol)
         mod === CC.Sort && return isdefined(Base.Sort, name)
     end
     return false
+end
+
+@jetreport struct LocalUndefVarErrorReport <: InferenceErrorReport
+    name::Symbol
+end
+print_report_message(io::IO, (; name)::LocalUndefVarErrorReport) =
+    print(io, "local variable $name is not defined")
+print_signature(::LocalUndefVarErrorReport) = false
+
+# these report passes use `:throw_undef_if_not` and `:(unreachable)` introduced by the native
+# optimization pass, and thus supposed to only work on post-optimization code
+# (::SoundPass)(::Type{LocalUndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, e::SlotNumber, vtypes::VarTable, @nospecialize(ret)) =
+#     report_undefined_local_slots!(analyzer, sv, e, vtypes, ret, #=unsound=#false)
+# (::BasicPass)(::Type{LocalUndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, e::SlotNumber, vtypes::VarTable, @nospecialize(ret)) =
+#     report_undefined_local_slots!(analyzer, sv, e, vtypes, ret, #=unsound=#true)
+
+function (::SoundPass)(::Type{LocalUndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState,
+    var::SlotNumber, vtypes::VarTable, @nospecialize(ret))
+    vtyp = vtypes[slot_id(var)]
+    if vtyp.undef
+        add_new_report!(analyzer, sv.result, LocalUndefVarErrorReport(sv, get_slotname(sv, var)))
+        return true
+    end
+    return false
+end
+function (::BasicPass)(::Type{LocalUndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState,
+    var::SlotNumber, vtypes::VarTable, @nospecialize(ret))
+    ret === Bottom || return false
+    add_new_report!(analyzer, sv.result, LocalUndefVarErrorReport(sv, get_slotname(sv, var)))
+    return true
 end
 
 @jetreport struct InvalidGlobalAssignmentError <: InferenceErrorReport

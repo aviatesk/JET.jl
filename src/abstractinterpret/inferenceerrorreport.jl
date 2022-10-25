@@ -372,6 +372,7 @@ function handle_sig!(sig::Vector{Any}, s::StateAtPC, rn::ReturnNode)
     end
     return sig
 end
+is_unreachable(@nospecialize(x)) = isa(x, ReturnNode) && !isdefined(x, :val)
 
 function handle_sig!(sig::Vector{Any}, ::StateAtPC, qn::QuoteNode)
     v = qn.value
