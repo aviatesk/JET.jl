@@ -22,9 +22,9 @@ that is a common technique to bring static analysis into a dynamic language, as 
 e.g. [mypy](https://github.com/python/mypy) for Python and
 [TypeScript](https://www.typescriptlang.org/) for JavaScript.
 Rather, JET's static analysis is powered by Julia's builtin type inference system, that
-based on a technique called
+is based on a technique called
 ["abstract interpretation"](https://en.wikipedia.org/wiki/Abstract_interpretation).
-This way JET can also analyze _just a normal_ Julia program and smartly detect possible
+This way JET can analyze just a normal Julia program and smartly detect possible
 errors statically, without requiring any additional setups like scattering type annotations
 just for the sake of analysis but preserving original polymorphism and composability of
 the program, as effectively as the Julia compiler can optimize your Julia program.
