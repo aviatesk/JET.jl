@@ -801,6 +801,9 @@ function report_undef_var!(analyzer::JETAnalyzer, sv::InferenceState, mod::Modul
             report |= true
         else
             if is_corecompiler_undefglobal(mod, name)
+            elseif VERSION ≥ v"1.8.0-DEV.1465" && ccall(:jl_binding_type, Any, (Any, Any), mod, name) !== nothing
+                # if this global var is explicitly type-declared, it will be likely get assigned somewhere
+                # TODO give this permission only to top-level analysis
             else
                 report |= true
             end

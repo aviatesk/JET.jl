@@ -323,6 +323,31 @@ end
         @test report isa GlobalUndefVarErrorReport
         @test report.name === :undefvar
     end
+
+    # if a global variable is type-declared, it will likely get assigned somewhere
+    let res = @analyze_toplevel analyze_from_definitions=true begin
+            global var::String
+            function __init__()
+                global var
+                var = "init"
+            end
+            getvar() = (global var; var)
+        end
+        @test isempty(res.res.inference_error_reports)
+    end
+    # but the sound mode should still be sound
+    let res = @analyze_toplevel mode=:sound analyze_from_definitions=true begin
+            global var::String
+            function __init__()
+                global var
+                var = "init"
+            end
+            getvar() = (global var; var)
+        end
+        report = only(get_reports_with_test(res))
+        @test report isa GlobalUndefVarErrorReport
+        @test report.name === :var
+    end
 end
 
 @static isdefined(@__MODULE__, :setglobal!) && @testset "InvalidGlobalAssignmentError" begin
