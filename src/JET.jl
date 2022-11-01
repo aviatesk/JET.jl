@@ -44,7 +44,7 @@ import .CC:
     abstract_call, abstract_call_gf_by_type, abstract_call_method,
     abstract_call_method_with_const_args, abstract_eval_special_value,
     abstract_eval_statement, abstract_eval_value, abstract_invoke, add_call_backedges!,
-    const_prop_entry_heuristic,
+    concrete_eval_call, concrete_eval_eligible, const_prop_entry_heuristic,
     #= typeinfer.jl =#
     _typeinf, finish!, finish, transform_result_for_cache, typeinf, typeinf_edge,
     #= optimize.jl =#
@@ -69,13 +69,13 @@ import Core:
     ReturnNode, SSAValue, SimpleVector, Slot, SlotNumber, svec
 
 import .CC:
-    AbstractInterpreter, BasicBlock, Bottom, CFG, CallMeta, ConstCallInfo, InferenceResult,
-    InternalCodeCache, InvokeCallInfo, LimitedAccuracy, MethodCallResult,
+    AbstractInterpreter, ArgInfo, BasicBlock, Bottom, CFG, CallMeta, ConstCallInfo,
+    InferenceResult, InternalCodeCache, InvokeCallInfo, LimitedAccuracy, MethodCallResult,
     MethodLookupResult, MethodMatchInfo, MethodMatches, NOT_FOUND, NativeInterpreter,
     OptimizationState, UnionSplitInfo, UnionSplitMethodMatches, VarState, VarTable,
     WorldRange, WorldView, InternalMethodTable, CachedMethodTable, OverlayMethodTable,
     _methods_by_ftype, argextype, argtype_by_index, argtype_tail, argtypes_to_type,
-    compute_basic_blocks, get_compileable_sig, ignorelimited, inlining_enabled,
+    compute_basic_blocks, get_compileable_sig, hasintersect, ignorelimited, inlining_enabled,
     instanceof_tfunc, is_throw_call, isType, isconstType, issingletontype,
     may_invoke_generator, singleton_type, slot_id, specialize_method,
     switchtupleunion, tmerge, widenconst, ⊑
@@ -130,8 +130,6 @@ __init__() = foreach(@nospecialize(f)->f(), INIT_HOOKS)
 
 # compat
 # ------
-
-import .CC: ArgInfo, concrete_eval_eligible, concrete_eval_call, hasintersect
 
 function anypush!(a::Vector{Any}, @nospecialize x...)
     na = length(a)
