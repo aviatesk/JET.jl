@@ -53,8 +53,7 @@ end
         reports = get_reports_with_test(res)
         diagnostics = vscode_diagnostics(res.analyzer,
                                          reports,
-                                         res.source,
-                                         )
+                                         res.source)
         check_basic_integration(diagnostics, reports)
         @test !isempty(diagnostics.items) && !isempty(reports)
         item = first(diagnostics.items)
@@ -67,8 +66,7 @@ end
         reports = get_reports_with_test(res)
         diagnostics = vscode_diagnostics(res.analyzer,
                                          reports,
-                                         res.source,
-                                         )
+                                         res.source)
         check_basic_integration(diagnostics, reports)
         @test isempty(diagnostics.items) && isempty(reports)
     end
@@ -85,11 +83,11 @@ end
             report_file2(path)
         end
         reports = get_reports_with_test(res)
+        postprocess = gen_postprocess(res.res.actual2virtual)
         diagnostics = vscode_diagnostics(res.analyzer,
                                          reports,
-                                         res.source,
-                                         gen_postprocess(res.res.actual2virtual),
-                                         )
+                                         res.source;
+                                         postprocess)
         check_basic_integration(diagnostics, reports)
         @test !isempty(diagnostics.items) && !isempty(reports)
         item = first(diagnostics.items)
@@ -106,11 +104,11 @@ end
             report_file2(path)
         end
         reports = get_reports_with_test(res)
+        postprocess = gen_postprocess(res.res.actual2virtual)
         diagnostics = vscode_diagnostics(res.analyzer,
                                          reports,
-                                         res.source,
-                                         gen_postprocess(res.res.actual2virtual),
-                                         )
+                                         res.source;
+                                         postprocess)
         check_basic_integration(diagnostics, reports)
         @test !isempty(diagnostics.items) && !isempty(reports)
         item = first(diagnostics.items)

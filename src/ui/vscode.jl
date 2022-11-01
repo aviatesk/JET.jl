@@ -67,15 +67,15 @@ Base.showable(::MIME"application/vnd.julia-vscode.diagnostics", ::JETToplevelRes
 function Base.show(io::IO, ::MIME"application/vnd.julia-vscode.diagnostics",
                    res::JETToplevelResult)
     forward_to_console_output(res; res.jetconfigs...)
+    postprocess = gen_postprocess(res.res.actual2virtual)
     return vscode_diagnostics(res.analyzer,
                               get_reports(res),
-                              res.source,
-                              gen_postprocess(res.res.actual2virtual),
-                              )
+                              res.source;
+                              postprocess)
 end
 function vscode_diagnostics(analyzer::Analyzer,
                             reports::Vector{ToplevelErrorReport},
-                            source::AbstractString,
+                            source::AbstractString;
                             postprocess = identity) where {Analyzer<:AbstractAnalyzer}
     return (; source = vscode_source(analyzer, source),
               items = map(reports) do report
@@ -97,12 +97,11 @@ function Base.show(io::IO, ::MIME"application/vnd.julia-vscode.diagnostics",
     forward_to_console_output(res; res.jetconfigs...)
     return vscode_diagnostics(res.analyzer,
                               get_reports(res),
-                              res.source,
-                              )
+                              res.source)
 end
 function vscode_diagnostics(analyzer::Analyzer,
                             reports::Vector{InferenceErrorReport},
-                            source::AbstractString,
+                            source::AbstractString;
                             postprocess = identity) where {Analyzer<:AbstractAnalyzer}
     order = vscode_diagnostics_order(analyzer)
     return (; source = vscode_source(analyzer, source),
