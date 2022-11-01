@@ -289,7 +289,7 @@ function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState)
             (src isa OptimizationState)) # the compiler optimized it, analyze it
             ReportPass(analyzer)(RuntimeDispatchReport, analyzer, caller, src)
         elseif (@static JET_DEV_MODE ? true : false)
-            if (@static isdefined(CC, :ConstAPI) ? isa(src, CC.ConstAPI) : isa(src, Const))
+            if isa(src, CC.ConstAPI)
                 # the optimization was very successful (i.e. fully constant folded),
                 # nothing to report
             elseif src === nothing # the optimization didn't happen
@@ -323,13 +323,6 @@ end
 function (::OptAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::OptAnalyzer, caller::InferenceResult, opt::OptimizationState)
     (; src, sptypes, slottypes) = opt
 
-    # branch on https://github.com/JuliaLang/julia/pull/42149
-    @static if !isdefined(CC, :mark_throw_blocks!)
-        throw_blocks =
-            analyzer.skip_unoptimized_throw_blocks && opt.inlining.params.unoptimize_throw_blocks ?
-            CC.find_throw_blocks(src.code) : nothing
-    end
-
     # TODO better to work on `opt.ir::IRCode` (with some updates on `handle_sig!`)
     local reported = false
     for (pc, x) in enumerate(src.code)
@@ -340,16 +333,8 @@ function (::OptAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::OptAnalyze
             # that callee should already have been reported
             continue
         end
-        # branch on https://github.com/JuliaLang/julia/pull/42149
-        @static if isdefined(CC, :mark_throw_blocks!)
-            if analyzer.skip_unoptimized_throw_blocks
-                CC.is_stmt_throw_block(src.ssaflags[pc]) && continue
-            end
-        else
-            if !isnothing(throw_blocks)
-                # optimization is intentionally turned off for this block, let's ignore anything here
-                CC.in(pc, throw_blocks) && continue
-            end
+        if analyzer.skip_unoptimized_throw_blocks
+            CC.is_stmt_throw_block(src.ssaflags[pc]) && continue
         end
         if isexpr(x, :call)
             ft = widenconst(argextype(first(x.args), src, sptypes, slottypes))

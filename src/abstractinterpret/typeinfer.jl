@@ -107,7 +107,7 @@ function CC.builtin_tfunction(analyzer::AbstractAnalyzer,
         if istoplevel_getproperty(sv)
             ret = narrow_toplevel_getglobal(argtypes, ret)
         end
-    elseif (@static isdefined(Core, :get_binding_type) && (f === Core.get_binding_type))
+    elseif f === Core.get_binding_type
         if istoplevel(sv)
             ret = narrow_toplevel_binding_type(argtypes, ret)
         end
@@ -224,27 +224,13 @@ let # overload `abstract_call_method_with_const_args`
         args_ex = :(analyzer::AbstractInterpreter,
             result::MethodCallResult, f::Any, arginfo::ArgInfo, match::MethodMatch,
             sv::InferenceState, invoketypes::Any)
-    elseif IS_V18
-        sigs_ex = :(analyzer::AbstractAnalyzer,
-            result::MethodCallResult, @nospecialize(f), arginfo::ArgInfo, match::MethodMatch,
-            sv::InferenceState)
-        args_ex = :(analyzer::AbstractInterpreter,
-            result::MethodCallResult, f::Any, arginfo::ArgInfo, match::MethodMatch,
-            sv::InferenceState)
-    elseif IS_AFTER_42529
-        sigs_ex = :(analyzer::AbstractAnalyzer,
-            result::MethodCallResult, @nospecialize(f), arginfo::ArgInfo, match::MethodMatch,
-            sv::InferenceState, va_override::Bool)
-        args_ex = :(analyzer::AbstractInterpreter,
-            result::MethodCallResult, f::Any, arginfo::ArgInfo, match::MethodMatch,
-            sv::InferenceState, va_override::Bool)
     else
         sigs_ex = :(analyzer::AbstractAnalyzer,
-            result::MethodCallResult, @nospecialize(f), argtypes::Argtypes, match::MethodMatch,
-            sv::InferenceState, va_override::Bool)
+            result::MethodCallResult, @nospecialize(f), arginfo::ArgInfo, match::MethodMatch,
+            sv::InferenceState)
         args_ex = :(analyzer::AbstractInterpreter,
-            result::MethodCallResult, f::Any, argtypes::Argtypes, match::MethodMatch,
-            sv::InferenceState, va_override::Bool)
+            result::MethodCallResult, f::Any, arginfo::ArgInfo, match::MethodMatch,
+            sv::InferenceState)
     end
     @eval function CC.abstract_call_method_with_const_args($(sigs_ex.args...))
         set_cacher!(analyzer, :abstract_call_method_with_const_args => sv.result)
@@ -286,13 +272,11 @@ let # overload `concrete_eval_call`
         args_ex = :(analyzer::AbstractInterpreter,
             f::Any, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
             invokecall::Union{Nothing,CC.InvokeCall})
-    elseif IS_V18
+    else
         sigs_ex = :(analyzer::AbstractAnalyzer,
             @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
         args_ex = :(analyzer::AbstractInterpreter,
             f::Any, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
-    else
-        return # `concrete_eval_call` isn't defined for this case
     end
     @eval function CC.concrete_eval_call($(sigs_ex.args...))
         ret = @invoke CC.concrete_eval_call($(args_ex.args...))
@@ -314,18 +298,12 @@ let # overload `abstract_call`
         args_ex = :(analyzer::AbstractInterpreter, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState,
             max_methods::Int)
         argtypes_ex = :(arginfo.argtypes)
-    elseif IS_AFTER_42529
+    else
         sigs_ex = :(analyzer::AbstractAnalyzer, arginfo::ArgInfo, sv::InferenceState,
             $(Expr(:kw, :(max_methods::Int), :(InferenceParams(analyzer).MAX_METHODS))))
         args_ex = :(analyzer::AbstractInterpreter, arginfo::ArgInfo, sv::InferenceState,
             max_methods::Int)
         argtypes_ex = :(arginfo.argtypes)
-    else
-        sigs_ex = :(analyzer::AbstractAnalyzer, fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes, sv::InferenceState,
-            $(Expr(:kw, :(max_methods::Int), :(InferenceParams(analyzer).MAX_METHODS))))
-        args_ex = :(analyzer::AbstractInterpreter, fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes, sv::InferenceState,
-            max_methods::Int)
-        argtypes_ex = :argtypes
     end
     @eval function CC.abstract_call($(sigs_ex.args...))
         ret = @invoke CC.abstract_call($(args_ex.args...))
@@ -548,13 +526,9 @@ function CC.transform_result_for_cache(analyzer::AbstractAnalyzer,
         AbstractInterpreter, MethodInstance, WorldRange, InferenceResult))
         inferred_result = @invoke transform_result_for_cache(analyzer::AbstractInterpreter,
         linfo::MethodInstance, valid_worlds::WorldRange, result::InferenceResult)
-    elseif isdefined(CC, :Effects) && hasmethod(CC.transform_result_for_cache, (
-        AbstractInterpreter, MethodInstance, WorldRange, Any, CC.Effects))
-        inferred_result = @invoke transform_result_for_cache(analyzer::AbstractInterpreter,
-        linfo::MethodInstance, valid_worlds::WorldRange, result.src::Any, result.ipo_effects::CC.Effects)
     else
         inferred_result = @invoke transform_result_for_cache(analyzer::AbstractInterpreter,
-            linfo::MethodInstance, valid_worlds::WorldRange, result.src::Any)
+        linfo::MethodInstance, valid_worlds::WorldRange, result.src::Any, result.ipo_effects::CC.Effects)
     end
     return JETCachedResult(inferred_result, cache)
 end
@@ -780,13 +754,7 @@ function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
         if (@static VERSION ≥ v"1.9.0-DEV.1636" ?
             (opt isa OptimizationState{typeof(analyzer)}) :
             (opt isa OptimizationState))
-            @static if VERSION ≥ v"1.8.0-DEV.1425"
-                CC.optimize(analyzer, opt, OptimizationParams(analyzer), caller)
-            else
-                result_type = caller.result
-                @assert !(result_type isa LimitedAccuracy)
-                CC.optimize(analyzer, opt, OptimizationParams(analyzer), result_type)
-            end
+            CC.optimize(analyzer, opt, OptimizationParams(analyzer), caller)
             # # COMBAK we may want to enable inlining ?
             # if opt.const_api
             #     # XXX: The work in ir_to_codeinf! is essentially wasted. The only reason

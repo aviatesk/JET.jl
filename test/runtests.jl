@@ -100,8 +100,7 @@ include("setup.jl")
                ft === typeof(zero) ||
                ft === typeof(JET.copy_report) ||
                ft === typeof(JET.handle_sig!) ||
-               (@static VERSION < v"1.8.0-DEV.1053" && ft === typeof(isprimitivetype)) || # requires https://github.com/JuliaLang/julia/pull/43113
-               (@static VERSION < v"1.9.0-DEV.283" && ft === typeof(JET.rewrap_unionall)) || # require https://github.com/JuliaLang/julia/pull/44512
+               (@static VERSION < v"1.9.0-DEV.283" && ft === typeof(JET.rewrap_unionall)) || # requires https://github.com/JuliaLang/julia/pull/44512
                false
                 return false
             end
