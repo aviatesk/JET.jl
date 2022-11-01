@@ -271,7 +271,7 @@ let
                    tuple_splat::Int            = 32,
                    assume_fatal_throw::Bool    = false,
                    )
-    elseif isdefined(CC, :mark_throw_blocks!)
+    else
         kwargs = :(inlining::Bool              = inlining_enabled(),
                    inline_cost_threshold::Int  = 100,
                    inline_nonleaf_penalty::Int = 1000,
@@ -280,17 +280,6 @@ let
                    max_methods::Int            = 3,
                    tuple_splat::Int            = 32,
                    union_splitting::Int        = 4,
-                   )
-    else
-        kwargs = :(inlining::Bool                = inlining_enabled(),
-                   inline_cost_threshold::Int    = 100,
-                   inline_nonleaf_penalty::Int   = 1000,
-                   inline_tupleret_bonus::Int    = 250,
-                   inline_error_path_cost::Int   = 20,
-                   max_methods::Int              = 3,
-                   tuple_splat::Int              = 32,
-                   union_splitting::Int          = 4,
-                   unoptimize_throw_blocks::Bool = true,
                    )
     end
     kwargs_exs = Expr[]
@@ -525,7 +514,6 @@ CC.may_compress(analyzer::AbstractAnalyzer)      = false
 CC.may_discard_trees(analyzer::AbstractAnalyzer) = false
 CC.verbose_stmt_info(analyzer::AbstractAnalyzer) = false
 
-@static if IS_AFTER_42082
 let # overload `inlining_policy`
     @static if isdefined(CC, :CallInfo)
         sigs_ex = :(analyzer::AbstractAnalyzer,
@@ -555,24 +543,6 @@ let # overload `inlining_policy`
         end
     end
 end
-else # @static if IS_AFTER_42082
-@doc """
-    inlining_policy(::AbstractAnalyzer) = jet_inlining_policy
-    jet_inlining_policy(@nospecialize(src)) -> source::Any
-
-`jet_inlining_policy` implements `Core.Compiler.inlining_policy` for `AbstractAnalyzer`.
-Since `AbstractAnalyzer` works on `InferenceResult` whose `src` field keeps
-[`JETResult`](@ref) or [`JETCachedResult`](@ref), `jet_inlining_policy` forwards
-their wrapped source to `Core.Compiler.default_inlining_policy`.
-"""
-CC.inlining_policy(::AbstractAnalyzer) = jet_inlining_policy
-@inline function jet_inlining_policy(@nospecialize(src))
-    if isa(src, JETCachedResult)
-        src = src.src
-    end
-    return CC.default_inlining_policy(src)
-end
-end # @static if IS_AFTER_42082
 
 # AbstractAnalyzer
 # ================

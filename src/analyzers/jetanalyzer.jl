@@ -155,8 +155,8 @@ CC.method_table(analyzer::JETAnalyzer) = analyzer.method_table
 # overloads
 # =========
 
-function CC.InferenceState(result::InferenceResult, cache::CACHE_ARG_TYPE, analyzer::JETAnalyzer)
-    frame = @invoke CC.InferenceState(result::InferenceResult, cache::CACHE_ARG_TYPE, analyzer::AbstractAnalyzer)
+function CC.InferenceState(result::InferenceResult, cache::Symbol, analyzer::JETAnalyzer)
+    frame = @invoke CC.InferenceState(result::InferenceResult, cache::Symbol, analyzer::AbstractAnalyzer)
     if isnothing(frame) # indicates something bad happened within `retrieve_code_info`
         ReportPass(analyzer)(GeneratorErrorReport, analyzer, result)
     end
@@ -185,21 +185,13 @@ let # overload `abstract_call_gf_by_type`
         args_ex = :(analyzer::AbstractAnalyzer, f::Any, arginfo::ArgInfo, si::StmtInfo, atype::Any,
             sv::InferenceState, max_methods::Int)
         argtypes_ex = :(arginfo.argtypes)
-    elseif IS_AFTER_42529
+    else
         sigs_ex = :(analyzer::JETAnalyzer,
             @nospecialize(f), arginfo::ArgInfo, @nospecialize(atype), sv::InferenceState,
             $(Expr(:kw, :(max_methods::Int), :(InferenceParams(analyzer).MAX_METHODS))))
         args_ex = :(analyzer::AbstractAnalyzer, f::Any, arginfo::ArgInfo, atype::Any,
             sv::InferenceState, max_methods::Int)
         argtypes_ex = :(arginfo.argtypes)
-    else
-        sigs_ex = :(analyzer::JETAnalyzer,
-            @nospecialize(f), fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes, @nospecialize(atype), sv::InferenceState,
-            $(Expr(:kw, :(max_methods::Int), :(InferenceParams(analyzer).MAX_METHODS))))
-        args_ex = :(analyzer::AbstractAnalyzer,
-            f::Any, fargs::Union{Nothing,Vector{Any}}, argtypes::Argtypes, atype::Any,
-            sv::InferenceState, max_methods::Int)
-        argtypes_ex = :argtypes
     end
     @eval function CC.abstract_call_gf_by_type($(sigs_ex.args...))
         ret = @invoke CC.abstract_call_gf_by_type($(args_ex.args...))
@@ -237,8 +229,7 @@ function CC.add_call_backedges!(analyzer::JETAnalyzer,
         matches::Union{MethodMatches,UnionSplitMethodMatches}, atype::Any,
         sv::InferenceState)
 end
-# overload after https://github.com/JuliaLang/julia/pull/45017/
-@static if isdefined(CC, :Effects)
+
 function CC.add_call_backedges!(analyzer::JETAnalyzer,
     @nospecialize(rettype), effects::CC.Effects,
     edges::Vector{MethodInstance}, matches::Union{MethodMatches,UnionSplitMethodMatches}, @nospecialize(atype),
@@ -249,30 +240,7 @@ function CC.add_call_backedges!(analyzer::JETAnalyzer,
         edges::Vector{MethodInstance}, matches::Union{MethodMatches,UnionSplitMethodMatches}, atype::Any,
         sv::InferenceState)
 end
-end
 struct __DummyAny__ end
-
-@static if VERSION < v"1.8.0-DEV.510"
-# manually take in https://github.com/JuliaLang/julia/pull/42195
-const ISEQUAL_ANY_ANY = let
-    ms = methods(isequal)
-    i = findfirst(m->m.sig===Tuple{typeof(isequal),Any,Any}, ms)::Int
-    ms[i]
-end
-
-function CC.abstract_call_method(analyzer::JETAnalyzer,
-    method::Method, @nospecialize(sig), sparams::SimpleVector, hardlimit::Bool, sv::InferenceState)
-    ret = @invoke CC.abstract_call_method(analyzer::AbstractAnalyzer,
-        method::Method, sig::Any, sparams::SimpleVector, hardlimit::Bool, sv::InferenceState)
-
-    # manually take in https://github.com/JuliaLang/julia/pull/42195
-    if method === ISEQUAL_ANY_ANY && ret.rt === Union{Bool,Missing}
-        ret = MethodCallResult(Bool, ret.edgecycle, ret.edgelimited, ret.edge)
-    end
-
-    return ret
-end
-end # @static if VERSION < v"1.8.0-DEV.510"
 
 let # overload `const_prop_entry_heuristic`
     @static if @isdefined(StmtInfo)
@@ -303,11 +271,9 @@ let # overload `concrete_eval_eligible`
         # https://github.com/JuliaLang/julia/pull/46966
         sigs_ex = :(analyzer::JETAnalyzer,
             @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo)
-    elseif IS_V18
+    else
         sigs_ex = :(analyzer::JETAnalyzer,
             @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
-    else
-        return
     end
     # TODO correctly reasons about error found by [semi-]concrete evaluation
     # for now just always fallback to the constant-prop'
@@ -340,14 +306,10 @@ let # overload `abstract_invoke`
         sigs_ex = :(analyzer::JETAnalyzer, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState)
         args_ex = :(analyzer::AbstractAnalyzer, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState)
         argtypes_ex = :(arginfo.argtypes)
-    elseif IS_AFTER_42529
+    else
         sigs_ex = :(analyzer::JETAnalyzer, arginfo::ArgInfo, sv::InferenceState)
         args_ex = :(analyzer::AbstractAnalyzer, arginfo::ArgInfo, sv::InferenceState)
         argtypes_ex = :(arginfo.argtypes)
-    else
-        sigs_ex = :(analyzer::JETAnalyzer, argtypes::Argtypes, sv::InferenceState)
-        args_ex = :(analyzer::AbstractAnalyzer, argtypes::Argtypes, sv::InferenceState)
-        argtypes_ex = :argtypes
     end
     @eval function CC.abstract_invoke($(sigs_ex.args...))
         ret = @invoke CC.abstract_invoke($(args_ex.args...))
@@ -387,7 +349,6 @@ end
 
 # N.B. this report pass won't be necessary as the frontend will generate code
 # that `typeassert`s the value type as the binding type beforehand
-@static VERSION ≥ v"1.8" && begin
 @static if isdefined(CC, :abstract_eval_basic_statement)
 @inline function CC.abstract_eval_basic_statement(analyzer::JETAnalyzer,
     @nospecialize(stmt), pc_vartable::VarTable, frame::InferenceState)
@@ -412,7 +373,6 @@ function CC.abstract_eval_statement(analyzer::JETAnalyzer,
     return ret
 end
 end # @static if isdefined(CC, :abstract_eval_basic_statement)
-end # @static VERSION ≥ v"1.8" begin
 
 function CC.abstract_eval_value(analyzer::JETAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
     ret = @invoke CC.abstract_eval_value(analyzer::AbstractAnalyzer, e::Any, vtypes::VarTable, sv::InferenceState)

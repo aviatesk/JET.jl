@@ -685,7 +685,6 @@ end
 end
 
 # filter_lineages! for concrete_eval_call
-@static if isdefined(Base, Symbol("@assume_effects"))
 Base.@assume_effects :foldable function filter_unopt_call(call::Bool, f, args...)
     if call
         f(args...)
@@ -698,4 +697,3 @@ let res = report_opt() do
     end
     @test isempty(get_reports_with_test(res))
 end
-end # @static if isdefined(Base, var"@assume_effects")

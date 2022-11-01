@@ -81,8 +81,8 @@ import .CC:
     switchtupleunion, tmerge, widenconst, ⊑
 
 import Base:
-    @invoke, @invokelatest, IdSet, destructure_callex, parse_input_line, rewrap_unionall,
-    uniontypes, unwrap_unionall
+    @invoke, @invokelatest, @constprop, IdSet, default_tt, destructure_callex,
+    parse_input_line, rewrap_unionall, uniontypes, unwrap_unionall
 
 import Base.Meta:
     _parse_string, isexpr, lower
@@ -131,23 +131,7 @@ __init__() = foreach(@nospecialize(f)->f(), INIT_HOOKS)
 # compat
 # ------
 
-# branch on https://github.com/JuliaLang/julia/pull/42082
-const IS_AFTER_42082 = hasmethod(InferenceState, (InferenceResult, Symbol, AbstractInterpreter))
-
-const IS_AFTER_42529 = isdefined(CC, :ArgInfo)
-@static IS_AFTER_42529 && import .CC: ArgInfo
-
-const IS_V18 = VERSION ≥ v"1.8-"
-@static IS_V18 && import .CC: concrete_eval_eligible, concrete_eval_call
-
-# branch on https://github.com/JuliaLang/julia/pull/42125
-@static if isdefined(Base, Symbol("@constprop"))
-    import Base: @constprop
-else
-    macro constprop(_, ex); esc(ex); end
-end
-
-@static @isdefined(LazyString) || include("strings/lazy.jl")
+import .CC: ArgInfo, concrete_eval_eligible, concrete_eval_call, hasintersect
 
 function anypush!(a::Vector{Any}, @nospecialize x...)
     na = length(a)
@@ -159,13 +143,7 @@ function anypush!(a::Vector{Any}, @nospecialize x...)
     return a
 end
 
-@static if isdefined(Core.Compiler, :hasintersect)
-    import .CC: hasintersect
-else
-    hasintersect(@nospecialize(a), @nospecialize(b)) = typeintersect(a, b) !== Bottom
-end
-
-@static if !isdefined(@__MODULE__, :getglobal)
+@static if !@isdefined(getglobal)
     const getglobal = getfield
 end
 
@@ -747,11 +725,7 @@ function analyze_method_instance!(analyzer::AbstractAnalyzer, mi::MethodInstance
                                   )
     result = InferenceResult(mi)
 
-    @static if IS_AFTER_42082
-        frame = InferenceState(result, #=cache=# :global, analyzer)
-    else
-        frame = InferenceState(result, #=cached=# true, analyzer)
-    end
+    frame = InferenceState(result, #=cache=# :global, analyzer)
 
     isnothing(frame) && return analyzer, result
 
@@ -759,11 +733,9 @@ function analyze_method_instance!(analyzer::AbstractAnalyzer, mi::MethodInstance
     return analyze_frame!(analyzer, frame)
 end
 
-const CACHE_ARG_TYPE = IS_AFTER_42082 ? Symbol : Bool
-
-function InferenceState(result::InferenceResult, cache::CACHE_ARG_TYPE, analyzer::AbstractAnalyzer)
+function InferenceState(result::InferenceResult, cache::Symbol, analyzer::AbstractAnalyzer)
     init_result!(analyzer, result) # set `JETResult` for succeeding JET analysis
-    return @invoke InferenceState(result::InferenceResult, cache::CACHE_ARG_TYPE, analyzer::AbstractInterpreter)
+    return @invoke InferenceState(result::InferenceResult, cache::Symbol, analyzer::AbstractInterpreter)
 end
 
 function analyze_frame!(analyzer::AbstractAnalyzer, frame::InferenceState)
@@ -1163,9 +1135,7 @@ function analyze_toplevel!(analyzer::AbstractAnalyzer, src::CodeInfo;
     # toplevel frames don't really need to be cached, but still better to be optimized
     # in order to get reasonable `LocalUndefVarErrorReport` and `UncaughtExceptionReport`
     # NOTE and also, otherwise `typeinf_edge` won't add "toplevel-to-callee" edges
-    frame = (@static IS_AFTER_42082 ?
-             InferenceState(result, src, #=cache=# :global, analyzer) :
-             InferenceState(result, src, #=cached=# true, analyzer))::InferenceState
+    frame = InferenceState(result, src, #=cache=# :global, analyzer)::InferenceState
 
     set_entry && set_entry!(analyzer, mi)
     return analyze_frame!(analyzer, frame)
@@ -1220,34 +1190,14 @@ end
 # resolve toplevel symbols (and other expressions like `:foreigncall`)
 # so that the returned `CodeInfo` is eligible for abstractintepret and optimization
 # TODO `jl_resolve_globals_in_ir` can throw, and we want to bypass it to `ToplevelErrorReport`
-@static if VERSION ≥ v"1.8.0-DEV.421"
-    function resolve_toplevel_symbols!(mod::Module, src::CodeInfo)
-        newsrc = copy(src)
-        @ccall jl_resolve_globals_in_ir(
-            #=jl_array_t *stmts=# newsrc.code::Any,
-            #=jl_module_t *m=# mod::Any,
-            #=jl_svec_t *sparam_vals=# svec()::Any,
-            #=int binding_effects=# 0::Int)::Cvoid
-        return newsrc
-    end
-else
-    # HACK before https://github.com/JuliaLang/julia/pull/42013, we need to go through
-    # the method definition pipeline to get the effect of `jl_resolve_globals_in_ir`
-    function resolve_toplevel_symbols!(mod::Module, src::CodeInfo)
-        sig = svec(
-            #=atypes=# svec(typeof(__toplevelf__)),
-            #=tvars=# svec(),
-            #=functionloc=# LineNumberNode(@__LINE__, @__FILE__))
-        # branching on https://github.com/JuliaLang/julia/pull/41137
-        method = (@static if isdefined(Core.Compiler, :OverlayMethodTable)
-            ccall(:jl_method_def, Any, (Any, Ptr{Cvoid}, Any, Any), sig, C_NULL, src, mod)
-        else
-            ccall(:jl_method_def, Cvoid, (Any, Any, Any), sig, src, mod)
-            only(methods(__toplevelf__))
-        end)::Method
-        return CC.uncompressed_ir(method)
-    end
-    function __toplevelf__ end
+function resolve_toplevel_symbols!(mod::Module, src::CodeInfo)
+    newsrc = copy(src)
+    @ccall jl_resolve_globals_in_ir(
+        #=jl_array_t *stmts=# newsrc.code::Any,
+        #=jl_module_t *m=# mod::Any,
+        #=jl_svec_t *sparam_vals=# svec()::Any,
+        #=int binding_effects=# 0::Int)::Cvoid
+    return newsrc
 end
 
 # interactive
@@ -1293,22 +1243,6 @@ function report_call(@nospecialize(f), @nospecialize(types = default_tt(f)); jet
     return report_call(tt; jetconfigs...)
 end
 
-@static if isdefined(Base, :default_tt)
-import Base: default_tt
-else
-# returns argument tuple type which is supposed to be used for `code_typed` and its family;
-# if there is a single method this functions returns the method argument signature,
-# otherwise returns `Tuple` that doesn't match with any signature
-function default_tt(@nospecialize(f))
-    ms = methods(f)
-    if length(ms) == 1
-        return Base.tuple_type_tail(only(ms).sig)
-    else
-        return Tuple
-    end
-end
-end
-
 function report_call(@nospecialize(tt::Type{<:Tuple});
                      analyzer::Type{Analyzer} = JETAnalyzer,
                      source::Union{Nothing,AbstractString} = nothing,
@@ -1318,7 +1252,7 @@ function report_call(@nospecialize(tt::Type{<:Tuple});
     analyzer, result = analyze_gf_by_type!(analyzer, tt)
 
     if isnothing(source)
-        source = string(nameof(var"@report_call"), " ", sprint(show_tuple_as_call, Symbol(""), tt))
+        source = string(nameof(var"@report_call"), " ", sprint(Base.show_tuple_as_call, Symbol(""), tt))
     end
 
     return JETCallResult(result, analyzer, source; jetconfigs...)
@@ -1453,15 +1387,6 @@ macro test_call(ex0...)
     end
 end
 
-get_exceptions() = @static if isdefined(Base, :current_exceptions)
-    Base.current_exceptions()
-else
-    Base.catch_stack()
-end
-@static if !hasfield(Pass, :source)
-    Pass(test_type::Symbol, orig_expr, data, thrown, source) = Pass(test_type, orig_expr, data, thrown)
-end
-
 function test_exs(ex0, m, source)
     analysis = InteractiveUtils.gen_call_with_extracted_types_and_kwargs(m, :report_call, ex0)
     orig_expr = QuoteNode(
@@ -1476,7 +1401,7 @@ function test_exs(ex0, m, source)
         end
     catch err
         isa(err, $InterruptException) && rethrow()
-        $Error(:test_error, $orig_expr, err, $get_exceptions(), $source)
+        $Error(:test_error, $orig_expr, err, $(Base.current_exceptions()), $source)
     end) |> Base.remove_linenums!
     return testres, orig_expr
 end
