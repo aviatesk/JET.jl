@@ -10,14 +10,14 @@ report_file("path/to/file.jl";
 ```
 
 !!! note
-    Please ignore the names of documented objects appearing below, like "[`JET._get_configured_reports`](@ref)".
+    Please ignore the names of documented objects appearing below, like "[`JET.configured_reports`](@ref)".
     They are just remnants of documentation internals, and you will never directly interact with them.
 
 
 ## [Configurations for Analysis Result](@id result-config)
 
 ```@docs
-JET._get_configured_reports
+JET.configured_reports
 ```
 
 ## [Configurations for Top-level Analysis](@id toplevel-config)
