@@ -20,7 +20,8 @@ JET employs Julia's type inference system to detect potential bugs and type inst
 See more commands, options and explanations in the documentation.
 
 ### Detect type instability with `@report_opt`
-Type instabilities can be detected in function calls using the `@report_opt` macro, which works similar to the `@code_warntype` macro. Note that, because JET relies on Julia's type inference, it cannot "see" what happens on the other side of a type instability.
+Type instabilities can be detected in function calls using the `@report_opt` macro, which works similar to the `@code_warntype` macro.
+Note that, because JET relies on Julia's type inference, if a chain of inference is broken due to dynamic dispatch, then all downstream function calls will be unknown to the compiler, and so JET cannot analyze them.
 
 ```julia
 julia> @report_opt foldl(+, Any[]; init=0)
