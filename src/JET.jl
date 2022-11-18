@@ -582,6 +582,7 @@ julia> @report_call ignored_modules=(Base,) foo("julia")
 ┌ @ REPL[1]:3 r2 = undefsum(a)
 │ `undefsum` is not defined
 └─────────────
+```
 ---
 """
 @jetconfigurable function configured_reports(
