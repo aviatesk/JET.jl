@@ -27,7 +27,7 @@ These configurations will be active for all the top-level entries explained in t
 [top-level analysis entry points](@ref jetanalysis-toplevel-entry) section.
 
 ---
-- `context::Bool = Main` \\
+- `context::Module = Main` \\
   The module context in which the top-level execution will be simulated.
 
   This configuration can be useful when you just want to analyze a submodule, without
