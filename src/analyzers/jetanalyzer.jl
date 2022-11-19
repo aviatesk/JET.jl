@@ -39,6 +39,11 @@ end
 
 CC.may_optimize(::JETAnalyzer) = false
 
+@static if VERSION ≥ v"1.10.0-DEV.25"
+    CC.typeinf_lattice(::JETAnalyzer) = CC.InferenceLattice(CC.MustAliasesLattice(CC.BaseInferenceLattice.instance))
+    CC.ipo_lattice(::JETAnalyzer) = CC.InferenceLattice(CC.InterMustAliasesLattice(CC.IPOResultLattice.instance))
+end
+
 # AbstractAnalyzer API
 # ====================
 
