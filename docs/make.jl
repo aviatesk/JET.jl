@@ -86,11 +86,16 @@ function generate_api_doc(examples_pages)
 end
 
 let
+    DocMeta.setdocmeta!(JET, :DocTestSetup, :(using JET); recursive=true)
     examples = generate_example_docs!()
     makedocs(; modules = [JET],
                sitename = "JET.jl",
                pages = Any[
                     "README" => generate_index!(),
+                    "Tutorial" => Any[
+                        "Tutorial" => "tutorial.md",
+                        "Error kinds and how to fix them" => "errortypes.md",
+                    ],
                     "Analyses" => Any[
                         "Error Analysis" => "jetanalysis.md",
                         "Optimization Analysis" => "optanalysis.md",
