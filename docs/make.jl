@@ -92,10 +92,7 @@ let
                sitename = "JET.jl",
                pages = Any[
                     "README" => generate_index!(),
-                    "Tutorial" => Any[
-                        "Tutorial" => "tutorial.md",
-                        "Error kinds and how to fix them" => "errortypes.md",
-                    ],
+                    "Tutorial" => "tutorial.md",
                     "Analyses" => Any[
                         "Error Analysis" => "jetanalysis.md",
                         "Optimization Analysis" => "optanalysis.md",

@@ -1,9 +1,3 @@
-```@meta
-DocTestSetup = quote
-    using JET
-end
-```
-
 # JET tutorial
 JET leverages the Julia compiler's inference to check user code for type instability and type errors.
 This tutorial will demonstrate how to use JET effectively.
@@ -13,18 +7,25 @@ Because JET relies on the compiler's type inference, it is not able to effective
 Making your code type stable is a prerequisite for effectively using JET's type error analysis.
 Therefore, we will begin by showing how to use JET to fix type instabilities.
 
+First of all, you need to install JET: JET is an ordinary Julia package, so you can install it via
+Julia's built-in package manager and use it as like other packages.
+```@repl tutorial
+; # ] add JET # install JET via the built-in package manager
+
+using JET
+```
+
 ## Detecting type instability with `@report_opt`
 JET exports a function [`report_opt`](@ref) and the related macro [`@report_opt`](@ref).
 It works similar to the function/macro pair `(@)code_warntype` from Base - except that it automatically analyses all the way down the function chain, and that it only displays any issues found.
 
 For example, suppose we have the function:
-```@repl opt1
+```@repl tutorial
 add_one_first(x) = first(x) + 1;
 ```
 
 Any type instabilities of a given function call can be analysed thus:
-```@repl opt1
-using JET # hide
+```@repl tutorial
 @report_opt add_one_first([1])
 @report_opt add_one_first(Any[1])
 ```
@@ -32,7 +33,7 @@ using JET # hide
 You can see that `add_one_first` is type stable when called with a `Vector{Int}`, but it leads to dynamic dispatch when called with `Vector{Any}`.
 
 Suppose now we have _two levels_ of type instability, where one type instability "hides behind" another type instability, as in this example:
-```@repl opt1
+```@repl tutorial
 add_one_first(x) = first(x) + 1;
 func_var = add_one_first;
 f(x) = func_var(x);
@@ -43,12 +44,12 @@ Remember that `add_one_first` was also type unstable when called with a `Vector{
 The reason is that because the Julia compiler does not know at compile time that `func_var` is equal to `add_one_first`, JET cannot "see through" the first type instability and see that `add_one_first(Any[1])` will eventually be called.
 
 If we fix the first instability by defining the global variable `my_func_var` as `const`:
-```@repl opt1
+```@repl tutorial
 const my_func_var = add_one_first;
 ```
 
 Then the compiler knows that `add_one_first` will be called, and the second type instability from this function is revealed:
-```@repl opt1
+```@repl tutorial
 f(x) = my_func_var(x)
 @report_opt f(Any[1])
 ```
@@ -56,7 +57,7 @@ f(x) = my_func_var(x)
 Sometimes, type instability only shows up much deeper into a call chain, several functions deep.
 This is not a problem for JET.
 In the example below, JET sees type instability ~10 function calls deep:
-```@repl opt1
+```@repl tutorial
 @report_opt sum(Any[1])
 ```
 
@@ -68,7 +69,7 @@ After the program has been made as type stable as possible, it's time to use `@r
 The function/macro pair [`report_call`](@ref) and [`@report_call`](@ref) works just like `(@)report_opt` - but where the latter reports dynamic dispatch, the former finds type errors.
 
 The `@report_call` macro analyses function calls like so:
-```@repl opt1
+```@repl tutorial
 @report_call sum(['a'])
 ```
 
@@ -82,7 +83,7 @@ Note also that the two possible errors shown are mutally exclusive - no input wi
 Nonetheless, JET is able to detect both possibilities, because it analyses all possible branches in the generated function call.
 
 In contrast, if we analyse the same `sum` method on a `Vector{Int}` instead of `Vector{Char}`:
-```@repl opt1
+```@repl tutorial
 @report_call sum([1])
 ```
 
@@ -96,7 +97,7 @@ Most packages, however, define only methods, and do not contain callsites. That 
 However, JET is able to do limited analysis using only the method signature extracted from the method definition.
 For example, if I define this simple function:
 
-```@repl
+```julia
 first_plus_n(itr, n::Real) = first(itr) + n;
 ```
 
@@ -106,7 +107,7 @@ Hence, JET can analyze the methodinstance `first_plus_n(::Any, ::Real)`, using o
 The JET function [`report_package`](@ref) extracts all method definitions in a package, and using the extracted signatures, runs `report_call` on them.
 For example, the package `BioSymbols` can be analysed like this:
 
-```
+```julia
 julia> using JET
 
 julia> report_package(JET)
@@ -118,7 +119,7 @@ Note that `report_package` is less precise than `@report_call`, because method s
 ## Usage tips
 #### Use `@report_opt` before `@report_call`
 JET works best on type-stable code.
-Iron out type instabilities using `@report_opt` before using `@report_call` 
+Iron out type instabilities using `@report_opt` before using `@report_call`
 
 #### Filtering away false postives
 It is common to find that JET finds lots of errors in your functions, which all derive from type instability and type issues in your dependencies.
@@ -129,29 +130,28 @@ To reduce false positives, you can use the keywords `ignored_modules` and `targe
 The former removes any errors that originate from any of the given modules, while the latter removes any errors _except_ ones originating from these modules.
 
 For example, in the REPL (which is in module `Main`), we can define:
-```@repl call1
-f(x) = first(x) + 1
+```@repl tutorial
+g(x) = first(x) + 1
 ```
 
 This throws in a `Base` function if we pass `nothing` into it:
-```@repl call1
-using JET # hide
-@report_call f(nothing)
+```@repl tutorial
+@report_call g(nothing)
 ```
 
 Since the error originates from `Base`, we can filter the error away by ignoring `Base`, or equivalently, we may retain only the ones from `Main`. Note that we pass `(Base,)` as a 1-element Tuple of modules:
-```@repl call1
-@report_call ignored_modules=(Base,) f(nothing)
-@report_call target_modules=(@__MODULE__,) f(nothing)
+```@repl tutorial
+@report_call ignored_modules=(Base,) g(nothing)
+@report_call target_modules=(@__MODULE__,) g(nothing)
 ```
 
 The `AnyFrameModule` construct can be used to filter for (or against) any error where _any_ of the function calls in the callchain originates from the given module.
 For example, in the example above, the function call begins in `Main` and ends in `Base`, so the callchain includes both modules.
 Ignoring `AnyFrameModule(Base)` _or_ `AnyFrameModule(Main)` will then ignore the error:
 
-```@repl call1
-@report_call ignored_modules=(AnyFrameModule(Base),) f(nothing)
-@report_call ignored_modules=(AnyFrameModule(@__MODULE__),) f(nothing)
+```@repl tutorial
+@report_call ignored_modules=(AnyFrameModule(Base),) g(nothing)
+@report_call ignored_modules=(AnyFrameModule(@__MODULE__),) g(nothing)
 ```
 
 Similarly, the error would be retained if `target_modules` would have been `AnyFrameModule(Base)` _or_ `AnyFrameModule(Main)`.
@@ -208,4 +208,4 @@ end
 
 Because such usage necessarily requires passing concrete types to your functions, calling `@report_call exercise_mypkg()` leads to more precise analysis than `report_package`.
 
-Furthermore, once you have written a function like `exercise_mypkg`, you can use a package like `SnoopPrecompile` to precompile the function, which will thus precompile all code exercised in the function, significantly reducing your package's latency.
+Furthermore, once you have written a function like `exercise_mypkg`, you can use a package like [`SnoopPrecompile`](https://github.com/timholy/SnoopCompile.jl) to precompile the function, which will thus precompile all code exercised in the function, significantly reducing your package's latency.
