@@ -1506,10 +1506,7 @@ end
 
 function reexport_as_api!(xs...)
     for x in xs
-        ex = Expr(:block)
-
-        val = Core.eval(@__MODULE__, x)
-        canonicalname = Symbol(parentmodule(val), '.', nameof(val))
+        canonicalname = Symbol(parentmodule(x), '.', nameof(x))
         canonicalpath = Symbol.(split(string(canonicalname), '.'))
 
         modpath = Expr(:., canonicalpath[1:end-1]...)
@@ -1517,9 +1514,10 @@ function reexport_as_api!(xs...)
         sympath = Expr(:., symname)
         importex = Expr(:import, Expr(:(:), modpath, sympath))
         exportex = Expr(:export, symname)
-
+        ex = Expr(:block)
         push!(ex.args, importex, exportex)
         Core.eval(JETInterface, ex)
+
         push!(JETInterface.DOCUMENTED_NAMES, symname)
     end
 end
