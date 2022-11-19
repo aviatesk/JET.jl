@@ -14,8 +14,10 @@ export
     LastFrameModule, AnyFrameModule
 
 let README = normpath(dirname(@__DIR__), "README.md")
+    s = read(README, String)
+    s = replace(s, ":bangbang:"=>"!!! note")
+    @doc s JET
     include_dependency(README)
-    @doc read(README, String) JET
 end
 
 # not sure why, but a benchmark showed this is faster
