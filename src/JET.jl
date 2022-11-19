@@ -1539,4 +1539,11 @@ reexport_as_api!(JETInterface,
 include("analyzers/jetanalyzer.jl")
 include("analyzers/optanalyzer.jl")
 
+if ccall(:jl_generating_output, Cint, ()) == 1
+    local io = IOContext(IOBuffer(), :color=>true)
+    show(io, @report_call sum("julia"))
+    show(io, @report_call rand(Bool))
+    show(io, @report_call println(QuoteNode(nothing)))
+end
+
 end
