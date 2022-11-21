@@ -505,7 +505,7 @@ These configurations are always active.
   By default (`target_modules = nothing`), JET reports all detected problems.
   If specified, a problem is reported if its module context matches any of `target_modules`
   settings and hidden otherwise. `target_modules` should be an iterator of whose element is
-  either of the data types below that match [`report::InferenceErrorReport`](@ref)'s
+  either of the data types below that match [`report::InferenceErrorReport`](@ref InferenceErrorReport)'s
   context module as follows:
   - `m::Module` or `JET.LastFrameModule(m::Module)`: matches if the module context of  `report`'s innermost stack frame is `m`
   - `JET.AnyFrameModule(m::Module)`: matches if module context of any of `report`'s stack frame is `m`
@@ -517,7 +517,7 @@ These configurations are always active.
   By default (`ignored_modules = nothing`), JET reports all detected problems.
   If specified, a problem is hidden if its module context matches any of `ignored_modules`
   settings and reported otherwise. `ignored_modules` should be an iterator of whose element is
-  either of the data types below that match [`report::InferenceErrorReport`](@ref)'s
+  either of the data types below that match [`report::InferenceErrorReport`](@ref InferenceErrorReport)'s
   context module as follows:
   - `m::Module` or `JET.LastFrameModule(m::Module)`: matches if the module context of  `report`'s innermost stack frame is `m`
   - `JET.AnyFrameModule(m::Module)`: matches if module context of any of `report`'s stack frame is `m`

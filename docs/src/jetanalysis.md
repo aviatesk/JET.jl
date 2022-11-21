@@ -293,7 +293,7 @@ using JET # hide
 @report_call f(Foo(1))
 ```
 
-We might reasonably expect the compiler to know that in the `else` branch, `x.x` must be an `Int`, since it just checked that it is not `nothing`. However, the compiler does not know that the value obtained from loading the `x` field in the expression `x.x` on the like with the if statement in this case is the same value as the value obtained when loading the `x` field in the `x.x + 1` statement.
+We might reasonably expect the compiler to know that in the `else` branch, `x.x` must be an `Int`, since it just checked that it is not `nothing`. However, the compiler does not know that the value obtained from loading the `x` field in the expression `x.x` on the like with the if statement in this case is the same value as the value obtained when loading the `x` field in the `x.x + 1` statement[^3].
 You can solve this issue by assigning `x.x` to a variable:
 
 ```@repl union3
@@ -308,6 +308,9 @@ end;
 
 @report_call f(Foo(1))
 ```
+
+[^3]: For immutable structs, the Julia compiler can figure out type constraints imposed on
+      aliased field loads if you're using Julia version higher than `v"1.10.0-DEV.25"`.
 
 ### `X is not defined`
 #### Description
