@@ -3,7 +3,15 @@
 JET analysis can be flexibly fine-tuned.
 Any entry point explained in [JET's default error analysis](@ref jetanalysis-entry) and [the optimization analysis](@ref optanalysis-entry)
 can accept any of the configuration parameters described below as keyword arguments (or optional parameters for the interactive macros).
-For example, you can analyze `path/to/file.jl` with specifying [`target_defined_modules` configuration](@ref toplevel-config) as follows:
+For example, you can analyze the call of `sum("julia")` with the [`annotate_types`](@ref print-config) configuration enabled as like:
+```julia
+@report_call annotate_types=true sum("julia")
+```
+or equivalently:
+```julia
+report_call(sum, (String,); annotate_types=true)
+```
+Similarly you can analyze a top-level script `path/to/file.jl` with specifying [`target_defined_modules` configuration](@ref toplevel-config) as follows:
 ```julia
 report_file("path/to/file.jl";
             target_defined_modules = true)
