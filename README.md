@@ -26,15 +26,15 @@ Note that, because JET relies on Julia's type inference, if a chain of inference
 ```julia
 julia> @report_opt foldl(+, Any[]; init=0)
 ═════ 1 possible error found ═════
-┌ @ reduce.jl:193 Base.:(var"#foldl#260")(kw..., _3, op, itr)
-│┌ @ reduce.jl:193 Core.kwfunc(mapfoldl)(merge(Base.NamedTuple(), kw), mapfoldl, identity, op, itr)
-││┌ @ reduce.jl:170 Base.:(var"#mapfoldl#259")(init, _3, f, op, itr)
-│││┌ @ reduce.jl:170 Base.mapfoldl_impl(f, op, init, itr)
+┌ @ reduce.jl:198 Base.:(var"#foldl#291")(kw..., _3, op, itr)
+│┌ @ reduce.jl:198 Core.kwcall(merge(Base.NamedTuple(), kw), mapfoldl, identity, op, itr)
+││┌ @ reduce.jl:175 Base.:(var"#mapfoldl#290")(_8, _3, f, op, itr)
+│││┌ @ reduce.jl:175 Base.mapfoldl_impl(f, op, init, itr)
 ││││┌ @ reduce.jl:44 Base.foldl_impl(op′, nt, itr′)
 │││││┌ @ reduce.jl:48 v = Base._foldl_impl(op, nt, itr)
-││││││┌ @ reduce.jl:62 op(%22, %42)
-│││││││ runtime dispatch detected: op::Base.BottomRF{typeof(+)}(%22::Any, %42::Any)::Any
-│││││││└────────────────
+││││││┌ @ reduce.jl:62 op(%20, %37)
+│││││││ runtime dispatch detected: op::Base.BottomRF{typeof(+)}(%20::Any, %37::Any)::Any
+││││││└────────────────
 ```
 
 ### Detect type errors with `@report_call`
@@ -42,21 +42,21 @@ This works best on type stable code, so use `@report_opt` liberally before using
 ```julia
 julia> @report_call foldl(+, Char[])
 ═════ 2 possible errors found ═════
-┌ @ reduce.jl:193 Base.:(var"#foldl#260")(pairs(NamedTuple()), #self#, op, itr)
-│┌ @ reduce.jl:193 mapfoldl(identity, op, itr)
-││┌ @ reduce.jl:170 Base.:(var"#mapfoldl#259")(Base._InitialValue(), #self#, f, op, itr)
-│││┌ @ reduce.jl:170 Base.mapfoldl_impl(f, op, init, itr)
+┌ @ reduce.jl:198 Base.:(var"#foldl#291")(pairs(NamedTuple()), #self#, op, itr)
+│┌ @ reduce.jl:198 mapfoldl(identity, op, itr)
+││┌ @ reduce.jl:175 Base.:(var"#mapfoldl#290")(Base._InitialValue(), #self#, f, op, itr)
+│││┌ @ reduce.jl:175 Base.mapfoldl_impl(f, op, init, itr)
 ││││┌ @ reduce.jl:44 Base.foldl_impl(op′, nt, itr′)
 │││││┌ @ reduce.jl:48 v = Base._foldl_impl(op, nt, itr)
 ││││││┌ @ reduce.jl:62 v = op(v, y[1])
-│││││││┌ @ reduce.jl:81 op.rf(acc, x)
+│││││││┌ @ reduce.jl:86 op.rf(acc, x)
 ││││││││ no matching method found `+(::Char, ::Char)`: (op::Base.BottomRF{typeof(+)}).rf::typeof(+)(acc::Char, x::Char)
 │││││││└────────────────
 │││││┌ @ reduce.jl:49 Base.reduce_empty_iter(op, itr)
-││││││┌ @ reduce.jl:378 Base.reduce_empty_iter(op, itr, Base.IteratorEltype(itr))
-│││││││┌ @ reduce.jl:379 Base.reduce_empty(op, eltype(itr))
-││││││││┌ @ reduce.jl:355 Base.reduce_empty(op.rf, T)
-│││││││││┌ @ reduce.jl:338 zero(T)
+││││││┌ @ reduce.jl:383 Base.reduce_empty_iter(op, itr, Base.IteratorEltype(itr))
+│││││││┌ @ reduce.jl:384 Base.reduce_empty(op, eltype(itr))
+││││││││┌ @ reduce.jl:360 Base.reduce_empty(op.rf, T)
+│││││││││┌ @ reduce.jl:343 zero(T)
 ││││││││││ no matching method found `zero(::Type{Char})`: zero(T::Type{Char})
 │││││││││└─────────────────
 ```
@@ -70,7 +70,7 @@ julia> using AbstractTrees
 julia> report_package(AbstractTrees)
  [ some output elided ]
 ═════ 4 possible errors found ═════
-┌ @ /home/jakni/.julia/packages/AbstractTrees/x9S7q/src/base.jl:260 AbstractTrees.collect(Core.apply_type(StableNode, T), ch)
+┌ @ ~/.julia/packages/AbstractTrees/x9S7q/src/base.jl:260 AbstractTrees.collect(Core.apply_type(StableNode, T), ch)
 │┌ @ array.jl:647 Base._collect(T, itr, Base.IteratorSize(itr))
 ││┌ @ array.jl:649 Base._array_for(T, isz, Base._similar_shape(itr, isz))
 │││┌ @ array.jl:679 Base._similar_shape(itr, isz)
@@ -81,10 +81,10 @@ julia> report_package(AbstractTrees)
 ││││┌ @ array.jl:663 length(itr)
 │││││ no matching method found `length(::Base.HasLength)`: length(itr::Base.HasLength)
 ││││└────────────────
-┌ @ /home/jakni/.julia/packages/AbstractTrees/x9S7q/src/indexing.jl:137 AbstractTrees.idx.tree
+┌ @ ~/.julia/packages/AbstractTrees/x9S7q/src/indexing.jl:137 AbstractTrees.idx.tree
 │ `AbstractTrees.idx` is not defined
 └───────────────────────────────────────────────────────────────────────
-┌ @ /home/jakni/.julia/packages/AbstractTrees/x9S7q/src/indexing.jl:137 AbstractTrees.idx.index
+┌ @ ~/.julia/packages/AbstractTrees/x9S7q/src/indexing.jl:137 AbstractTrees.idx.index
 │ `AbstractTrees.idx` is not defined
 └───────────────────────────────────────────────────────────────────────
 ```
