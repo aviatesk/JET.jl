@@ -110,7 +110,7 @@ For example, the package `BioSymbols` can be analysed like this:
 ```julia
 julia> using JET
 
-julia> report_package(JET)
+julia> report_package(BioSymbols)
 [ output elided ]
 ```
 
