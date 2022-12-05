@@ -73,9 +73,9 @@ import Core:
 import .CC:
     AbstractInterpreter, ArgInfo, BasicBlock, Bottom, CFG, CallMeta, ConstCallInfo,
     InferenceResult, InternalCodeCache, InvokeCallInfo, LimitedAccuracy, MethodCallResult,
-    MethodLookupResult, MethodMatchInfo, MethodMatches, NOT_FOUND, NativeInterpreter,
-    OptimizationState, UnionSplitInfo, UnionSplitMethodMatches, VarState, VarTable,
-    WorldRange, WorldView, InternalMethodTable, CachedMethodTable, OverlayMethodTable,
+    MethodLookupResult, MethodMatchInfo, MethodMatches, NOT_FOUND, OptimizationState,
+    UnionSplitInfo, UnionSplitMethodMatches, VarState, VarTable, WorldRange, WorldView,
+    InternalMethodTable, CachedMethodTable, OverlayMethodTable,
     _methods_by_ftype, argextype, argtype_by_index, argtype_tail, argtypes_to_type,
     compute_basic_blocks, get_compileable_sig, hasintersect, ignorelimited, inlining_enabled,
     instanceof_tfunc, is_throw_call, isType, isconstType, issingletontype,

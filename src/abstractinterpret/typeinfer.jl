@@ -317,9 +317,9 @@ end
 
 Adds special cased analysis pass for task parallelism.
 In Julia's task parallelism implementation, parallel code is represented as closure and it's
-wrapped in a `Task` object. `NativeInterpreter` doesn't infer nor optimize the bodies of
-those closures when compiling code that creates parallel tasks, but JET will try to run
-additional analysis pass by recurring into the closures.
+wrapped in a `Task` object. `Core.Compiler.NativeInterpreter` doesn't infer nor optimize the
+bodies of those closures when compiling code that creates parallel tasks, but JET will try
+to run additional analysis pass by recurring into the closures.
 
 See also: <https://github.com/aviatesk/JET.jl/issues/114>
 
@@ -415,8 +415,8 @@ where [`src.inferred::JETCachedResult`](@ref JETCachedResult) caches JET's analy
 This cache is separated by the identities of `AbstractAnalyzer`s, which are hash keys
 computed by [`get_cache_key(analyzer::AbstractAnalyzer)`](@ref get_cache_key).
 
-`JET_CACHE` is completely separated from the `NativeInterpreter`'s global cache, so that
-JET's analysis never interacts with actual code execution.
+`JET_CACHE` is completely separated from the `Core.Compiler.NativeInterpreter`'s global cache,
+so that JET's analysis never interacts with actual code execution.
 """
 const JET_CACHE = IdDict{UInt, IdDict{MethodInstance,CodeInstance}}()
 
@@ -573,18 +573,18 @@ end
 
 struct JETLocalCache{Analyzer<:AbstractAnalyzer}
     analyzer::Analyzer
-    cache::Vector{InferenceResult}
+    inf_cache::Vector{InferenceResult}
 end
 
-CC.get_inference_cache(analyzer::AbstractAnalyzer) = JETLocalCache(analyzer, get_inference_cache(get_native(analyzer)))
+CC.get_inference_cache(analyzer::AbstractAnalyzer) = JETLocalCache(analyzer, get_inf_cache(analyzer))
 
 let
     if isdefined(CC, :AbstractLattice)
         sigs_ex = :(lattice::CC.AbstractLattice, linfo::MethodInstance, given_argtypes::Argtypes, cache::JETLocalCache)
-        args_ex = :(lattice, linfo, given_argtypes, cache.cache)
+        args_ex = :(lattice, linfo, given_argtypes, cache.inf_cache)
     else
         sigs_ex = :(linfo::MethodInstance, given_argtypes::Argtypes, cache::JETLocalCache)
-        args_ex = :(linfo, given_argtypes, cache.cache)
+        args_ex = :(linfo, given_argtypes, cache.inf_cache)
     end
     @eval function CC.cache_lookup($(sigs_ex.args...))
         # XXX the very dirty analyzer state observation again
@@ -620,7 +620,7 @@ let
     end
 end
 
-CC.push!(cache::JETLocalCache, inf_result::InferenceResult) = CC.push!(cache.cache, inf_result)
+CC.push!(cache::JETLocalCache, inf_result::InferenceResult) = CC.push!(cache.inf_cache, inf_result)
 
 # main driver
 # ===========

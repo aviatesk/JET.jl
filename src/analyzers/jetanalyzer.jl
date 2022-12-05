@@ -81,8 +81,7 @@ end
                             jetconfigs...)
     cache_key = state.param_key
     cache_key = hash(report_pass, cache_key)
-    world = CC.get_world_counter(state.native)
-    method_table = CachedMethodTable(OverlayMethodTable(world, JET_METHOD_TABLE))
+    method_table = CachedMethodTable(OverlayMethodTable(state.world, JET_METHOD_TABLE))
     analyzer = JETAnalyzer(report_pass, state, cache_key, method_table)
     return analyzer
 end
@@ -90,8 +89,7 @@ JETInterface.AnalyzerState(analyzer::JETAnalyzer) = analyzer.state
 function JETInterface.AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerState)
     report_pass = ReportPass(analyzer)
     cache_key = analyzer.__cache_key
-    world = CC.get_world_counter(state.native)
-    method_table = CachedMethodTable(OverlayMethodTable(world, JET_METHOD_TABLE))
+    method_table = CachedMethodTable(OverlayMethodTable(state.world, JET_METHOD_TABLE))
     return JETAnalyzer(report_pass, state, cache_key, method_table)
 end
 JETInterface.ReportPass(analyzer::JETAnalyzer) = analyzer.report_pass
@@ -337,7 +335,7 @@ function CC.abstract_eval_special_value(analyzer::JETAnalyzer,
         # report pass for undefined global reference
         ReportPass(analyzer)(GlobalUndefVarErrorReport, analyzer, sv, mod, name)
 
-        # NOTE `NativeInterpreter` should return `ret = Any` `ret` even if `mod.name`
+        # NOTE `Core.Compiler.NativeInterpreter` should return `ret = Any` `ret` even if `mod.name`
         # isn't defined and we just pass it as is to collect as much error points as possible
         # we can change it to `Bottom` to suppress any further inference with this variable,
         # but then we also need to make sure to invalidate the cache for the analysis on
@@ -691,7 +689,7 @@ function (::SoundBasicPass)(::Type{InvalidReturnTypeCall}, analyzer::AbstractAna
     # here we make a very simple analysis to check if the call of `return_type` is clearly
     # invalid or not by just checking the # of call arguments
     # we don't take a (very unexpected) possibility of its overload into account here,
-    # `NativeInterpreter` doens't also (it hard-codes the return type as `Type`)
+    # `Core.Compiler.NativeInterpreter` doens't also (it hard-codes the return type as `Type`)
     if length(argtypes) ≠ 3
         # invalid argument #, let's report and return error result (i.e. `Bottom`)
         add_new_report!(analyzer, sv.result, InvalidReturnTypeCall(sv))

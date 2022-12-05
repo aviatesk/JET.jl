@@ -13,7 +13,7 @@ import JET:
 import Base.Meta:
     isexpr
 
-get_cache(analyzer::AbstractAnalyzer) = JET.get_native(analyzer).cache
+get_cache(analyzer::AbstractAnalyzer) = JET.get_inf_cache(analyzer)
 
 function subtypes_recursive!(t, ts)
     push!(ts, t)

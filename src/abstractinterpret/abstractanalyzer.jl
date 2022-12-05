@@ -133,11 +133,14 @@ AnalyzerState(analyzer::NewAnalyzer) = analyzer.state
 ```
 """
 mutable struct AnalyzerState
-    ## native ##
+    ## AbstractInterpreter ##
 
-    native::NativeInterpreter
+    world::UInt
+    inf_cache::Vector{InferenceResult}
+    inf_params::InferenceParams
+    opt_params::OptimizationParams
 
-    ## `AbstractAnalyzer` ##
+    ## AbstractAnalyzer ##
 
     results::IdDict{InferenceResult,AnyJETResult}
 
@@ -191,12 +194,13 @@ end
                                         jetconfigs...)
     isnothing(inf_params) && (inf_params = JETInferenceParams(; jetconfigs...))
     isnothing(opt_params) && (opt_params = JETOptimizationParams(; jetconfigs...))
-
-    native       = NativeInterpreter(world; inf_params, opt_params)
+    inf_cache = InferenceResult[]
     param_key    = get_param_key(inf_params)
     caller_cache = InferenceErrorReport[]
-
-    return AnalyzerState(#=native::NativeInterpreter=# native,
+    return AnalyzerState(#=world::UInt=# world,
+                         #=inf_cache::Vector{InferenceResult}=#inf_cache,
+                         #=inf_params::InferenceParams=#inf_params,
+                         #=opt_params::OptimizationParams=#opt_params,
                          #=results::IdDict{InferenceResult,AnyJETResult}=# results,
                          #=param_key::UInt=# param_key,
                          #=caller_cache::Vector{InferenceErrorReport}=# caller_cache,
@@ -486,9 +490,9 @@ add_caller_cache!(analyzer::AbstractAnalyzer, reports::Vector{InferenceErrorRepo
 # ===================
 # provide default implementations for the API requirements
 
-CC.InferenceParams(analyzer::AbstractAnalyzer)    = InferenceParams(get_native(analyzer))
-CC.OptimizationParams(analyzer::AbstractAnalyzer) = OptimizationParams(get_native(analyzer))
-CC.get_world_counter(analyzer::AbstractAnalyzer)  = get_world_counter(get_native(analyzer))
+CC.InferenceParams(analyzer::AbstractAnalyzer)    = get_inf_params(analyzer)
+CC.OptimizationParams(analyzer::AbstractAnalyzer) = get_opt_params(analyzer)
+CC.get_world_counter(analyzer::AbstractAnalyzer)  = get_world(analyzer)
 
 # JET only works for runtime inference
 CC.lock_mi_inference(::AbstractAnalyzer, ::MethodInstance) = nothing
@@ -497,7 +501,7 @@ CC.unlock_mi_inference(::AbstractAnalyzer, ::MethodInstance) = nothing
 """
     NativeRemark <: InferenceErrorReport
 
-This special `InferenceErrorReport` wraps remarks by `NativeInterpreter`.
+This special `InferenceErrorReport` wraps remarks by the default abstract interpretation.
 "remarks" are information that Julia's native compiler emits about how its type inference goes,
 and those remarks are less interesting in term of "error checking", so currently any of JET's
 pre-defined report passes doesn't make any use of `NativeRemark`.
