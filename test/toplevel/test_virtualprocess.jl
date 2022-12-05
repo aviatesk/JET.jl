@@ -1544,9 +1544,8 @@ end
     end
 end
 
-@testset "analyze from definitions" begin
-    let
-        res = @analyze_toplevel analyze_from_definitions=false begin
+@testset "`analyze_from_definitions`" begin
+    let res = @analyze_toplevel analyze_from_definitions=false begin
             foo() = return undefvar
         end
         @test isempty(res.res.inference_error_reports)
@@ -1561,8 +1560,8 @@ end
         end
     end
 
-    let # COMBAK use different aggregation policy for "user-script" analysis ?
-        res = @analyze_toplevel analyze_from_definitions=true begin
+    # COMBAK use different aggregation policy for "user-script" analysis ?
+    let res = @analyze_toplevel analyze_from_definitions=true begin
             foo(a) = b # typo
             bar() = foo("julia")
         end
@@ -1578,12 +1577,37 @@ end
         # end
     end
 
-    let
-        res = @analyze_toplevel analyze_from_definitions=true begin
+    let res = @analyze_toplevel analyze_from_definitions=true begin
             foo(a) = sum(a)
             bar() = foo("julia")
         end
         test_sum_over_string(res)
+    end
+
+    # skip errors on abstract entry frame entered by `analyze_from_definitions!`
+    let res = @analyze_toplevel analyze_from_definitions=true begin
+            struct Foo end
+            function foo_or_nothing(x)
+                # (::Missing == ::Foo)::Missing will lead to `NonBooleanCondErrorReport` otherwise
+                return x == Foo() ? :foo : nothing
+            end
+        end
+        @test !any(r->isa(r,NonBooleanCondErrorReport), res.res.inference_error_reports)
+    end
+
+    # https://github.com/aviatesk/JET.jl/issues/426
+    let res = @analyze_toplevel analyze_from_definitions=true begin
+            function f1(func, x::String)
+                return 1 + x
+            end
+
+            function f2(x::String)
+                return 1 + x
+            end
+        end
+        reports = res.res.inference_error_reports
+        @test_broken length(reports) == 2
+        @test all(r->isa(r,MethodErrorReport), reports)
     end
 end
 

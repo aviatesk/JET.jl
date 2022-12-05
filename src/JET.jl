@@ -410,6 +410,11 @@ Base.show(io::IO, ::MIME"application/prs.juno.inline", frame::InferenceState) =
 ignorenotfound(@nospecialize(t)) = t === NOT_FOUND ? Bottom : t
 safewidenconst(@nospecialize t) = widenconst(ignorelimited(ignorenotfound(t)))
 
+# method table
+unwrap_method_table(::InternalMethodTable) = nothing
+unwrap_method_table(method_table::OverlayMethodTable) = method_table.mt
+unwrap_method_table(method_table::CachedMethodTable) = unwrap_method_table(method_table.table)
+
 # logging
 
 const JET_LOGGER_LEVEL = :JET_LOGGER_LEVEL

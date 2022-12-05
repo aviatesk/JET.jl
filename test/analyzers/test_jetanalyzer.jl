@@ -962,17 +962,6 @@ issue363(f, args...) = f(args...)
             @test !isempty(get_reports_with_test(res))
             @test any(r->isa(r,MethodErrorReport), get_reports_with_test(res))
         end
-
-        # skip errors on abstract entry frame entered by `analyze_from_definitions!`
-        let res = @analyze_toplevel analyze_from_definitions=true begin
-                struct Foo end
-                function isfoo(x)
-                    # ==(::Missing, ::Foo) -> Missing will lead to `NonBooleanCondErrorReport` otherwise
-                    return x == Foo() ? :foo : :bar
-                end
-            end
-            @test !any(r->isa(r,NonBooleanCondErrorReport), res.res.inference_error_reports)
-        end
     end
 end
 
