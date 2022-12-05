@@ -34,7 +34,7 @@ struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
     report_pass::RP
     state::AnalyzerState
     __cache_key::UInt
-    method_table::CachedMethodTable
+    method_table::CachedMethodTable{OverlayMethodTable}
 end
 
 CC.may_optimize(::JETAnalyzer) = false

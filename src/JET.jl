@@ -67,8 +67,8 @@ import Test:
 
 import Core:
     Argument, Builtin, CodeInfo, CodeInstance, Const, GlobalRef, GotoIfNot, GotoNode,
-    IntrinsicFunction, Intrinsics, LineInfoNode, MethodInstance, MethodMatch, NewvarNode,
-    ReturnNode, SSAValue, SimpleVector, Slot, SlotNumber, svec
+    IntrinsicFunction, Intrinsics, LineInfoNode, MethodInstance, MethodMatch, MethodTable,
+    NewvarNode, ReturnNode, SSAValue, SimpleVector, Slot, SlotNumber, svec
 
 import .CC:
     AbstractInterpreter, ArgInfo, BasicBlock, Bottom, CFG, CallMeta, ConstCallInfo,
@@ -148,6 +148,29 @@ end
 end
 
 @static isdefined(CC, :StmtInfo) && import .CC: StmtInfo
+
+# @static if VERSION ≥ v"1.10.0-DEV.81"
+#     using Base: _which
+# else
+    function _which(@nospecialize(tt::Type);
+        method_table::Union{Nothing,MethodTable,Core.Compiler.MethodTableView}=nothing,
+        world::UInt=get_world_counter(),
+        raise::Bool=false)
+        if method_table === nothing
+            table = Core.Compiler.InternalMethodTable(world)
+        elseif isa(method_table, MethodTable)
+            table = Core.Compiler.OverlayMethodTable(world, method_table)
+        else
+            table = method_table
+        end
+        match, = Core.Compiler.findsup(tt, table)
+        if match === nothing
+            raise && error("no unique matching method found for the specified argument types")
+            return nothing
+        end
+        return match
+    end
+# end
 
 # macros
 # ------
@@ -676,23 +699,14 @@ include("ui/vscode.jl")
 
 # TODO `analyze_builtin!` ?
 function analyze_gf_by_type!(analyzer::AbstractAnalyzer, @nospecialize(tt::Type{<:Tuple}); kwargs...)
-    mm = get_single_method_match(tt, InferenceParams(analyzer).MAX_METHODS, get_world_counter(analyzer))
-    return analyze_method_signature!(analyzer, mm.method, mm.spec_types, mm.sparams; kwargs...)
+    match = find_single_match(tt, analyzer)
+    return analyze_method_signature!(analyzer, match.method, match.spec_types, match.sparams; kwargs...)
 end
 
-function get_single_method_match(@nospecialize(tt), lim, world)
-    mms = _methods_by_ftype(tt, lim, world)
-    isa(mms, Bool) && single_match_error(tt)
-    local mm = nothing
-    for i = 1:length(mms)
-        mmᵢ = mms[i]::MethodMatch
-        if tt === mmᵢ.spec_types
-            mm === nothing || single_match_error(tt)
-            mm = mmᵢ
-        end
-    end
-    mm isa MethodMatch || single_match_error(tt)
-    return mm
+function find_single_match(@nospecialize(tt), analyzer::AbstractAnalyzer)
+    match = _which(tt; method_table=method_table(analyzer), world=get_world_counter(analyzer), raise=false)
+    match === nothing && single_match_error(tt)
+    return match
 end
 
 @noinline single_match_error(@nospecialize tt) =

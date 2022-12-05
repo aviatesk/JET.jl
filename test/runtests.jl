@@ -65,24 +65,25 @@ include("setup.jl")
         JETAnalyzerT   = typeof(JET.JETAnalyzer())
         OptAnalyzerT   = typeof(JET.OptAnalyzer())
         InferenceState = Core.Compiler.InferenceState
+        annotate_types = true
 
         # error analysis
         # ==============
 
         # JETAnalyzer
         test_call(JET.analyze_frame!, (JETAnalyzerT, InferenceState);
-                  target_modules)
+                  target_modules, annotate_types)
         # OptAnalyzer
         test_call(JET.analyze_frame!, (OptAnalyzerT, InferenceState);
-                  target_modules)
+                  target_modules, annotate_types)
         # top-level
         test_call(JET.virtual_process, (String, String, JETAnalyzerT, JET.ToplevelConfig);
-                  target_modules)
+                  target_modules, annotate_types)
         # entries
         test_call(JET.report_file, (String,);
-                  target_modules)
+                  target_modules, annotate_types)
         test_call(JET.report_package, (Union{String,Module,Nothing},);
-                  target_modules)
+                  target_modules, annotate_types)
 
         # optimization analysis
         # =====================
@@ -100,6 +101,7 @@ include("setup.jl")
                ft === typeof(zero) ||
                ft === typeof(JET.copy_report) ||
                ft === typeof(JET.handle_sig!) ||
+               ft === typeof(JET._which) ||
                (@static VERSION < v"1.9.0-DEV.283" && ft === typeof(JET.rewrap_unionall)) || # requires https://github.com/JuliaLang/julia/pull/44512
                false
                 return false
@@ -109,10 +111,10 @@ include("setup.jl")
         # JETAnalyzer
         test_opt(JET.analyze_frame!, (JETAnalyzerT, InferenceState);
                  target_modules,
-                 function_filter)
+                 function_filter, annotate_types)
         # OptAnalyzer
         test_opt(JET.analyze_frame!, (OptAnalyzerT, InferenceState);
                  target_modules,
-                 function_filter)
+                 function_filter, annotate_types)
     end
 end

@@ -365,11 +365,11 @@ function analyze_additional_pass_by_type!(analyzer::AbstractAnalyzer, @nospecial
     # but what we're doing here is essentially equivalent to modifying the user code and inlining
     # the threaded code block as a usual code block, and thus the side-effects won't (hopefully)
     # confuse the abstract interpretation, which is supposed to terminate on any kind of code
-    mm = get_single_method_match(tt, InferenceParams(newanalyzer).MAX_METHODS, get_world_counter(newanalyzer))
+    match = find_single_match(tt, newanalyzer)
     @static if @isdefined(StmtInfo)
-        abstract_call_method(newanalyzer, mm.method, mm.spec_types, mm.sparams, #=hardlimit=#false, #=si=#StmtInfo(false), sv)
+        abstract_call_method(newanalyzer, match.method, match.spec_types, match.sparams, #=hardlimit=#false, #=si=#StmtInfo(false), sv)
     else
-        abstract_call_method(newanalyzer, mm.method, mm.spec_types, mm.sparams, #=hardlimit=#false, sv)
+        abstract_call_method(newanalyzer, match.method, match.spec_types, match.sparams, #=hardlimit=#false, sv)
     end
 
     return nothing
