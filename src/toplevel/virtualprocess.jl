@@ -416,26 +416,28 @@ function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProce
     n = length(res.toplevel_signatures)
     succeeded = 0
     for (i, tt) in enumerate(res.toplevel_signatures)
-        mms = _methods_by_ftype(tt, -1, get_world_counter())
-        if isa(mms, Vector{Any})
-            filter!(mm::MethodMatch->mm.spec_types===tt, mms)
-            if length(mms) == 1
-                succeeded += 1
-                with_toplevel_logger(config; pre=clearline) do @nospecialize(io)
-                    (i == n ? println : print)(io, "analyzing from top-level definitions ... $succeeded/$n")
-                end
-                analyzer = AbstractAnalyzer(analyzer, _CONCRETIZED, _TOPLEVELMOD)
-                analyzer, result = analyze_method!(
-                    analyzer, (only(mms)::MethodMatch).method;
-                    # JETAnalyzer{BasicPass}: don't report errors unless this frame is concrete
-                    set_entry = false)
-                append!(res.inference_error_reports, get_reports(analyzer, result))
-                continue
+        match = _which(tt;
+            # NOTE use the current world counter with `method_table(analyzer)` unwrapped,
+            # otherwise it may encode a world counter when this method isn't defined yet
+            method_table=unwrap_method_table(method_table(analyzer)),
+            world=get_world_counter(),
+            raise=false)
+        if match !== nothing
+            succeeded += 1
+            with_toplevel_logger(config; pre=clearline) do @nospecialize(io)
+                (i == n ? println : print)(io, "analyzing from top-level definitions ... $succeeded/$n")
             end
+            analyzer = AbstractAnalyzer(analyzer, _CONCRETIZED, _TOPLEVELMOD)
+            analyzer, result = analyze_method_signature!(analyzer,
+                match.method, match.spec_types, match.sparams;
+                # JETAnalyzer{BasicPass}: don't report errors unless this frame is concrete
+                set_entry = false)
+            append!(res.inference_error_reports, get_reports(analyzer, result))
+            continue
         end
         # something went wrong
         with_toplevel_logger(config; filter=≥(JET_LOGGER_LEVEL_DEBUG), pre=clearline) do @nospecialize(io)
-            println(io, "couldn't find a single method matching the signature `$tt`")
+            println(io, "couldn't find a single method matching the signature `", tt, "`")
         end
     end
     return nothing

@@ -334,10 +334,11 @@ function AbstractAnalyzer(analyzer::T) where {T<:AbstractAnalyzer}
 end
 
 # constructor for sequential toplevel JET analysis
-function AbstractAnalyzer(analyzer::T, concretized, toplevelmod) where {T<:AbstractAnalyzer}
-    newstate = AnalyzerState(# update world age to take in newly added methods defined
-                             # in a previous toplevel interpretation performed by `ConcreteInterpreter`
-                             get_world_counter();
+function AbstractAnalyzer(analyzer::T, concretized, toplevelmod;
+    # update world age to take in newly added methods defined by `ConcreteInterpreter`
+    world::UInt = get_world_counter()
+    ) where {T<:AbstractAnalyzer}
+    newstate = AnalyzerState(world;
                              inf_params  = InferenceParams(analyzer),
                              opt_params  = OptimizationParams(analyzer),
                              concretized = concretized, # or construct partial `CodeInfo` from remaining abstract statements ?
