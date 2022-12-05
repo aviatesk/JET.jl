@@ -149,9 +149,9 @@ end
 
 @static isdefined(CC, :StmtInfo) && import .CC: StmtInfo
 
-# @static if VERSION ≥ v"1.10.0-DEV.81"
-#     using Base: _which
-# else
+@static if VERSION ≥ v"1.10.0-DEV.96"
+    using Base: _which
+else
     function _which(@nospecialize(tt::Type);
         method_table::Union{Nothing,MethodTable,Core.Compiler.MethodTableView}=nothing,
         world::UInt=get_world_counter(),
@@ -170,7 +170,7 @@ end
         end
         return match
     end
-# end
+end
 
 # macros
 # ------
