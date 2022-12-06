@@ -428,10 +428,13 @@ function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProce
                 (i == n ? println : print)(io, "analyzing from top-level definitions ... $succeeded/$n")
             end
             analyzer = AbstractAnalyzer(analyzer, _CONCRETIZED, _TOPLEVELMOD)
+            state = AnalyzerState(analyzer)
+            inf_params = state.inf_params
+            # TODO state.inf_params = JETInferenceParams(inf_params; max_methods=1)
+            state.inf_params = JETInferenceParams(; max_methods=1)
             analyzer, result = analyze_method_signature!(analyzer,
-                match.method, match.spec_types, match.sparams;
-                # JETAnalyzer{BasicPass}: don't report errors unless this frame is concrete
-                set_entry = false)
+                match.method, match.spec_types, match.sparams)
+            state.inf_params = inf_params
             append!(res.inference_error_reports, get_reports(analyzer, result))
             continue
         end
