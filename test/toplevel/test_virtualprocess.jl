@@ -1606,7 +1606,7 @@ end
             end
         end
         reports = res.res.inference_error_reports
-        @test_broken length(reports) == 2
+        @test length(reports) == 2
         @test all(r->isa(r,MethodErrorReport), reports)
     end
 end
