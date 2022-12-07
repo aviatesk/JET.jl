@@ -223,8 +223,38 @@ const _GLOBAL_SLOTS = Dict{Int,Symbol}()
 Configurations for abstract interpretation performed by JET.
 These configurations will be active for all the entries.
 
-You can configure any of the keyword parameters that `$InferenceParams` or `$OptimizationParams`
-can take, e.g. `max_methods::Int = 3`, `union_splitting::Int = 4`.
+You can configure any of the keyword parameters that [`Core.Compiler.InferenceParams`](@ref)
+or [`Core.Compiler.OptimizationParams`](@ref) can take, e.g. `max_methods`:
+```julia
+julia> methods(==, (Any,Nothing))
+# 3 methods for generic function "==" from Base:
+ [1] ==(::Missing, ::Any)
+     @ missing.jl:75
+ [2] ==(w::WeakRef, v)
+     @ gcutils.jl:4
+ [3] ==(x, y)
+     @ Base.jl:127
+
+julia> report_call((Any,)) do x
+           # when we account for all the possible matching method candidates,
+           # `(::Missing == ::Nothing)::Missing` leads to an `NonBooleanCondErrorReport`
+           x == nothing ? :nothing : :some
+       end
+═════ 1 possible error found ═════
+┌ @ none:4 goto %4 if not x == nothing
+│ non-boolean `Missing` found in boolean context (1/2 union split): goto %4 if not (x::Any == nothing)::Union{Missing, Bool}
+└──────────
+
+julia> report_call((Any,); max_methods=1) do x
+           # since we limit `max_methods=1`, JET gives up analysis on `(x::Any == nothing)`
+           # and thus we won't get any error report
+           x == nothing ? :nothing : :some
+       end
+No errors detected
+```
+
+See also [`Core.Compiler.InferenceParams`](@ref) and [`Core.Compiler.OptimizationParams`](@ref).
+
 Listed below are selections of those parameters that can have a potent influence on JET analysis.
 
 ---
