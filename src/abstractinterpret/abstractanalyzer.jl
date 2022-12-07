@@ -187,7 +187,7 @@ end
 
 # constructor for fresh analysis
 @jetconfigurable function AnalyzerState(world::UInt  = get_world_counter();
-                                        code_cache   = CodeCache(),
+                                        code_cache   = _DUMMY_GLOBAL_CACHE_,
                                         results      = IdDict{InferenceResult,AnyJETResult}(),
                                         inf_params   = nothing,
                                         opt_params   = nothing,
@@ -216,6 +216,10 @@ end
                          #=entry::Union{Nothing,MethodInstance}=# nothing,
                          #=depth::Int=# depth)
 end
+
+# dummy global cache (to avoid unnecessary allocation)
+# `state.code_cache` is supposed to be initialized by `init_cache!`
+const _DUMMY_GLOBAL_CACHE_ = CodeCache()
 
 # dummies for non-toplevel analysis
 module __toplevelmod__ end
