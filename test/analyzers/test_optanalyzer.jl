@@ -169,16 +169,14 @@ end
             @assert JET.InferenceParams(JET.OptAnalyzer()).MAX_UNION_SPLITTING < 5
         end
 
-        let
-            result = @eval M $report_opt((Vector{Any},)) do xs
+        let result = @eval M $report_opt((Vector{Any},)) do xs
                 with_runtime_dispatch(xs[1])
             end
             @test !isempty(get_reports_with_test(result))
             @test any(r->isa(r,RuntimeDispatchReport), get_reports_with_test(result))
         end
 
-        let
-            function_filter(x) = x !== typeof(M.with_runtime_dispatch)
+        let function_filter(x) = x !== typeof(M.with_runtime_dispatch)
             @eval M $test_opt((Vector{Any},); function_filter=$function_filter) do xs
                 with_runtime_dispatch(xs[1])
             end

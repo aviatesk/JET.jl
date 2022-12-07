@@ -286,8 +286,7 @@ else
                                  union_splitting,
                                  apply_union_enum,
                                  tupletype_depth,
-                                 tuple_splat,
-                                 )
+                                 tuple_splat)
     let
         @static if hasfield(OptimizationParams, :assume_fatal_throw)
             kwargs = :(inlining::Bool              = inlining_enabled(),
@@ -296,8 +295,7 @@ else
                        inline_tupleret_bonus::Int  = 250,
                        inline_error_path_cost::Int = 20,
                        tuple_splat::Int            = 32,
-                       assume_fatal_throw::Bool    = false,
-                       )
+                       assume_fatal_throw::Bool    = false)
         else
             kwargs = :(inlining::Bool              = inlining_enabled(),
                        inline_cost_threshold::Int  = 100,
@@ -306,8 +304,7 @@ else
                        inline_error_path_cost::Int = 20,
                        max_methods::Int            = 3,
                        tuple_splat::Int            = 32,
-                       union_splitting::Int        = 4,
-                       )
+                       union_splitting::Int        = 4)
         end
         kwargs_exs = Expr[]
         names = Symbol[]
