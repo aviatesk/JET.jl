@@ -413,7 +413,7 @@ cache_report!(cache, @nospecialize(report::InferenceErrorReport)) =
 # ------
 
 """
-    JET_CACHE::$(typeof(JET_CACHE))
+    GLOBAL_CACHE::$(typeof(GLOBAL_CACHE))
 
 Keeps `src::CodeInstance` cache associated with `mi::MethodInstace` that represents the
 analysis result on `mi` performed by [`analyzer::AbstractAnalyzer`](@ref AbstractAnalyzer),
@@ -421,13 +421,18 @@ where [`src.inferred::JETCachedResult`](@ref JETCachedResult) caches JET's analy
 This cache is separated by the identities of `AbstractAnalyzer`s, which are hash keys
 computed by [`get_cache_key(analyzer::AbstractAnalyzer)`](@ref get_cache_key).
 
-`JET_CACHE` is completely separated from the `Core.Compiler.NativeInterpreter`'s global cache,
+`GLOBAL_CACHE` is completely separated from the `Core.Compiler.NativeInterpreter`'s global cache,
 so that JET's analysis never interacts with actual code execution.
 """
-const JET_CACHE = IdDict{UInt, IdDict{MethodInstance,CodeInstance}}()
+const GLOBAL_CACHE = IdDict{UInt, CodeCache}()
+
+function init_cache!(analyzer::AbstractAnalyzer)
+    cache_key = get_cache_key(analyzer)
+    set_code_cache!(analyzer, get!(()->CodeCache(), GLOBAL_CACHE, cache_key))
+end
 
 # just used for interactive developments
-__clear_caches!() = empty!(JET_CACHE)
+__clear_caches!() = empty!(GLOBAL_CACHE)
 
 function CC.code_cache(analyzer::AbstractAnalyzer)
     cache  = JETGlobalCache(analyzer)
@@ -439,11 +444,9 @@ struct JETGlobalCache{Analyzer<:AbstractAnalyzer}
     analyzer::Analyzer
 end
 
-# cache existence for this `analyzer` is ensured on its construction
-jet_cache(analyzer::AbstractAnalyzer)       = JET_CACHE[get_cache_key(analyzer)]
-jet_cache(wvc::WorldView{<:JETGlobalCache}) = jet_cache(wvc.cache.analyzer)
+get_code_cache(wvc::WorldView{<:JETGlobalCache}) = get_code_cache(wvc.cache.analyzer)
 
-CC.haskey(wvc::WorldView{<:JETGlobalCache}, mi::MethodInstance) = haskey(jet_cache(wvc), mi)
+CC.haskey(wvc::WorldView{<:JETGlobalCache}, mi::MethodInstance) = haskey(get_code_cache(wvc), mi)
 
 function CC.typeinf_edge(analyzer::AbstractAnalyzer, method::Method, @nospecialize(atype), sparams::SimpleVector, caller::InferenceState)
     # enable the report cache restoration at `code = get(code_cache(interp), mi, nothing)`
@@ -452,7 +455,7 @@ function CC.typeinf_edge(analyzer::AbstractAnalyzer, method::Method, @nospeciali
 end
 
 function CC.get(wvc::WorldView{<:JETGlobalCache}, mi::MethodInstance, default)
-    codeinf = get(jet_cache(wvc), mi, default) # will ignore native code cache for a `MethodInstance` that is not analyzed by JET yet
+    codeinf = get(get_code_cache(wvc), mi, default) # will ignore native code cache for a `MethodInstance` that is not analyzed by JET yet
 
     analyzer = wvc.cache.analyzer
 
@@ -540,38 +543,39 @@ function CC.transform_result_for_cache(analyzer::AbstractAnalyzer,
 end
 
 function CC.setindex!(wvc::WorldView{<:JETGlobalCache}, ci::CodeInstance, mi::MethodInstance)
-    setindex!(jet_cache(wvc), ci, mi)
-    return nothing
+    code_cache = get_code_cache(wvc)
+    add_jet_callback!(mi, code_cache)
+    code_cache[mi] = ci
 end
 
-function add_jet_callback!(linfo)
-    if !isdefined(linfo, :callbacks)
-        linfo.callbacks = Any[invalidate_jet_cache!]
+function add_jet_callback!(mi::MethodInstance, code_cache::CodeCache)
+    callback = jet_callback(code_cache)
+    if !isdefined(mi, :callbacks)
+        mi.callbacks = Any[callback]
     else
-        callbacks = linfo.callbacks::Vector{Any}
-        if !any(@nospecialize(cb)->cb===invalidate_jet_cache!, callbacks)
-            push!(callbacks, invalidate_jet_cache!)
+        callbacks = mi.callbacks::Vector{Any}
+        if !any(@nospecialize(cb)->cb===callback, callbacks)
+            push!(callbacks, callback)
         end
     end
     return nothing
 end
 
-function invalidate_jet_cache!(replaced::MethodInstance, max_world,
-    seen::IdSet{MethodInstance} = IdSet{MethodInstance}())
-    push!(seen, replaced)
-    for cache in values(JET_CACHE)
-        delete!(cache, replaced)
-    end
-
-    if isdefined(replaced, :backedges)
-        for item in replaced.backedges
-            isa(item, MethodInstance) || continue # might be `Type` object representing an `invoke` signature
-            mi = item
-            mi in seen && continue # otherwise fail into an infinite loop
-            invalidate_jet_cache!(mi, max_world, seen)
+function jet_callback(code_cache::CodeCache)
+    return function (replaced::MethodInstance, max_world,
+                                          seen::IdSet{MethodInstance} = IdSet{MethodInstance}())
+        push!(seen, replaced)
+        delete!(code_cache, replaced)
+        if isdefined(replaced, :backedges)
+            for item in replaced.backedges
+                isa(item, MethodInstance) || continue # might be `Type` object representing an `invoke` signature
+                mi = item
+                mi in seen && continue # otherwise fail into an infinite loop
+                var"#self#"(mi, max_world, seen)
+            end
         end
+        return nothing
     end
-    return nothing
 end
 
 # local
@@ -798,12 +802,9 @@ function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
         unique!(aggregation_policy(analyzer), reports)
 
         # global cache management
-        # part 1: transform collected reports to `JETCachedResult` and put it into `CodeInstance.inferred`
         if cached && !istoplevel(frame)
             CC.cache_result!(analyzer, caller)
         end
-        # part 2: register invalidation callback for JET cache
-        add_jet_callback!(caller.linfo)
 
         if frame.parent !== nothing
             # inter-procedural handling: get back to the caller what we got from these results
@@ -871,6 +872,10 @@ end
 function CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
     return CC.finish!(analyzer, frame.result)
 end
+
+is_global_slot(analyzer::AbstractAnalyzer, slot::Int)   = slot in keys(get_global_slots(analyzer))
+is_global_slot(analyzer::AbstractAnalyzer, slot::Slot)  = is_global_slot(analyzer, slot_id(slot))
+is_global_slot(analyzer::AbstractAnalyzer, sym::Symbol) = sym in values(get_global_slots(analyzer))
 
 # simple cfg analysis to check if the assignment at `pc` will happen non-deterministically
 function is_assignment_nondeterministic(cfg::CFG, pc::Int)

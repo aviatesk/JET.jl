@@ -995,7 +995,7 @@ function report_text(text::AbstractString,
                      source::Union{Nothing,AbstractString} = nothing,
                      jetconfigs...) where {Analyzer<:AbstractAnalyzer}
     analyzer′ = Analyzer(; jetconfigs...)
-    may_init_cache!(analyzer′)
+    init_cache!(analyzer′)
     config = ToplevelConfig(; jetconfigs...)
     res = virtual_process(text, filename, analyzer′, config)
     if isnothing(source)
@@ -1268,7 +1268,7 @@ function report_call(@nospecialize(tt::Type{<:Tuple});
                      source::Union{Nothing,AbstractString} = nothing,
                      jetconfigs...) where {Analyzer<:AbstractAnalyzer}
     analyzer = Analyzer(; jetconfigs...)
-    may_init_cache!(analyzer)
+    init_cache!(analyzer)
     analyzer, result = analyze_gf_by_type!(analyzer, tt)
 
     if isnothing(source)
