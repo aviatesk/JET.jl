@@ -430,8 +430,11 @@ function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProce
             analyzer = AbstractAnalyzer(analyzer, _CONCRETIZED, _TOPLEVELMOD)
             state = AnalyzerState(analyzer)
             inf_params = state.inf_params
-            # TODO state.inf_params = JETInferenceParams(inf_params; max_methods=1)
-            state.inf_params = JETInferenceParams(; max_methods=1)
+            @static if hasfield(InferenceParams, :max_methods) # VERSION ≥ v"1.10.0-DEV.105"
+                state.inf_params = JETInferenceParams(inf_params; max_methods=1)
+            else
+                state.inf_params = JETInferenceParams(; max_methods=1)
+            end
             analyzer, result = analyze_method_signature!(analyzer,
                 match.method, match.spec_types, match.sparams)
             state.inf_params = inf_params

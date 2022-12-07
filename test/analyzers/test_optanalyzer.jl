@@ -163,7 +163,11 @@ end
             with_runtime_dispatch(::UInt64) = :UInt64
             with_runtime_dispatch(::UInt128) = :UInt128
         end
-        @assert JET.InferenceParams(JET.OptAnalyzer()).MAX_UNION_SPLITTING < 5
+        @static if hasfield(Core.Compiler.InferenceParams, :max_methods) # VERSION ≥ v"1.10.0-DEV.105"
+            @assert JET.InferenceParams(JET.OptAnalyzer()).max_union_splitting < 5
+        else
+            @assert JET.InferenceParams(JET.OptAnalyzer()).MAX_UNION_SPLITTING < 5
+        end
 
         let
             result = @eval M $report_opt((Vector{Any},)) do xs

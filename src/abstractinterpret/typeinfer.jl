@@ -292,7 +292,13 @@ let # overload `concrete_eval_call`
 end
 
 let # overload `abstract_call`
-    @static if @isdefined(StmtInfo)
+    @static if hasfield(InferenceParams, :max_methods) # VERSION ≥ v"1.10.0-DEV.105"
+        sigs_ex = :(analyzer::AbstractAnalyzer, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState,
+            $(Expr(:kw, :(max_methods::Int), :(InferenceParams(analyzer).max_methods))))
+        args_ex = :(analyzer::AbstractInterpreter, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState,
+            max_methods::Int)
+        argtypes_ex = :(arginfo.argtypes)
+    elseif @isdefined(StmtInfo)
         sigs_ex = :(analyzer::AbstractAnalyzer, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState,
             $(Expr(:kw, :(max_methods::Int), :(InferenceParams(analyzer).MAX_METHODS))))
         args_ex = :(analyzer::AbstractInterpreter, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState,
