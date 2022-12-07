@@ -195,7 +195,7 @@ end
     isnothing(inf_params) && (inf_params = JETInferenceParams(; jetconfigs...))
     isnothing(opt_params) && (opt_params = JETOptimizationParams(; jetconfigs...))
     inf_cache = InferenceResult[]
-    param_key    = get_param_key(inf_params)
+    param_key = get_param_key(inf_params)
     caller_cache = InferenceErrorReport[]
     return AnalyzerState(#=world::UInt=# world,
                          #=inf_cache::Vector{InferenceResult}=#inf_cache,
@@ -218,8 +218,6 @@ module __toplevelmod__ end
 const _CONCRETIZED  = BitVector()
 const _TOPLEVELMOD  = __toplevelmod__
 const _GLOBAL_SLOTS = Dict{Int,Symbol}()
-
-# wrappers of `InferenceParams` and `OptimizationParams` that can accept JET configrations
 
 """
 Configurations for abstract interpretation performed by JET.
@@ -247,62 +245,96 @@ Listed below are selections of those parameters that can have a potent influence
   to get a "proper" analysis result, just because there may be other errors even in those "throw blocks".
 ---
 """
-JETInferenceParams(; ipo_constant_propagation::Bool        = true,
-                     aggressive_constant_propagation::Bool = false,
-                     unoptimize_throw_blocks::Bool         = true,
-                     max_methods::Int                      = 3,
-                     union_splitting::Int                  = 4,
-                     apply_union_enum::Int                 = 8,
-                     tupletype_depth::Int                  = 3,
-                     tuple_splat::Int                      = 32,
-                     __jetconfigs...) =
-    return InferenceParams(; ipo_constant_propagation,
-                             aggressive_constant_propagation,
-                             unoptimize_throw_blocks,
-                             max_methods,
-                             union_splitting,
-                             apply_union_enum,
-                             tupletype_depth,
-                             tuple_splat,
-                             )
-let
-    @static if hasfield(OptimizationParams, :assume_fatal_throw)
-        kwargs = :(inlining::Bool              = inlining_enabled(),
-                   inline_cost_threshold::Int  = 100,
-                   inline_nonleaf_penalty::Int = 1000,
-                   inline_tupleret_bonus::Int  = 250,
-                   inline_error_path_cost::Int = 20,
-                   tuple_splat::Int            = 32,
-                   assume_fatal_throw::Bool    = false,
-                   )
-    else
-        kwargs = :(inlining::Bool              = inlining_enabled(),
-                   inline_cost_threshold::Int  = 100,
-                   inline_nonleaf_penalty::Int = 1000,
-                   inline_tupleret_bonus::Int  = 250,
-                   inline_error_path_cost::Int = 20,
-                   max_methods::Int            = 3,
-                   tuple_splat::Int            = 32,
-                   union_splitting::Int        = 4,
-                   )
+function JETInferenceParams end
+function JETOptimizationParams end
+
+# define wrappers of `InferenceParams(...)` and `OptimizationParams(...)` that can accept JET configrations
+@static if hasfield(InferenceParams, :max_methods) # VERSION ≥ v"1.10.0-DEV.105"
+    for (Params, Func) = ((InferenceParams, JETInferenceParams),
+                          (OptimizationParams, JETOptimizationParams))
+        params = Params()
+        param = Expr(:kw, Expr(:(::), :params, Params), CC.quoted(params))
+        kwargs = Expr[]
+        parameters = Symbol[]
+        for i = 1:nfields(params)
+            fname, ftype = fieldname(Params, i), fieldtype(Params, i)
+            push!(parameters, fname)
+            arg = Expr(:(::), fname, ftype)
+            default = Expr(:., :params, QuoteNode(fname))
+            push!(kwargs, Expr(:kw, arg, default))
+        end
+        push!(kwargs, Expr(:..., :__jetconfigs)) # other arbitrary JET configs
+        sig = Expr(:call, nameof(Func), Expr(:parameters, kwargs...), param)
+        call = Expr(:call, nameof(Params), parameters...)
+        def = Expr(:(=), sig, call)
+        Core.eval(@__MODULE__, def)
     end
-    kwargs_exs = Expr[]
-    names = Symbol[]
-    for x::Expr in kwargs.args
-        @assert isexpr(x, :(=))
-        push!(kwargs_exs, Expr(:kw, x.args...))
-        lhs = first(x.args)
-        @assert isexpr(lhs, :(::))
-        push!(names, first(lhs.args)::Symbol)
-    end
-    push!(kwargs_exs, :(__jetconfigs...))
-    @eval global function JETOptimizationParams(; $(kwargs_exs...))
-        return OptimizationParams(; $(names...))
+else
+    JETInferenceParams(; ipo_constant_propagation::Bool        = true,
+                         aggressive_constant_propagation::Bool = false,
+                         unoptimize_throw_blocks::Bool         = true,
+                         max_methods::Int                      = 3,
+                         union_splitting::Int                  = 4,
+                         apply_union_enum::Int                 = 8,
+                         tupletype_depth::Int                  = 3,
+                         tuple_splat::Int                      = 32,
+                         __jetconfigs...) =
+        return InferenceParams(; ipo_constant_propagation,
+                                 aggressive_constant_propagation,
+                                 unoptimize_throw_blocks,
+                                 max_methods,
+                                 union_splitting,
+                                 apply_union_enum,
+                                 tupletype_depth,
+                                 tuple_splat,
+                                 )
+    let
+        @static if hasfield(OptimizationParams, :assume_fatal_throw)
+            kwargs = :(inlining::Bool              = inlining_enabled(),
+                       inline_cost_threshold::Int  = 100,
+                       inline_nonleaf_penalty::Int = 1000,
+                       inline_tupleret_bonus::Int  = 250,
+                       inline_error_path_cost::Int = 20,
+                       tuple_splat::Int            = 32,
+                       assume_fatal_throw::Bool    = false,
+                       )
+        else
+            kwargs = :(inlining::Bool              = inlining_enabled(),
+                       inline_cost_threshold::Int  = 100,
+                       inline_nonleaf_penalty::Int = 1000,
+                       inline_tupleret_bonus::Int  = 250,
+                       inline_error_path_cost::Int = 20,
+                       max_methods::Int            = 3,
+                       tuple_splat::Int            = 32,
+                       union_splitting::Int        = 4,
+                       )
+        end
+        kwargs_exs = Expr[]
+        names = Symbol[]
+        for x::Expr in kwargs.args
+            @assert isexpr(x, :(=))
+            push!(kwargs_exs, Expr(:kw, x.args...))
+            lhs = first(x.args)
+            @assert isexpr(lhs, :(::))
+            push!(names, first(lhs.args)::Symbol)
+        end
+        push!(kwargs_exs, :(__jetconfigs...))
+        @eval global function JETOptimizationParams(; $(kwargs_exs...))
+            return OptimizationParams(; $(names...))
+        end
     end
 end
-# # assert here that they create same objects as the original constructors
-@assert JETInferenceParams() == InferenceParams()
-@assert JETOptimizationParams() == OptimizationParams()
+
+# assert that the wrappers create same objects as the original constructors
+for (Params, Func) = ((InferenceParams, JETInferenceParams),
+                      (OptimizationParams, JETOptimizationParams))
+    @assert Params() == Func()
+end
+@static if hasfield(InferenceParams, :max_methods) # VERSION ≥ v"1.10.0-DEV.105"
+    # assert that `Effects(::Effects; ...)`-like constructors work as expected
+    @assert JETInferenceParams(InferenceParams(); max_methods=1).max_methods == 1
+    @assert !JETOptimizationParams(OptimizationParams(); inlining=false).inlining
+end
 
 @noinline function AnalyzerState(analyzer::AbstractAnalyzer)
     error(lazy"""

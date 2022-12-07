@@ -181,7 +181,14 @@ function CC.finish!(analyzer::JETAnalyzer, frame::InferenceState)
 end
 
 let # overload `abstract_call_gf_by_type`
-    @static if @isdefined(StmtInfo)
+    @static if hasfield(InferenceParams, :max_methods) # VERSION ≥ v"1.10.0-DEV.105"
+        sigs_ex = :(analyzer::JETAnalyzer,
+            @nospecialize(f), arginfo::ArgInfo, si::StmtInfo, @nospecialize(atype), sv::InferenceState,
+            $(Expr(:kw, :(max_methods::Int), :(InferenceParams(analyzer).max_methods))))
+        args_ex = :(analyzer::AbstractAnalyzer, f::Any, arginfo::ArgInfo, si::StmtInfo, atype::Any,
+            sv::InferenceState, max_methods::Int)
+        argtypes_ex = :(arginfo.argtypes)
+    elseif @isdefined(StmtInfo)
         sigs_ex = :(analyzer::JETAnalyzer,
             @nospecialize(f), arginfo::ArgInfo, si::StmtInfo, @nospecialize(atype), sv::InferenceState,
             $(Expr(:kw, :(max_methods::Int), :(InferenceParams(analyzer).MAX_METHODS))))
