@@ -416,28 +416,6 @@ end
 # global
 # ------
 
-"""
-    GLOBAL_CACHE::$(typeof(GLOBAL_CACHE))
-
-Keeps `src::CodeInstance` cache associated with `mi::MethodInstace` that represents the
-analysis result on `mi` performed by [`analyzer::AbstractAnalyzer`](@ref AbstractAnalyzer),
-where [`src.inferred::JETCachedResult`](@ref JETCachedResult) caches JET's analysis result.
-This cache is separated by the identities of `AbstractAnalyzer`s, which are hash keys
-computed by [`get_cache_key(analyzer::AbstractAnalyzer)`](@ref get_cache_key).
-
-`GLOBAL_CACHE` is completely separated from the `Core.Compiler.NativeInterpreter`'s global cache,
-so that JET's analysis never interacts with actual code execution.
-"""
-const GLOBAL_CACHE = IdDict{UInt, CodeCache}()
-
-function init_cache!(analyzer::AbstractAnalyzer)
-    cache_key = get_cache_key(analyzer)
-    set_code_cache!(analyzer, get!(()->CodeCache(), GLOBAL_CACHE, cache_key))
-end
-
-# just used for interactive developments
-__clear_caches!() = empty!(GLOBAL_CACHE)
-
 function CC.code_cache(analyzer::AbstractAnalyzer)
     view = AbstractAnalyzerView(analyzer)
     worlds = WorldRange(get_world_counter(analyzer))
@@ -446,7 +424,9 @@ end
 
 get_code_cache(wvc::WorldView{<:AbstractAnalyzerView}) = get_code_cache(wvc.cache.analyzer)
 
-CC.haskey(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance) = haskey(get_code_cache(wvc), mi)
+AnalysisCache(wvc::WorldView{<:AbstractAnalyzerView}) = AnalysisCache(wvc.cache.analyzer)
+
+CC.haskey(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance) = haskey(AnalysisCache(wvc), mi)
 
 function CC.typeinf_edge(analyzer::AbstractAnalyzer, method::Method, @nospecialize(atype), sparams::SimpleVector, caller::InferenceState)
     # enable the report cache restoration at `code = get(code_cache(interp), mi, nothing)`
@@ -455,7 +435,7 @@ function CC.typeinf_edge(analyzer::AbstractAnalyzer, method::Method, @nospeciali
 end
 
 function CC.get(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance, default)
-    codeinf = get(get_code_cache(wvc), mi, default) # will ignore native code cache for a `MethodInstance` that is not analyzed by JET yet
+    codeinf = get(AnalysisCache(wvc), mi, default) # will ignore native code cache for a `MethodInstance` that is not analyzed by JET yet
 
     analyzer = wvc.cache.analyzer
 
@@ -543,13 +523,13 @@ function CC.transform_result_for_cache(analyzer::AbstractAnalyzer,
 end
 
 function CC.setindex!(wvc::WorldView{<:AbstractAnalyzerView}, ci::CodeInstance, mi::MethodInstance)
-    code_cache = get_code_cache(wvc)
-    add_jet_callback!(mi, code_cache)
-    code_cache[mi] = ci
+    analysis_cache = AnalysisCache(wvc)
+    add_jet_callback!(mi, analysis_cache)
+    analysis_cache[mi] = ci
 end
 
-function add_jet_callback!(mi::MethodInstance, code_cache::CodeCache)
-    callback = jet_callback(code_cache)
+function add_jet_callback!(mi::MethodInstance, analysis_cache::AnalysisCache)
+    callback = jet_callback(analysis_cache)
     if !isdefined(mi, :callbacks)
         mi.callbacks = Any[callback]
     else
@@ -561,11 +541,11 @@ function add_jet_callback!(mi::MethodInstance, code_cache::CodeCache)
     return nothing
 end
 
-function jet_callback(code_cache::CodeCache)
+function jet_callback(analysis_cache::AnalysisCache)
     return function (replaced::MethodInstance, max_world,
-                                          seen::IdSet{MethodInstance} = IdSet{MethodInstance}())
+                     seen::IdSet{MethodInstance} = IdSet{MethodInstance}())
         push!(seen, replaced)
-        delete!(code_cache, replaced)
+        delete!(analysis_cache, replaced)
         if isdefined(replaced, :backedges)
             for item in replaced.backedges
                 isa(item, MethodInstance) || continue # might be `Type` object representing an `invoke` signature

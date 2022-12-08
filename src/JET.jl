@@ -307,6 +307,15 @@ const _JET_CONFIGURATIONS = Dict{Symbol,Union{Symbol,Expr}}()
 # utils
 # -----
 
+# hash
+
+function compute_hash(objs...)
+    @assert length(objs) ≠ 0 "given no objects to be hashed"
+    return _compute_hash(objs...)
+end
+_compute_hash(o, objs...) = hash(o, _compute_hash(objs...))
+_compute_hash() = @static UInt === UInt64 ? 0xa49bd446c0a5d90e : 0xe45361ac
+
 # state
 
 const State     = Union{InferenceState,OptimizationState}
@@ -995,7 +1004,6 @@ function report_text(text::AbstractString,
                      source::Union{Nothing,AbstractString} = nothing,
                      jetconfigs...) where {Analyzer<:AbstractAnalyzer}
     analyzer′ = Analyzer(; jetconfigs...)
-    init_cache!(analyzer′)
     config = ToplevelConfig(; jetconfigs...)
     res = virtual_process(text, filename, analyzer′, config)
     if isnothing(source)
@@ -1272,7 +1280,6 @@ function report_call(@nospecialize(tt::Type{<:Tuple});
                      source::Union{Nothing,AbstractString} = nothing,
                      jetconfigs...) where {Analyzer<:AbstractAnalyzer}
     analyzer = Analyzer(; jetconfigs...)
-    init_cache!(analyzer)
     analyzer, result = analyze_gf_by_type!(analyzer, tt)
 
     if isnothing(source)
@@ -1549,7 +1556,7 @@ end
 
 reexport_as_api!(JETInterface,
     # AbstractAnalyzer API
-    AbstractAnalyzer, AnalyzerState, ReportPass, get_cache_key,
+    AbstractAnalyzer, AnalyzerState, ReportPass, AnalysisCache,
     VSCode.vscode_source, VSCode.vscode_diagnostics_order,
     # InferenceErrorReport API
     InferenceErrorReport, copy_report, print_report_message, print_signature, report_color,

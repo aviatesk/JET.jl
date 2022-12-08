@@ -168,13 +168,15 @@ the following additional configurations that are specific to the optimization an
 """
 struct OptAnalyzer{RP,FF} <: AbstractAnalyzer
     state::AnalyzerState
+    analysis_cache::AnalysisCache
     report_pass::RP
     skip_noncompileable_calls::Bool
     function_filter::FF
     skip_unoptimized_throw_blocks::Bool
     __analyze_frame::BitVector # temporary stash to keep per-frame analysis-skip configuration
-    __cache_key::UInt
 end
+
+# AbstractAnalyzer API requirements
 function OptAnalyzer(;
     report_pass = OptAnalysisPass(),
     skip_noncompileable_calls::Bool = true,
@@ -182,39 +184,35 @@ function OptAnalyzer(;
     skip_unoptimized_throw_blocks::Bool = true,
     jetconfigs...)
     state = AnalyzerState(; jetconfigs...)
-    # we want to run different analysis with a different filter, so include its hash into the cache key
-    cache_key = state.param_key
-    cache_key = hash(report_pass, cache_key)
-    cache_key = hash(skip_noncompileable_calls, cache_key)
+    cache_key = compute_hash(state.inf_params, state.opt_params, report_pass,
+        skip_noncompileable_calls, skip_unoptimized_throw_blocks)
     cache_key = @invoke hash(function_filter::Any, cache_key::UInt) # HACK avoid dynamic dispatch
-    cache_key = hash(skip_unoptimized_throw_blocks, cache_key)
+    analysis_cache = get!(()->AnalysisCache(), OPT_ANALYZER_CACHE, cache_key)
     return OptAnalyzer(
         state,
+        analysis_cache,
         report_pass,
         skip_noncompileable_calls,
         function_filter,
         skip_unoptimized_throw_blocks,
-        #=__analyze_frame=# BitVector(),
-        cache_key,
-        )
+        #=__analyze_frame=# BitVector())
 end
-
-# AbstractAnalyzer API requirements
 JETInterface.AnalyzerState(analyzer::OptAnalyzer) = analyzer.state
 function JETInterface.AbstractAnalyzer(analyzer::OptAnalyzer, state::AnalyzerState)
     return OptAnalyzer(
         state,
+        analyzer.analysis_cache,
         analyzer.report_pass,
         analyzer.skip_noncompileable_calls,
         analyzer.function_filter,
         analyzer.skip_unoptimized_throw_blocks,
-        analyzer.__analyze_frame,
-        analyzer.__cache_key,
-        )
+        analyzer.__analyze_frame)
 end
 JETInterface.ReportPass(analyzer::OptAnalyzer) = analyzer.report_pass
-JETInterface.get_cache_key(analyzer::OptAnalyzer) = analyzer.__cache_key
+JETInterface.AnalysisCache(analyzer::OptAnalyzer) = analyzer.analysis_cache
 JETInterface.vscode_diagnostics_order(analyzer::OptAnalyzer) = false
+
+const OPT_ANALYZER_CACHE = IdDict{UInt, AnalysisCache}()
 
 struct OptAnalysisPass <: ReportPass end
 

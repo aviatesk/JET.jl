@@ -36,7 +36,6 @@ let g = addgroup!(SUITE, "JETAnalyzer{BasicPass} top-level")
     g["demo"] = @benchmarkable report_file("demo.jl"; report_pass=FreshPass(JET.BasicPass()), toplevel_logger=nothing) seconds=60.0
     g["self analysis"] = @benchmarkable JET.analyze_method!(analyzer, m) setup = begin
         analyzer = JET.JETAnalyzer(; report_pass=FreshPass(JET.BasicPass()))
-        JET.init_cache!(analyzer)
         m = only(methods(JET.virtual_process))
     end seconds=40.0
     tune_benchmarks!(g)

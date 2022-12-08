@@ -29,7 +29,7 @@ JET.analyze_task_parallel_code!
 ### How `AbstractAnalyzer` manages caches
 
 ```@docs
-JET.GLOBAL_CACHE
+JET.AnalysisCache
 JET.JETCachedResult
 JET.inlining_policy
 ```
