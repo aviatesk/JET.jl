@@ -1117,16 +1117,31 @@ function report_setglobal!!(analyzer::JETAnalyzer, sv::InferenceState, argtypes:
     return ReportPass(analyzer)(InvalidGlobalAssignmentError, analyzer, sv, gr.mod, gr.name, argtypes[3])
 end
 
-# TODO use Core.Compiler version when ported
-function _getfield_fieldindex(s::DataType, name::Const)
-    nv = name.val
-    if isa(nv, Symbol)
-        nv = Base.fieldindex(s, nv, false)
+@static if VERSION ≥ v"1.9.0-DEV.1616"
+    using Core.Compiler: _getfield_fieldindex, _mutability_errorcheck
+else
+    function _getfield_fieldindex(s::DataType, name::Const)
+        nv = name.val
+        if isa(nv, Symbol)
+            nv = Base.fieldindex(s, nv, false)
+        end
+        if isa(nv, Int)
+            return nv
+        end
+        return nothing
     end
-    if isa(nv, Int)
-        return nv
+    function _mutability_errorcheck(@nospecialize objt0)
+        objt = unwrap_unionall(objt0)
+        if isa(objt, Union)
+            return _mutability_errorcheck(rewrap_unionall(objt.a, objt0)) ||
+                   _mutability_errorcheck(rewrap_unionall(objt.b, objt0))
+        elseif isa(objt, DataType)
+            # Can't say anything about abstract types
+            isabstracttype(objt) && return true
+            return ismutabletype(objt)
+        end
+        return true
     end
-    return nothing
 end
 
 const MODULE_SETFIELD_MSG = "cannot assign variables in other modules"
@@ -1206,20 +1221,6 @@ function report_fieldaccess!(analyzer::JETAnalyzer, sv::InferenceState, @nospeci
         @assert false "invalid field analysis"
     end
     add_new_report!(analyzer, sv.result, BuiltinErrorReport(sv, f, argtypes, msg))
-    return true
-end
-
-# TODO use Core.Compiler version when ported
-function _mutability_errorcheck(@nospecialize objt0)
-    objt = unwrap_unionall(objt0)
-    if isa(objt, Union)
-        return _mutability_errorcheck(rewrap_unionall(objt.a, objt0)) ||
-               _mutability_errorcheck(rewrap_unionall(objt.b, objt0))
-    elseif isa(objt, DataType)
-        # Can't say anything about abstract types
-        isabstracttype(objt) && return true
-        return ismutabletype(objt)
-    end
     return true
 end
 
