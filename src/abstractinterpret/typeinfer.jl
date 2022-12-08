@@ -237,7 +237,7 @@ let # overload `abstract_call_method_with_const_args`
         const_result =
             @invoke CC.abstract_call_method_with_const_args($(args_ex.args...))
         # we should make sure we reset the cacher because at this point we may have not hit
-        # `CC.cache_lookup(linfo::MethodInstance, given_argtypes::Argtypes, cache::JETLocalCache)`
+        # `CC.cache_lookup(linfo::MethodInstance, given_argtypes::Argtypes, view::AbstractAnalyzerView)`
         set_cacher!(analyzer, nothing)
         if const_result !== nothing
             # successful constant prop', we also need to update reports
@@ -409,6 +409,10 @@ end
 cache_report!(cache, @nospecialize(report::InferenceErrorReport)) =
     push!(cache, copy_report′(report)::InferenceErrorReport)
 
+struct AbstractAnalyzerView{Analyzer<:AbstractAnalyzer}
+    analyzer::Analyzer
+end
+
 # global
 # ------
 
@@ -435,18 +439,14 @@ end
 __clear_caches!() = empty!(GLOBAL_CACHE)
 
 function CC.code_cache(analyzer::AbstractAnalyzer)
-    cache  = JETGlobalCache(analyzer)
+    view = AbstractAnalyzerView(analyzer)
     worlds = WorldRange(get_world_counter(analyzer))
-    return WorldView(cache, worlds)
+    return WorldView(view, worlds)
 end
 
-struct JETGlobalCache{Analyzer<:AbstractAnalyzer}
-    analyzer::Analyzer
-end
+get_code_cache(wvc::WorldView{<:AbstractAnalyzerView}) = get_code_cache(wvc.cache.analyzer)
 
-get_code_cache(wvc::WorldView{<:JETGlobalCache}) = get_code_cache(wvc.cache.analyzer)
-
-CC.haskey(wvc::WorldView{<:JETGlobalCache}, mi::MethodInstance) = haskey(get_code_cache(wvc), mi)
+CC.haskey(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance) = haskey(get_code_cache(wvc), mi)
 
 function CC.typeinf_edge(analyzer::AbstractAnalyzer, method::Method, @nospecialize(atype), sparams::SimpleVector, caller::InferenceState)
     # enable the report cache restoration at `code = get(code_cache(interp), mi, nothing)`
@@ -454,7 +454,7 @@ function CC.typeinf_edge(analyzer::AbstractAnalyzer, method::Method, @nospeciali
     return @invoke typeinf_edge(analyzer::AbstractInterpreter, method::Method, atype::Any, sparams::SimpleVector, caller::InferenceState)
 end
 
-function CC.get(wvc::WorldView{<:JETGlobalCache}, mi::MethodInstance, default)
+function CC.get(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance, default)
     codeinf = get(get_code_cache(wvc), mi, default) # will ignore native code cache for a `MethodInstance` that is not analyzed by JET yet
 
     analyzer = wvc.cache.analyzer
@@ -488,7 +488,7 @@ function CC.get(wvc::WorldView{<:JETGlobalCache}, mi::MethodInstance, default)
     return codeinf
 end
 
-function CC.getindex(wvc::WorldView{<:JETGlobalCache}, mi::MethodInstance)
+function CC.getindex(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance)
     r = CC.get(wvc, mi, nothing)
     r === nothing && throw(KeyError(mi))
     return r::CodeInstance
@@ -542,7 +542,7 @@ function CC.transform_result_for_cache(analyzer::AbstractAnalyzer,
     return JETCachedResult(inferred_result, cache)
 end
 
-function CC.setindex!(wvc::WorldView{<:JETGlobalCache}, ci::CodeInstance, mi::MethodInstance)
+function CC.setindex!(wvc::WorldView{<:AbstractAnalyzerView}, ci::CodeInstance, mi::MethodInstance)
     code_cache = get_code_cache(wvc)
     add_jet_callback!(mi, code_cache)
     code_cache[mi] = ci
@@ -581,26 +581,21 @@ end
 # local
 # -----
 
-struct JETLocalCache{Analyzer<:AbstractAnalyzer}
-    analyzer::Analyzer
-    inf_cache::Vector{InferenceResult}
-end
-
-CC.get_inference_cache(analyzer::AbstractAnalyzer) = JETLocalCache(analyzer, get_inf_cache(analyzer))
+CC.get_inference_cache(analyzer::AbstractAnalyzer) = AbstractAnalyzerView(analyzer)
 
 let
     if isdefined(CC, :AbstractLattice)
-        sigs_ex = :(lattice::CC.AbstractLattice, linfo::MethodInstance, given_argtypes::Argtypes, cache::JETLocalCache)
-        args_ex = :(lattice, linfo, given_argtypes, cache.inf_cache)
+        sigs_ex = :(lattice::CC.AbstractLattice, linfo::MethodInstance, given_argtypes::Argtypes, view::AbstractAnalyzerView)
+        args_ex = :(lattice, linfo, given_argtypes, get_inf_cache(view.analyzer))
     else
-        sigs_ex = :(linfo::MethodInstance, given_argtypes::Argtypes, cache::JETLocalCache)
-        args_ex = :(linfo, given_argtypes, cache.inf_cache)
+        sigs_ex = :(linfo::MethodInstance, given_argtypes::Argtypes, view::AbstractAnalyzerView)
+        args_ex = :(linfo, given_argtypes, get_inf_cache(view.analyzer))
     end
     @eval function CC.cache_lookup($(sigs_ex.args...))
         # XXX the very dirty analyzer state observation again
         # this method should only be called from the single context i.e. `abstract_call_method_with_const_args`,
         # and so we should reset the cacher immediately we reach here
-        analyzer = cache.analyzer
+        analyzer = view.analyzer
         setter, caller = get_cacher(analyzer)::Pair{Symbol,InferenceResult}
         @assert setter === :abstract_call_method_with_const_args
         set_cacher!(analyzer, nothing)
@@ -630,7 +625,7 @@ let
     end
 end
 
-CC.push!(cache::JETLocalCache, inf_result::InferenceResult) = CC.push!(cache.inf_cache, inf_result)
+CC.push!(view::AbstractAnalyzerView, inf_result::InferenceResult) = CC.push!(get_inf_cache(view.analyzer), inf_result)
 
 # main driver
 # ===========
