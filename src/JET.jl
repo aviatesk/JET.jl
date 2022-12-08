@@ -1148,7 +1148,11 @@ function analyze_toplevel!(analyzer::AbstractAnalyzer, src::CodeInfo;
     mi.def = mod = get_toplevelmod(analyzer)
     src = transform_abstract_global_symbols!(analyzer, src)
     src = resolve_toplevel_symbols!(mod, src)
-    mi.uninferred = src
+    @static if VERSION ≥ v"1.10.0-DEV.112"
+        @atomic mi.uninferred = src
+    else
+        mi.uninferred = src
+    end
 
     result = InferenceResult(mi);
     init_result!(analyzer, result) # set `JETResult` for succeeding JET analysis
