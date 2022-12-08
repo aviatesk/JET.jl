@@ -5,16 +5,16 @@
         function () end; report_pass=JET.BasicPass(), mode=:sound)
 
     # cache key should be same for the same configurations
-    let cache1 = JET.get_code_cache(JETAnalyzer()),
-        cache2 = JET.get_code_cache(JETAnalyzer())
+    let cache1 = JET.AnalysisCache(JETAnalyzer()),
+        cache2 = JET.AnalysisCache(JETAnalyzer())
         @test cache1 == cache2
     end
 
     # cache key should be different for different configurations
     let analyzer1 = JETAnalyzer(; max_methods=3),
         analyzer2 = JETAnalyzer(; max_methods=4)
-        cache1 = JET.get_code_cache(analyzer1)
-        cache2 = JET.get_code_cache(analyzer2)
+        cache1 = JET.AnalysisCache(analyzer1)
+        cache2 = JET.AnalysisCache(analyzer2)
         @test cache1 ≠ cache2
     end
 
@@ -22,16 +22,16 @@
     # shouldn't affect the cache key identity
     let analyzer1 = JETAnalyzer(; toplevel_logger=nothing),
         analyzer2 = JETAnalyzer(; toplevel_logger=IOBuffer())
-        cache1 = JET.get_code_cache(analyzer1)
-        cache2 = JET.get_code_cache(analyzer2)
+        cache1 = JET.AnalysisCache(analyzer1)
+        cache2 = JET.AnalysisCache(analyzer2)
         @test cache1 == cache2
     end
 
     # cache key should be different for different report passes
     let analyzer1 = JETAnalyzer(; report_pass=JET.BasicPass()),
         analyzer2 = JETAnalyzer(; report_pass=JET.SoundPass())
-        cache1 = JET.get_code_cache(analyzer1)
-        cache2 = JET.get_code_cache(analyzer2)
+        cache1 = JET.AnalysisCache(analyzer1)
+        cache2 = JET.AnalysisCache(analyzer2)
         @test cache1 ≠ cache2
     end
 

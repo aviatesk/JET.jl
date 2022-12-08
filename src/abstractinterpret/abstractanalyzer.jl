@@ -1,8 +1,6 @@
 # AbstractAnalyzer
 # ================
 
-const CodeCache = IdDict{MethodInstance,CodeInstance}
-
 """
     abstract type AbstractAnalyzer <: AbstractInterpreter end
 
@@ -26,11 +24,11 @@ as subtype of `AbstractAnalyzer`, and is expected to the following interfaces:
 4. `ReportPass(analyzer::NewAnalyzer) -> ReportPass`: \\
    Returns [`ReportPass`](@ref) used for `analyzer::NewAnalyzer`.
 ---
-5. `get_code_cache(analyzer::NewAnalyzer) -> code_cache::$CodeCache`: \\
+5. `AnalysisCache(analyzer::NewAnalyzer) -> analysis_cache::AnalysisCache`: \\
    Returns code cache used for `analyzer::NewAnalyzer`.
 ---
 
-See also [`AnalyzerState`](@ref), [`ReportPass`](@ref) and [`get_code_cache`](@ref).
+See also [`AnalyzerState`](@ref), [`ReportPass`](@ref) and [`AnalysisCache`](@ref).
 
 # Example
 
@@ -40,7 +38,7 @@ JET.jl defines its default error analyzer `JETAnalyzer <: AbstractAnalyzer` as t
 # the default error analyzer for JET.jl
 struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
     state::AnalyzerState
-    code_cache::CodeCache
+    analysis_cache::AnalysisCache
     report_pass::RP
 end
 
@@ -50,13 +48,13 @@ function JETAnalyzer(;
     report_pass::ReportPass = BasicPass(),
     jetconfigs...)
     state = AnalyzerState(; jetconfigs...)
-    code_cache = CodeCache() # TODO globalize this
-    return JETAnalyzer(state, code_cache, report_pass)
+    analysis_cache = AnalysisCache() # TODO globalize this
+    return JETAnalyzer(state, analysis_cache, report_pass)
 end
 AnalyzerState(analyzer::JETAnalyzer) = analyzer.state
 AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerState) = JETAnalyzer(ReportPass(analyzer), state)
 ReportPass(analyzer::JETAnalyzer) = analyzer.report_pass
-get_code_cache(analyzer::JETAnalyzer) = analyzer.code_cache
+AnalysisCache(analyzer::JETAnalyzer) = analyzer.analysis_cache
 ```
 """
 abstract type AbstractAnalyzer <: AbstractInterpreter end
@@ -479,20 +477,37 @@ end
 
 # interface 5
 # -----------
-# 5. `get_code_cache(analyzer::NewAnalyzer) -> code_cache::CodeCache`
+# 5. `AnalysisCache(analyzer::NewAnalyzer) -> analysis_cache::AnalysisCache`
 
 """
-    get_code_cache(analyzer::AbstractAnalyzer) -> code_cache::CodeCache
+    AnalysisCache
 
-Returns code cache for this `analyzer::AbstractAnalyzer`.
-`AbstractAnalyzer` instances can share the same code cache if they perform the same analysis,
-otherwise their code cache should be separated.
+JET's internal representation of a global analysis cache.
+
+---
+
+    AnalysisCache(analyzer::AbstractAnalyzer) -> analysis_cache::AnalysisCache
+
+Returns [`AnalysisCache`](@ref) for this `analyzer::AbstractAnalyzer`.
+`AbstractAnalyzer` instances can share the same cache if they perform the same analysis,
+otherwise their cache should be separated.
 """
-@noinline function get_code_cache(analyzer::AbstractAnalyzer)
+struct AnalysisCache
+    cache::IdDict{MethodInstance,CodeInstance}
+end
+AnalysisCache() = AnalysisCache(IdDict{MethodInstance,CodeInstance}())
+
+Base.haskey(analysis_cache::AnalysisCache, mi::MethodInstance) = haskey(analysis_cache.cache, mi)
+Base.get(analysis_cache::AnalysisCache, mi::MethodInstance, default) = get(analysis_cache.cache, mi, default)
+Base.getindex(analysis_cache::AnalysisCache, mi::MethodInstance) = getindex(analysis_cache.cache, mi)
+Base.setindex!(analysis_cache::AnalysisCache, ci::CodeInstance, mi::MethodInstance) = setindex!(analysis_cache.cache, ci, mi)
+Base.delete!(analysis_cache::AnalysisCache, mi::MethodInstance) = delete!(analysis_cache.cache, mi)
+
+@noinline function AnalysisCache(analyzer::AbstractAnalyzer)
     error(lazy"""
     missing `$AbstractAnalyzer` API:
-    `$(typeof(analyzer))` is required to implement the `$get_code_cache(analyzer::$(typeof(analyzer))) -> $CodeCache` interface.
-    See the documentation of `$AbstractAnalyzer` and `$get_code_cache`.
+    `$(typeof(analyzer))` is required to implement the `$AnalysisCache(analyzer::$(typeof(analyzer))) -> $AnalysisCache` interface.
+    See the documentation of `$AbstractAnalyzer` and `$AnalysisCache`.
     """)
 end
 

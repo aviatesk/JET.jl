@@ -424,7 +424,9 @@ end
 
 get_code_cache(wvc::WorldView{<:AbstractAnalyzerView}) = get_code_cache(wvc.cache.analyzer)
 
-CC.haskey(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance) = haskey(get_code_cache(wvc), mi)
+AnalysisCache(wvc::WorldView{<:AbstractAnalyzerView}) = AnalysisCache(wvc.cache.analyzer)
+
+CC.haskey(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance) = haskey(AnalysisCache(wvc), mi)
 
 function CC.typeinf_edge(analyzer::AbstractAnalyzer, method::Method, @nospecialize(atype), sparams::SimpleVector, caller::InferenceState)
     # enable the report cache restoration at `code = get(code_cache(interp), mi, nothing)`
@@ -433,7 +435,7 @@ function CC.typeinf_edge(analyzer::AbstractAnalyzer, method::Method, @nospeciali
 end
 
 function CC.get(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance, default)
-    codeinf = get(get_code_cache(wvc), mi, default) # will ignore native code cache for a `MethodInstance` that is not analyzed by JET yet
+    codeinf = get(AnalysisCache(wvc), mi, default) # will ignore native code cache for a `MethodInstance` that is not analyzed by JET yet
 
     analyzer = wvc.cache.analyzer
 
@@ -521,13 +523,13 @@ function CC.transform_result_for_cache(analyzer::AbstractAnalyzer,
 end
 
 function CC.setindex!(wvc::WorldView{<:AbstractAnalyzerView}, ci::CodeInstance, mi::MethodInstance)
-    code_cache = get_code_cache(wvc)
-    add_jet_callback!(mi, code_cache)
-    code_cache[mi] = ci
+    analysis_cache = AnalysisCache(wvc)
+    add_jet_callback!(mi, analysis_cache)
+    analysis_cache[mi] = ci
 end
 
-function add_jet_callback!(mi::MethodInstance, code_cache::CodeCache)
-    callback = jet_callback(code_cache)
+function add_jet_callback!(mi::MethodInstance, analysis_cache::AnalysisCache)
+    callback = jet_callback(analysis_cache)
     if !isdefined(mi, :callbacks)
         mi.callbacks = Any[callback]
     else
@@ -539,11 +541,11 @@ function add_jet_callback!(mi::MethodInstance, code_cache::CodeCache)
     return nothing
 end
 
-function jet_callback(code_cache::CodeCache)
+function jet_callback(analysis_cache::AnalysisCache)
     return function (replaced::MethodInstance, max_world,
-                                          seen::IdSet{MethodInstance} = IdSet{MethodInstance}())
+                     seen::IdSet{MethodInstance} = IdSet{MethodInstance}())
         push!(seen, replaced)
-        delete!(code_cache, replaced)
+        delete!(analysis_cache, replaced)
         if isdefined(replaced, :backedges)
             for item in replaced.backedges
                 isa(item, MethodInstance) || continue # might be `Type` object representing an `invoke` signature

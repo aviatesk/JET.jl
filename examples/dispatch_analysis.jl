@@ -56,7 +56,7 @@ import JET: JET
 
 struct DispatchAnalyzer{T} <: AbstractAnalyzer
     state::AnalyzerState
-    code_cache::JET.CodeCache
+    analysis_cache::AnalysisCache
     opts::BitVector
     frame_filter::T
 end
@@ -66,15 +66,15 @@ function DispatchAnalyzer(;
     jetconfigs...)
     state = AnalyzerState(; jetconfigs...)
     ## just for the sake of simplicity, create a fresh code cache for each `DispatchAnalyzer` instance (i.e. don't globalize the cache)
-    code_cache = JET.CodeCache()
-    return DispatchAnalyzer(state, code_cache, BitVector(), frame_filter)
+    analysis_cache = AnalysisCache()
+    return DispatchAnalyzer(state, analysis_cache, BitVector(), frame_filter)
 end
 
 ## AbstractAnalyzer API requirements
 JETInterface.AnalyzerState(analyzer::DispatchAnalyzer) = analyzer.state
-JETInterface.AbstractAnalyzer(analyzer::DispatchAnalyzer, state::AnalyzerState) = DispatchAnalyzer(state, analyzer.code_cache, analyzer.opts, analyzer.frame_filter)
+JETInterface.AbstractAnalyzer(analyzer::DispatchAnalyzer, state::AnalyzerState) = DispatchAnalyzer(state, analyzer.analysis_cache, analyzer.opts, analyzer.frame_filter)
 JETInterface.ReportPass(analyzer::DispatchAnalyzer) = DispatchAnalysisPass()
-JETInterface.get_code_cache(analyzer::DispatchAnalyzer) = analyzer.code_cache
+JETInterface.AnalysisCache(analyzer::DispatchAnalyzer) = analyzer.analysis_cache
 
 struct DispatchAnalysisPass <: ReportPass end
 

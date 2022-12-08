@@ -32,7 +32,7 @@ end
 
 struct APIValidator <: AbstractAnalyzer
     state::AnalyzerState
-    code_cache::JET.CodeCache
+    analysis_cache::AnalysisCache
 end
 
 function compute_sins(i)
@@ -50,7 +50,7 @@ const ERROR_MSG = "missing `$AbstractAnalyzer` API"
 @test_throws ERROR_MSG @report_call analyzer=APIValidator compute_sins(10)
 
 # interface 1: `APIValidator(; jetconfigs...) -> APIValidator`
-APIValidator(; jetconfigs...) = APIValidator(AnalyzerState(; jetconfigs...), JET.CodeCache())
+APIValidator(; jetconfigs...) = APIValidator(AnalyzerState(; jetconfigs...), AnalysisCache())
 
 @test_throws ERROR_MSG @report_call analyzer=APIValidator compute_sins(10)
 
@@ -60,7 +60,7 @@ JETInterface.AnalyzerState(analyzer::APIValidator) = analyzer.state
 @test_throws ERROR_MSG @report_call analyzer=APIValidator compute_sins(10)
 
 # interface 3: `AbstractAnalyzer(analyzer::APIValidator, state::AnalyzerState) -> APIValidator`
-JETInterface.AbstractAnalyzer(analyzer::APIValidator, state::AnalyzerState) = APIValidator(state, analyzer.code_cache)
+JETInterface.AbstractAnalyzer(analyzer::APIValidator, state::AnalyzerState) = APIValidator(state, analyzer.analysis_cache)
 
 @test_throws ERROR_MSG @report_call analyzer=APIValidator compute_sins(10)
 
@@ -69,8 +69,8 @@ JETInterface.ReportPass(analyzer::APIValidator) = IgnoreAllPass()
 
 @test_throws ERROR_MSG @report_call analyzer=APIValidator compute_sins(10)
 
-# interface 5: `get_code_cache(analyzer::APIValidator) -> JET.CodeCache`
-JETInterface.get_code_cache(analyzer::APIValidator) = analyzer.code_cache
+# interface 5: `AnalysisCache(analyzer::APIValidator) -> AnalysisCache`
+JETInterface.AnalysisCache(analyzer::APIValidator) = analyzer.analysis_cache
 
 # because `APIValidator` uses `IgnoreAllPass`, we won't get any reports
 let result = @report_call analyzer=APIValidator compute_sins(10)

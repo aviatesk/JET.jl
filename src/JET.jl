@@ -1556,7 +1556,7 @@ end
 
 reexport_as_api!(JETInterface,
     # AbstractAnalyzer API
-    AbstractAnalyzer, AnalyzerState, ReportPass, get_code_cache,
+    AbstractAnalyzer, AnalyzerState, ReportPass, AnalysisCache,
     VSCode.vscode_source, VSCode.vscode_diagnostics_order,
     # InferenceErrorReport API
     InferenceErrorReport, copy_report, print_report_message, print_signature, report_color,

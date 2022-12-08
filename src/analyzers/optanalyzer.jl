@@ -168,7 +168,7 @@ the following additional configurations that are specific to the optimization an
 """
 struct OptAnalyzer{RP,FF} <: AbstractAnalyzer
     state::AnalyzerState
-    code_cache::CodeCache
+    analysis_cache::AnalysisCache
     report_pass::RP
     skip_noncompileable_calls::Bool
     function_filter::FF
@@ -187,10 +187,10 @@ function OptAnalyzer(;
     cache_key = compute_hash(state.inf_params, state.opt_params, report_pass,
         skip_noncompileable_calls, skip_unoptimized_throw_blocks)
     cache_key = @invoke hash(function_filter::Any, cache_key::UInt) # HACK avoid dynamic dispatch
-    code_cache = get!(()->CodeCache(), OPT_ANALYZER_CACHE, cache_key)
+    analysis_cache = get!(()->AnalysisCache(), OPT_ANALYZER_CACHE, cache_key)
     return OptAnalyzer(
         state,
-        code_cache,
+        analysis_cache,
         report_pass,
         skip_noncompileable_calls,
         function_filter,
@@ -201,7 +201,7 @@ JETInterface.AnalyzerState(analyzer::OptAnalyzer) = analyzer.state
 function JETInterface.AbstractAnalyzer(analyzer::OptAnalyzer, state::AnalyzerState)
     return OptAnalyzer(
         state,
-        analyzer.code_cache,
+        analyzer.analysis_cache,
         analyzer.report_pass,
         analyzer.skip_noncompileable_calls,
         analyzer.function_filter,
@@ -209,10 +209,10 @@ function JETInterface.AbstractAnalyzer(analyzer::OptAnalyzer, state::AnalyzerSta
         analyzer.__analyze_frame)
 end
 JETInterface.ReportPass(analyzer::OptAnalyzer) = analyzer.report_pass
-JETInterface.get_code_cache(analyzer::OptAnalyzer) = analyzer.code_cache
+JETInterface.AnalysisCache(analyzer::OptAnalyzer) = analyzer.analysis_cache
 JETInterface.vscode_diagnostics_order(analyzer::OptAnalyzer) = false
 
-const OPT_ANALYZER_CACHE = IdDict{UInt, CodeCache}()
+const OPT_ANALYZER_CACHE = IdDict{UInt, AnalysisCache}()
 
 struct OptAnalysisPass <: ReportPass end
 

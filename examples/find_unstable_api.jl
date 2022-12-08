@@ -41,7 +41,7 @@ const CC = Core.Compiler # to inject a customized report pass
 
 struct UnstableAPIAnalyzer{T} <: AbstractAnalyzer
     state::AnalyzerState
-    code_cache::JET.CodeCache
+    analysis_cache::AnalysisCache
     is_target_module::T
 end
 function UnstableAPIAnalyzer(;
@@ -50,16 +50,16 @@ function UnstableAPIAnalyzer(;
     state = AnalyzerState(; jetconfigs...)
     ## use a globalized code cache (, which is separated by `InferenceParams` configurations)
     cache_key = JET.compute_hash(state.inf_params)
-    code_cache = get!(()->JET.CodeCache(), UNSTABLE_API_ANALYZER_CACHE, cache_key)
-    return UnstableAPIAnalyzer(state, code_cache, is_target_module)
+    analysis_cache = get!(()->AnalysisCache(), UNSTABLE_API_ANALYZER_CACHE, cache_key)
+    return UnstableAPIAnalyzer(state, analysis_cache, is_target_module)
 end
 JETInterface.AnalyzerState(analyzer::UnstableAPIAnalyzer) = analyzer.state
 JETInterface.AbstractAnalyzer(analyzer::UnstableAPIAnalyzer, state::AnalyzerState) =
     UnstableAPIAnalyzer(state, analyzer.is_target_module)
 JETInterface.ReportPass(analyzer::UnstableAPIAnalyzer) = UnstableAPIAnalysisPass()
-JETInterface.get_code_cache(analyzer::UnstableAPIAnalyzer) = analyzer.code_cache
+JETInterface.AnalysisCache(analyzer::UnstableAPIAnalyzer) = analyzer.analysis_cache
 
-const UNSTABLE_API_ANALYZER_CACHE = IdDict{UInt, JET.CodeCache}()
+const UNSTABLE_API_ANALYZER_CACHE = IdDict{UInt, AnalysisCache}()
 
 # Next, we overload some of `Core.Compiler`'s [abstract interpretation](@ref abstractinterpret) methods,
 # and inject a customized analysis pass (here we gonna name it `UnstableAPIAnalysisPass`).

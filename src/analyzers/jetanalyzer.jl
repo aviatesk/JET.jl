@@ -32,7 +32,7 @@ the following additional configurations that are specific to the error analysis.
 """
 struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
     state::AnalyzerState
-    code_cache::CodeCache
+    analysis_cache::AnalysisCache
     report_pass::RP
     method_table::CachedMethodTable{OverlayMethodTable}
 end
@@ -77,22 +77,22 @@ end
                             unoptimize_throw_blocks,
                             jetconfigs...)
     cache_key = compute_hash(state.inf_params, report_pass)
-    code_cache = get!(()->CodeCache(), JET_ANALYZER_CACHE, cache_key)
+    analysis_cache = get!(()->AnalysisCache(), JET_ANALYZER_CACHE, cache_key)
     method_table = CachedMethodTable(OverlayMethodTable(state.world, JET_METHOD_TABLE))
-    analyzer = JETAnalyzer(state, code_cache, report_pass, method_table)
+    analyzer = JETAnalyzer(state, analysis_cache, report_pass, method_table)
     return analyzer
 end
 JETInterface.AnalyzerState(analyzer::JETAnalyzer) = analyzer.state
 function JETInterface.AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerState)
-    code_cache = analyzer.code_cache
+    analysis_cache = analyzer.analysis_cache
     report_pass = ReportPass(analyzer)
     method_table = CachedMethodTable(OverlayMethodTable(state.world, JET_METHOD_TABLE))
-    return JETAnalyzer(state, code_cache, report_pass, method_table)
+    return JETAnalyzer(state, analysis_cache, report_pass, method_table)
 end
 JETInterface.ReportPass(analyzer::JETAnalyzer) = analyzer.report_pass
-JETInterface.get_code_cache(analyzer::JETAnalyzer) = analyzer.code_cache
+JETInterface.AnalysisCache(analyzer::JETAnalyzer) = analyzer.analysis_cache
 
-const JET_ANALYZER_CACHE = IdDict{UInt, CodeCache}()
+const JET_ANALYZER_CACHE = IdDict{UInt, AnalysisCache}()
 
 """
 The basic (default) error analysis pass.
