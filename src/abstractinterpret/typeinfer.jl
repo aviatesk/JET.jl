@@ -422,8 +422,6 @@ function CC.code_cache(analyzer::AbstractAnalyzer)
     return WorldView(view, worlds)
 end
 
-get_code_cache(wvc::WorldView{<:AbstractAnalyzerView}) = get_code_cache(wvc.cache.analyzer)
-
 AnalysisCache(wvc::WorldView{<:AbstractAnalyzerView}) = AnalysisCache(wvc.cache.analyzer)
 
 CC.haskey(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance) = haskey(AnalysisCache(wvc), mi)
