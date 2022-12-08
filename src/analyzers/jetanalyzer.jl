@@ -37,6 +37,8 @@ struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
     method_table::CachedMethodTable{OverlayMethodTable}
 end
 
+# JETAnalyzer hooks on abstract interpretation only,
+# and so the cost of running the optimization passes is just unnecessary
 CC.may_optimize(::JETAnalyzer) = false
 
 @static if VERSION ≥ v"1.10.0-DEV.25"
@@ -50,12 +52,10 @@ end
 # NOTE `@constprop :aggressive` here makes sure `mode` to be propagated as constant
 @constprop :aggressive @jetconfigurable function JETAnalyzer(;
     report_pass::Union{Nothing,ReportPass} = nothing,
-    mode::Symbol                           = :basic,
+    mode::Symbol = :basic,
     # default `InferenceParams` tuning
     aggressive_constant_propagation::Bool = true,
-    unoptimize_throw_blocks::Bool         = false,
-    # default `OptimizationParams` tuning
-    inlining::Bool = false,
+    unoptimize_throw_blocks::Bool = false,
     jetconfigs...)
     if isnothing(report_pass)
         # if `report_pass` isn't passed explicitly, here we configure it according to `mode`
@@ -71,13 +71,8 @@ end
     elseif mode !== :basic
         throw(ArgumentError("either of `report_pass` and `mode` configurations can be specified"))
     end
-    # NOTE we always disable inlining, because:
-    # - our current strategy to find undefined local variables and uncaught `throw` calls assumes un-inlined frames
-    # - the cost for inlining isn't necessary for JETAnalyzer
-    inlining && throw(ArgumentError("inlining should be disabled for `JETAnalyzer`"))
     state = AnalyzerState(; aggressive_constant_propagation,
                             unoptimize_throw_blocks,
-                            inlining,
                             jetconfigs...)
     cache_key = state.param_key
     cache_key = hash(report_pass, cache_key)

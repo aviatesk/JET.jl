@@ -1152,9 +1152,9 @@ function analyze_toplevel!(analyzer::AbstractAnalyzer, src::CodeInfo;
 
     result = InferenceResult(mi);
     init_result!(analyzer, result) # set `JETResult` for succeeding JET analysis
-    # toplevel frames don't really need to be cached, but still better to be optimized
-    # in order to get reasonable `LocalUndefVarErrorReport` and `UncaughtExceptionReport`
-    # NOTE and also, otherwise `typeinf_edge` won't add "toplevel-to-callee" edges
+    # NOTE toplevel frames don't really need to be cached, but still better to be optimized
+    # in order to get reasonable `UncaughtExceptionReport`, and also, otherwise
+    # `typeinf_edge` won't add "toplevel-to-callee" edges
     frame = InferenceState(result, src, #=cache=# :global, analyzer)::InferenceState
 
     set_entry && set_entry!(analyzer, mi)
