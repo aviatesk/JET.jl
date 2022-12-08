@@ -416,28 +416,6 @@ end
 # global
 # ------
 
-"""
-    GLOBAL_CACHE::$(typeof(GLOBAL_CACHE))
-
-Keeps `src::CodeInstance` cache associated with `mi::MethodInstace` that represents the
-analysis result on `mi` performed by [`analyzer::AbstractAnalyzer`](@ref AbstractAnalyzer),
-where [`src.inferred::JETCachedResult`](@ref JETCachedResult) caches JET's analysis result.
-This cache is separated by the identities of `AbstractAnalyzer`s, which are hash keys
-computed by [`get_cache_key(analyzer::AbstractAnalyzer)`](@ref get_cache_key).
-
-`GLOBAL_CACHE` is completely separated from the `Core.Compiler.NativeInterpreter`'s global cache,
-so that JET's analysis never interacts with actual code execution.
-"""
-const GLOBAL_CACHE = IdDict{UInt, CodeCache}()
-
-function init_cache!(analyzer::AbstractAnalyzer)
-    cache_key = get_cache_key(analyzer)
-    set_code_cache!(analyzer, get!(()->CodeCache(), GLOBAL_CACHE, cache_key))
-end
-
-# just used for interactive developments
-__clear_caches!() = empty!(GLOBAL_CACHE)
-
 function CC.code_cache(analyzer::AbstractAnalyzer)
     view = AbstractAnalyzerView(analyzer)
     worlds = WorldRange(get_world_counter(analyzer))

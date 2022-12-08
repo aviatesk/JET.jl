@@ -41,18 +41,25 @@ const CC = Core.Compiler # to inject a customized report pass
 
 struct UnstableAPIAnalyzer{T} <: AbstractAnalyzer
     state::AnalyzerState
+    code_cache::JET.CodeCache
     is_target_module::T
 end
 function UnstableAPIAnalyzer(;
     is_target_module = ==(@__MODULE__),
     jetconfigs...)
-    return UnstableAPIAnalyzer(AnalyzerState(; jetconfigs...), is_target_module)
+    state = AnalyzerState(; jetconfigs...)
+    ## use a globalized code cache (, which is separated by `InferenceParams` configurations)
+    cache_key = JET.compute_hash(state.inf_params)
+    code_cache = get!(()->JET.CodeCache(), UNSTABLE_API_ANALYZER_CACHE, cache_key)
+    return UnstableAPIAnalyzer(state, code_cache, is_target_module)
 end
 JETInterface.AnalyzerState(analyzer::UnstableAPIAnalyzer) = analyzer.state
 JETInterface.AbstractAnalyzer(analyzer::UnstableAPIAnalyzer, state::AnalyzerState) =
     UnstableAPIAnalyzer(state, analyzer.is_target_module)
 JETInterface.ReportPass(analyzer::UnstableAPIAnalyzer) = UnstableAPIAnalysisPass()
-JETInterface.get_cache_key(analyzer::UnstableAPIAnalyzer) = AnalyzerState(analyzer).param_key
+JETInterface.get_code_cache(analyzer::UnstableAPIAnalyzer) = analyzer.code_cache
+
+const UNSTABLE_API_ANALYZER_CACHE = IdDict{UInt, JET.CodeCache}()
 
 # Next, we overload some of `Core.Compiler`'s [abstract interpretation](@ref abstractinterpret) methods,
 # and inject a customized analysis pass (here we gonna name it `UnstableAPIAnalysisPass`).
@@ -94,7 +101,7 @@ function CC.builtin_tfunction(analyzer::UnstableAPIAnalyzer, @nospecialize(f), a
 end
 
 # Additionally, we can cut off the performance cost involved with Julia's native compiler's optimizations passes:
-CC.may_optimize(analyzer::UnstableAPIAnalyzer) = return false
+CC.may_optimize(analyzer::UnstableAPIAnalyzer) = false
 
 # Now we implement the body of our analysis.
 # We define "unstable API"s such that they're:

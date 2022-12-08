@@ -31,15 +31,17 @@ the following additional configurations that are specific to the error analysis.
 ---
 """
 struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
-    report_pass::RP
     state::AnalyzerState
-    __cache_key::UInt
+    code_cache::CodeCache
+    report_pass::RP
     method_table::CachedMethodTable{OverlayMethodTable}
 end
 
 # JETAnalyzer hooks on abstract interpretation only,
 # and so the cost of running the optimization passes is just unnecessary
 CC.may_optimize(::JETAnalyzer) = false
+
+CC.method_table(analyzer::JETAnalyzer) = analyzer.method_table
 
 @static if VERSION ≥ v"1.10.0-DEV.25"
     CC.typeinf_lattice(::JETAnalyzer) = CC.InferenceLattice(CC.MustAliasesLattice(CC.BaseInferenceLattice.instance))
@@ -74,21 +76,23 @@ end
     state = AnalyzerState(; aggressive_constant_propagation,
                             unoptimize_throw_blocks,
                             jetconfigs...)
-    cache_key = state.param_key
-    cache_key = hash(report_pass, cache_key)
+    cache_key = compute_hash(state.inf_params, report_pass)
+    code_cache = get!(()->CodeCache(), JET_ANALYZER_CACHE, cache_key)
     method_table = CachedMethodTable(OverlayMethodTable(state.world, JET_METHOD_TABLE))
-    analyzer = JETAnalyzer(report_pass, state, cache_key, method_table)
+    analyzer = JETAnalyzer(state, code_cache, report_pass, method_table)
     return analyzer
 end
 JETInterface.AnalyzerState(analyzer::JETAnalyzer) = analyzer.state
 function JETInterface.AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerState)
+    code_cache = analyzer.code_cache
     report_pass = ReportPass(analyzer)
-    cache_key = analyzer.__cache_key
     method_table = CachedMethodTable(OverlayMethodTable(state.world, JET_METHOD_TABLE))
-    return JETAnalyzer(report_pass, state, cache_key, method_table)
+    return JETAnalyzer(state, code_cache, report_pass, method_table)
 end
 JETInterface.ReportPass(analyzer::JETAnalyzer) = analyzer.report_pass
-JETInterface.get_cache_key(analyzer::JETAnalyzer) = analyzer.__cache_key
+JETInterface.get_code_cache(analyzer::JETAnalyzer) = analyzer.code_cache
+
+const JET_ANALYZER_CACHE = IdDict{UInt, CodeCache}()
 
 """
 The basic (default) error analysis pass.
@@ -143,7 +147,6 @@ This works as a temporal patch, and ideally we want to port it back to the Julia
 a package, or improve the accuracy of base abstract interpretation analysis.
 """
 @MethodTable JET_METHOD_TABLE
-CC.method_table(analyzer::JETAnalyzer) = analyzer.method_table
 
 # https://github.com/aviatesk/JET.jl/issues/404
 # this definition makes it impossible to dispatch to `Base.iterate(()::Tuple, i::Int)`,

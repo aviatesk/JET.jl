@@ -1,6 +1,8 @@
 # AbstractAnalyzer
 # ================
 
+const CodeCache = IdDict{MethodInstance,CodeInstance}
+
 """
     abstract type AbstractAnalyzer <: AbstractInterpreter end
 
@@ -24,11 +26,11 @@ as subtype of `AbstractAnalyzer`, and is expected to the following interfaces:
 4. `ReportPass(analyzer::NewAnalyzer) -> ReportPass`: \\
    Returns [`ReportPass`](@ref) used for `analyzer::NewAnalyzer`.
 ---
-5. `get_cache_key(analyzer::NewAnalyzer) -> cache_key::UInt`: \\
-   Returns [`cache_key::UInt`](@ref get_cache_key) used for `analyzer::NewAnalyzer`.
+5. `get_code_cache(analyzer::NewAnalyzer) -> code_cache::$CodeCache`: \\
+   Returns code cache used for `analyzer::NewAnalyzer`.
 ---
 
-See also [`AnalyzerState`](@ref), [`ReportPass`](@ref) and [`get_cache_key`](@ref).
+See also [`AnalyzerState`](@ref), [`ReportPass`](@ref) and [`get_code_cache`](@ref).
 
 # Example
 
@@ -37,9 +39,9 @@ JET.jl defines its default error analyzer `JETAnalyzer <: AbstractAnalyzer` as t
 ```julia
 # the default error analyzer for JET.jl
 struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
-    report_pass::RP
     state::AnalyzerState
-    __cache_key::UInt
+    code_cache::CodeCache
+    report_pass::RP
 end
 
 # AbstractAnalyzer API requirements
@@ -48,13 +50,13 @@ function JETAnalyzer(;
     report_pass::ReportPass = BasicPass(),
     jetconfigs...)
     state = AnalyzerState(; jetconfigs...)
-    cache_key = [...]
-    return JETAnalyzer(report_pass, state, cache_key)
+    code_cache = CodeCache() # TODO globalize this
+    return JETAnalyzer(state, code_cache, report_pass)
 end
 AnalyzerState(analyzer::JETAnalyzer) = analyzer.state
 AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerState) = JETAnalyzer(ReportPass(analyzer), state)
 ReportPass(analyzer::JETAnalyzer) = analyzer.report_pass
-get_cache_key(analyzer::JETAnalyzer) = analyzer.__cache_key
+get_code_cache(analyzer::JETAnalyzer) = analyzer.code_cache
 ```
 """
 abstract type AbstractAnalyzer <: AbstractInterpreter end
@@ -106,8 +108,6 @@ end
 
 const AnyJETResult = Union{JETResult,JETCachedResult}
 
-const CodeCache = IdDict{MethodInstance,CodeInstance}
-
 """
     mutable struct AnalyzerState
         ...
@@ -139,16 +139,12 @@ mutable struct AnalyzerState
 
     world::UInt
     inf_cache::Vector{InferenceResult}
-    code_cache::CodeCache
     inf_params::InferenceParams
     opt_params::OptimizationParams
 
     ## AbstractAnalyzer ##
 
     results::IdDict{InferenceResult,AnyJETResult}
-
-    # identity hash key for this state
-    param_key::UInt
 
     # temporal stash to keep reports that are collected within the currently-analyzed frame
     # and should be appended to the caller when returning back to the caller frame next time
@@ -187,7 +183,6 @@ end
 
 # constructor for fresh analysis
 @jetconfigurable function AnalyzerState(world::UInt  = get_world_counter();
-                                        code_cache   = _DUMMY_GLOBAL_CACHE_,
                                         results      = IdDict{InferenceResult,AnyJETResult}(),
                                         inf_params   = nothing,
                                         opt_params   = nothing,
@@ -199,15 +194,12 @@ end
     isnothing(inf_params) && (inf_params = JETInferenceParams(; jetconfigs...))
     isnothing(opt_params) && (opt_params = JETOptimizationParams(; jetconfigs...))
     inf_cache = InferenceResult[]
-    param_key = get_param_key(inf_params)
     caller_cache = InferenceErrorReport[]
     return AnalyzerState(#=world::UInt=# world,
                          #=inf_cache::Vector{InferenceResult}=# inf_cache,
-                         #=code_cache::CodeCache=# code_cache,
                          #=inf_params::InferenceParams=# inf_params,
                          #=opt_params::OptimizationParams=# opt_params,
                          #=results::IdDict{InferenceResult,AnyJETResult}=# results,
-                         #=param_key::UInt=# param_key,
                          #=caller_cache::Vector{InferenceErrorReport}=# caller_cache,
                          #=cacher::Union{Nothing,InferenceResult}=# nothing,
                          #=concretized::BitVector=# concretized,
@@ -216,10 +208,6 @@ end
                          #=entry::Union{Nothing,MethodInstance}=# nothing,
                          #=depth::Int=# depth)
 end
-
-# dummy global cache (to avoid unnecessary allocation)
-# `state.code_cache` is supposed to be initialized by `init_cache!`
-const _DUMMY_GLOBAL_CACHE_ = CodeCache()
 
 # dummies for non-toplevel analysis
 module __toplevelmod__ end
@@ -371,12 +359,6 @@ end
     @assert !JETOptimizationParams(OptimizationParams(); inlining=false).inlining
 end
 
-function get_param_key(inf_params::InferenceParams)
-    h = @static UInt === UInt64 ? 0xa49bd446c0a5d90e : 0xe45361ac
-    h = hash(inf_params, h)
-    return h
-end
-
 @noinline function AnalyzerState(analyzer::AbstractAnalyzer)
     error(lazy"""
     missing `$AbstractAnalyzer` API:
@@ -405,9 +387,7 @@ function AbstractAnalyzer(analyzer::T) where {T<:AbstractAnalyzer}
                              opt_params = OptimizationParams(analyzer),
                              depth      = get_depth(analyzer),
                              )
-    newanalyzer = AbstractAnalyzer(analyzer, newstate)
-    init_cache!(newanalyzer)
-    return newanalyzer
+    return AbstractAnalyzer(analyzer, newstate)
 end
 
 # constructor for sequential toplevel JET analysis
@@ -421,9 +401,7 @@ function AbstractAnalyzer(analyzer::T, concretized, toplevelmod;
                              concretized = concretized, # or construct partial `CodeInfo` from remaining abstract statements ?
                              toplevelmod = toplevelmod,
                              )
-    newanalyzer = AbstractAnalyzer(analyzer, newstate)
-    init_cache!(newanalyzer)
-    return newanalyzer
+    return AbstractAnalyzer(analyzer, newstate)
 end
 
 # interface 4
@@ -501,22 +479,20 @@ end
 
 # interface 5
 # -----------
-# 5. `get_cache_key(analyzer::NewAnalyzer) -> cache_key::UInt`
+# 5. `get_code_cache(analyzer::NewAnalyzer) -> code_cache::CodeCache`
 
 """
-    get_cache_key(analyzer::AbstractAnalyzer) -> cache_key::UInt
+    get_code_cache(analyzer::AbstractAnalyzer) -> code_cache::CodeCache
 
-Returns the cache key for this `analyzer::AbstractAnalyzer`.
-`AbstractAnalyzer`s that have different cache keys will use different cache so that their
-analysis results are completely separated.
-
-See also [`GLOBAL_CACHE`](@ref).
+Returns code cache for this `analyzer::AbstractAnalyzer`.
+`AbstractAnalyzer` instances can share the same code cache if they perform the same analysis,
+otherwise their code cache should be separated.
 """
-@noinline function get_cache_key(analyzer::AbstractAnalyzer)
+@noinline function get_code_cache(analyzer::AbstractAnalyzer)
     error(lazy"""
     missing `$AbstractAnalyzer` API:
-    `$(typeof(analyzer))` is required to implement the `$get_cache_key(analyzer::$(typeof(analyzer))) -> UInt` interface.
-    See the documentation of `$AbstractAnalyzer` and `$get_cache_key`.
+    `$(typeof(analyzer))` is required to implement the `$get_code_cache(analyzer::$(typeof(analyzer))) -> $CodeCache` interface.
+    See the documentation of `$AbstractAnalyzer` and `$get_code_cache`.
     """)
 end
 
