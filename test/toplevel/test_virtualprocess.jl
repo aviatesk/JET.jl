@@ -80,8 +80,8 @@ end
 
         @test isempty(res.res.toplevel_error_reports)
         @test any(res.res.inference_error_reports) do err
-            isa(err, GlobalUndefVarErrorReport) &&
-            err.name === :undefined
+            isa(err, UndefVarErrorReport) &&
+            err.var isa GlobalRef && err.var.name === :undefined
         end
     end
 end
@@ -507,7 +507,7 @@ end
         @test !isempty(res.res.toplevel_error_reports)
         @test first(res.res.toplevel_error_reports) isa ActualErrorWrapped
         @test !isempty(res.res.inference_error_reports)
-        @test first(res.res.inference_error_reports) isa GlobalUndefVarErrorReport
+        @test first(res.res.inference_error_reports) isa UndefVarErrorReport
     end
 
     let
@@ -648,7 +648,7 @@ end
 
         @test isempty(res.res.toplevel_error_reports)
         report = only(res.res.inference_error_reports)
-        @test report isa GlobalUndefVarErrorReport
+        @test report isa UndefVarErrorReport
         @test occursin("isexpr2", get_msg(report))
     end
 
@@ -676,7 +676,7 @@ end
 
             using ..foo
 
-            bar("julia") # -> GlobalUndefVarErrorReport
+            bar("julia") # -> UndefVarErrorReport
 
             end # module bar
 
@@ -685,7 +685,7 @@ end
 
         @test isempty(res.res.toplevel_error_reports)
         @test !isempty(res.res.inference_error_reports)
-        @test only(res.res.inference_error_reports) isa GlobalUndefVarErrorReport
+        @test only(res.res.inference_error_reports) isa UndefVarErrorReport
     end
 
     # usage of global objects
@@ -844,7 +844,7 @@ end
 
             foo(a) = length(a)
         end
-        @test only(res.res.inference_error_reports) isa GlobalUndefVarErrorReport
+        @test only(res.res.inference_error_reports) isa UndefVarErrorReport
     end
 
     let
@@ -1362,8 +1362,8 @@ end
             :(foo)
         end
         let r = only(res.res.inference_error_reports)
-            r isa GlobalUndefVarErrorReport &&
-            r.name === :foo
+            r isa UndefVarErrorReport &&
+            r.var isa GlobalRef && r.var.name === :foo
         end
     end
 end
@@ -1555,8 +1555,7 @@ end
         end
         @test !isempty(res.res.inference_error_reports)
         let r = only(res.res.inference_error_reports)
-            isa(r, GlobalUndefVarErrorReport) &&
-            r.name === :undefvar
+            @test is_global_undef_var(r, :undefvar)
         end
     end
 
@@ -1566,15 +1565,11 @@ end
             bar() = foo("julia")
         end
         @test length(res.res.inference_error_reports) ≥ 1
-        # @test_broken any(res.res.inference_error_reports) do err # report analyzed from `foo`
-        #     isa(err, GlobalUndefVarErrorReport) &&
-        #     err.name === :b &&
-        #     length(err.vst) == 1
-        # end &&       any(res.res.inference_error_reports) do err # report analyzed from `bar`
-        #     isa(err, GlobalUndefVarErrorReport) &&
-        #     err.name === :b &&
-        #     length(err.vst) == 2
-        # end
+        @test_broken any(res.res.inference_error_reports) do r # report analyzed from `foo`
+            is_global_undef_var(r, :b) && length(err.vst) == 1
+        end &&       any(res.res.inference_error_reports) do r # report analyzed from `bar`
+            is_global_undef_var(r, :b) && length(err.vst) == 2
+        end
     end
 
     let res = @analyze_toplevel analyze_from_definitions=true begin
@@ -1761,10 +1756,7 @@ end
             @test isempty(res.res.toplevel_error_reports)
             @test length(res.res.toplevel_signatures) == 2
             test_sum_over_string(res)
-            @test any(res.res.inference_error_reports) do r
-                isa(r, GlobalUndefVarErrorReport) &&
-                r.name === :err2
-            end
+            @test any(r->is_global_undef_var(r, :err2), res.res.inference_error_reports)
         end
 
         # XXX similar to "captured variables for global functions" cases, but such patterns
@@ -1990,13 +1982,11 @@ end
 @testset "test file targets" begin
     TARGET_DIR = normpath(FIXTURE_DIR, "targets")
 
-    let
-        res = report_file2(normpath(TARGET_DIR, "error.jl"))
+    let res = report_file2(normpath(TARGET_DIR, "error.jl"))
         @test isempty(res.res.toplevel_error_reports)
     end
 
-    let
-        res = report_file2(normpath(TARGET_DIR, "dict.jl"))
+    let res = report_file2(normpath(TARGET_DIR, "dict.jl"))
         @test isempty(res.res.toplevel_error_reports)
     end
 end
@@ -2011,8 +2001,7 @@ end
         throw("invalid argument")
     end)
 
-    let
-        res = @eval @analyze_toplevel begin
+    let res = @eval @analyze_toplevel begin
             $genex
 
             foo(100) # generate valid code
@@ -2020,18 +2009,16 @@ end
         @test isempty(res.res.inference_error_reports)
     end
 
-    let
-        res = @eval @analyze_toplevel begin
+    let res = @eval @analyze_toplevel begin
             $genex
 
             foo(100.0) # generate invalid code
         end
         r = only(res.res.inference_error_reports)
-        @test isa(r, GlobalUndefVarErrorReport)
+        @test is_global_undef_var(r, :undefvar)
     end
 
-    let
-        res = @eval @analyze_toplevel begin
+    let res = @eval @analyze_toplevel begin
             $genex
 
             foo("julia") # unsuccessful code generation
@@ -2043,16 +2030,14 @@ end
     # when `analyze_from_definitions = true`, code generation will likely fail
     # (because we can't expect method signatures to be concrete for `@generated` function),
     # but we just ignore that
-    let
-        res = @eval @analyze_toplevel analyze_from_definitions=true begin
+    let res = @eval @analyze_toplevel analyze_from_definitions=true begin
             $genex
         end
         @test isempty(res.res.inference_error_reports)
     end
 
     # when `analyze_from_definitions = true`, we can analyze generator itself
-    let
-        res = @analyze_toplevel analyze_from_definitions = true begin
+    let res = @analyze_toplevel analyze_from_definitions = true begin
             @generated function foo(a)
                 if a <: Integer
                     return :(a)
@@ -2063,6 +2048,6 @@ end
             end
         end
         r = only(res.res.inference_error_reports)
-        @test isa(r, GlobalUndefVarErrorReport) && r.name === :t
+        @test is_global_undef_var(r, :t)
     end
 end

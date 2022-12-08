@@ -124,3 +124,20 @@ isa_abstract(mod::Module, sym::Symbol, @nospecialize(typ)) = is_abstract(mod, sy
 # these utilities allow robust testing to check if a object is successfully analyzed by JET whichever it's concretized or abstracted
 is_analyzed(mod::Module, sym::Symbol) = isdefined(mod, sym) # essentially, `is_concrete(mod, sym) || is_abstract(mod, sym)`
 isa_analyzed(mod::Module, sym::Symbol, @nospecialize(typ)) = isa_abstract(mod, sym, typ) || isa_concrete(mod, sym, typ)
+
+function is_global_undef_var(@nospecialize(r::InferenceErrorReport), mod::Module, name::Symbol)
+    r isa UndefVarErrorReport || return false
+    var = r.var
+    return var isa GlobalRef && var.mod === mod && var.name === name
+end
+function is_global_undef_var(@nospecialize(r::InferenceErrorReport), name::Symbol)
+    r isa UndefVarErrorReport || return false
+    var = r.var
+    return var isa GlobalRef && var.name === name
+end
+
+function is_local_undef_var(@nospecialize(r::InferenceErrorReport), name::Symbol)
+    r isa UndefVarErrorReport || return false
+    var = r.var
+    return var === name
+end

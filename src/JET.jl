@@ -44,7 +44,7 @@ import .CC:
     builtin_tfunction, return_type_tfunc,
     #= abstractinterpretation.jl =#
     abstract_call, abstract_call_gf_by_type, abstract_call_method,
-    abstract_call_method_with_const_args, abstract_eval_special_value,
+    abstract_call_method_with_const_args, abstract_eval_value_expr, abstract_eval_special_value,
     abstract_eval_statement, abstract_eval_value, abstract_invoke, add_call_backedges!,
     concrete_eval_call, concrete_eval_eligible, const_prop_entry_heuristic,
     #= typeinfer.jl =#

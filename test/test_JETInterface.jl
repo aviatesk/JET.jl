@@ -1,7 +1,7 @@
 module InterfaceTest
 
 using JET.JETInterface, JET, Test
-import JET: get_reports, BasicPass, GlobalUndefVarErrorReport
+import JET: get_reports, BasicPass, UndefVarErrorReport
 
 # customized report pass
 # ======================
@@ -14,14 +14,13 @@ end
 
 struct IgnoreAllExceptGlobalUndefVarPass <: ReportPass end
 (::IgnoreAllExceptGlobalUndefVarPass)(::Type{<:InferenceErrorReport}, @nospecialize(_...)) = return
-(::IgnoreAllExceptGlobalUndefVarPass)(::Type{GlobalUndefVarErrorReport}, @nospecialize(args...)) = BasicPass()(GlobalUndefVarErrorReport, args...)
+(::IgnoreAllExceptGlobalUndefVarPass)(::Type{UndefVarErrorReport}, @nospecialize(args...)) = BasicPass()(UndefVarErrorReport, args...)
 let result = report_call(; report_pass=IgnoreAllExceptGlobalUndefVarPass()) do
         sum("julia") # should be ignored
         undefvar
     end
     let r = only(get_reports(result))
-        @test isa(r, GlobalUndefVarErrorReport)
-        @test r.name === :undefvar
+        @test isa(r, UndefVarErrorReport) && isa(r.var, GlobalRef) && r.var.name === :undefvar
     end
 end
 
