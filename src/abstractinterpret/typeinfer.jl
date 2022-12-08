@@ -636,7 +636,7 @@ function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
     # throw-away previously-collected error reports that are "lineage" of this frame,
     # when it is being re-inferred with constants
     # NOTE `frame.linfo` is the exactly same object as that of the previous non-constant inference
-    # IDEA we may still want to keep some "serious" error reports like `GlobalUndefVarErrorReport`
+    # IDEA we may still want to keep some "serious" error reports like `UndefVarErrorReport`
     # even when constant prop' reveals it never happ∫ens given the current constant arguments
     if is_constant_propagated(frame) && !isentry
         filter_lineages!(analyzer, parent.result, linfo)

@@ -429,17 +429,17 @@ while still using the analysis routine implemented by `NewAnalyzer`.
 For example, [`JETAnalyzer`](@ref) accepts a custom `ReportPass` passed as [JET configurations](@ref)
 (see the example documentation of [`AbstractAnalyzer`](@ref) for details).
 And we can setup a custom report pass `IgnoreAllExceptGlobalUndefVar`, that ignores all the
-reports that are otherwise collected by `JETAnalyzer` except `GlobalUndefVarErrorReport`:
+reports that are otherwise collected by `JETAnalyzer` except `UndefVarErrorReport`:
 ```julia
-# custom report pass that ignores all the reports except `GlobalUndefVarErrorReport`
+# custom report pass that ignores all the reports except `UndefVarErrorReport`
 struct IgnoreAllExceptGlobalUndefVar <: ReportPass end
 
 # ignores all the reports analyzed by `JETAnalyzer`
 (::IgnoreAllExceptGlobalUndefVar)(::Type{<:InferenceErrorReport}, @nospecialize(_...)) = return
 
-# forward to `BasicPass` to collect `GlobalUndefVarErrorReport`
-function (::IgnoreAllExceptGlobalUndefVar)(::Type{GlobalUndefVarErrorReport}, @nospecialize(args...))
-    BasicPass()(GlobalUndefVarErrorReport, args...)
+# forward to `BasicPass` to collect `UndefVarErrorReport`
+function (::IgnoreAllExceptGlobalUndefVar)(::Type{UndefVarErrorReport}, @nospecialize(args...))
+    BasicPass()(UndefVarErrorReport, args...)
 end
 
 no_method_error()    = 1 + "1"

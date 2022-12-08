@@ -94,6 +94,9 @@ JETInterface.AnalysisCache(analyzer::JETAnalyzer) = analyzer.analysis_cache
 
 const JET_ANALYZER_CACHE = IdDict{UInt, AnalysisCache}()
 
+# report passes
+# =============
+
 """
 The basic (default) error analysis pass.
 
@@ -114,15 +117,15 @@ function jetanalyzer_function_filter(@nospecialize ft)
     return true
 end
 
+basic_filter(analyzer::JETAnalyzer, sv) =
+    is_compileable_frame(sv) || get_entry(analyzer) === get_linfo(sv) # `report_call` may start analysis with abstract signature
+
 """
 The sound error analysis pass.
 
 _**TODO**_: elaborate the definitions of "error"s.
 """
 struct SoundPass <: ReportPass end
-
-basic_filter(analyzer::JETAnalyzer, sv) =
-    is_compileable_frame(sv) || get_entry(analyzer) === get_linfo(sv) # `report_call` may start analysis with abstract signature
 
 # `SoundPass` is still WIP, we may use it to implement both passes at once for the meantime
 const SoundBasicPass = Union{SoundPass,BasicPass}
@@ -133,7 +136,7 @@ A typo detection pass.
 _**TODO**_: elaborate the definitions of "error"s.
 """
 struct TypoPass <: ReportPass end
-(::TypoPass)(@nospecialize _...) = return false # ignore everything except GlobalUndefVarErrorReport and field error report
+(::TypoPass)(@nospecialize _...) = return false # ignore everything except UndefVarErrorReport and field error report
 
 # overlay method table
 # ====================
@@ -330,15 +333,24 @@ let # overload `abstract_invoke`
     end
 end
 
+# TODO enable this with https://github.com/JuliaLang/julia/pull/46791 to close https://github.com/aviatesk/JET.jl/issues/285
+# function CC.abstract_eval_value_expr(analyzer::JETAnalyzer, e::Expr, sv::InferenceState)
+#     ret = @invoke CC.abstract_eval_value_expr(analyzer::AbstractInterpreter, e::Expr, sv::InferenceState)
+#     if e.head === :static_parameter
+#         # report pass for undefined static parameter
+#         ReportPass(analyzer)(UndefVarErrorReport, analyzer, sv, e.args[1]::Int)
+#     end
+#     return ret
+# end
+
 function CC.abstract_eval_special_value(analyzer::JETAnalyzer,
     @nospecialize(e), vtypes::VarTable, sv::InferenceState)
     ret = @invoke CC.abstract_eval_special_value(analyzer::AbstractAnalyzer,
         e::Any, vtypes::VarTable, sv::InferenceState)
 
     if isa(e, GlobalRef)
-        mod, name = e.mod, e.name
         # report pass for undefined global reference
-        ReportPass(analyzer)(GlobalUndefVarErrorReport, analyzer, sv, mod, name)
+        ReportPass(analyzer)(UndefVarErrorReport, analyzer, sv, e)
 
         # NOTE `Core.Compiler.NativeInterpreter` should return `ret = Any` `ret` even if `mod.name`
         # isn't defined and we just pass it as is to collect as much error points as possible
@@ -349,7 +361,7 @@ function CC.abstract_eval_special_value(analyzer::JETAnalyzer,
     # TODO enable this
     # elseif isa(e, SlotNumber)
     #     # report pass for (local) undef var error
-    #     ReportPass(analyzer)(LocalUndefVarErrorReport, analyzer, sv, e, vtypes, ret)
+    #     ReportPass(analyzer)(UndefVarErrorReport, analyzer, sv, e, vtypes, ret)
     end
 
     return ret
@@ -747,29 +759,38 @@ function (::SoundBasicPass)(::Type{InvalidInvokeErrorReport}, analyzer::JETAnaly
     return false
 end
 
-@jetreport struct GlobalUndefVarErrorReport <: InferenceErrorReport
-    mod::Module
-    name::Symbol
+@jetreport struct UndefVarErrorReport <: InferenceErrorReport
+    var::Union{GlobalRef,TypeVar,Symbol}
 end
-function print_report_message(io::IO, (; mod, name)::GlobalUndefVarErrorReport)
-    print(io, "`", mod, '.', name, "` is not defined")
+function print_report_message(io::IO, r::UndefVarErrorReport)
+    var = r.var
+    if isa(var, GlobalRef)
+        print(io, "`", var.mod, '.', var.name, "`")
+    elseif isa(var, TypeVar)
+        print(io, "static parameter `", var.name, "`")
+    else
+        print(io, "local variable `", name, "`")
+    end
+    print(io, " is not defined")
 end
-print_signature(::GlobalUndefVarErrorReport) = false
+print_signature(::UndefVarErrorReport) = false
 
-(::SoundPass)(::Type{GlobalUndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, mod::Module, name::Symbol) =
-    report_undef_var!(analyzer, sv, mod, name, #=sound=#true)
-(::BasicPass)(::Type{GlobalUndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, mod::Module, name::Symbol) =
-    report_undef_var!(analyzer, sv, mod, name, #=sound=#false)
-(::TypoPass)(::Type{GlobalUndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, mod::Module, name::Symbol) =
-    report_undef_var!(analyzer, sv, mod, name, #=sound=#false)
-function report_undef_var!(analyzer::JETAnalyzer, sv::InferenceState, mod::Module, name::Symbol, sound::Bool)
-    if !isdefined(mod, name)
+# undefined global variable report passes
+
+(::SoundPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, gr::GlobalRef) =
+    report_undef_global_var!(analyzer, sv, gr, #=sound=#true)
+(::BasicPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, gr::GlobalRef) =
+    report_undef_global_var!(analyzer, sv, gr, #=sound=#false)
+(::TypoPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, gr::GlobalRef) =
+    report_undef_global_var!(analyzer, sv, gr, #=sound=#false)
+function report_undef_global_var!(analyzer::JETAnalyzer, sv::InferenceState, gr::GlobalRef, sound::Bool)
+    if !isdefined(gr.mod, gr.name)
         report = false
         if sound
             report |= true
         else
-            if is_corecompiler_undefglobal(mod, name)
-            elseif VERSION ≥ v"1.8.0-DEV.1465" && ccall(:jl_binding_type, Any, (Any, Any), mod, name) !== nothing
+            if is_corecompiler_undefglobal(gr)
+            elseif VERSION ≥ v"1.8.0-DEV.1465" && ccall(:jl_binding_type, Any, (Any, Any), gr.mod, gr.name) !== nothing
                 # if this global var is explicitly type-declared, it will be likely get assigned somewhere
                 # TODO give this permission only to top-level analysis
             else
@@ -777,7 +798,7 @@ function report_undef_var!(analyzer::JETAnalyzer, sv::InferenceState, mod::Modul
             end
         end
         if report
-            add_new_report!(analyzer, sv.result, GlobalUndefVarErrorReport(sv, mod, name))
+            add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, gr))
             return true
         end
     end
@@ -790,41 +811,58 @@ end
 # definitions, and `BasicPass` will exclude reports on those undefined names since they
 # usually don't matter and `Core.Compiler`'s basic functionality is battle-tested and
 # validated exhausively by its test suite and real-world usages.
-function is_corecompiler_undefglobal(mod::Module, name::Symbol)
-    mod === CC && return isdefined(Base, name)
+function is_corecompiler_undefglobal(gr::GlobalRef)
+    gr.mod === CC && return isdefined(Base, gr.name)
     @static if isdefined(CC, :Sort)
-        mod === CC.Sort && return isdefined(Base.Sort, name)
+        gr.mod === CC.Sort && return isdefined(Base.Sort, gr.name)
     end
     return false
 end
 
-@jetreport struct LocalUndefVarErrorReport <: InferenceErrorReport
-    name::Symbol
-end
-print_report_message(io::IO, (; name)::LocalUndefVarErrorReport) =
-    print(io, "local variable $name is not defined")
-print_signature(::LocalUndefVarErrorReport) = false
+# undefined static parameter report passes
 
-# these report passes use `:throw_undef_if_not` and `:(unreachable)` introduced by the native
-# optimization pass, and thus supposed to only work on post-optimization code
-# (::SoundPass)(::Type{LocalUndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, e::SlotNumber, vtypes::VarTable, @nospecialize(ret)) =
-#     report_undefined_local_slots!(analyzer, sv, e, vtypes, ret, #=unsound=#false)
-# (::BasicPass)(::Type{LocalUndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, e::SlotNumber, vtypes::VarTable, @nospecialize(ret)) =
-#     report_undefined_local_slots!(analyzer, sv, e, vtypes, ret, #=unsound=#true)
-
-function (::SoundPass)(::Type{LocalUndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState,
-    var::SlotNumber, vtypes::VarTable, @nospecialize(ret))
-    vtyp = vtypes[slot_id(var)]
-    if vtyp.undef
-        add_new_report!(analyzer, sv.result, LocalUndefVarErrorReport(sv, get_slotname(sv, var)))
+(::SoundPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, n::Int) =
+    report_undef_static_parameter!(analyzer, sv, n)
+(::BasicPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, n::Int) =
+    report_undef_static_parameter!(analyzer, sv, n)
+(::TypoPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, n::Int) =
+    report_undef_static_parameter!(analyzer, sv, n)
+function report_undef_static_parameter!(analyzer::JETAnalyzer, sv::InferenceState, n::Int)
+    if 1 ≤ n ≤ length(sv.sptypes)
+        if sv.sptypes[n] === Any
+            tv = sv.linfo.sparam_vals[n]
+            add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, tv))
+            return true
+        end
+    else
+        add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, TypeVar(:unknown)))
         return true
     end
     return false
 end
-function (::BasicPass)(::Type{LocalUndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState,
+
+# undefined local variable report passes
+
+# these report passes use `:throw_undef_if_not` and `:(unreachable)` introduced by the native
+# optimization pass, and thus supposed to only work on post-optimization code
+# (::SoundPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, e::SlotNumber, vtypes::VarTable, @nospecialize(ret)) =
+#     report_undefined_local_slots!(analyzer, sv, e, vtypes, ret, #=unsound=#false)
+# (::BasicPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, e::SlotNumber, vtypes::VarTable, @nospecialize(ret)) =
+#     report_undefined_local_slots!(analyzer, sv, e, vtypes, ret, #=unsound=#true)
+
+function (::SoundPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState,
+    var::SlotNumber, vtypes::VarTable, @nospecialize(ret))
+    vtyp = vtypes[slot_id(var)]
+    if vtyp.undef
+        add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, get_slotname(sv, var)))
+        return true
+    end
+    return false
+end
+function (::BasicPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState,
     var::SlotNumber, vtypes::VarTable, @nospecialize(ret))
     ret === Bottom || return false
-    add_new_report!(analyzer, sv.result, LocalUndefVarErrorReport(sv, get_slotname(sv, var)))
+    add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, get_slotname(sv, var)))
     return true
 end
 
@@ -1054,7 +1092,7 @@ function report_getglobal!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::
     gr = constant_globalref(argtypes)
     gr === nothing && return false
     # forward to the report pass for undefined global reference
-    return ReportPass(analyzer)(GlobalUndefVarErrorReport, analyzer, sv, gr.mod, gr.name)
+    return ReportPass(analyzer)(UndefVarErrorReport, analyzer, sv, gr)
 end
 
 function report_setfield!!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes, @nospecialize(ret))

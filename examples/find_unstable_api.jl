@@ -112,9 +112,9 @@ CC.may_optimize(analyzer::UnstableAPIAnalyzer) = false
 # So in our report pass, we would like to ignore all the reports implemented by JET.jl by default
 (::UnstableAPIAnalysisPass)(T::Type{<:InferenceErrorReport}, analyzer, state, @nospecialize(spec_args...)) = return
 
-# but except the report of undefined global references (i.e. `GlobalUndefVarErrorReport`).
+# but except the report of undefined global references (i.e. `UndefVarErrorReport`).
 # This overload allow us to find code that falls into the category 1.
-function (::UnstableAPIAnalysisPass)(T::Type{JET.GlobalUndefVarErrorReport}, analyzer, state, @nospecialize(spec_args...))
+function (::UnstableAPIAnalysisPass)(T::Type{JET.UndefVarErrorReport}, analyzer, state, @nospecialize(spec_args...))
     JET.BasicPass()(T, analyzer, state, spec_args...) # forward to JET's default report pass
 end
 
@@ -134,7 +134,7 @@ JETInterface.report_color(::UnstableAPI) = :yellow
 
 function (::UnstableAPIAnalysisPass)(::Type{UnstableAPI}, analyzer::UnstableAPIAnalyzer, sv, @nospecialize(e))
     if isa(e, GlobalRef)
-        isdefined(e.mod, e.name) || return false # this global reference falls into the category 1, should be caught by `GlobalUndefVarErrorReport` instead
+        isdefined(e.mod, e.name) || return false # this global reference falls into the category 1, should be caught by `UndefVarErrorReport` instead
 
         (; mod, name) = Base.resolve(e) # this reference will be safely resolved
         analyzer.is_target_module(mod) && return # we don't care about what we defined ourselves

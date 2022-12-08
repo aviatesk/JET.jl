@@ -60,19 +60,13 @@
         result = @eval m $report_call((Int,); max_methods=4) do a
             foo(Val(a))
         end
-        @test any(get_reports_with_test(result)) do r
-            isa(r, GlobalUndefVarErrorReport) &&
-            r.name === :undefvar
-        end
+        @test any(r->is_global_undef_var(r, :undefvar), get_reports_with_test(result))
 
         # should run the cached previous result
         result = @eval m $report_call((Int,); max_methods=4) do a
             foo(Val(a))
         end
-        @test any(get_reports_with_test(result)) do r
-            isa(r, GlobalUndefVarErrorReport) &&
-            r.name === :undefvar
-        end
+        @test any(r->is_global_undef_var(r, :undefvar), get_reports_with_test(result))
     end
 end
 
@@ -175,178 +169,169 @@ end
     end
 end
 
-@static false && @testset "LocalUndefVarErrorReport" begin
-    let result = report_call((Bool,)) do b
-            if b
-                bar = rand(Int)
-                return bar
-            end
-            return bar # undefined in this pass
+@testset "UndefVarErrorReport" begin
+    @testset "global" begin
+        let result = report_call(()->foo)
+            r = only(get_reports_with_test(result))
+            @test is_global_undef_var(r, :foo)
         end
-        r = only(get_reports_with_test(result))
-        @test r isa LocalUndefVarErrorReport
-        @test r.name === :bar
-        @test last(r.vst).line == (@__LINE__)-5
+
+        # deeper level
+        let m = @fixturedef begin
+                foo(bar) = bar + baz
+                qux(a) = foo(a)
+            end
+
+            result = Core.eval(m, :($report_call(qux, (Int,))))
+            r = only(get_reports_with_test(result))
+            @test is_global_undef_var(r, :baz)
+
+            # works when cached
+            result = Core.eval(m, :($report_call(qux, (Int,))))
+            r = only(get_reports_with_test(result))
+            @test is_global_undef_var(r, :baz)
+        end
+
+        let result = @eval Module() begin
+                $report_call() do
+                    getfield(@__MODULE__, :undefvar)
+                end
+            end
+            r = only(get_reports_with_test(result))
+            @test is_global_undef_var(r, :undefvar)
+        end
+
+        @static @isdefined(getglobal) && let result = @eval Module() begin
+                $report_call() do
+                    getglobal(@__MODULE__, :undefvar)
+                end
+            end
+            r = only(get_reports_with_test(result))
+            @test is_global_undef_var(r, :undefvar)
+        end
+
+        # if a global variable is type-declared, it will likely get assigned somewhere
+        let res = @analyze_toplevel analyze_from_definitions=true begin
+                global var::String
+                function __init__()
+                    global var
+                    var = "init"
+                end
+                getvar() = (global var; var)
+            end
+            @test isempty(res.res.inference_error_reports)
+        end
+        # but the sound mode should still be sound
+        let res = @analyze_toplevel mode=:sound analyze_from_definitions=true begin
+                global var::String
+                function __init__()
+                    global var
+                    var = "init"
+                end
+                getvar() = (global var; var)
+            end
+            r = only(get_reports_with_test(res))
+            @test is_global_undef_var(r, :var)
+        end
     end
 
-    # deeper level
-    let m = @fixturedef begin
-            function foo(b)
+    @static false && @testset "local" begin
+        let result = report_call((Bool,)) do b
                 if b
                     bar = rand(Int)
                     return bar
                 end
                 return bar # undefined in this pass
             end
-            baz(a) = foo(a)
+            r = only(get_reports_with_test(result))
+            @test is_local_undef_var(r, :bar)
+            @test last(r.vst).line == (@__LINE__)-4
         end
 
-        result = Core.eval(m, :($report_call(baz, (Bool,))))
-        r = only(get_reports_with_test(result))
-        @test r isa LocalUndefVarErrorReport
-        @test r.name === :bar
-        @test last(r.vst).line == (@__LINE__)-9
-
-        # works when cached
-        result = Core.eval(m, :($report_call(baz, (Bool,))))
-        r = only(get_reports_with_test(result))
-        @test r isa LocalUndefVarErrorReport
-        @test r.name === :bar
-        @test last(r.vst).line == (@__LINE__)-16
-    end
-
-    # try to exclude false negatives as possible (by collecting reports in after-optimization pass)
-    let result = report_call((Bool,)) do b
-            if b
-                bar = rand()
-            end
-
-            return if b
-                return bar # this shouldn't be reported
-            else
-                return nothing
-            end
-        end
-        @test isempty(get_reports_with_test(result))
-    end
-
-    let result = report_call((Bool,)) do b
-            if b
-                bar = rand()
-            end
-
-            return if b
-                return nothing
-            else
-                # ideally we want to have report for this pass, but tons of work will be
-                # needed to report this pass
-                return bar
-            end
-        end
-        @test_broken length(get_reports_with_test(result)) === 1 &&
-            first(get_reports_with_test(result)) isa LocalUndefVarErrorReport &&
-            first(get_reports_with_test(result)).name === :bar
-    end
-
-    # TODO better closure handling
-    let result = report_call() do
-            local a
-            function inner(n)
-                if n > 0
-                   a = n
+        # deeper level
+        let m = @fixturedef begin
+                function foo(b)
+                    if b
+                        bar = rand(Int)
+                        return bar
+                    end
+                    return bar # undefined in this pass
                 end
+                baz(a) = foo(a)
             end
-            inner(rand(Int))
-            return a
-        end
-        @test_broken isempty(get_reports_with_test(result))
-    end
 
-    let # should work for top-level analysis
-        res = @analyze_toplevel begin
-            foo = let
-                if rand(Bool)
-                    bar = rand(Int)
+            result = Core.eval(m, :($report_call(baz, (Bool,))))
+            r = only(get_reports_with_test(result))
+            @test is_local_undef_var(r, :bar)
+            @test last(r.vst).line == (@__LINE__)-8
+
+            # works when cached
+            result = Core.eval(m, :($report_call(baz, (Bool,))))
+            r = only(get_reports_with_test(result))
+            @test is_local_undef_var(r, :bar)
+            @test last(r.vst).line == (@__LINE__)-14
+        end
+
+        # try to exclude false negatives as possible (by collecting reports in after-optimization pass)
+        let result = report_call((Bool,)) do b
+                if b
+                    bar = rand()
+                end
+
+                return if b
+                    return bar # this shouldn't be reported
                 else
-                    bar # undefined in this pass
+                    return nothing
                 end
             end
-        end
-        let r = only(res.res.inference_error_reports)
-            @test r isa LocalUndefVarErrorReport
-            @test r.name === :bar
-        end
-    end
-end
-
-@testset "GlobalUndefVarErrorReport" begin
-    let result = report_call(()->foo)
-        @test length(get_reports_with_test(result)) === 1
-        @test first(get_reports_with_test(result)) isa GlobalUndefVarErrorReport
-        @test first(get_reports_with_test(result)).name === :foo
-    end
-
-    # deeper level
-    let m = @fixturedef begin
-            foo(bar) = bar + baz
-            qux(a) = foo(a)
+            @test isempty(get_reports_with_test(result))
         end
 
-        result = Core.eval(m, :($report_call(qux, (Int,))))
-        @test length(get_reports_with_test(result)) === 1
-        @test first(get_reports_with_test(result)) isa GlobalUndefVarErrorReport
-        @test first(get_reports_with_test(result)).name === :baz
+        let result = report_call((Bool,)) do b
+                if b
+                    bar = rand()
+                end
 
-        # works when cached
-        result = Core.eval(m, :($report_call(qux, (Int,))))
-        @test length(get_reports_with_test(result)) === 1
-        @test first(get_reports_with_test(result)) isa GlobalUndefVarErrorReport
-        @test first(get_reports_with_test(result)).name === :baz
-    end
+                return if b
+                    return nothing
+                else
+                    # ideally we want to have report for this pass, but tons of work will be
+                    # needed to report this pass
+                    return bar
+                end
+            end
+            @test_broken length(get_reports_with_test(result)) === 1 &&
+                is_local_undef_var(get_reports_with_test(result), :bar)
+        end
 
-    let result = @eval Module() begin
-            $report_call() do
-                getfield(@__MODULE__, :undefvar)
+        # TODO better closure handling
+        let result = report_call() do
+                local a
+                function inner(n)
+                    if n > 0
+                       a = n
+                    end
+                end
+                inner(rand(Int))
+                return a
+            end
+            @test_broken isempty(get_reports_with_test(result))
+        end
+
+        let # should work for top-level analysis
+            res = @analyze_toplevel begin
+                foo = let
+                    if rand(Bool)
+                        bar = rand(Int)
+                    else
+                        bar # undefined in this pass
+                    end
+                end
+            end
+            let r = only(res.res.inference_error_reports)
+                @test is_local_undef_var(r, :bar)
             end
         end
-        report = only(get_reports_with_test(result))
-        @test report isa GlobalUndefVarErrorReport
-        @test report.name === :undefvar
-    end
-
-    @static @isdefined(getglobal) && let result = @eval Module() begin
-            $report_call() do
-                getglobal(@__MODULE__, :undefvar)
-            end
-        end
-        report = only(get_reports_with_test(result))
-        @test report isa GlobalUndefVarErrorReport
-        @test report.name === :undefvar
-    end
-
-    # if a global variable is type-declared, it will likely get assigned somewhere
-    let res = @analyze_toplevel analyze_from_definitions=true begin
-            global var::String
-            function __init__()
-                global var
-                var = "init"
-            end
-            getvar() = (global var; var)
-        end
-        @test isempty(res.res.inference_error_reports)
-    end
-    # but the sound mode should still be sound
-    let res = @analyze_toplevel mode=:sound analyze_from_definitions=true begin
-            global var::String
-            function __init__()
-                global var
-                var = "init"
-            end
-            getvar() = (global var; var)
-        end
-        report = only(get_reports_with_test(res))
-        @test report isa GlobalUndefVarErrorReport
-        @test report.name === :var
     end
 end
 
@@ -645,8 +630,7 @@ end
         result = report_call(m.foo, (Float64,))
         @test length(get_reports_with_test(result)) == 1
         r = first(get_reports_with_test(result))
-        @test isa(r, GlobalUndefVarErrorReport)
-        @test r.name === :undefvar
+        @test is_global_undef_var(r, :undefvar)
     end
 
     let # unsuccessful code generation
@@ -901,33 +885,27 @@ end
 
     let result = @report_call M.foo("julia")
         test_sum_over_string(result)
-        @test any(get_reports_with_test(result)) do report
-            isa(report, GlobalUndefVarErrorReport) && report.name === :undefsum
-        end
+        @test any(r->is_global_undef_var(r, :undefsum), get_reports_with_test(result))
     end
 
     let result = @report_call target_modules=(M,) M.foo("julia")
-        report = only(get_reports_with_test(result))
-        @test isa(report, GlobalUndefVarErrorReport) && report.name === :undefsum
+        r = only(get_reports_with_test(result))
+        @test is_global_undef_var(r, :undefsum)
     end
 
     let result = @report_call target_modules=(AnyFrameModule(M),) M.foo("julia")
         test_sum_over_string(result)
-        @test any(get_reports_with_test(result)) do report
-            isa(report, GlobalUndefVarErrorReport) && report.name === :undefsum
-        end
+        @test any(r->is_global_undef_var(r, :undefsum), get_reports_with_test(result))
     end
 
     let result = @report_call ignored_modules=(Base,) M.foo("julia")
-        report = only(get_reports_with_test(result))
-        @test isa(report, GlobalUndefVarErrorReport) && report.name === :undefsum
+        r = only(get_reports_with_test(result))
+        @test is_global_undef_var(r, :undefsum)
     end
 
     let result = @report_call ignored_modules=(M,) M.foo("julia")
         test_sum_over_string(result)
-        @test !any(get_reports_with_test(result)) do report
-            isa(report, GlobalUndefVarErrorReport) && report.name === :undefsum
-        end
+        @test !any(r->is_global_undef_var(r, :undefsum), get_reports_with_test(result))
     end
 end
 
@@ -1013,9 +991,8 @@ end
     @testset "global undef var" begin
         let
             result = report_call(()->foo; mode=:typo)
-            @test length(get_reports_with_test(result)) === 1
-            @test first(get_reports_with_test(result)) isa GlobalUndefVarErrorReport
-            @test first(get_reports_with_test(result)).name === :foo
+            r = only(get_reports_with_test(result))
+            @test is_global_undef_var(r, :foo)
         end
 
         let # deeper level
@@ -1025,15 +1002,13 @@ end
             end
 
             result = Core.eval(m, :($report_call(qux, (Int,); mode=:typo)))
-            @test length(get_reports_with_test(result)) === 1
-            @test first(get_reports_with_test(result)) isa GlobalUndefVarErrorReport
-            @test first(get_reports_with_test(result)).name === :baz
+            r = only(get_reports_with_test(result))
+            @test is_global_undef_var(r, :baz)
 
             # works when cached
             result = Core.eval(m, :($report_call(qux, (Int,); mode=:typo)))
-            @test length(get_reports_with_test(result)) === 1
-            @test first(get_reports_with_test(result)) isa GlobalUndefVarErrorReport
-            @test first(get_reports_with_test(result)).name === :baz
+            r = only(get_reports_with_test(result))
+            @test is_global_undef_var(r, :baz)
         end
     end
 
