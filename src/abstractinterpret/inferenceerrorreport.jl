@@ -473,7 +473,7 @@ report_color(::InferenceErrorReport) = ERROR_COLOR
 # ------
 
 # to help inference
-function Base.getproperty(er::InferenceErrorReport, sym::Symbol)
+@inline function Base.getproperty(@nospecialize(er::InferenceErrorReport), sym::Symbol)
     return if sym === :vst
         getfield(er, sym)::VirtualStackTrace
     elseif sym === :sig

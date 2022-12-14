@@ -520,7 +520,7 @@ JETCallResult(result::InferenceResult, analyzer::AbstractAnalyzer, source::Abstr
     return state > $(fieldcount(JETCallResult)) ? nothing : (getfield(res, state), state+1)
 
 function get_result(result::JETCallResult)
-    if any(@nospecialize(r) -> isa(r, GeneratorErrorReport), get_reports(result))
+    if any(@nospecialize(r::InferenceErrorReport) -> isa(r, GeneratorErrorReport), get_reports(result))
         return Bottom
     else
         return result.result.result

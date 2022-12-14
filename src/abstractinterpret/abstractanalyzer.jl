@@ -536,18 +536,18 @@ get_any_reports(analyzer::AbstractAnalyzer, result::InferenceResult) = (analyzer
 
 Adds new [`report::InferenceErrorReport`](@ref InferenceErrorReport) associated with `result::InferenceResult`.
 """
-function add_new_report!(analyzer::AbstractAnalyzer, result::InferenceResult, report::InferenceErrorReport)
+function add_new_report!(analyzer::AbstractAnalyzer, result::InferenceResult, @nospecialize(report::InferenceErrorReport))
     push!(get_reports(analyzer, result), report)
     return report
 end
 
-function add_cached_report!(analyzer::AbstractAnalyzer, caller::InferenceResult, cached::InferenceErrorReport)
+function add_cached_report!(analyzer::AbstractAnalyzer, caller::InferenceResult, @nospecialize(cached::InferenceErrorReport))
     cached = copy_report′(cached)
     push!(get_reports(analyzer, caller), cached)
     return cached
 end
 
-add_caller_cache!(analyzer::AbstractAnalyzer, report::InferenceErrorReport) = push!(get_caller_cache(analyzer), report)
+add_caller_cache!(analyzer::AbstractAnalyzer, @nospecialize(report::InferenceErrorReport)) = push!(get_caller_cache(analyzer), report)
 add_caller_cache!(analyzer::AbstractAnalyzer, reports::Vector{InferenceErrorReport}) = append!(get_caller_cache(analyzer), reports)
 
 # AbstractInterpreter
@@ -628,7 +628,7 @@ ignores the identity of error point's `MethodInstance`, under the assumption tha
 identical as far as they're collected at the same file and line.
 """
 aggregation_policy(::AbstractAnalyzer) = default_aggregation_policy
-function default_aggregation_policy(@nospecialize(report#=::InferenceErrorReport=#))
+function default_aggregation_policy(@nospecialize(report::InferenceErrorReport))
     return DefaultReportIdentity(
         typeof(Base.inferencebarrier(report))::DataType,
         report.sig,
