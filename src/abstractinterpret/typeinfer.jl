@@ -529,6 +529,7 @@ because it is not detected within `linfo3` but within `linfo1` (so it's not a "l
 """
 function islineage(parent::MethodInstance, current::MethodInstance)
     function (report::InferenceErrorReport)
+        @nospecialize report
         @inbounds begin
             vst = report.vst
             length(vst) > 1 || return false

@@ -515,7 +515,9 @@ function (::BasicPass)(::Type{UncaughtExceptionReport}, analyzer::JETAnalyzer, f
         # (if exists) are caught and not propagated here
         # we don't want to cache the caught `UncaughtExceptionReport`s for this frame and
         # its parents, and just filter them away now
-        filter!(report->!isa(report, UncaughtExceptionReport), get_reports(analyzer, frame.result))
+        filter!(get_reports(analyzer, frame.result)) do @nospecialize(report::InferenceErrorReport)
+            return !isa(report, UncaughtExceptionReport)
+        end
     end
     return false
 end
