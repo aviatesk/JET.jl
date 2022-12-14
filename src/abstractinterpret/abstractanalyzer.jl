@@ -536,23 +536,27 @@ get_reports(analyzer::AbstractAnalyzer, result::InferenceResult) = (analyzer[res
 get_cached_reports(analyzer::AbstractAnalyzer, result::InferenceResult) = (analyzer[result]::JETCachedResult).reports
 get_any_reports(analyzer::AbstractAnalyzer, result::InferenceResult) = (analyzer[result]::AnyJETResult).reports
 
+# HACK to avoid runtime dispatch
+@inline push_report!(reports::Vector{InferenceErrorReport}, @nospecialize(report::InferenceErrorReport)) =
+    @invoke push!(reports::Vector, report::InferenceErrorReport)
+
 """
     add_new_report!(analyzer::AbstractAnalyzer, result::InferenceResult, report::InferenceErrorReport)
 
 Adds new [`report::InferenceErrorReport`](@ref InferenceErrorReport) associated with `result::InferenceResult`.
 """
 function add_new_report!(analyzer::AbstractAnalyzer, result::InferenceResult, @nospecialize(report::InferenceErrorReport))
-    push!(get_reports(analyzer, result), report)
+    push_report!(get_reports(analyzer, result), report)
     return report
 end
 
 function add_cached_report!(analyzer::AbstractAnalyzer, caller::InferenceResult, @nospecialize(cached::InferenceErrorReport))
     cached = copy_report′(cached)
-    push!(get_reports(analyzer, caller), cached)
+    push_report!(get_reports(analyzer, caller), cached)
     return cached
 end
 
-add_caller_cache!(analyzer::AbstractAnalyzer, @nospecialize(report::InferenceErrorReport)) = push!(get_caller_cache(analyzer), report)
+add_caller_cache!(analyzer::AbstractAnalyzer, @nospecialize(report::InferenceErrorReport)) = push_report!(get_caller_cache(analyzer), report)
 add_caller_cache!(analyzer::AbstractAnalyzer, reports::Vector{InferenceErrorReport}) = append!(get_caller_cache(analyzer), reports)
 
 # AbstractInterpreter

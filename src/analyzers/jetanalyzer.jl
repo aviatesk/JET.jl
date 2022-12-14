@@ -170,18 +170,17 @@ function CC.InferenceState(result::InferenceResult, cache::Symbol, analyzer::JET
     return frame
 end
 
-function CC.finish!(analyzer::JETAnalyzer, frame::InferenceState)
-    src = @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
-
-    if isnothing(src)
-        # caught in cycle, similar error should have been reported where the source is available
-        return src
-    else
-        code = (src::CodeInfo).code
+function CC.finish!(analyzer::JETAnalyzer, caller::InferenceResult)
+    src = @invoke CC.finish!(analyzer::AbstractInterpreter, caller::InferenceResult)
+    if src isa CodeInfo
         # report pass for uncaught `throw` calls
-        ReportPass(analyzer)(UncaughtExceptionReport, analyzer, frame, code)
-        return src
+        ReportPass(analyzer)(UncaughtExceptionReport, analyzer, caller, src)
+    else
+        # very much optimized (nothing to report), or very much unoptimized:
+        # in a case of the latter, similar error should have been reported
+        # where the source is available
     end
+    return @invoke CC.finish!(analyzer::AbstractAnalyzer, caller::InferenceResult)
 end
 
 let # overload `abstract_call_gf_by_type`
@@ -487,56 +486,60 @@ end
 Represents general `throw` calls traced during inference.
 This is reported only when it's not caught by control flow.
 """
-@jetreport struct UncaughtExceptionReport <: InferenceErrorReport
-    throw_calls::Vector{Tuple{Int,Expr}} # (pc, call)
-end
-function UncaughtExceptionReport(sv::InferenceState, throw_calls::Vector{Tuple{Int,Expr}})
-    vf = get_virtual_frame(sv.linfo)
-    sig = Any[]
-    ncalls = length(throw_calls)
-    for (i, (pc, call)) in enumerate(throw_calls)
-        call_sig = get_sig_nowrap((sv, pc), call)
-        append!(sig, call_sig)
-        i ≠ ncalls && push!(sig, ", ")
-    end
-    return UncaughtExceptionReport([vf], Signature(sig), throw_calls)
-end
-function print_report_message(io::IO, (; throw_calls)::UncaughtExceptionReport)
-    msg = length(throw_calls) == 1 ? "may throw" : "may throw either of"
-    print(io, msg)
-end
+@jetreport struct UncaughtExceptionReport <: InferenceErrorReport end
+print_report_message(io::IO, ::UncaughtExceptionReport) = print(io, "may throw")
+print_signature(::UncaughtExceptionReport) = false
+
+# @jetreport struct UncaughtExceptionReport <: InferenceErrorReport
+#     throw_calls::Vector{Tuple{Int,Expr}} # (pc, call)
+# end
+# function UncaughtExceptionReport(caller::InferenceResult, throw_calls::Vector{Tuple{Int,Expr}})
+#     vf = get_virtual_frame(caller.linfo)
+#     sig = Any[]
+#     ncalls = length(throw_calls)
+#     for (i, (pc, call)) in enumerate(throw_calls)
+#         call_sig = get_sig_nowrap((caller.src::CodeInfo, pc), call)
+#         append!(sig, call_sig)
+#         i ≠ ncalls && push!(sig, ", ")
+#     end
+#     return UncaughtExceptionReport([vf], Signature(sig), throw_calls)
+# end
+# function print_report_message(io::IO, (; throw_calls)::UncaughtExceptionReport)
+#     msg = length(throw_calls) == 1 ? "may throw" : "may throw either of"
+#     print(io, msg)
+# end
 
 # report `throw` calls "appropriately"
 # this error report pass is very special, since 1.) it's tightly bound to the report pass of
 # `SeriousExceptionReport` and 2.) it involves "report filtering" on its own
-function (::BasicPass)(::Type{UncaughtExceptionReport}, analyzer::JETAnalyzer, frame::InferenceState, stmts::Vector{Any})
-    if frame.bestguess === Bottom
-        report_uncaught_exceptions!(analyzer, frame, stmts)
+function (::BasicPass)(::Type{UncaughtExceptionReport}, analyzer::JETAnalyzer, caller::InferenceResult, src::CodeInfo)
+    if caller.result === Bottom
+        report_uncaught_exceptions!(analyzer, caller, src)
         return true
     else
         # the non-`Bottom` result may mean `throw` calls from the children frames
         # (if exists) are caught and not propagated here
         # we don't want to cache the caught `UncaughtExceptionReport`s for this frame and
         # its parents, and just filter them away now
-        filter!(get_reports(analyzer, frame.result)) do @nospecialize(report::InferenceErrorReport)
+        filter!(get_reports(analyzer, caller)) do @nospecialize(report::InferenceErrorReport)
             return !isa(report, UncaughtExceptionReport)
         end
     end
     return false
 end
-(::SoundPass)(::Type{UncaughtExceptionReport}, analyzer::JETAnalyzer, frame::InferenceState, stmts::Vector{Any}) =
-    report_uncaught_exceptions!(analyzer, frame, stmts) # yes, you want tons of false positives !
-function report_uncaught_exceptions!(analyzer::JETAnalyzer, frame::InferenceState, stmts::Vector{Any})
+(::SoundPass)(::Type{UncaughtExceptionReport}, analyzer::JETAnalyzer, caller::InferenceResult, src::CodeInfo) =
+    report_uncaught_exceptions!(analyzer, caller, src) # yes, you want tons of false positives !
+function report_uncaught_exceptions!(analyzer::JETAnalyzer, caller::InferenceResult, src::CodeInfo)
     # if the return type here is `Bottom` annotated, this _may_ mean there're uncaught
     # `throw` calls
     # XXX it's possible that the `throw` calls within them are all caught but the other
     # critical errors still make the return type `Bottom`
     # NOTE to reduce the false positive cases described above, we count `throw` calls
     # after optimization, since it may have eliminated "unreachable" `throw` calls
-    codelocs = frame.src.codelocs
-    linetable = frame.src.linetable::LineTable
+    codelocs = src.codelocs
+    linetable = src.linetable::LineTable
     reported_locs = nothing
-    for report in get_reports(analyzer, frame.result)
+    for report in get_reports(analyzer, caller)
         if isa(report, SeriousExceptionReport)
             if isnothing(reported_locs)
                 reported_locs = LineInfoNode[]
@@ -545,7 +548,7 @@ function report_uncaught_exceptions!(analyzer::JETAnalyzer, frame::InferenceStat
         end
     end
     throw_calls = nothing
-    for (pc, stmt) in enumerate(stmts)
+    for (pc, stmt) in enumerate(src.code)
         isa(stmt, Expr) || continue
         is_throw_call(stmt) || continue
         # if this `throw` is already reported, don't duplciate
@@ -558,7 +561,8 @@ function report_uncaught_exceptions!(analyzer::JETAnalyzer, frame::InferenceStat
         push!(throw_calls, (pc, stmt))
     end
     if !isnothing(throw_calls) && !isempty(throw_calls)
-        add_new_report!(analyzer, frame.result, UncaughtExceptionReport(frame, throw_calls))
+        # TODO add_new_report!(analyzer, caller, UncaughtExceptionReport(caller, throw_calls))
+        add_new_report!(analyzer, caller, UncaughtExceptionReport(caller))
         return true
     end
     return false

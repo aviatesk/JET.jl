@@ -168,7 +168,7 @@ end
     result = report_call(m.foo, (String,))
     r = only(get_reports_with_test(result))
     @test isa(r, UncaughtExceptionReport)
-    @test Any['(', 's', String, ')', ArgumentError] ⫇ r.sig._sig
+    @test_broken Any['(', 's', String, ')', ArgumentError] ⫇ r.sig._sig
 end
 
 sparams1(::Type{T}) where T = zero(T)
