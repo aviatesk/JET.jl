@@ -1,169 +1,3 @@
-# top-level bridge
-# ================
-
-"""
-    mutable struct AbstractGlobal
-        t::Any     # analyzed type
-        isconst::Bool # is this abstract global variable declarared as constant or not
-    end
-
-Wraps a global variable whose type is analyzed by abtract interpretation.
-`AbstractGlobal` object will be actually evaluated into the context module, and a later
-analysis may refer to or alter its type on future load and store operations.
-
-!!! note
-    The type of the wrapped global variable will be propagated only when in a toplevel frame,
-    and thus we don't care about the analysis cache invalidation on a refinement of the
-    wrapped global variable, since JET doesn't cache the toplevel frame.
-"""
-mutable struct AbstractGlobal
-    t::Any        # analyzed type
-    isconst::Bool # is this abstract global variable declarared as constant or not
-    AbstractGlobal(@nospecialize(t), isconst::Bool) = new(t, isconst)
-end
-
-@doc """
-    bail_out_toplevel_call(analyzer::AbstractAnalyzer, ...)
-
-An overload for `abstract_call_gf_by_type(analyzer::AbstractAnalyzer, ...)`, which keeps
-inference on non-concrete call sites in a toplevel frame created by [`virtual_process`](@ref).
-"""
-CC.bail_out_toplevel_call(analyzer::AbstractAnalyzer, @nospecialize(sig), sv::InferenceState) = false
-
-function CC.abstract_eval_special_value(analyzer::AbstractAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    istoplevel = JET.istoplevel(sv)
-
-    if istoplevel
-        if isa(e, Slot) && is_global_slot(analyzer, e)
-            if get_slottype((sv, get_currpc(sv)), e) === Bottom
-                # if this abstract global variable is not initialized, form the global
-                # reference and abstract intepret it; we may have abstract interpreted this
-                # variable and it may have a type
-                # if it's really not defined, the error will be generated later anyway
-                e = GlobalRef(get_toplevelmod(analyzer), get_slotname(sv, e))
-            end
-        end
-    end
-
-    ret = @invoke CC.abstract_eval_special_value(analyzer::AbstractInterpreter, e::Any, vtypes::VarTable, sv::InferenceState)
-
-    if istoplevel
-        if isa(e, GlobalRef)
-            mod, name = e.mod, e.name
-            if isdefined(mod, name)
-                # eagerly propagate the type of this global variable:
-                # of course the traced type might be difference from its type in actual execution
-                # e.g. we don't track global variable assignments that can happen somewhere
-                # in this call graph, but it's highly possible this is a toplevel callsite
-                # and we take a risk here since we can't enter the analysis otherwise
-                val = getglobal(mod, name)
-                ret = isa(val, AbstractGlobal) ? val.t : Const(val)
-            end
-        end
-    end
-
-    return ret
-end
-
-function CC.abstract_eval_value(analyzer::AbstractAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    ret = @invoke CC.abstract_eval_value(analyzer::AbstractInterpreter, e::Any, vtypes::VarTable, sv::InferenceState)
-
-    # HACK if we encounter `_INACTIVE_EXCEPTION`, it means `ConcreteInterpreter` tried to
-    # concretize an exception which was not actually thrown – yet the actual error hasn't
-    # happened thanks to JuliaInterpreter's implementation detail, i.e. JuliaInterpreter
-    # could retrieve `FrameData.last_exception`, which is initialized with
-    # `_INACTIVE_EXCEPTION.instance` – but it's obviously not a sound approximation of an
-    # actual execution and so here we will fix it to `Any`, since we don't analyze types of
-    # exceptions in general
-    if is_inactive_exception(ret)
-        ret = Any
-    end
-
-    return ret
-end
-
-function is_inactive_exception(@nospecialize rt)
-    return isa(rt, Const) && rt.val === _INACTIVE_EXCEPTION()
-end
-
-function CC.abstract_eval_statement(analyzer::AbstractAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    if istoplevel(sv)
-        if get_concretized(analyzer)[get_currpc(sv)]
-            return Any # bail out if it has been interpreted by `ConcreteInterpreter`
-        end
-    end
-
-    return @invoke CC.abstract_eval_statement(analyzer::AbstractInterpreter, e::Any, vtypes::VarTable, sv::InferenceState)
-end
-
-function CC.builtin_tfunction(analyzer::AbstractAnalyzer,
-    @nospecialize(f), argtypes::Vector{Any},
-    sv::InferenceState) # `AbstractAnalyzer` isn't overloaded on `return_type`
-    ret = @invoke CC.builtin_tfunction(analyzer::AbstractInterpreter,
-        f::Any, argtypes::Vector{Any},
-        sv::Union{InferenceState,Nothing})
-
-    if f === getglobal
-        if istoplevel_getproperty(sv)
-            ret = narrow_toplevel_getglobal(argtypes, ret)
-        end
-    elseif f === Core.get_binding_type
-        if istoplevel(sv)
-            ret = narrow_toplevel_binding_type(argtypes, ret)
-        end
-    end
-
-    return ret
-end
-
-# check if this frame is for `getproperty(::Module, ::Symbol)`,
-# that may access to abstract global variable traced by `analyzer`
-function istoplevel_getproperty(sv::InferenceState)
-    def = sv.linfo.def
-    isa(def, Method) || return false
-    def.name === :getproperty || return false
-    def.sig === Tuple{typeof(getproperty), Module, Symbol} || return false
-    parent = sv.parent
-    parent === nothing && return false
-    return istoplevel(parent)
-end
-
-# if this `getglobal` access to a global variable in a module concretized by `AbstractAnalyzer`,
-# eargely propagate its type (NOTE the logic here should be synced with the implementation
-# of `abstract_eval_special_value(::AbstractAnalyzer, ...)`)
-function narrow_toplevel_getglobal(argtypes::Vector{Any}, @nospecialize ret)
-    (isa(ret, Const) || ret === Bottom) && return ret # i.e. constant or error
-    gr = constant_globalref(argtypes)
-    gr === nothing && return ret
-    isdefined(gr.mod, gr.name) || return ret
-    val = getglobal(gr.mod, gr.name)
-    return isa(val, AbstractGlobal) ? val.t : Const(val)
-end
-
-# if the type for a variable hasn't been declared explicitly, return the narrower type
-# declaration (`Const(Any)`) to allow JET to analyze the first assignment for the variable
-# (, that would follow most of the time as generated by the frontend) more precisely
-function narrow_toplevel_binding_type(argtypes::Vector{Any}, @nospecialize ret)
-    (isa(ret, Const) || ret === Bottom) && return ret # i.e. already declared or error
-    gr = constant_globalref(argtypes)
-    gr === nothing && return ret
-    @assert !isdefined(gr.mod, gr.name) "`get_binding_type` should resolve the already-defined variable type"
-    return Const(Any)
-end
-
-function constant_globalref(argtypes::Vector{Any})
-    length(argtypes) ≥ 2 || return nothing
-    mod = argtypes[1]
-    isa(mod, Const) || return nothing
-    mod = mod.val
-    isa(mod, Module) || return nothing
-    sym = argtypes[2]
-    isa(sym, Const) || return nothing
-    sym = sym.val
-    isa(sym, Symbol) || return nothing
-    return GlobalRef(mod, sym)
-end
-
 # inter-procedural
 # ================
 
@@ -801,6 +635,179 @@ function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
     return true
 end
 
+# by default, this overload just is forwarded to the AbstractInterpreter's implementation
+# but the only reason we have this overload is that some analyzers (like `JETAnalyzer`)
+# can further overload this to generate `InferenceErrorReport` with an access to `frame`
+function CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
+    return CC.finish!(analyzer, frame.result)
+end
+
+# top-level bridge
+# ================
+
+"""
+    mutable struct AbstractGlobal
+        t::Any     # analyzed type
+        isconst::Bool # is this abstract global variable declarared as constant or not
+    end
+
+Wraps a global variable whose type is analyzed by abtract interpretation.
+`AbstractGlobal` object will be actually evaluated into the context module, and a later
+analysis may refer to or alter its type on future load and store operations.
+
+!!! note
+    The type of the wrapped global variable will be propagated only when in a toplevel frame,
+    and thus we don't care about the analysis cache invalidation on a refinement of the
+    wrapped global variable, since JET doesn't cache the toplevel frame.
+"""
+mutable struct AbstractGlobal
+    t::Any        # analyzed type
+    isconst::Bool # is this abstract global variable declarared as constant or not
+    AbstractGlobal(@nospecialize(t), isconst::Bool) = new(t, isconst)
+end
+
+@doc """
+    bail_out_toplevel_call(analyzer::AbstractAnalyzer, ...)
+
+An overload for `abstract_call_gf_by_type(analyzer::AbstractAnalyzer, ...)`, which keeps
+inference on non-concrete call sites in a toplevel frame created by [`virtual_process`](@ref).
+"""
+CC.bail_out_toplevel_call(analyzer::AbstractAnalyzer, @nospecialize(sig), sv::InferenceState) = false
+
+function CC.abstract_eval_special_value(analyzer::AbstractAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
+    istoplevel = JET.istoplevel(sv)
+
+    if istoplevel
+        if isa(e, Slot) && is_global_slot(analyzer, e)
+            if get_slottype((sv, get_currpc(sv)), e) === Bottom
+                # if this abstract global variable is not initialized, form the global
+                # reference and abstract intepret it; we may have abstract interpreted this
+                # variable and it may have a type
+                # if it's really not defined, the error will be generated later anyway
+                e = GlobalRef(get_toplevelmod(analyzer), get_slotname(sv, e))
+            end
+        end
+    end
+
+    ret = @invoke CC.abstract_eval_special_value(analyzer::AbstractInterpreter, e::Any, vtypes::VarTable, sv::InferenceState)
+
+    if istoplevel
+        if isa(e, GlobalRef)
+            mod, name = e.mod, e.name
+            if isdefined(mod, name)
+                # eagerly propagate the type of this global variable:
+                # of course the traced type might be difference from its type in actual execution
+                # e.g. we don't track global variable assignments that can happen somewhere
+                # in this call graph, but it's highly possible this is a toplevel callsite
+                # and we take a risk here since we can't enter the analysis otherwise
+                val = getglobal(mod, name)
+                ret = isa(val, AbstractGlobal) ? val.t : Const(val)
+            end
+        end
+    end
+
+    return ret
+end
+
+function CC.abstract_eval_value(analyzer::AbstractAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
+    ret = @invoke CC.abstract_eval_value(analyzer::AbstractInterpreter, e::Any, vtypes::VarTable, sv::InferenceState)
+
+    # HACK if we encounter `_INACTIVE_EXCEPTION`, it means `ConcreteInterpreter` tried to
+    # concretize an exception which was not actually thrown – yet the actual error hasn't
+    # happened thanks to JuliaInterpreter's implementation detail, i.e. JuliaInterpreter
+    # could retrieve `FrameData.last_exception`, which is initialized with
+    # `_INACTIVE_EXCEPTION.instance` – but it's obviously not a sound approximation of an
+    # actual execution and so here we will fix it to `Any`, since we don't analyze types of
+    # exceptions in general
+    if is_inactive_exception(ret)
+        ret = Any
+    end
+
+    return ret
+end
+
+function is_inactive_exception(@nospecialize rt)
+    return isa(rt, Const) && rt.val === _INACTIVE_EXCEPTION()
+end
+
+function CC.abstract_eval_statement(analyzer::AbstractAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
+    if istoplevel(sv)
+        if get_concretized(analyzer)[get_currpc(sv)]
+            return Any # bail out if it has been interpreted by `ConcreteInterpreter`
+        end
+    end
+
+    return @invoke CC.abstract_eval_statement(analyzer::AbstractInterpreter, e::Any, vtypes::VarTable, sv::InferenceState)
+end
+
+function CC.builtin_tfunction(analyzer::AbstractAnalyzer,
+    @nospecialize(f), argtypes::Vector{Any},
+    sv::InferenceState) # `AbstractAnalyzer` isn't overloaded on `return_type`
+    ret = @invoke CC.builtin_tfunction(analyzer::AbstractInterpreter,
+        f::Any, argtypes::Vector{Any},
+        sv::Union{InferenceState,Nothing})
+
+    if f === getglobal
+        if istoplevel_getproperty(sv)
+            ret = narrow_toplevel_getglobal(argtypes, ret)
+        end
+    elseif f === Core.get_binding_type
+        if istoplevel(sv)
+            ret = narrow_toplevel_binding_type(argtypes, ret)
+        end
+    end
+
+    return ret
+end
+
+# check if this frame is for `getproperty(::Module, ::Symbol)`,
+# that may access to abstract global variable traced by `analyzer`
+function istoplevel_getproperty(sv::InferenceState)
+    def = sv.linfo.def
+    isa(def, Method) || return false
+    def.name === :getproperty || return false
+    def.sig === Tuple{typeof(getproperty), Module, Symbol} || return false
+    parent = sv.parent
+    parent === nothing && return false
+    return istoplevel(parent)
+end
+
+# if this `getglobal` access to a global variable in a module concretized by `AbstractAnalyzer`,
+# eargely propagate its type (NOTE the logic here should be synced with the implementation
+# of `abstract_eval_special_value(::AbstractAnalyzer, ...)`)
+function narrow_toplevel_getglobal(argtypes::Vector{Any}, @nospecialize ret)
+    (isa(ret, Const) || ret === Bottom) && return ret # i.e. constant or error
+    gr = constant_globalref(argtypes)
+    gr === nothing && return ret
+    isdefined(gr.mod, gr.name) || return ret
+    val = getglobal(gr.mod, gr.name)
+    return isa(val, AbstractGlobal) ? val.t : Const(val)
+end
+
+# if the type for a variable hasn't been declared explicitly, return the narrower type
+# declaration (`Const(Any)`) to allow JET to analyze the first assignment for the variable
+# (, that would follow most of the time as generated by the frontend) more precisely
+function narrow_toplevel_binding_type(argtypes::Vector{Any}, @nospecialize ret)
+    (isa(ret, Const) || ret === Bottom) && return ret # i.e. already declared or error
+    gr = constant_globalref(argtypes)
+    gr === nothing && return ret
+    @assert !isdefined(gr.mod, gr.name) "`get_binding_type` should resolve the already-defined variable type"
+    return Const(Any)
+end
+
+function constant_globalref(argtypes::Vector{Any})
+    length(argtypes) ≥ 2 || return nothing
+    mod = argtypes[1]
+    isa(mod, Const) || return nothing
+    mod = mod.val
+    isa(mod, Module) || return nothing
+    sym = argtypes[2]
+    isa(sym, Const) || return nothing
+    sym = sym.val
+    isa(sym, Symbol) || return nothing
+    return GlobalRef(mod, sym)
+end
+
 function CC.finish(me::InferenceState, analyzer::AbstractAnalyzer)
     ret = @invoke CC.finish(me::InferenceState, analyzer::AbstractInterpreter)
 
@@ -842,13 +849,6 @@ function CC.finish(me::InferenceState, analyzer::AbstractAnalyzer)
     end
 
     return ret
-end
-
-# by default, this overload just is forwarded to the AbstractInterpreter's implementation
-# but the only reason we have this overload is that some analyzers (like `JETAnalyzer`)
-# can further overload this to generate `InferenceErrorReport` with an access to `frame`
-function CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
-    return CC.finish!(analyzer, frame.result)
 end
 
 is_global_slot(analyzer::AbstractAnalyzer, slot::Int)   = slot in keys(get_global_slots(analyzer))
