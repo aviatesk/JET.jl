@@ -558,10 +558,6 @@ CC.InferenceParams(analyzer::AbstractAnalyzer)    = get_inf_params(analyzer)
 CC.OptimizationParams(analyzer::AbstractAnalyzer) = get_opt_params(analyzer)
 CC.get_world_counter(analyzer::AbstractAnalyzer)  = get_world(analyzer)
 
-# JET only works for runtime inference
-CC.lock_mi_inference(::AbstractAnalyzer, ::MethodInstance) = nothing
-CC.unlock_mi_inference(::AbstractAnalyzer, ::MethodInstance) = nothing
-
 """
     NativeRemark <: InferenceErrorReport
 
@@ -578,10 +574,8 @@ function print_report_message(io::IO, (; s)::NativeRemark)
 end
 CC.add_remark!(analyzer::AbstractAnalyzer, sv::InferenceState, s) = ReportPass(analyzer)(NativeRemark, sv, s) # ignored by default
 
-CC.may_optimize(analyzer::AbstractAnalyzer)      = true
 CC.may_compress(analyzer::AbstractAnalyzer)      = false
 CC.may_discard_trees(analyzer::AbstractAnalyzer) = false
-CC.verbose_stmt_info(analyzer::AbstractAnalyzer) = false
 
 let # overload `inlining_policy`
     @static if isdefined(CC, :CallInfo)
