@@ -450,7 +450,12 @@ function CC.get(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance, defa
         if setter === :typeinf_edge
             if isa(codeinf, CodeInstance)
                 # cache hit, now we need to append cached reports associated with this `MethodInstance`
-                for cached in (codeinf.inferred::JETCachedResult).reports
+                @static if VERSION ≥ v"1.9.0-DEV.1115"
+                    inferred = @atomic :monotonic codeinf.inferred
+                else
+                    inferred = codeinf.inferred
+                end
+                for cached in (inferred::JETCachedResult).reports
                     restored = add_cached_report!(analyzer, caller, cached)
                     @static if JET_DEV_MODE
                         actual, expected = first(restored.vst).linfo, mi
