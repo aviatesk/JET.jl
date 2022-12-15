@@ -117,7 +117,7 @@ function jetanalyzer_function_filter(@nospecialize ft)
     return true
 end
 
-basic_filter(analyzer::JETAnalyzer, sv) =
+basic_filter(analyzer::JETAnalyzer, sv::InferenceState) =
     is_compileable_frame(sv) || get_entry(analyzer) === get_linfo(sv) # `report_call` may start analysis with abstract signature
 
 """

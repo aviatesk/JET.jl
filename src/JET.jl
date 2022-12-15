@@ -744,21 +744,18 @@ function method_sparams(m::Method)
     return svec(s...)
 end
 
-function analyze_method_signature!(analyzer::AbstractAnalyzer, m::Method, @nospecialize(atype), sparams::SimpleVector; kwargs...)
+function analyze_method_signature!(analyzer::AbstractAnalyzer, m::Method, @nospecialize(atype), sparams::SimpleVector)
     mi = specialize_method(m, atype, sparams)::MethodInstance
-    return analyze_method_instance!(analyzer, mi; kwargs...)
+    return analyze_method_instance!(analyzer, mi)
 end
 
-function analyze_method_instance!(analyzer::AbstractAnalyzer, mi::MethodInstance;
-                                  set_entry::Bool = true,
-                                  )
+function analyze_method_instance!(analyzer::AbstractAnalyzer, mi::MethodInstance)
     result = InferenceResult(mi)
 
     frame = InferenceState(result, #=cache=# :global, analyzer)
 
     isnothing(frame) && return analyzer, result
 
-    set_entry && set_entry!(analyzer, mi)
     return analyze_frame!(analyzer, frame)
 end
 
@@ -768,6 +765,7 @@ function InferenceState(result::InferenceResult, cache::Symbol, analyzer::Abstra
 end
 
 function analyze_frame!(analyzer::AbstractAnalyzer, frame::InferenceState)
+    set_entry!(analyzer, frame.linfo)
     typeinf(analyzer, frame)
     return analyzer, frame.result
 end
@@ -1146,9 +1144,7 @@ struct InsufficientWatches <: Exception
 end
 
 # we have to go on hacks; see `transform_abstract_global_symbols!` and `resolve_toplevel_symbols!`
-function analyze_toplevel!(analyzer::AbstractAnalyzer, src::CodeInfo;
-                           set_entry::Bool = true,
-                           )
+function analyze_toplevel!(analyzer::AbstractAnalyzer, src::CodeInfo)
     # construct toplevel `MethodInstance`
     mi = ccall(:jl_new_method_instance_uninit, Ref{Core.MethodInstance}, ());
     mi.specTypes = Tuple{}
@@ -1169,7 +1165,6 @@ function analyze_toplevel!(analyzer::AbstractAnalyzer, src::CodeInfo;
     # `typeinf_edge` won't add "toplevel-to-callee" edges
     frame = InferenceState(result, src, #=cache=# :global, analyzer)::InferenceState
 
-    set_entry && set_entry!(analyzer, mi)
     return analyze_frame!(analyzer, frame)
 end
 
