@@ -224,7 +224,8 @@ function CC.finish(frame::InferenceState, analyzer::OptAnalyzer)
 
     analyze = true
     if analyzer.skip_noncompileable_calls
-        if !(is_compileable_frame(frame) || get_entry(analyzer) === get_linfo(frame))
+        mi = frame.linfo
+        if !(is_compileable_mi(mi) || is_entry(analyzer, mi))
             analyze = false
         end
     end

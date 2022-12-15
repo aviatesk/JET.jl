@@ -117,8 +117,11 @@ function jetanalyzer_function_filter(@nospecialize ft)
     return true
 end
 
-basic_filter(analyzer::JETAnalyzer, sv::InferenceState) =
-    is_compileable_frame(sv) || get_entry(analyzer) === get_linfo(sv) # `report_call` may start analysis with abstract signature
+function basic_filter(analyzer::JETAnalyzer, sv::InferenceState)
+    mi = sv.linfo
+    is_compileable_mi(mi) && return true
+    return is_entry(analyzer, mi) # `report_call` may start analysis with abstract signature
+end
 
 """
 The sound error analysis pass.

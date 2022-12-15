@@ -376,11 +376,10 @@ function Base.getindex(st::StmtTypes, pc::Int)
 end
 end
 
-function is_compileable_frame(frame)
-    linfo = get_linfo(frame)
-    def = linfo.def
+function is_compileable_mi(mi::MethodInstance)
+    def = mi.def
     isa(def, Method) || return false
-    return get_compileable_sig(def, linfo.specTypes, linfo.sparam_vals) !== nothing
+    return get_compileable_sig(def, mi.specTypes, mi.sparam_vals) !== nothing
 end
 
 get_linfo(sv::State) = sv.linfo
@@ -769,6 +768,8 @@ function analyze_frame!(analyzer::AbstractAnalyzer, frame::InferenceState)
     typeinf(analyzer, frame)
     return analyzer, frame.result
 end
+
+is_entry(analyzer::AbstractAnalyzer, mi::MethodInstance) = get_entry(analyzer) === mi
 
 # toplevel
 # --------
