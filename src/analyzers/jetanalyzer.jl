@@ -786,25 +786,20 @@ print_signature(::UndefVarErrorReport) = false
 (::TypoPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, gr::GlobalRef) =
     report_undef_global_var!(analyzer, sv, gr, #=sound=#false)
 function report_undef_global_var!(analyzer::JETAnalyzer, sv::InferenceState, gr::GlobalRef, sound::Bool)
-    if !isdefined(gr.mod, gr.name)
-        report = false
-        if sound
-            report |= true
-        else
-            if is_corecompiler_undefglobal(gr)
-            elseif VERSION ≥ v"1.8.0-DEV.1465" && ccall(:jl_binding_type, Any, (Any, Any), gr.mod, gr.name) !== nothing
-                # if this global var is explicitly type-declared, it will be likely get assigned somewhere
-                # TODO give this permission only to top-level analysis
-            else
-                report |= true
-            end
-        end
-        if report
-            add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, gr))
-            return true
-        end
+    isdefined(gr.mod, gr.name) && return false
+    sound && @goto report
+    is_corecompiler_undefglobal(gr) && return false
+    # if this global var is explicitly type-declared, it will be likely get assigned somewhere
+    # TODO give this permission only to top-level analysis
+    @static if VERSION ≥ v"1.10.0-DEV.145"
+        ccall(:jl_get_binding_type, Any, (Any, Any), gr.mod, gr.name) !== nothing && return false
+    elseif VERSION ≥ v"1.8.0-DEV.1465"
+        ccall(:jl_binding_type, Any, (Any, Any), gr.mod, gr.name) !== nothing && return false
     end
-    return false
+    begin @label report
+        add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, gr))
+        return true
+    end
 end
 
 # Returns `true` if this global reference is undefined inside `Core.Compiler`, but the
@@ -893,7 +888,11 @@ end
     report_global_assignment!(analyzer, sv, mod, name, vtyp, #=sound=#false)
 function report_global_assignment!(analyzer::JETAnalyzer,
     sv::InferenceState, mod::Module, name::Symbol, @nospecialize(vtyp), sound::Bool)
-    btyp = ccall(:jl_binding_type, Any, (Any, Any), mod, name)
+    @static if VERSION ≥ v"1.10.0-DEV.145"
+        btyp = ccall(:jl_get_binding_type, Any, (Any, Any), mod, name)
+    else
+        btyp = ccall(:jl_binding_type, Any, (Any, Any), mod, name)
+    end
     if btyp !== nothing
         vtyp = widenconst(vtyp)
         if !(sound ? vtyp ⊑ btyp : hasintersect(vtyp, btyp))
