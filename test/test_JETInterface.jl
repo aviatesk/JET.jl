@@ -44,7 +44,7 @@ function compute_sins(i)
     return out
 end
 
-const ERROR_MSG = "missing `$AbstractAnalyzer` API"
+const ERROR_MSG = "Missing `$AbstractAnalyzer` API"
 
 @test_throws ERROR_MSG @report_call analyzer=APIValidator compute_sins(10)
 

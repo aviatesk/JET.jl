@@ -64,9 +64,10 @@ abstract type AbstractAnalyzer <: AbstractInterpreter end
 # 1. `NewAnalyzer(; jetconfigs...) -> NewAnalyzer`
 
 @noinline function (::Type{Analyzer})(; jetconfigs...) where Analyzer<:AbstractAnalyzer
+    AnalyzerType = nameof(Analyzer)
     error(lazy"""
-    missing `$AbstractAnalyzer` API:
-    `$Analyzer` is required to implement the `$Analyzer(; jetconfigs...) -> $Analyzer` interface.
+    Missing `$AbstractAnalyzer` API:
+    `$AnalyzerType` is required to implement the `$AnalyzerType(; jetconfigs...) -> $AnalyzerType` interface.
     See the documentation of `$AbstractAnalyzer`.
     """)
 end
@@ -358,9 +359,10 @@ end
 end
 
 @noinline function AnalyzerState(analyzer::AbstractAnalyzer)
+    AnalyzerType = nameof(typeof(analyzer))
     error(lazy"""
-    missing `$AbstractAnalyzer` API:
-    `$(typeof(analyzer))` is required to implement the `$AnalyzerState(analyzer::$(typeof(analyzer))) -> $AnalyzerState` interface.
+    Missing `$AbstractAnalyzer` API:
+    `$AnalyzerType` is required to implement the `$AnalyzerState(analyzer::$AnalyzerType) -> $AnalyzerState` interface.
     See the documentation of `$AbstractAnalyzer` and `$AnalyzerState`.
     """)
 end
@@ -370,9 +372,10 @@ end
 # 3. `AbstractAnalyzer(analyzer::NewAnalyzer, state::AnalyzerState) -> NewAnalyzer`
 
 @noinline function AbstractAnalyzer(analyzer::AbstractAnalyzer, state::AnalyzerState)
+    AnalyzerType = nameof(typeof(analyzer))
     error(lazy"""
-    missing `$AbstractAnalyzer` API:
-    `$(typeof(analyzer))` is required to implement the `$AbstractAnalyzer(analyzer::$(typeof(analyzer)), state::$AnalyzerState) -> $(typeof(analyzer))` interface.
+    Missing `$AbstractAnalyzer` API:
+    `$AnalyzerType` is required to implement the `$AbstractAnalyzer(analyzer::$AnalyzerType, state::$AnalyzerState) -> $AnalyzerType` interface.
     See the documentation of `$AbstractAnalyzer`.
     """)
 end
@@ -456,9 +459,10 @@ end
 abstract type ReportPass end
 
 @noinline function ReportPass(analyzer::AbstractAnalyzer)
+    AnalyzerType = nameof(typeof(analyzer))
     error(lazy"""
-    missing `$AbstractAnalyzer` API:
-    `$(typeof(analyzer))` is required to implement the `$ReportPass(analyzer::$(typeof(analyzer))) -> $ReportPass` interface.
+    Missing `$AbstractAnalyzer` API:
+    `$AnalyzerType` is required to implement the `$ReportPass(analyzer::$AnalyzerType) -> $ReportPass` interface.
     See the documentation of `$AbstractAnalyzer` and `$ReportPass`.
     """)
 end
@@ -504,9 +508,10 @@ Base.setindex!(analysis_cache::AnalysisCache, ci::CodeInstance, mi::MethodInstan
 Base.delete!(analysis_cache::AnalysisCache, mi::MethodInstance) = delete!(analysis_cache.cache, mi)
 
 @noinline function AnalysisCache(analyzer::AbstractAnalyzer)
+    AnalyzerType = nameof(typeof(analyzer))
     error(lazy"""
-    missing `$AbstractAnalyzer` API:
-    `$(typeof(analyzer))` is required to implement the `$AnalysisCache(analyzer::$(typeof(analyzer))) -> $AnalysisCache` interface.
+    Missing `$AbstractAnalyzer` API:
+    `$AnalyzerType` is required to implement the `$AnalysisCache(analyzer::$AnalyzerType) -> $AnalysisCache` interface.
     See the documentation of `$AbstractAnalyzer` and `$AnalysisCache`.
     """)
 end
