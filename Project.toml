@@ -17,7 +17,7 @@ JuliaInterpreter = "0.9"
 LoweredCodeUtils = "2.2"
 MacroTools = "0.5.6"
 Revise = "3.3"
-julia = "1.8.1 - 1.8.4"
+julia = "1.8.1"
 
 [extras]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
