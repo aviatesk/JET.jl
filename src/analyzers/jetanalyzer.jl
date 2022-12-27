@@ -1047,10 +1047,6 @@ print_report_message(io::IO, r::BuiltinErrorReport) = print(io, r.msg)
 print_signature(r::BuiltinErrorReport) = r.print_signature
 const GENERAL_BUILTIN_ERROR_MSG = "invalid builtin function call"
 
-# TODO we do need sound versions of these functions
-# XXX for general case JET just relies on the (maybe too permissive) return type from native
-# tfuncs to report invalid builtin calls and probably there're lots of false negatives
-
 function (::BasicPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(ret))
     @assert !(f === throw) "`throw` calls shuold be handled either by the report pass of `SeriousExceptionReport` or `UncaughtExceptionReport`"
     if f === getfield
