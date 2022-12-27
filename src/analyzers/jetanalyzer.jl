@@ -44,8 +44,31 @@ CC.may_optimize(::JETAnalyzer) = false
 CC.method_table(analyzer::JETAnalyzer) = analyzer.method_table
 
 @static if VERSION ≥ v"1.10.0-DEV.25"
-    CC.typeinf_lattice(::JETAnalyzer) = CC.InferenceLattice(CC.MustAliasesLattice(CC.BaseInferenceLattice.instance))
-    CC.ipo_lattice(::JETAnalyzer) = CC.InferenceLattice(CC.InterMustAliasesLattice(CC.IPOResultLattice.instance))
+    import .CC: typeinf_lattice, ipo_lattice
+    using .CC:
+        AbstractLattice, InferenceLattice, MustAliasesLattice,  InterMustAliasesLattice,
+        BaseInferenceLattice, IPOResultLattice
+
+    @static if VERSION ≥ v"1.10.0-DEV.197"
+        import .CC: widenlattice, is_valid_lattice_norec, ⊑, tmerge, tmeet, _getfield_tfunc
+
+        struct IntrinsicErrorCheckLattice{𝕃<:AbstractLattice} <: AbstractLattice
+            parent::𝕃
+        end
+        CC.widenlattice(𝕃::IntrinsicErrorCheckLattice) = 𝕃.parent
+        CC.is_valid_lattice_norec(::IntrinsicErrorCheckLattice, @nospecialize(elem)) = false
+
+        @nospecs CC.:⊑(𝕃::IntrinsicErrorCheckLattice, x, y) = ⊑(widenlattice(𝕃), x, y)
+        @nospecs CC.tmerge(𝕃::IntrinsicErrorCheckLattice, x, y) = tmerge(widenlattice(𝕃), x, y)
+        @nospecs CC.tmeet(𝕃::IntrinsicErrorCheckLattice, x, t::Type) = tmeet(widenlattice(𝕃), x, t)
+        @nospecs CC._getfield_tfunc(𝕃::IntrinsicErrorCheckLattice, xs...) = _getfield_tfunc(widenlattice(𝕃), xs...)
+
+        CC.typeinf_lattice(::JETAnalyzer) = InferenceLattice(IntrinsicErrorCheckLattice(MustAliasesLattice(BaseInferenceLattice.instance)))
+        CC.ipo_lattice(::JETAnalyzer) = InferenceLattice(IntrinsicErrorCheckLattice(InterMustAliasesLattice(IPOResultLattice.instance)))
+    else
+        CC.typeinf_lattice(::JETAnalyzer) = InferenceLattice(MustAliasesLattice(BaseInferenceLattice.instance))
+        CC.ipo_lattice(::JETAnalyzer) = InferenceLattice(InterMustAliasesLattice(IPOResultLattice.instance))
+    end
 end
 
 # AbstractAnalyzer API
@@ -445,6 +468,12 @@ function CC.builtin_tfunction(analyzer::JETAnalyzer,
         # other general `throw` calls will be handled within `_typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)`
     else
         ReportPass(analyzer)(AbstractBuiltinErrorReport, analyzer, sv, f, argtypes, ret)
+    end
+
+    # `IntrinsicError` is a special marker object that JET uses to indicate an errorneous
+    # intrinsic function call, so fix it up here to `Bottom`
+    if @static VERSION ≥ v"1.10.0-DEV.197" ? (ret isa IntrinsicError) : false
+        ret = Bottom
     end
 
     return ret
@@ -1047,6 +1076,96 @@ print_report_message(io::IO, r::BuiltinErrorReport) = print(io, r.msg)
 print_signature(r::BuiltinErrorReport) = r.print_signature
 const GENERAL_BUILTIN_ERROR_MSG = "invalid builtin function call"
 
+@static if VERSION ≥ v"1.10.0-DEV.197"
+
+# report errorneous intrinsic function calls
+
+"""
+    IntrinsicError(reason::String)
+
+A special lattice element that represents an errorneous intrinsic function call.
+`IntrinsicError` is essentially equivalent to `Bottom` but isn't fully integrated with the
+`AbstractLattice` system. It is a special marker object that is merely returned by `tfunc`s
+for intrinsic calls that are overloaded with `IntrinsicErrorCheckLattice` to generate
+`BuiltinErrorReport` with an appropriate error message, and it should be replaced with
+`Bottom` before it is propagated to other abstract interpretation routines.
+"""
+struct IntrinsicError
+    reason::String
+end
+
+@nospecs function with_conversion_errorcheck(t, x, bitshift::Bool=false)
+    ty, isexact, isconcrete = instanceof_tfunc(t)
+    if isconcrete
+        if !isprimitivetype(ty)
+            if bitshift
+                return IntrinsicError("target type not a leaf primitive type")
+            else
+                return IntrinsicError("type is not a primitive type")
+            end
+        end
+    end
+    xty = widenconst(x)
+    if isconcretetype(xty)
+        if !isprimitivetype(xty)
+            return IntrinsicError("value is not a primitive type")
+        end
+        if bitshift && isconcrete
+            if Core.sizeof(ty) !== Core.sizeof(xty)
+                return IntrinsicError("argument size does not match size of target type")
+            end
+        end
+    end
+    return ty
+end
+@nospecs function with_intrinsic_errorcheck(ok, a)
+    aty = widenconst(a)
+    if isconcretetype(aty)
+        isprimitivetype(aty) || return IntrinsicError("value is not a primitive type")
+    end
+    return ok
+end
+@nospecs function with_intrinsic_errorcheck(ok, a, b, shift::Bool=false)
+    aty = widenconst(a)
+    if isconcretetype(aty)
+        isprimitivetype(aty) || return IntrinsicError("a is not a primitive type")
+    end
+    bty = widenconst(b)
+    if isconcretetype(bty)
+        isprimitivetype(bty) || return IntrinsicError("b is not a primitive type")
+    end
+    shift || hasintersect(aty, bty) || return IntrinsicError("types of a and b must match")
+    return ok
+end
+@nospecs function with_intrinsic_errorcheck(ok, a, b, c)
+    aty = widenconst(a)
+    if isconcretetype(aty)
+        isprimitivetype(aty) || return IntrinsicError("a is not a primitive type")
+    end
+    bty = widenconst(b)
+    if isconcretetype(bty)
+        isprimitivetype(bty) || return IntrinsicError("b is not a primitive type")
+    end
+    cty = widenconst(c)
+    if isconcretetype(cty)
+        isprimitivetype(cty) || return IntrinsicError("c is not a primitive type")
+    end
+    hasintersect(aty, bty) || return IntrinsicError("types of a and b must match")
+    hasintersect(bty, cty) || return IntrinsicError("types of b and c must match")
+    return ok
+end
+
+import .CC: bitcast_tfunc, conversion_tfunc, math_tfunc, shift_tfunc, cmp_tfunc, chk_tfunc
+
+@nospecs CC.bitcast_tfunc(𝕃::IntrinsicErrorCheckLattice, t, x) = with_conversion_errorcheck(t, x, #=bitshift=#true)
+@nospecs CC.conversion_tfunc(𝕃::IntrinsicErrorCheckLattice, t, x) = with_conversion_errorcheck(t, x)
+@nospecs CC.math_tfunc(𝕃::IntrinsicErrorCheckLattice, a, bs...) = with_intrinsic_errorcheck(widenconst(a), a, bs...)
+@nospecs CC.shift_tfunc(𝕃::IntrinsicErrorCheckLattice, a, b) = with_intrinsic_errorcheck(widenconst(a), a, b, #=shift=#true)
+@nospecs CC.cmp_tfunc(𝕃::IntrinsicErrorCheckLattice, a, b) = with_intrinsic_errorcheck(Bool, a, b, #=shift=#true)
+@nospecs CC.chk_tfunc(𝕃::IntrinsicErrorCheckLattice, a, b) = with_intrinsic_errorcheck(Tuple{widenconst(a),Bool}, a, b, #=shift=#true)
+
+end # @static if VERSION >= v"1.10.0-DEV.197"
+
 function (::BasicPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(ret))
     @assert !(f === throw) "`throw` calls shuold be handled either by the report pass of `SeriousExceptionReport` or `UncaughtExceptionReport`"
     if f === getfield
@@ -1061,6 +1180,12 @@ function (::BasicPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer
         report_setglobal!!(analyzer, sv, argtypes) && return true
     elseif length(argtypes) == 2 && is_division_func(f)
         report_devide_error!(analyzer, sv, f, argtypes) && return true
+    end
+    if @static VERSION >= v"1.10.0-DEV.197" ? (ret isa IntrinsicError) : false
+        msg = LazyString(f, ": ", ret.reason)
+        report = BuiltinErrorReport(sv, f, argtypes, msg, #=print_signature=#true)
+        add_new_report!(analyzer, sv.result, report)
+        return true
     end
     return handle_invalid_builtins!(analyzer, sv, f, argtypes, ret)
 end
