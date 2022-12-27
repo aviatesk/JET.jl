@@ -1038,3 +1038,33 @@ function isssue_404(c::Bool)
     end
 end
 test_call(isssue_404, (Bool,))
+
+@static VERSION ≥ v"1.10.0-DEV.197" && @testset "intrinsic errors" begin
+    let result = report_call((Int32,Int64)) do x, y
+            return Core.Intrinsics.add_int(x, y)
+        end
+        r = only(get_reports_with_test(result))
+        @test r isa BuiltinErrorReport
+        @test r.f === Core.Intrinsics.add_int
+        err = (try
+            Core.Intrinsics.add_int(zero(Int32), zero(Int64))
+        catch err
+            err
+        end)::ErrorException
+        @test err.msg == r.msg
+    end
+
+    let result = report_call((Int32,)) do x
+            return Core.Intrinsics.bitcast(Int64, x)
+        end
+        r = only(get_reports_with_test(result))
+        @test r isa BuiltinErrorReport
+        @test r.f === Core.Intrinsics.bitcast
+        err = (try
+            Core.Intrinsics.bitcast(Int64, zero(Int32))
+        catch err
+            err
+        end)::ErrorException
+        @test err.msg == r.msg
+    end
+end
