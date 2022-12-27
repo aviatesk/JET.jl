@@ -304,6 +304,58 @@ macro jetconfigurable(funcdef)
 end
 const _JET_CONFIGURATIONS = Dict{Symbol,Union{Symbol,Expr}}()
 
+@static if VERSION ≥ v"1.10.0-DEV.117"
+    using .CC: @nospecs
+else
+    using Base: is_function_def
+
+    @doc """
+        @nospecs def
+
+    Adds `@nospecialize` annotation to non-annotated arguments of `def`.
+    ```julia
+    (Core.Compiler) julia> @macroexpand @nospecs function tfunc(𝕃::AbstractLattice, x, y::Bool, zs...)
+                               x, ys
+                           end
+    :(function tfunc(\$(Expr(:meta, :specialize, :(𝕃::AbstractLattice))), x, y::Bool, zs...)
+          #= REPL[3]:1 =#
+          \$(Expr(:meta, :nospecialize, :x, :zs))
+          #= REPL[3]:2 =#
+          (x, ys)
+      end)
+    ```
+    """
+    macro nospecs(ex)
+        is_function_def(ex) || throw(ArgumentError("expected function definition"))
+        args, body = ex.args
+        if isexpr(args, :call)
+            args = args.args[2:end] # skip marking `@nospecialize` on the function itself
+        else
+            @assert isexpr(args, :tuple) # anonymous function
+            args = args.args
+        end
+        names = Symbol[]
+        for arg in args
+            isexpr(arg, :macrocall) && continue
+            if isexpr(arg, :...)
+                arg = arg.args[1]
+            elseif isexpr(arg, :kw)
+                arg = arg.args[1]
+            end
+            isexpr(arg, :(::)) && continue
+            @assert arg isa Symbol
+            push!(names, arg)
+        end
+        @assert isexpr(body, :block)
+        if !isempty(names)
+            lin = first(body.args)::LineNumberNode
+            nospec = Expr(:macrocall, Symbol("@nospecialize"), lin, names...)
+            insert!(body.args, 2, nospec)
+        end
+        return esc(ex)
+    end
+end
+
 # utils
 # -----
 
