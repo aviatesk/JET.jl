@@ -328,6 +328,9 @@ else
     macro nospecs(ex)
         is_function_def(ex) || throw(ArgumentError("expected function definition"))
         args, body = ex.args
+        while isexpr(args, :where)
+            args = args.args[1]
+        end
         if isexpr(args, :call)
             args = args.args[2:end] # skip marking `@nospecialize` on the function itself
         else
