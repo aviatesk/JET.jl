@@ -123,7 +123,7 @@ const JET_ANALYZER_CACHE = IdDict{UInt, AnalysisCache}()
 """
 The basic (default) error analysis pass.
 
-_**TODO**_: elaborate the definitions of "error"s.
+TODO: elaborate this documentation.
 """
 struct BasicPass{FF} <: ReportPass
     function_filter::FF
@@ -149,7 +149,7 @@ end
 """
 The sound error analysis pass.
 
-_**TODO**_: elaborate the definitions of "error"s.
+TODO: elaborate this documentation.
 """
 struct SoundPass <: ReportPass end
 
@@ -159,7 +159,7 @@ const SoundBasicPass = Union{SoundPass,BasicPass}
 """
 A typo detection pass.
 
-_**TODO**_: elaborate the definitions of "error"s.
+TODO: elaborate this documentation.
 """
 struct TypoPass <: ReportPass end
 (::TypoPass)(@nospecialize _...) = return false # ignore everything except UndefVarErrorReport and field error report
@@ -1238,7 +1238,7 @@ function report_setglobal!!(analyzer::JETAnalyzer, sv::InferenceState, argtypes:
     3 ≤ length(argtypes) ≤ 4 || return false
     gr = constant_globalref(argtypes)
     gr === nothing && return false
-    # forward to the report pass for invalid global assignemt
+    # forward to the report pass for invalid global assignment
     return ReportPass(analyzer)(InvalidGlobalAssignmentError, analyzer, sv, gr.mod, gr.name, argtypes[3])
 end
 
@@ -1271,9 +1271,8 @@ end
 
 const MODULE_SETFIELD_MSG = "cannot assign variables in other modules"
 const DEVIDE_ERROR_MSG = sprint(showerror, DivideError())
-function type_error_msg(@nospecialize(f), @nospecialize(expected), @nospecialize(actual))
-    return lazy"TypeError: in $f, expected $expected, got a value of type $actual"
-end
+@nospecs type_error_msg(f, expected, actual) =
+    lazy"TypeError: in $f, expected $expected, got a value of type $actual"
 function nofield_msg(@nospecialize(typ), name::Symbol)
     if typ <: Tuple
         typ = Tuple # reproduce base error message
