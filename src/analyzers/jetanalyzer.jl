@@ -1080,7 +1080,7 @@ const GENERAL_BUILTIN_ERROR_MSG = "invalid builtin function call"
 
 # report errorneous intrinsic function calls
 
-"""
+@doc """
     IntrinsicError(reason::String)
 
 A special lattice element that represents an errorneous intrinsic function call.
