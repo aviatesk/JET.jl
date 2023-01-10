@@ -747,7 +747,7 @@ end
 fullbasepath(filename) = normpath(JULIA_DIR, "base", filename)
 
 # TODO make this configurable ?
-const JULIA_DIR = begin
+const JULIA_DIR = let
     p1 = normpath(Sys.BINDIR, "..", "..")
     p2 = normpath(Sys.BINDIR, Base.DATAROOTDIR, "julia")
     ispath(normpath(p1, "base")) ? p1 : p2
