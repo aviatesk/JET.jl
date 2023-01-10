@@ -240,8 +240,8 @@ end
 # cache
 # =====
 
-cache_report!(cache, @nospecialize(report::InferenceErrorReport)) =
-    push!(cache, copy_report′(report)::InferenceErrorReport)
+cache_report!(cache::Vector{InferenceErrorReport}, @nospecialize(report::InferenceErrorReport)) =
+    push_report!(cache, copy_report′(report)::InferenceErrorReport)
 
 struct AbstractAnalyzerView{Analyzer<:AbstractAnalyzer}
     analyzer::Analyzer
@@ -340,6 +340,7 @@ end # @static if hasmethod(CC.transform_result_for_cache, (...))
 
 function CC.transform_result_for_cache(analyzer::AbstractAnalyzer,
     linfo::MethodInstance, valid_worlds::WorldRange, result::InferenceResult)
+    istoplevel(linfo) && return nothing
     cache = InferenceErrorReport[]
     for report in get_reports(analyzer, result)
         @static if JET_DEV_MODE
@@ -543,104 +544,27 @@ function filter_lineages!(analyzer::AbstractAnalyzer, caller::InferenceResult, c
      filter!(!islineage(caller.linfo, current), get_reports(analyzer, caller))
 end
 
-# in this overload we can work on `frame.src::CodeInfo` (and also `frame::InferenceState`)
-# where type inference (and also optimization if applied) already ran on
-function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
-    CC.typeinf_nocycle(analyzer, frame) || return false # frame is now part of a higher cycle
-    # with no active ip's, frame is done
-    frames = frame.callers_in_cycle
-    isempty(frames) && push!(frames, frame)
-    valid_worlds = WorldRange()
-    for caller in frames
-        @assert !(caller.dont_work_on_me)
-        caller.dont_work_on_me = true
-        # might might not fully intersect these earlier, so do that now
-        valid_worlds = CC.intersect(caller.valid_worlds, valid_worlds)
-    end
-    for caller in frames
-        caller.valid_worlds = valid_worlds
-        CC.finish(caller, analyzer)
-        # finalize and record the linfo result
-        caller.inferred = true
-    end
-    # NOTE we don't discard `InferenceState`s here so that some analyzers can use them in `finish!`
-    # # collect results for the new expanded frame
-    # results = Tuple{InferenceResult, Vector{Any}, Bool}[
-    #         ( frames[i].result,
-    #           frames[i].stmt_edges[1]::Vector{Any},
-    #           frames[i].cached )
-    #     for i in 1:length(frames) ]
-    # empty!(frames)
-    for frame in frames
-        caller = frame.result
-        opt = caller.src
-        if (@static VERSION ≥ v"1.9.0-DEV.1636" ?
-            (opt isa OptimizationState{typeof(analyzer)}) :
-            (opt isa OptimizationState))
-            CC.optimize(analyzer, opt, OptimizationParams(analyzer), caller)
-            # # COMBAK we may want to enable inlining ?
-            # if opt.const_api
-            #     # XXX: The work in ir_to_codeinf! is essentially wasted. The only reason
-            #     # we're doing it is so that code_llvm can return the code
-            #     # for the `return ...::Const` (which never runs anyway). We should do this
-            #     # as a post processing step instead.
-            #     CC.ir_to_codeinf!(opt)
-            #     if result_type isa Const
-            #         caller.src = result_type
-            #     else
-            #         @assert CC.isconstType(result_type)
-            #         caller.src = Const(result_type.parameters[1])
-            #     end
-            # end
-            caller.valid_worlds = CC.getindex((opt.inlining.et::CC.EdgeTracker).valid_worlds)
+function CC.finish!(analyzer::AbstractAnalyzer, caller::InferenceResult)
+    reports = get_reports(analyzer, caller)
+
+    # XXX this is a dirty fix for performance problem, we need more "proper" fix
+    # https://github.com/aviatesk/JET.jl/issues/75
+    unique!(aggregation_policy(analyzer), reports)
+
+    if get_entry(analyzer) !== caller.linfo
+        # inter-procedural handling: get back to the caller what we got from these results
+        add_caller_cache!(analyzer, reports)
+
+        # local cache management
+        # TODO there are duplicated work here and `transform_result_for_cache`
+        cache = InferenceErrorReport[]
+        for report in reports
+            cache_report!(cache, report)
         end
+        set_cached_result!(analyzer, caller, cache)
     end
 
-    for frame in frames
-        caller = frame.result
-        edges = frame.stmt_edges[1]::Vector{Any}
-        cached = frame.cached
-        valid_worlds = caller.valid_worlds
-        if CC.last(valid_worlds) >= get_world_counter()
-            # if we aren't cached, we don't need this edge
-            # but our caller might, so let's just make it anyways
-            CC.store_backedges(caller, edges)
-        end
-        CC.finish!(analyzer, frame)
-
-        reports = get_reports(analyzer, caller)
-
-        # XXX this is a dirty fix for performance problem, we need more "proper" fix
-        # https://github.com/aviatesk/JET.jl/issues/75
-        unique!(aggregation_policy(analyzer), reports)
-
-        # global cache management
-        if cached && !istoplevel(frame)
-            CC.cache_result!(analyzer, caller)
-        end
-
-        if frame.parent !== nothing
-            # inter-procedural handling: get back to the caller what we got from these results
-            add_caller_cache!(analyzer, reports)
-
-            # local cache management
-            # TODO there are duplicated work here and `transform_result_for_cache`
-            cache = InferenceErrorReport[]
-            for report in reports
-                cache_report!(cache, report)
-            end
-            set_cached_result!(analyzer, caller, cache)
-        end
-    end
-
-    return true
-end
-
-# by default, this overload just is forwarded to the AbstractInterpreter's implementation
-# but the only reason we have this overload is that some analyzers (like `JETAnalyzer`)
-# can further overload this to generate `InferenceErrorReport` with an access to `frame`
-function CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
-    return CC.finish!(analyzer, frame.result)
+    return @invoke CC.finish!(analyzer::AbstractInterpreter, caller::InferenceResult)
 end
 
 # top-level bridge

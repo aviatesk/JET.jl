@@ -218,7 +218,7 @@ struct OptAnalysisPass <: ReportPass end
 
 optanalyzer_function_filter(@nospecialize ft) = true
 
-# TODO better to work only `finish!`
+# TODO better to work only `finish!`, i.e. only work on `CodeInfo` (with static parameters)
 function CC.finish(frame::InferenceState, analyzer::OptAnalyzer)
     ret = @invoke CC.finish(frame::InferenceState, analyzer::AbstractAnalyzer)
 
@@ -272,20 +272,15 @@ function (::OptAnalysisPass)(::Type{CapturedVariableReport}, analyzer::OptAnalyz
     return reported
 end
 
-function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState)
-    caller = frame.result
-
+function CC.finish!(analyzer::OptAnalyzer, caller::InferenceResult)
     # get the source before running `finish!` to keep the reference to `OptimizationState`
     src = caller.src
-
-    ret = @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
-
     if popfirst!(analyzer.__analyze_frame)
         ReportPass(analyzer)(OptimizationFailureReport, analyzer, caller)
-
         if (@static VERSION ≥ v"1.9.0-DEV.1636" ?
             (src isa OptimizationState{typeof(analyzer)}) :
             (src isa OptimizationState)) # the compiler optimized it, analyze it
+            src.ir === nothing || CC.ir_to_codeinf!(src)
             ReportPass(analyzer)(RuntimeDispatchReport, analyzer, caller, src)
         elseif (@static JET_DEV_MODE ? true : false)
             if isa(src, CC.ConstAPI)
@@ -298,8 +293,7 @@ function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState)
             end
         end
     end
-
-    return ret
+    return @invoke CC.finish!(analyzer::AbstractAnalyzer, caller::InferenceResult)
 end
 
 # report optimization failure due to recursive calls, etc.
