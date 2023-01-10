@@ -20,7 +20,6 @@ let README = normpath(dirname(@__DIR__), "README.md")
     include_dependency(README)
 end
 
-# not sure why, but a benchmark showed this is faster
 Base.Experimental.@optlevel 1
 
 const CC = Core.Compiler
