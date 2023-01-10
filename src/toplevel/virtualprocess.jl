@@ -417,8 +417,8 @@ function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProce
     succeeded = 0
     for (i, tt) in enumerate(res.toplevel_signatures)
         match = _which(tt;
-            # NOTE use the current world counter with `method_table(analyzer)` unwrapped,
-            # otherwise it may encode a world counter when this method isn't defined yet
+            # NOTE use the latest world counter with `method_table(analyzer)` unwrapped,
+            # otherwise it may use a world counter when this method isn't defined yet
             method_table=unwrap_method_table(method_table(analyzer)),
             world=get_world_counter(),
             raise=false)
@@ -1034,15 +1034,21 @@ end
 function collect_toplevel_signature!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node))
     if isexpr(node, :method, 3)
         sigs = node.args[2]
-        atype_params, sparams, _ = @lookup(moduleof(frame), frame, sigs)::SimpleVector
-        # t = atype_params[1]
-        # if isdefined(t, :name)
-        #     # XXX ignore constructor methods, just because it can lead to false positives ...
-        #     t.name === CC._TYPE_NAME && return
-        # end
-        atype = Tuple{(atype_params::SimpleVector)...}
-        push!(interp.res.toplevel_signatures, atype)
+        atype_params, sparams, #=linenode=#_ = @lookup(moduleof(frame), frame, sigs)::SimpleVector
+        tt = form_method_signature(atype_params::SimpleVector, sparams::SimpleVector)
+        @assert !has_free_typevars(tt) "free type variable left in toplevel_signatures"
+        push!(interp.res.toplevel_signatures, tt)
     end
+    return nothing
+end
+
+# form a method signature from the first and second parameters of lowered `:method` expression
+function form_method_signature(atype_params::SimpleVector, sparams::SimpleVector)
+    atype = Tuple{atype_params...}
+    for i = 1:length(sparams)
+        atype = UnionAll(sparams[i]::TypeVar, atype)
+    end
+    return atype
 end
 
 ismoduleusage(@nospecialize(x)) = isexpr(x, (:import, :using, :export))

@@ -77,9 +77,9 @@ import .CC:
     UnionSplitInfo, UnionSplitMethodMatches, VarState, VarTable, WorldRange, WorldView,
     InternalMethodTable, CachedMethodTable, OverlayMethodTable,
     _methods_by_ftype, argextype, argtype_by_index, argtype_tail, argtypes_to_type,
-    compute_basic_blocks, get_compileable_sig, hasintersect, ignorelimited, inlining_enabled,
-    instanceof_tfunc, is_throw_call, isType, isconstType, issingletontype,
-    may_invoke_generator, singleton_type, slot_id, specialize_method,
+    compute_basic_blocks, get_compileable_sig, hasintersect, has_free_typevars,
+    ignorelimited, inlining_enabled, instanceof_tfunc, is_throw_call, isType, isconstType,
+    issingletontype, may_invoke_generator, singleton_type, slot_id, specialize_method,
     switchtupleunion, tmerge, widenconst, ⊑
 
 import Base:
