@@ -304,7 +304,11 @@ let # overload `const_prop_entry_heuristic`
 end
 
 let # overload `concrete_eval_eligible`
-    @static if @isdefined(StmtInfo)
+    @static if VERSION ≥ v"1.10.0-DEV.350"
+        # https://github.com/JuliaLang/julia/pull/48246
+        sigs_ex = :(analyzer::JETAnalyzer,
+            @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
+    elseif VERSION ≥ v"1.9.0-DEV.1472"
         # https://github.com/JuliaLang/julia/pull/46966
         sigs_ex = :(analyzer::JETAnalyzer,
             @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo)
