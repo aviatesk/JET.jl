@@ -79,6 +79,7 @@ end
     report_pass::Union{Nothing,ReportPass} = nothing,
     mode::Symbol = :basic,
     # default `InferenceParams` tuning
+    max_methods::Int = 1,
     aggressive_constant_propagation::Bool = true,
     unoptimize_throw_blocks::Bool = false,
     jetconfigs...)
@@ -96,7 +97,8 @@ end
     elseif mode !== :basic
         throw(ArgumentError("either of `report_pass` and `mode` configurations can be specified"))
     end
-    state = AnalyzerState(; aggressive_constant_propagation,
+    state = AnalyzerState(; max_methods,
+                            aggressive_constant_propagation,
                             unoptimize_throw_blocks,
                             jetconfigs...)
     cache_key = compute_hash(state.inf_params, report_pass)

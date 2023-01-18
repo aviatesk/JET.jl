@@ -956,10 +956,7 @@ end
         result = report_call((Any,Symbol); mode = :sound) do a, b
             a == b ? 0 : 1
         end
-        @test any(get_reports_with_test(result)) do r
-            isa(r, NonBooleanCondErrorReport) &&
-            r.t == Type[Missing]
-        end
+        @test any(r->isa(r,NonBooleanCondErrorReport), get_reports_with_test(result))
     end
 
     let # `!(t ⊑ Bool)` -> error
