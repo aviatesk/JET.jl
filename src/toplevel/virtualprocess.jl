@@ -413,8 +413,9 @@ gen_virtual_module(root = Main; name = VIRTUAL_MODULE_NAME) =
 # if code generation has failed given the entry method signature, the overload of
 # `InferenceState(..., ::AbstractAnalyzer)` will collect `GeneratorErrorReport`
 function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProcessResult, config::ToplevelConfig)
-    n = length(res.toplevel_signatures)
     succeeded = 0
+    start = time()
+    n = length(res.toplevel_signatures)
     for (i, tt) in enumerate(res.toplevel_signatures)
         match = _which(tt;
             # NOTE use the latest world counter with `method_table(analyzer)` unwrapped,
@@ -425,7 +426,7 @@ function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProce
         if match !== nothing
             succeeded += 1
             with_toplevel_logger(config; pre=clearline) do @nospecialize(io)
-                (i == n ? println : print)(io, "analyzing from top-level definitions ... $succeeded/$n")
+                (i == n ? println : print)(io, "analyzing from top-level definitions ($succeeded/$n)")
             end
             analyzer = AbstractAnalyzer(analyzer, _CONCRETIZED, _TOPLEVELMOD)
             state = AnalyzerState(analyzer)
@@ -445,6 +446,10 @@ function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProce
         with_toplevel_logger(config; filter=≥(JET_LOGGER_LEVEL_DEBUG), pre=clearline) do @nospecialize(io)
             println(io, "couldn't find a single method matching the signature `", tt, "`")
         end
+    end
+    with_toplevel_logger(config) do @nospecialize(io)
+        sec = round(time() - start; digits = 3)
+        println(io, "analyzed $succeeded top-level definitions (took $sec sec)")
     end
     return nothing
 end
