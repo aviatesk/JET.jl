@@ -1067,8 +1067,12 @@ function to_simple_module_usages(x::Expr)::Vector{Expr}
 end
 
 # adapted from https://github.com/JuliaDebug/JuliaInterpreter.jl/blob/2f5f80034bc287a60fe77c4e3b5a49a087e38f8b/src/interpret.jl#L188-L199
-# works almost same as `JuliaInterpreter.evaluate_call_compiled!`, but also added special
-# cases for JET analysis
+# works almost same as `JuliaInterpreter.evaluate_call_compiled!`, but with few important tweaks:
+# - a special hanlding for `include` call to recursively apply JET's analysis on the included file
+# - some `@invokelatest` are added where we directly call an user expression
+#   since `_virtual_process!` iteratively interprets toplevel expressions but the world age
+#   is not updated at each iteration so we need to make sure the user expression is
+#   evaluated in the latest world age where newly defined functions are avalable.
 function JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)
     # @assert !enter_generated
     pc = frame.pc
@@ -1080,15 +1084,9 @@ function JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, fr
     f = first(args)
     if isinclude(f)
         return handle_include(interp, args)
-    else
-        popfirst!(args)  # now it's really just `args`
-        # `_virtual_process!` iteratively interpret toplevel expressions but it doesn't hit toplevel
-        # we may want to make `_virtual_process!` hit the toplevel on each interation rather than
-        # using `invokelatest` here, but assuming concretized calls are supposed only to be
-        # used for other toplevel definitions and as such not so computational heavy,
-        # I'd like to go with this simplest way
-        return @invokelatest f(args...)
     end
+    popfirst!(args)  # now it's really just `args`
+    return @invokelatest f(args...)
 end
 
 isinclude(@nospecialize f) = isa(f, Function) && nameof(f) === :include
