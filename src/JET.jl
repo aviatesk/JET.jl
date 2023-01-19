@@ -1588,9 +1588,10 @@ end
 
 function reexport_as_api!(xs...)
     for x in xs
-        canonicalname = Symbol(parentmodule(x), '.', nameof(x))
-        canonicalpath = Symbol.(split(string(canonicalname), '.'))
-
+        canonicalname = string(parentmodule(x), '.', nameof(x))
+        canonicalpath = let pat = r"var\"(.+)\""=>s"\1" # necessary for successful package analysis
+            Symbol.(replace.(split(canonicalname, '.'), Ref(pat)))
+        end
         modpath = Expr(:., canonicalpath[1:end-1]...)
         symname = last(canonicalpath)
         sympath = Expr(:., symname)
@@ -1599,7 +1600,6 @@ function reexport_as_api!(xs...)
         ex = Expr(:block)
         push!(ex.args, importex, exportex)
         Core.eval(JETInterface, ex)
-
         push!(JETInterface.DOCUMENTED_NAMES, symname)
     end
 end
