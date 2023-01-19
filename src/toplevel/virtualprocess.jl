@@ -204,11 +204,11 @@ struct ToplevelConfig{CP<:Any}
                                                virtualize::Bool                   = true,
                                                toplevel_logger::Union{Nothing,IO} = nothing
                                                ) where {T<:Any}
-        if typeintersect(T, Expr) === Bottom
+        if hasintersect(T, Expr)
+            CP = T
+        else
             CP = tmerge(T, Expr)
             concretization_patterns = convert(Vector{CP}, concretization_patterns)
-        else
-            CP = T
         end
         push!(concretization_patterns,
               # `@enum` macro is fairly complex and especially the `let insts = (Any[ $(esc(typename))(v) for v in $values ]...,)`
@@ -498,49 +498,34 @@ function _virtual_process!(toplevelex::Expr,
 
     local lnn::LineNumberNode = LineNumberNode(0, filename)
 
-    function macroexpand_err_handler(@nospecialize(err), st)
+    function err_handler(@nospecialize(err), st)
         report = is_missing_concretization(err) ?
                  MissingConcretization(err, st, filename, lnn.line) :
                  ActualErrorWrapped(err, st, filename, lnn.line)
         push!(res.toplevel_error_reports, report)
         return nothing
     end
+
     # `scrub_offset = 4` corresponds to `with_err_handling` -> `f` -> `macroexpand` -> kwfunc (`macroexpand`)
-    macroexpand_with_err_handling(mod, x) = with_err_handling(macroexpand_err_handler, #= scrub_offset =# 4) do
+    macroexpand_with_err_handling(mod, x) = with_err_handling(err_handler, #= scrub_offset =# 4) do
         # XXX we want to non-recursive, sequential partial macro expansion here, which allows
         # us to collect more fine-grained error reports within macro expansions
         # but it can lead to invalid macro hygiene escaping because of https://github.com/JuliaLang/julia/issues/20241
         return macroexpand(mod, x; recursive = true #= but want to use `false` here =#)
     end
-    function eval_err_handler(@nospecialize(err), st)
-        report = is_missing_concretization(err) ?
-                 MissingConcretization(err, st, filename, lnn.line) :
-                 ActualErrorWrapped(err, st, filename, lnn.line)
-        push!(res.toplevel_error_reports, report)
-        return nothing
-    end
     # `scrub_offset = 3` corresponds to `with_err_handling` -> `f` -> `eval`
-    eval_with_err_handling(mod, x) = with_err_handling(eval_err_handler, #= scrub_offset =# 3) do
+    eval_with_err_handling(mod, x) = with_err_handling(err_handler, #= scrub_offset =# 3) do
         return Core.eval(mod, x)
     end
-    function lower_err_handler(@nospecialize(err), st)
-        report = is_missing_concretization(err) ?
-                 MissingConcretization(err, st, filename, lnn.line) :
-                 ActualErrorWrapped(err, st, filename, lnn.line)
-        push!(res.toplevel_error_reports, report)
-        return nothing
-    end
     # `scrub_offset = 3` corresponds to `with_err_handling` -> `f` -> `lower`
-    lower_with_err_handling(mod, x) = with_err_handling(lower_err_handler, #= scrub_offset =# 3) do
+    lower_with_err_handling(mod, x) = with_err_handling(err_handler, #= scrub_offset =# 3) do
         lwr = lower(mod, x)
-
         # here we should capture syntax errors found during lowering
         if isexpr(lwr, :error)
             msg = first(lwr.args)
-            push!(res.toplevel_error_reports, SyntaxErrorReport("syntax: $msg", filename, lnn.line))
+            push!(res.toplevel_error_reports, SyntaxErrorReport(lazy"syntax: $msg", filename, lnn.line))
             return nothing
         end
-
         return lwr
     end
 
@@ -1255,8 +1240,8 @@ function collect_syntax_errors(s, filename)
             !isnothing(ex)
         end
         line += count(==('\n'), s[index:nextindex-1])
-        report = isexpr(ex, :error) ? SyntaxErrorReport(string("syntax: ", first(ex.args)), filename, line) :
-                 isexpr(ex, :incomplete) ? SyntaxErrorReport(first(ex.args), filename, line) :
+        report = isexpr(ex, :error) ? SyntaxErrorReport(lazy"syntax: $(first(ex.args))", filename, line) :
+                 isexpr(ex, :incomplete) ? SyntaxErrorReport(first(ex.args)::String, filename, line) :
                  nothing
         isnothing(report) || push!(reports, report)
         index = nextindex
