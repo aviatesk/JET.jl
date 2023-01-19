@@ -807,7 +807,7 @@ function print_report_message(io::IO, r::UndefVarErrorReport)
     elseif isa(var, TypeVar)
         print(io, "static parameter `", var.name, "`")
     else
-        print(io, "local variable `", name, "`")
+        print(io, "local variable `", var, "`")
     end
     print(io, " is not defined")
 end
@@ -1332,7 +1332,7 @@ function report_fieldaccess!(analyzer::JETAnalyzer, sv::InferenceState, @nospeci
         end
     end
     fidx = _getfield_fieldindex(s, name)
-    fidx === Bottom && @goto report_nofield_error
+    fidx === nothing && @goto report_nofield_error
     ftypes = Base.datatype_fieldtypes(s)
     nf = length(ftypes)
     (fidx < 1 || fidx > nf) && @goto report_nofield_error

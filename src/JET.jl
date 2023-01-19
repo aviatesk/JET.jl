@@ -765,9 +765,9 @@ include("ui/vscode.jl")
 # -----------------
 
 # TODO `analyze_builtin!` ?
-function analyze_gf_by_type!(analyzer::AbstractAnalyzer, @nospecialize(tt::Type{<:Tuple}); kwargs...)
+function analyze_gf_by_type!(analyzer::AbstractAnalyzer, @nospecialize(tt::Type{<:Tuple}))
     match = find_single_match(tt, analyzer)
-    return analyze_method_signature!(analyzer, match.method, match.spec_types, match.sparams; kwargs...)
+    return analyze_method_signature!(analyzer, match.method, match.spec_types, match.sparams)
 end
 
 function find_single_match(@nospecialize(tt), analyzer::AbstractAnalyzer)
@@ -784,8 +784,8 @@ struct TTPrinter
 end
 Base.show(io::IO, ttp::TTPrinter) = Base.show_tuple_as_call(io, Symbol(""), ttp.tt)
 
-analyze_method!(analyzer::AbstractAnalyzer, m::Method; kwargs...) =
-    analyze_method_signature!(analyzer, m, m.sig, method_sparams(m); kwargs...)
+analyze_method!(analyzer::AbstractAnalyzer, m::Method) =
+    analyze_method_signature!(analyzer, m, m.sig, method_sparams(m))
 
 function method_sparams(m::Method)
     s = TypeVar[]
@@ -1515,7 +1515,7 @@ function test_call(@nospecialize(args...);
             end
         catch err
             isa(err, InterruptException) && rethrow()
-            Error(:test_error, orig_expr, err, get_exceptions(), source)
+            Error(:test_error, orig_expr, err, Base.current_exceptions(), source)
         end
 
         if broken
