@@ -467,6 +467,9 @@ end
 Base.show(io::IO, ::MIME"application/prs.juno.inline", frame::InferenceState) =
     return frame
 
+Base.show(io::IO, cache::CachedMethodTable) =
+    print(io, typeof(cache), "(", Core.Compiler.length(cache.cache), " entries)")
+
 # lattice
 
 ignorenotfound(@nospecialize(t)) = t === NOT_FOUND ? Bottom : t

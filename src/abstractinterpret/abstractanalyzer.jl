@@ -358,6 +358,8 @@ end
     @assert !JETOptimizationParams(OptimizationParams(); inlining=false).inlining
 end
 
+Base.show(io::IO, state::AnalyzerState) = print(io, typeof(state), "(...)")
+
 @noinline function AnalyzerState(analyzer::AbstractAnalyzer)
     AnalyzerType = nameof(typeof(analyzer))
     error(lazy"""
@@ -506,6 +508,7 @@ Base.get(analysis_cache::AnalysisCache, mi::MethodInstance, default) = get(analy
 Base.getindex(analysis_cache::AnalysisCache, mi::MethodInstance) = getindex(analysis_cache.cache, mi)
 Base.setindex!(analysis_cache::AnalysisCache, ci::CodeInstance, mi::MethodInstance) = setindex!(analysis_cache.cache, ci, mi)
 Base.delete!(analysis_cache::AnalysisCache, mi::MethodInstance) = delete!(analysis_cache.cache, mi)
+Base.show(io::IO, analysis_cache::AnalysisCache) = print(io, typeof(analysis_cache), "(", length(analysis_cache.cache), " entries)")
 
 @noinline function AnalysisCache(analyzer::AbstractAnalyzer)
     AnalyzerType = nameof(typeof(analyzer))
