@@ -1039,31 +1039,28 @@ end
 ismoduleusage(@nospecialize(x)) = isexpr(x, (:import, :using, :export))
 
 # assuming `ismoduleusage(x)` holds
-function to_simple_module_usages(x::Expr)::Vector{Expr}
+function to_simple_module_usages(x::Expr)
     if length(x.args) != 1
         # using A, B, export a, b
-        return Expr.(x.head, x.args)
-    else
-        arg = only(x.args)
-        if isa(arg, Symbol)
-            # export a
-            return Expr[x]
-        else
-            # import Pkg as P
-            if arg.head === :as
-                arg = first(arg.args)
-            end
-            if arg.head === :.
-                # using A
-                return Expr[x]
-            else
-                # using A: sym1, sym2, ...
-                @assert isexpr(arg, :(:))
-                a, as... = arg.args
-                return Expr.(x.head, Expr.(arg.head, Ref(a), as))::Vector{Expr}
-            end
-        end
+        return Expr[Expr(x.head, arg) for arg in x.args]
     end
+    arg = only(x.args)
+    if isa(arg, Symbol)
+        # export a
+        return Expr[x]
+    end
+    if isexpr(arg, :as)
+        # import Pkg as P
+        arg = first(arg.args)
+    end
+    if isexpr(arg, :.)
+        # using A
+        return Expr[x]
+    end
+    # using A: sym1, sym2, ...
+    @assert isexpr(arg, :(:))
+    a, as... = arg.args
+    return Expr[Expr(x.head, ex) for ex in Expr[Expr(arg.head, a, a′) for a′ in as]]
 end
 
 # adapted from https://github.com/JuliaDebug/JuliaInterpreter.jl/blob/2f5f80034bc287a60fe77c4e3b5a49a087e38f8b/src/interpret.jl#L188-L199
@@ -1082,9 +1079,7 @@ function JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, fr
     isa(ret, Some{Any}) && return ret.value
     args = collect_args(interp, frame, call_expr)
     f = first(args)
-    if isinclude(f)
-        return handle_include(interp, args)
-    end
+    isinclude(f) && return handle_include(interp, args)
     popfirst!(args)  # now it's really just `args`
     return @invokelatest f(args...)
 end
