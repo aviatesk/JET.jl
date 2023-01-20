@@ -35,6 +35,16 @@ struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
     analysis_cache::AnalysisCache
     report_pass::RP
     method_table::CachedMethodTable{OverlayMethodTable}
+
+    function JETAnalyzer(state::AnalyzerState, analysis_cache::AnalysisCache, report_pass::RP) where RP
+        method_table = CachedMethodTable(OverlayMethodTable(state.world, JET_METHOD_TABLE))
+        return new{RP}(state, analysis_cache, report_pass, method_table)
+    end
+    function JETAnalyzer(state::AnalyzerState, report_pass::RP) where RP
+        cache_key = compute_hash(state.inf_params, report_pass)
+        analysis_cache = get!(()->AnalysisCache(), JET_ANALYZER_CACHE, cache_key)
+        return JETAnalyzer(state, analysis_cache, report_pass)
+    end
 end
 
 # JETAnalyzer hooks on abstract interpretation only,
@@ -99,18 +109,11 @@ end
     state = AnalyzerState(; aggressive_constant_propagation,
                             unoptimize_throw_blocks,
                             jetconfigs...)
-    cache_key = compute_hash(state.inf_params, report_pass)
-    analysis_cache = get!(()->AnalysisCache(), JET_ANALYZER_CACHE, cache_key)
-    method_table = CachedMethodTable(OverlayMethodTable(state.world, JET_METHOD_TABLE))
-    analyzer = JETAnalyzer(state, analysis_cache, report_pass, method_table)
-    return analyzer
+    return JETAnalyzer(state, report_pass)
 end
 JETInterface.AnalyzerState(analyzer::JETAnalyzer) = analyzer.state
 function JETInterface.AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerState)
-    analysis_cache = analyzer.analysis_cache
-    report_pass = ReportPass(analyzer)
-    method_table = CachedMethodTable(OverlayMethodTable(state.world, JET_METHOD_TABLE))
-    return JETAnalyzer(state, analysis_cache, report_pass, method_table)
+    return JETAnalyzer(state, ReportPass(analyzer))
 end
 JETInterface.ReportPass(analyzer::JETAnalyzer) = analyzer.report_pass
 JETInterface.AnalysisCache(analyzer::JETAnalyzer) = analyzer.analysis_cache
