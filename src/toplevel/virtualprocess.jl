@@ -416,29 +416,26 @@ function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProce
     succeeded = 0
     start = time()
     n = length(res.toplevel_signatures)
+    state = AnalyzerState(analyzer)
+    inf_params, world = state.inf_params, state.world
+    new_inf_params = JETInferenceParams(inf_params; max_methods=1)
+    new_world = get_world_counter()
+    state.inf_params, state.world = new_inf_params, new_world
+    analyzer = AbstractAnalyzer(analyzer, state)
     for (i, tt) in enumerate(res.toplevel_signatures)
         match = _which(tt;
             # NOTE use the latest world counter with `method_table(analyzer)` unwrapped,
             # otherwise it may use a world counter when this method isn't defined yet
             method_table=unwrap_method_table(method_table(analyzer)),
-            world=get_world_counter(),
+            world=new_world,
             raise=false)
         if match !== nothing
             succeeded += 1
             with_toplevel_logger(config; pre=clearline) do @nospecialize(io)
                 (i == n ? println : print)(io, "analyzing from top-level definitions ($succeeded/$n)")
             end
-            analyzer = AbstractAnalyzer(analyzer, _CONCRETIZED, _TOPLEVELMOD)
-            state = AnalyzerState(analyzer)
-            inf_params = state.inf_params
-            @static if hasfield(InferenceParams, :max_methods) # VERSION ≥ v"1.10.0-DEV.105"
-                state.inf_params = JETInferenceParams(inf_params; max_methods=1)
-            else
-                state.inf_params = JETInferenceParams(; max_methods=1)
-            end
             analyzer, result = analyze_method_signature!(analyzer,
                 match.method, match.spec_types, match.sparams)
-            state.inf_params = inf_params
             append!(res.inference_error_reports, get_reports(analyzer, result))
             continue
         end
@@ -447,6 +444,7 @@ function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProce
             println(io, "couldn't find a single method matching the signature `", tt, "`")
         end
     end
+    state.inf_params, state.world = inf_params, world
     with_toplevel_logger(config) do @nospecialize(io)
         sec = round(time() - start; digits = 3)
         println(io, "analyzed $succeeded top-level definitions (took $sec sec)")

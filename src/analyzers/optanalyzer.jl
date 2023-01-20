@@ -174,6 +174,24 @@ struct OptAnalyzer{RP,FF} <: AbstractAnalyzer
     function_filter::FF
     skip_unoptimized_throw_blocks::Bool
     __analyze_frame::BitVector # temporary stash to keep per-frame analysis-skip configuration
+
+    function OptAnalyzer(state::AnalyzerState,
+                         report_pass::RP,
+                         skip_noncompileable_calls::Bool,
+                         function_filter::FF,
+                         skip_unoptimized_throw_blocks::Bool) where {RP,FF}
+        cache_key = compute_hash(state.inf_params, state.opt_params, report_pass,
+                                 skip_noncompileable_calls, skip_unoptimized_throw_blocks)
+        cache_key = @invoke hash(function_filter::Any, cache_key::UInt) # HACK avoid dynamic dispatch
+        analysis_cache = get!(()->AnalysisCache(), OPT_ANALYZER_CACHE, cache_key)
+        return new{RP,FF}(state,
+                          analysis_cache,
+                          report_pass,
+                          skip_noncompileable_calls,
+                          function_filter,
+                          skip_unoptimized_throw_blocks,
+                          #=__analyze_frame=# BitVector())
+    end
 end
 
 # AbstractAnalyzer API requirements
@@ -184,29 +202,21 @@ function OptAnalyzer(;
     skip_unoptimized_throw_blocks::Bool = true,
     jetconfigs...)
     state = AnalyzerState(; jetconfigs...)
-    cache_key = compute_hash(state.inf_params, state.opt_params, report_pass,
-        skip_noncompileable_calls, skip_unoptimized_throw_blocks)
-    cache_key = @invoke hash(function_filter::Any, cache_key::UInt) # HACK avoid dynamic dispatch
-    analysis_cache = get!(()->AnalysisCache(), OPT_ANALYZER_CACHE, cache_key)
     return OptAnalyzer(
         state,
-        analysis_cache,
         report_pass,
         skip_noncompileable_calls,
         function_filter,
-        skip_unoptimized_throw_blocks,
-        #=__analyze_frame=# BitVector())
+        skip_unoptimized_throw_blocks)
 end
 JETInterface.AnalyzerState(analyzer::OptAnalyzer) = analyzer.state
 function JETInterface.AbstractAnalyzer(analyzer::OptAnalyzer, state::AnalyzerState)
     return OptAnalyzer(
         state,
-        analyzer.analysis_cache,
         analyzer.report_pass,
         analyzer.skip_noncompileable_calls,
         analyzer.function_filter,
-        analyzer.skip_unoptimized_throw_blocks,
-        analyzer.__analyze_frame)
+        analyzer.skip_unoptimized_throw_blocks,)
 end
 JETInterface.ReportPass(analyzer::OptAnalyzer) = analyzer.report_pass
 JETInterface.AnalysisCache(analyzer::OptAnalyzer) = analyzer.analysis_cache
