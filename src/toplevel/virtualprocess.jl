@@ -418,7 +418,10 @@ function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProce
     n = length(res.toplevel_signatures)
     state = AnalyzerState(analyzer)
     inf_params, world = state.inf_params, state.world
-    new_inf_params = JETInferenceParams(inf_params; max_methods=1)
+    # XXX make this less specific to `JETAnalyzer`?
+    new_inf_params = analyzer isa JETAnalyzer ?
+                     JETInferenceParams(inf_params; max_methods=1) :
+                     inf_params
     new_world = get_world_counter()
     state.inf_params, state.world = new_inf_params, new_world
     analyzer = AbstractAnalyzer(analyzer, state)
