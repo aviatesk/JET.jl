@@ -920,9 +920,6 @@ function add_iterblocks!(cocretize, src, edges, iterblocks) end
 
 # implementation of https://github.com/aviatesk/JET.jl/issues/196
 function select_dependencies!(concretize, src, edges)
-    debug = false
-    debug && println("initially selected:", findall(concretize))
-
     # find statement sets that come from iteration/iterator protocol
     # TODO iterblocks = find_iterblocks(src)
 
@@ -942,7 +939,6 @@ function select_dependencies!(concretize, src, edges)
         # TODO changed |= add_iterblocks!(concretized, src, edges, iterblocks)
         changed |= add_typedefs!(concretize, src, edges, typedefs, ())
     end
-    debug && (println("after initial requirements discovery:"); print_with_code(stdout::IO, src, concretize))
 
     # find a loop region and check if any of the requirements discovered so far is involved
     # with it, and if require everything involved with the loop in order to properly
@@ -953,8 +949,7 @@ function select_dependencies!(concretize, src, edges)
     # and thus the analysis here should terminate in reasonable time even with a fairly
     # complex control flow graph
     cfg = compute_basic_blocks(src.code)
-    loops = filter!(>(1)∘length, strongly_connected_components(cfg)) # filter
-    debug && @show loops
+    loops = filter!(>(1)∘length, strongly_connected_components(cfg))
 
     critical_blocks = BitSet()
     for (i, block) in enumerate(cfg.blocks)
@@ -977,7 +972,6 @@ function select_dependencies!(concretize, src, edges)
             # push!(critical_blocks, minimum(loop) - 1)
         end
     end
-    debug && @show critical_blocks
 
     norequire = BitSet()
     for (i, block) in enumerate(cfg.blocks)
@@ -985,7 +979,6 @@ function select_dependencies!(concretize, src, edges)
             pushall!(norequire, rng(block))
         end
     end
-    debug && @show norequire
 
     changed = true
     while changed
@@ -995,7 +988,6 @@ function select_dependencies!(concretize, src, edges)
         changed |= add_ssa_preds!(concretize, src, edges, norequire)
         changed |= add_control_flow!(concretize, cfg, norequire)
     end
-    debug && (println("after all requirements discovery:"); print_with_code(stdout::IO, src, concretize))
 end
 
 function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node), istoplevel::Bool)
