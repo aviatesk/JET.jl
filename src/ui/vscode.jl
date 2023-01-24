@@ -1,7 +1,6 @@
 module VSCode
 
 import ..JET:
-    @jetconfigurable,
     gen_postprocess,
     tofullpath,
     print_signature,

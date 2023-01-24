@@ -277,13 +277,13 @@ macro jetconfigurable(funcdef)
         defsig = first(defsig.args)
     end
     args = defsig.args::Vector{Any}
-    thisname = first(args)
+    thisname = first(args)::Symbol
     i = findfirst(@nospecialize(a)->isexpr(a, :parameters), args)
     if isnothing(i)
         @warn "no JET configurations are defined for `$thisname`"
         insert!(args, 2, Expr(:parameters, :(jetconfigs...)))
     else
-        kwargs = args[i]
+        kwargs = args[i]::Expr
         found = false
         for kwarg in kwargs.args
             if isexpr(kwarg, :...)
@@ -301,7 +301,7 @@ macro jetconfigurable(funcdef)
 
     return esc(funcdef)
 end
-const _JET_CONFIGURATIONS = Dict{Symbol,Union{Symbol,Expr}}()
+const _JET_CONFIGURATIONS = Dict{Symbol,Symbol}()
 
 @static if VERSION ≥ v"1.10.0-DEV.117"
     using .CC: @nospecs
