@@ -263,11 +263,9 @@ const _EGAL_TYPES = Any[Symbol, MethodInstance, Type]
         ...
     end
 
-This macro asserts that there's no configuration naming conflict across the `@jetconfigurable`
-functions so that a configuration for a `@jetconfigurable` function  doesn't affect the other
-`@jetconfigurable` functions.
-This macro also adds a dummy splat keyword arguments (`jetconfigs...`) to the function definition
-so that any configuration of other `@jetconfigurable` functions can be passed on to it.
+Assert that there is no configuration naming conflict across `@jetconfigurable` methods.
+Also add the dummy splat keyword argument `jetconfigs...` to the argument list if necessary
+so that any configuration of other `@jetconfigurable` methods can be passed on to it.
 """
 macro jetconfigurable(funcdef)
     @assert isexpr(funcdef, :(=)) || isexpr(funcdef, :function) "function definition should be given"
