@@ -170,15 +170,15 @@ struct OptAnalyzer{RP,FF} <: AbstractAnalyzer
     state::AnalyzerState
     analysis_cache::AnalysisCache
     report_pass::RP
-    skip_noncompileable_calls::Bool
     function_filter::FF
+    skip_noncompileable_calls::Bool
     skip_unoptimized_throw_blocks::Bool
     __analyze_frame::BitVector # temporary stash to keep per-frame analysis-skip configuration
 
     function OptAnalyzer(state::AnalyzerState,
                          report_pass::RP,
-                         skip_noncompileable_calls::Bool,
                          function_filter::FF,
+                         skip_noncompileable_calls::Bool,
                          skip_unoptimized_throw_blocks::Bool) where {RP,FF}
         cache_key = compute_hash(state.inf_params, state.opt_params, report_pass,
                                  skip_noncompileable_calls, skip_unoptimized_throw_blocks)
@@ -187,26 +187,26 @@ struct OptAnalyzer{RP,FF} <: AbstractAnalyzer
         return new{RP,FF}(state,
                           analysis_cache,
                           report_pass,
-                          skip_noncompileable_calls,
                           function_filter,
+                          skip_noncompileable_calls,
                           skip_unoptimized_throw_blocks,
                           #=__analyze_frame=# BitVector())
     end
 end
 
 # AbstractAnalyzer API requirements
-function OptAnalyzer(;
+@jetconfigurable :report_pass :function_filter function OptAnalyzer(;
     report_pass = OptAnalysisPass(),
-    skip_noncompileable_calls::Bool = true,
     function_filter = optanalyzer_function_filter,
+    skip_noncompileable_calls::Bool = true,
     skip_unoptimized_throw_blocks::Bool = true,
     jetconfigs...)
     state = AnalyzerState(; jetconfigs...)
     return OptAnalyzer(
         state,
         report_pass,
-        skip_noncompileable_calls,
         function_filter,
+        skip_noncompileable_calls,
         skip_unoptimized_throw_blocks)
 end
 JETInterface.AnalyzerState(analyzer::OptAnalyzer) = analyzer.state
@@ -214,8 +214,8 @@ function JETInterface.AbstractAnalyzer(analyzer::OptAnalyzer, state::AnalyzerSta
     return OptAnalyzer(
         state,
         analyzer.report_pass,
-        analyzer.skip_noncompileable_calls,
         analyzer.function_filter,
+        analyzer.skip_noncompileable_calls,
         analyzer.skip_unoptimized_throw_blocks,)
 end
 JETInterface.ReportPass(analyzer::OptAnalyzer) = analyzer.report_pass
@@ -367,13 +367,8 @@ end
 Analyzes the generic function call with the given type signature with [the optimization analyzer](@ref optanalysis),
 which collects optimization failures and runtime dispatches involved within the call stack.
 """
-function report_opt(@nospecialize(args...);
-                    analyzer = OptAnalyzer,
-                    jetconfigs...)
-    if !(analyzer === OptAnalyzer)
-        throw(ArgumentError("`analyzer` is fixed to $OptAnalyzer"))
-    end
-    return report_call(args...; analyzer, jetconfigs...)
+function report_opt(@nospecialize(args...); jetconfigs...)
+    return report_call(args...; analyzer=OptAnalyzer, jetconfigs...)
 end
 
 """
@@ -441,11 +436,6 @@ Tests the generic function call with the given type signature is free from runti
 Except that it takes a type signature rather than a call expression, this function works
 in the same way as [`@test_opt`](@ref).
 """
-function test_opt(@nospecialize(args...);
-                  analyzer = OptAnalyzer,
-                  kwargs...)
-    if !(analyzer === OptAnalyzer)
-        throw(ArgumentError("`analyzer` is fixed to $OptAnalyzer"))
-    end
-    return test_call(args...; analyzer, kwargs...)
+function test_opt(@nospecialize(args...); jetconfigs...)
+    return test_call(args...; analyzer=OptAnalyzer, jetconfigs...)
 end

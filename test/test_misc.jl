@@ -87,3 +87,9 @@ macro toml_str(s); TOML.parse(TOML.Parser(s)); end
         @test (:concretization_patterns => [:(const x_ = y_)]) in config
     end
 end
+
+@testset "configuration validation" begin
+    # https://github.com/aviatesk/JET.jl/issues/414
+    @test_throws "lkdsjkdlkas" report_call(+, (Int, Int), lkdsjkdlkas=true)
+    @test_throws "target_module" @report_call target_module=(Core,) sum(Char[])
+end
