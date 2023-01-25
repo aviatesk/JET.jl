@@ -1097,10 +1097,8 @@ Analyzes `text` and returns [`JETToplevelResult`](@ref).
     analyzer′ = Analyzer(; jetconfigs...)
     config = ToplevelConfig(; jetconfigs...)
     res = virtual_process(text, filename, analyzer′, config)
-    source = LazyPrinter() do io::IO
-        print(io, nameof(typeof(analyzer)), ": ")
-        print(io, "report_file(\"", filename, "\")")
-    end |> LazyString
+    analyzername = nameof(typeof(analyzer))
+    source = lazy"$analyzername: report_file(\"$filename\")"
     return JETToplevelResult(analyzer′, res, source; analyzer, jetconfigs...)
 end
 
@@ -1367,10 +1365,9 @@ end
     jetconfigs...) where {Analyzer<:AbstractAnalyzer}
     analyzer = Analyzer(; jetconfigs...)
     analyzer, result = analyze_gf_by_type!(analyzer, tt)
-    source = LazyPrinter() do io::IO
-        print(io, nameof(typeof(analyzer)), ": ")
-        Base.show_tuple_as_call(io, Symbol(""), tt)
-    end |> LazyString
+    analyzername = nameof(typeof(analyzer))
+    sig = LazyPrinter(io::IO->Base.show_tuple_as_call(io, Symbol(""), tt))
+    source = lazy"$analyzername: $sig"
     return JETCallResult(result, analyzer, source; jetconfigs...)
 end
 
