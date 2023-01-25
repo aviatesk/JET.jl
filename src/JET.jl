@@ -935,7 +935,7 @@ function set_if_missing!(configs::Dict{Symbol,Any}, key::Symbol, @nospecialize(v
     return configs
 end
 
-function kwargs_dict(configs)
+function kwargs_dict(@nospecialize configs)
     dict = Dict{Symbol,Any}()
     for (key, val) in configs
         dict[Symbol(key)] = val
@@ -943,7 +943,7 @@ function kwargs_dict(configs)
     return dict
 end
 
-function find_config_file(dir)
+function find_config_file(dir::AbstractString)
     next_dir = dirname(dir)
     if (next_dir == dir || # ensure to escape infinite recursion
         isempty(dir))      # reached to the system root
