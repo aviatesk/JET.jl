@@ -327,7 +327,7 @@ macro jetconfigurable(exs...)
 end
 const _JET_CONFIGURATIONS = Dict{Symbol,Symbol}()
 
-function validate_configs(jetconfigs)
+function validate_configs(@nospecialize jetconfigs)
     valid_names = keys(_JET_CONFIGURATIONS)
     for (key, val) in jetconfigs
         if key ∉ valid_names
