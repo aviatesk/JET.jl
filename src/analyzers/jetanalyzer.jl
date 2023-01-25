@@ -84,7 +84,7 @@ end
 # AbstractAnalyzer API
 # ====================
 
-@constprop :aggressive @jetconfigurable :report_pass function JETAnalyzer(;
+@jetconfigurable :report_pass function JETAnalyzer(;
     report_pass::Union{Nothing,ReportPass} = nothing,
     mode::Symbol = :basic,
     jetconfigs...)

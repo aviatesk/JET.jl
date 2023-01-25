@@ -82,8 +82,8 @@ import .CC:
     switchtupleunion, tmerge, widenconst, ⊑
 
 import Base:
-    @invoke, @invokelatest, @constprop, IdSet, default_tt, destructure_callex,
-    parse_input_line, rewrap_unionall, uniontypes, unwrap_unionall
+    @invoke, @invokelatest, IdSet, default_tt, destructure_callex, parse_input_line,
+    rewrap_unionall, uniontypes, unwrap_unionall
 
 import Base.Meta:
     _parse_string, isexpr, lower
