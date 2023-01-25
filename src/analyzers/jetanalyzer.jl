@@ -97,10 +97,10 @@ end
         elseif mode === :typo
             report_pass = TypoPass()
         else
-            throw(ArgumentError("`mode` configuration should be either of `:basic`, `:sound` or `:typo`"))
+            throw(JETConfigError("`mode` configuration should be either of `:basic`, `:sound` or `:typo`", :mode, mode))
         end
     elseif mode !== :basic
-        throw(ArgumentError("either of `report_pass` and `mode` configurations can be specified"))
+        throw(JETConfigError("Either of `report_pass` and `mode` configurations can be specified", :report_pass, report_pass))
     end
     jetconfigs = kwargs_dict(jetconfigs)
     set_if_missing!(jetconfigs, :aggressive_constant_propagation, true)

@@ -329,13 +329,21 @@ const _JET_CONFIGURATIONS = Dict{Symbol,Symbol}()
 
 function validate_configs(jetconfigs)
     valid_names = keys(_JET_CONFIGURATIONS)
-    for name in keys(jetconfigs)
-        if name ∉ valid_names
-            throw(ArgumentError(lazy"unexpected configuration given `$name`"))
+    for (key, val) in jetconfigs
+        if key ∉ valid_names
+            throw(JETConfigError(lazy"Given unexpected configuration: `$key`", key, val))
         end
     end
     return nothing
 end
+
+struct JETConfigError <: Exception
+    msg::AbstractString
+    key::Symbol
+    val
+    JETConfigError(msg::AbstractString, key::Symbol, @nospecialize(val)) = new(msg, key, val)
+end
+Base.showerror(io::IO, err::JETConfigError) = print(io, "JETConfigError: ", err.msg)
 
 @static if VERSION ≥ v"1.10.0-DEV.117"
     using .CC: @nospecs
@@ -987,30 +995,43 @@ E.g. the configurations below are equivalent:
     JET configurations specified as keyword arguments have precedence over those specified
     via a configuration file.
 """
-parse_config_file(path::AbstractString) = process_config_dict!(kwargs_dict(TOML.parsefile(path)))
+parse_config_file(path::AbstractString) = process_config_dict(TOML.parsefile(path))
+
+process_config_dict(configs) = process_config_dict!(kwargs_dict(configs))
 
 function process_config_dict!(config_dict::Dict{Symbol,Any})
     context = get(config_dict, :context, nothing)
     if !isnothing(context)
-        @assert isa(context, String) "`context` should be string of Julia code"
-        config_dict[:context] = Core.eval(Main, trymetaparse(context))
+        isa(context, String) ||
+            throw(JETConfigError("`context` should be string of Julia code", :context, context))
+        config_dict[:context] = Core.eval(Main, trymetaparse(context, :context))
     end
     concretization_patterns = get(config_dict, :concretization_patterns, nothing)
     if !isnothing(concretization_patterns)
-        @assert isa(concretization_patterns, Vector{String}) "`concretization_patterns` should be array of string of Julia expression"
-        config_dict[:concretization_patterns] = trymetaparse.(concretization_patterns)
+        isa(concretization_patterns, Vector{String}) ||
+            throw(JETConfigError("`concretization_patterns` should be array of string of Julia expression", :concretization_patterns, concretization_patterns))
+        config_dict[:concretization_patterns] = trymetaparse.(concretization_patterns, :concretization_patterns)
     end
     toplevel_logger = get(config_dict, :toplevel_logger, nothing)
     if !isnothing(toplevel_logger)
-        @assert isa(toplevel_logger, String) "`toplevel_logger` should be string of Julia code"
-        config_dict[:toplevel_logger] = Core.eval(Main, trymetaparse(toplevel_logger))
+        isa(toplevel_logger, String) ||
+            throw(JETConfigError("`toplevel_logger` should be string of Julia code", :toplevel_logger, toplevel_logger))
+        config_dict[:toplevel_logger] = Core.eval(Main, trymetaparse(toplevel_logger, :toplevel_logger))
     end
     return config_dict
 end
 
-function trymetaparse(s)
-    ret = Meta.parse(strip(s); raise = true)
-    isexpr(ret, :incomplete) && error(first(ret.args))
+function trymetaparse(s::String, name::Symbol)
+    s = strip(s)
+    ret = Meta.parse(s; raise=false)
+    if isexpr(ret, :error) || isexpr(ret, :incomplete)
+        err = ret.args[1]
+        msg = lazy"""Failed to parse configuration string.
+          ∘ given: `$s`
+          ∘ error: $err
+        """
+        throw(JETConfigError(msg, name, s))
+    end
     return ret
 end
 
