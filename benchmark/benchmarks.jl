@@ -75,9 +75,9 @@ end
 # first-time performance
 # ----------------------
 
-let g = addgroup!(SUITE, "JETAnalyzer{BasicPass} first-time")
+let g = addgroup!(SUITE, "First-Time-To-JET")
     g["package loading"] = @freshbenchmarkable (using JET)
-    g["sum(\"julia\") (first time)"] = @freshbenchmarkable (@report_call sum("julia")) setup = using JET
-    g["rand(Bool) (first time)"] = @freshbenchmarkable (@report_call rand(Bool)) setup = using JET
+    g["sum(\"julia\")"] = @freshbenchmarkable (@report_call sum("julia")) setup = using JET
+    g["rand(Bool)"] = @freshbenchmarkable (@report_call rand(Bool)) setup = using JET
     tune_benchmarks!(g; seconds=60.0)
 end
