@@ -331,7 +331,8 @@ function validate_configs(@nospecialize jetconfigs)
     valid_names = keys(_JET_CONFIGURATIONS)
     for (key, val) in jetconfigs
         if key ∉ valid_names
-            throw(JETConfigError(lazy"Given unexpected configuration: `$key=$val`", key, val))
+            valrepr = LazyPrinter(io::IO->show(io,val))
+            throw(JETConfigError(lazy"Given unexpected configuration: `$key = $valrepr`", key, val))
         end
     end
     return nothing

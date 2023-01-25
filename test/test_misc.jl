@@ -87,4 +87,5 @@ end
     # https://github.com/aviatesk/JET.jl/issues/414
     @test_throws "lkdsjkdlkas" report_call(+, (Int, Int), lkdsjkdlkas=true)
     @test_throws "target_module" @report_call target_module=(Core,) sum(Char[])
+    @test_throws "foo = :bar" @report_call foo = :bar sum(Char[])
 end
