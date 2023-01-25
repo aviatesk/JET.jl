@@ -1,8 +1,6 @@
 @testset "configurations" begin
-    @test_throws ArgumentError("`mode` configuration should be either of `:basic`, `:sound` or `:typo`") report_call(
-        function () end; mode=:badmode)
-    @test_throws ArgumentError("either of `report_pass` and `mode` configurations can be specified") report_call(
-        function () end; report_pass=JET.BasicPass(), mode=:sound)
+    @test_throws JET.JETConfigError report_call(function () end; mode=:badmode)
+    @test_throws JET.JETConfigError report_call(function () end; report_pass=JET.BasicPass(), mode=:sound)
 
     # cache key should be same for the same configurations
     let cache1 = JET.AnalysisCache(JETAnalyzer()),

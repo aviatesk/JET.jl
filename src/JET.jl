@@ -82,8 +82,8 @@ import .CC:
     switchtupleunion, tmerge, widenconst, ⊑
 
 import Base:
-    @invoke, @invokelatest, @constprop, IdSet, default_tt, destructure_callex,
-    parse_input_line, rewrap_unionall, uniontypes, unwrap_unionall
+    @invoke, @invokelatest, IdSet, default_tt, destructure_callex, parse_input_line,
+    rewrap_unionall, uniontypes, unwrap_unionall
 
 import Base.Meta:
     _parse_string, isexpr, lower
@@ -259,47 +259,91 @@ end
 const _EGAL_TYPES = Any[Symbol, MethodInstance, Type]
 
 """
-    @jetconfigurable function config_func(args...; configurations...)
+    @jetconfigurable [duplicated_names...] function config_func(args...; configurations...)
         ...
     end
 
 Assert that there is no configuration naming conflict across `@jetconfigurable` methods.
 Also add the dummy splat keyword argument `jetconfigs...` to the argument list if necessary
 so that any configuration of other `@jetconfigurable` methods can be passed on to it.
+And also insert a call to `validate_configs` at the head of the method's body.
 """
-macro jetconfigurable(funcdef)
+macro jetconfigurable(exs...)
+    if length(exs) == 1
+        funcdef = only(exs)
+        duplicated_names = Symbol[]
+    else
+        funcdef = last(exs)
+        duplicated_names = Symbol[(isa(name, QuoteNode) ? name.value : name)::Symbol for name in exs[1:end-1]]
+    end
     @assert isexpr(funcdef, :(=)) || isexpr(funcdef, :function) "function definition should be given"
+    funcdef = funcdef::Expr
 
     defsig = funcdef.args[1]
     if isexpr(defsig, :where)
         defsig = first(defsig.args)
     end
+    defsig = defsig::Expr
     args = defsig.args::Vector{Any}
     thisname = first(args)::Symbol
     i = findfirst(@nospecialize(a)->isexpr(a, :parameters), args)
     if isnothing(i)
         @warn "no JET configurations are defined for `$thisname`"
         insert!(args, 2, Expr(:parameters, :(jetconfigs...)))
+        configsname = :jetconfigs
     else
         kwargs = args[i]::Expr
         found = false
         for kwarg in kwargs.args
             if isexpr(kwarg, :...)
                 found = true
+                configsname = first(kwarg.args)::Symbol
                 continue
             end
             kwargex = first(kwarg.args)
             kwargname = (isexpr(kwargex, :(::)) ? first(kwargex.args) : kwargex)::Symbol
             othername = get!(_JET_CONFIGURATIONS, kwargname, thisname)
-            # allows same configurations for same generic function or function refinement
-            @assert thisname == othername "`$thisname` uses `$kwargname` JET configuration name which is already used by `$othername`"
+            if thisname !== othername && kwargname ∉ duplicated_names
+                throw("`$thisname` uses `$kwargname` JET configuration name which is already used by `$othername`")
+            end
         end
-        found || push!(kwargs.args, :(jetconfigs...))
+        if !found
+            push!(kwargs.args, :(jetconfigs...))
+            configsname = :jetconfigs
+        end
+    end
+
+    # insert validation to check if there are no invalid names
+    assertion = :($validate_configs($configsname))
+    body = funcdef.args[2]
+    if isexpr(body, :block)
+        i = findfirst(!islnn, body.args)::Int
+        insert!(body.args, i, assertion)
+    else
+        funcdef.args[2] = Expr(:block, LineNumberNode(@__LINE__, @__FILE__), assertion, body)
     end
 
     return esc(funcdef)
 end
 const _JET_CONFIGURATIONS = Dict{Symbol,Symbol}()
+
+function validate_configs(jetconfigs)
+    valid_names = keys(_JET_CONFIGURATIONS)
+    for (key, val) in jetconfigs
+        if key ∉ valid_names
+            throw(JETConfigError(lazy"Given unexpected configuration: `$key`", key, val))
+        end
+    end
+    return nothing
+end
+
+struct JETConfigError <: Exception
+    msg::AbstractString
+    key::Symbol
+    val
+    JETConfigError(msg::AbstractString, key::Symbol, @nospecialize(val)) = new(msg, key, val)
+end
+Base.showerror(io::IO, err::JETConfigError) = print(io, "JETConfigError: ", err.msg)
 
 @static if VERSION ≥ v"1.10.0-DEV.117"
     using .CC: @nospecs
@@ -545,8 +589,8 @@ function get_reports(result::JETToplevelResult)
     end
 end
 
-@jetconfigurable function get_toplevel_target_modules(
-    defined_modules; target_defined_modules::Bool = false)
+@jetconfigurable function get_toplevel_target_modules(defined_modules;
+    target_defined_modules::Bool = false)
     return target_defined_modules ? defined_modules : nothing
 end
 
@@ -678,10 +722,8 @@ julia> @report_call ignored_modules=(Base,) foo("julia")
 ```
 ---
 """
-@jetconfigurable function configured_reports(
-    reports::Vector{InferenceErrorReport};
-    report_config = nothing,
-    target_modules = nothing, ignored_modules = nothing)
+@jetconfigurable function configured_reports(reports::Vector{InferenceErrorReport};
+    report_config = nothing, target_modules = nothing, ignored_modules = nothing)
     if report_config === nothing
         report_config = ReportConfig(target_modules, ignored_modules)
     end
@@ -862,23 +904,16 @@ See [JET's configuration file](@ref config-file) for more details.
     ```
     See [JET's top-level analysis configurations](@ref toplevel-config) for more details.
 """
-function report_file(filename::AbstractString;
-                     __default_configs = (default_toplevel_logger_config(),),
-                     source::Union{Nothing,AbstractString} = nothing,
-                     jetconfigs...)
+@jetconfigurable :source function report_file(filename::AbstractString;
+    source::Union{Nothing,AbstractString} = nothing,
+    jetconfigs...)
     isfile(filename) || throw(ArgumentError("$filename doesn't exist"))
 
+    jetconfigs = set_if_missing(jetconfigs, :toplevel_logger, IOContext(stdout::IO, JET_LOGGER_LEVEL => DEFAULT_LOGGER_LEVEL))
     configfile = find_config_file(dirname(abspath(filename)))
-    if isnothing(configfile)
-        for default in __default_configs
-            jetconfigs = set_if_missing(jetconfigs, default)
-        end
-    else
+    if !isnothing(configfile)
         config = parse_config_file(configfile)
-        jetconfigs = overwrite_options(config, jetconfigs)
-        for default in __default_configs
-            jetconfigs = set_if_missing(jetconfigs, default)
-        end
+        merge!(jetconfigs, config) # overwrite configurations
         toplevel_logger = get(jetconfigs, :toplevel_logger, nothing)
         with_toplevel_logger(toplevel_logger; filter=≥(JET_LOGGER_LEVEL_INFO)) do @nospecialize(io)
             println(io, lazy"applied JET configurations in $configfile")
@@ -892,13 +927,20 @@ function report_file(filename::AbstractString;
     return report_text(read(filename, String), filename; source, jetconfigs...)
 end
 
-default_toplevel_logger_config() =
-    return :toplevel_logger => IOContext(stdout::IO, JET_LOGGER_LEVEL => DEFAULT_LOGGER_LEVEL)
+set_if_missing(configs, args...) = (@nospecialize; set_if_missing!(kwargs_dict(configs), args...))
 
-function set_if_missing(@nospecialize(jetconfigs), (key, value))
-    haskey(jetconfigs, key) && return jetconfigs
-    default = kwargs((; key => value))
-    return overwrite_options(jetconfigs, default)
+function set_if_missing!(configs::Dict{Symbol,Any}, key::Symbol, @nospecialize(value))
+    haskey(configs, key) && return configs
+    push!(configs, key => value)
+    return configs
+end
+
+function kwargs_dict(configs)
+    dict = Dict{Symbol,Any}()
+    for (key, val) in configs
+        dict[Symbol(key)] = val
+    end
+    return dict
 end
 
 function find_config_file(dir)
@@ -953,40 +995,45 @@ E.g. the configurations below are equivalent:
     JET configurations specified as keyword arguments have precedence over those specified
     via a configuration file.
 """
-parse_config_file(path) = process_config_dict!(TOML.parsefile(path))
+parse_config_file(path::AbstractString) = process_config_dict(TOML.parsefile(path))
 
-function process_config_dict!(config_dict)
-    context = get(config_dict, "context", nothing)
+process_config_dict(configs) = process_config_dict!(kwargs_dict(configs))
+
+function process_config_dict!(config_dict::Dict{Symbol,Any})
+    context = get(config_dict, :context, nothing)
     if !isnothing(context)
-        @assert isa(context, String) "`context` should be string of Julia code"
-        config_dict["context"] = Core.eval(Main, trymetaparse(context))
+        isa(context, String) ||
+            throw(JETConfigError("`context` should be string of Julia code", :context, context))
+        config_dict[:context] = Core.eval(Main, trymetaparse(context, :context))
     end
-    concretization_patterns = get(config_dict, "concretization_patterns", nothing)
+    concretization_patterns = get(config_dict, :concretization_patterns, nothing)
     if !isnothing(concretization_patterns)
-        @assert isa(concretization_patterns, Vector{String}) "`concretization_patterns` should be array of string of Julia expression"
-        config_dict["concretization_patterns"] = trymetaparse.(concretization_patterns)
+        isa(concretization_patterns, Vector{String}) ||
+            throw(JETConfigError("`concretization_patterns` should be array of string of Julia expression", :concretization_patterns, concretization_patterns))
+        config_dict[:concretization_patterns] = trymetaparse.(concretization_patterns, :concretization_patterns)
     end
-    toplevel_logger = get(config_dict, "toplevel_logger", nothing)
+    toplevel_logger = get(config_dict, :toplevel_logger, nothing)
     if !isnothing(toplevel_logger)
-        @assert isa(toplevel_logger, String) "`toplevel_logger` should be string of Julia code"
-        config_dict["toplevel_logger"] = Core.eval(Main, trymetaparse(toplevel_logger))
+        isa(toplevel_logger, String) ||
+            throw(JETConfigError("`toplevel_logger` should be string of Julia code", :toplevel_logger, toplevel_logger))
+        config_dict[:toplevel_logger] = Core.eval(Main, trymetaparse(toplevel_logger, :toplevel_logger))
     end
-    return kwargs(config_dict)
+    return config_dict
 end
 
-function trymetaparse(s)
-    ret = Meta.parse(strip(s); raise = true)
-    isexpr(ret, :incomplete) && error(first(ret.args))
+function trymetaparse(s::String, name::Symbol)
+    s = strip(s)
+    ret = Meta.parse(s; raise=false)
+    if isexpr(ret, :error) || isexpr(ret, :incomplete)
+        err = ret.args[1]
+        msg = lazy"""Failed to parse configuration string.
+          ∘ given: `$s`
+          ∘ error: $err
+        """
+        throw(JETConfigError(msg, name, s))
+    end
     return ret
 end
-
-function kwargs(dict)
-    ns = (Symbol.(keys(dict))...,)
-    vs = (collect(values(dict))...,)
-    return pairs(NamedTuple{ns}(vs))
-end
-
-overwrite_options(old, new) = kwargs(merge(old, new))
 
 """
     report_package(package::Union{AbstractString,Module};
@@ -1015,16 +1062,14 @@ Like above but analyzes the package of the current project.
 
 See also: [`report_file`](@ref)
 """
-function report_package(package::Union{AbstractString,Module,Nothing} = nothing;
-                        analyze_from_definitions::Bool = true,
-                        concretization_patterns = [:(x_)], # concretize all top-level code
-                        jetconfigs...)
+@jetconfigurable function report_package(
+    package::Union{AbstractString,Module,Nothing} = nothing;
+    jetconfigs...)
     filename = get_package_file(package)
-    __default_configs = ( # allow a configuration file to overwrite these configurations
-        default_toplevel_logger_config(),
-        :analyze_from_definitions => analyze_from_definitions,
-        :concretization_patterns => concretization_patterns)
-    return report_file(filename; __default_configs, jetconfigs...)
+    jetconfigs = kwargs_dict(jetconfigs)
+    set_if_missing!(jetconfigs, :analyze_from_definitions, true)
+    set_if_missing!(jetconfigs, :concretization_patterns, [:(x_)]) # concretize all top-level code
+    return report_file(filename; jetconfigs...)
 end
 
 function get_package_file(package::AbstractString)
@@ -1052,11 +1097,12 @@ end
 
 Analyzes `text` and returns [`JETToplevelResult`](@ref).
 """
-function report_text(text::AbstractString,
-                     filename::AbstractString = "top-level";
-                     analyzer::Type{Analyzer} = JETAnalyzer,
-                     source::Union{Nothing,AbstractString} = nothing,
-                     jetconfigs...) where {Analyzer<:AbstractAnalyzer}
+@jetconfigurable :analyzer :source function report_text(
+    text::AbstractString,
+    filename::AbstractString = "top-level";
+    analyzer::Type{Analyzer} = JETAnalyzer,
+    source::Union{Nothing,AbstractString} = nothing,
+    jetconfigs...) where {Analyzer<:AbstractAnalyzer}
     analyzer′ = Analyzer(; jetconfigs...)
     config = ToplevelConfig(; jetconfigs...)
     res = virtual_process(text, filename, analyzer′, config)
@@ -1098,12 +1144,12 @@ struct WatchConfig
     # Revise configurations
     revise_all::Bool
     revise_modules
-    @jetconfigurable WatchConfig(; revise_all::Bool = true,
-                                   revise_modules   = nothing,
-                                   ) =
+    @jetconfigurable function WatchConfig(;
+        revise_all::Bool = true,
+        revise_modules   = nothing)
         return new(revise_all,
-                   revise_modules,
-                   )
+                   revise_modules)
+    end
 end
 
 """
@@ -1315,7 +1361,9 @@ end
 Analyzes the generic function call with the given type signature with `analyzer`.
 And finally returns the analysis result as [`JETCallResult`](@ref).
 """
-function report_call(@nospecialize(f), @nospecialize(types = default_tt(f)); jetconfigs...)
+@jetconfigurable function report_call(
+    @nospecialize(f), @nospecialize(types = default_tt(f));
+    jetconfigs...)
     ft = Core.Typeof(f)
     if isa(types, Type)
         u = unwrap_unionall(types)
@@ -1326,10 +1374,11 @@ function report_call(@nospecialize(f), @nospecialize(types = default_tt(f)); jet
     return report_call(tt; jetconfigs...)
 end
 
-function report_call(@nospecialize(tt::Type{<:Tuple});
-                     analyzer::Type{Analyzer} = JETAnalyzer,
-                     source::Union{Nothing,AbstractString} = nothing,
-                     jetconfigs...) where {Analyzer<:AbstractAnalyzer}
+@jetconfigurable :analyzer :source function report_call(
+    @nospecialize(tt::Type{<:Tuple});
+    analyzer::Type{Analyzer} = JETAnalyzer,
+    source::Union{Nothing,AbstractString} = nothing,
+    jetconfigs...) where {Analyzer<:AbstractAnalyzer}
     analyzer = Analyzer(; jetconfigs...)
     analyzer, result = analyze_gf_by_type!(analyzer, tt)
 
@@ -1497,9 +1546,9 @@ function call `f(args...)` is free from problems that `report_call` can detect.
 Except that it takes a type signature rather than a call expression, this function works
 in the same way as [`@test_call`](@ref).
 """
-function test_call(@nospecialize(args...);
-                   broken::Bool = false, skip::Bool = false,
-                   jetconfigs...)
+@jetconfigurable function test_call(@nospecialize(args...);
+    broken::Bool = false, skip::Bool = false,
+    jetconfigs...)
     source = LineNumberNode(@__LINE__, @__FILE__)
     kwargs = map(((k,v),)->Expr(:kw, k, v), collect(jetconfigs))
     orig_expr = :($test_call($(args...); $(kwargs...)))

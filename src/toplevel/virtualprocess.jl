@@ -376,7 +376,7 @@ function virtualize_module_context(actual::Module)
 
     if length(modpath) ≥ 2
         if modpath[1] === :Main && modpath[2] === :anonymous
-            throw(ArgumentError("can't virtualize an anonymous module"))
+            error("can't virtualize an anonymous module")
         end
     end
 

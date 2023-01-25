@@ -288,14 +288,15 @@ for (Params, Func) = ((InferenceParams, JETInferenceParams),
         default = Expr(:., :params, QuoteNode(fname))
         push!(kwargs, Expr(:kw, arg, default))
     end
-    push!(kwargs, Expr(:..., :__jetconfigs)) # other arbitrary JET configs
     sig = Expr(:call, nameof(Func), Expr(:parameters, kwargs...), param)
     call = Expr(:call, nameof(Params), parameters...)
     def = Expr(:(=), sig, call)
+    def = Expr(:macrocall, Symbol("@jetconfigurable"), LineNumberNode(@__LINE__, @__FILE__),
+        :max_methods, :max_tuple_splat, :max_union_splitting, def)
     Core.eval(@__MODULE__, def)
 end
 else
-function JETInferenceParams(
+@jetconfigurable :max_methods :tuple_splat :union_splitting function JETInferenceParams(
     params::InferenceParams = InferenceParams();
     ipo_constant_propagation::Bool = params.ipo_constant_propagation,
     aggressive_constant_propagation::Bool = params.aggressive_constant_propagation,
@@ -304,8 +305,7 @@ function JETInferenceParams(
     union_splitting::Int = params.MAX_UNION_SPLITTING,
     apply_union_enum::Int = params.MAX_APPLY_UNION_ENUM,
     tupletype_depth::Int = params.TUPLE_COMPLEXITY_LIMIT_DEPTH,
-    tuple_splat::Int = params.MAX_TUPLE_SPLAT,
-    __jetconfigs...)
+    tuple_splat::Int = params.MAX_TUPLE_SPLAT)
     return InferenceParams(; ipo_constant_propagation,
                              aggressive_constant_propagation,
                              unoptimize_throw_blocks,
@@ -342,8 +342,7 @@ let kwargs = @static VERSION ≥ v"1.9-DEV" ?
         @assert isexpr(lhs, :(::))
         push!(names, first(lhs.args)::Symbol)
     end
-    push!(kwargs_exs, :(__jetconfigs...))
-    @eval global function JETOptimizationParams(
+    @eval global @jetconfigurable :max_methods :tuple_splat :union_splitting function JETOptimizationParams(
         params::OptimizationParams=OptimizationParams();
         $(kwargs_exs...))
         return OptimizationParams(; $(names...))

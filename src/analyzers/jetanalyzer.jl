@@ -84,13 +84,9 @@ end
 # AbstractAnalyzer API
 # ====================
 
-# NOTE `@constprop :aggressive` here makes sure `mode` to be propagated as constant
-@constprop :aggressive @jetconfigurable function JETAnalyzer(;
+@jetconfigurable :report_pass function JETAnalyzer(;
     report_pass::Union{Nothing,ReportPass} = nothing,
     mode::Symbol = :basic,
-    # default `InferenceParams` tuning
-    aggressive_constant_propagation::Bool = true,
-    unoptimize_throw_blocks::Bool = false,
     jetconfigs...)
     if isnothing(report_pass)
         # if `report_pass` isn't passed explicitly, here we configure it according to `mode`
@@ -101,16 +97,18 @@ end
         elseif mode === :typo
             report_pass = TypoPass()
         else
-            throw(ArgumentError("`mode` configuration should be either of `:basic`, `:sound` or `:typo`"))
+            throw(JETConfigError("`mode` configuration should be either of `:basic`, `:sound` or `:typo`", :mode, mode))
         end
     elseif mode !== :basic
-        throw(ArgumentError("either of `report_pass` and `mode` configurations can be specified"))
+        throw(JETConfigError("Either of `report_pass` and `mode` configurations can be specified", :report_pass, report_pass))
     end
-    state = AnalyzerState(; aggressive_constant_propagation,
-                            unoptimize_throw_blocks,
-                            jetconfigs...)
+    jetconfigs = kwargs_dict(jetconfigs)
+    set_if_missing!(jetconfigs, :aggressive_constant_propagation, true)
+    set_if_missing!(jetconfigs, :unoptimize_throw_blocks, false)
+    state = AnalyzerState(; jetconfigs...)
     return JETAnalyzer(state, report_pass)
 end
+
 JETInterface.AnalyzerState(analyzer::JETAnalyzer) = analyzer.state
 function JETInterface.AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerState)
     return JETAnalyzer(state, ReportPass(analyzer))
@@ -131,9 +129,8 @@ TODO: elaborate this documentation.
 struct BasicPass{FF} <: ReportPass
     function_filter::FF
 end
-function BasicPass(;
-    function_filter = jetanalyzer_function_filter,
-    __jetconfigs...)
+@jetconfigurable :function_filter function BasicPass(;
+    function_filter = jetanalyzer_function_filter)
     return BasicPass(function_filter)
 end
 

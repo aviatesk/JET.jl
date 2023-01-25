@@ -36,12 +36,11 @@ end
 end
 
 using Base.TOML
-using JET: process_config_dict!
+using JET: process_config_dict
 macro toml_str(s); TOML.parse(TOML.Parser(s)); end
 
 @testset "`process_config_dict`" begin
-    let
-        config_dict = toml"""
+    let config_dict = toml"""
         # usual
         analyze_from_definitions = true
 
@@ -51,39 +50,41 @@ macro toml_str(s); TOML.parse(TOML.Parser(s)); end
         toplevel_logger = "stdout"
         """
 
-        config = process_config_dict!(config_dict)
+        config = process_config_dict(config_dict)
         @test (:context => Base) in config
         @test (:concretization_patterns => [:(const x_ = y_)]) in config
         @test (:toplevel_logger => stdout) in config
     end
 
     # error when invalid expression given
-    let
-        config_dict = toml"""
+    let config_dict = toml"""
         concretization_patterns = ["const x_ = end"]
         """
-        @test_throws Meta.ParseError process_config_dict!(config_dict)
+        @test_throws JET.JETConfigError process_config_dict(config_dict)
     end
 
     # error when incomplete expression given
-    let
-        config_dict = toml"""
+    let config_dict = toml"""
         concretization_patterns = ["const x_ = "]
         """
-        @test_throws ErrorException process_config_dict!(config_dict)
+        @test_throws JET.JETConfigError process_config_dict(config_dict)
     end
 
     # should be whitespece/newline insensitive
-    let
-        config_dict = toml"""
+    let config_dict = toml"""
         concretization_patterns = [
             \"\"\"
             const x_ = y_
             \"\"\"
         ]
         """
-
-        config = process_config_dict!(config_dict)
+        config = process_config_dict(config_dict)
         @test (:concretization_patterns => [:(const x_ = y_)]) in config
     end
+end
+
+@testset "configuration validation" begin
+    # https://github.com/aviatesk/JET.jl/issues/414
+    @test_throws "lkdsjkdlkas" report_call(+, (Int, Int), lkdsjkdlkas=true)
+    @test_throws "target_module" @report_call target_module=(Core,) sum(Char[])
 end
