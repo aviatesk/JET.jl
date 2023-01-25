@@ -21,16 +21,6 @@ tovscodepath(path::Symbol)         = tovscodepath(string(path))
 tovscodepath(path::AbstractString) = isuntitled(path) ? path : tofullpath(path)
 
 """
-    vscode_source(analyzer::AbstractAnalyzer, source::AbstractString) -> String
-
-Returns "source" of [diagnostics](https://code.visualstudio.com/api/references/vscode-api#Diagnostic),
-which represents the identity of diagnostics.
-"""
-function vscode_source(analyzer::Analyzer, source::AbstractString) where {Analyzer<:AbstractAnalyzer}
-    return string(nameof(Analyzer), ": ", source)
-end
-
-"""
     vscode_diagnostics_order(analyzer::AbstractAnalyzer) -> Bool
 
 If `true` (default) a diagnostic will be reported at entry site.
@@ -78,15 +68,14 @@ function vscode_diagnostics(analyzer::Analyzer,
                             reports::Vector{ToplevelErrorReport},
                             source::AbstractString;
                             postprocess = identity) where {Analyzer<:AbstractAnalyzer}
-    return (; source = vscode_source(analyzer, source),
+    return (; source = String(source),
               items = map(reports) do report
                   return (; msg = postprocess(sprint(print_report, report)),
                             path = tovscodepath(report.file),
                             line = report.line,
                             severity = 0, # 0: Error, 1: Warning, 2: Information, 3: Hint
                             )
-              end,
-              )
+              end)
 end
 
 # inference
@@ -105,7 +94,7 @@ function vscode_diagnostics(analyzer::Analyzer,
                             source::AbstractString;
                             postprocess = identity) where {Analyzer<:AbstractAnalyzer}
     order = vscode_diagnostics_order(analyzer)
-    return (; source = vscode_source(analyzer, source),
+    return (; source = String(source),
               items = map(reports) do report
                   showpoint = (order ? first : last)(report.vst)
                   msg = sprint(print_report, report)
@@ -121,8 +110,7 @@ function vscode_diagnostics(analyzer::Analyzer,
                                           )
                             end,
                             )
-              end,
-              )
+              end)
 end
 
 end # module VSCode

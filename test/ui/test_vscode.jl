@@ -5,10 +5,13 @@ import JET.VSCode:
 
 @testset "sources" begin
     let res = @report_call sum("julia")
-        @test res.source == "@report_call sum(::String)"
+        @test res.source == "JETAnalyzer: sum(::String)"
     end
     let res = @report_call sum(1:100)
-        @test res.source == "@report_call sum(::$(typeof(1:100)))"
+        @test res.source == "JETAnalyzer: sum(::$(typeof(1:100)))"
+    end
+    let res = @report_opt sum("julia")
+        @test res.source == "OptAnalyzer: sum(::String)"
     end
     let
         local filename

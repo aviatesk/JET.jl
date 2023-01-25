@@ -917,8 +917,7 @@ See [JET's configuration file](@ref config-file) for more details.
         end
     end
     entrytext = read(filename, String)
-    __source = lazy"report_file(\"$filename\")"
-    return report_text(entrytext, filename, __source; jetconfigs...)
+    return report_text(entrytext, filename; jetconfigs...)
 end
 
 set_if_missing(configs, args...) = (@nospecialize; set_if_missing!(kwargs_dict(configs), args...))
@@ -1092,14 +1091,17 @@ end
 Analyzes `text` and returns [`JETToplevelResult`](@ref).
 """
 @jetconfigurable :analyzer function report_text(text::AbstractString,
-    filename::AbstractString = "top-level",
-    __source::AbstractString = lazy"report_text(..., \"$filename\")";
+    filename::AbstractString = "top-level";
     analyzer::Type{Analyzer} = JETAnalyzer,
     jetconfigs...) where {Analyzer<:AbstractAnalyzer}
     analyzer′ = Analyzer(; jetconfigs...)
     config = ToplevelConfig(; jetconfigs...)
     res = virtual_process(text, filename, analyzer′, config)
-    return JETToplevelResult(analyzer′, res, __source; analyzer, jetconfigs...)
+    source = LazyPrinter() do io::IO
+        print(io, nameof(typeof(analyzer)), ": ")
+        print(io, "report_file(\"", filename, "\")")
+    end |> LazyString
+    return JETToplevelResult(analyzer′, res, source; analyzer, jetconfigs...)
 end
 
 """
@@ -1360,18 +1362,16 @@ Finally returns the analysis result as [`JETCallResult`](@ref).
     return report_call(tt; jetconfigs...)
 end
 
-@jetconfigurable :analyzer function report_call(@nospecialize(tt::Type{<:Tuple}),
-    __source::AbstractString = get_call_source(tt);
+@jetconfigurable :analyzer function report_call(@nospecialize(tt::Type{<:Tuple});
     analyzer::Type{Analyzer} = JETAnalyzer,
     jetconfigs...) where {Analyzer<:AbstractAnalyzer}
     analyzer = Analyzer(; jetconfigs...)
     analyzer, result = analyze_gf_by_type!(analyzer, tt)
-    return JETCallResult(result, analyzer, __source; jetconfigs...)
-end
-
-function get_call_source(@nospecialize tt)
-    sig = LazyPrinter(io::IO->Base.show_tuple_as_call(io, Symbol(""), tt))
-    return lazy"@report_call $sig"
+    source = LazyPrinter() do io::IO
+        print(io, nameof(typeof(analyzer)), ": ")
+        Base.show_tuple_as_call(io, Symbol(""), tt)
+    end |> LazyString
+    return JETCallResult(result, analyzer, source; jetconfigs...)
 end
 
 # Test.jl integration
@@ -1641,12 +1641,12 @@ end
 
 reexport_as_api!(JETInterface,
     # AbstractAnalyzer API
-    AbstractAnalyzer, AnalyzerState, ReportPass, AnalysisCache,
-    VSCode.vscode_source, VSCode.vscode_diagnostics_order,
+    AbstractAnalyzer, AnalyzerState, ReportPass, AnalysisCache, aggregation_policy,
+    VSCode.vscode_diagnostics_order,
     # InferenceErrorReport API
     InferenceErrorReport, copy_report, print_report_message, print_signature, report_color,
     # development utilities
-    aggregation_policy, add_new_report!, var"@jetreport")
+    add_new_report!, var"@jetreport")
 
 # builtin analyzers
 # =================
