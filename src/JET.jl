@@ -796,6 +796,9 @@ const JULIA_DIR = let
     ispath(normpath(p1, "base")) ? p1 : p2
 end
 
+struct LazyPrinter; f; end
+Base.show(io::IO, l::LazyPrinter) = l.f(io)
+
 # default UI (console)
 include("ui/print.jl")
 # UI for VSCode
@@ -819,13 +822,10 @@ function find_single_match(@nospecialize(tt), analyzer::AbstractAnalyzer)
     return match
 end
 
-@noinline single_match_error(@nospecialize tt) =
-    error(lazy"unable to find single target method for `$(TTPrinter(tt))`")
-struct TTPrinter
-    tt
-    TTPrinter(@nospecialize tt) = new(tt)
+@noinline function single_match_error(@nospecialize tt)
+    sig = LazyPrinter(io::IO->Base.show_tuple_as_call(io, Symbol(""), tt))
+    error(lazy"unable to find single target method for `sig`")
 end
-Base.show(io::IO, ttp::TTPrinter) = Base.show_tuple_as_call(io, Symbol(""), ttp.tt)
 
 analyze_method!(analyzer::AbstractAnalyzer, m::Method) =
     analyze_method_signature!(analyzer, m, m.sig, method_sparams(m))
