@@ -258,6 +258,7 @@ end
 # types that should be compared by `===` rather than `==`
 const _EGAL_TYPES = Any[Symbol, MethodInstance, Type]
 
+# TODO remove this macro
 """
     @jetconfigurable [duplicated_names...] function config_func(args...; configurations...)
         ...
@@ -325,12 +326,11 @@ macro jetconfigurable(exs...)
 
     return esc(funcdef)
 end
-const _JET_CONFIGURATIONS = Dict{Symbol,Symbol}()
+const _JET_CONFIGURATIONS = Dict{Symbol,Symbol}() # TODO split this up
 
-function validate_configs(@nospecialize jetconfigs)
-    valid_names = keys(_JET_CONFIGURATIONS)
+function validate_configs(jetconfigs, valid_keys = keys(_JET_CONFIGURATIONS))
     for (key, val) in jetconfigs
-        if key ∉ valid_names
+        if key ∉ valid_keys
             valrepr = LazyPrinter(io::IO->show(io,val))
             throw(JETConfigError(lazy"Given unexpected configuration: `$key = $valrepr`", key, val))
         end
