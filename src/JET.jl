@@ -1329,6 +1329,7 @@ end
 
 Evaluates the arguments to the function call, determines its types, and then calls
 [`report_call`](@ref) on the resulting expression.
+By default, it uses [`JETAnalyzer`](@ref) that performs [the error analysis](@ref jetanalysis).
 As with `@code_typed` and its family, any of [JET configurations](@ref) can be given as the optional
 arguments like this:
 ```julia-repl
@@ -1348,8 +1349,9 @@ end
                 analyzer::Type{<:AbstractAnalyzer} = JETAnalyzer,
                 jetconfigs...) -> JETCallResult
 
-Analyzes the generic function call with the given type signature with `analyzer`.
-And finally returns the analysis result as [`JETCallResult`](@ref).
+Analyzes a generic function call with the given type signature with `analyzer`.
+By default, it uses [`JETAnalyzer`](@ref) that performs [the error analysis](@ref jetanalysis).
+Finally returns the analysis result as [`JETCallResult`](@ref).
 """
 @jetconfigurable function report_call(
     @nospecialize(f), @nospecialize(types = default_tt(f));
