@@ -331,7 +331,7 @@ function validate_configs(jetconfigs)
     valid_names = keys(_JET_CONFIGURATIONS)
     for (key, val) in jetconfigs
         if key ∉ valid_names
-            throw(JETConfigError(lazy"Given unexpected configuration: `$key`", key, val))
+            throw(JETConfigError(lazy"Given unexpected configuration: `$key=$val`", key, val))
         end
     end
     return nothing
