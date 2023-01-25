@@ -16,6 +16,13 @@ function tune_benchmarks!(g::BenchmarkGroup;
     end
 end
 
+# warm up
+@report_call identity(nothing)
+@report_call report_pass=FreshPass(JET.BasicPass()) identity(nothing)
+@report_call report_pass=FreshPass(JET.SoundPass()) identity(nothing)
+@report_opt report_pass=FreshPass(JET.OptAnalysisPass()) identity(nothing)
+show(devnull, @report_call sum("julia"))
+
 # analysis performance
 # --------------------
 
