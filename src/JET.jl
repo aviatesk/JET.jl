@@ -1098,7 +1098,7 @@ Analyzes `text` and returns [`JETToplevelResult`](@ref).
     config = ToplevelConfig(; jetconfigs...)
     res = virtual_process(text, filename, analyzer′, config)
     analyzername = nameof(typeof(analyzer))
-    source = lazy"$analyzername: report_file(\"$filename\")"
+    source = lazy"$analyzername: \"$filename\""
     return JETToplevelResult(analyzer′, res, source; analyzer, jetconfigs...)
 end
 
