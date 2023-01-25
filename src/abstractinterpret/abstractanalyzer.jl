@@ -10,21 +10,18 @@ When a new type `NewAnalyzer` implements the `AbstractAnalyzer` interface, it sh
 as subtype of `AbstractAnalyzer`, and is expected to the following interfaces:
 
 ---
-1. `NewAnalyzer(; jetconfigs...) -> NewAnalyzer`: \\
-   Constructs new analyzer given [JET configurations](@ref) passed as `jetconfigs`.
----
-2. `AnalyzerState(analyzer::NewAnalyzer) -> AnalyzerState`: \\
+1. `AnalyzerState(analyzer::NewAnalyzer) -> AnalyzerState`: \\
    Returns the [`AnalyzerState`](@ref) for `analyzer::NewAnalyzer`.
 ---
-3. `AbstractAnalyzer(analyzer::NewAnalyzer, state::AnalyzerState) -> NewAnalyzer`: \\
+2. `AbstractAnalyzer(analyzer::NewAnalyzer, state::AnalyzerState) -> NewAnalyzer`: \\
    Constructs an new `NewAnalyzer` instance in the middle of JET's [top-level analysis](@ref toplevel)
    or [abstract interpretation](@ref abstractinterpret), given the previous
    `analyzer::NewAnalyzer` and [`state::AnalyzerState`](@ref AnalyzerState).
 ---
-4. `ReportPass(analyzer::NewAnalyzer) -> ReportPass`: \\
+3. `ReportPass(analyzer::NewAnalyzer) -> ReportPass`: \\
    Returns [`ReportPass`](@ref) used for `analyzer::NewAnalyzer`.
 ---
-5. `AnalysisCache(analyzer::NewAnalyzer) -> analysis_cache::AnalysisCache`: \\
+4. `AnalysisCache(analyzer::NewAnalyzer) -> analysis_cache::AnalysisCache`: \\
    Returns code cache used for `analyzer::NewAnalyzer`.
 ---
 
@@ -43,14 +40,6 @@ struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
 end
 
 # AbstractAnalyzer API requirements
-
-function JETAnalyzer(;
-    report_pass::ReportPass = BasicPass(),
-    jetconfigs...)
-    state = AnalyzerState(; jetconfigs...)
-    analysis_cache = AnalysisCache() # TODO globalize this
-    return JETAnalyzer(state, analysis_cache, report_pass)
-end
 AnalyzerState(analyzer::JETAnalyzer) = analyzer.state
 AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerState) = JETAnalyzer(ReportPass(analyzer), state)
 ReportPass(analyzer::JETAnalyzer) = analyzer.report_pass
@@ -61,20 +50,7 @@ abstract type AbstractAnalyzer <: AbstractInterpreter end
 
 # interface 1
 # -----------
-# 1. `NewAnalyzer(; jetconfigs...) -> NewAnalyzer`
-
-@noinline function (::Type{Analyzer})(; jetconfigs...) where Analyzer<:AbstractAnalyzer
-    AnalyzerType = nameof(Analyzer)
-    error(lazy"""
-    Missing `$AbstractAnalyzer` API:
-    `$AnalyzerType` is required to implement the `$AnalyzerType(; jetconfigs...) -> $AnalyzerType` interface.
-    See the documentation of `$AbstractAnalyzer`.
-    """)
-end
-
-# interface 2
-# -----------
-# 2. `AnalyzerState(analyzer::NewAnalyzer) -> AnalyzerState`
+# 1. `AnalyzerState(analyzer::NewAnalyzer) -> AnalyzerState`
 
 """
     JETResult
@@ -372,9 +348,9 @@ Base.show(io::IO, state::AnalyzerState) = print(io, typeof(state), "(...)")
     """)
 end
 
-# interface 3
+# interface 2
 # -----------
-# 3. `AbstractAnalyzer(analyzer::NewAnalyzer, state::AnalyzerState) -> NewAnalyzer`
+# 2. `AbstractAnalyzer(analyzer::NewAnalyzer, state::AnalyzerState) -> NewAnalyzer`
 
 @noinline function AbstractAnalyzer(analyzer::AbstractAnalyzer, state::AnalyzerState)
     AnalyzerType = nameof(typeof(analyzer))
@@ -410,9 +386,9 @@ function AbstractAnalyzer(analyzer::T, concretized, toplevelmod;
     return AbstractAnalyzer(analyzer, newstate)
 end
 
-# interface 4
+# interface 3
 # -----------
-# 4. `ReportPass(analyzer::NewAnalyzer) -> ReportPass`
+# 3. `ReportPass(analyzer::NewAnalyzer) -> ReportPass`
 
 """
     abstract type ReportPass end
@@ -484,9 +460,9 @@ function (rp::ReportPass)(T#=::Type{<:InferenceErrorReport}=#, @nospecialize(arg
     return false
 end
 
-# interface 5
+# interface 4
 # -----------
-# 5. `AnalysisCache(analyzer::NewAnalyzer) -> analysis_cache::AnalysisCache`
+# 4. `AnalysisCache(analyzer::NewAnalyzer) -> analysis_cache::AnalysisCache`
 
 """
     AnalysisCache

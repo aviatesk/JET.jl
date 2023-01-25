@@ -32,8 +32,8 @@
 # language and those written by ourselves, and in the latter case we're certainly uses
 # "unstable API" under the definition above.
 
+using JET
 using JET.JETInterface   # to load APIs of the pluggable analysis framework
-using JET                # to use analysis entry points
 const CC = Core.Compiler # to inject a customized report pass
 
 # First off, we define `UnstableAPIAnalyzer`, which is a new [`AbstractAnalyzer`](@ref) and will
@@ -43,15 +43,6 @@ struct UnstableAPIAnalyzer{T} <: AbstractAnalyzer
     state::AnalyzerState
     analysis_cache::AnalysisCache
     is_target_module::T
-end
-function UnstableAPIAnalyzer(;
-    is_target_module = ==(@__MODULE__),
-    jetconfigs...)
-    state = AnalyzerState(; jetconfigs...)
-    ## use a globalized code cache (, which is separated by `InferenceParams` configurations)
-    cache_key = JET.compute_hash(state.inf_params)
-    analysis_cache = get!(()->AnalysisCache(), UNSTABLE_API_ANALYZER_CACHE, cache_key)
-    return UnstableAPIAnalyzer(state, analysis_cache, is_target_module)
 end
 JETInterface.AnalyzerState(analyzer::UnstableAPIAnalyzer) = analyzer.state
 JETInterface.AbstractAnalyzer(analyzer::UnstableAPIAnalyzer, state::AnalyzerState) =
@@ -183,9 +174,30 @@ function hasdoc(mod, name)
 end
 
 # ## Usages
+#
+# Now our analyzer is set up.
+# Lastly we are going to set up analysis entry points using the analyzer.
 
-# Now we find "unstable API"s in your code using [JET's analysis entry points](@ref jetanalysis-entry)
-# with passing `UnstableAPIAnalyzer` as the `analyzer` configuration.
+using InteractiveUtils # to use `gen_call_with_extracted_types_and_kwargs`
+
+## the constructor for creating a new configured `UnstableAPIAnalyzer` instance
+function UnstableAPIAnalyzer(;
+    is_target_module = ==(@__MODULE__),
+    jetconfigs...)
+    state = AnalyzerState(; jetconfigs...)
+    ## use a globalized code cache (, which is separated by `InferenceParams` configurations)
+    cache_key = JET.compute_hash(state.inf_params)
+    analysis_cache = get!(()->AnalysisCache(), UNSTABLE_API_ANALYZER_CACHE, cache_key)
+    return UnstableAPIAnalyzer(state, analysis_cache, is_target_module)
+end
+function report_unstable_api(args...; jetconfigs...)
+    @nospecialize args jetconfigs
+    analyzer = UnstableAPIAnalyzer(; jetconfigs...)
+    return analyze_and_report_call!(analyzer, args...; jetconfigs...)
+end
+macro report_unstable_api(ex0...)
+    return InteractiveUtils.gen_call_with_extracted_types_and_kwargs(__module__, :report_unstable_api, ex0)
+end
 
 # ### Simple cases
 
@@ -196,18 +208,18 @@ end
 function some_reflection_code(@nospecialize(f))
     return any(Base.hasgenerator, methods(f)) # Base.hasgenerator is unstable
 end
-@report_call analyzer=UnstableAPIAnalyzer some_reflection_code(sin)
+@report_unstable_api some_reflection_code(sin)
 
 # `UnstableAPIAnalyzer` can find an "unstable" global variable:
 module foo; bar = 1 end
-report_call((Any,); analyzer=UnstableAPIAnalyzer) do a
+report_unstable_api((Any,)) do a
     foo.bar + a # foo.bar is unstable
 end
 
 # `UnstableAPIAnalyzer` can detect "unstable API"s even if they're imported binding or
 # nested reference (, which will be resolve to `getproperty`)
 import Base: hasgenerator
-report_call((Any,); analyzer=UnstableAPIAnalyzer) do mi
+report_unstable_api((Any,)) do mi
     ## NOTE every function call appearing here is unstable
     ci = hasgenerator(mi) ? Core.Compiler.get_staged(mi) : Base.uncompressed_ast(mi)
 end
@@ -225,8 +237,14 @@ end
 
 using Pkg #src
 if "IRTools" in keys(Pkg.project().dependencies) #src
-is_irtools(mod) = occursin("IRTools", string(Symbol(mod))) # module context will be virtualized by `report_package`, thus use string match
-report_package("IRTools"; analyzer=UnstableAPIAnalyzer, is_target_module=is_irtools)
+## define an entry point for analyzing a package
+function report_package_unstable_api(args...; jetconfigs...)
+    analyzer = UnstableAPIAnalyzer(; jetconfigs...)
+    return analyze_and_report_package!(analyzer, args...; jetconfigs...)
+end
+report_package_unstable_api("IRTools";
+                            ## to only find erros detected within the module context of `IRTools`
+                            target_defined_modules=true)
 else #src
 @warn "IRTools isn't installed in the current environment at $(Pkg.project().path)" #src
 end #src

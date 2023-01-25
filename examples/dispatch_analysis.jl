@@ -58,16 +58,7 @@ struct DispatchAnalyzer{T} <: AbstractAnalyzer
     state::AnalyzerState
     analysis_cache::AnalysisCache
     opts::BitVector
-    frame_filter::T
-end
-function DispatchAnalyzer(;
-    ## a predicate, which takes `CC.InfernceState` and returns whether we want to analyze the call or not
-    frame_filter = x::Core.MethodInstance->true,
-    jetconfigs...)
-    state = AnalyzerState(; jetconfigs...)
-    ## just for the sake of simplicity, create a fresh code cache for each `DispatchAnalyzer` instance (i.e. don't globalize the cache)
-    analysis_cache = AnalysisCache()
-    return DispatchAnalyzer(state, analysis_cache, BitVector(), frame_filter)
+    frame_filter::T # a predicate, which takes `CC.InfernceState` and returns whether we want to analyze the call or not
 end
 
 ## AbstractAnalyzer API requirements
@@ -132,15 +123,23 @@ end
 # ## Usages
 #
 # So we defined our analyzer.
-# Let's setup utility analysis entries first:
+# Let's set up utility analysis entries first:
 
-using JET, InteractiveUtils # to use analysis entry points
+using InteractiveUtils # to use `gen_call_with_extracted_types_and_kwargs`
 
-function report_dispatch(@nospecialize(f), @nospecialize(types = Tuple{});
-                         analyzer = DispatchAnalyzer,
-                         jetconfigs...)
-    @assert analyzer === DispatchAnalyzer "analyzer is fixed to $DispatchAnalyzer"
-    report_call(f, types; analyzer, jetconfigs...)
+## the constructor for creating a new configured `DispatchAnalyzer` instance
+function DispatchAnalyzer(;
+    frame_filter = x::Core.MethodInstance->true,
+    jetconfigs...)
+    state = AnalyzerState(; jetconfigs...)
+    ## just for the sake of simplicity, create a fresh code cache for each `DispatchAnalyzer` instance (i.e. don't globalize the cache)
+    analysis_cache = AnalysisCache()
+    return DispatchAnalyzer(state, analysis_cache, BitVector(), frame_filter)
+end
+function report_dispatch(args...; jetconfigs...)
+    @nospecialize args jetconfigs
+    analyzer = DispatchAnalyzer(; jetconfigs...)
+    return analyze_and_report_call!(analyzer, args...; jetconfigs...)
 end
 macro report_dispatch(ex0...)
     return InteractiveUtils.gen_call_with_extracted_types_and_kwargs(__module__, :report_dispatch, ex0)

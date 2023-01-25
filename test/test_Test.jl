@@ -106,7 +106,7 @@ end
     @test length(ts.results) == 1
     r = ts.results[1]
     @test isa(r, Test.Broken)
-    @test r.test_type === :test_call
+    @test r.test_type === Symbol("@test_call") || r.test_type === :test_call
 
     ts = with_isolated_testset() do
         broken = true
@@ -116,7 +116,7 @@ end
     @test length(ts.results) == 1
     r = ts.results[1]
     @test isa(r, Test.Broken)
-    @test r.test_type === :test_call
+    @test r.test_type === Symbol("@test_call") || r.test_type === :test_call
 
     ts = with_isolated_testset() do
         @test_call broken=true goodf(10)

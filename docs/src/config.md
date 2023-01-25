@@ -1,4 +1,4 @@
-# [Configurations](@id JET-configurations)
+# Configurations
 
 JET analysis can be flexibly fine-tuned.
 Any entry point explained in [JET's default error analysis](@ref jetanalysis-entry) and [the optimization analysis](@ref optanalysis-entry)
