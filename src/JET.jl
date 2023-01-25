@@ -1356,13 +1356,7 @@ Finally returns the analysis result as [`JETCallResult`](@ref).
 @jetconfigurable function report_call(
     @nospecialize(f), @nospecialize(types = default_tt(f));
     jetconfigs...)
-    ft = Core.Typeof(f)
-    if isa(types, Type)
-        u = unwrap_unionall(types)
-        tt = rewrap_unionall(Tuple{ft, u.parameters...}, types)
-    else
-        tt = Tuple{ft, types...}
-    end
+    tt = Base.signature_type(f, types)
     return report_call(tt; jetconfigs...)
 end
 
