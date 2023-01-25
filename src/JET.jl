@@ -560,7 +560,7 @@ include("toplevel/virtualprocess.jl")
 Represents the result of JET's analysis on a top-level script.
 - `res.analyzer::AbstractAnalyzer`: [`AbstractAnalyzer`](@ref) used for this analysis
 - `res.res::VirtualProcessResult`: [`VirtualProcessResult`](@ref) collected from this analysis
-- `res.source::String`: the identity key of this analysis
+- `res.source::AbstractString`: the identity key of this analysis
 - `res.jetconfigs`: [JET configurations](@ref JET-configurations) used for this analysis
 
 `JETToplevelResult` implements `show` methods for each different frontend.
@@ -569,7 +569,7 @@ An appropriate `show` method will be automatically choosen and render the analys
 struct JETToplevelResult{Analyzer<:AbstractAnalyzer,JETConfigs}
     analyzer::Analyzer
     res::VirtualProcessResult
-    source::String
+    source::AbstractString
     jetconfigs::JETConfigs
 end
 JETToplevelResult(analyzer::AbstractAnalyzer, res::VirtualProcessResult, source::AbstractString;
@@ -601,7 +601,7 @@ end
 Represents the result of JET's analysis on a function call.
 - `res.result::InferenceResult`: the result of this analysis
 - `res.analyzer::AbstractAnalyzer`: [`AbstractAnalyzer`](@ref) used for this analysis
-- `res.source::String`: the identity key of this analysis
+- `res.source::AbstractString`: the identity key of this analysis
 - `res.jetconfigs`: [JET configurations](@ref JET-configurations) used for this analysis
 
 `JETCallResult` implements `show` methods for each different frontend.
@@ -610,7 +610,7 @@ An appropriate `show` method will be automatically choosen and render the analys
 struct JETCallResult{Analyzer<:AbstractAnalyzer,JETConfigs}
     result::InferenceResult
     analyzer::Analyzer
-    source::String
+    source::AbstractString
     jetconfigs::JETConfigs
 end
 JETCallResult(result::InferenceResult, analyzer::AbstractAnalyzer, source::AbstractString;
@@ -873,8 +873,7 @@ is_entry(analyzer::AbstractAnalyzer, mi::MethodInstance) = get_entry(analyzer) =
 # --------
 
 """
-    report_file(filename::AbstractString;
-                jetconfigs...) -> JETToplevelResult
+    report_file(filename::AbstractString; jetconfigs...) -> JETToplevelResult
 
 Analyzes `filename` and returns [`JETToplevelResult`](@ref).
 
@@ -905,12 +904,9 @@ See [JET's configuration file](@ref config-file) for more details.
     ```
     See [JET's top-level analysis configurations](@ref toplevel-config) for more details.
 """
-@jetconfigurable :source function report_file(filename::AbstractString;
-    source::Union{Nothing,AbstractString} = nothing,
-    jetconfigs...)
+@jetconfigurable function report_file(filename::AbstractString; jetconfigs...)
     isfile(filename) || throw(ArgumentError("$filename doesn't exist"))
-
-    jetconfigs = set_if_missing(jetconfigs, :toplevel_logger, IOContext(stdout::IO, JET_LOGGER_LEVEL => DEFAULT_LOGGER_LEVEL))
+    jetconfigs = set_if_missing(jetconfigs, :toplevel_logger, IOContext(stdout, JET_LOGGER_LEVEL => DEFAULT_LOGGER_LEVEL))
     configfile = find_config_file(dirname(abspath(filename)))
     if !isnothing(configfile)
         config = parse_config_file(configfile)
@@ -920,12 +916,9 @@ See [JET's configuration file](@ref config-file) for more details.
             println(io, lazy"applied JET configurations in $configfile")
         end
     end
-
-    if isnothing(source)
-        source = string(nameof(var"#self#"), "(\"$filename\")")
-    end
-
-    return report_text(read(filename, String), filename; source, jetconfigs...)
+    entrytext = read(filename, String)
+    __source = lazy"report_file(\"$filename\")"
+    return report_text(entrytext, filename, __source; jetconfigs...)
 end
 
 set_if_missing(configs, args...) = (@nospecialize; set_if_missing!(kwargs_dict(configs), args...))
@@ -1098,19 +1091,15 @@ end
 
 Analyzes `text` and returns [`JETToplevelResult`](@ref).
 """
-@jetconfigurable :analyzer :source function report_text(
-    text::AbstractString,
-    filename::AbstractString = "top-level";
+@jetconfigurable :analyzer function report_text(text::AbstractString,
+    filename::AbstractString = "top-level",
+    __source::AbstractString = lazy"report_text(..., \"$filename\")";
     analyzer::Type{Analyzer} = JETAnalyzer,
-    source::Union{Nothing,AbstractString} = nothing,
     jetconfigs...) where {Analyzer<:AbstractAnalyzer}
     analyzer′ = Analyzer(; jetconfigs...)
     config = ToplevelConfig(; jetconfigs...)
     res = virtual_process(text, filename, analyzer′, config)
-    if isnothing(source)
-        source = string(nameof(var"#self#"), "(..., \"$filename\")")
-    end
-    return JETToplevelResult(analyzer′, res, source; analyzer, jetconfigs...)
+    return JETToplevelResult(analyzer′, res, __source; analyzer, jetconfigs...)
 end
 
 """
@@ -1375,19 +1364,18 @@ And finally returns the analysis result as [`JETCallResult`](@ref).
     return report_call(tt; jetconfigs...)
 end
 
-@jetconfigurable :analyzer :source function report_call(
-    @nospecialize(tt::Type{<:Tuple});
+@jetconfigurable :analyzer function report_call(@nospecialize(tt::Type{<:Tuple}),
+    __source::AbstractString = get_call_source(tt);
     analyzer::Type{Analyzer} = JETAnalyzer,
-    source::Union{Nothing,AbstractString} = nothing,
     jetconfigs...) where {Analyzer<:AbstractAnalyzer}
     analyzer = Analyzer(; jetconfigs...)
     analyzer, result = analyze_gf_by_type!(analyzer, tt)
+    return JETCallResult(result, analyzer, __source; jetconfigs...)
+end
 
-    if isnothing(source)
-        source = string(nameof(var"@report_call"), " ", sprint(Base.show_tuple_as_call, Symbol(""), tt))
-    end
-
-    return JETCallResult(result, analyzer, source; jetconfigs...)
+function get_call_source(@nospecialize tt)
+    sig = LazyPrinter(io::IO->Base.show_tuple_as_call(io, Symbol(""), tt))
+    return lazy"@report_call $sig"
 end
 
 # Test.jl integration
