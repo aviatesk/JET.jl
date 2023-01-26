@@ -998,21 +998,26 @@ process_config_dict(configs) = process_config_dict!(kwargs_dict(configs))
 function process_config_dict!(config_dict::Dict{Symbol,Any})
     context = get(config_dict, :context, nothing)
     if !isnothing(context)
-        isa(context, String) ||
-            throw(JETConfigError("`context` should be string of Julia code", :context, context))
-        config_dict[:context] = Core.eval(Main, trymetaparse(context, :context))
+        isa(context, String) || throw(JETConfigError(
+            "`context` should be string of Julia code", :context, context))
+        context = Core.eval(Main, trymetaparse(context, :context))
+        config_dict[:context] = context
     end
     concretization_patterns = get(config_dict, :concretization_patterns, nothing)
     if !isnothing(concretization_patterns)
-        isa(concretization_patterns, Vector{String}) ||
-            throw(JETConfigError("`concretization_patterns` should be array of string of Julia expression", :concretization_patterns, concretization_patterns))
-        config_dict[:concretization_patterns] = trymetaparse.(concretization_patterns, :concretization_patterns)
+        isa(concretization_patterns, Vector{String}) || throw(JETConfigError(
+            "`concretization_patterns` should be array of string of Julia expression",
+            :concretization_patterns, concretization_patterns))
+        concretization_patterns = trymetaparse.(concretization_patterns, :concretization_patterns)
+        config_dict[:concretization_patterns] = concretization_patterns
     end
     toplevel_logger = get(config_dict, :toplevel_logger, nothing)
     if !isnothing(toplevel_logger)
-        isa(toplevel_logger, String) ||
-            throw(JETConfigError("`toplevel_logger` should be string of Julia code", :toplevel_logger, toplevel_logger))
-        config_dict[:toplevel_logger] = Core.eval(Main, trymetaparse(toplevel_logger, :toplevel_logger))
+        isa(toplevel_logger, String) || throw(JETConfigError(
+            "`toplevel_logger` should be string of Julia code",
+            :toplevel_logger, toplevel_logger))
+        toplevel_logger = Core.eval(Main, trymetaparse(toplevel_logger, :toplevel_logger))
+        config_dict[:toplevel_logger] = toplevel_logger
     end
     return config_dict
 end
