@@ -1048,12 +1048,11 @@ See [`ToplevelConfig`](@ref) for more details.
 
 ---
 
-    report_package([io::IO = stdout];
-                   jetconfigs...) -> res::ReportResult
+    report_package(; jetconfigs...) -> res::ReportResult
 
 Like above but analyzes the package of the current project.
 
-See also: [`report_file`](@ref)
+See also [`report_file`](@ref).
 """
 @jetconfigurable function report_package(
     package::Union{AbstractString,Module,Nothing} = nothing;
