@@ -1659,7 +1659,7 @@ track code updates. Revise also offers possibilities to track changes in files t
 not directly analyzed by JET, or even changes in `Base` files.
 See [watch configurations](@ref watch-config) for more details.
 
-!!! warn
+!!! warning
     This interface is very experimental and likely to subject to change or removal without notice.
 
 See also [`report_file`](@ref).
