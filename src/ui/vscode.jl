@@ -1,7 +1,6 @@
 module VSCode
 
 import ..JET:
-    @jetconfigurable,
     gen_postprocess,
     tofullpath,
     print_signature,
@@ -45,9 +44,9 @@ These configurations are active only when used in [the integrated Julia REPL](ht
 """
 struct VSCodeConfig end
 
-@jetconfigurable function forward_to_console_output(
-    res::Union{JETToplevelResult,JETCallResult};
-    vscode_console_output::Union{Nothing,IO} = nothing)
+function forward_to_console_output(res::Union{JETToplevelResult,JETCallResult};
+                                   vscode_console_output::Union{Nothing,IO} = nothing,
+                                   __jetconfigs...)
     isa(vscode_console_output, IO) && show(vscode_console_output, res)
 end
 

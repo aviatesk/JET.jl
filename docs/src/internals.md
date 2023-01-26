@@ -66,10 +66,3 @@ JET.Signature
 JET.InferenceErrorReport
 JET.ToplevelErrorReport
 ```
-
-## Utilities
-
-```@docs
-JET.@withmixedhash
-JET.@jetconfigurable
-```

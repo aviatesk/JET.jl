@@ -198,12 +198,12 @@ struct ToplevelConfig{CP<:Any}
     concretization_patterns::Vector{CP}
     virtualize::Bool
     toplevel_logger # ::Union{Nothing,IO}
-    @jetconfigurable function ToplevelConfig(; context::Module                    = Main,
-                                               analyze_from_definitions::Bool     = false,
-                                               concretization_patterns::Vector{T} = Expr[],
-                                               virtualize::Bool                   = true,
-                                               toplevel_logger::Union{Nothing,IO} = nothing
-                                               ) where {T<:Any}
+    function ToplevelConfig(; context::Module                    = Main,
+                              analyze_from_definitions::Bool     = false,
+                              concretization_patterns::Vector{T} = Expr[],
+                              virtualize::Bool                   = true,
+                              toplevel_logger::Union{Nothing,IO} = nothing,
+                              __jetconfigs...) where {T<:Any}
         if hasintersect(T, Expr)
             CP = T
         else
@@ -228,8 +228,7 @@ struct ToplevelConfig{CP<:Any}
                        analyze_from_definitions,
                        concretization_patterns,
                        virtualize,
-                       toplevel_logger,
-                       )
+                       toplevel_logger)
     end
 end
 

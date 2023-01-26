@@ -156,16 +156,15 @@ for fld in fieldnames(AnalyzerState)
     @eval (@__MODULE__) @inline $setter(analyzer::AbstractAnalyzer, v) = setfield!(AnalyzerState(analyzer), $(QuoteNode(fld)), v)
 end
 
-# constructor for fresh analysis
-@jetconfigurable function AnalyzerState(world::UInt  = get_world_counter();
-                                        results      = IdDict{InferenceResult,AnyJETResult}(),
-                                        inf_params   = nothing,
-                                        opt_params   = nothing,
-                                        concretized  = _CONCRETIZED,
-                                        toplevelmod  = _TOPLEVELMOD,
-                                        global_slots = _GLOBAL_SLOTS,
-                                        depth        = 0,
-                                        jetconfigs...)
+function AnalyzerState(world::UInt  = get_world_counter();
+                       results      = IdDict{InferenceResult,AnyJETResult}(),
+                       inf_params   = nothing,
+                       opt_params   = nothing,
+                       concretized  = _CONCRETIZED,
+                       toplevelmod  = _TOPLEVELMOD,
+                       global_slots = _GLOBAL_SLOTS,
+                       depth        = 0,
+                       jetconfigs...)
     isnothing(inf_params) && (inf_params = JETInferenceParams(; jetconfigs...))
     isnothing(opt_params) && (opt_params = JETOptimizationParams(; jetconfigs...))
     inf_cache = InferenceResult[]
@@ -264,15 +263,14 @@ for (Params, Func) = ((InferenceParams, JETInferenceParams),
         default = Expr(:., :params, QuoteNode(fname))
         push!(kwargs, Expr(:kw, arg, default))
     end
-    sig = Expr(:call, nameof(Func), Expr(:parameters, kwargs...), param)
+    sig = Expr(:call, nameof(Func), Expr(:parameters, kwargs..., :(__jetconfigs...)), param)
     call = Expr(:call, nameof(Params), parameters...)
-    def = Expr(:(=), sig, call)
-    def = Expr(:macrocall, Symbol("@jetconfigurable"), LineNumberNode(@__LINE__, @__FILE__),
-        :max_methods, :max_tuple_splat, :max_union_splitting, def)
+    body = Expr(:block, LineNumberNode(@__LINE__, @__FILE__), call)
+    def = Expr(:(=), sig, body)
     Core.eval(@__MODULE__, def)
 end
 else
-@jetconfigurable :max_methods :tuple_splat :union_splitting function JETInferenceParams(
+function JETInferenceParams(
     params::InferenceParams = InferenceParams();
     ipo_constant_propagation::Bool = params.ipo_constant_propagation,
     aggressive_constant_propagation::Bool = params.aggressive_constant_propagation,
@@ -281,7 +279,8 @@ else
     union_splitting::Int = params.MAX_UNION_SPLITTING,
     apply_union_enum::Int = params.MAX_APPLY_UNION_ENUM,
     tupletype_depth::Int = params.TUPLE_COMPLEXITY_LIMIT_DEPTH,
-    tuple_splat::Int = params.MAX_TUPLE_SPLAT)
+    tuple_splat::Int = params.MAX_TUPLE_SPLAT,
+    __jetconfigs...)
     return InferenceParams(; ipo_constant_propagation,
                              aggressive_constant_propagation,
                              unoptimize_throw_blocks,
@@ -300,7 +299,8 @@ let kwargs = @static VERSION ≥ v"1.9-DEV" ?
                tuple_splat::Int = params.MAX_TUPLE_SPLAT,
                compilesig_invokes::Bool = params.compilesig_invokes,
                trust_inference::Bool = params.trust_inference,
-               assume_fatal_throw::Bool = params.assume_fatal_throw) :
+               assume_fatal_throw::Bool = params.assume_fatal_throw,
+               __jetconfigs...) :
              :(inlining::Bool = inlining_enabled(),
                inline_cost_threshold::Int = 100,
                inline_nonleaf_penalty::Int = 1000,
@@ -308,17 +308,22 @@ let kwargs = @static VERSION ≥ v"1.9-DEV" ?
                inline_error_path_cost::Int = 20,
                max_methods::Int = 3,
                tuple_splat::Int = 32,
-               union_splitting::Int = 4)
+               union_splitting::Int = 4,
+               __jetconfigs...)
     kwargs_exs = Expr[]
     names = Symbol[]
     for x::Expr in kwargs.args
+        if isexpr(x, :...)
+            push!(kwargs_exs, x)
+            continue
+        end
         @assert isexpr(x, :(=))
         push!(kwargs_exs, Expr(:kw, x.args...))
         lhs = first(x.args)
         @assert isexpr(lhs, :(::))
         push!(names, first(lhs.args)::Symbol)
     end
-    @eval global @jetconfigurable :max_methods :tuple_splat :union_splitting function JETOptimizationParams(
+    @eval global function JETOptimizationParams(
         params::OptimizationParams=OptimizationParams();
         $(kwargs_exs...))
         return OptimizationParams(; $(names...))
@@ -498,6 +503,69 @@ Base.show(io::IO, analysis_cache::AnalysisCache) = print(io, typeof(analysis_cac
     """)
 end
 
+# optional API
+# ------------
+
+"""
+    valid_configurations(analyzer::AbstractAnalyzer) -> names or nothing
+
+Returns a set of names that are valid as a configuration for `analyzer`.
+`names` should be an iterator of `Symbol`.
+No validations are performed if `nothing` is returned.
+"""
+valid_configurations(analyzer::AbstractAnalyzer) = nothing
+
+function validate_configs(analyzer::AbstractAnalyzer, jetconfigs)
+    valid_keys = valid_configurations(analyzer)
+    isnothing(valid_keys) && return nothing
+    for (key, val) in jetconfigs
+        if key ∉ valid_keys
+            valrepr = LazyPrinter(io::IO->show(io,val))
+            throw(JETConfigError(lazy"Given unexpected configuration: `$key = $valrepr`", key, val))
+        end
+    end
+    return nothing
+end
+
+"""
+    aggregation_policy(analyzer::AbstractAnalyzer)
+
+Defines how `analyzer` aggregates [`InferenceErrorReport`](@ref)s.
+Defaults to `default_aggregation_policy`.
+
+---
+
+    default_aggregation_policy(report::InferenceErrorReport) -> DefaultReportIdentity
+
+Returns the default identity of `report::InferenceErrorReport`, where `DefaultReportIdentity`
+aggregates reports based on "error location" of each `report`.
+`DefaultReportIdentity` aggregates `InferenceErrorReport`s aggressively in a sense that it
+ignores the identity of error point's `MethodInstance`, under the assumption that errors are
+identical as far as they're collected at the same file and line.
+"""
+aggregation_policy(::AbstractAnalyzer) = default_aggregation_policy
+function default_aggregation_policy(@nospecialize(report::InferenceErrorReport))
+    return DefaultReportIdentity(
+        typeof(Base.inferencebarrier(report))::DataType,
+        report.sig,
+        # VirtualFrameNoLinfo(first(report.vst)),
+        VirtualFrameNoLinfo(last(report.vst)),
+        )
+end
+@withmixedhash struct VirtualFrameNoLinfo
+    file::Symbol
+    line::Int
+    sig::Signature
+    # linfo::MethodInstance # ignore the idenity of `MethodInstace`
+    VirtualFrameNoLinfo(vf::VirtualFrame) = new(vf.file, vf.line, vf.sig)
+end
+@withmixedhash struct DefaultReportIdentity
+    T::DataType
+    sig::Signature
+    # entry_frame::VirtualFrameNoLinfo
+    error_frame::VirtualFrameNoLinfo
+end
+
 # InferenceResult
 # ===============
 # define how AbstractAnalyzer manages `InferenceResult`
@@ -592,47 +660,4 @@ let # overload `inlining_policy`
             return @invoke CC.inlining_policy($(args_ex.args...))
         end
     end
-end
-
-# AbstractAnalyzer
-# ================
-# AbstractAnalyzer specific APIs
-
-"""
-    aggregation_policy(analyzer::AbstractAnalyzer)
-
-Defines how `analyzer` aggregates [`InferenceErrorReport`](@ref)s.
-Defaults to `default_aggregation_policy`.
-
----
-
-    default_aggregation_policy(report::InferenceErrorReport) -> DefaultReportIdentity
-
-Returns the default identity of `report::InferenceErrorReport`, where `DefaultReportIdentity`
-aggregates reports based on "error location" of each `report`.
-`DefaultReportIdentity` aggregates `InferenceErrorReport`s aggressively in a sense that it
-ignores the identity of error point's `MethodInstance`, under the assumption that errors are
-identical as far as they're collected at the same file and line.
-"""
-aggregation_policy(::AbstractAnalyzer) = default_aggregation_policy
-function default_aggregation_policy(@nospecialize(report::InferenceErrorReport))
-    return DefaultReportIdentity(
-        typeof(Base.inferencebarrier(report))::DataType,
-        report.sig,
-        # VirtualFrameNoLinfo(first(report.vst)),
-        VirtualFrameNoLinfo(last(report.vst)),
-        )
-end
-@withmixedhash struct VirtualFrameNoLinfo
-    file::Symbol
-    line::Int
-    sig::Signature
-    # linfo::MethodInstance # ignore the idenity of `MethodInstace`
-    VirtualFrameNoLinfo(vf::VirtualFrame) = new(vf.file, vf.line, vf.sig)
-end
-@withmixedhash struct DefaultReportIdentity
-    T::DataType
-    sig::Signature
-    # entry_frame::VirtualFrameNoLinfo
-    error_frame::VirtualFrameNoLinfo
 end

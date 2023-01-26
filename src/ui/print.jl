@@ -111,16 +111,16 @@ struct PrintConfig
     print_inference_success::Bool
     annotate_types::Bool
     fullpath::Bool
-    @jetconfigurable PrintConfig(; print_toplevel_success::Bool  = false,
-                                   print_inference_success::Bool = true,
-                                   annotate_types::Bool          = false,
-                                   fullpath::Bool                = false,
-                                   ) =
+    function PrintConfig(; print_toplevel_success::Bool  = false,
+                           print_inference_success::Bool = true,
+                           annotate_types::Bool          = false,
+                           fullpath::Bool                = false,
+                           __jetconfigs...)
         return new(print_toplevel_success,
                    print_inference_success,
                    annotate_types,
-                   fullpath,
-                   )
+                   fullpath)
+    end
 end
 
 # utility
