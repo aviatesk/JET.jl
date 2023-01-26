@@ -344,7 +344,7 @@ end
 # =======
 
 # the entry constructor
-@jetconfigurable :report_pass :function_filter function OptAnalyzer(;
+function OptAnalyzer(;
     report_pass = OptAnalysisPass(),
     function_filter = optanalyzer_function_filter,
     skip_noncompileable_calls::Bool = true,
@@ -357,6 +357,13 @@ end
         function_filter,
         skip_noncompileable_calls,
         skip_unoptimized_throw_blocks)
+end
+
+const OPT_ANALYZER_CONFIGURATIONS = Set{Symbol}((
+    :report_pass, :function_filter, :skip_noncompileable_calls, :skip_unoptimized_throw_blocks))
+
+let valid_keys = GENERAL_CONFIGURATIONS ∪ OPT_ANALYZER_CONFIGURATIONS
+    @eval JETInterface.valid_configurations(::OptAnalyzer) = $valid_keys
 end
 
 """

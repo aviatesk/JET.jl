@@ -104,8 +104,7 @@ TODO: elaborate this documentation.
 struct BasicPass{FF} <: ReportPass
     function_filter::FF
 end
-@jetconfigurable :function_filter function BasicPass(;
-    function_filter = jetanalyzer_function_filter)
+function BasicPass(; function_filter = jetanalyzer_function_filter, __jetconfigs...)
     return BasicPass(function_filter)
 end
 
@@ -1394,7 +1393,7 @@ end
 # =======
 
 # the entry constructor
-@jetconfigurable :report_pass function JETAnalyzer(;
+function JETAnalyzer(;
     report_pass::Union{Nothing,ReportPass} = nothing,
     mode::Symbol = :basic,
     jetconfigs...)
@@ -1417,6 +1416,13 @@ end
     set_if_missing!(jetconfigs, :unoptimize_throw_blocks, false)
     state = AnalyzerState(; jetconfigs...)
     return JETAnalyzer(state, report_pass)
+end
+
+const JET_ANALYZER_CONFIGURATIONS = Set{Symbol}((
+    :report_pass, :mode, :function_filter))
+
+let valid_keys = GENERAL_CONFIGURATIONS ∪ JET_ANALYZER_CONFIGURATIONS
+    @eval JETInterface.valid_configurations(::JETAnalyzer) = $valid_keys
 end
 
 # interactive

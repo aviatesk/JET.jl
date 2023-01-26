@@ -257,86 +257,6 @@ end
 # types that should be compared by `===` rather than `==`
 const _EGAL_TYPES = Any[Symbol, MethodInstance, Type]
 
-# TODO remove this macro
-"""
-    @jetconfigurable [duplicated_names...] function config_func(args...; configurations...)
-        ...
-    end
-
-Assert that there is no configuration naming conflict across `@jetconfigurable` methods.
-Also add the dummy splat keyword argument `jetconfigs...` to the argument list if necessary
-so that any configuration of other `@jetconfigurable` methods can be passed on to it.
-And also insert a call to `validate_configs` at the head of the method's body.
-"""
-macro jetconfigurable(exs...)
-    if length(exs) == 1
-        funcdef = only(exs)
-        duplicated_names = Symbol[]
-    else
-        funcdef = last(exs)
-        duplicated_names = Symbol[(isa(name, QuoteNode) ? name.value : name)::Symbol for name in exs[1:end-1]]
-    end
-    @assert isexpr(funcdef, :(=)) || isexpr(funcdef, :function) "function definition should be given"
-    funcdef = funcdef::Expr
-
-    defsig = funcdef.args[1]
-    if isexpr(defsig, :where)
-        defsig = first(defsig.args)
-    end
-    defsig = defsig::Expr
-    args = defsig.args::Vector{Any}
-    thisname = first(args)::Symbol
-    i = findfirst(@nospecialize(a)->isexpr(a, :parameters), args)
-    if isnothing(i)
-        @warn "no JET configurations are defined for `$thisname`"
-        insert!(args, 2, Expr(:parameters, :(jetconfigs...)))
-        configsname = :jetconfigs
-    else
-        kwargs = args[i]::Expr
-        found = false
-        for kwarg in kwargs.args
-            if isexpr(kwarg, :...)
-                found = true
-                configsname = first(kwarg.args)::Symbol
-                continue
-            end
-            kwargex = first(kwarg.args)
-            kwargname = (isexpr(kwargex, :(::)) ? first(kwargex.args) : kwargex)::Symbol
-            othername = get!(_JET_CONFIGURATIONS, kwargname, thisname)
-            if thisname !== othername && kwargname ∉ duplicated_names
-                throw("`$thisname` uses `$kwargname` JET configuration name which is already used by `$othername`")
-            end
-        end
-        if !found
-            push!(kwargs.args, :(jetconfigs...))
-            configsname = :jetconfigs
-        end
-    end
-
-    # insert validation to check if there are no invalid names
-    assertion = :($validate_configs($configsname))
-    body = funcdef.args[2]
-    if isexpr(body, :block)
-        i = findfirst(!islnn, body.args)::Int
-        insert!(body.args, i, assertion)
-    else
-        funcdef.args[2] = Expr(:block, LineNumberNode(@__LINE__, @__FILE__), assertion, body)
-    end
-
-    return esc(funcdef)
-end
-const _JET_CONFIGURATIONS = Dict{Symbol,Symbol}() # TODO split this up
-
-function validate_configs(jetconfigs, valid_keys = keys(_JET_CONFIGURATIONS))
-    for (key, val) in jetconfigs
-        if key ∉ valid_keys
-            valrepr = LazyPrinter(io::IO->show(io,val))
-            throw(JETConfigError(lazy"Given unexpected configuration: `$key = $valrepr`", key, val))
-        end
-    end
-    return nothing
-end
-
 struct JETConfigError <: Exception
     msg::AbstractString
     key::Symbol
@@ -584,14 +504,13 @@ function get_reports(result::JETToplevelResult)
         return res.toplevel_error_reports
     else
         reports = res.inference_error_reports
-        target_modules = get_toplevel_target_modules(res.defined_modules; result.jetconfigs...)
+        if get(result.jetconfigs, :target_defined_modules, false)
+            target_modules = res.defined_modules
+        else
+            target_modules = nothing
+        end
         return configured_reports(reports; target_modules, result.jetconfigs...)
     end
-end
-
-@jetconfigurable function get_toplevel_target_modules(defined_modules;
-    target_defined_modules::Bool = false)
-    return target_defined_modules ? defined_modules : nothing
 end
 
 """
@@ -722,8 +641,9 @@ julia> @report_call ignored_modules=(Base,) foo("julia")
 ```
 ---
 """
-@jetconfigurable function configured_reports(reports::Vector{InferenceErrorReport};
-    report_config = nothing, target_modules = nothing, ignored_modules = nothing)
+function configured_reports(reports::Vector{InferenceErrorReport};
+                            report_config = nothing, target_modules = nothing, ignored_modules = nothing,
+                            __jetconfigs...)
     if report_config === nothing
         report_config = ReportConfig(target_modules, ignored_modules)
     end
@@ -826,6 +746,7 @@ function analyze_and_report_call!(analyzer::AbstractAnalyzer, @nospecialize(f), 
 end
 function analyze_and_report_call!(analyzer::AbstractAnalyzer, @nospecialize(tt::Type{<:Tuple});
                                   jetconfigs...)
+    validate_configs(analyzer, jetconfigs)
     analyzer, result = analyze_gf_by_type!(analyzer, tt)
     analyzername = nameof(typeof(analyzer))
     sig = LazyPrinter(io::IO->Base.show_tuple_as_call(io, Symbol(""), tt))
@@ -1087,6 +1008,7 @@ General users should use high-level entry points like [`report_text`](@ref).
 function analyze_and_report_text!(analyzer::AbstractAnalyzer, text::AbstractString,
                                   filename::AbstractString = "top-level";
                                   jetconfigs...)
+    validate_configs(analyzer, jetconfigs)
     config = ToplevelConfig(; jetconfigs...)
     res = virtual_process(text, filename, analyzer, config)
     analyzername = nameof(typeof(analyzer))
@@ -1126,11 +1048,10 @@ struct WatchConfig
     # Revise configurations
     revise_all::Bool
     revise_modules
-    @jetconfigurable function WatchConfig(;
-        revise_all::Bool = true,
-        revise_modules   = nothing)
-        return new(revise_all,
-                   revise_modules)
+    function WatchConfig(; revise_all::Bool = true,
+                           revise_modules = nothing,
+                           __jetconfigs...)
+        return new(revise_all, revise_modules)
     end
 end
 
@@ -1368,6 +1289,23 @@ function Test.record(ts::DefaultTestSet, t::JETTestFailure)
     return t
 end
 
+# validation
+# ==========
+
+const GENERAL_CONFIGURATIONS = Set{Symbol}((
+    # general
+    :report_config, :target_modules, :ignored_modules,
+    # toplevel
+    :context, :analyze_from_definitions, :concretization_patterns, :virtualize, :toplevel_logger,
+    # ui
+    :print_toplevel_success, :print_inference_success, :annotate_types, :fullpath, :vscode_console_output,
+    # watch
+    :revise_all, :revise_modules))
+for (Params, Func) = ((InferenceParams, JETInferenceParams),
+                      (OptimizationParams, JETOptimizationParams))
+    push!(GENERAL_CONFIGURATIONS, Base.kwarg_decl(only(methods(Func, (Params,))))...)
+end
+
 # interface
 # =========
 
@@ -1401,8 +1339,8 @@ end
 
 reexport_as_api!(JETInterface,
     # AbstractAnalyzer API
-    AbstractAnalyzer, AnalyzerState, ReportPass, AnalysisCache, aggregation_policy,
-    VSCode.vscode_diagnostics_order,
+    AbstractAnalyzer, AnalyzerState, ReportPass, AnalysisCache,
+    valid_configurations, aggregation_policy, VSCode.vscode_diagnostics_order,
     # InferenceErrorReport API
     InferenceErrorReport, copy_report, print_report_message, print_signature, report_color,
     # generic entry points,
