@@ -450,7 +450,7 @@ JET.report_text
 
 ## [Configurations](@id jetanalysis-config)
 
-In addition to [general configurations](@ref JET-configurations), the error analysis can take the
+In addition to [general-config](@ref general-config), the error analysis can take the
 following specific configurations:
 ```@docs
 JET.JETAnalyzer

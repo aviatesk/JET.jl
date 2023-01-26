@@ -1246,3 +1246,87 @@ struct SyntaxErrorReport <: ToplevelErrorReport
     line::Int
     SyntaxErrorReport(msg::AbstractString, file, line) = new(ErrorException(msg), file, line)
 end
+
+# a bridge to abstract interpretation
+function analyze_toplevel!(analyzer::AbstractAnalyzer, src::CodeInfo)
+    # construct toplevel `MethodInstance`
+    mi = ccall(:jl_new_method_instance_uninit, Ref{Core.MethodInstance}, ());
+    mi.specTypes = Tuple{}
+
+    mi.def = mod = get_toplevelmod(analyzer)
+    src = transform_abstract_global_symbols!(analyzer, src)
+    src = resolve_toplevel_symbols!(mod, src)
+    @static if VERSION ≥ v"1.10.0-DEV.112"
+        @atomic mi.uninferred = src
+    else
+        mi.uninferred = src
+    end
+
+    result = InferenceResult(mi);
+    init_result!(analyzer, result) # set `JETResult` for succeeding JET analysis
+    # NOTE toplevel frames don't really need to be cached, but still better to be optimized
+    # in order to get reasonable `UncaughtExceptionReport`, and also, otherwise
+    # `typeinf_edge` won't add "toplevel-to-callee" edges
+    frame = InferenceState(result, src, #=cache=# :global, analyzer)::InferenceState
+
+    return analyze_frame!(analyzer, frame)
+end
+
+# HACK this is very naive hack to re-use `AbstractInterpreter`'s slot type approximation for
+# assignments of abstract global variables, which are represented as toplevel symbols at this point;
+# the idea is just to transform them into slot from symbol and use their approximated type
+# on their assignment (see `finish(::InferenceState, ::AbstractAnalyzer)`).
+# NOTE that `transform_abstract_global_symbols!` will produce really invalid code for
+# actual interpretation or execution, but all the statements won't be interpreted anymore
+# by `ConcreteInterpreter` nor executed by the native compilation pipeline anyway
+function transform_abstract_global_symbols!(analyzer::AbstractAnalyzer, src::CodeInfo)
+    nslots = length(src.slotnames)
+    abstrct_global_variables = Dict{Symbol,Int}()
+    concretized = get_concretized(analyzer)
+
+    # linear scan, and find assignments of abstract global variables
+    for (i, stmt) in enumerate(src.code::Vector{Any})
+        if !(concretized[i])
+            if isexpr(stmt, :(=))
+                lhs = first(stmt.args)
+                if isa(lhs, Symbol)
+                    if !haskey(abstrct_global_variables, lhs)
+                        nslots += 1
+                        push!(abstrct_global_variables, lhs => nslots)
+                    end
+                end
+            end
+        end
+    end
+
+    prewalk_and_transform!(src) do x, scope
+        if isa(x, Symbol)
+            slot = get(abstrct_global_variables, x, nothing)
+            isnothing(slot) || return SlotNumber(slot)
+        end
+        return x
+    end
+
+    resize!(src.slotnames, nslots)
+    resize!(src.slotflags, nslots)
+    for (slotname, idx) in abstrct_global_variables
+        src.slotnames[idx] = slotname
+    end
+
+    set_global_slots!(analyzer, Dict(idx => slotname for (slotname, idx) in abstrct_global_variables))
+
+    return src
+end
+
+# resolve toplevel symbols (and other expressions like `:foreigncall`)
+# so that the returned `CodeInfo` is eligible for abstractintepret and optimization
+# TODO `jl_resolve_globals_in_ir` can throw, and we want to bypass it to `ToplevelErrorReport`
+function resolve_toplevel_symbols!(mod::Module, src::CodeInfo)
+    newsrc = copy(src)
+    @ccall jl_resolve_globals_in_ir(
+        #=jl_array_t *stmts=# newsrc.code::Any,
+        #=jl_module_t *m=# mod::Any,
+        #=jl_svec_t *sparam_vals=# svec()::Any,
+        #=int binding_effects=# 0::Int)::Cvoid
+    return newsrc
+end

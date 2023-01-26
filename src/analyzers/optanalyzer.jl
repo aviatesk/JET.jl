@@ -1,9 +1,6 @@
-# OptAnalyzer
-# ===========
-
 """
 Every [entry point of optimization analysis](@ref optanalysis-entry) can accept
-any of [general JET configurations](@ref JET-configurations) as well as
+any of [general JET configurations](@ref general-config) as well as
 the following additional configurations that are specific to the optimization analysis.
 
 ---
@@ -195,20 +192,6 @@ struct OptAnalyzer{RP,FF} <: AbstractAnalyzer
 end
 
 # AbstractAnalyzer API requirements
-@jetconfigurable :report_pass :function_filter function OptAnalyzer(;
-    report_pass = OptAnalysisPass(),
-    function_filter = optanalyzer_function_filter,
-    skip_noncompileable_calls::Bool = true,
-    skip_unoptimized_throw_blocks::Bool = true,
-    jetconfigs...)
-    state = AnalyzerState(; jetconfigs...)
-    return OptAnalyzer(
-        state,
-        report_pass,
-        function_filter,
-        skip_noncompileable_calls,
-        skip_unoptimized_throw_blocks)
-end
 JETInterface.AnalyzerState(analyzer::OptAnalyzer) = analyzer.state
 function JETInterface.AbstractAnalyzer(analyzer::OptAnalyzer, state::AnalyzerState)
     return OptAnalyzer(
@@ -358,54 +341,72 @@ function (::OptAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::OptAnalyze
 end
 
 # entries
-# -------
+# =======
+
+# the entry constructor
+@jetconfigurable :report_pass :function_filter function OptAnalyzer(;
+    report_pass = OptAnalysisPass(),
+    function_filter = optanalyzer_function_filter,
+    skip_noncompileable_calls::Bool = true,
+    skip_unoptimized_throw_blocks::Bool = true,
+    jetconfigs...)
+    state = AnalyzerState(; jetconfigs...)
+    return OptAnalyzer(
+        state,
+        report_pass,
+        function_filter,
+        skip_noncompileable_calls,
+        skip_unoptimized_throw_blocks)
+end
 
 """
     report_opt(f, [types]; jetconfigs...) -> JETCallResult
     report_opt(tt::Type{<:Tuple}; jetconfigs...) -> JETCallResult
 
-Analyzes the generic function call with the given type signature with [the optimization analyzer](@ref optanalysis),
-which collects optimization failures and runtime dispatches involved within the call stack.
+Analyzes a function call with the given type signature to detect optimization failures and
+unresolved method dispatches.
+
+General [configurations](@ref) and [the optimization analysis specific configurations](@ref optanalysis-config)
+can be specified as a keyword argument.
+
+See [the documentation of the optimization analysis](@ref optanalysis) for more details.
 """
-function report_opt(@nospecialize(args...); jetconfigs...)
-    return report_call(args...; analyzer=OptAnalyzer, jetconfigs...)
+function report_opt(args...; jetconfigs...)
+    analyzer = OptAnalyzer(; jetconfigs...)
+    return analyze_and_report_call!(analyzer, args...; jetconfigs...)
 end
 
 """
     @report_opt [jetconfigs...] f(args...)
 
-Evaluates the arguments to the function call, determines its types, and then calls
+Evaluates the arguments to a function call, determines their types, and then calls
 [`report_opt`](@ref) on the resulting expression.
-As with `@code_typed` and its family, any of [JET configurations](@ref JET-configurations)
-or [optimization analysis specific configurations](@ref optanalysis-config) can be given
-as the optional arguments like this:
-```julia-repl
-# reports `rand(::Type{Bool})` with `unoptimize_throw_blocks` configuration turned on
-julia> @report_opt unoptimize_throw_blocks=true rand(Bool)
-```
+
+General [configurations](@ref) and [the optimization analysis specific configurations](@ref optanalysis-config)
+can be specified as an optional argument.
 """
 macro report_opt(ex0...)
-    return var"@report_call"(__source__, __module__, :(analyzer=$OptAnalyzer), ex0...)
+    return InteractiveUtils.gen_call_with_extracted_types_and_kwargs(__module__, :report_opt, ex0)
 end
 
 """
     @test_opt [jetconfigs...] [broken=false] [skip=false] f(args...)
 
-Tests the generic function call `f(args...)` is free from runtime dispatch.
-Returns a `Pass` result if it is, a `Fail` result if if contains any location where runtime
-dispatch or optimization failure happens, or an `Error` result if this macro encounters an
-unexpected error. When the test `Fail`s, abstract call stack to each problem location will
-also be printed to `stdout`.
-
+Runs [`@report_opt jetconfigs... f(args...)`](@ref @report_opt) and tests that the function
+call `f(args...)` is free from optimization failures and unresolved method dispatches that
+`@report_opt` can detect.
+Returns a `Pass` result if the test is successful, a `Fail` result if any problems are detected,
+or an `Error` result if the test encounters an unexpected error.
+When the test `Fail`s, abstract call stack to each problem location will be printed to `stdout`.
 ```julia-repl
 julia> @test_opt sincos(10)
 Test Passed
   Expression: #= none:1 =# JET.@test_opt sincos(10)
 ```
 
-As with [`@report_opt`](@ref), any of [JET configurations](@ref JET-configurations) or
-[optimization analysis specific configurations](@ref optanalysis-config) can be given
-as the optional arguments like this:
+As with [`@report_opt`](@ref), general [configurations](@ref) and
+[optimization analysis specific configurations](@ref optanalysis-config)
+can be specified as an optional argument:
 ```julia-repl
 julia> function f(n)
             r = sincos(n)
@@ -425,17 +426,18 @@ Like [`@test_call`](@ref), `@test_opt` is fully integrated with [`Test` standard
 See [`@test_call`](@ref) for the details.
 """
 macro test_opt(ex0...)
-    return var"@test_call"(__source__, __module__, :(analyzer=$OptAnalyzer), ex0...)
+    return call_test_ex(:report_opt, Symbol("@test_opt"), ex0, __module__, __source__)
 end
 
 """
     test_opt(f, [types]; broken::Bool = false, skip::Bool = false, jetconfigs...)
     test_opt(tt::Type{<:Tuple}; broken::Bool = false, skip::Bool = false, jetconfigs...)
 
-Tests the generic function call with the given type signature is free from runtime dispatch.
+Runs [`report_opt`](@ref) on a function call with the given type signature and tests that
+it is free from optimization failures and unresolved method dispatches that `report_opt` can detect.
 Except that it takes a type signature rather than a call expression, this function works
-in the same way as [`@test_opt`](@ref).
+in the same way as [`@test_call`](@ref).
 """
 function test_opt(@nospecialize(args...); jetconfigs...)
-    return test_call(args...; analyzer=OptAnalyzer, jetconfigs...)
+    return call_test(report_opt, :test_opt, args...; jetconfigs...)
 end
