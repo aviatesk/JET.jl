@@ -99,10 +99,10 @@ const JET_ANALYZER_CACHE = IdDict{UInt, AnalysisCache}()
 # TODO elaborate the documentations of passes
 
 """
-The basic (default) error analysis pass.
+The basic error analysis pass. This is used by default.
 """
 struct BasicPass{FF} <: ReportPass
-    function_filter::FF
+    function_filter::FF # TODO move this to JETAnalyzer?
 end
 function BasicPass(; function_filter = jetanalyzer_function_filter, __jetconfigs...)
     return BasicPass(function_filter)
