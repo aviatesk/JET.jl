@@ -96,10 +96,10 @@ const JET_ANALYZER_CACHE = IdDict{UInt, AnalysisCache}()
 # report passes
 # =============
 
+# TODO elaborate the documentations of passes
+
 """
 The basic (default) error analysis pass.
-
-TODO: elaborate this documentation.
 """
 struct BasicPass{FF} <: ReportPass
     function_filter::FF
@@ -122,8 +122,6 @@ end
 
 """
 The sound error analysis pass.
-
-TODO: elaborate this documentation.
 """
 struct SoundPass <: ReportPass end
 
@@ -132,8 +130,6 @@ const SoundBasicPass = Union{SoundPass,BasicPass}
 
 """
 A typo detection pass.
-
-TODO: elaborate this documentation.
 """
 struct TypoPass <: ReportPass end
 (::TypoPass)(@nospecialize _...) = return false # ignore everything except UndefVarErrorReport and field error report
