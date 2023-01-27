@@ -237,13 +237,14 @@ end
 # Especially, it uses `Base.isgenerator` [here](https://github.com/FluxML/IRTools.jl/blob/1f3f43be654a41d0db154fd16b31fdf40f30748c/src/reflection/reflection.jl#L49),
 # and you can see the analyzer correctly detects it if you run the following code with IRTools@v0.4.2 installed.
 
-using Pkg #src
-if "IRTools" in keys(Pkg.project().dependencies) #src
 ## define an entry point for analyzing a package
 function report_package_unstable_api(args...; jetconfigs...)
     analyzer = UnstableAPIAnalyzer(; jetconfigs...)
     return analyze_and_report_package!(analyzer, args...; jetconfigs...)
 end
+
+using Pkg #src
+if "IRTools" in keys(Pkg.project().dependencies) #src
 report_package_unstable_api("IRTools";
                             ## to only find erros detected within the module context of `IRTools`
                             target_defined_modules=true)
