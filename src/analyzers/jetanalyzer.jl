@@ -1,7 +1,7 @@
 """
 Every [entry point of error analysis](@ref jetanalysis-entry) can accept
-any of [general JET configurations](@ref general-config) as well as
-the following additional configurations that are specific to the error analysis.
+any of the [general configurations](@ref) as well as the following additional configurations
+that are specific to the error analysis.
 
 ---
 - `mode::Symbol = :basic`:\\
@@ -1435,7 +1435,7 @@ end
 Analyzes a function call with the given type signature to find type-level errors
 and returns back detected problems.
 
-General [configurations](@ref) and [the error analysis specific configurations](@ref jetanalysis-config)
+The [general configurations](@ref) and [the error analysis specific configurations](@ref jetanalysis-config)
 can be specified as a keyword argument.
 
 See [the documentation of the error analysis](@ref jetanalysis) for more details.
@@ -1452,7 +1452,7 @@ Evaluates the arguments to a function call, determines their types, and then cal
 [`report_call`](@ref) on the resulting expression.
 This macro works in a similar way as the `@code_typed` macro.
 
-General [configurations](@ref) and [the error analysis specific configurations](@ref jetanalysis-config)
+The [general configurations](@ref) and [the error analysis specific configurations](@ref jetanalysis-config)
 can be specified as an optional argument.
 """
 macro report_call(ex0...)
@@ -1476,7 +1476,7 @@ Test Passed
   Expression: #= none:1 =# JET.@test_call sincos(10)
 ```
 
-As with [`@report_call`](@ref), general [configurations](@ref) and
+As with [`@report_call`](@ref), the [general configurations](@ref) and
 [the error analysis specific configurations](@ref jetanalysis-config)
 can be specified as an optional argument:
 ```julia-repl
@@ -1567,7 +1567,7 @@ and searches _upward_ in the file tree until a `$CONFIG_FILE_NAME` is (or isn't)
 When found, the configurations specified in the file are applied.
 See [JET's configuration file specification](@ref config-file) for more details.
 
-General [configurations](@ref) and [the error analysis specific configurations](@ref jetanalysis-config)
+The [general configurations](@ref) and [the error analysis specific configurations](@ref jetanalysis-config)
 can be specified as a keyword argument, and if given, they are preferred over the configurations
 specified by a `$CONFIG_FILE_NAME` configuration file.
 
@@ -1618,7 +1618,7 @@ The error analysis performed by this function is configured as follows by defaul
   code written in a package since it usually only defines types and methods.
 See [`ToplevelConfig`](@ref) for more details.
 
-Still general [configurations](@ref) and [the error analysis specific configurations](@ref jetanalysis-config)
+Still the [general configurations](@ref) and [the error analysis specific configurations](@ref jetanalysis-config)
 can be specified as a keyword argument, and if given, they are preferred over the default
 configurations described above.
 

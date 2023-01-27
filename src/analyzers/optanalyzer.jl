@@ -1,7 +1,7 @@
 """
 Every [entry point of optimization analysis](@ref optanalysis-entry) can accept
-any of [general JET configurations](@ref general-config) as well as
-the following additional configurations that are specific to the optimization analysis.
+any of the [general configurations](@ref) as well as the following additional configurations
+that are specific to the optimization analysis.
 
 ---
 - `skip_noncompileable_calls::Bool = true`:\\
@@ -373,7 +373,7 @@ end
 Analyzes a function call with the given type signature to detect optimization failures and
 unresolved method dispatches.
 
-General [configurations](@ref) and [the optimization analysis specific configurations](@ref optanalysis-config)
+The [general configurations](@ref) and [the optimization analysis specific configurations](@ref optanalysis-config)
 can be specified as a keyword argument.
 
 See [the documentation of the optimization analysis](@ref optanalysis) for more details.
@@ -389,7 +389,7 @@ end
 Evaluates the arguments to a function call, determines their types, and then calls
 [`report_opt`](@ref) on the resulting expression.
 
-General [configurations](@ref) and [the optimization analysis specific configurations](@ref optanalysis-config)
+The [general configurations](@ref) and [the optimization analysis specific configurations](@ref optanalysis-config)
 can be specified as an optional argument.
 """
 macro report_opt(ex0...)
@@ -411,7 +411,7 @@ Test Passed
   Expression: #= none:1 =# JET.@test_opt sincos(10)
 ```
 
-As with [`@report_opt`](@ref), general [configurations](@ref) and
+As with [`@report_opt`](@ref), the [general configurations](@ref) and
 [optimization analysis specific configurations](@ref optanalysis-config)
 can be specified as an optional argument:
 ```julia-repl

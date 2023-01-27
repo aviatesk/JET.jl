@@ -1,6 +1,6 @@
-# Configurations
+# [General Configurations](@id general-configurations)
 
-JET analysis can be flexibly fine-tuned.
+JET can be fine-tuned very flexibly.
 Any entry point explained in [JET's default error analysis](@ref jetanalysis-entry) and [the optimization analysis](@ref optanalysis-entry)
 can accept any of the configuration parameters described below as keyword arguments (or optional parameters for the interactive macros).
 For example, you can analyze the call of `sum("julia")` with the [`annotate_types`](@ref print-config) configuration enabled as like:

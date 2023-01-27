@@ -194,7 +194,7 @@ e.g. `report_file("path/to/file.jl"; analyzer = OptAnalyzer)`.
 
 ## [Configurations](@id optanalysis-config)
 
-In addition to [general-config](@ref general-config), the optimization analysis can take the following specific configurations:
+In addition to the [general configurations](@ref), the optimization analysis can take the following specific configurations:
 ```@docs
 JET.OptAnalyzer
 ```

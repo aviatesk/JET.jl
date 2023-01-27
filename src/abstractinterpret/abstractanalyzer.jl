@@ -97,7 +97,7 @@ The mutable object that holds various states that are consumed by all [`Abstract
 If `NewAnalyzer` implements the `AbstractAnalyzer` interface, `NewAnalyzer` should implement
 this `AnalyzerState(analyzer::NewAnalyzer) -> AnalyzerState` interface.
 
-A new `AnalyzerState` is supposed to be constructed using [JET configurations](@ref) passed
+A new `AnalyzerState` is supposed to be constructed using the [general configurations](@ref) passed
 as keyword arguments `jetconfigs` of the [`NewAnalyzer(; jetconfigs...)`](@ref AbstractAnalyzer)
 constructor, and the constructed `AnalyzerState` is usually kept within `NewAnalyzer` itself:
 ```julia
@@ -415,8 +415,9 @@ while still using the analysis routine implemented by `NewAnalyzer`.
 
 # Example
 
-For example, [`JETAnalyzer`](@ref) accepts a custom `ReportPass` passed as [JET configurations](@ref)
-(see the example documentation of [`AbstractAnalyzer`](@ref) for details).
+For example, [`JETAnalyzer`](@ref) accepts a custom `ReportPass` passed as part of the
+[general configurations](@ref) (see the documentation of [`AbstractAnalyzer`](@ref) for
+an example implementation).
 And we can setup a custom report pass `IgnoreAllExceptGlobalUndefVar`, that ignores all the
 reports that are otherwise collected by `JETAnalyzer` except `UndefVarErrorReport`:
 ```julia

@@ -116,7 +116,8 @@ end
     g::GlobalRef
 end
 function JETInterface.print_report_message(io::IO, (; g)::UnstableAPI)
-    (; mod, name) = Base.resolve(g) # resolve to original name
+    (; mod, name) = g
+    mod = Base.binding_module(mod, name)
     msg = lazy"usage of unstable API `$mod.$name` found"
     print(io, "usage of unstable API `", mod, '.', name, "` found")
 end
@@ -125,9 +126,10 @@ JETInterface.report_color(::UnstableAPI) = :yellow
 
 function (::UnstableAPIAnalysisPass)(::Type{UnstableAPI}, analyzer::UnstableAPIAnalyzer, sv, @nospecialize(e))
     if isa(e, GlobalRef)
-        isdefined(e.mod, e.name) || return false # this global reference falls into the category 1, should be caught by `UndefVarErrorReport` instead
+        (; mod, name) = e
+        isdefined(mod, name) || return false # this global reference falls into the category 1, should be caught by `UndefVarErrorReport` instead
 
-        (; mod, name) = Base.resolve(e) # this reference will be safely resolved
+        mod = Base.binding_module(mod, name)
         analyzer.is_target_module(mod) && return # we don't care about what we defined ourselves
 
         if isunstable(mod, name)
@@ -155,7 +157,7 @@ function isunstable(mod, name)
 end
 
 function isexported(mod, name)
-    (; mod, name) = Base.resolve(GlobalRef(mod, name))
+    mod = Base.binding_module(mod, name)
     return Base.isexported(mod, name)
 end
 

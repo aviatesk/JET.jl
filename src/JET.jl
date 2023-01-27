@@ -480,7 +480,7 @@ Represents the result of JET's analysis on a top-level script.
 - `res.analyzer::AbstractAnalyzer`: [`AbstractAnalyzer`](@ref) used for this analysis
 - `res.res::VirtualProcessResult`: [`VirtualProcessResult`](@ref) collected from this analysis
 - `res.source::AbstractString`: the identity key of this analysis
-- `res.jetconfigs`: [JET configurations](@ref general-config) used for this analysis
+- `res.jetconfigs`: configurations used for this analysis
 
 `JETToplevelResult` implements `show` methods for each different frontend.
 An appropriate `show` method will be automatically choosen and render the analysis result.
@@ -520,7 +520,7 @@ Represents the result of JET's analysis on a function call.
 - `res.result::InferenceResult`: the result of this analysis
 - `res.analyzer::AbstractAnalyzer`: [`AbstractAnalyzer`](@ref) used for this analysis
 - `res.source::AbstractString`: the identity key of this analysis
-- `res.jetconfigs`: [JET configurations](@ref general-config) used for this analysis
+- `res.jetconfigs`: configurations used for this analysis
 
 `JETCallResult` implements `show` methods for each different frontend.
 An appropriate `show` method will be automatically choosen and render the analysis result.
@@ -840,7 +840,7 @@ function apply_file_config(jetconfigs, filename::AbstractString)
         merge!(jetconfigs, config) # overwrite configurations
         toplevel_logger = get(jetconfigs, :toplevel_logger, nothing)
         with_toplevel_logger(toplevel_logger; filter=≥(JET_LOGGER_LEVEL_INFO)) do @nospecialize(io)
-            println(io, lazy"applied JET configurations in $configfile")
+            println(io, lazy"applied configurations in $configfile")
         end
     end
     return jetconfigs
@@ -883,7 +883,7 @@ When [`report_file`](@ref) or [`report_and_watch_file`](@ref) is called, it will
 a JET configuration file is (or isn't) found.
 When found, the configurations specified in the file will be applied.
 
-A configuration file can specify any of JET configurations like:
+A configuration file can specify configurations like:
 ```toml
 aggressive_constant_propagation = false # turn off aggressive constant propagation
 ... # other configurations
@@ -911,7 +911,7 @@ E.g. the configurations below are equivalent:
   end)
 
 !!! note
-    JET configurations specified as keyword arguments have precedence over those specified
+    Configurations specified as keyword arguments have precedence over those specified
     via a configuration file.
 """
 parse_config_file(path::AbstractString) = process_config_dict(TOML.parsefile(path))
