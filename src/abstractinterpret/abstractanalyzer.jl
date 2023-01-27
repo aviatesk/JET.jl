@@ -53,35 +53,35 @@ abstract type AbstractAnalyzer <: AbstractInterpreter end
 # 1. `AnalyzerState(analyzer::NewAnalyzer) -> AnalyzerState`
 
 """
-    JETResult
+    AnalysisResult
 
 [`analyzer::AbstractAnalyzer`](@ref AbstractAnalyzer) manages [`InferenceErrorReport`](@ref)
-associating it with `InferenceResult`.
-`InferenceErrorReport`s found within currently-analyzed `result::InferenceResult` can be
-accessed with `get_reports(analyzer, result)`.
+by associating it with `InferenceResult`.
+`InferenceErrorReport`s found within the currently-analyzed `result::InferenceResult` can be
+accessed using `get_reports(analyzer, result)`.
 """
-struct JETResult
+struct AnalysisResult
     reports::Vector{InferenceErrorReport}
 end
 
 """
-    JETCachedResult
+    CachedAnalysisResult
 
-[`JETResult`](@ref JETResult) is transformed into `JETCachedResult` when it is cached into
+[`AnalysisResult`](@ref AnalysisResult) is transformed into `CachedAnalysisResult` when it is cached into
 a global cache maintained by `AbstractAnalyzer`. That means,
 `codeinf::CodeInstance = Core.Compiler.code_cache(analyzer::AbstractAnalyzer)[mi::MethodInstance])`
-is expected to have its field `codeinf.inferred::JETCachedResult`.
+is expected to have its field `codeinf.inferred::CachedAnalysisResult`.
 
 [`InferenceErrorReport`](@ref)s found within already-analyzed `result::InferenceResult`
 can be accessed with `get_cached_reports(analyzer, result)`.
 """
-struct JETCachedResult
+struct CachedAnalysisResult
     src
     reports::Vector{InferenceErrorReport}
-    JETCachedResult(@nospecialize(src), reports::Vector{InferenceErrorReport}) = new(src, reports)
+    CachedAnalysisResult(@nospecialize(src), reports::Vector{InferenceErrorReport}) = new(src, reports)
 end
 
-const AnyJETResult = Union{JETResult,JETCachedResult}
+const AnyAnalysisResult = Union{AnalysisResult,CachedAnalysisResult}
 
 """
     mutable struct AnalyzerState
@@ -119,7 +119,7 @@ mutable struct AnalyzerState
 
     ## AbstractAnalyzer ##
 
-    results::IdDict{InferenceResult,AnyJETResult}
+    results::IdDict{InferenceResult,AnyAnalysisResult}
 
     # temporal stash to keep reports that are collected within the currently-analyzed frame
     # and should be appended to the caller when returning back to the caller frame next time
@@ -157,7 +157,7 @@ for fld in fieldnames(AnalyzerState)
 end
 
 function AnalyzerState(world::UInt  = get_world_counter();
-                       results      = IdDict{InferenceResult,AnyJETResult}(),
+                       results      = IdDict{InferenceResult,AnyAnalysisResult}(),
                        inf_params   = nothing,
                        opt_params   = nothing,
                        concretized  = _CONCRETIZED,
@@ -173,7 +173,7 @@ function AnalyzerState(world::UInt  = get_world_counter();
                          #=inf_cache::Vector{InferenceResult}=# inf_cache,
                          #=inf_params::InferenceParams=# inf_params,
                          #=opt_params::OptimizationParams=# opt_params,
-                         #=results::IdDict{InferenceResult,AnyJETResult}=# results,
+                         #=results::IdDict{InferenceResult,AnyAnalysisResult}=# results,
                          #=caller_cache::Vector{InferenceErrorReport}=# caller_cache,
                          #=cacher::Union{Nothing,InferenceResult}=# nothing,
                          #=concretized::BitVector=# concretized,
@@ -571,20 +571,20 @@ end
 # define how AbstractAnalyzer manages `InferenceResult`
 
 Base.getindex(analyzer::AbstractAnalyzer, result::InferenceResult) = get_results(analyzer)[result]
-Base.setindex!(analyzer::AbstractAnalyzer, jetresult::AnyJETResult, result::InferenceResult) = get_results(analyzer)[result] = jetresult
+Base.setindex!(analyzer::AbstractAnalyzer, AnalysisResult::AnyAnalysisResult, result::InferenceResult) = get_results(analyzer)[result] = AnalysisResult
 
 function init_result!(analyzer::AbstractAnalyzer, result::InferenceResult)
-    analyzer[result] = JETResult(InferenceErrorReport[])
+    analyzer[result] = AnalysisResult(InferenceErrorReport[])
     return nothing
 end
 function set_cached_result!(analyzer::AbstractAnalyzer, result::InferenceResult, cache::Vector{InferenceErrorReport})
-    analyzer[result] = JETCachedResult(result.src, cache)
+    analyzer[result] = CachedAnalysisResult(result.src, cache)
     return nothing
 end
 
-get_reports(analyzer::AbstractAnalyzer, result::InferenceResult) = (analyzer[result]::JETResult).reports
-get_cached_reports(analyzer::AbstractAnalyzer, result::InferenceResult) = (analyzer[result]::JETCachedResult).reports
-get_any_reports(analyzer::AbstractAnalyzer, result::InferenceResult) = (analyzer[result]::AnyJETResult).reports
+get_reports(analyzer::AbstractAnalyzer, result::InferenceResult) = (analyzer[result]::AnalysisResult).reports
+get_cached_reports(analyzer::AbstractAnalyzer, result::InferenceResult) = (analyzer[result]::CachedAnalysisResult).reports
+get_any_reports(analyzer::AbstractAnalyzer, result::InferenceResult) = (analyzer[result]::AnyAnalysisResult).reports
 
 """
     add_new_report!(analyzer::AbstractAnalyzer, result::InferenceResult, report::InferenceErrorReport)
@@ -650,11 +650,11 @@ let # overload `inlining_policy`
 
         Implements inlining policy for `AbstractAnalyzer`.
         Since `AbstractAnalyzer` works on `InferenceResult` whose `src` field keeps
-        [`JETResult`](@ref) or [`JETCachedResult`](@ref), this implementation needs to forward
+        [`AnalysisResult`](@ref) or [`CachedAnalysisResult`](@ref), this implementation needs to forward
         their wrapped source to `inlining_policy(::AbstractInterpreter, ::Any, ::UInt8)`.
         """
         function CC.inlining_policy($(sigs_ex.args...))
-            if isa(src, JETCachedResult)
+            if isa(src, CachedAnalysisResult)
                 src = src.src
             end
             return @invoke CC.inlining_policy($(args_ex.args...))

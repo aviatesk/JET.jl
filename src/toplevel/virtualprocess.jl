@@ -1262,7 +1262,7 @@ function analyze_toplevel!(analyzer::AbstractAnalyzer, src::CodeInfo)
     end
 
     result = InferenceResult(mi);
-    init_result!(analyzer, result) # set `JETResult` for succeeding JET analysis
+    init_result!(analyzer, result)
     # NOTE toplevel frames don't really need to be cached, but still better to be optimized
     # in order to get reasonable `UncaughtExceptionReport`, and also, otherwise
     # `typeinf_edge` won't add "toplevel-to-callee" edges

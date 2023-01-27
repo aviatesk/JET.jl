@@ -289,7 +289,7 @@ function CC.get(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance, defa
                 else
                     inferred = codeinf.inferred
                 end
-                for cached in (inferred::JETCachedResult).reports
+                for cached in (inferred::CachedAnalysisResult).reports
                     restored = add_cached_report!(analyzer, caller, cached)
                     @static if JET_DEV_MODE
                         actual, expected = first(restored.vst).linfo, mi
@@ -356,7 +356,7 @@ function CC.transform_result_for_cache(analyzer::AbstractAnalyzer,
         inferred_result = @invoke transform_result_for_cache(analyzer::AbstractInterpreter,
         linfo::MethodInstance, valid_worlds::WorldRange, result.src::Any, result.ipo_effects::CC.Effects)
     end
-    return JETCachedResult(inferred_result, cache)
+    return CachedAnalysisResult(inferred_result, cache)
 end
 
 function CC.setindex!(wvc::WorldView{<:AbstractAnalyzerView}, ci::CodeInstance, mi::MethodInstance)

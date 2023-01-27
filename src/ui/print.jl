@@ -17,8 +17,7 @@ function print_reports(io::IO, res::JETCallResult)
 end
 
 # entry for test
-print_reports(args...; jetconfigs...) =
-    return print_reports(stdout::IO, args...; jetconfigs...)
+print_reports(res::AnyJETResult; jetconfigs...) = print_reports(stdout::IO, res; jetconfigs...)
 
 # configuration
 # =============

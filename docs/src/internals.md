@@ -17,7 +17,7 @@ Most overloads use the [`invoke`](https://docs.julialang.org/en/v1/base/base/#Co
 passing `AbstractAnalyzer` to the subsequent (maybe overloaded) callees.
 
 ```@docs
-JET.JETResult
+JET.AnalysisResult
 JET.islineage
 JET.bail_out_toplevel_call
 JET.bail_out_call
@@ -30,7 +30,7 @@ JET.analyze_task_parallel_code!
 
 ```@docs
 JET.AnalysisCache
-JET.JETCachedResult
+JET.CachedAnalysisResult
 JET.inlining_policy
 ```
 

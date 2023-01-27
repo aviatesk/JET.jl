@@ -719,6 +719,8 @@ end
 struct LazyPrinter; f; end
 Base.show(io::IO, l::LazyPrinter) = l.f(io)
 
+const AnyJETResult = Union{JETCallResult,JETToplevelResult}
+
 # default UI (console)
 include("ui/print.jl")
 # UI for VSCode
@@ -800,7 +802,7 @@ function analyze_method_instance!(analyzer::AbstractAnalyzer, mi::MethodInstance
 end
 
 function InferenceState(result::InferenceResult, cache::Symbol, analyzer::AbstractAnalyzer)
-    init_result!(analyzer, result) # set `JETResult` for succeeding JET analysis
+    init_result!(analyzer, result)
     return @invoke InferenceState(result::InferenceResult, cache::Symbol, analyzer::AbstractInterpreter)
 end
 

@@ -5,10 +5,10 @@ using Test
 # i.e. julia -i test/interactive_utils.jl
 include("interactive_utils.jl")
 
-function get_reports_with_test(args...)
-    reports = get_reports(args...)
+function get_reports_with_test(res::JET.AnyJETResult)
+    reports = get_reports(res)
     buf = IOBuffer()
-    print_reports(IOContext(buf, :color=>true), reports)
+    print_reports(IOContext(buf, :color=>true), reports; res.jetconfigs...)
     @test !isempty(String(take!(buf)))
     return reports
 end
