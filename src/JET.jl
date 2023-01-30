@@ -66,14 +66,14 @@ import Test:
 import Core:
     Argument, Builtin, CodeInfo, CodeInstance, Const, GlobalRef, GotoIfNot, GotoNode,
     IntrinsicFunction, Intrinsics, LineInfoNode, MethodInstance, MethodMatch, MethodTable,
-    NewvarNode, ReturnNode, SSAValue, SimpleVector, Slot, SlotNumber, svec
+    ReturnNode, SSAValue, SimpleVector, Slot, SlotNumber, svec
 
 import .CC:
-    AbstractInterpreter, ArgInfo, BasicBlock, Bottom, CFG, CallMeta, ConstCallInfo,
-    InferenceResult, InternalCodeCache, InvokeCallInfo, LimitedAccuracy, MethodCallResult,
-    MethodLookupResult, MethodMatchInfo, MethodMatches, NOT_FOUND, OptimizationState,
-    UnionSplitInfo, UnionSplitMethodMatches, VarState, VarTable, WorldRange, WorldView,
-    InternalMethodTable, CachedMethodTable, OverlayMethodTable,
+    AbstractInterpreter, ArgInfo, BasicBlock, Bottom, CFG, CachedMethodTable, CallMeta,
+    ConstCallInfo, InferenceResult, InternalMethodTable, InvokeCallInfo, LimitedAccuracy,
+    MethodCallResult, MethodLookupResult, MethodMatchInfo, MethodMatches, NOT_FOUND,
+    OptimizationState, OverlayMethodTable,UnionSplitInfo, UnionSplitMethodMatches, VarState,
+    VarTable, WorldRange, WorldView,
     _methods_by_ftype, argextype, argtype_by_index, argtype_tail, argtypes_to_type,
     compute_basic_blocks, get_compileable_sig, hasintersect, has_free_typevars,
     ignorelimited, inlining_enabled, instanceof_tfunc, is_throw_call, isType, isconstType,
