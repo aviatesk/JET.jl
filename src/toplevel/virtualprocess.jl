@@ -73,19 +73,19 @@ These configurations will be active for all the top-level entries explained in t
   Specifies a customized top-level code concretization strategy.
 
   When analyzing a top-level code, JET first splits the entire code into appropriate units
-  of code (i.e. code blocks), and then iterate a virtual top-level code execution process
-  on each code block in order to simulate Julia's sequential top-level code execution.
-  In virtual code execution, JET will selectively interpret "top-level definitions" (like a function definition)
-  just like Julia's top-level code execution, while it tries to avoid executing any other
-  parts of code like function calls and leaves them to succeeding static analysis by
-  abstract interpretation.
+  of code (i.e. "code blocks"), and then iterate a virtual top-level code execution process
+  on each code block in order to simulate Julia's top-level code execution.
+  In the virtual code execution, JET will selectively interpret "top-level definitions"
+  (like a function definition), while it tries to avoid executing any other parts of code
+  including function calls that typically do a main computational task, leaving them to be
+  analyzed by the succeeding abstract interpretation based analysis.
 
-  However, currently, JET doesn't track the "inter-code-block" level code dependencies, and
-  so the selective interpretation of top-level definitions can fail if it needs an access to
-  global variables defined in other code blocks that are not actually interpreted (i.e. "concretized")
-  but just left for abstract interpreation (i.e. "abstracted").
+  However, currently, JET doesn't track "inter-block" level code dependencies, and therefore
+  the selective interpretation of top-level definitions may fail when it needs to use global
+  bindings defined in the other code blocks that have not been selected and actually
+  interpreted (i.e. "concretized") but left for abstract interpretation (i.e. "abstracted").
 
-  For example, the issue happens when your macro accesses to a global variable during its expansion, e.g.:
+  For example, the issue would happen if the expansion of a macro uses a global variable, e.g.:
   > test/fixtures/concretization_patterns.jl
   $(let
       text = read(normpath(@__DIR__, "..", "..", "test", "fixtures", "concretization_patterns.jl"), String)
@@ -94,12 +94,12 @@ These configurations will be active for all the top-level entries explained in t
       join(lines, "\n  ")
   end)
 
-  To circumvent this issue, JET offers the `concretization_patterns::Vector{<:Any}` configuration,
+  To circumvent this issue, JET offers this `concretization_patterns::Vector{<:Any}` configuration,
   which allows us to customize JET's top-level code concretization strategy.
   `concretization_patterns` specifies the _patterns of code_ that should be concretized.
   To put in other word, when JET sees a code that matches any of code patterns specified by
-  an user, JET will try to interpret and concretize the code, regardless of whether JET's
-  code selection logic decides to concretize it or not.
+  this configuration, JET will try to interpret and concretize the code, regardless of
+  whether or not JET's default code selection logic decides to concretize it.
 
   JET uses [MacroTools.jl's expression pattern match](https://fluxml.ai/MacroTools.jl/stable/pattern-matching/),
   and we can specify whatever code pattern expected by `MacroTools.@capture` macro.
@@ -110,14 +110,13 @@ These configurations will be active for all the top-level entries explained in t
   Then `GLOBAL_CODE_STORE` will just be concretized and so any top-level error won't happen
   at the macro expansion.
 
-  Although configuring `concretization_patterns` properly could be really tricky, we can
-  effectively debug JET's top-level code concretization plan using the `toplevel_logger`
-  configuration with the logging level above than `$JET_LOGGER_LEVEL_DEBUG` ("debug") level.
-  With the `toplevel_logger` configuration, we can see:
+  Since configuring `concretization_patterns` properly can be tricky, JET offers a logging
+  system that allows us to debug 's top-level code concretization plan. With the
+  `toplevel_logger` configuration with specifying the logging level to be above than
+  `$JET_LOGGER_LEVEL_DEBUG` ("debug") level, we can see:
   - which code is matched with `concretization_patterns` and forcibly concretized
-  - which code is selected to be concretized or not by JET's code selection logic:
+  - which code is selected to be concretized by JET's default code selection logic:
     where `t`-annotated statements are concretized while `f`-annotated statements are abstracted
-    and left abstract interpretation
   ```julia-repl
   julia> report_file("test/fixtures/concretization_patterns.jl";
                      concretization_patterns = [:(const GLOBAL_CODE_STORE = Dict())],
@@ -169,6 +168,13 @@ These configurations will be active for all the top-level entries explained in t
   ```
 
   Also see: the `toplevel_logger` section below, [`virtual_process`](@ref).
+
+  !!! note
+      [`report_package`](@ref) automatically sets this configuration as
+      ```julia
+      concretization_patterns = [:(x_)]
+      ```
+      meaning that it will concretize all top-level code included in a package being analyzed.
 ---
 - `toplevel_logger::Union{Nothing,IO} = nothing` \\
   If `IO` object is given, it will track JET's toplevel analysis.
