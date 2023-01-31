@@ -339,13 +339,8 @@ function virtual_process(x::Union{AbstractString,Expr},
         context = config.context
     end
 
-    res = _virtual_process!(x,
-                            filename,
-                            analyzer,
-                            config,
-                            context,
-                            VirtualProcessResult(actual2virtual, context),
-                            )
+    res = VirtualProcessResult(actual2virtual, context)
+    _virtual_process!(res, x, filename, analyzer, config, context)
 
     # analyze collected signatures unless critical error happened
     if config.analyze_from_definitions && isempty(res.toplevel_error_reports)
@@ -461,12 +456,12 @@ function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProce
 end
 clearline(io) = print(io, '\r')
 
-function _virtual_process!(s::AbstractString,
+function _virtual_process!(res::VirtualProcessResult,
+                           s::AbstractString,
                            filename::AbstractString,
                            analyzer::AbstractAnalyzer,
                            config::ToplevelConfig,
                            context::Module,
-                           res::VirtualProcessResult,
                            )
     start = time()
 
@@ -485,7 +480,7 @@ function _virtual_process!(s::AbstractString,
     elseif isnothing(toplevelex)
         # just return if there is nothing to analyze
     else
-        res = _virtual_process!(toplevelex, filename, analyzer, config, context, res)
+        _virtual_process!(res, toplevelex, filename, analyzer, config, context)
     end
     pop!(res.files_stack)
 
@@ -497,12 +492,12 @@ function _virtual_process!(s::AbstractString,
     return res
 end
 
-function _virtual_process!(toplevelex::Expr,
+function _virtual_process!(res::VirtualProcessResult,
+                           toplevelex::Expr,
                            filename::AbstractString,
                            analyzer::AbstractAnalyzer,
                            config::ToplevelConfig,
                            context::Module,
-                           res::VirtualProcessResult,
                            force_concretize::Bool = false,
                            )
     @assert isexpr(toplevelex, :toplevel)
@@ -621,7 +616,7 @@ function _virtual_process!(toplevelex::Expr,
 
             newmod = newcontext::Module
             push!(res.defined_modules, newmod)
-            _virtual_process!(newtoplevelex, filename, analyzer, config, newmod, res, force_concretize)
+            _virtual_process!(res, newtoplevelex, filename, analyzer, config, newmod, force_concretize)
 
             continue
         end
@@ -1143,7 +1138,7 @@ function handle_include(interp::ConcreteInterpreter, args)
     end
     isnothing(include_text) && return nothing # typically no file error
 
-    _virtual_process!(include_text::String, include_file, interp.analyzer, interp.config, context, interp.res)
+    _virtual_process!(interp.res, include_text::String, include_file, interp.analyzer, interp.config, context)
 
     # TODO: actually, here we need to try to get the lastly analyzed result of the `_virtual_process!` call above
     return nothing
