@@ -694,14 +694,14 @@ function split_module_path!(m::Module, ret)
 end
 
 # if virtualized, replace self references of `actualmod` with `virtualmod` (as is)
-fix_self_references!(::Nothing, x) = return nothing
-function fix_self_references!((actualmod, virtualmod)::Actual2Virtual, x)
+fix_self_references!(::Nothing, ::CodeInfo) = return nothing
+function fix_self_references!((actualmod, virtualmod)::Actual2Virtual, x::CodeInfo)
     actualmodsym   = Symbol(actualmod)
     virtualmodsyms = split_module_path(virtualmod)
 
     # we can't use `Module` object in module usage expression, so we need to replace it with
     # its symbolic representation
-    function fix_modpath(modpath)
+    function fix_modpath(modpath::Vector{Any})
         ret = Symbol[]
         for s in modpath
             if s === virtualmod # postwalk, so we compare to `virtualmod`
@@ -713,20 +713,33 @@ function fix_self_references!((actualmod, virtualmod)::Actual2Virtual, x)
         return ret
     end
 
-    fix_module_usage(head, modpath) =
+    fix_module_usage(head::Symbol, modpath::Vector{Any}) =
         Expr(head, Expr(:., fix_modpath(modpath)...))
-    fix_module_usage_specific(head, modpath, names) =
-        Expr(head, Expr(:(:), Expr(:., fix_modpath(modpath)...), Expr(:., names...)))
+    fix_module_usage_specific(head::Symbol, modpath::Vector{Any}, name::Symbol) =
+        Expr(head, Expr(:(:), Expr(:., fix_modpath(modpath)...), Expr(:., name)))
+    fix_module_usage_alias(head::Symbol, modpath::Vector{Any}, name::Symbol, alias::Symbol) =
+        Expr(head, Expr(:(:), Expr(:., fix_modpath(modpath)...), Expr(:as, Expr(:., name), alias)))
 
-    function fix_simple_module_usage(usage)
-        return @capture(usage, import modpath__) ? fix_module_usage(:import, modpath) :
-               @capture(usage, using modpath__) ? fix_module_usage(:using, modpath) :
-               @capture(usage, import modpath__: names__) ? fix_module_usage_specific(:import, modpath, names) :
-               @capture(usage, using modpath__: names__) ? fix_module_usage_specific(:using, modpath, names) :
-               usage # :export
+    function fix_simple_module_usage(usage::Expr)
+        if @capture(usage, import modpath__)
+            return fix_module_usage(:import, modpath::Vector{Any})
+        elseif @capture(usage, using modpath__)
+            return fix_module_usage(:using, modpath::Vector{Any})
+        elseif @capture(usage, import modpath__: name_)
+            return fix_module_usage_specific(:import, modpath::Vector{Any}, name::Symbol)
+        elseif @capture(usage, using modpath__: name_)
+            return fix_module_usage_specific(:using, modpath::Vector{Any}, name::Symbol)
+        elseif @capture(usage, import modpath__: name_ as alias_)
+            return fix_module_usage_alias(:import, modpath::Vector{Any}, name::Symbol, alias::Symbol)
+        elseif @capture(usage, using modpath__: name_ as alias_)
+            return fix_module_usage_alias(:using, modpath::Vector{Any}, name::Symbol, alias::Symbol)
+        elseif @capture(usage, export name_)
+            return usage
+        end
+        error(lazy"unexpected module usage found: $usage")
     end
 
-    function fix_module_usage(usage)
+    function fix_module_usage(usage::Expr)
         head = usage.head
         ret = Expr(head)
         for simple in to_simple_module_usages(usage)
@@ -737,7 +750,7 @@ function fix_self_references!((actualmod, virtualmod)::Actual2Virtual, x)
         return ret
     end
 
-    return postwalk_and_transform!(x) do x, scope
+    return postwalk_and_transform!(x) do @nospecialize(x), scope::Vector{Symbol}
         if ismoduleusage(x)
             return fix_module_usage(x)
         elseif x === actualmodsym
@@ -747,32 +760,35 @@ function fix_self_references!((actualmod, virtualmod)::Actual2Virtual, x)
     end
 end
 
-postwalk_and_transform!(f, x, scope = Symbol[]) =
-    walk_and_transform!(x, x->postwalk_and_transform!(f, x, scope), f, scope)
-prewalk_and_transform!(f, x, scope = Symbol[]) =
-    walk_and_transform!(f(x, scope), x->prewalk_and_transform!(f, x, scope), (x,scope)->x, scope)
+function postwalk_and_transform!(f, x, scope = Symbol[])
+    inner(@nospecialize(x)) = postwalk_and_transform!(f, x, scope)
+    return walk_and_transform!(x, inner, f, scope)
+end
+function prewalk_and_transform!(f, x, scope::Vector{Symbol} = Symbol[])
+    inner(@nospecialize(x)) = prewalk_and_transform!(f, x, scope)
+    outer(@nospecialize(x), scope::Vector{Symbol}) = x
+    return walk_and_transform!(f(x, scope), inner, outer, scope)
+end
 
-walk_and_transform!(@nospecialize(x), inner, outer, scope) = outer(x, scope)
-function walk_and_transform!(node::GotoIfNot, inner, outer, scope)
-    push!(scope, :gotoifnot)
-    cond = inner(walk_and_transform!(node.cond, inner, outer, scope))
-    dest = inner(walk_and_transform!(node.dest, inner, outer, scope))
-    pop!(scope)
-    return outer(GotoIfNot(cond, dest), scope)
-end
-function walk_and_transform!(ex::Expr, inner, outer, scope)
-    push!(scope, ex.head)
-    for (i, x) in enumerate(ex.args)
-        ex.args[i] = inner(walk_and_transform!(x, inner, outer, scope))
+function walk_and_transform!(@nospecialize(x), inner, outer, scope::Vector{Symbol})
+    if isa(x, GotoIfNot)
+        push!(scope, :gotoifnot)
+        cond = inner(walk_and_transform!(x.cond, inner, outer, scope))
+        dest = inner(walk_and_transform!(x.dest, inner, outer, scope))
+        x = GotoIfNot(cond, dest)
+        pop!(scope)
+    elseif isa(x, Expr)
+        push!(scope, x.head)
+        for (i, x′) in enumerate(x.args)
+            x.args[i] = inner(walk_and_transform!(x′, inner, outer, scope))
+        end
+        pop!(scope)
+    elseif isa(x, CodeInfo)
+        for (i, x′) in enumerate(x.code)
+            x.code[i] = inner(walk_and_transform!(x′, inner, outer, scope))
+        end
     end
-    pop!(scope)
-    return outer(ex, scope)
-end
-function walk_and_transform!(src::CodeInfo, inner, outer, scope)
-    for (i, x) in enumerate(src.code)
-        src.code[i] = inner(walk_and_transform!(x, inner, outer, scope))
-    end
-    return outer(src, scope)
+    return outer(x, scope)
 end
 
 # wraps an error that might happen because of inappropriate top-level code abstraction
@@ -1038,6 +1054,14 @@ ismoduleusage(@nospecialize(x)) = isexpr(x, (:import, :using, :export))
 
 # assuming `ismoduleusage(x)` holds
 function to_simple_module_usages(x::Expr)
+    @assert ismoduleusage(x)
+    ret = _to_simple_module_usages(x)
+    foreach(ret) do ex::Expr
+        @assert ex.head === x.head && length(ex.args) == 1
+    end
+    return ret
+end
+function _to_simple_module_usages(x::Expr)
     if length(x.args) != 1
         # using A, B, export a, b
         return Expr[Expr(x.head, arg) for arg in x.args]
