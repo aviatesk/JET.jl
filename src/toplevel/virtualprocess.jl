@@ -291,8 +291,7 @@ end
     virtual_process(s::AbstractString,
                     filename::AbstractString,
                     analyzer::AbstractAnalyzer,
-                    config::ToplevelConfig,
-                    ) -> res::VirtualProcessResult
+                    config::ToplevelConfig) -> res::VirtualProcessResult
 
 Simulates Julia's toplevel execution and collects error points, and finally returns $(@doc VirtualProcessResult)
 
@@ -320,8 +319,7 @@ following steps on each code block (`blk`) of `toplevelex`:
 function virtual_process(x::Union{AbstractString,Expr},
                          filename::AbstractString,
                          analyzer::AbstractAnalyzer,
-                         config::ToplevelConfig,
-                         )
+                         config::ToplevelConfig)
     if config.virtualize
         actual  = config.context
 
@@ -461,8 +459,7 @@ function _virtual_process!(res::VirtualProcessResult,
                            filename::AbstractString,
                            analyzer::AbstractAnalyzer,
                            config::ToplevelConfig,
-                           context::Module,
-                           )
+                           context::Module)
     start = time()
 
     with_toplevel_logger(config) do @nospecialize(io)
@@ -498,41 +495,46 @@ function _virtual_process!(res::VirtualProcessResult,
                            analyzer::AbstractAnalyzer,
                            config::ToplevelConfig,
                            context::Module,
-                           force_concretize::Bool = false,
-                           )
+                           force_concretize::Bool = false)
     @assert isexpr(toplevelex, :toplevel)
 
-    local lnn::LineNumberNode = LineNumberNode(0, filename)
+    local lnnref = Ref(LineNumberNode(0, filename))
 
     function err_handler(@nospecialize(err), st)
         report = is_missing_concretization(err) ?
-                 MissingConcretization(err, st, filename, lnn.line) :
-                 ActualErrorWrapped(err, st, filename, lnn.line)
+                 MissingConcretization(err, st, filename, lnnref[].line) :
+                 ActualErrorWrapped(err, st, filename, lnnref[].line)
         push!(res.toplevel_error_reports, report)
         return nothing
     end
 
-    # `scrub_offset = 4` corresponds to `with_err_handling` -> `f` -> `macroexpand` -> kwfunc (`macroexpand`)
-    macroexpand_with_err_handling(mod, x) = with_err_handling(err_handler, #= scrub_offset =# 4) do
-        # XXX we want to non-recursive, sequential partial macro expansion here, which allows
-        # us to collect more fine-grained error reports within macro expansions
-        # but it can lead to invalid macro hygiene escaping because of https://github.com/JuliaLang/julia/issues/20241
-        return macroexpand(mod, x; recursive = true #= but want to use `false` here =#)
-    end
-    # `scrub_offset = 3` corresponds to `with_err_handling` -> `f` -> `eval`
-    eval_with_err_handling(mod, x) = with_err_handling(err_handler, #= scrub_offset =# 3) do
-        return Core.eval(mod, x)
-    end
-    # `scrub_offset = 3` corresponds to `with_err_handling` -> `f` -> `lower`
-    lower_with_err_handling(mod, x) = with_err_handling(err_handler, #= scrub_offset =# 3) do
-        lwr = lower(mod, x)
-        # here we should capture syntax errors found during lowering
-        if isexpr(lwr, :error)
-            msg = first(lwr.args)
-            push!(res.toplevel_error_reports, SyntaxErrorReport(lazy"syntax: $msg", filename, lnn.line))
-            return nothing
+    function macroexpand_with_err_handling(mod::Module, x::Expr)
+        # `scrub_offset = 4` corresponds to `with_err_handling` -> `f` -> `macroexpand` -> kwfunc (`macroexpand`)
+        return with_err_handling(err_handler, #=scrub_offset=#4) do
+            # XXX we want to non-recursive, sequential partial macro expansion here, which allows
+            # us to collect more fine-grained error reports within macro expansions
+            # but it can lead to invalid macro hygiene escaping because of https://github.com/JuliaLang/julia/issues/20241
+            return macroexpand(mod, x; recursive = true #= but want to use `false` here =#)
         end
-        return lwr
+    end
+    function eval_with_err_handling(mod::Module, x::Expr)
+        # `scrub_offset = 3` corresponds to `with_err_handling` -> `f` -> `Core.eval`
+        return with_err_handling(err_handler, #=scrub_offset=#3) do
+            return Core.eval(mod, x)
+        end
+    end
+    function lower_with_err_handling(mod::Module, x::Expr)
+        # `scrub_offset = 3` corresponds to `with_err_handling` -> `f` -> `lower`
+        return with_err_handling(err_handler, #=scrub_offset=#3) do
+            lwr = lower(mod, x)
+            # here we should capture syntax errors found during lowering
+            if isexpr(lwr, :error)
+                msg = first(lwr.args)
+                push!(res.toplevel_error_reports, SyntaxErrorReport(lazy"syntax: $msg", filename, lnnref[].line))
+                return nothing
+            end
+            return lwr
+        end
     end
 
     # transform, and then analyze sequentially
@@ -547,7 +549,7 @@ function _virtual_process!(res::VirtualProcessResult,
 
         # update line info
         if isa(x, LineNumberNode)
-            lnn = x
+            lnnref[] = x
             continue
         end
 
@@ -560,7 +562,7 @@ function _virtual_process!(res::VirtualProcessResult,
             for pat in config.concretization_patterns
                 if @capture(x, $pat)
                     with_toplevel_logger(config; filter=≥(JET_LOGGER_LEVEL_DEBUG)) do @nospecialize(io)
-                        line, file = lnn.line, lnn.file
+                        line, file = lnnref[].line, lnnref[].file
                         x′ = striplines(normalise(x))
                         println(io, "concretization pattern `$pat` matched `$x′` at $file:$line")
                     end
@@ -627,7 +629,7 @@ function _virtual_process!(res::VirtualProcessResult,
             continue
         end
 
-        blk = Expr(:block, lnn, x) # attach current line number info
+        blk = Expr(:block, lnnref[], x) # attach current line number info
         lwr = lower_with_err_handling(context, blk)
 
         isnothing(lwr) && continue # error happened during lowering
@@ -637,14 +639,8 @@ function _virtual_process!(res::VirtualProcessResult,
 
         fix_self_references!(res.actual2virtual, src)
 
-        interp = ConcreteInterpreter(filename,
-                                     lnn,
-                                     eval_with_err_handling,
-                                     context,
-                                     analyzer,
-                                     config,
-                                     res,
-                                     )
+        interp = ConcreteInterpreter(filename, lnnref[], eval_with_err_handling, context,
+                                     analyzer, config, res)
         if force_concretize
             JuliaInterpreter.finish!(interp, Frame(context, src), true)
             continue
@@ -693,70 +689,90 @@ function split_module_path!(m::Module, ret)
     push!(ret, nameof(m))
 end
 
+# using A.B.C
+form_module_usage(head::Symbol, modpath::Vector{Any}) =
+    Expr(head, Expr(:., modpath...))
+# using A.B.C: abc
+form_module_usage_specific(head::Symbol, modpath::Vector{Any}, name::Symbol) =
+    Expr(head, Expr(:(:), Expr(:., modpath...), Expr(:., name)))
+# using A.B.C: abc as abc′
+form_module_usage_alias(head::Symbol, modpath::Vector{Any}, name::Symbol, alias::Symbol) =
+    Expr(head, Expr(:(:), Expr(:., modpath...), Expr(:as, Expr(:., name), alias)))
+
 # if virtualized, replace self references of `actualmod` with `virtualmod` (as is)
-fix_self_references!(::Nothing, ::CodeInfo) = return nothing
-function fix_self_references!((actualmod, virtualmod)::Actual2Virtual, x::CodeInfo)
+fix_self_references!(::Nothing, @nospecialize(x)) = x
+function fix_self_references!((actualmod, virtualmod)::Actual2Virtual, @nospecialize(x))
     actualmodsym   = Symbol(actualmod)
     virtualmodsyms = split_module_path(virtualmod)
 
+    function any_self(modpath::Vector{Any})
+        for x in modpath
+            if x === virtualmod # postwalk, so we compare to `virtualmod`
+                return true
+            end
+        end
+        return false
+    end
+
     # we can't use `Module` object in module usage expression, so we need to replace it with
     # its symbolic representation
-    function fix_modpath(modpath::Vector{Any})
-        ret = Symbol[]
-        for s in modpath
-            if s === virtualmod # postwalk, so we compare to `virtualmod`
+    function fix_self(modpath::Vector{Any})
+        ret = Any[]
+        for x in modpath
+            if x === virtualmod # postwalk, so we compare to `virtualmod`
                 push!(ret, virtualmodsyms...)
             else
-                push!(ret, s)
+                push!(ret, x)
             end
         end
         return ret
     end
 
-    fix_module_usage(head::Symbol, modpath::Vector{Any}) =
-        Expr(head, Expr(:., fix_modpath(modpath)...))
-    fix_module_usage_specific(head::Symbol, modpath::Vector{Any}, name::Symbol) =
-        Expr(head, Expr(:(:), Expr(:., fix_modpath(modpath)...), Expr(:., name)))
-    fix_module_usage_alias(head::Symbol, modpath::Vector{Any}, name::Symbol, alias::Symbol) =
-        Expr(head, Expr(:(:), Expr(:., fix_modpath(modpath)...), Expr(:as, Expr(:., name), alias)))
-
-    function fix_simple_module_usage(usage::Expr)
-        if @capture(usage, import modpath__)
-            return fix_module_usage(:import, modpath::Vector{Any})
-        elseif @capture(usage, using modpath__)
-            return fix_module_usage(:using, modpath::Vector{Any})
-        elseif @capture(usage, import modpath__: name_)
-            return fix_module_usage_specific(:import, modpath::Vector{Any}, name::Symbol)
-        elseif @capture(usage, using modpath__: name_)
-            return fix_module_usage_specific(:using, modpath::Vector{Any}, name::Symbol)
-        elseif @capture(usage, import modpath__: name_ as alias_)
-            return fix_module_usage_alias(:import, modpath::Vector{Any}, name::Symbol, alias::Symbol)
-        elseif @capture(usage, using modpath__: name_ as alias_)
-            return fix_module_usage_alias(:using, modpath::Vector{Any}, name::Symbol, alias::Symbol)
-        elseif @capture(usage, export name_)
+    function fix_self_reference_simple(usage::Expr)
+        if isexpr(usage, :export)
             return usage
+        elseif @capture(usage, import modpath__: name_ as alias_)
+            head = :import
+        elseif @capture(usage, using modpath__: name_ as alias_)
+            head = :using
+        elseif @capture(usage, import modpath__: name_)
+            head = :import
+        elseif @capture(usage, using modpath__: name_)
+            head = :using
+        elseif @capture(usage, import modpath__)
+            head = :import
+        elseif @capture(usage, using modpath__)
+            head = :using
+        else
+            error(lazy"unexpected module usage found: $usage")
         end
-        error(lazy"unexpected module usage found: $usage")
+        modpath = modpath::Vector{Any}
+        any_self(modpath) || return usage
+        if isa(alias, Symbol) && isa(name, Symbol)
+            return form_module_usage_alias(head, fix_self(modpath), name, alias)
+        elseif isa(name, Symbol)
+            return form_module_usage_specific(head, fix_self(modpath), name)
+        end
+        return form_module_usage(head, fix_self(modpath))
     end
 
-    function fix_module_usage(usage::Expr)
-        head = usage.head
-        ret = Expr(head)
+    function fix_self_reference(usage::Expr)
+        ret = Expr(usage.head)
         for simple in to_simple_module_usages(usage)
-            fixed = fix_simple_module_usage(simple)
-            @assert fixed.head === head && length(fixed.args) == 1
+            fixed = fix_self_reference_simple(simple)
+            @assert usage.head === fixed.head === simple.head && length(fixed.args) == 1
             push!(ret.args, first(fixed.args))
         end
         return ret
     end
 
-    return postwalk_and_transform!(x) do @nospecialize(x), scope::Vector{Symbol}
-        if ismoduleusage(x)
-            return fix_module_usage(x)
-        elseif x === actualmodsym
+    return postwalk_and_transform!(x) do @nospecialize(xx), scope::Vector{Symbol}
+        if ismoduleusage(xx)
+            return fix_self_reference(xx)
+        elseif xx === actualmodsym
             return virtualmod
         end
-        return x
+        return xx
     end
 end
 
@@ -779,13 +795,13 @@ function walk_and_transform!(@nospecialize(x), inner, outer, scope::Vector{Symbo
         pop!(scope)
     elseif isa(x, Expr)
         push!(scope, x.head)
-        for (i, x′) in enumerate(x.args)
-            x.args[i] = inner(walk_and_transform!(x′, inner, outer, scope))
+        for i = 1:length(x.args)
+            x.args[i] = inner(walk_and_transform!(x.args[i], inner, outer, scope))
         end
         pop!(scope)
     elseif isa(x, CodeInfo)
-        for (i, x′) in enumerate(x.code)
-            x.code[i] = inner(walk_and_transform!(x′, inner, outer, scope))
+        for i = 1:length(x.code)
+            x.code[i] = inner(walk_and_transform!(x.code[i], inner, outer, scope))
         end
     end
     return outer(x, scope)
@@ -1323,7 +1339,7 @@ function transform_abstract_global_symbols!(analyzer::AbstractAnalyzer, src::Cod
         end
     end
 
-    prewalk_and_transform!(src) do x, scope
+    prewalk_and_transform!(src) do @nospecialize(x), scope::Vector{Symbol}
         if isa(x, Symbol)
             slot = get(abstrct_global_variables, x, nothing)
             isnothing(slot) || return SlotNumber(slot)

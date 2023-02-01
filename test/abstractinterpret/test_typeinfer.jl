@@ -76,8 +76,7 @@ end
 
 @testset "getfield with abstract global variable" begin
     # nested module access will be resolved as a direct call of `getfield`
-    let
-        res = @analyze_toplevel begin
+    let res = @analyze_toplevel begin
             module foo
 
             const bar = sum
@@ -98,8 +97,7 @@ end
     end
 
     # this should work even if the accessed variable is not constant
-    let
-        res = @analyze_toplevel begin
+    let res = @analyze_toplevel begin
             module foo
 
             bar = sum

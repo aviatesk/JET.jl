@@ -77,7 +77,7 @@ include("setup.jl")
         test_call(JET.analyze_frame!, (OptAnalyzerT, InferenceState);
                   target_modules, annotate_types)
         # top-level
-        test_call(JET.virtual_process, (String, String, JETAnalyzerT, JET.ToplevelConfig);
+        test_call(JET.virtual_process, (String, String, JETAnalyzerT, JET.ToplevelConfig{Vector{Expr}});
                   target_modules, annotate_types)
         # entries
         test_call(JET.report_file, (String,);
