@@ -104,18 +104,15 @@ end
 end
 
 @testset "fix self-reference of virtual module" begin
-    let
-        res = @analyze_toplevel begin
+    let res = @analyze_toplevel begin
             const foo = sum
             Main.foo("julia") # `Main.sum` should be resolved as constant
         end
         test_sum_over_string(res)
     end
 
-    let
-        res = @analyze_toplevel begin
-            let
-                Main = "julia" # local `Main` should not be resolved to virtual module
+    let res = @analyze_toplevel begin
+            let Main = "julia" # local `Main` should not be resolved to virtual module
                 sum(Main)
             end
         end
@@ -123,8 +120,7 @@ end
     end
 
     # https://github.com/aviatesk/JET.jl/issues/151
-    let
-        res = @analyze_toplevel begin
+    let res = @analyze_toplevel begin
             struct X end
 
             module A
@@ -135,8 +131,18 @@ end
         @test isempty(res.res.toplevel_error_reports)
     end
 
-    let
-        res = @analyze_toplevel begin
+    let res = @analyze_toplevel begin
+            struct X end
+
+            module A
+            using ..Main: X as X′
+            end
+        end
+
+        @test isempty(res.res.toplevel_error_reports)
+    end
+
+    let res = @analyze_toplevel begin
             module A
             struct X end
             export X
