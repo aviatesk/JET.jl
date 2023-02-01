@@ -142,30 +142,55 @@ end
         @test isempty(res.res.toplevel_error_reports)
     end
 
+    # stress test
     let res = @analyze_toplevel begin
             module A
             struct X end
-            export X
+            struct Y end
+            export X, y
             end
 
-            module B
+            module B1
             import ..Main.A
             println(A.X)
             end
+            module B2
+            using ..Main.A
+            println(A.X)
+            end
 
-            module C
+            module C11
             import ..Main.A: X
             println(X)
             end
-
-            module D
-            using ..Main.A
-            println(X)
+            module C12
+            import ..Main.A: X, Y
+            println(X, Y)
             end
-
-            module E
+            module C21
             using ..Main.A: X
             println(X)
+            end
+            module C22
+            using ..Main.A: X, Y
+            println(X, Y)
+            end
+
+            module D11
+            import ..Main.A: X as x
+            println(x)
+            end
+            module D12
+            import ..Main.A: X as x, Y as y
+            println(x, y)
+            end
+            module D21
+            using ..Main.A: X as x
+            println(x)
+            end
+            module D22
+            using ..Main.A: X as x, Y as y
+            println(x, y)
             end
         end
 
