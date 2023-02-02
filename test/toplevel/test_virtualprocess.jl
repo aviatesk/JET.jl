@@ -2077,7 +2077,7 @@ end
 end
 
 using Pkg
-function test_report_package(test_func, (pkgname, code); isbaremodule=false)
+function test_report_package(test_func, (pkgname, code))
     old = Pkg.project().path
     pkgcode = Base.remove_linenums!(code)
     mktempdir() do tempdir
@@ -2090,7 +2090,7 @@ function test_report_package(test_func, (pkgname, code); isbaremodule=false)
             Pkg.activate(; temp=true, io=devnull)
             Pkg.develop(; path=pkgpath, io=devnull)
 
-            pkgcode = Expr(:module, !isbaremodule, Symbol(pkgname), pkgcode)
+            pkgcode = Expr(:module, true, Symbol(pkgname), pkgcode)
             pkgfile = normpath(pkgpath, "src", "$pkgname.jl")
             write(pkgfile, string(pkgcode))
 
