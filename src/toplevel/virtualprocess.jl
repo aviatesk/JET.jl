@@ -648,7 +648,12 @@ function _virtual_process!(res::VirtualProcessResult,
                         push!(res.toplevel_error_reports, report)
                         return nothing
                     end
-                    Core.eval(mod, :(const $dep = $require_pkg($depid)))
+                    require_ex = :(const $dep = $require_pkg($depid))
+                    # TODO better handling of loading errors that may happen here
+                    require_res = with_err_handling(err_handler, #=scrub_offset=#3) do
+                        return Core.eval(mod, require_ex)
+                    end
+                    isnothing(require_res) && return nothing
                     push!(dependencies, dep)
                 end
                 pushfirst!(modpath, :.)
