@@ -467,6 +467,8 @@ include("abstractinterpret/inferenceerrorreport.jl")
 include("abstractinterpret/abstractanalyzer.jl")
 include("abstractinterpret/typeinfer.jl")
 
+function print_report end
+
 include("toplevel/graph.jl")
 include("toplevel/virtualprocess.jl")
 
@@ -825,10 +827,12 @@ Finally returns the analysis result as [`JETToplevelResult`](@ref).
 Note that this is intended to be used by developers of `AbstractAnalyzer` only.
 General users should use high-level entry points like [`report_file`](@ref).
 """
-function analyze_and_report_file!(analyzer::AbstractAnalyzer, filename::AbstractString; jetconfigs...)
+function analyze_and_report_file!(analyzer::AbstractAnalyzer, filename::AbstractString,
+                                  pkgid::Union{Nothing,Base.PkgId} = nothing;
+                                  jetconfigs...)
     jetconfigs = apply_file_config(jetconfigs, filename)
     entrytext = read(filename, String)
-    return analyze_and_report_text!(analyzer, entrytext, filename; jetconfigs...)
+    return analyze_and_report_text!(analyzer, entrytext, filename, pkgid; jetconfigs...)
 end
 
 function apply_file_config(jetconfigs, filename::AbstractString)
@@ -972,29 +976,41 @@ General users should use high-level entry points like [`report_package`](@ref).
 function analyze_and_report_package!(analyzer::AbstractAnalyzer,
                                      package::Union{AbstractString,Module,Nothing} = nothing;
                                      jetconfigs...)
-    filename = get_package_file(package)
+    (; filename, pkgid) = find_pkg(package)
     jetconfigs = kwargs_dict(jetconfigs)
     set_if_missing!(jetconfigs, :analyze_from_definitions, true)
     set_if_missing!(jetconfigs, :concretization_patterns, [:(x_)]) # concretize all top-level code
-    return analyze_and_report_file!(analyzer, filename; jetconfigs...)
+    return analyze_and_report_file!(analyzer, filename, pkgid; jetconfigs...)
 end
 
-function get_package_file(package::AbstractString)
-    filename = Base.find_package(package)
-    isnothing(filename) && error(lazy"unknown package $package.")
-    return filename
+function find_pkg(pkgname::AbstractString)
+    @static if isdefined(Base, :identify_package_env)
+        pkgenv = Base.identify_package_env(pkgname)
+        isnothing(pkgenv) && error(lazy"Unknown package $pkgname.")
+        pkgid, env = pkgenv
+        filename = Base.locate_package(pkgid, env)
+        isnothing(filename) && error(lazy"Expected $pkgname to have a source file.")
+    else
+        pkgid = Base.identify_package(pkgname)
+        isnothing(pkgid) && error(lazy"Unknown package $pkgname.")
+        filename = Base.locate_package(pkgid)
+        isnothing(filename) && error(lazy"Expected $pkgname to have a source file.")
+    end
+    return (; pkgid, filename)
 end
 
-function get_package_file(package::Module)
-    filename = pathof(package)
-    isnothing(filename) && error("cannot analyze a module defined in the REPL.")
-    return filename
+function find_pkg(pkgmod::Module)
+    filename = pathof(pkgmod)
+    isnothing(filename) && error(lazy"Cannot analyze a module defined in the REPL.")
+    pkgid = Base.identify_package(String(nameof(pkgmod)))
+    isnothing(pkgid) && error(lazy"Expected $pkgmod to exist as a package.")
+    return (; pkgid, filename)
 end
 
-function get_package_file(::Nothing)
+function find_pkg(::Nothing)
     project = Pkg.project()
     project.ispackage || error(lazy"active project at $(project.path) is not a package.")
-    return normpath(dirname(project.path), "src", project.name::String * ".jl")
+    return find_pkg(project.name)
 end
 
 """
@@ -1008,11 +1024,12 @@ Note that this is intended to be used by developers of `AbstractAnalyzer` only.
 General users should use high-level entry points like [`report_text`](@ref).
 """
 function analyze_and_report_text!(analyzer::AbstractAnalyzer, text::AbstractString,
-                                  filename::AbstractString = "top-level";
+                                  filename::AbstractString = "top-level",
+                                  pkgid::Union{Nothing,Base.PkgId} = nothing;
                                   jetconfigs...)
     validate_configs(analyzer, jetconfigs)
     config = ToplevelConfig(; jetconfigs...)
-    res = virtual_process(text, filename, analyzer, config)
+    res = virtual_process(text, filename, pkgid, analyzer, config)
     analyzername = nameof(typeof(analyzer))
     source = lazy"$analyzername: \"$filename\""
     return JETToplevelResult(analyzer, res, source; jetconfigs...)

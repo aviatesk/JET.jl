@@ -206,27 +206,6 @@ function print_reports(io::IO,
     return n
 end
 
-# don't show stacktrace for syntax errors
-print_report(io, report::SyntaxErrorReport) = showerror(io, report.err)
-function print_report(io, report::RecursiveIncludeErrorReport)
-    printstyled(io, "ERROR: "; bold = true, color = ERROR_COLOR)
-    println(io, "recursive `include` call detected:")
-    println(io, " ⚈ duplicated file: ", report.duplicated_file)
-    println(io, " ⚈  included files: ", join(report.files, ' '))
-end
-# TODO: add context information, i.e. during macroexpansion, defining something
-print_report(io, report::ActualErrorWrapped) = showerror(io, report.err, report.st)
-function print_report(io, report::MissingConcretization)
-    printstyled(io, "HINT: "; bold = true, color = HINT_COLOR)
-    printlnstyled(io, """
-    the following error happened mostly because of the missing concretization of global variables,
-    and this could be fixed with the `concretization_patterns` configuration.
-    Check https://aviatesk.github.io/JET.jl/dev/config/#JET.ToplevelConfig for the details.
-    ---"""; color = HINT_COLOR)
-
-    showerror(io, report.err, report.st)
-end
-
 # inference
 # =========
 

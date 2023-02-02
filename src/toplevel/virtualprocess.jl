@@ -21,6 +21,81 @@ function Base.getproperty(er::ToplevelErrorReport, sym::Symbol)
     end
 end
 
+struct SyntaxErrorReport <: ToplevelErrorReport
+    err::ErrorException
+    file::String
+    line::Int
+    SyntaxErrorReport(msg::AbstractString, file, line) = new(ErrorException(msg), file, line)
+end
+# don't show stacktrace for syntax errors
+print_report(io::IO, report::SyntaxErrorReport) = showerror(io, report.err)
+
+# wraps general errors from actual execution
+struct ActualErrorWrapped <: ToplevelErrorReport
+    err
+    st::Base.StackTraces.StackTrace
+    file::String
+    line::Int
+    function ActualErrorWrapped(@nospecialize(err), st, file, line)
+        if isa(err, ErrorException) && startswith(err.msg, "syntax: ")
+            # forward syntax error
+            return SyntaxErrorReport(err.msg, file, line)
+        end
+        return new(err, st, file, line)
+    end
+end
+# TODO: add context information, i.e. during macroexpansion, defining something
+print_report(io::IO, report::ActualErrorWrapped) = showerror(io, report.err, report.st)
+
+struct DependencyError <: ToplevelErrorReport
+    pkg::String
+    dep::String
+    file::String
+    line::Int
+end
+function print_report(io::IO, report::DependencyError)
+    (; pkg, dep) = report
+    # NOTE this message should sync with `Base.require`
+    print(io, """
+    Package $pkg does not have $dep in its dependencies:
+    - You may have a partially installed environment. Try `Pkg.instantiate()`
+      to ensure all packages in the environment are installed.
+    - Or, if you have $pkg checked out for development and have
+      added $dep as a dependency but haven't updated your primary
+      environment's manifest file, try `Pkg.resolve()`.
+    - Otherwise you may need to report an issue with $pkg""")
+end
+
+# wraps an error that might happen because of inappropriate top-level code abstraction
+struct MissingConcretization <: ToplevelErrorReport
+    err
+    st::Base.StackTraces.StackTrace
+    file::String
+    line::Int
+end
+function print_report(io::IO, report::MissingConcretization)
+    printstyled(io, "HINT: "; bold = true, color = HINT_COLOR)
+    printlnstyled(io, """
+    the following error happened mostly because of the missing concretization of global variables,
+    and this could be fixed with the `concretization_patterns` configuration.
+    Check https://aviatesk.github.io/JET.jl/dev/config/#JET.ToplevelConfig for the details.
+    ---"""; color = HINT_COLOR)
+    showerror(io, report.err, report.st)
+end
+
+struct RecursiveIncludeErrorReport <: ToplevelErrorReport
+    duplicated_file::String
+    files::Vector{String}
+    file::String
+    line::Int
+end
+function print_report(io::IO, report::RecursiveIncludeErrorReport)
+    printstyled(io, "ERROR: "; bold = true, color = ERROR_COLOR)
+    println(io, "recursive `include` call detected:")
+    println(io, " ⚈ duplicated file: ", report.duplicated_file)
+    println(io, " ⚈  included files: ", join(report.files, ' '))
+end
+
 """
 Configurations for top-level analysis.
 These configurations will be active for all the top-level entries explained in the
@@ -290,6 +365,7 @@ end
 """
     virtual_process(s::AbstractString,
                     filename::AbstractString,
+                    pkgid::Union{Nothing,Base.PkgId},
                     analyzer::AbstractAnalyzer,
                     config::ToplevelConfig) -> res::VirtualProcessResult
 
@@ -318,6 +394,7 @@ following steps on each code block (`blk`) of `toplevelex`:
 """
 function virtual_process(x::Union{AbstractString,Expr},
                          filename::AbstractString,
+                         pkgid::Union{Nothing,Base.PkgId},
                          analyzer::AbstractAnalyzer,
                          config::ToplevelConfig)
     if config.virtualize
@@ -338,7 +415,7 @@ function virtual_process(x::Union{AbstractString,Expr},
     end
 
     res = VirtualProcessResult(actual2virtual, context)
-    _virtual_process!(res, x, filename, analyzer, config, context)
+    _virtual_process!(res, x, filename, pkgid, analyzer, config, context)
 
     # analyze collected signatures unless critical error happened
     if config.analyze_from_definitions && isempty(res.toplevel_error_reports)
@@ -457,6 +534,7 @@ clearline(io) = print(io, '\r')
 function _virtual_process!(res::VirtualProcessResult,
                            s::AbstractString,
                            filename::AbstractString,
+                           pkgid::Union{Nothing,Base.PkgId},
                            analyzer::AbstractAnalyzer,
                            config::ToplevelConfig,
                            context::Module)
@@ -477,7 +555,7 @@ function _virtual_process!(res::VirtualProcessResult,
     elseif isnothing(toplevelex)
         # just return if there is nothing to analyze
     else
-        _virtual_process!(res, toplevelex, filename, analyzer, config, context)
+        _virtual_process!(res, toplevelex, filename, pkgid, analyzer, config, context)
     end
     pop!(res.files_stack)
 
@@ -492,6 +570,7 @@ end
 function _virtual_process!(res::VirtualProcessResult,
                            toplevelex::Expr,
                            filename::AbstractString,
+                           pkgid::Union{Nothing,Base.PkgId},
                            analyzer::AbstractAnalyzer,
                            config::ToplevelConfig,
                            context::Module,
@@ -501,9 +580,9 @@ function _virtual_process!(res::VirtualProcessResult,
     local lnnref = Ref(LineNumberNode(0, filename))
 
     function err_handler(@nospecialize(err), st)
-        report = is_missing_concretization(err) ?
-                 MissingConcretization(err, st, filename, lnnref[].line) :
-                 ActualErrorWrapped(err, st, filename, lnnref[].line)
+        local report = is_missing_concretization(err) ?
+                       MissingConcretization(err, st, filename, lnnref[].line) :
+                       ActualErrorWrapped(err, st, filename, lnnref[].line)
         push!(res.toplevel_error_reports, report)
         return nothing
     end
@@ -534,6 +613,57 @@ function _virtual_process!(res::VirtualProcessResult,
                 return nothing
             end
             return lwr
+        end
+    end
+    local dependencies = Set{Symbol}()
+    function usemodule_with_err_handling(mod::Module, ex::Expr)
+        # TODO recursive analysis on dependencies?
+        if pkgid !== nothing && !isexpr(ex, :export)
+            modpath = name = alias = nothing
+            if @capture(ex, import modpath__)
+                head = :import
+            elseif @capture(ex, using modpath__)
+                head = :using
+            elseif @capture(ex, import modpath__: name_)
+                head = :import
+            elseif @capture(ex, using modpath__: name_)
+                head = :using
+            elseif @capture(ex, import modpath__: name_ as alias_)
+                head = :import
+            elseif @capture(ex, using modpath__: name_ as alias_)
+                head = :using
+            else
+                error(lazy"unexpected module usage found: $ex")
+            end
+            modpath = modpath::Vector{Any}
+            dep = first(modpath)::Symbol
+            if !(dep === :. || # relative module doens't need to be fixed
+                 dep === :Base || dep === :Core) # modules available by default
+                if dep ∉ dependencies
+                    depstr = String(dep)
+                    depid = Base.identify_package(pkgid, depstr)
+                    if depid === nothing
+                        # IDEA better message in a case of `any(m::Module->dep===nameof(m), res.defined_modules))`?
+                        local report = DependencyError(pkgid.name, depstr, filename, lnnref[].line)
+                        push!(res.toplevel_error_reports, report)
+                        return nothing
+                    end
+                    Core.eval(mod, :(const $dep = $require_pkg($depid)))
+                    push!(dependencies, dep)
+                end
+                pushfirst!(modpath, :.)
+                if isa(alias, Symbol) && isa(name, Symbol)
+                    ex = form_module_usage_alias(head, modpath, name, alias)
+                elseif isa(name, Symbol)
+                    ex = form_module_usage_specific(head, modpath, name)
+                else
+                    ex = form_module_usage(head, modpath)
+                end
+            end
+        end
+        # `scrub_offset = 3` corresponds to `with_err_handling` -> `f` -> `Core.eval`
+        return with_err_handling(err_handler, #=scrub_offset=#3) do
+            return Core.eval(mod, ex)
         end
     end
 
@@ -618,7 +748,7 @@ function _virtual_process!(res::VirtualProcessResult,
 
             newmod = newcontext::Module
             push!(res.defined_modules, newmod)
-            _virtual_process!(res, newtoplevelex, filename, analyzer, config, newmod, force_concretize)
+            _virtual_process!(res, newtoplevelex, filename, pkgid, analyzer, config, newmod, force_concretize)
 
             continue
         end
@@ -639,8 +769,8 @@ function _virtual_process!(res::VirtualProcessResult,
 
         fix_self_references!(res.actual2virtual, src)
 
-        interp = ConcreteInterpreter(filename, lnnref[], eval_with_err_handling, context,
-                                     analyzer, config, res)
+        interp = ConcreteInterpreter(filename, pkgid, lnnref[], usemodule_with_err_handling,
+                                     context, analyzer, config, res)
         if force_concretize
             JuliaInterpreter.finish!(interp, Frame(context, src), true)
             continue
@@ -658,6 +788,12 @@ function _virtual_process!(res::VirtualProcessResult,
     end
 
     return res
+end
+
+function require_pkg(pkg::Base.PkgId)
+    @lock Base.require_lock begin
+        return Base._require_prelocked(pkg)
+    end
 end
 
 struct VExpr
@@ -807,30 +943,6 @@ function walk_and_transform!(@nospecialize(x), inner, outer, scope::Vector{Symbo
     return outer(x, scope)
 end
 
-# wraps an error that might happen because of inappropriate top-level code abstraction
-struct MissingConcretization <: ToplevelErrorReport
-    err
-    st::Base.StackTraces.StackTrace
-    file::String
-    line::Int
-end
-
-# wraps general errors from actual execution
-struct ActualErrorWrapped <: ToplevelErrorReport
-    err
-    st::Base.StackTraces.StackTrace
-    file::String
-    line::Int
-
-    function ActualErrorWrapped(@nospecialize(err), st, file, line)
-        if isa(err, ErrorException) && startswith(err.msg, "syntax: ")
-            # forward syntax error
-            return SyntaxErrorReport(err.msg, file, line)
-        end
-        return new(err, st, file, line)
-    end
-end
-
 """
     ConcreteInterpreter
 
@@ -841,10 +953,11 @@ The trait to inject code into JuliaInterpreter's interpretation process; JET.jl 
 - `JuliaInterpreter.handle_err` to wrap an error happened during interpretation into
   `ActualErrorWrapped`
 """
-struct ConcreteInterpreter{Analyzer<:AbstractAnalyzer,CP}
+struct ConcreteInterpreter{F,Analyzer<:AbstractAnalyzer,CP}
     filename::String
+    pkgid::Union{Nothing,Base.PkgId}
     lnn::LineNumberNode
-    eval_with_err_handling::Function
+    usemodule_with_err_handling::F
     context::Module
     analyzer::Analyzer
     config::ToplevelConfig{CP}
@@ -1025,16 +1138,9 @@ end
 function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node), istoplevel::Bool)
     @assert istoplevel "JET.ConcreteInterpreter can only work for top-level code"
 
-    # TODO:
-    # - support package analysis
-    # - add report pass (report usage of undefined name, etc.)
     if ismoduleusage(node)
-        for ex in to_simple_module_usages(node::Expr)
-            # NOTE: usages of abstract global variables also work here, since they are supposed
-            # to be actually evaluated into `interp.context` (as `AbstractGlobal`
-            # object) at this point
-
-            interp.eval_with_err_handling(interp.context, ex)
+        for ex in to_simple_module_usages(node)
+            interp.usemodule_with_err_handling(interp.context, ex)
         end
         return frame.pc += 1
     end
@@ -1178,17 +1284,10 @@ function handle_include(interp::ConcreteInterpreter, args)
     end
     isnothing(include_text) && return nothing # typically no file error
 
-    _virtual_process!(interp.res, include_text::String, include_file, interp.analyzer, interp.config, context)
+    _virtual_process!(interp.res, include_text::String, include_file, interp.pkgid, interp.analyzer, interp.config, context)
 
     # TODO: actually, here we need to try to get the lastly analyzed result of the `_virtual_process!` call above
     return nothing
-end
-
-struct RecursiveIncludeErrorReport <: ToplevelErrorReport
-    duplicated_file::String
-    files::Vector{String}
-    file::String
-    line::Int
 end
 
 const JET_VIRTUALPROCESS_FILE = Symbol(@__FILE__)
@@ -1278,13 +1377,6 @@ function collect_syntax_errors(s, filename)
         index = nextindex
     end
     return reports
-end
-
-struct SyntaxErrorReport <: ToplevelErrorReport
-    err::ErrorException
-    file::String
-    line::Int
-    SyntaxErrorReport(msg::AbstractString, file, line) = new(ErrorException(msg), file, line)
 end
 
 # a bridge to abstract interpretation

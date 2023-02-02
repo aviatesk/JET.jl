@@ -1,6 +1,5 @@
 @testset "syntax error reports" begin
-    let
-        s = """
+    let s = """
         begin
             c = rand(Bool)
         end
@@ -15,8 +14,7 @@ end
 
 @testset "virtualize module context" begin
     # the context of the original module should be virtualized
-    let
-        actual = gen_virtual_module(@__MODULE__)
+    let actual = gen_virtual_module(@__MODULE__)
         Core.eval(actual, quote
             struct X end
             const Y = nothing
@@ -30,8 +28,7 @@ end
     end
 
     # in the virtualized context, we can define a name that is already defined in the original module
-    let
-        actual = gen_virtual_module(@__MODULE__)
+    let actual = gen_virtual_module(@__MODULE__)
         Core.eval(actual, quote
             struct X end
             const Y = nothing
@@ -47,8 +44,7 @@ end
     end
 
     # end to end
-    let
-        orig = gen_virtual_module(@__MODULE__)
+    let orig = gen_virtual_module(@__MODULE__)
         Core.eval(orig, Expr(:toplevel, (quote
             module Foo
             bar() = return :baz
@@ -68,8 +64,7 @@ end
     end
 
     # don't error if there is undefined export
-    let
-        actual = gen_virtual_module(@__MODULE__)
+    let actual = gen_virtual_module(@__MODULE__)
         Core.eval(actual, :(export undefined))
 
         @test (virtualize_module_context(actual); true)
@@ -200,8 +195,7 @@ end
 
 @testset "fix toplevel global `Symbol`" begin
     # this case otherwise will throw an error in `CC.typ_for_val` in optimization
-    let
-        res = @analyze_toplevel begin
+    let res = @analyze_toplevel begin
             v = '1'
             v = if rand(Bool)
                 rand(Int)
@@ -215,8 +209,7 @@ end
 
     # `c` wrapped in `GotoIfNot` node should be transformed into `GlobalRef(vmod, :c)`,
     # otherwise `NonBooleanCondErrorReport` (and `UncaughtExceptionReport`) will be reported
-    let
-        res = @analyze_toplevel begin
+    let res = @analyze_toplevel begin
             c = false
             if c
                 throw("should be ignored")
@@ -2080,5 +2073,189 @@ end
         end
         r = only(res.res.inference_error_reports)
         @test is_global_undef_var(r, :t)
+    end
+end
+
+using Pkg
+function test_report_package(test_func, (pkgname, code); isbaremodule=false)
+    old = Pkg.project().path
+    mktempdir() do tempdir
+        try
+            pkgpath = normpath(tempdir, pkgname)
+            Pkg.generate(pkgpath; io=devnull)
+            Pkg.activate(pkgpath; io=devnull)
+            Pkg.develop(; path=normpath(FIXTURE_DIR, "PkgAnalysisDep"), io=devnull)
+
+            Pkg.activate(; temp=true, io=devnull)
+            Pkg.develop(; path=pkgpath, io=devnull)
+
+            pkgcode = Expr(:module, !isbaremodule, Symbol(pkgname), code)
+            pkgfile = normpath(pkgpath, "src", "$pkgname.jl")
+            write(pkgfile, string(pkgcode))
+
+            res = report_package(pkgname; toplevel_logger=nothing)
+
+            @eval @testset $pkgname $test_func($res)
+
+            return res
+        catch err
+            rethrow(err)
+        finally
+            Pkg.activate(old; io=devnull)
+        end
+    end
+end
+
+@testset "package dependency" begin
+    test_report_package("UsingCore" => quote
+            using Core: Box
+            makebox() = Core.Box()
+        end) do res
+        @test isempty(res.res.toplevel_error_reports)
+    end
+    test_report_package("ImportBase" => quote
+            import Base: show
+            struct XXX end
+            show(io::IO, ::XXX) = xxx
+        end) do res
+        @test isempty(res.res.toplevel_error_reports)
+        r = only(res.res.inference_error_reports)
+        @test isa(r, UndefVarErrorReport) && r.var.name === :xxx
+    end
+
+    test_report_package("UsingSimple" => quote
+            using PkgAnalysisDep
+            callfunc1() = func1()
+            callfunc3() = func3()
+        end) do res
+        @test isempty(res.res.toplevel_error_reports)
+        r = only(res.res.inference_error_reports)
+        @test isa(r, UndefVarErrorReport) && r.var.name === :func3
+    end
+    test_report_package("UsingSpecific" => quote
+            using PkgAnalysisDep: func1
+            callfunc1() = func1()
+        end) do res
+        @test isempty(res.res.toplevel_error_reports)
+    end
+    test_report_package("UsingAlias" => quote
+            using PkgAnalysisDep: func1 as func
+            callfunc1() = func()
+        end) do res
+        @test isempty(res.res.toplevel_error_reports)
+    end
+    test_report_package("UsingInner" => quote
+            using PkgAnalysisDep.Inner
+            callfunc1() = func1()
+            callfunc3() = func3()
+        end) do res
+        @test isempty(res.res.toplevel_error_reports)
+        r = only(res.res.inference_error_reports)
+        @test isa(r, UndefVarErrorReport) && r.var.name === :func1
+    end
+    test_report_package("UsingBlock" => quote
+            begin
+                using PkgAnalysisDep
+                callfunc1() = func1()
+                callfunc3() = func3()
+            end
+        end) do res
+        @test isempty(res.res.toplevel_error_reports)
+        r = only(res.res.inference_error_reports)
+        @test isa(r, UndefVarErrorReport) && r.var.name === :func3
+    end
+    test_report_package("UsingBlock" => quote
+            global truecond::Bool = true
+            if truecond
+                using PkgAnalysisDep
+                callfunc1() = func1()
+                callfunc3() = func3()
+            end
+        end) do res
+        @test isempty(res.res.toplevel_error_reports)
+        r = only(res.res.inference_error_reports)
+        @test isa(r, UndefVarErrorReport) && r.var.name === :func3
+    end
+
+    test_report_package("ImportSimple" => quote
+            import PkgAnalysisDep
+            callfunc1() = PkgAnalysisDep.func1()
+        end) do res
+        @test isempty(res.res.toplevel_error_reports)
+    end
+    test_report_package("ImportSpecific" => quote
+            import PkgAnalysisDep: func1
+            callfunc1() = func1()
+        end) do res
+        @test isempty(res.res.toplevel_error_reports)
+    end
+    test_report_package("ImportAlias" => quote
+            import PkgAnalysisDep: func1 as func
+            callfunc1() = func()
+        end) do res
+        @test isempty(res.res.toplevel_error_reports)
+    end
+    test_report_package("ImportInner" => quote
+            import PkgAnalysisDep.Inner
+            callfunc1() = Inner.func1()
+            callfunc3() = Inner.func3()
+        end) do res
+        @test isempty(res.res.toplevel_error_reports)
+        r = only(res.res.inference_error_reports)
+        @test isa(r, UndefVarErrorReport) && r.var.name === :func1
+    end
+    test_report_package("ImportBlock" => quote
+            begin
+                import PkgAnalysisDep
+                callfunc1() = PkgAnalysisDep.func1()
+            end
+        end) do res
+        @test isempty(res.res.toplevel_error_reports)
+    end
+    test_report_package("ImportBlock" => quote
+            global truecond::Bool = true
+            if truecond
+                import PkgAnalysisDep
+                callfunc1() = PkgAnalysisDep.func1()
+            end
+        end) do res
+        @test isempty(res.res.toplevel_error_reports)
+    end
+
+    test_report_package("RelativeDependency" => quote
+            import PkgAnalysisDep
+            using .PkgAnalysisDep: func2
+            callfunc1() = func1()
+            callfunc2() = func2()
+        end) do res
+        @test isempty(res.res.toplevel_error_reports)
+        r = only(res.res.inference_error_reports)
+        @test isa(r, UndefVarErrorReport) && r.var.name === :func1
+    end
+    test_report_package("RelativeInner" => quote
+            module Inner
+            struct XXX end
+            export XXX
+            end
+            using .Inner
+            Base.show(io::IO, ::XXX) = xxx
+        end) do res
+        @test isempty(res.res.toplevel_error_reports)
+        r = only(res.res.inference_error_reports)
+        @test isa(r, UndefVarErrorReport) && r.var.name === :xxx
+    end
+    test_report_package("BadRelativeInner" => quote
+            module Inner end
+            using Inner # should be `using .Inner`
+        end) do res
+        r = only(res.res.toplevel_error_reports)
+        @test isa(r, DependencyError) && r.pkg == "BadRelativeInner" && r.dep == "Inner"
+    end
+
+    test_report_package("UninstalledDependency" => quote
+            using UninstalledDep
+        end) do res
+        r = only(res.res.toplevel_error_reports)
+        @test isa(r, DependencyError) && r.pkg == "UninstalledDependency" && r.dep == "UninstalledDep"
     end
 end
