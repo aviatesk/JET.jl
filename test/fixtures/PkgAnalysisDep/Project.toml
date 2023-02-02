@@ -1,0 +1,4 @@
+name = "PkgAnalysisDep"
+uuid = "a5618a33-c44a-4f23-8dc7-57c575df3537"
+authors = ["Shuhei Kadowaki <aviatesk@gmail.com>"]
+version = "0.1.0"

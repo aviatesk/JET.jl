@@ -6,32 +6,32 @@
     test_call(getproperty, (Any,Symbol))
 end
 
-@testset "`get_package_file`" begin
+@testset "`find_pkg`" begin
     using Pkg, JET
-    using JET: get_package_file
+    using JET: find_pkg
 
-    target = pathof(JET)
+    pkgid = Base.PkgId(JET)
+    filename = pathof(JET)
+    target = (; pkgid, filename)
 
-    @test get_package_file("JET") == target
-    @test_throws ErrorException get_package_file("unknown")
+    @test find_pkg("JET") == target
+    @test_throws ErrorException find_pkg("unknown")
 
-    @test get_package_file(JET) == target
-    @test_throws ErrorException get_package_file(Module())
+    @test find_pkg(JET) == target
+    @test_throws ErrorException find_pkg(Module())
 
     # suppress logs from Pkg.jl if possible
-    pkg_activate(args...; io = IOBuffer(), kwargs...) =
-        Pkg.activate(args...; io, kwargs...)
     old = Pkg.project().path
     try
-        pkg_activate(pkgdir(JET))
-        @test get_package_file(nothing) == target
+        Pkg.activate(pkgdir(JET); io=devnull)
+        @test find_pkg(nothing) == target
 
-        pkg_activate(; temp = true)
-        @test_throws ErrorException get_package_file(nothing)
+        Pkg.activate(; temp=true, io=devnull)
+        @test_throws ErrorException find_pkg(nothing)
     catch err
         rethrow(err)
     finally
-        pkg_activate(old)
+        Pkg.activate(old; io=devnull)
     end
 end
 
