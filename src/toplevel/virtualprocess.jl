@@ -488,7 +488,7 @@ gen_virtual_module(root = Main; name = VIRTUAL_MODULE_NAME) =
 # if code generation has failed given the entry method signature, the overload of
 # `InferenceState(..., ::AbstractAnalyzer)` will collect `GeneratorErrorReport`
 function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProcessResult, config::ToplevelConfig)
-    succeeded = 0
+    succeeded = Ref(0)
     start = time()
     n = length(res.toplevel_signatures)
     state = AnalyzerState(analyzer)
@@ -508,9 +508,9 @@ function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProce
             world=new_world,
             raise=false)
         if match !== nothing
-            succeeded += 1
+            succeeded[] += 1
             with_toplevel_logger(config; pre=clearline) do @nospecialize(io)
-                (i == n ? println : print)(io, "analyzing from top-level definitions ($succeeded/$n)")
+                (i == n ? println : print)(io, "analyzing from top-level definitions ($(succeeded[])/$n)")
             end
             analyzer, result = analyze_method_signature!(analyzer,
                 match.method, match.spec_types, match.sparams)
@@ -525,7 +525,7 @@ function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProce
     state.inf_params, state.world = inf_params, world
     with_toplevel_logger(config) do @nospecialize(io)
         sec = round(time() - start; digits = 3)
-        println(io, "analyzed $succeeded top-level definitions (took $sec sec)")
+        println(io, "analyzed $(succeeded[]) top-level definitions (took $sec sec)")
     end
     return nothing
 end
@@ -555,6 +555,7 @@ function _virtual_process!(res::VirtualProcessResult,
     elseif isnothing(toplevelex)
         # just return if there is nothing to analyze
     else
+        @assert isexpr(toplevelex, :toplevel)
         _virtual_process!(res, toplevelex, filename, pkgid, analyzer, config, context)
     end
     pop!(res.files_stack)
@@ -575,8 +576,6 @@ function _virtual_process!(res::VirtualProcessResult,
                            config::ToplevelConfig,
                            context::Module,
                            force_concretize::Bool = false)
-    @assert isexpr(toplevelex, :toplevel)
-
     local lnnref = Ref(LineNumberNode(0, filename))
 
     function err_handler(@nospecialize(err), st)
@@ -872,17 +871,19 @@ function fix_self_references!((actualmod, virtualmod)::Actual2Virtual, @nospecia
     function fix_self_reference_simple(usage::Expr)
         if isexpr(usage, :export)
             return usage
-        elseif @capture(usage, import modpath__: name_ as alias_)
+        end
+        modpath = name = alias = nothing
+        if @capture(usage, import modpath__)
             head = :import
-        elseif @capture(usage, using modpath__: name_ as alias_)
+        elseif @capture(usage, using modpath__)
             head = :using
         elseif @capture(usage, import modpath__: name_)
             head = :import
         elseif @capture(usage, using modpath__: name_)
             head = :using
-        elseif @capture(usage, import modpath__)
+        elseif @capture(usage, import modpath__: name_ as alias_)
             head = :import
-        elseif @capture(usage, using modpath__)
+        elseif @capture(usage, using modpath__: name_ as alias_)
             head = :using
         else
             error(lazy"unexpected module usage found: $usage")
@@ -1243,7 +1244,7 @@ function handle_include(interp::ConcreteInterpreter, args)
 
     function handle_actual_method_error!(args)
         err = MethodError(args[1], args[2:end])
-        report = ActualErrorWrapped(err, [], filename, lnn.line)
+        local report = ActualErrorWrapped(err, [], filename, lnn.line)
         push!(res.toplevel_error_reports, report)
     end
 
@@ -1265,7 +1266,7 @@ function handle_include(interp::ConcreteInterpreter, args)
         handle_actual_method_error!(args)
         return nothing
     end
-    if !isa(fname, AbstractString)
+    if !isa(fname, String)
         handle_actual_method_error!(args)
         return nothing
     end
@@ -1273,13 +1274,13 @@ function handle_include(interp::ConcreteInterpreter, args)
     include_file = normpath(dirname(filename), fname)
     # handle recursive `include`s
     if include_file in res.files_stack
-        report = RecursiveIncludeErrorReport(include_file, copy(res.files_stack), filename, lnn.line)
+        local report = RecursiveIncludeErrorReport(include_file, copy(res.files_stack), filename, lnn.line)
         push!(res.toplevel_error_reports, report)
         return nothing
     end
 
     function read_err_handler(@nospecialize(err), st)
-        report = ActualErrorWrapped(err, st, filename, lnn.line)
+        local report = ActualErrorWrapped(err, st, filename, lnn.line)
         push!(res.toplevel_error_reports, report)
         return nothing
     end
