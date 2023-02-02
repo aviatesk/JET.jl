@@ -442,7 +442,7 @@ If you're interested in how JET selects "top-level definitions", please see [`JE
 
 ```@docs
 JET.report_file
-JET.report_and_watch_file
+JET.watch_file
 JET.report_package
 JET.report_text
 ```

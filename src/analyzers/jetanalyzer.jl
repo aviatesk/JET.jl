@@ -1644,7 +1644,7 @@ function report_text(args...; jetconfigs...)
 end
 
 """
-    report_and_watch_file(file::AbstractString; jetconfigs...)
+    watch_file(file::AbstractString; jetconfigs...)
 
 Watches `file` and keeps re-triggering analysis with [`report_file`](@ref) on code update.
 JET will try to analyze all the `include`d files reachable from `file`, and it will
@@ -1660,4 +1660,4 @@ See [watch configurations](@ref watch-config) for more details.
 
 See also [`report_file`](@ref).
 """
-report_and_watch_file(args...; jetconfigs...) = watch_file_with_func(report_file, args...; jetconfigs...)
+watch_file(args...; jetconfigs...) = watch_file_with_func(report_file, args...; jetconfigs...)

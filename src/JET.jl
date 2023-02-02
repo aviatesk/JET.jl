@@ -6,7 +6,7 @@ module JET
 export
     # jetanalyzer
     @report_call, report_call, @test_call, test_call,
-    report_file, report_package, report_text, report_and_watch_file,
+    report_file, report_package, report_text, watch_file,
     # optanalyzer
     @report_opt, report_opt, @test_opt, test_opt,
     # configurations
@@ -18,6 +18,8 @@ let README = normpath(dirname(@__DIR__), "README.md")
     @doc s JET
     include_dependency(README)
 end
+
+@deprecate report_and_watch_file watch_file # to be removed by v0.8
 
 Base.Experimental.@optlevel 1
 
@@ -882,7 +884,7 @@ configuration file support.
 This means you can use `$CONFIG_FILE_NAME` configuration file to specify any of configurations
 explained above and share that with others.
 
-When [`report_file`](@ref) or [`report_and_watch_file`](@ref) is called, it will look for
+When [`report_file`](@ref) or [`watch_file`](@ref) is called, it will look for
 `$CONFIG_FILE_NAME` in the directory of the given file, and search _up_ the file tree until
 a JET configuration file is (or isn't) found.
 When found, the configurations specified in the file will be applied.
@@ -1037,7 +1039,7 @@ end
 
 """
 Configurations for "watch" mode.
-The configurations will only be active when used with [`report_and_watch_file`](@ref).
+The configurations will only be active when used with [`watch_file`](@ref).
 
 ---
 - `revise_all::Bool = true` \\
@@ -1059,7 +1061,7 @@ The configurations will only be active when used with [`report_and_watch_file`](
       e.g. editing functions defined in `Base`:
       ```julia-repl
       # re-performe analysis when you make a change to `Base`
-      julia> report_and_watch_file(yourfile; revise_modules = [Base])
+      julia> watch_file(yourfile; revise_modules = [Base])
       ```
 ---
 """

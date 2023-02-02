@@ -142,7 +142,7 @@ These configurations will be active for all the top-level entries explained in t
       concrete call sites will produce more accurate results than analysis entered from
       (maybe not concrete-typed) method signatures.
 
-  Also see: [`report_file`](@ref), [`report_and_watch_file`](@ref)
+  Also see: [`report_file`](@ref), [`watch_file`](@ref)
 ---
 - `concretization_patterns::Vector{<:Any} = Expr[]` \\
   Specifies a customized top-level code concretization strategy.
