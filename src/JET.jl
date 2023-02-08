@@ -1315,7 +1315,7 @@ end
 
 const GENERAL_CONFIGURATIONS = Set{Symbol}((
     # general
-    :report_config, :target_modules, :ignored_modules,
+    :report_config, :target_modules, :ignored_modules, :target_defined_modules,
     # toplevel
     :context, :analyze_from_definitions, :concretization_patterns, :virtualize, :toplevel_logger,
     # ui
