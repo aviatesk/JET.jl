@@ -281,7 +281,7 @@ function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState)
             (src isa OptimizationState)) # the compiler optimized it, analyze it
             ReportPass(analyzer)(RuntimeDispatchReport, analyzer, caller, src)
         elseif (@static JET_DEV_MODE ? true : false)
-            if isa(src, CC.ConstAPI)
+            if (@static VERSION < v"1.10.0-DEV.551" && true) && isa(src, CC.ConstAPI)
                 # the optimization was very successful (i.e. fully constant folded),
                 # nothing to report
             elseif src === nothing # the optimization didn't happen

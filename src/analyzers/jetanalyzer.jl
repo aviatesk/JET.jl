@@ -832,7 +832,7 @@ end
     report_undef_static_parameter!(analyzer, sv, n)
 function report_undef_static_parameter!(analyzer::JETAnalyzer, sv::InferenceState, n::Int)
     if 1 ≤ n ≤ length(sv.sptypes)
-        if sv.sptypes[n] === Any
+        if (@static VERSION ≥ v"1.10.0-DEV.556" ? sv.sptypes[n].typ : sv.sptypes[n]) === Any
             tv = sv.linfo.sparam_vals[n]
             add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, tv))
             return true
