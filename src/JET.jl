@@ -1376,20 +1376,24 @@ reexport_as_api!(JETInterface,
 include("analyzers/jetanalyzer.jl")
 include("analyzers/optanalyzer.jl")
 
+using SnoopPrecompile
 @static if (!JET_DEV_MODE && # skip long precompilations in development
             (VERSION ≥ v"1.10.0-DEV.204" || VERSION ≥ v"1.9.0-beta3"))
-    # XXX We should not analyze methods that may be called at runtime during precompilation
-    #     since `CodeInstance`s created by JET are cached by the pkgimage but it contains
-    #     arbitrary data structure that is specific to JET and thus can not be handled by
-    #     the runtime system (see https://github.com/JuliaLang/julia/issues/48453).
-    #     Thus we target temporary annonymous methods here, in order to create caches of
-    #     code that is necessary for performing JET's analyses themselves.
-    let ___precompile_target___(x) = ___precompile_target___(),
+    @precompile_setup let
+        # XXX We should not analyze methods that may be called at runtime during precompilation
+        #     since `CodeInstance`s created by JET are cached by the pkgimage but it contains
+        #     arbitrary data structure that is specific to JET and thus can not be handled by
+        #     the runtime system (see https://github.com/JuliaLang/julia/issues/48453).
+        #     Thus we target temporary annonymous methods here, in order to create caches of
+        #     code that is necessary for performing JET's analyses themselves.
+        ___precompile_target___(x) = ___precompile_target___()
         ___precompile_target___(x, y) = ___precompile_target___(x)
-        result = @report_call annotate_types=true ___precompile_target___(0, nothing)
-        show(IOContext(devnull, :color=>true), result)
-        result = @report_opt annotate_types=true ___precompile_target___(0, nothing)
-        show(IOContext(devnull, :color=>true), result)
+        @precompile_all_calls let
+            result = @report_call annotate_types=true ___precompile_target___(0, nothing)
+            show(IOContext(devnull, :color=>true), result)
+            result = @report_opt annotate_types=true ___precompile_target___(0, nothing)
+            show(IOContext(devnull, :color=>true), result)
+        end
     end
 end
 
