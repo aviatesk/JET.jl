@@ -296,7 +296,11 @@ function handle_sig_static_parameter!(sig::Vector{Any}, s::StateAtPC, expr::Expr
     i = first(expr.args)::Int
     sv = first(s)
     name = sparam_name((sv.linfo.def::Method).sig::UnionAll, i)
-    typ = widenconst(sv.sptypes[i])
+    @static if VERSION ≥ v"1.10.0-DEV.556"
+        typ = widenconst(sv.sptypes[i].typ)
+    else
+        typ = widenconst(sv.sptypes[i])
+    end
     anypush!(sig, String(name), typ)
     return sig
 end

@@ -1214,8 +1214,7 @@ end
         # TODO add test for `eval_with_err_handling` and `lower_with_err_handling`
 
         # scrub all the internal frame when errors happens in `maybe_evaluate_builtin`
-        let
-            res = @analyze_toplevel begin
+        let res = @analyze_toplevel begin
                 struct A
                     fld::UndefinedType
                 end
@@ -1385,10 +1384,9 @@ end
             """
             :(foo)
         end
-        let r = only(res.res.inference_error_reports)
-            r isa UndefVarErrorReport &&
-            r.var isa GlobalRef && r.var.name === :foo
-        end
+        r = only(res.res.inference_error_reports)
+        @test r isa UndefVarErrorReport
+        @test r.var isa GlobalRef && r.var.name === :foo
     end
 end
 
