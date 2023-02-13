@@ -18,6 +18,7 @@ JuliaInterpreter = "0.9"
 LoweredCodeUtils = "2.2"
 MacroTools = "0.5.6"
 Revise = "3.3"
+SnoopPrecompile = "1"
 julia = "1.8.1"
 
 [extras]
