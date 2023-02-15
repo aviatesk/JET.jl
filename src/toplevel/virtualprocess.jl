@@ -1172,7 +1172,7 @@ end
 # form a method signature from the first and second parameters of lowered `:method` expression
 function form_method_signature(atype_params::SimpleVector, sparams::SimpleVector)
     atype = Tuple{atype_params...}
-    for i = 1:length(sparams)
+    for i = length(sparams):-1:1
         atype = UnionAll(sparams[i]::TypeVar, atype)
     end
     return atype
@@ -1308,6 +1308,12 @@ function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame, err)
     bt = catch_backtrace()
     st = stacktrace(bt)
 
+    # if the last error is from this file, it's likely to be a serious error of JET
+    lastframe = last(st)
+    if lastframe.file === JET_VIRTUALPROCESS_FILE && lastframe.func === :evaluate_call_recurse!
+        rethrow(err)
+    end
+
     # scrub the original stacktrace so that it only contains frames from user code
     i = 0
     for (j, frame) in enumerate(st)
@@ -1326,8 +1332,7 @@ function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame, err)
 
         # other general errors may happen at `collect_args`, etc.
         # we don't show any stacktrace for those errors (by keeping the original `i = 0`)
-        # since they are hopefully enough self-explanatory (XXX is it really so ?) and even
-        # Julia's base error handler only shows something like `[1] top-level scope` in these cases
+        # since they are hopefully self-explanatory
         continue
     end
     st = st[1:i]
@@ -1340,9 +1345,9 @@ function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame, err)
     return nothing # stop further interpretation
 end
 
-function with_err_handling(f, err_handler, scrub_offset)
-    return try
-        f()
+function with_err_handling(f, err_handler, scrub_offset::Int)
+    try
+        return f()
     catch err
         bt = catch_backtrace()
         st = stacktrace(bt)
@@ -1354,7 +1359,7 @@ function with_err_handling(f, err_handler, scrub_offset)
         @assert i !== nothing
         st = st[1:(i - scrub_offset)]
 
-        err_handler(err, st)
+        return err_handler(err, st)
     end
 end
 

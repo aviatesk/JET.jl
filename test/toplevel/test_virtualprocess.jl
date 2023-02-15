@@ -1564,6 +1564,21 @@ end
     @test any(res.res.toplevel_signatures) do sig
         sig <: Tuple{typeof(vmod.qux),Integer} # `Tuple{typeof(vmod.qux),TypeVar}`
     end
+
+    vmod, res = @analyze_toplevel2 analyze_from_definitions=true begin
+        # borrowed from LinearAlgebra's definition
+        struct Diagonal{T,V<:AbstractVector{T}} <: AbstractMatrix{T}
+            diag::V
+        end
+        function issue474(out::Vector{Diagonal{T, V}}, A::Diagonal{T, V}, k::Integer;
+                          caches = nothing) where {T <: Number, V <: AbstractVector{T}}
+            nothing
+        end
+    end
+    @test !isempty(res.res.toplevel_signatures)
+    @test all(res.res.toplevel_signatures) do @nospecialize sig
+        !Base.has_free_typevars(sig)
+    end
 end
 
 @testset "`analyze_from_definitions`" begin
