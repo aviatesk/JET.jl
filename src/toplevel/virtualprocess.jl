@@ -1458,7 +1458,7 @@ end
 
 # resolve toplevel symbols (and other expressions like `:foreigncall`)
 # so that the returned `CodeInfo` is eligible for abstractintepret and optimization
-# TODO `jl_resolve_globals_in_ir` can throw, and we want to bypass it to `ToplevelErrorReport`
+# TODO `jl_resolve_globals_in_ir` may throw, and we want to redirect it to `ToplevelErrorReport`
 function resolve_toplevel_symbols!(mod::Module, src::CodeInfo)
     newsrc = copy(src)
     @ccall jl_resolve_globals_in_ir(
