@@ -1172,7 +1172,7 @@ end
 # form a method signature from the first and second parameters of lowered `:method` expression
 function form_method_signature(atype_params::SimpleVector, sparams::SimpleVector)
     atype = Tuple{atype_params...}
-    for i = 1:length(sparams)
+    for i = length(sparams):-1:1
         atype = UnionAll(sparams[i]::TypeVar, atype)
     end
     return atype
