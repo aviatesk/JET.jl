@@ -679,7 +679,7 @@ function CC.abstract_eval_special_value(analyzer::AbstractAnalyzer, @nospecializ
     istoplevel = JET.istoplevel(sv)
 
     if istoplevel
-        if isa(e, Slot) && is_global_slot(analyzer, e)
+        if isa(e, SlotNumber) && is_global_slot(analyzer, e)
             if get_slottype((sv, get_currpc(sv)), e) === Bottom
                 # if this abstract global variable is not initialized, form the global
                 # reference and abstract intepret it; we may have abstract interpreted this
@@ -822,7 +822,7 @@ function CC.finish(me::InferenceState, analyzer::AbstractAnalyzer)
         for (pc, stmt) in enumerate(stmts)
             if isexpr(stmt, :(=))
                 lhs = first(stmt.args)
-                if isa(lhs, Slot)
+                if isa(lhs, SlotNumber)
                     slot = slot_id(lhs)
                     if is_global_slot(analyzer, slot)
                         isnd = is_assignment_nondeterministic(cfg, pc)
@@ -852,8 +852,8 @@ function CC.finish(me::InferenceState, analyzer::AbstractAnalyzer)
     return ret
 end
 
-is_global_slot(analyzer::AbstractAnalyzer, slot::Int)   = slot in keys(get_global_slots(analyzer))
-is_global_slot(analyzer::AbstractAnalyzer, slot::Slot)  = is_global_slot(analyzer, slot_id(slot))
+is_global_slot(analyzer::AbstractAnalyzer, slot::Int) = slot in keys(get_global_slots(analyzer))
+is_global_slot(analyzer::AbstractAnalyzer, slot::SlotNumber) = is_global_slot(analyzer, slot_id(slot))
 is_global_slot(analyzer::AbstractAnalyzer, sym::Symbol) = sym in values(get_global_slots(analyzer))
 
 # simple cfg analysis to check if the assignment at `pc` will happen non-deterministically
@@ -892,7 +892,7 @@ function collect_slottypes(sv::InferenceState)
         # find all reachable assignments to locals
         if isa(state, VarTable) && isexpr(stmt, :(=))
             lhs = first(stmt.args)
-            if isa(lhs, Slot)
+            if isa(lhs, SlotNumber)
                 vt = ssavaluetypes[i] # don't widen const
                 @assert vt !== NOT_FOUND "active slot in unreached region"
                 if vt !== Bottom
@@ -1051,8 +1051,8 @@ function is_constant_declared(name::Symbol, sv::InferenceState)
     return any(sv.src.code) do @nospecialize(x)
         if isexpr(x, :const)
             arg = first(x.args)
-            # `transform_abstract_global_symbols!` replaces all the global symbols in this toplevel frame with `Slot`s
-            if isa(arg, Slot)
+            # `transform_abstract_global_symbols!` replaces all the global symbols in this toplevel frame with `SlotNumber`s
+            if isa(arg, SlotNumber)
                 return get_slotname(sv, arg) === name
             end
         end
