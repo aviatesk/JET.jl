@@ -68,7 +68,7 @@ import Test:
 import Core:
     Argument, Builtin, CodeInfo, CodeInstance, Const, GlobalRef, GotoIfNot, GotoNode,
     IntrinsicFunction, Intrinsics, LineInfoNode, MethodInstance, MethodMatch, MethodTable,
-    ReturnNode, SSAValue, SimpleVector, Slot, SlotNumber, svec
+    ReturnNode, SSAValue, SimpleVector, SlotNumber, svec
 
 import .CC:
     AbstractInterpreter, ArgInfo, BasicBlock, Bottom, CFG, CachedMethodTable, CallMeta,
