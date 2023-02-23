@@ -98,7 +98,7 @@ end
 
 @jetreport struct OptimizationFailureReport <: InferenceErrorReport end
 function JETInterface.print_report_message(io::IO, ::OptimizationFailureReport)
-    print(io, "failed to optimize")
+    print(io, "failed to optimize due to recursion")
 end
 function (::DispatchAnalysisPass)(::Type{OptimizationFailureReport}, analyzer::DispatchAnalyzer, result::CC.InferenceResult)
     add_new_report!(analyzer, result, OptimizationFailureReport(result.linfo))

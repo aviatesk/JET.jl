@@ -298,7 +298,7 @@ end
 # report optimization failure due to recursive calls, etc.
 @jetreport struct OptimizationFailureReport <: InferenceErrorReport end
 function print_report_message(io::IO, ::OptimizationFailureReport)
-    print(io, "failed to optimize")
+    print(io, "failed to optimize due to recursion")
 end
 function (::OptAnalysisPass)(::Type{OptimizationFailureReport}, analyzer::OptAnalyzer, caller::InferenceResult)
     if caller.src === nothing # the optimization didn't happen
