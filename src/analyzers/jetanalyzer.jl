@@ -214,7 +214,7 @@ end
 With this overload, `abstract_call_gf_by_type(analyzer::JETAnalyzer, ...)` doesn't bail
 out inference even after the current return type grows up to `Any` and collects as much
 error points as possible.
-Of course this slows down inference performance, but hoopefully it stays to be "practical"
+Of course this slows down inference performance, but hopefully it stays to be "practical"
 speed since the number of matching methods are limited beforehand.
 """
 CC.bail_out_call(analyzer::JETAnalyzer, @nospecialize(t), sv::InferenceState) = false
