@@ -211,13 +211,16 @@ end
 @doc """
     bail_out_call(analyzer::JETAnalyzer, ...)
 
-With this overload, `abstract_call_gf_by_type(analyzer::JETAnalyzer, ...)` doesn't bail
-out inference even after the current return type grows up to `Any` and collects as much
-error points as possible.
-Of course this slows down inference performance, but hopefully it stays to be "practical"
-speed since the number of matching methods are limited beforehand.
+This overload makes call inference performed by `JETAnalyzer` not bail out even when
+inferred return type grows up to `Any` to collect as much error reports as possible.
+That potentially slows down inference performance, but it would stay to be practical
+given that the number of matching methods are limited beforehand.
 """
-CC.bail_out_call(analyzer::JETAnalyzer, @nospecialize(t), sv::InferenceState) = false
+@static if VERSION ≥ v"1.10.0-DEV.679"
+    CC.bail_out_call(::JETAnalyzer, ::CC.InferenceLoopState, ::InferenceState) = false
+else
+    CC.bail_out_call(::JETAnalyzer, @nospecialize(t), ::InferenceState) = false
+end
 
 @doc """
     add_call_backedges!(analyzer::JETAnalyzer, ...)
