@@ -342,8 +342,13 @@ function handle_sig!(sig::Vector{Any}, s::StateAtPC, slot::SlotNumber)
         repr = String(name)
     end
     # we can use per-program counter type after inference
-    typ = safewidenconst((sv isa InferenceState && sv.inferred) ?
-        get_slottype(sv, slot) : get_slottype(s, slot))
+    @static if VERSION ≥ v"1.10.0-DEV.750"
+        typ = safewidenconst((sv isa InferenceState && CC.is_inferred(sv)) ?
+            get_slottype(sv, slot) : get_slottype(s, slot))
+    else
+        typ = safewidenconst((sv isa InferenceState && sv.inferred) ?
+            get_slottype(sv, slot) : get_slottype(s, slot))
+    end
     anypush!(sig, repr, typ)
     return sig
 end

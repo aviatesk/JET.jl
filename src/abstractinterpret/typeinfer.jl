@@ -422,7 +422,11 @@ let
         isa(inf_result, InferenceResult) || return inf_result
 
         # constant prop' hits a cycle (recur into same non-constant analysis), we just bail out
-        isa(inf_result.result, InferenceState) && return inf_result
+        @static if VERSION ≥ v"1.10.0-DEV.750"
+            inf_result.result === nothing && return inf_result
+        else
+            isa(inf_result.result, InferenceState) && return inf_result
+        end
 
         # cache hit, try to restore local report caches
 
@@ -560,8 +564,10 @@ function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
     for caller in frames
         caller.valid_worlds = valid_worlds
         CC.finish(caller, analyzer)
-        # finalize and record the linfo result
-        caller.inferred = true
+        @static if !(VERSION ≥ v"1.10.0-DEV.750")
+            # finalize and record the linfo result
+            caller.inferred = true
+        end
     end
     # NOTE we don't discard `InferenceState`s here so that some analyzers can use them in `finish!`
     # # collect results for the new expanded frame
