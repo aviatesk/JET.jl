@@ -216,7 +216,7 @@ inferred return type grows up to `Any` to collect as much error reports as possi
 That potentially slows down inference performance, but it would stay to be practical
 given that the number of matching methods are limited beforehand.
 """
-@static if VERSION ≥ v"1.10.0-DEV.679"
+@static if VERSION ≥ v"1.9.0-rc1" || VERSION ≥ v"1.10.0-DEV.679"
     CC.bail_out_call(::JETAnalyzer, ::CC.InferenceLoopState, ::InferenceState) = false
 else
     CC.bail_out_call(::JETAnalyzer, @nospecialize(t), ::InferenceState) = false
@@ -277,7 +277,7 @@ let # overload `const_prop_entry_heuristic`
 end
 
 let # overload `concrete_eval_eligible`
-    @static if VERSION ≥ v"1.10.0-DEV.350"
+    @static if VERSION ≥ v"1.9.0-rc1" || VERSION ≥ v"1.10.0-DEV.350"
         # https://github.com/JuliaLang/julia/pull/48246
         sigs_ex = :(analyzer::JETAnalyzer,
             @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)

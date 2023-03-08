@@ -683,7 +683,7 @@ end
 This overload allows JET to keep inference performed by `AbstractAnalyzer` going on
 non-concrete call sites in a toplevel frame created by [`virtual_process`](@ref).
 """
-@static if VERSION ≥ v"1.10.0-DEV.679"
+@static if VERSION ≥ v"1.9.0-rc1" || VERSION ≥ v"1.10.0-DEV.679"
     CC.bail_out_toplevel_call(::AbstractAnalyzer, ::CC.InferenceLoopState, ::InferenceState) = false
 else
     CC.bail_out_toplevel_call(::AbstractAnalyzer, @nospecialize(sig), ::InferenceState) = false

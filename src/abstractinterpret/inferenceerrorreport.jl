@@ -298,6 +298,8 @@ function handle_sig_static_parameter!(sig::Vector{Any}, s::StateAtPC, expr::Expr
     name = sparam_name((sv.linfo.def::Method).sig::UnionAll, i)
     @static if VERSION ≥ v"1.10.0-DEV.556"
         typ = widenconst(sv.sptypes[i].typ)
+    elseif VERSION ≥ v"1.9.0-rc1"
+        typ = widenconst(CC.unwrap_maybeundefsp(sv.sptypes[i]))
     else
         typ = widenconst(sv.sptypes[i])
     end
