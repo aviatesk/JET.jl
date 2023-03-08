@@ -583,7 +583,11 @@ function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
         if (@static VERSION ≥ v"1.9.0-DEV.1636" ?
             (opt isa OptimizationState{typeof(analyzer)}) :
             (opt isa OptimizationState))
-            CC.optimize(analyzer, opt, OptimizationParams(analyzer), caller)
+            @static if VERSION ≥ v"1.10.0-DEV.757"
+                CC.optimize(analyzer, opt, caller)
+            else
+                CC.optimize(analyzer, opt, OptimizationParams(analyzer), caller)
+            end
             # # COMBAK we may want to enable inlining ?
             # if opt.const_api
             #     # XXX: The work in ir_to_codeinf! is essentially wasted. The only reason
