@@ -774,7 +774,7 @@ end
 
 @noinline function single_match_error(@nospecialize tt)
     sig = LazyPrinter(io::IO->Base.show_tuple_as_call(io, Symbol(""), tt))
-    error(lazy"unable to find single target method for `$sig`")
+    error(lazy"Could not find single target method for `$sig`")
 end
 
 analyze_method!(analyzer::AbstractAnalyzer, m::Method) =

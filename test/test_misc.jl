@@ -1,6 +1,6 @@
 @testset "report_call entry" begin
-    @test_throws ErrorException("unable to find single target method for `sin(::String)`") report_call(sin, (String,))
-    @test_throws ErrorException("unable to find single target method for `sin(::String)`") @report_call sin("julia")
+    @test_throws ErrorException("Could not find single target method for `sin(::String)`") report_call(sin, (String,))
+    @test_throws ErrorException("Could not find single target method for `sin(::String)`") @report_call sin("julia")
 
     # https://github.com/aviatesk/JET.jl/issues/427
     test_call(getproperty, (Any,Symbol))
