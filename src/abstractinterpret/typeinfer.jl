@@ -224,8 +224,8 @@ let # overload `return_type_tfunc`
         args_ex = :(AbstractAnalyzer(analyzer)::AbstractInterpreter, argtypes::Argtypes, sv::InferenceState)
     end
     # `return_type_tfunc` internally uses `abstract_call` to model `Core.Compiler.return_type`
-    # and here we should NOT catch error reports detected within the simulated call
-    # because it is really not any abstraction of actual execution
+    # and here we should NOT catch error reports detected within the virtualized call
+    # because it is not abstraction of actual execution
     @eval function CC.return_type_tfunc($(sigs_ex.args...))
         # stash and discard the result from the simulated call, and keep the original result (`result0`)
         result = sv.result
