@@ -1,7 +1,15 @@
+authors = ["Shuhei Kadowaki <aviatesk@gmail.com>"]
 name = "JET"
 uuid = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
-authors = ["Shuhei Kadowaki <aviatesk@gmail.com>"]
 version = "0.7.7"
+
+[compat]
+JuliaInterpreter = "0.9"
+LoweredCodeUtils = "2.2"
+MacroTools = "0.5.6"
+Revise = "3.3"
+SnoopPrecompile = "1"
+julia = "1.8.1"
 
 [deps]
 InteractiveUtils = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
@@ -12,14 +20,6 @@ Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 SnoopPrecompile = "66db9d55-30c0-4569-8b51-7e840670fc0c"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
-
-[compat]
-JuliaInterpreter = "0.9"
-LoweredCodeUtils = "2.2"
-MacroTools = "0.5.6"
-Revise = "3.3"
-SnoopPrecompile = "1"
-julia = "1.8.1"
 
 [extras]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
