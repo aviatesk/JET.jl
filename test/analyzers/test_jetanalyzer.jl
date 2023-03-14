@@ -863,9 +863,8 @@ end
     end
 
     # end to end
-    let
-        # this shouldn't report "no matching method found for call signature: Base.iterate(itr::DataType)",
-        # which otherwise will be caught in `abstract_cal` in `return_type_tfunc`
+    let # this shouldn't report "no matching method found for call signature: Base.iterate(itr::DataType)",
+        # which otherwise will be caught in `abstract_call` in `return_type_tfunc`
         result = report_call(() -> Dict('a' => 1, :b => 2))
         @test isempty(get_reports_with_test(result))
     end

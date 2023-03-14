@@ -292,11 +292,28 @@ let # overload `concrete_eval_eligible`
     # TODO correctly reasons about error found by [semi-]concrete evaluation
     # for now just always fallback to the constant-prop'
     @eval function CC.concrete_eval_eligible($(sigs_ex.args...))
+        if f === typejoin
+            # HACK special case this function: there had been a special handling in the base
+            # Julia compiler to constant fold a call to this function and it turned out that
+            # `JETAnalyzer` implicitly relies on it to get a reasonable analysis accuracy
+            if concrete_eval_eligible_ignoring_overlay(result, arginfo)
+                return true
+            end
+        end
         @static if isdefined(CC, :ir_abstract_constant_propagation)
             return nothing # disables both concrete evaluation and semi-concrete interpretation
         else
             return false # disables concrete evaluation
         end
+    end
+end
+
+function concrete_eval_eligible_ignoring_overlay(result::MethodCallResult, arginfo::ArgInfo)
+    result.edge !== nothing || return false
+    @static if hasfield(MethodCallResult, :effects) # VERSION ≥ v"1.9"
+        return CC.is_foldable(result.effects) && CC.is_all_const_arg(arginfo, #=start=#2)
+    else
+        return CC.is_foldable(result.edge_effects) && CC.is_all_const_arg(arginfo)
     end
 end
 
