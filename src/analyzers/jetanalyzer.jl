@@ -671,14 +671,26 @@ function report_method_error_for_union_split!(analyzer::JETAnalyzer,
     empty_matches = uncovered_matches = nothing
     for (i, matchinfo) in enumerate(info.matches)
         if is_empty_match(matchinfo)
-            isnothing(split_argtypes) && (split_argtypes = switchtupleunion(argtypes))
+            if isnothing(split_argtypes)
+                @static if VERSION ≥ v"1.10.0-DEV.833"
+                    split_argtypes = switchtupleunion(typeinf_lattice(analyzer), argtypes)
+                else
+                    split_argtypes = switchtupleunion(argtypes)
+                end
+            end
             if empty_matches === nothing
                 empty_matches = (Any[], length(info.matches))
             end
             sig_n = argtypes_to_type(split_argtypes[i]::Vector{Any})
             push!(empty_matches[1], sig_n)
         elseif sound && !is_fully_covered(matchinfo)
-            isnothing(split_argtypes) && (split_argtypes = switchtupleunion(argtypes))
+            if isnothing(split_argtypes)
+                @static if VERSION ≥ v"1.10.0-DEV.833"
+                    split_argtypes = switchtupleunion(typeinf_lattice(analyzer), argtypes)
+                else
+                    split_argtypes = switchtupleunion(argtypes)
+                end
+            end
             if uncovered_matches === nothing
                 uncovered_matches = (Any[], length(info.matches))
             end
