@@ -76,11 +76,12 @@ import .CC:
     MethodCallResult, MethodLookupResult, MethodMatchInfo, MethodMatches, NOT_FOUND,
     OptimizationState, OverlayMethodTable,UnionSplitInfo, UnionSplitMethodMatches, VarState,
     VarTable, WorldRange, WorldView,
-    _methods_by_ftype, argextype, argtype_by_index, argtype_tail, argtypes_to_type,
-    compute_basic_blocks, get_compileable_sig, hasintersect, has_free_typevars,
-    ignorelimited, inlining_enabled, instanceof_tfunc, is_throw_call, isType, isconstType,
-    issingletontype, may_invoke_generator, singleton_type, slot_id, specialize_method,
-    switchtupleunion, tmerge, widenconst, ⊑
+    argextype, argtype_by_index, argtype_tail, argtypes_to_type, compute_basic_blocks,
+    get_compileable_sig, hasintersect, has_free_typevars, ignorelimited, inlining_enabled,
+    instanceof_tfunc, is_throw_call, isType, isconstType, issingletontype,
+    may_invoke_generator, singleton_type, slot_id, specialize_method, switchtupleunion,
+    tmerge, widenconst,
+    ⊑
 
 import Base:
     @invoke, @invokelatest, IdSet, default_tt, destructure_callex, parse_input_line,
