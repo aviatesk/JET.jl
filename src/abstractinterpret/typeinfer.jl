@@ -177,19 +177,26 @@ function analyze_task_parallel_code!(analyzer::AbstractAnalyzer, argtypes::Argty
     # and so we may not be able to access to the closure at that point.
     # As a compromise, here we invoke the additional analysis on `Task` construction,
     # regardless of whether it's really `schedule`d or not.
-    if f === Task &&
-       length(argtypes) ≥ 2 &&
-       (v = argtypes[2]; v ⊑ Function)
-        # if we encounter `Task(::Function)`, try to get its inner function and run analysis on it
-        # the closure can be a nullary lambda that really doesn't depend on
-        # the captured environment, and in that case we can retrieve it as
-        # a function object, otherwise we will try to retrieve the type of the closure
-        ft = (isa(v, Const) ? Core.Typeof(v.val) :
-              isa(v, Core.PartialStruct) ? v.typ :
-              isa(v, DataType) ? v :
-              return)
-        analyze_additional_pass_by_type!(analyzer, Tuple{ft}, sv)
-        return
+    if f === Task && length(argtypes) ≥ 2
+        v = argtypes[2]
+        if v ⊑ Function
+            # if we encounter `Task(::Function)`,
+            # try to get its inner function and run analysis on it:
+            # the closure can be a nullary lambda that really doesn't depend on
+            # the captured environment, and in that case we can retrieve it as
+            # a function object, otherwise we will try to retrieve the type of the closure
+            ft = nothing
+            if isa(v, Const)
+                ft = Core.Typeof(v.val)
+            elseif isa(v, Core.PartialStruct)
+                ft = v.typ
+            elseif isa(v, DataType)
+                ft = v
+            end
+            if ft !== nothing
+                analyze_additional_pass_by_type!(analyzer, Tuple{ft}, sv)
+            end
+        end
     end
 
     return nothing
