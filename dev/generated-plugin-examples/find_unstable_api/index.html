@@ -73,7 +73,7 @@ end</code></pre><p>In the report pass above, <code>isunstable</code> will take t
     x isa Core.Builtin &amp;&amp; return false
     (x === Base.indexed_iterate || x === Base.SizeUnknown) &amp;&amp; return false # iteration protocol
     (x === Base.Iterators.Filter || x === Base.Iterators.Flatten) &amp;&amp; return false # iterator protocol
-    x === Base.Broadcast.broadcasted &amp;&amp; return false # broadcase protocol
+    x === Base.Broadcast.broadcasted &amp;&amp; return false # broadcast protocol
     x === Base.kwerr &amp;&amp; return false # ignore keyword lowering
 
     return !isexported(mod, name) &amp;&amp; !hasdoc(mod, name)
@@ -147,7 +147,7 @@ function report_package_unstable_api(args...; jetconfigs...)
 end
 
 report_package_unstable_api(&quot;IRTools&quot;;
-                            # to only find erros detected within the module context of `IRTools`
+                            # to only find errors detected within the module context of `IRTools`
                             target_defined_modules=true)</code></pre><pre><code class="nohighlight hljs">═════ 59 possible errors found ═════
 ┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:39 Core.kwfunc(IRTools.Inner.invoke_meta)(Core.apply_type(Core.NamedTuple, (:world,))(Core.tuple(world)), IRTools.Inner.invoke_meta, T)
 │┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:69 IRTools.Inner.#invoke_meta#6(world, _3, T)
@@ -163,4 +163,4 @@ report_package_unstable_api(&quot;IRTools&quot;;
 │││││ usage of unstable API `Base.uncompressed_ast` found
 ││││└─────────────────────────────────────────────────────────────────────────────────
 ││││┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:54
-... # many other &quot;unstable API&quot;s detected</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../dispatch_analysis/">« Dispatch Analysis</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.24 on <span class="colophon-date" title="Wednesday 29 March 2023 09:11">Wednesday 29 March 2023</span>. Using Julia version 1.10.0-DEV.904.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+... # many other &quot;unstable API&quot;s detected</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../dispatch_analysis/">« Dispatch Analysis</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.24 on <span class="colophon-date" title="Thursday 30 March 2023 04:36">Thursday 30 March 2023</span>. Using Julia version 1.10.0-DEV.912.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
