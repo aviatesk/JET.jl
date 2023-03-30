@@ -685,7 +685,7 @@ end
     end
 end
 
-function test_builtinerror_compatiblility(@nospecialize(reproducer), result)
+function test_builtinerror_compatibility(@nospecialize(reproducer), result)
     buf = IOBuffer()
     try
         reproducer()
