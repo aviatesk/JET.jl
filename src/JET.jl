@@ -488,7 +488,7 @@ Represents the result of JET's analysis on a top-level script.
 - `res.jetconfigs`: configurations used for this analysis
 
 `JETToplevelResult` implements `show` methods for each different frontend.
-An appropriate `show` method will be automatically choosen and render the analysis result.
+An appropriate `show` method will be automatically chosen and render the analysis result.
 """
 struct JETToplevelResult{Analyzer<:AbstractAnalyzer,JETConfigs}
     analyzer::Analyzer
@@ -528,7 +528,7 @@ Represents the result of JET's analysis on a function call.
 - `res.jetconfigs`: configurations used for this analysis
 
 `JETCallResult` implements `show` methods for each different frontend.
-An appropriate `show` method will be automatically choosen and render the analysis result.
+An appropriate `show` method will be automatically chosen and render the analysis result.
 """
 struct JETCallResult{Analyzer<:AbstractAnalyzer,JETConfigs}
     result::InferenceResult
@@ -1061,7 +1061,7 @@ The configurations will only be active when used with [`watch_file`](@ref).
       This configuration is useful when your're also editing files that are not tracked by Revise,
       e.g. editing functions defined in `Base`:
       ```julia-repl
-      # re-performe analysis when you make a change to `Base`
+      # re-perform analysis when you make a change to `Base`
       julia> watch_file(yourfile; revise_modules = [Base])
       ```
 ---
@@ -1269,7 +1269,7 @@ function call_test(func, testname::Symbol, @nospecialize(args...);
     end
 end
 
-# NOTE we will just show abstract call strack, and won't show backtrace of actual test executions
+# NOTE we will just show abstract call stack, and won't show backtrace of actual test executions
 
 struct JETTestFailure <: Result
     orig_expr::Expr
@@ -1385,7 +1385,7 @@ using SnoopPrecompile
         #     since `CodeInstance`s created by JET are cached by the pkgimage but it contains
         #     arbitrary data structure that is specific to JET and thus can not be handled by
         #     the runtime system (see https://github.com/JuliaLang/julia/issues/48453).
-        #     Thus we target temporary annonymous methods here, in order to create caches of
+        #     Thus we target temporary anonymous methods here, in order to create caches of
         #     code that is necessary for performing JET's analyses themselves.
         ___precompile_target___(x) = ___precompile_target___()
         ___precompile_target___(x, y) = ___precompile_target___(x)

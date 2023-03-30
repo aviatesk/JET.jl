@@ -464,7 +464,7 @@ function CC.builtin_tfunction(analyzer::JETAnalyzer,
         ReportPass(analyzer)(AbstractBuiltinErrorReport, analyzer, sv, f, argtypes, ret)
     end
 
-    # `IntrinsicError` is a special marker object that JET uses to indicate an errorneous
+    # `IntrinsicError` is a special marker object that JET uses to indicate an erroneous
     # intrinsic function call, so fix it up here to `Bottom`
     if @static VERSION ≥ v"1.10.0-DEV.197" ? (ret isa IntrinsicError) : false
         ret = Bottom
@@ -484,7 +484,7 @@ function print_report_message(io::IO, (; err)::GeneratorErrorReport)
 end
 
 # XXX what's the "soundness" of a `@generated` function ?
-# adapated from https://github.com/JuliaLang/julia/blob/f806df603489cfca558f6284d52a38f523b81881/base/compiler/utilities.jl#L107-L137
+# adapted from https://github.com/JuliaLang/julia/blob/f806df603489cfca558f6284d52a38f523b81881/base/compiler/utilities.jl#L107-L137
 function (::SoundBasicPass)(::Type{GeneratorErrorReport}, analyzer::JETAnalyzer, result::InferenceResult)
     mi = result.linfo
     m = mi.def::Method
@@ -492,7 +492,7 @@ function (::SoundBasicPass)(::Type{GeneratorErrorReport}, analyzer::JETAnalyzer,
         # analyze_method_instance!(analyzer, linfo) XXX doesn't work
         may_invoke_generator(mi) || return false
         try
-            ccall(:jl_code_for_staged, Any, (Any,), mi) # invoke the "errorneous" generator again
+            ccall(:jl_code_for_staged, Any, (Any,), mi) # invoke the "erroneous" generator again
         catch err
             # if user code throws error, wrap and report it
             report = add_new_report!(analyzer, result, GeneratorErrorReport(mi, err))
@@ -571,7 +571,7 @@ function report_uncaught_exceptions!(analyzer::JETAnalyzer, frame::InferenceStat
     for (pc, stmt) in enumerate(stmts)
         isa(stmt, Expr) || continue
         is_throw_call(stmt) || continue
-        # if this `throw` is already reported, don't duplciate
+        # if this `throw` is already reported, don't duplicate
         if !isnothing(reported_locs) && linetable[codelocs[pc]]::LineInfoNode in reported_locs
             continue
         end
@@ -746,7 +746,7 @@ function (::SoundBasicPass)(::Type{InvalidReturnTypeCall}, analyzer::AbstractAna
     # here we make a very simple analysis to check if the call of `return_type` is clearly
     # invalid or not by just checking the # of call arguments
     # we don't take a (very unexpected) possibility of its overload into account here,
-    # `Core.Compiler.NativeInterpreter` doens't also (it hard-codes the return type as `Type`)
+    # `Core.Compiler.NativeInterpreter` doesn't also (it hard-codes the return type as `Type`)
     if length(argtypes) ≠ 3
         # invalid argument #, let's report and return error result (i.e. `Bottom`)
         add_new_report!(analyzer, sv.result, InvalidReturnTypeCall(sv))
@@ -1084,12 +1084,12 @@ const GENERAL_BUILTIN_ERROR_MSG = "invalid builtin function call"
 
 @static if VERSION ≥ v"1.10.0-DEV.197"
 
-# report errorneous intrinsic function calls
+# report erroneous intrinsic function calls
 
 @doc """
     IntrinsicError(reason::String)
 
-A special lattice element that represents an errorneous intrinsic function call.
+A special lattice element that represents an erroneous intrinsic function call.
 `IntrinsicError` is essentially equivalent to `Bottom` but isn't fully integrated with the
 `AbstractLattice` system. It is a special marker object that is merely returned by `tfunc`s
 for intrinsic calls that are overloaded with `IntrinsicErrorCheckLattice` to generate
@@ -1173,7 +1173,7 @@ import .CC: bitcast_tfunc, conversion_tfunc, math_tfunc, shift_tfunc, cmp_tfunc,
 end # @static if VERSION >= v"1.10.0-DEV.197"
 
 function (::BasicPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(ret))
-    @assert !(f === throw) "`throw` calls shuold be handled either by the report pass of `SeriousExceptionReport` or `UncaughtExceptionReport`"
+    @assert !(f === throw) "`throw` calls should be handled either by the report pass of `SeriousExceptionReport` or `UncaughtExceptionReport`"
     if f === getfield
         report_getfield!(analyzer, sv, argtypes, ret) && return true
     elseif f === setfield!
@@ -1185,7 +1185,7 @@ function (::BasicPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer
     elseif @static @isdefined(setglobal!) ? (f === setglobal!) : false
         report_setglobal!!(analyzer, sv, argtypes) && return true
     elseif length(argtypes) == 2 && is_division_func(f)
-        report_devide_error!(analyzer, sv, f, argtypes) && return true
+        report_divide_error!(analyzer, sv, f, argtypes) && return true
     end
     if @static VERSION >= v"1.10.0-DEV.197" ? (ret isa IntrinsicError) : false
         msg = LazyString(f, ": ", ret.reason)
@@ -1276,7 +1276,7 @@ else
 end
 
 const MODULE_SETFIELD_MSG = "cannot assign variables in other modules"
-const DEVIDE_ERROR_MSG = sprint(showerror, DivideError())
+const DIVIDE_ERROR_MSG = sprint(showerror, DivideError())
 @nospecs type_error_msg(f, expected, actual) =
     lazy"TypeError: in $f, expected $expected, got a value of type $actual"
 function nofield_msg(@nospecialize(typ), name::Symbol)
@@ -1366,12 +1366,12 @@ function is_division_func(@nospecialize f)
 end
 
 # TODO this check might be better in its own report pass, say `NumericalPass`
-function report_devide_error!(analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes)
+function report_divide_error!(analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes)
     a = argtypes[2]
     t = widenconst(a)
     if isprimitivetype(t) && t <: Number
         if isa(a, Const) && a.val === zero(t)
-            report = BuiltinErrorReport(sv, f, argtypes, DEVIDE_ERROR_MSG)
+            report = BuiltinErrorReport(sv, f, argtypes, DIVIDE_ERROR_MSG)
             add_new_report!(analyzer, sv.result, report)
             return true
         end
@@ -1402,7 +1402,7 @@ function (::SoundPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer
     # TODO enable this sound pass:
     # - make `stmt_effect_free` work on `InfernceState`
     # - sort out `argextype` interface to make it accept `InfernceState`
-    @assert !(f === throw) "`throw` calls shuold be handled either by the report pass of `SeriousExceptionReport` or `UncaughtExceptionReport`"
+    @assert !(f === throw) "`throw` calls should be handled either by the report pass of `SeriousExceptionReport` or `UncaughtExceptionReport`"
     if isa(f, IntrinsicFunction)
         if !Core.Compiler.intrinsic_nothrow(f, argtypes)
             add_new_report!(analyzer, sv.result, UnsoundBuiltinErrorReport(sv, f, argtypes))

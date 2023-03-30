@@ -121,7 +121,7 @@ Note that `report_package` is less precise than `@report_call`, because method s
 JET works best on type-stable code.
 Iron out type instabilities using `@report_opt` before using `@report_call`
 
-#### Filtering away false postives
+#### Filtering away false positives
 It is common to find that JET finds lots of errors in your functions, which all derive from type instability and type issues in your dependencies.
 In fact, type issues from dependencies are often so plentiful they flood your analysis with false positives, which can make working with JET harder.
 
@@ -195,7 +195,7 @@ julia> report_file("my_script.jl")
 As shown above, packages can be analysed with `report_package`.
 However, generic type signatures often used in packages lead to imprecise inference and thus imprecise analysis.
 
-To improve analysis, you can create a file `src/workload.jl` in your package, which uses all (or most) functionality of the pacakge.
+To improve analysis, you can create a file `src/workload.jl` in your package, which uses all (or most) functionality of the package.
 The function could look like:
 
 ```julia

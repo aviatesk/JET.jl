@@ -163,14 +163,14 @@ end; end
 #                  :(sym)
 #
 #         l1, l2, l3 = @freshexec begin
-#             # ensure we start with this "errorneous" `show_sym`
+#             # ensure we start with this "erroneous" `show_sym`
 #             @eval Base begin
 #                 function show_sym(io::IO, $(symarg); allow_macroname=false)
 #                     if is_valid_identifier(sym)
 #                         print(io, sym)
 #                     elseif allow_macroname && (sym_str = string(sym); startswith(sym_str, '@'))
 #                         print(io, '@')
-#                         show_sym(io, sym_str[2:end]) # NOTE: `sym_str[2:end]` here is errorneous
+#                         show_sym(io, sym_str[2:end]) # NOTE: `sym_str[2:end]` here is erroneous
 #                     else
 #                         print(io, "var", repr(string(sym)))
 #                     end
@@ -301,7 +301,7 @@ end
             end
         end)
 
-        # there should be local cache for each errorneous constant analysis
+        # there should be local cache for each erroneous constant analysis
         @test !isempty(get_reports_with_test(result))
         @test any(get_cache(result.analyzer)) do analysis_result
             analysis_result.argtypes==Any[CC.Const(m.getter),m.Foo{Int},CC.Const(:baz)]
@@ -619,7 +619,7 @@ end
 
     # don't fail into infinite loop (rather, don't spoil inference termination)
     m = @fixturedef begin
-        # adapated from https://julialang.org/blog/2019/07/multithreading/
+        # adapted from https://julialang.org/blog/2019/07/multithreading/
         import Base.Threads.@spawn
 
         # sort the elements of `v` in place, from indices `lo` to `hi` inclusive

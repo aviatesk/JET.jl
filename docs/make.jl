@@ -60,7 +60,7 @@ function generate_api_doc(examples_pages)
 
         JET offers an infrastructure to implement a "plugin" code analyzer.
         Actually, [JET's default error analyzer](@ref jetanalysis) is one specific instance
-        of such a pluggin analyzer built on top of the framework.
+        of such a plugin analyzer built on top of the framework.
 
         In this documentation we will try to elaborate the framework APIs and showcase example analyzers.
 

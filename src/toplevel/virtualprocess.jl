@@ -298,7 +298,7 @@ struct ToplevelConfig{CP<:Any}
               # pushes elements (`v`) into a slot representing an array (`insts`),
               # which is very hard to be generalized;
               # here we add them as pre-defined concretization patterns and make sure
-              # false postive top-level errors won't happen by the macro expansion
+              # false positive top-level errors won't happen by the macro expansion
               :(@enum(args__)), :(Base.@enum(args__)),
               )
         concretization_patterns = CP[striplines(normalise(x)) for x in concretization_patterns]
@@ -373,7 +373,7 @@ Simulates Julia's toplevel execution and collects error points, and finally retu
 
 This function first parses `s::AbstractString` into `toplevelex::Expr` and then iterate the
 following steps on each code block (`blk`) of `toplevelex`:
-1. if `blk` is a `:module` expression, recusively enters analysis into an newly defined
+1. if `blk` is a `:module` expression, recursively enters analysis into an newly defined
    virtual module
 2. `lower`s `blk` into `:thunk` expression `lwr` (macros are also expanded in this step)
 3. if the context module is virtualized, replaces self-references of the original context
@@ -636,7 +636,7 @@ function _virtual_process!(res::VirtualProcessResult,
             end
             modpath = modpath::Vector{Any}
             dep = first(modpath)::Symbol
-            if !(dep === :. || # relative module doens't need to be fixed
+            if !(dep === :. || # relative module doesn't need to be fixed
                  dep === :Base || dep === :Core) # modules available by default
                 if dep ∉ dependencies
                     depstr = String(dep)
@@ -1215,11 +1215,11 @@ end
 
 # adapted from https://github.com/JuliaDebug/JuliaInterpreter.jl/blob/2f5f80034bc287a60fe77c4e3b5a49a087e38f8b/src/interpret.jl#L188-L199
 # works almost same as `JuliaInterpreter.evaluate_call_compiled!`, but with few important tweaks:
-# - a special hanlding for `include` call to recursively apply JET's analysis on the included file
+# - a special handling for `include` call to recursively apply JET's analysis on the included file
 # - some `@invokelatest` are added where we directly call an user expression
 #   since `_virtual_process!` iteratively interprets toplevel expressions but the world age
 #   is not updated at each iteration so we need to make sure the user expression is
-#   evaluated in the latest world age where newly defined functions are avalable.
+#   evaluated in the latest world age where newly defined functions are available.
 function JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)
     # @assert !enter_generated
     pc = frame.pc
@@ -1424,7 +1424,7 @@ end
 # by `ConcreteInterpreter` nor executed by the native compilation pipeline anyway
 function transform_abstract_global_symbols!(analyzer::AbstractAnalyzer, src::CodeInfo)
     nslots = length(src.slotnames)
-    abstrct_global_variables = Dict{Symbol,Int}()
+    abstract_global_variables = Dict{Symbol,Int}()
     concretized = get_concretized(analyzer)
 
     # linear scan, and find assignments of abstract global variables
@@ -1433,9 +1433,9 @@ function transform_abstract_global_symbols!(analyzer::AbstractAnalyzer, src::Cod
             if isexpr(stmt, :(=))
                 lhs = first(stmt.args)
                 if isa(lhs, Symbol)
-                    if !haskey(abstrct_global_variables, lhs)
+                    if !haskey(abstract_global_variables, lhs)
                         nslots += 1
-                        push!(abstrct_global_variables, lhs => nslots)
+                        push!(abstract_global_variables, lhs => nslots)
                     end
                 end
             end
@@ -1444,7 +1444,7 @@ function transform_abstract_global_symbols!(analyzer::AbstractAnalyzer, src::Cod
 
     prewalk_and_transform!(src) do @nospecialize(x), scope::Vector{Symbol}
         if isa(x, Symbol)
-            slot = get(abstrct_global_variables, x, nothing)
+            slot = get(abstract_global_variables, x, nothing)
             isnothing(slot) || return SlotNumber(slot)
         end
         return x
@@ -1452,11 +1452,11 @@ function transform_abstract_global_symbols!(analyzer::AbstractAnalyzer, src::Cod
 
     resize!(src.slotnames, nslots)
     resize!(src.slotflags, nslots)
-    for (slotname, idx) in abstrct_global_variables
+    for (slotname, idx) in abstract_global_variables
         src.slotnames[idx] = slotname
     end
 
-    set_global_slots!(analyzer, Dict(idx => slotname for (slotname, idx) in abstrct_global_variables))
+    set_global_slots!(analyzer, Dict(idx => slotname for (slotname, idx) in abstract_global_variables))
 
     return src
 end

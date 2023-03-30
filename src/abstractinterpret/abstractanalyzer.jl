@@ -248,7 +248,7 @@ Listed below are selections of those parameters that can have a potent influence
 function JETInferenceParams end
 function JETOptimizationParams end
 
-# define wrappers of `InferenceParams(...)` and `OptimizationParams(...)` that can accept JET configrations
+# define wrappers of `InferenceParams(...)` and `OptimizationParams(...)` that can accept JET configurations
 @static if hasfield(InferenceParams, :max_methods) # VERSION ≥ v"1.10.0-DEV.105"
 for (Params, Func) = ((InferenceParams, JETInferenceParams),
                       (OptimizationParams, JETOptimizationParams))
@@ -557,7 +557,7 @@ end
     file::Symbol
     line::Int
     sig::Signature
-    # linfo::MethodInstance # ignore the idenity of `MethodInstace`
+    # linfo::MethodInstance # ignore the identity of `MethodInstance`
     VirtualFrameNoLinfo(vf::VirtualFrame) = new(vf.file, vf.line, vf.sig)
 end
 @withmixedhash struct DefaultReportIdentity

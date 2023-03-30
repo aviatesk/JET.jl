@@ -236,7 +236,7 @@ end
 This error is unique in that idiomatic Julia code may still lead to this error. For example, in the `pos_after_tab` function above, if the input vector does not have a `'\t'` byte, `p` will be `nothing`, and a `MethodError` will be thrown when `nothing + 1` is attempted.
 However, in many situations, the possibility of such a `MethodError` is not a mistake, but rather an idiomatic way of erroring.
 
-There are different possiblities to address this kind of error. Let's take the `pos_after_tab` example:
+There are different possibilities to address this kind of error. Let's take the `pos_after_tab` example:
 
 If you actually _could_ expect `p` to legitimately be `nothing` for valid input (i.e. the input could lack a `'\t'` byte), then your function should be written to take this edge case into account:
 ```@repl union2
