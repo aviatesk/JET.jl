@@ -1,7 +1,7 @@
 authors = ["Shuhei Kadowaki <aviatesk@gmail.com>"]
 name = "JET"
 uuid = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
-version = "0.7.9"
+version = "0.7.10"
 
 [compat]
 JuliaInterpreter = "0.9"
