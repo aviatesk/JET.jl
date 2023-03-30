@@ -169,7 +169,7 @@ report_dispatch((Any,)) do a
 end
 
 # Note that even if a call is not "well-typed" (i.e. it's not a concrete call), runtime
-# dispatch won't happen as far as a single method can be resovled statically:
+# dispatch won't happen as far as a single method can be resolved statically:
 report_dispatch((AbstractString,)) do a
     getsomething(a) # this call isn't very concrete, but ok, Julia can optimize it
 end
@@ -281,7 +281,7 @@ end
 # `DispatchAnalyzer`'s `frame_filter` option can be useful for this, by allowing us to
 # specify where it should and shouldn't run analysis.
 # For example, we can limit the scope of analysis to the current module like this:
-function module_filter(m) # fiter by module
+function module_filter(m) # filter by module
     return function (linfo::Core.MethodInstance)
         def = linfo.def
         isa(def, Method) ? def.module === m : def === m

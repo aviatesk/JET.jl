@@ -150,7 +150,7 @@ function isunstable(mod, name)
     x isa Core.Builtin && return false
     (x === Base.indexed_iterate || x === Base.SizeUnknown) && return false # iteration protocol
     (x === Base.Iterators.Filter || x === Base.Iterators.Flatten) && return false # iterator protocol
-    x === Base.Broadcast.broadcasted && return false # broadcase protocol
+    x === Base.Broadcast.broadcasted && return false # broadcast protocol
     x === Base.kwerr && return false # ignore keyword lowering
 
     return !isexported(mod, name) && !hasdoc(mod, name)
@@ -246,7 +246,7 @@ end
 using Pkg #src
 if "IRTools" in keys(Pkg.project().dependencies) #src
 report_package_unstable_api("IRTools";
-                            ## to only find erros detected within the module context of `IRTools`
+                            ## to only find errors detected within the module context of `IRTools`
                             target_defined_modules=true)
 else #src
 @warn "IRTools isn't installed in the current environment at $(Pkg.project().path)" #src

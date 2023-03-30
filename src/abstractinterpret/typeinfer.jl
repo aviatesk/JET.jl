@@ -662,7 +662,7 @@ end
         isconst::Bool # is this abstract global variable declarared as constant or not
     end
 
-Wraps a global variable whose type is analyzed by abtract interpretation.
+Wraps a global variable whose type is analyzed by abstract interpretation.
 `AbstractGlobal` object will be actually evaluated into the context module, and a later
 analysis may refer to or alter its type on future load and store operations.
 
@@ -696,7 +696,7 @@ function CC.abstract_eval_special_value(analyzer::AbstractAnalyzer, @nospecializ
         if isa(e, SlotNumber) && is_global_slot(analyzer, e)
             if get_slottype((sv, get_currpc(sv)), e) === Bottom
                 # if this abstract global variable is not initialized, form the global
-                # reference and abstract intepret it; we may have abstract interpreted this
+                # reference and abstract interpret it; we may have abstract interpreted this
                 # variable and it may have a type
                 # if it's really not defined, the error will be generated later anyway
                 e = GlobalRef(get_toplevelmod(analyzer), get_slotname(sv, e))

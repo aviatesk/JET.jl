@@ -419,14 +419,14 @@ end
         end
         report = only(get_reports_with_test(result))
         @test report isa BuiltinErrorReport
-        @test report.msg == JET.DEVIDE_ERROR_MSG
+        @test report.msg == JET.DIVIDE_ERROR_MSG
     end
     let result = report_call() do
             rem(1, 0)
         end
         report = only(get_reports_with_test(result))
         @test report isa BuiltinErrorReport
-        @test report.msg == JET.DEVIDE_ERROR_MSG
+        @test report.msg == JET.DIVIDE_ERROR_MSG
     end
     # JETAnalyzer isn't sound
     let result = report_call((Int,Int)) do a, b
@@ -580,7 +580,7 @@ end
         bar(a) = return a + undefvar
         function baz(a)
             a += 1
-            Base.@invoke bar(a::Int) # `invoke` is valid, but error should happne within `bar`
+            Base.@invoke bar(a::Int) # `invoke` is valid, but error should happen within `bar`
         end
         $report_call(baz, (Any,))
     end
@@ -685,7 +685,7 @@ end
     end
 end
 
-function test_builtinerror_compatbility(@nospecialize(reproducer), result)
+function test_builtinerror_compatibility(@nospecialize(reproducer), result)
     buf = IOBuffer()
     try
         reproducer()
@@ -708,7 +708,7 @@ end
             getfield(x, :y)
         end
         @test only(get_reports_with_test(result)) isa BuiltinErrorReport
-        test_builtinerror_compatbility(result) do
+        test_builtinerror_compatibility(result) do
             x = SingleField("foo")
             getfield(x, :y)
         end
@@ -718,7 +718,7 @@ end
             getfield(x, 2)
         end
         @test only(get_reports_with_test(result)) isa BuiltinErrorReport
-        test_builtinerror_compatbility(result) do
+        test_builtinerror_compatibility(result) do
             x = SingleField("foo")
             getfield(x, 2)
         end
@@ -727,7 +727,7 @@ end
             fieldtype(SingleField, :y)
         end
         @test only(get_reports_with_test(result)) isa BuiltinErrorReport
-        test_builtinerror_compatbility(result) do
+        test_builtinerror_compatibility(result) do
             fieldtype(SingleField, :y)
         end
     end
@@ -736,7 +736,7 @@ end
         end
         @test only(get_reports_with_test(result)) isa BuiltinErrorReport
         # XXX Julia doesn't render this error nicely
-        # test_builtinerror_compatbility(result) do
+        # test_builtinerror_compatibility(result) do
         #     fieldtype(SingleField, 2)
         # end
     end
@@ -745,7 +745,7 @@ end
             setfield!(x, :y, "bar")
         end
         @test only(get_reports_with_test(result)) isa BuiltinErrorReport
-        test_builtinerror_compatbility(result) do
+        test_builtinerror_compatibility(result) do
             x = SingleField("foo")
             setfield!(x, :y, "bar")
         end
@@ -755,7 +755,7 @@ end
             setfield!(x, :y, 2)
         end
         @test only(get_reports_with_test(result)) isa BuiltinErrorReport
-        test_builtinerror_compatbility(result) do
+        test_builtinerror_compatibility(result) do
             x = SingleField("foo")
             setfield!(x, :y, 2)
         end
@@ -766,7 +766,7 @@ end
             x.y
         end
         @test only(get_reports_with_test(result)) isa BuiltinErrorReport
-        test_builtinerror_compatbility(result) do
+        test_builtinerror_compatibility(result) do
             x = SingleField("foo")
             x.y
         end
@@ -776,7 +776,7 @@ end
             x.y = "bar"
         end
         @test only(get_reports_with_test(result)) isa BuiltinErrorReport
-        test_builtinerror_compatbility(result) do
+        test_builtinerror_compatibility(result) do
             x = SingleField("foo")
             x.y = "bar"
         end
@@ -798,7 +798,7 @@ end
         end
         report = only(get_reports_with_test(result))
         @test report isa BuiltinErrorReport
-        test_builtinerror_compatbility(result) do
+        test_builtinerror_compatibility(result) do
             getfield((1,2,3), :x)
         end
     end
@@ -809,7 +809,7 @@ end
         report = only(get_reports_with_test(result))
         @test report isa BuiltinErrorReport
         # XXX Julia raises `BoundsError` when ran in the compiler
-        # test_builtinerror_compatbility(result) do
+        # test_builtinerror_compatibility(result) do
         #     getfield(@__MODULE__, 42)
         # end
     end
@@ -832,7 +832,7 @@ end
         report = only(get_reports_with_test(result))
         @test report isa BuiltinErrorReport
         @test report.f === setfield!
-        test_builtinerror_compatbility(result) do
+        test_builtinerror_compatibility(result) do
             setfield!(@__MODULE__, :___xxx___, 42)
         end
     end
@@ -1028,13 +1028,13 @@ end
 end
 
 # https://github.com/aviatesk/JET.jl/issues/404
-function isssue_404(c::Bool)
+function issue_404(c::Bool)
     x = c ? () : (1,)
     for v in x
         println(v)
     end
 end
-test_call(isssue_404, (Bool,))
+test_call(issue_404, (Bool,))
 
 @static VERSION ≥ v"1.10.0-DEV.197" && @testset "intrinsic errors" begin
     let result = report_call((Int32,Int64)) do x, y

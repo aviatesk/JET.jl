@@ -452,7 +452,7 @@ abstract type InferenceErrorReport end
     copy_report(report::R) where R<:InferenceErrorReport -> new::R
 
 Returns new `new::R`, that should be identical to the original `report::R`, except
-that `new.vst` is copied from `report.vst` so that the further modifcation on `report.vst`
+that `new.vst` is copied from `report.vst` so that the further modification on `report.vst`
 that may happen in later abstract interpretation doesn't affect `new.vst`.
 """
 @noinline copy_report(report::InferenceErrorReport) = (@nospecialize;
@@ -544,7 +544,7 @@ end
         ...
     end
 
-An utilitiy macro to define [`InferenceErrorReport`](@ref).
+A utility macro to define [`InferenceErrorReport`](@ref).
 It can be very tedious to manually satisfy the `InferenceErrorReport` interfaces.
 JET internally uses this `@jetreport` utility macro, which takes a `struct` definition of
 `InferenceErrorReport` without the required fields specified, and automatically defines
