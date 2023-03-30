@@ -487,7 +487,7 @@ function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
     # IDEA we may still want to keep some "serious" error reports like `UndefVarErrorReport`
     # even when constant prop' reveals it never happ∫ens given the current constant arguments
     if is_constant_propagated(frame) && !isentry
-        filter_lineages!(analyzer, parent.result, linfo)
+        filter_lineages!(analyzer, (parent::InferenceState).result, linfo)
     end
 
     ret = @invoke typeinf(analyzer::AbstractInterpreter, frame::InferenceState)
@@ -791,7 +791,7 @@ function istoplevel_getproperty(sv::InferenceState)
     def.sig === Tuple{typeof(getproperty), Module, Symbol} || return false
     parent = sv.parent
     parent === nothing && return false
-    return istoplevel(parent)
+    return istoplevel(parent::InferenceState)
 end
 
 # if this `getglobal` access to a global variable in a module concretized by `AbstractAnalyzer`,
