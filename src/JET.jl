@@ -1378,8 +1378,7 @@ include("analyzers/jetanalyzer.jl")
 include("analyzers/optanalyzer.jl")
 
 using SnoopPrecompile
-@static if (!JET_DEV_MODE && # skip long precompilations in development
-            (VERSION ≥ v"1.10.0-DEV.204" || VERSION ≥ v"1.9.0-beta3"))
+@static if (VERSION ≥ v"1.10.0-DEV.204" || VERSION ≥ v"1.9.0-beta3")
     @precompile_setup let
         # XXX We should not analyze methods that may be called at runtime during precompilation
         #     since `CodeInstance`s created by JET are cached by the pkgimage but it contains
