@@ -180,7 +180,17 @@ struct OptAnalyzer{RP,FF} <: AbstractAnalyzer
         cache_key = compute_hash(state.inf_params, state.opt_params, report_pass,
                                  skip_noncompileable_calls, skip_unoptimized_throw_blocks)
         cache_key = @invoke hash(function_filter::Any, cache_key::UInt) # HACK avoid dynamic dispatch
-        analysis_cache = get!(()->AnalysisCache(), OPT_ANALYZER_CACHE, cache_key)
+        if (@ccall jl_generating_output()::Cint) != 0
+            # XXX Avoid storing analysis results into a cache that persists across the
+            #     precompilation, as pkgimage currently doesn't support serializing
+            #     externally created `CodeInstance`. Otherwise, `CodeInstance`s created by
+            #     JET, containing JET-specific data structures, will leak into the native
+            #     code cache, likely causing segfaults or undefined behavior.
+            #     (see https://github.com/JuliaLang/julia/issues/48453).
+            analysis_cache = AnalysisCache()
+        else
+            analysis_cache = get!(()->AnalysisCache(), OPT_ANALYZER_CACHE, cache_key)
+        end
         return new{RP,FF}(state,
                           analysis_cache,
                           report_pass,

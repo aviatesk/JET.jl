@@ -1380,18 +1380,14 @@ include("analyzers/optanalyzer.jl")
 using SnoopPrecompile
 @static if (VERSION ≥ v"1.10.0-DEV.204" || VERSION ≥ v"1.9.0-beta3")
     @precompile_setup let
-        # XXX We should not analyze methods that may be called at runtime during precompilation
-        #     since `CodeInstance`s created by JET are cached by the pkgimage but it contains
-        #     arbitrary data structure that is specific to JET and thus can not be handled by
-        #     the runtime system (see https://github.com/JuliaLang/julia/issues/48453).
-        #     Thus we target temporary anonymous methods here, in order to create caches of
-        #     code that is necessary for performing JET's analyses themselves.
-        ___precompile_target___(x) = ___precompile_target___()
-        ___precompile_target___(x, y) = ___precompile_target___(x)
         @precompile_all_calls let
-            result = @report_call annotate_types=true ___precompile_target___(0, nothing)
+            result = @report_call annotate_types=true sum("julia")
             show(IOContext(devnull, :color=>true), result)
-            result = @report_opt annotate_types=true ___precompile_target___(0, nothing)
+            result = @report_call annotate_types=true rand(String)
+            show(IOContext(devnull, :color=>true), result)
+            result = @report_opt annotate_types=true sum("julia")
+            show(IOContext(devnull, :color=>true), result)
+            result = @report_opt annotate_types=true rand(String)
             show(IOContext(devnull, :color=>true), result)
         end
     end

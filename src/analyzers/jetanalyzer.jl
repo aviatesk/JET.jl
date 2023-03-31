@@ -42,7 +42,17 @@ struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
     end
     function JETAnalyzer(state::AnalyzerState, report_pass::RP) where RP
         cache_key = compute_hash(state.inf_params, report_pass)
-        analysis_cache = get!(()->AnalysisCache(), JET_ANALYZER_CACHE, cache_key)
+        if (@ccall jl_generating_output()::Cint) != 0
+            # XXX Avoid storing analysis results into a cache that persists across the
+            #     precompilation, as pkgimage currently doesn't support serializing
+            #     externally created `CodeInstance`. Otherwise, `CodeInstance`s created by
+            #     JET, containing JET-specific data structures, will leak into the native
+            #     code cache, likely causing segfaults or undefined behavior.
+            #     (see https://github.com/JuliaLang/julia/issues/48453).
+            analysis_cache = AnalysisCache()
+        else
+            analysis_cache = get!(()->AnalysisCache(), JET_ANALYZER_CACHE, cache_key)
+        end
         return JETAnalyzer(state, analysis_cache, report_pass)
     end
 end
