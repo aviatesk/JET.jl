@@ -115,12 +115,14 @@ import Test:
     Broken, DefaultTestSet, Error, Fail, FallbackTestSet, FallbackTestSetException, Pass,
     Result, TESTSET_PRINT_ENABLE, Test, get_testset
 
+using Preferences
+
 # common
 # ======
 
 const Argtypes = Vector{Any}
 
-const JET_DEV_MODE = parse(Bool, get(ENV, "JET_DEV_MODE", "false"))
+const JET_DEV_MODE = @load_preference("JET_DEV_MODE", false)
 
 const CONFIG_FILE_NAME = ".JET.toml"
 
