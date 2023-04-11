@@ -846,7 +846,7 @@ function CC.finish(me::InferenceState, analyzer::AbstractAnalyzer)
                 if isa(lhs, SlotNumber)
                     slot = slot_id(lhs)
                     if is_global_slot(analyzer, slot)
-                        isnd = is_assignment_nondeterministic(cfg, pc)
+                        isnd = !is_deterministic(cfg, pc)
 
                         # COMBAK this approach is really not true when there're multiple
                         # assignments in different basic blocks
@@ -877,23 +877,11 @@ is_global_slot(analyzer::AbstractAnalyzer, slot::Int) = slot in keys(get_global_
 is_global_slot(analyzer::AbstractAnalyzer, slot::SlotNumber) = is_global_slot(analyzer, slot_id(slot))
 is_global_slot(analyzer::AbstractAnalyzer, sym::Symbol) = sym in values(get_global_slots(analyzer))
 
-# simple cfg analysis to check if the assignment at `pc` will happen non-deterministically
-function is_assignment_nondeterministic(cfg::CFG, pc::Int)
-    isnd = false
-
-    blocks = cfg.blocks
-    for (idx, block) in enumerate(blocks)
-        if pc in rng(block)
-            for block′ in blocks
-                succs = block′.succs
-                if idx in succs
-                    isnd |= length(succs) > 1
-                end
-            end
-        end
-    end
-
-    return isnd
+# check if `pc` may not be executed in a given control graph
+function is_deterministic(cfg::CFG, pc::Int)
+    domtree = CC.construct_domtree(cfg.blocks)
+    bb = CC.block_for_inst(cfg, pc)
+    return CC.dominates(domtree, bb, length(cfg.blocks))
 end
 
 # at this point all the types of SSA values are iterated to maximum fixed point,
