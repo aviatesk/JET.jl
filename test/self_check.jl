@@ -34,7 +34,7 @@ let target_modules = (JET,)
     # ignore some dynamically-designed functions
     # TODO implement `signature_filter` and limit the ignorance scope
     function function_filter(@nospecialize ft)
-        if ft === typeof(JET.widenconst) ||
+        if (ft === typeof(JET.widenconst) ||
             ft === typeof(JET.ignorelimited) ||
             ft === typeof(JET.print) ||
             ft === typeof(Base.CoreLogging.handle_message) ||
@@ -46,7 +46,8 @@ let target_modules = (JET,)
             ft === typeof(JET.handle_sig!) ||
             ft === typeof(JET._which) ||
             (@static VERSION < v"1.9.0-DEV.283" && ft === typeof(JET.rewrap_unionall)) || # requires https://github.com/JuliaLang/julia/pull/44512
-            false
+            (@static VERSION < v"1.9-" && ft === typeof(JET.nameof)) ||
+            false)
             return false
         end
         return true
