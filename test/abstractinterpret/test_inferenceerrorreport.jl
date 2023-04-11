@@ -1,3 +1,9 @@
+# TODO set up a dedicated module context for this testset
+# NOTE currently this testset relies on the fact that it is run in the `Main` module
+# module test_inferenceerrorreport
+
+include("../setup.jl")
+
 # similar to ⊆, but respect the sequence, ignore char vs. string difference
 function ⫇(a, b)
     normalize(@nospecialize(x)) = x
@@ -197,3 +203,6 @@ sparams22(::Type{A}, ::Type{B}) where B where A = zero(A), zero(B)
         @test "B" in report.sig
     end
 end
+
+# TODO set up a dedicated module context for this testset
+# end # module test_inferenceerrorreport

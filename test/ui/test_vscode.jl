@@ -1,3 +1,7 @@
+module test_vscode
+
+include("../setup.jl")
+
 import JET.VSCode:
     get_reports,
     gen_postprocess,
@@ -119,3 +123,5 @@ end
         check_inference_integration(item, report)
     end
 end
+
+end # module test_vscode

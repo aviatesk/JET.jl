@@ -1,4 +1,4 @@
-module InterfaceTest
+module test_JETInterface
 
 using JET.JETInterface, JET, Test, InteractiveUtils
 import JET: get_reports, BasicPass, UndefVarErrorReport
@@ -81,4 +81,4 @@ let result = @report_apivalidator compute_sins(10)
     @test isempty(get_reports(result))
 end
 
-end # module InterfaceTest
+end # module test_JETInterface

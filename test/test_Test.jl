@@ -1,3 +1,7 @@
+module test_Test
+
+using Test, JET
+
 import Base.Meta: isexpr
 import MacroTools: @capture, postwalk
 
@@ -165,3 +169,5 @@ end
     r = ts.results[1]
     @test isa(r, Test.Broken)
 end
+
+end # module test_Test

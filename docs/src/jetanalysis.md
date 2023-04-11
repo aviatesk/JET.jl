@@ -166,7 +166,7 @@ end
 
 JET uses JET itself in its test pipeline: JET's static analysis has been proven to
 be very useful and helped its development a lot.
-If interested, take a peek at [JET's `"self check !!!"` testset](https://github.com/aviatesk/JET.jl/blob/master/test/runtests.jl).
+If interested, take a peek at [JET's `"self check"` testset](https://github.com/aviatesk/JET.jl/blob/master/test/self_check.jl).
 
 Lastly, let's see the example that demonstrates JET can analyze a "top-level" program.
 The top-level analysis should be considered as a somewhat experimental feature, and at this moment

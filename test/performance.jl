@@ -1,3 +1,7 @@
+module performance
+
+using Test, JET
+
 # fresh execution/benchmark tools
 include(normpath(@__DIR__, "..", "benchmark", "JETBenchmarkUtils.jl"))
 using .JETBenchmarkUtils
@@ -33,4 +37,6 @@ using .JETBenchmarkUtils
         end
         @test ok
     end
+end
+
 end

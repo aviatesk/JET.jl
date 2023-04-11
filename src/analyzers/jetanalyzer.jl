@@ -1293,7 +1293,8 @@ function nofield_msg(@nospecialize(typ), name::Symbol)
     if typ <: Tuple
         typ = Tuple # reproduce base error message
     end
-    return lazy"type $typ has no field $name"
+    tname = nameof(typ::Union{DataType,UnionAll})
+    return lazy"type $tname has no field $name"
 end
 function boundserror_msg(@nospecialize(typ), name::Int)
     return lazy"BoundsError: attempt to access $typ at index [$name]"

@@ -1,3 +1,7 @@
+module test_misc
+
+using JET, Test
+
 @testset "report_call entry" begin
     @test_throws ErrorException("Could not find single target method for `sin(::String)`") report_call(sin, (String,))
     @test_throws ErrorException("Could not find single target method for `sin(::String)`") @report_call sin("julia")
@@ -89,3 +93,5 @@ end
     @test_throws "target_module" @report_call target_module=(Core,) sum(Char[])
     @test_throws "foo = :bar" @report_call foo = :bar sum(Char[])
 end
+
+end # module test_misc

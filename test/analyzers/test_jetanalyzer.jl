@@ -1,3 +1,7 @@
+module test_jetanalyzer
+
+include("../setup.jl")
+
 @testset "configurations" begin
     @test_throws JET.JETConfigError report_call(function () end; mode=:badmode)
     @test_throws JET.JETConfigError report_call(function () end; report_pass=JET.BasicPass(), mode=:sound)
@@ -1065,3 +1069,5 @@ test_call(issue_404, (Bool,))
         @test err.msg == r.msg
     end
 end
+
+end # module test_jetanalyzer

@@ -1,5 +1,6 @@
-# OptAnalyzer
-# ===========
+module test_optanalyzer
+
+include("../setup.jl")
 
 getsomething(x::Any) = x
 getsomething(x::Array) = x[]
@@ -298,3 +299,5 @@ let result = report_opt() do
     end
     @test isempty(get_reports_with_test(result))
 end
+
+end # module test_optanalyzer

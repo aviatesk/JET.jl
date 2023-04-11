@@ -1,3 +1,7 @@
+module test_virtualprocess
+
+include("../setup.jl")
+
 @testset "syntax error reports" begin
     let s = """
         begin
@@ -2273,3 +2277,5 @@ end
         @test isa(r, DependencyError) && r.pkg == "UninstalledDependency" && r.dep == "UninstalledDep"
     end
 end
+
+end # module test_virtualprocess

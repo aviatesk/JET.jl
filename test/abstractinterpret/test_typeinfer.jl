@@ -1,3 +1,7 @@
+module test_typeinfer
+
+include("../setup.jl")
+
 @testset "inference with abstract global variable" begin
     let
         vmod = gen_virtual_module()
@@ -695,3 +699,5 @@ let res = report_opt() do
     end
     @test isempty(get_reports_with_test(res))
 end
+
+end # module test_typeinfer

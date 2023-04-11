@@ -1,6 +1,6 @@
-# NOTE:
-# tests in this file may not be so robust against the future changes in JET.jl or
-# even those in julia itself
+module test_print
+
+include("../setup.jl")
 
 @testset "print toplevel errors" begin
     let
@@ -115,3 +115,5 @@ test_print_callf(f, a) = f(a)
         @test !occursin(r"(Main|Base)\.test_print_callf", s)
     end
 end
+
+end # module test_print
