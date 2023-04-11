@@ -1,3 +1,4 @@
+# run simple performance benchmark
 module performance
 
 using Test, JET

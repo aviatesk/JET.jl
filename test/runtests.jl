@@ -4,61 +4,35 @@ using Test, JET
 
 @testset "JET.jl" begin
     @testset "abstractinterpret" begin
-        @testset "inferenceerrorreport.jl" begin
-            include("abstractinterpret/test_inferenceerrorreport.jl")
-        end
+        @testset "inferenceerrorreport.jl" include("abstractinterpret/test_inferenceerrorreport.jl")
 
-        @testset "typeinfer.jl" begin
-            include("abstractinterpret/test_typeinfer.jl")
-        end
+        @testset "typeinfer.jl" include("abstractinterpret/test_typeinfer.jl")
     end
 
     @testset "toplevel" begin
-        @testset "virtualprocess.jl" begin
-            include("toplevel/test_virtualprocess.jl")
-        end
+        @testset "virtualprocess.jl" include("toplevel/test_virtualprocess.jl")
     end
 
     @testset "ui" begin
         # tests with Windows-paths is just an hell
-        @static Sys.iswindows() || @testset "print.jl" begin
-            include("ui/test_print.jl")
-        end
+        @static Sys.iswindows() || @testset "print.jl" include("ui/test_print.jl")
 
-        @testset "vscode.jl" begin
-            include("ui/test_vscode.jl")
-        end
+        @testset "vscode.jl" include("ui/test_vscode.jl")
     end
 
-    @testset "misc" begin
-        include("test_misc.jl")
-    end
+    @testset "misc" include("test_misc.jl")
 
-    @testset "Test.jl integration" begin
-        include("test_Test.jl")
-    end
+    @testset "Test.jl integration" include("test_Test.jl")
 
-    @testset "JETInterface" begin
-        include("test_JETInterface.jl")
-    end
+    @testset "JETInterface" include("test_JETInterface.jl")
 
     @testset "analyzers" begin
-        @testset "JETAnalyzer" begin
-            include("analyzers/test_jetanalyzer.jl")
-        end
+        @testset "JETAnalyzer" include("analyzers/test_jetanalyzer.jl")
 
-        @testset "OptAnalyzer" begin
-            include("analyzers/test_optanalyzer.jl")
-        end
+        @testset "OptAnalyzer" include("analyzers/test_optanalyzer.jl")
     end
 
-    # run simple performance benchmark
-    # and also run OptAnalyzer on JET
-    @testset "performance" begin
-        include("performance.jl")
-    end
+    @testset "performance" include("performance.jl")
 
-    @testset "self check" begin
-        include("self_check.jl")
-    end
+    @testset "self check" include("self_check.jl")
 end
