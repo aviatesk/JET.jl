@@ -846,14 +846,14 @@ function CC.finish(me::InferenceState, analyzer::AbstractAnalyzer)
                 if isa(lhs, SlotNumber)
                     slot = slot_id(lhs)
                     if is_global_slot(analyzer, slot)
-                        isnd = !is_deterministic(cfg, pc)
+                        isd = is_deterministic(cfg, pc)
 
                         # COMBAK this approach is really not true when there're multiple
                         # assignments in different basic blocks
                         if haskey(assigns, slot)
-                            assigns[slot] |= isnd
+                            assigns[slot] &= isd
                         else
-                            assigns[slot] = isnd
+                            assigns[slot] = isd
                         end
                     end
                 end
@@ -862,10 +862,10 @@ function CC.finish(me::InferenceState, analyzer::AbstractAnalyzer)
 
         if !isempty(assigns)
             slottypes = collect_slottypes(me)
-            for (slot, isnd) in assigns
+            for (slot, isd) in assigns
                 slotname = get_global_slots(analyzer)[slot]
                 typ = slottypes[slot]
-                set_abstract_global!(analyzer, get_toplevelmod(analyzer), slotname, typ, isnd, me)
+                set_abstract_global!(analyzer, get_toplevelmod(analyzer), slotname, typ, isd, me)
             end
         end
     end
@@ -946,7 +946,8 @@ function collect_slottypes(sv::InferenceState)
 end
 end
 
-function set_abstract_global!(analyzer::AbstractAnalyzer, mod::Module, name::Symbol, @nospecialize(t), isnd::Bool, sv::InferenceState)
+function set_abstract_global!(analyzer::AbstractAnalyzer, mod::Module, name::Symbol,
+                              @nospecialize(t), is_deterministic::Bool, sv::InferenceState)
     prev_agv = nothing
     prev_t = nothing
     isconst = is_constant_declared(name, sv)
@@ -989,16 +990,10 @@ function set_abstract_global!(analyzer::AbstractAnalyzer, mod::Module, name::Sym
         return
     end
 
-    # if this assignment happens non-deterministically, we need to take the previous type into account
-    if isnd
-        if !isnew # if this assignment is an initialization, we just need to use `t`
-            t = tmerge(prev_t, t)
-        end
-    else
-        # if this assignment happens deterministically, and the assigned value is known to be
-        # constant statically, let's concretize it for good reasons;
-        # we will be able to use it in concrete interpretation and so this allows to define
-        # structs with type aliases, etc.
+    if is_deterministic
+        # if this assignment happens deterministically, and the assigned value is known
+        # to be constant statically, let's concretize it for good reason; doing so allows
+        # us to use it in concrete interpretation and define structs with type aliases, etc.
         v = singleton_type(t)
         if v !== nothing
             if isconst
@@ -1009,6 +1004,10 @@ function set_abstract_global!(analyzer::AbstractAnalyzer, mod::Module, name::Sym
                 return Core.eval(mod, :($name = $(QuoteNode(v))))
             end
         end
+    elseif !isnew
+        # if this assignment happens non-deterministically,
+        # we need to take the previous type into account
+        t = tmerge(prev_t, t)
     end
 
     # okay, we will define new abstract global variable from here on
