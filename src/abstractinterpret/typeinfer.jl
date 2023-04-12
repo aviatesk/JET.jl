@@ -953,7 +953,7 @@ function set_abstract_global!(analyzer::AbstractAnalyzer, mod::Module, name::Sym
 
     # check if this global variable is already assigned previously
     if isdefined(mod, name)
-        val = getfield(mod, name)
+        val = getglobal(mod, name)
         if isa(val, AbstractGlobal)
             prev_t = val.t
             if val.isconst && (prev_t′ = widenconst(prev_t)) !== (t′ = widenconst(t))
@@ -999,15 +999,8 @@ function set_abstract_global!(analyzer::AbstractAnalyzer, mod::Module, name::Sym
         # constant statically, let's concretize it for good reasons;
         # we will be able to use it in concrete interpretation and so this allows to define
         # structs with type aliases, etc.
-        local v
-        if isa(t, Const)
-            v = t.val
-        elseif isconstType(t)
-            v = t.parameters[1]
-        elseif issingletontype(t)
-            v = t.instance
-        end
-        if @isdefined v
+        v = singleton_type(t)
+        if v !== nothing
             if isconst
                 @assert isnew # means, this is a valid constant declaration
                 return Core.eval(mod, :(const $name = $(QuoteNode(v))))
