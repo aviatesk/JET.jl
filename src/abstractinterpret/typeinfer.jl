@@ -833,40 +833,40 @@ end
 function CC.finish(me::InferenceState, analyzer::AbstractAnalyzer)
     ret = @invoke CC.finish(me::InferenceState, analyzer::AbstractInterpreter)
 
-    if istoplevel(me)
-        # find assignments of abstract global variables, and assign types to them,
-        # so that later analysis can refer to them
+    istoplevel(me) || return ret
 
-        stmts = me.src.code
-        cfg = compute_basic_blocks(stmts)
-        assigns = Dict{Int,Bool}() # slot id => is this deterministic
-        for (pc, stmt) in enumerate(stmts)
-            if isexpr(stmt, :(=))
-                lhs = first(stmt.args)
-                if isa(lhs, SlotNumber)
-                    slot = slot_id(lhs)
-                    if is_global_slot(analyzer, slot)
-                        isd = is_deterministic(cfg, pc)
+    # find assignments of abstract global variables, and assign types to them,
+    # so that later analysis can refer to them
 
-                        # COMBAK this approach is really not true when there're multiple
-                        # assignments in different basic blocks
-                        if haskey(assigns, slot)
-                            assigns[slot] &= isd
-                        else
-                            assigns[slot] = isd
-                        end
+    stmts = me.src.code
+    cfg = compute_basic_blocks(stmts)
+    assigns = Dict{Int,Bool}() # slot id => is this deterministic
+    for (pc, stmt) in enumerate(stmts)
+        if isexpr(stmt, :(=))
+            lhs = first(stmt.args)
+            if isa(lhs, SlotNumber)
+                slot = slot_id(lhs)
+                if is_global_slot(analyzer, slot)
+                    isd = is_deterministic(cfg, pc)
+
+                    # COMBAK this approach is really not true when there're multiple
+                    # assignments in different basic blocks
+                    if haskey(assigns, slot)
+                        assigns[slot] &= isd
+                    else
+                        assigns[slot] = isd
                     end
                 end
             end
         end
+    end
 
-        if !isempty(assigns)
-            slottypes = collect_slottypes(me)
-            for (slot, isd) in assigns
-                slotname = get_global_slots(analyzer)[slot]
-                typ = slottypes[slot]
-                set_abstract_global!(analyzer, get_toplevelmod(analyzer), slotname, typ, isd, me)
-            end
+    if !isempty(assigns)
+        slottypes = collect_slottypes(me)
+        for (slot, isd) in assigns
+            slotname = get_global_slots(analyzer)[slot]
+            typ = slottypes[slot]
+            set_abstract_global!(analyzer, get_toplevelmod(analyzer), slotname, typ, isd, me)
         end
     end
 
