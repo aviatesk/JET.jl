@@ -1015,9 +1015,9 @@ end
 
 function select_direct_requirement!(concretize, stmts, edges)
     for (i, stmt) in enumerate(stmts)
-        if ismethod(stmt)      || # don't abstract away method definitions
-           istypedef(stmt)     || # don't abstract away type definitions
-           ismoduleusage(stmt)    # module usages are handled by `ConcreteInterpreter`
+        if (ismethod(stmt) ||    # don't abstract away method definitions
+            istypedef(stmt) ||   # don't abstract away type definitions
+            ismoduleusage(stmt)) # module usages are handled by `ConcreteInterpreter`
             concretize[i] = true
             continue
         end

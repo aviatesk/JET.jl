@@ -413,15 +413,6 @@ JET.@report_call
 JET.report_call
 ```
 
-### [`Test` Integration](@id jetanalysis-test-integration)
-
-JET also exports entries that are fully integrated with [`Test` standard library](https://docs.julialang.org/en/v1/stdlib/Test/)'s unit-testing infrastructure.
-It can be used in your test suite to assert your program is free from errors that JET can detect:
-```@docs
-JET.@test_call
-JET.test_call
-```
-
 ### [Top-level Entry Points](@id jetanalysis-toplevel-entry)
 
 JET can also analyze your "top-level" program: it can just take your Julia script or package
@@ -447,6 +438,17 @@ JET.report_package
 JET.report_text
 ```
 
+### [`Test` Integration](@id jetanalysis-test-integration)
+
+JET also exports entries that are fully integrated with [`Test` standard library](https://docs.julialang.org/en/v1/stdlib/Test/)'s unit-testing infrastructure.
+It can be used in your test suite to assert your program is free from errors that JET can detect:
+```@docs
+JET.@test_call
+JET.test_call
+JET.test_file
+JET.test_package
+JET.test_text
+```
 
 ## [Configurations](@id jetanalysis-config)
 

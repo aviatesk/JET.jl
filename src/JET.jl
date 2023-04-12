@@ -6,7 +6,8 @@ module JET
 export
     # jetanalyzer
     @report_call, report_call, @test_call, test_call,
-    report_file, report_package, report_text, watch_file,
+    report_file, test_file, report_package, test_package, report_text, test_text,
+    watch_file,
     # optanalyzer
     @report_opt, report_opt, @test_opt, test_opt,
     # configurations
@@ -1231,17 +1232,21 @@ function _call_test_ex(funcname::Symbol, testname::Symbol, ex0, __module__, __so
 end
 
 """
-    call_test(func, testname::Symbol, args...; jetconfigs...)
+    func_test(func, testname::Symbol, args...; jetconfigs...)
 
 An internal utility function to implement a `test_call`-like function.
 See the implementation of [`test_call`](@ref).
 """
-function call_test(func, testname::Symbol, @nospecialize(args...);
+function func_test(func, testname::Symbol, @nospecialize(args...);
     broken::Bool = false, skip::Bool = false,
     jetconfigs...)
     source = LineNumberNode(@__LINE__, @__FILE__)
-    kwargs = map(((k,v),)->Expr(:kw, k, v), collect(jetconfigs))
-    orig_expr = :($func($(args...); $(kwargs...)))
+    if isempty(jetconfigs)
+        orig_expr = :($func($(args...)))
+    else
+        kwargs = map(((k,v),)->Expr(:kw, k, v), collect(jetconfigs))
+        orig_expr = :($func($(args...); $(kwargs...)))
+    end
 
     if skip
         Test.record(get_testset(), Broken(:skipped, orig_expr))
@@ -1276,7 +1281,7 @@ end
 struct JETTestFailure <: Result
     orig_expr::Expr
     source::LineNumberNode
-    result::JETCallResult
+    result::Union{JETCallResult,JETToplevelResult}
 end
 
 const TEST_INDENTS = "  "
@@ -1368,7 +1373,7 @@ reexport_as_api!(JETInterface,
     # InferenceErrorReport API
     InferenceErrorReport, copy_report, print_report_message, print_signature, report_color,
     # generic entry points,
-    analyze_and_report_call!, call_test_ex, call_test,
+    analyze_and_report_call!, call_test_ex, func_test,
     analyze_and_report_file!, analyze_and_report_package!, analyze_and_report_text!,
     # development utilities
     add_new_report!, var"@jetreport")
