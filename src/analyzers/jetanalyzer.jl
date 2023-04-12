@@ -1590,7 +1590,7 @@ Except that it takes a type signature rather than a call expression, this functi
 in the same way as [`@test_call`](@ref).
 """
 function test_call(args...; jetconfigs...)
-    return call_test(report_call, :test_call, args...; jetconfigs...)
+    return func_test(report_call, :test_call, args...; jetconfigs...)
 end
 
 # top-level
@@ -1639,6 +1639,23 @@ function report_file(args...; jetconfigs...)
 end
 
 """
+    test_file(file::AbstractString; jetconfigs...)
+
+Runs [`report_file`](@ref) and tests that there are no problems detected.
+
+As with [`report_file`](@ref), the [general configurations](@ref) and
+[the error analysis specific configurations](@ref jetanalysis-config)
+can be specified as an optional argument.
+
+Like [`@test_call`](@ref), `test_file` is fully integrated with the
+[`Test` standard library](https://docs.julialang.org/en/v1/stdlib/Test/).
+See [`@test_call`](@ref) for the details.
+"""
+function test_file(args...; jetconfigs...)
+    return func_test(report_file, :test_file, args...; jetconfigs...)
+end
+
+"""
     report_package(package::Union{AbstractString,Module}; jetconfigs...) -> JETToplevelResult
 
 Analyzes `package` in the same way as [`report_file`](@ref) and returns back type-level errors
@@ -1676,6 +1693,32 @@ function report_package(args...; jetconfigs...)
 end
 
 """
+    test_package(package::Union{AbstractString,Module}; jetconfigs...)
+    test_package(; jetconfigs...)
+
+Runs [`report_package`](@ref) and tests that there are no problems detected.
+
+As with [`report_package`](@ref), the [general configurations](@ref) and
+[the error analysis specific configurations](@ref jetanalysis-config)
+can be specified as an optional argument.
+
+Like [`@test_call`](@ref), `test_package` is fully integrated with the
+[`Test` standard library](https://docs.julialang.org/en/v1/stdlib/Test/).
+See [`@test_call`](@ref) for the details.
+
+```julia
+julia> @testset "test_package" begin
+    test_package("Example"; toplevel_logger=nothing)
+end;
+Test Summary: | Pass  Total  Time
+test_package  |    1      1  0.0s
+```
+"""
+function test_package(args...; jetconfigs...)
+    return func_test(report_package, :test_package, args...; jetconfigs...)
+end
+
+"""
     report_text(text::AbstractString; jetconfigs...) -> JETToplevelResult
     report_text(text::AbstractString, filename::AbstractString; jetconfigs...) -> JETToplevelResult
 
@@ -1684,6 +1727,24 @@ Analyzes top-level `text` and returns back type-level errors.
 function report_text(args...; jetconfigs...)
     analyzer = JETAnalyzer(; jetconfigs...)
     return analyze_and_report_text!(analyzer, args...; jetconfigs...)
+end
+
+"""
+    test_text(package::Union{AbstractString,Module}; jetconfigs...)
+    test_text(; jetconfigs...)
+
+Runs [`report_package`](@ref) and tests that there are no problems detected.
+
+As with [`report_package`](@ref), the [general configurations](@ref) and
+[the error analysis specific configurations](@ref jetanalysis-config)
+can be specified as an optional argument.
+
+Like [`@test_call`](@ref), `test_text` is fully integrated with the
+[`Test` standard library](https://docs.julialang.org/en/v1/stdlib/Test/).
+See [`@test_call`](@ref) for the details.
+"""
+function test_text(args...; jetconfigs...)
+    return func_test(report_text, :test_text, args...; jetconfigs...)
 end
 
 """

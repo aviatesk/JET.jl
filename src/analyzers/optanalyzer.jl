@@ -412,14 +412,6 @@ end
 Runs [`@report_opt jetconfigs... f(args...)`](@ref @report_opt) and tests that the function
 call `f(args...)` is free from optimization failures and unresolved method dispatches that
 `@report_opt` can detect.
-Returns a `Pass` result if the test is successful, a `Fail` result if any problems are detected,
-or an `Error` result if the test encounters an unexpected error.
-When the test `Fail`s, abstract call stack to each problem location will be printed to `stdout`.
-```julia-repl
-julia> @test_opt sincos(10)
-Test Passed
-  Expression: #= none:1 =# JET.@test_opt sincos(10)
-```
 
 As with [`@report_opt`](@ref), the [general configurations](@ref) and
 [optimization analysis specific configurations](@ref optanalysis-config)
@@ -439,7 +431,8 @@ Test Passed
   Expression: #= REPL[3]:1 =# JET.@test_call analyzer = JET.OptAnalyzer target_modules = (#= REPL[3]:1 =# @__MODULE__(),) f(10)
 ```
 
-Like [`@test_call`](@ref), `@test_opt` is fully integrated with [`Test` standard library](https://docs.julialang.org/en/v1/stdlib/Test/).
+Like [`@test_call`](@ref), `@test_opt` is fully integrated with the
+[`Test` standard library](https://docs.julialang.org/en/v1/stdlib/Test/).
 See [`@test_call`](@ref) for the details.
 """
 macro test_opt(ex0...)
@@ -453,8 +446,8 @@ end
 Runs [`report_opt`](@ref) on a function call with the given type signature and tests that
 it is free from optimization failures and unresolved method dispatches that `report_opt` can detect.
 Except that it takes a type signature rather than a call expression, this function works
-in the same way as [`@test_call`](@ref).
+in the same way as [`@test_opt`](@ref).
 """
 function test_opt(@nospecialize(args...); jetconfigs...)
-    return call_test(report_opt, :test_opt, args...; jetconfigs...)
+    return func_test(report_opt, :test_opt, args...; jetconfigs...)
 end
