@@ -64,14 +64,13 @@ import Test:
 
 # usings
 # ======
-# TODO: really use `using` instead
 
-import Core:
+using Core:
     Argument, Builtin, CodeInfo, CodeInstance, Const, GlobalRef, GotoIfNot, GotoNode,
     IntrinsicFunction, Intrinsics, LineInfoNode, MethodInstance, MethodMatch, MethodTable,
     ReturnNode, SSAValue, SimpleVector, SlotNumber, svec
 
-import .CC:
+using .CC:
     AbstractInterpreter, ArgInfo, BasicBlock, Bottom, CFG, CachedMethodTable, CallMeta,
     ConstCallInfo, InferenceResult, InternalMethodTable, InvokeCallInfo, LimitedAccuracy,
     MethodCallResult, MethodLookupResult, MethodMatchInfo, MethodMatches, NOT_FOUND,
@@ -84,35 +83,35 @@ import .CC:
     tmerge, widenconst,
     ⊑
 
-import Base:
+using Base:
     @invoke, @invokelatest, IdSet, default_tt, destructure_callex, parse_input_line,
     rewrap_unionall, uniontypes, unwrap_unionall
 
-import Base.Meta:
+using Base.Meta:
     _parse_string, isexpr, lower
 
-import Base.Experimental:
+using Base.Experimental:
     @MethodTable, @overlay
 
 using LoweredCodeUtils, JuliaInterpreter
 
-import LoweredCodeUtils:
+using LoweredCodeUtils:
     #=NamedVar,=# add_control_flow!, #=add_named_dependencies!, add_requests!,=#
     add_ssa_preds!, add_typedefs!, callee_matches, find_typedefs, ismethod, istypedef,
     print_with_code, pushall!, rng
 
-import JuliaInterpreter:
+using JuliaInterpreter:
     @lookup, _INACTIVE_EXCEPTION, bypass_builtins, collect_args, #=finish!,=#
     is_quotenode_egal, is_return, maybe_evaluate_builtin, moduleof
 
-import MacroTools:
+using MacroTools:
     @capture, MacroTools, normalise, striplines
 
 using InteractiveUtils
 
 using Pkg, Pkg.TOML
 
-import Test:
+using Test:
     Broken, DefaultTestSet, Error, Fail, FallbackTestSet, FallbackTestSetException, Pass,
     Result, TESTSET_PRINT_ENABLE, Test, get_testset
 
