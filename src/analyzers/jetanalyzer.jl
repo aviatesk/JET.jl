@@ -1708,8 +1708,8 @@ See [`@test_call`](@ref) for the details.
 
 ```julia
 julia> @testset "test_package" begin
-    test_package("Example"; toplevel_logger=nothing)
-end;
+           test_package("Example"; toplevel_logger=nothing)
+       end;
 Test Summary: | Pass  Total  Time
 test_package  |    1      1  0.0s
 ```
