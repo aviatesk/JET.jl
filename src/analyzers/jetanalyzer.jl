@@ -41,7 +41,6 @@ struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
         return new{RP}(state, analysis_cache, report_pass, method_table)
     end
     function JETAnalyzer(state::AnalyzerState, report_pass::RP) where RP
-        cache_key = compute_hash(state.inf_params, report_pass)
         if (@ccall jl_generating_output()::Cint) != 0
             # XXX Avoid storing analysis results into a cache that persists across the
             #     precompilation, as pkgimage currently doesn't support serializing
@@ -51,6 +50,7 @@ struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
             #     (see https://github.com/JuliaLang/julia/issues/48453).
             analysis_cache = AnalysisCache()
         else
+            cache_key = compute_hash(state.inf_params, report_pass)
             analysis_cache = get!(()->AnalysisCache(), JET_ANALYZER_CACHE, cache_key)
         end
         return JETAnalyzer(state, analysis_cache, report_pass)
@@ -1656,12 +1656,13 @@ function test_file(args...; jetconfigs...)
 end
 
 """
-    report_package(package::Union{AbstractString,Module}; jetconfigs...) -> JETToplevelResult
+    report_package(package::Module; jetconfigs...) -> JETToplevelResult
+    report_package(package::AbstractString; jetconfigs...) -> JETToplevelResult
 
 Analyzes `package` in the same way as [`report_file`](@ref) and returns back type-level errors
 with the special default configurations, which are especially tuned for analyzing a package
 (see below for details).
-`package` can be either a `Module` or a `String`.
+The `package` argument can be either a `Module` or a `AbstractString`.
 In the latter case it must be the name of a package in your current environment.
 
 The error analysis performed by this function is configured as follows by default:
@@ -1680,7 +1681,7 @@ configurations described above.
 
 ---
 
-    report_package(; jetconfigs...)
+    report_package(; jetconfigs...) -> JETToplevelResult
 
 Like above but analyzes the package of the current project.
 
@@ -1693,7 +1694,8 @@ function report_package(args...; jetconfigs...)
 end
 
 """
-    test_package(package::Union{AbstractString,Module}; jetconfigs...)
+    test_package(package::Module; jetconfigs...)
+    test_package(package::AbstractString; jetconfigs...)
     test_package(; jetconfigs...)
 
 Runs [`report_package`](@ref) and tests that there are no problems detected.

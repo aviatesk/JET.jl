@@ -1014,7 +1014,7 @@ end
 
 function find_pkg(::Nothing)
     project = Pkg.project()
-    project.ispackage || error(lazy"active project at $(project.path) is not a package.")
+    project.ispackage || error(lazy"Active project at $(project.path) is not a package.")
     return find_pkg(project.name)
 end
 
