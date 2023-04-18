@@ -62,7 +62,11 @@ accessed using `get_reports(analyzer, result)`.
 """
 struct AnalysisResult
     reports::Vector{InferenceErrorReport}
+    reported::BitSet
+    AnalysisResult(reports::Vector{InferenceErrorReport}) = new(reports)
+    AnalysisResult(reports::Vector{InferenceErrorReport}, reported::BitSet) = new(reports, reported)
 end
+AnalysisResult() = AnalysisResult(InferenceErrorReport[])
 
 """
     CachedAnalysisResult
@@ -575,7 +579,7 @@ Base.getindex(analyzer::AbstractAnalyzer, result::InferenceResult) = get_results
 Base.setindex!(analyzer::AbstractAnalyzer, AnalysisResult::AnyAnalysisResult, result::InferenceResult) = get_results(analyzer)[result] = AnalysisResult
 
 function init_result!(analyzer::AbstractAnalyzer, result::InferenceResult)
-    analyzer[result] = AnalysisResult(InferenceErrorReport[])
+    analyzer[result] = AnalysisResult()
     return nothing
 end
 function set_cached_result!(analyzer::AbstractAnalyzer, result::InferenceResult, cache::Vector{InferenceErrorReport})
@@ -596,6 +600,22 @@ function add_new_report!(analyzer::AbstractAnalyzer, result::InferenceResult, @n
     push!(get_reports(analyzer, result), report)
     return report
 end
+
+function add_new_report!(analyzer::AbstractAnalyzer, sv::InferenceState, @nospecialize(report::InferenceErrorReport))
+    result = analyzer[sv.result]
+    push!(result.reports, report)
+    if isdefined(result, :reported)
+        push!(result.reported, sv.currpc)
+    else
+        reported = BitSet()
+        push!(reported, sv.currpc)
+        analyzer[sv.result] = AnalysisResult(result.reports, reported)
+    end
+    return report
+end
+
+is_reported(analyzer::AbstractAnalyzer, sv::InferenceState) = (result = analyzer[sv.result];
+    isdefined(result, :reported) && (sv.currpc in result.reported))
 
 function add_cached_report!(analyzer::AbstractAnalyzer, caller::InferenceResult, @nospecialize(cached::InferenceErrorReport))
     cached = copy_report′(cached)
