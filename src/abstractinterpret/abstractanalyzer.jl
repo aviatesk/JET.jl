@@ -62,9 +62,9 @@ accessed using `get_reports(analyzer, result)`.
 """
 struct AnalysisResult
     reports::Vector{InferenceErrorReport}
-    reported::BitSet
+    reported::Set{Int}
     AnalysisResult(reports::Vector{InferenceErrorReport}) = new(reports)
-    AnalysisResult(reports::Vector{InferenceErrorReport}, reported::BitSet) = new(reports, reported)
+    AnalysisResult(reports::Vector{InferenceErrorReport}, reported::Set{Int}) = new(reports, reported)
 end
 AnalysisResult() = AnalysisResult(InferenceErrorReport[])
 
@@ -607,7 +607,7 @@ function add_new_report!(analyzer::AbstractAnalyzer, sv::InferenceState, @nospec
     if isdefined(result, :reported)
         push!(result.reported, sv.currpc)
     else
-        reported = BitSet()
+        reported = Set{Int}()
         push!(reported, sv.currpc)
         analyzer[sv.result] = AnalysisResult(result.reports, reported)
     end
