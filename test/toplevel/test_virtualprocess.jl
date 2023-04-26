@@ -2094,7 +2094,8 @@ end
 end
 
 using Pkg
-function test_report_package(test_func, (pkgname, code))
+function test_report_package(test_func, (pkgname, code);
+                             additional_setup=(::Pkg.API.ProjectInfo)->nothing)
     old = Pkg.project().path
     pkgcode = Base.remove_linenums!(code)
     mktempdir() do tempdir
@@ -2103,6 +2104,8 @@ function test_report_package(test_func, (pkgname, code))
             Pkg.generate(pkgpath; io=devnull)
             Pkg.activate(pkgpath; io=devnull)
             Pkg.develop(; path=normpath(FIXTURE_DIR, "PkgAnalysisDep"), io=devnull)
+
+            additional_setup(Pkg.project())
 
             Pkg.activate(; temp=true, io=devnull)
             Pkg.develop(; path=pkgpath, io=devnull)
@@ -2275,6 +2278,23 @@ end
         end) do res
         r = only(res.res.toplevel_error_reports)
         @test isa(r, DependencyError) && r.pkg == "UninstalledDependency" && r.dep == "UninstalledDep"
+    end
+
+    test_report_package("LoadPreferences" => quote
+            using Preferences
+
+            @load_preference("LoadRootConfig", false)
+            const LoadRootConfig = @load_preference("LoadRootConfig", false)
+
+            module Submodule
+            using Preferences
+            @load_preference("LoadSubConfig", false)
+            const LoadSubConfig = @load_preference("LoadSubConfig", false)
+            end
+        end; additional_setup = function (::Pkg.API.ProjectInfo)
+            Pkg.add("Preferences"; io=devnull)
+        end) do res
+        @test isempty(res.res.toplevel_error_reports)
     end
 end
 
