@@ -2282,8 +2282,15 @@ end
 
     test_report_package("LoadPreferences" => quote
             using Preferences
-            @load_preference("LoadPreferencesConfig", false)
-            const LoadPreferencesConfig = @load_preference("LoadPreferencesConfig", false)
+
+            @load_preference("LoadRootConfig", false)
+            const LoadRootConfig = @load_preference("LoadRootConfig", false)
+
+            module Submodule
+            using Preferences
+            @load_preference("LoadSubConfig", false)
+            const LoadSubConfig = @load_preference("LoadSubConfig", false)
+            end
         end; additional_setup = function (::Pkg.API.ProjectInfo)
             Pkg.add("Preferences"; io=devnull)
         end) do res

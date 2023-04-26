@@ -414,8 +414,12 @@ function virtual_process(x::Union{AbstractString,Expr},
         context = config.context
     end
 
+    if pkgid !== nothing
+        PKG_ID_STASH[] = (Base.moduleroot(context), pkgid)
+    end
     res = VirtualProcessResult(actual2virtual, context)
     _virtual_process!(res, x, filename, pkgid, analyzer, config, context)
+    PKG_ID_STASH[] = nothing
 
     # analyze collected signatures unless critical error happened
     if config.analyze_from_definitions && isempty(res.toplevel_error_reports)
@@ -427,6 +431,9 @@ function virtual_process(x::Union{AbstractString,Expr},
 
     return res
 end
+
+# a temporary stash to store the id of the package being analyzed
+const PKG_ID_STASH = Ref{Union{Nothing,Tuple{Module,Base.PkgId}}}()
 
 """
     virtualize_module_context(actual::Module)
@@ -1360,28 +1367,20 @@ end
 # We can't use the CassetteOverlay-like mechanism for a cleaner implementation, since
 # Preferences.jl might be called within `macroexpand` or `lower` of the main
 # `_virtual_process!` loop, where we don't have control over execution.
-# Note that this hack does not allow Preferences.jl to read or set configurations correctly.
-# A potential TODO is to read the configurations of virtualized package being analyzed.
-struct VirtualUUID end
 push_inithook!() do
     @eval Preferences function get_uuid(m::Module)
-        uuid = Base.PkgId(m).uuid
+        pkg_id_stash = $PKG_ID_STASH[]
+        if pkg_id_stash !== nothing && pkg_id_stash[1] === Base.moduleroot(m)
+            uuid = pkg_id_stash[2].uuid
+        else
+            uuid = Base.PkgId(m).uuid
+        end
         if uuid === nothing
-            # if this is called from `virtual_process`, return `VirtualUUID` instead of erroring
-            for frame in stacktrace(backtrace())
-                if frame.file === $(QuoteNode(JET_VIRTUALPROCESS_FILE)) && frame.func === :with_err_handling
-                    return $VirtualUUID()
-                end
-            end
             throw(ArgumentError("Module $(m) does not correspond to a loaded package!"))
         end
         return uuid
     end
 end
-Preferences.load_preference(::VirtualUUID, ::String, default=nothing) = default
-Preferences.has_preference(::VirtualUUID, ::String) = false
-Preferences.set_preferences!(::VirtualUUID, ::Pair{String,<:Any}...; _...) = nothing
-Preferences.delete_preferences!(::VirtualUUID, ::String...; _...) = nothing
 
 function with_err_handling(f, err_handler, scrub_offset::Int)
     try
