@@ -706,8 +706,8 @@ function _virtual_process!(res::VirtualProcessResult,
             end
         end
 
-        # we will end up lowering `x` later, but special case `macrocall`s and expand it here
-        # this is because macros can arbitrarily generate `:toplevel` and `:module` expressions
+        # although we will lower `x` after special-handling `:toplevel` and `:module` expressions,
+        # expand `macrocall`s here because macro can arbitrarily generate those expressions
         if isexpr(x, :macrocall)
             newx = macroexpand_with_err_handling(context, x)
 
@@ -1345,6 +1345,44 @@ function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame, err)
     return nothing # stop further interpretation
 end
 
+# HACK to prevent Preferences.jl from throwing errors for virtual modules.
+# This is a very dirty solution for https://github.com/aviatesk/JET.jl/issues/497,
+# but ideally this should be replaced with a better solution if available.
+# Without this monkey patching, we will encounter something like:
+# ```
+# │ ArgumentError: Module XXX does not correspond to a loaded package!
+# │ Stacktrace:
+# │  [1] get_uuid(m::Module)
+# │    @ Preferences ~/.julia/packages/Preferences/VmJXL/src/utils.jl:8
+# │  [2] var"@load_preference"(__source__::LineNumberNode, __module__::Module, key::Any, default::Any)
+# │    @ Preferences ~/.julia/packages/Preferences/VmJXL/src/Preferences.jl:45
+# ```
+# We can't use the CassetteOverlay-like mechanism for a cleaner implementation, since
+# Preferences.jl might be called within `macroexpand` or `lower` of the main
+# `_virtual_process!` loop, where we don't have control over execution.
+# Note that this hack does not allow Preferences.jl to read or set configurations correctly.
+# A potential TODO is to read the configurations of virtualized package being analyzed.
+struct VirtualUUID end
+push_inithook!() do
+    @eval Preferences function get_uuid(m::Module)
+        uuid = Base.PkgId(m).uuid
+        if uuid === nothing
+            # if this is called from `virtual_process`, return `VirtualUUID` instead of erroring
+            for frame in stacktrace(backtrace())
+                if frame.file === $(QuoteNode(JET_VIRTUALPROCESS_FILE)) && frame.func === :with_err_handling
+                    return $VirtualUUID()
+                end
+            end
+            throw(ArgumentError("Module $(m) does not correspond to a loaded package!"))
+        end
+        return uuid
+    end
+end
+Preferences.load_preference(::VirtualUUID, ::String, default=nothing) = default
+Preferences.has_preference(::VirtualUUID, ::String) = false
+Preferences.set_preferences!(::VirtualUUID, ::Pair{String,<:Any}...; _...) = nothing
+Preferences.delete_preferences!(::VirtualUUID, ::String...; _...) = nothing
+
 function with_err_handling(f, err_handler, scrub_offset::Int)
     try
         return f()
@@ -1353,11 +1391,12 @@ function with_err_handling(f, err_handler, scrub_offset::Int)
         st = stacktrace(bt)
 
         # scrub the original stacktrace so that it only contains frames from user code
-        i = findfirst(st) do frame
-            frame.file === JET_VIRTUALPROCESS_FILE && frame.func === :with_err_handling
+        for (i, frame) in enumerate(st)
+            if frame.file === JET_VIRTUALPROCESS_FILE && frame.func === :with_err_handling
+                st = st[1:(i - scrub_offset)]
+                break
+            end
         end
-        @assert i !== nothing
-        st = st[1:(i - scrub_offset)]
 
         return err_handler(err, st)
     end
