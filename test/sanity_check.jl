@@ -32,6 +32,6 @@ end
 test_dependent("Issue499" => quote
     using JET
 end) do proj
-    Pkg.precompile(proj.name)
+    Pkg.precompile(proj.name; io=devnull)
     @test true
 end
