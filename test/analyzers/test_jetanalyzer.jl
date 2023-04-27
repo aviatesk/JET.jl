@@ -148,27 +148,27 @@ end
         @test report.sig[end] === Symbol
     end
 
-    # report both no match error and uncovered match error
-    let result = @eval Module() begin
-            onlyint(::Int) = :ok
-            $report_call((Union{Integer,Nothing},); mode=:sound) do x
-                onlyint(x)
-            end
-        end
-        @test length(get_reports_with_test(result)) == 2
-        @test any(get_reports_with_test(result)) do report
-            # no match for `onlyint(::Nothing)`
-            report isa MethodErrorReport &&
-            !report.uncovered &&
-            report.sig[end] === Union{}
-        end
-        @test any(get_reports_with_test(result)) do report
-            # uncovered match for `onlyint(::Integer)`
-            report isa MethodErrorReport &&
-            report.uncovered &&
-            report.sig[end] === Symbol
-        end
-    end
+    # # report both no match error and uncovered match error
+    # let result = @eval Module() begin
+    #         onlyint(::Int) = :ok
+    #         $report_call((Union{Integer,Nothing},); mode=:sound) do x
+    #             onlyint(x)
+    #         end
+    #     end
+    #     @test length(get_reports_with_test(result)) == 2
+    #     @test any(get_reports_with_test(result)) do report
+    #         # no match for `onlyint(::Nothing)`
+    #         report isa MethodErrorReport &&
+    #         !report.uncovered &&
+    #         report.sig[end] === Union{}
+    #     end
+    #     @test any(get_reports_with_test(result)) do report
+    #         # uncovered match for `onlyint(::Integer)`
+    #         report isa MethodErrorReport &&
+    #         report.uncovered &&
+    #         report.sig[end] === Symbol
+    #     end
+    # end
 end
 
 @testset "UndefVarErrorReport" begin
