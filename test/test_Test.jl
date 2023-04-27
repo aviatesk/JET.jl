@@ -15,8 +15,6 @@ function with_isolated_testset(f)
                 f()
             end
         end
-    catch err
-        rethrow(err)
     finally
         Test.pop_testset()
     end

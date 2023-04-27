@@ -2119,8 +2119,6 @@ function test_report_package(test_func, (pkgname, code);
             @eval @testset $pkgname $test_func($res)
 
             return res
-        catch err
-            rethrow(err)
         finally
             Pkg.activate(old; io=devnull)
         end

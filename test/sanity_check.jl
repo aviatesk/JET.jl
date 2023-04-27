@@ -21,8 +21,6 @@ function test_dependent(test_func, (pkgname, code))
             write(pkgfile, string(pkgcode))
 
             test_func(proj)
-        catch err
-            rethrow(err)
         finally
             Pkg.activate(old; io=devnull)
         end
