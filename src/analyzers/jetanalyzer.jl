@@ -1027,9 +1027,6 @@ function (::SoundBasicPass)(::Type{InvalidConstantDeclaration}, analyzer::JETAna
     return true
 end
 
-# XXX tfunc implementations in Core.Compiler are really not enough to catch invalid calls
-# TODO set up our own checks and enable sound analysis
-
 """
     SeriousExceptionReport <: InferenceErrorReport
 
@@ -1410,9 +1407,6 @@ print_report_message(io::IO, r::UnsoundBuiltinErrorReport) = print(io, r.msg)
 print_signature(::UnsoundBuiltinErrorReport) = true
 
 function (::SoundPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(rt))
-    # TODO enable this sound pass:
-    # - make `stmt_effect_free` work on `InfernceState`
-    # - sort out `argextype` interface to make it accept `InfernceState`
     @assert !(f === throw) "`throw` calls should be handled either by the report pass of `SeriousExceptionReport` or `UncaughtExceptionReport`"
     if isa(f, IntrinsicFunction)
         if !Core.Compiler.intrinsic_nothrow(f, argtypes)

@@ -414,10 +414,9 @@ function virtual_process(x::Union{AbstractString,Expr},
         context = config.context
     end
 
-    # HACK to prevent Preferences.jl from throwing errors for virtual modules.
-    # This is a very dirty solution for https://github.com/aviatesk/JET.jl/issues/497,
-    # but ideally this should be replaced with a better solution if available.
-    # Without this, we will encounter something like:
+    # Override the configurations for the virtualized module with that for the original package
+    # to prevent Preferences.jl from throwing errors. Without this, we will encounter
+    # the issues reported at https://github.com/aviatesk/JET.jl/issues/497:
     # ```
     # │ ArgumentError: Module XXX does not correspond to a loaded package!
     # │ Stacktrace:
@@ -426,9 +425,9 @@ function virtual_process(x::Union{AbstractString,Expr},
     # │  [2] var"@load_preference"(__source__::LineNumberNode, __module__::Module, key::Any, default::Any)
     # │    @ Preferences ~/.julia/packages/Preferences/VmJXL/src/Preferences.jl:45
     # ```
-    # We can't use the CassetteOverlay-like mechanism for a cleaner implementation, since
-    # Preferences.jl might be called within `macroexpand` or `lower` of the main
-    # `_virtual_process!` loop, where we don't have control over execution.
+    # Note that we can't use the CassetteOverlay-like mechanism here for a cleaner
+    # implementation, since Preferences.jl might be called within `macroexpand` or `lower`
+    # of the main `_virtual_process!` loop, where we don't have control over execution.
     old_main_uuid = Preferences.main_uuid[]
     if pkgid !== nothing && pkgid.uuid !== nothing
         Preferences.main_uuid[] = pkgid.uuid
@@ -454,7 +453,7 @@ end
 """
     virtualize_module_context(actual::Module)
 
-HACK: Returns a module where the context of `actual` is virtualized.
+HACK to return a module where the context of `actual` is virtualized.
 
 The virtualization will be done by 2 steps below:
 1. loads the module context of `actual` into a sandbox module, and export the whole context from there
@@ -1439,7 +1438,7 @@ function analyze_toplevel!(analyzer::AbstractAnalyzer, src::CodeInfo)
     return analyze_frame!(analyzer, frame)
 end
 
-# HACK this is very naive hack to re-use `AbstractInterpreter`'s slot type approximation for
+# This is very naive HACK to re-use `AbstractInterpreter`'s slot type approximation for
 # assignments of abstract global variables, which are represented as toplevel symbols at this point;
 # the idea is just to transform them into slot from symbol and use their approximated type
 # on their assignment (see `finish(::InferenceState, ::AbstractAnalyzer)`).
