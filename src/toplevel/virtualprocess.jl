@@ -414,12 +414,31 @@ function virtual_process(x::Union{AbstractString,Expr},
         context = config.context
     end
 
-    if pkgid !== nothing
-        PKG_ID_STASH[] = (Base.moduleroot(context), pkgid)
+    # HACK to prevent Preferences.jl from throwing errors for virtual modules.
+    # This is a very dirty solution for https://github.com/aviatesk/JET.jl/issues/497,
+    # but ideally this should be replaced with a better solution if available.
+    # Without this, we will encounter something like:
+    # ```
+    # │ ArgumentError: Module XXX does not correspond to a loaded package!
+    # │ Stacktrace:
+    # │  [1] get_uuid(m::Module)
+    # │    @ Preferences ~/.julia/packages/Preferences/VmJXL/src/utils.jl:8
+    # │  [2] var"@load_preference"(__source__::LineNumberNode, __module__::Module, key::Any, default::Any)
+    # │    @ Preferences ~/.julia/packages/Preferences/VmJXL/src/Preferences.jl:45
+    # ```
+    # We can't use the CassetteOverlay-like mechanism for a cleaner implementation, since
+    # Preferences.jl might be called within `macroexpand` or `lower` of the main
+    # `_virtual_process!` loop, where we don't have control over execution.
+    old_main_uuid = Preferences.main_uuid[]
+    if pkgid !== nothing && pkgid.uuid !== nothing
+        Preferences.main_uuid[] = pkgid.uuid
     end
     res = VirtualProcessResult(actual2virtual, context)
-    _virtual_process!(res, x, filename, pkgid, analyzer, config, context)
-    PKG_ID_STASH[] = nothing
+    try
+        _virtual_process!(res, x, filename, pkgid, analyzer, config, context)
+    finally
+        Preferences.main_uuid[] = old_main_uuid
+    end
 
     # analyze collected signatures unless critical error happened
     if config.analyze_from_definitions && isempty(res.toplevel_error_reports)
@@ -431,9 +450,6 @@ function virtual_process(x::Union{AbstractString,Expr},
 
     return res
 end
-
-# a temporary stash to store the id of the package being analyzed
-const PKG_ID_STASH = Ref{Union{Nothing,Tuple{Module,Base.PkgId}}}()
 
 """
     virtualize_module_context(actual::Module)
@@ -1351,38 +1367,6 @@ function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame, err)
 
     return nothing # stop further interpretation
 end
-
-# This hack does not work. We need to find an alternative.
-# See https://github.com/aviatesk/JET.jl/issues/499.
-# # HACK to prevent Preferences.jl from throwing errors for virtual modules.
-# # This is a very dirty solution for https://github.com/aviatesk/JET.jl/issues/497,
-# # but ideally this should be replaced with a better solution if available.
-# # Without this monkey patching, we will encounter something like:
-# # ```
-# # │ ArgumentError: Module XXX does not correspond to a loaded package!
-# # │ Stacktrace:
-# # │  [1] get_uuid(m::Module)
-# # │    @ Preferences ~/.julia/packages/Preferences/VmJXL/src/utils.jl:8
-# # │  [2] var"@load_preference"(__source__::LineNumberNode, __module__::Module, key::Any, default::Any)
-# # │    @ Preferences ~/.julia/packages/Preferences/VmJXL/src/Preferences.jl:45
-# # ```
-# # We can't use the CassetteOverlay-like mechanism for a cleaner implementation, since
-# # Preferences.jl might be called within `macroexpand` or `lower` of the main
-# # `_virtual_process!` loop, where we don't have control over execution.
-# push_inithook!() do
-#     @eval Preferences function get_uuid(m::Module)
-#         pkg_id_stash = $PKG_ID_STASH[]
-#         if pkg_id_stash !== nothing && pkg_id_stash[1] === Base.moduleroot(m)
-#             uuid = pkg_id_stash[2].uuid
-#         else
-#             uuid = Base.PkgId(m).uuid
-#         end
-#         if uuid === nothing
-#             throw(ArgumentError("Module $(m) does not correspond to a loaded package!"))
-#         end
-#         return uuid
-#     end
-# end
 
 function with_err_handling(f, err_handler, scrub_offset::Int)
     try
