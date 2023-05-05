@@ -62,4 +62,4 @@ let target_modules = (JET,)
                 function_filter, annotate_types)
 end
 
-end # self_check
+end # module self_check

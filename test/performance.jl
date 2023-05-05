@@ -40,4 +40,4 @@ using .JETBenchmarkUtils
     end
 end
 
-end
+end # module performance

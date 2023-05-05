@@ -1,3 +1,5 @@
+module sanity_check
+
 using Test, Aqua, JET
 
 Aqua.test_all(JET; stale_deps=false)
@@ -33,3 +35,5 @@ end) do proj
     Pkg.precompile(proj.name; io=devnull)
     @test true
 end
+
+end # module sanity_check
