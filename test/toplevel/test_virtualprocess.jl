@@ -2095,7 +2095,7 @@ end
 
 using Pkg
 function test_report_package(test_func, (pkgname, code);
-                             additional_setup=(::Pkg.API.ProjectInfo)->nothing)
+                             additional_setup=()->nothing)
     old = Pkg.project().path
     pkgcode = Base.remove_linenums!(code)
     mktempdir() do tempdir
@@ -2105,7 +2105,7 @@ function test_report_package(test_func, (pkgname, code);
             Pkg.activate(pkgpath; io=devnull)
             Pkg.develop(; path=normpath(FIXTURE_DIR, "PkgAnalysisDep"), io=devnull)
 
-            additional_setup(Pkg.project())
+            additional_setup()
 
             Pkg.activate(; temp=true, io=devnull)
             Pkg.develop(; path=pkgpath, io=devnull)
@@ -2289,10 +2289,10 @@ end
             @load_preference("LoadSubConfig", false)
             const LoadSubConfig = @load_preference("LoadSubConfig", false)
             end
-        end; additional_setup = function (::Pkg.API.ProjectInfo)
+        end; additional_setup = function ()
             Pkg.add("Preferences"; io=devnull)
         end) do res
-        @test_broken isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.toplevel_error_reports)
     end
 end
 
