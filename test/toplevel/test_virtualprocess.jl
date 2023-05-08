@@ -2068,16 +2068,16 @@ end
         @test isa(r, GeneratorErrorReport) && r.err == "invalid argument"
     end
 
-    # when `analyze_from_definitions = true`, code generation will likely fail
-    # (because we can't expect method signatures to be concrete for `@generated` function),
-    # but we just ignore that
+    # when `analyze_from_definitions = true`, code generation will likely fail, because we
+    # generally can't expect method signatures to be concrete, but the `may_invoke_generator`
+    # guard in the `GeneratorErrorReport` error check pass will ignore that case
     let res = @eval @analyze_toplevel analyze_from_definitions=true begin
             $genex
         end
         @test isempty(res.res.inference_error_reports)
     end
 
-    # when `analyze_from_definitions = true`, we can analyze generator itself
+    # when `analyze_from_definitions = true`, we can still analyze generator itself
     let res = @analyze_toplevel analyze_from_definitions = true begin
             @generated function foo(a)
                 if a <: Integer
