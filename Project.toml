@@ -1,7 +1,7 @@
 name = "JET"
 uuid = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
 authors = ["Shuhei Kadowaki <aviatesk@gmail.com>"]
-version = "0.7.14"
+version = "0.7.15"
 
 [deps]
 InteractiveUtils = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
@@ -21,7 +21,7 @@ MacroTools = "0.5.6"
 PrecompileTools = "1"
 Preferences = "1.4"
 Revise = "3.3"
-julia = "1.8.1"
+julia = "1.9"
 
 [extras]
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"

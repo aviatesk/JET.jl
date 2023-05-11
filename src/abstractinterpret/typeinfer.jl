@@ -82,44 +82,18 @@ let # overload `abstract_call_method_with_const_args`
 end
 
 let # overload `concrete_eval_call`
-    sv_available = true
-    @static if VERSION ≥ v"1.9.0-DEV.1502"
-        sigs_ex = :(analyzer::AbstractAnalyzer,
-            @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState,
-            $(Expr(:kw, :(invokecall::Union{Nothing,CC.InvokeCall}), :nothing)))
-        args_ex = :(analyzer::AbstractInterpreter,
-            f::Any, result::MethodCallResult, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState,
-            invokecall::Union{Nothing,CC.InvokeCall})
-    elseif @isdefined(StmtInfo)
-        sigs_ex = :(analyzer::AbstractAnalyzer,
-            @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState,
-            $(Expr(:kw, :(invokecall::Union{Nothing,CC.InvokeCall}), :nothing)))
-        args_ex = :(analyzer::AbstractInterpreter,
-            f::Any, result::MethodCallResult, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState,
-            invokecall::Union{Nothing,CC.InvokeCall})
-        sv_available = false
-    elseif isdefined(CC, :InvokeCall)
-        # https://github.com/JuliaLang/julia/pull/46743
-        sigs_ex = :(analyzer::AbstractAnalyzer,
-            @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
-            $(Expr(:kw, :(invokecall::Union{Nothing,CC.InvokeCall}), :nothing)))
-        args_ex = :(analyzer::AbstractInterpreter,
-            f::Any, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
-            invokecall::Union{Nothing,CC.InvokeCall})
-    else
-        sigs_ex = :(analyzer::AbstractAnalyzer,
-            @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
-        args_ex = :(analyzer::AbstractInterpreter,
-            f::Any, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
-    end
+    sigs_ex = :(analyzer::AbstractAnalyzer,
+        @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState,
+        $(Expr(:kw, :(invokecall::Union{Nothing,CC.InvokeCall}), :nothing)))
+    args_ex = :(analyzer::AbstractInterpreter,
+        f::Any, result::MethodCallResult, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState,
+        invokecall::Union{Nothing,CC.InvokeCall})
     @eval function CC.concrete_eval_call($(sigs_ex.args...))
         ret = @invoke CC.concrete_eval_call($(args_ex.args...))
-        if $(sv_available)
-            if $(isdefined(CC, :ConstCallResults) ? :(ret isa CC.ConstCallResults) : :(ret !== nothing))
-                # this frame has been happily concretized, now we throw away reports collected
-                # during the previous abstract-interpretation based analysis
-                filter_lineages!(analyzer, sv.result, result.edge::MethodInstance)
-            end
+        if $(isdefined(CC, :ConstCallResults) ? :(ret isa CC.ConstCallResults) : :(ret !== nothing))
+            # this frame has been happily concretized, now we throw away reports collected
+            # during the previous abstract-interpretation based analysis
+            filter_lineages!(analyzer, sv.result, result.edge::MethodInstance)
         end
         return ret
     end
@@ -291,11 +265,7 @@ function CC.get(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance, defa
         if setter === :typeinf_edge
             if isa(codeinf, CodeInstance)
                 # cache hit, now we need to append cached reports associated with this `MethodInstance`
-                @static if VERSION ≥ v"1.9.0-DEV.1115"
-                    inferred = @atomic :monotonic codeinf.inferred
-                else
-                    inferred = codeinf.inferred
-                end
+                inferred = @atomic :monotonic codeinf.inferred
                 for cached in (inferred::CachedAnalysisResult).reports
                     restored = add_cached_report!(analyzer, caller, cached)
                     @static if JET_DEV_MODE
@@ -587,9 +557,7 @@ function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
     for frame in frames
         caller = frame.result
         opt = caller.src
-        if (@static VERSION ≥ v"1.9.0-DEV.1636" ?
-            (opt isa OptimizationState{typeof(analyzer)}) :
-            (opt isa OptimizationState))
+        if opt isa OptimizationState{typeof(analyzer)}
             @static if VERSION ≥ v"1.10.0-DEV.757"
                 CC.optimize(analyzer, opt, caller)
             else
@@ -690,11 +658,7 @@ end
 This overload allows JET to keep inference performed by `AbstractAnalyzer` going on
 non-concrete call sites in a toplevel frame created by [`virtual_process`](@ref).
 """
-@static if VERSION ≥ v"1.9.0-rc1" || VERSION ≥ v"1.10.0-DEV.679"
-    CC.bail_out_toplevel_call(::AbstractAnalyzer, ::CC.InferenceLoopState, ::InferenceState) = false
-else
-    CC.bail_out_toplevel_call(::AbstractAnalyzer, @nospecialize(sig), ::InferenceState) = false
-end
+CC.bail_out_toplevel_call(::AbstractAnalyzer, ::CC.InferenceLoopState, ::InferenceState) = false
 
 function CC.abstract_eval_special_value(analyzer::AbstractAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
     istoplevel = JET.istoplevel(sv)

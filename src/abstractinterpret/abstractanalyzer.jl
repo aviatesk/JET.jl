@@ -290,46 +290,29 @@ function JETInferenceParams(
                              tupletype_depth,
                              tuple_splat)
 end
-let kwargs = @static VERSION ≥ v"1.9-DEV" ?
-             :(inlining::Bool = params.inlining,
-               inline_cost_threshold::Int = params.inline_cost_threshold,
-               inline_nonleaf_penalty::Int = params.inline_nonleaf_penalty,
-               inline_tupleret_bonus::Int = params.inline_tupleret_bonus,
-               inline_error_path_cost::Int = params.inline_error_path_cost,
-               tuple_splat::Int = params.MAX_TUPLE_SPLAT,
-               compilesig_invokes::Bool = params.compilesig_invokes,
-               trust_inference::Bool = params.trust_inference,
-               assume_fatal_throw::Bool = params.assume_fatal_throw,
-               __jetconfigs...) :
-             :(inlining::Bool = inlining_enabled(),
-               inline_cost_threshold::Int = 100,
-               inline_nonleaf_penalty::Int = 1000,
-               inline_tupleret_bonus::Int = 250,
-               inline_error_path_cost::Int = 20,
-               max_methods::Int = 3,
-               tuple_splat::Int = 32,
-               union_splitting::Int = 4,
-               __jetconfigs...)
-    kwargs_exs = Expr[]
-    names = Symbol[]
-    for x::Expr in kwargs.args
-        if isexpr(x, :...)
-            push!(kwargs_exs, x)
-            continue
-        end
-        @assert isexpr(x, :(=))
-        push!(kwargs_exs, Expr(:kw, x.args...))
-        lhs = first(x.args)
-        @assert isexpr(lhs, :(::))
-        push!(names, first(lhs.args)::Symbol)
-    end
-    @eval global function JETOptimizationParams(
-        params::OptimizationParams=OptimizationParams();
-        $(kwargs_exs...))
-        return OptimizationParams(; $(names...))
-    end
+function JETOptimizationParams(
+    params::OptimizationParams=OptimizationParams();
+    inlining::Bool = params.inlining,
+    inline_cost_threshold::Int = params.inline_cost_threshold,
+    inline_nonleaf_penalty::Int = params.inline_nonleaf_penalty,
+    inline_tupleret_bonus::Int = params.inline_tupleret_bonus,
+    inline_error_path_cost::Int = params.inline_error_path_cost,
+    tuple_splat::Int = params.MAX_TUPLE_SPLAT,
+    compilesig_invokes::Bool = params.compilesig_invokes,
+    trust_inference::Bool = params.trust_inference,
+    assume_fatal_throw::Bool = params.assume_fatal_throw,
+    __jetconfigs...)
+    return OptimizationParams(; inlining,
+                               inline_cost_threshold,
+                               inline_nonleaf_penalty,
+                               inline_tupleret_bonus,
+                               inline_error_path_cost,
+                               tuple_splat,
+                               compilesig_invokes,
+                               trust_inference,
+                               assume_fatal_throw)
 end
-end
+end # hasfield(InferenceParams, :max_methods) # VERSION ≥ v"1.10.0-DEV.105"
 
 # assert that the wrappers create same objects as the original constructors
 for (Params, Func) = ((InferenceParams, JETInferenceParams),
