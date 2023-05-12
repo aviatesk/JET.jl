@@ -1384,18 +1384,16 @@ include("analyzers/jetanalyzer.jl")
 include("analyzers/optanalyzer.jl")
 
 using PrecompileTools
-@static if (VERSION ≥ v"1.10.0-DEV.204" || VERSION ≥ v"1.9.0-beta3")
-    @setup_workload let
-        @compile_workload let
-            result = @report_call annotate_types=true sum("julia")
-            show(IOContext(devnull, :color=>true), result)
-            result = @report_call annotate_types=true rand(String)
-            show(IOContext(devnull, :color=>true), result)
-            result = @report_opt annotate_types=true sum("julia")
-            show(IOContext(devnull, :color=>true), result)
-            result = @report_opt annotate_types=true rand(String)
-            show(IOContext(devnull, :color=>true), result)
-        end
+@setup_workload let
+    @compile_workload let
+        result = @report_call annotate_types=true sum("julia")
+        show(IOContext(devnull, :color=>true), result)
+        result = @report_call annotate_types=true rand(String)
+        show(IOContext(devnull, :color=>true), result)
+        result = @report_opt annotate_types=true sum("julia")
+        show(IOContext(devnull, :color=>true), result)
+        result = @report_opt annotate_types=true rand(String)
+        show(IOContext(devnull, :color=>true), result)
     end
 end
 

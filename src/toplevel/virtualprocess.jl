@@ -1398,9 +1398,7 @@ function collect_syntax_errors(s, filename)
     reports = SyntaxErrorReport[]
     index = line = 1
     while begin
-            ex, nextindex = @static VERSION ≥ v"1.8.0-DEV.1370" ?
-                _parse_string(s, filename, line, index, :statement) :
-                _parse_string(s, filename, index, :statement)
+            ex, nextindex = _parse_string(s, filename, line, index, :statement)
             !isnothing(ex)
         end
         line += count(==('\n'), s[index:nextindex-1])

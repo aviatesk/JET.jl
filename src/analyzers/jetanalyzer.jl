@@ -226,11 +226,7 @@ inferred return type grows up to `Any` to collect as much error reports as possi
 That potentially slows down inference performance, but it would stay to be practical
 given that the number of matching methods are limited beforehand.
 """
-@static if VERSION ≥ v"1.9.0-rc1" || VERSION ≥ v"1.10.0-DEV.679"
-    CC.bail_out_call(::JETAnalyzer, ::CC.InferenceLoopState, ::InferenceState) = false
-else
-    CC.bail_out_call(::JETAnalyzer, @nospecialize(t), ::InferenceState) = false
-end
+CC.bail_out_call(::JETAnalyzer, ::CC.InferenceLoopState, ::InferenceState) = false
 
 @doc """
     add_call_backedges!(analyzer::JETAnalyzer, ...)
@@ -287,18 +283,8 @@ let # overload `const_prop_entry_heuristic`
 end
 
 let # overload `concrete_eval_eligible`
-    @static if VERSION ≥ v"1.9.0-rc1" || VERSION ≥ v"1.10.0-DEV.350"
-        # https://github.com/JuliaLang/julia/pull/48246
-        sigs_ex = :(analyzer::JETAnalyzer,
-            @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
-    elseif VERSION ≥ v"1.9.0-DEV.1472"
-        # https://github.com/JuliaLang/julia/pull/46966
-        sigs_ex = :(analyzer::JETAnalyzer,
-            @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo)
-    else
-        sigs_ex = :(analyzer::JETAnalyzer,
-            @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
-    end
+    sigs_ex = :(analyzer::JETAnalyzer,
+        @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
     # TODO correctly reasons about error found by [semi-]concrete evaluation
     # for now just always fallback to the constant-prop'
     @eval function CC.concrete_eval_eligible($(sigs_ex.args...))
@@ -320,11 +306,7 @@ end
 
 function concrete_eval_eligible_ignoring_overlay(result::MethodCallResult, arginfo::ArgInfo)
     result.edge !== nothing || return false
-    @static if hasfield(MethodCallResult, :effects) # VERSION ≥ v"1.9"
-        return CC.is_foldable(result.effects) && CC.is_all_const_arg(arginfo, #=start=#2)
-    else
-        return CC.is_foldable(result.edge_effects) && CC.is_all_const_arg(arginfo)
-    end
+    return CC.is_foldable(result.effects) && CC.is_all_const_arg(arginfo, #=start=#2)
 end
 
 let # overload `return_type_tfunc`
@@ -841,7 +823,7 @@ function report_undef_global_var!(analyzer::JETAnalyzer, sv::InferenceState, gr:
     # TODO give this permission only to top-level analysis
     @static if VERSION ≥ v"1.10.0-DEV.145"
         ccall(:jl_get_binding_type, Any, (Any, Any), gr.mod, gr.name) !== nothing && return false
-    elseif VERSION ≥ v"1.8.0-DEV.1465"
+    else
         ccall(:jl_binding_type, Any, (Any, Any), gr.mod, gr.name) !== nothing && return false
     end
     begin @label report
@@ -1255,32 +1237,7 @@ function report_setglobal!!(analyzer::JETAnalyzer, sv::InferenceState, argtypes:
     return ReportPass(analyzer)(InvalidGlobalAssignmentError, analyzer, sv, gr.mod, gr.name, argtypes[3])
 end
 
-@static if VERSION ≥ v"1.9.0-DEV.1616"
-    using Core.Compiler: _getfield_fieldindex, _mutability_errorcheck
-else
-    function _getfield_fieldindex(s::DataType, name::Const)
-        nv = name.val
-        if isa(nv, Symbol)
-            nv = Base.fieldindex(s, nv, false)
-        end
-        if isa(nv, Int)
-            return nv
-        end
-        return nothing
-    end
-    function _mutability_errorcheck(@nospecialize objt0)
-        objt = unwrap_unionall(objt0)
-        if isa(objt, Union)
-            return _mutability_errorcheck(rewrap_unionall(objt.a, objt0)) ||
-                   _mutability_errorcheck(rewrap_unionall(objt.b, objt0))
-        elseif isa(objt, DataType)
-            # Can't say anything about abstract types
-            isabstracttype(objt) && return true
-            return ismutabletype(objt)
-        end
-        return true
-    end
-end
+using Core.Compiler: _getfield_fieldindex, _mutability_errorcheck
 
 const MODULE_SETFIELD_MSG = "cannot assign variables in other modules"
 const DIVIDE_ERROR_MSG = sprint(showerror, DivideError())
