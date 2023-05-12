@@ -110,14 +110,14 @@ that are specific to the optimization analysis.
            └──────────
 
 ---
-- `function_filter = @nospecialize(ft)->true`:\\
-  A predicate which takes a function type and returns `false` to skip runtime dispatch
-  analysis on the function call. This configuration is particularly useful when your program
-  uses a function that is intentionally written to use runtime dispatch.
+- `function_filter = @nospecialize(f)->true`:\\
+  A predicate which takes a function object and returns `false` to skip runtime dispatch
+  analysis on calls of the function. This configuration is particularly useful when your
+  program uses a function that is intentionally designed to use runtime dispatch.
 
   ```julia-repl
-  # ignores `Core.Compiler.widenconst` calls (since it's designed to be runtime-dispatched):
-  julia> function_filter(@nospecialize(ft)) = ft !== typeof(Core.Compiler.widenconst)
+  # ignore `Core.Compiler.widenconst` calls (since it's designed to be runtime-dispatched):
+  julia> function_filter(@nospecialize f) = f !== Core.Compiler.widenconst
 
   julia> @test_opt function_filter=function_filter f(args...)
   ...
@@ -219,7 +219,7 @@ const OPT_ANALYZER_CACHE = IdDict{UInt, AnalysisCache}()
 
 struct OptAnalysisPass <: ReportPass end
 
-optanalyzer_function_filter(@nospecialize ft) = true
+optanalyzer_function_filter(@nospecialize f) = true
 
 # TODO better to work only `finish!`
 function CC.finish(frame::InferenceState, analyzer::OptAnalyzer)
@@ -337,12 +337,14 @@ function (::OptAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::OptAnalyze
             CC.is_stmt_throw_block(src.ssaflags[pc]) && continue
         end
         if isexpr(x, :call)
-            ft = widenconst(argextype(first(x.args), src, sptypes, slottypes))
-            ft <: Builtin && continue # ignore `:call`s of language intrinsics
-            if analyzer.function_filter(ft)
-                add_new_report!(analyzer, caller, RuntimeDispatchReport((opt, pc)))
-                reported |= true
+            ft = argextype(first(x.args), src, sptypes, slottypes)
+            f = singleton_type(ft)
+            if f !== nothing
+                f isa Builtin && continue # ignore `:call`s of language intrinsics
+                analyzer.function_filter(f) || continue # ignore user-specified functions
             end
+            add_new_report!(analyzer, caller, RuntimeDispatchReport((opt, pc)))
+            reported |= true
         end
     end
     return reported
