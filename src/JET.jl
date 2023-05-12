@@ -11,7 +11,8 @@ export
     # optanalyzer
     @report_opt, report_opt, @test_opt, test_opt,
     # configurations
-    LastFrameModule, AnyFrameModule
+    LastFrameModule, AnyFrameModule,
+    @analysispass
 
 let README = normpath(dirname(@__DIR__), "README.md")
     s = read(README, String)
@@ -79,12 +80,12 @@ using .CC:
     argextype, argtype_by_index, argtype_tail, argtypes_to_type, compute_basic_blocks,
     get_compileable_sig, hasintersect, has_free_typevars, ignorelimited, inlining_enabled,
     instanceof_tfunc, is_throw_call, isType, isconstType, issingletontype,
-    may_invoke_generator, singleton_type, slot_id, specialize_method, switchtupleunion,
-    tmerge, widenconst,
+    may_invoke_generator, retrieve_code_info, singleton_type, slot_id, specialize_method,
+    switchtupleunion, tmerge, widenconst,
     ⊑
 
 using Base:
-    @invoke, @invokelatest, IdSet, default_tt, destructure_callex, parse_input_line,
+    @invoke, @invokelatest, IdSet, default_tt, parse_input_line,
     rewrap_unionall, uniontypes, unwrap_unionall
 
 using Base.Meta:
@@ -152,13 +153,20 @@ end
 
 @static isdefined(CC, :StmtInfo) && import .CC: StmtInfo
 
-@static if VERSION ≥ v"1.10.0-DEV.96"
+# TODO investigate why `pass_generator` is called with `world === typemax(UInt)`
+#      and hit the error in the `Base._which` version
+@static if false # VERSION ≥ v"1.10.0-DEV.96"
     using Base: _which
 else
+    # HACK This definition is same as the one defined in
+    # https://github.com/JuliaLang/julia/blob/38d24e574caab20529a61a6f7444c9e473724ccc/base/reflection.jl#L1565
+    # modulo that this version allows us to use it within a `@generated` context
+    # (see the commented out `world == typemax(UInt) && error(...)` line below).
     function _which(@nospecialize(tt::Type);
         method_table::Union{Nothing,MethodTable,Core.Compiler.MethodTableView}=nothing,
         world::UInt=get_world_counter(),
         raise::Bool=false)
+        # world == typemax(UInt) && error("code reflection cannot be used from generated functions")
         if method_table === nothing
             table = Core.Compiler.InternalMethodTable(world)
         elseif isa(method_table, MethodTable)
@@ -1396,5 +1404,7 @@ using PrecompileTools
         show(IOContext(devnull, :color=>true), result)
     end
 end
+
+include("runtime.jl")
 
 end # module JET
