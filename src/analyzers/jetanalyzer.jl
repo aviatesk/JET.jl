@@ -118,11 +118,7 @@ function BasicPass(; function_filter = jetanalyzer_function_filter, __jetconfigs
     return BasicPass(function_filter)
 end
 
-function jetanalyzer_function_filter(@nospecialize ft)
-    ft === typeof(Base.mapreduce_empty) && return false
-    ft === typeof(Base.reduce_empty) && return false
-    return true
-end
+jetanalyzer_function_filter(@nospecialize ft) = true
 
 function basic_filter(analyzer::JETAnalyzer, sv::InferenceState)
     mi = sv.linfo
