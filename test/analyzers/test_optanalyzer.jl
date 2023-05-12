@@ -60,7 +60,7 @@ end
 
     # union split might help
     test_opt((Vector{Union{Int,String,Nothing}},)) do xs
-        getsomething(xs[1]) # runtime dispatch !
+        getsomething(xs[1]) # no runtime dispatch!
     end
 
     # NOTE the following test is line-sensitive !
@@ -85,184 +85,190 @@ end
     @test_opt sin(10)
 end
 
-@testset "captured variables" begin
-    let result = @eval Module() begin
-            function foo(a, n)
-                incr! = x -> a += x
+function captured_variable_f(a, n)
+    incr! = x -> a += x
 
-                for i = 1:n
-                    if isodd(i)
-                        incr!(i)
-                    end
-                end
-
-                return a
-            end
-            $report_opt(foo, (Int, Int))
+    for i = 1:n
+        if isodd(i)
+            incr!(i)
         end
+    end
+
+    return a
+end
+
+# we report `Core.Box` whatever it's type-stable
+# adapted https://docs.julialang.org/en/v1/manual/performance-tips/#man-performance-captured
+function abmult(r::Int)
+    if r < 0
+        r = -r
+    end
+    f = x -> x * r
+    return f
+end
+
+function abmult2(r0::Int)
+    r::Int = r0
+    if r < 0
+        r = -r
+    end
+    f = x -> x * r
+    return f
+end
+
+function abmult3(r::Int)
+    if r < 0
+        r = -r
+    end
+    f = let r = r
+        x -> x * r
+    end
+    return f
+end
+
+@testset "captured variables" begin
+    let result = report_opt(captured_variable_f, (Int, Int))
         @test any(get_reports_with_test(result)) do report
             return isa(report, CapturedVariableReport) &&
                    report.name === :a
         end
     end
 
-    let M = Module() # we report `Core.Box` whatever it's type-stable
-        @eval M begin
-            # adapted https://docs.julialang.org/en/v1/manual/performance-tips/#man-performance-captured
-            function abmult(r::Int)
-                if r < 0
-                    r = -r
-                end
-                f = x -> x * r
-                return f
-            end
-
-            function abmult2(r0::Int)
-                r::Int = r0
-                if r < 0
-                    r = -r
-                end
-                f = x -> x * r
-                return f
-            end
-
-            function abmult3(r::Int)
-                if r < 0
-                    r = -r
-                end
-                f = let r = r
-                    x -> x * r
-                end
-                return f
-            end
+    let result = @report_opt abmult(42)
+        @test any(get_reports_with_test(result)) do report
+            return isa(report, CapturedVariableReport) &&
+                    report.name === :r
         end
-
-        let result = @report_opt M.abmult(42)
-            @test any(get_reports_with_test(result)) do report
-                return isa(report, CapturedVariableReport) &&
-                       report.name === :r
-            end
-        end
-        let result = @report_opt M.abmult2(42)
-            @test any(get_reports_with_test(result)) do report
-                return isa(report, CapturedVariableReport) &&
-                       report.name === :r
-            end
-        end
-
-        @test_opt M.abmult3(42) # no captured variable for `abmult3` !
     end
+    let result = @report_opt abmult2(42)
+        @test any(get_reports_with_test(result)) do report
+            return isa(report, CapturedVariableReport) &&
+                    report.name === :r
+        end
+    end
+
+    @test_opt abmult3(42) # no captured variable for `abmult3` !
+end
+
+with_runtime_dispatch(::UInt8)  = :UInt8
+with_runtime_dispatch(::UInt16) = :UInt16
+with_runtime_dispatch(::UInt32) = :UInt32
+with_runtime_dispatch(::UInt64) = :UInt64
+with_runtime_dispatch(::UInt128) = :UInt128
+
+struct WithRuntimeDispatch
+    name::Symbol
+end
+WithRuntimeDispatch(::UInt8)  = WithRuntimeDispatch(:UInt8)
+WithRuntimeDispatch(::UInt16) = WithRuntimeDispatch(:UInt16)
+WithRuntimeDispatch(::UInt32) = WithRuntimeDispatch(:UInt32)
+WithRuntimeDispatch(::UInt64) = WithRuntimeDispatch(:UInt64)
+WithRuntimeDispatch(::UInt128) = WithRuntimeDispatch(:UInt128)
+
+const FNC_F1_DEF_LINE = (@__LINE__)+1
+skip_noncompileable_calls1(f, a) = f(a)
+const FNC_F2_DEF_LINE = (@__LINE__)+1
+skip_noncompileable_calls_f2(f, @nospecialize a) = f(a)
+
+# problem: when ∑1/n exceeds 30 ?
+function target_modules_compute(x)
+    r = 1
+    s = 0.0
+    n = 1
+    @time while r < x
+        s += 1/n
+        if s ≥ r
+            println("round $r/$x has been finished") # we're not interested type-instabilities within this call
+            r += 1
+        end
+        n += 1
+    end
+    return n, s
 end
 
 @testset "OptAnalyzer configurations" begin
     @testset "function_filter" begin
-        M = Module()
-        @eval M begin
-            with_runtime_dispatch(::UInt8)  = :UInt8
-            with_runtime_dispatch(::UInt16) = :UInt16
-            with_runtime_dispatch(::UInt32) = :UInt32
-            with_runtime_dispatch(::UInt64) = :UInt64
-            with_runtime_dispatch(::UInt128) = :UInt128
-        end
         @static if hasfield(Core.Compiler.InferenceParams, :max_methods) # VERSION ≥ v"1.10.0-DEV.105"
             @assert JET.InferenceParams(JET.OptAnalyzer()).max_union_splitting < 5
         else
             @assert JET.InferenceParams(JET.OptAnalyzer()).MAX_UNION_SPLITTING < 5
         end
 
-        let result = @eval M $report_opt((Vector{Any},)) do xs
+        let result = report_opt((Vector{Any},)) do xs
                 with_runtime_dispatch(xs[1])
             end
             @test !isempty(get_reports_with_test(result))
             @test any(r->isa(r,RuntimeDispatchReport), get_reports_with_test(result))
         end
-
-        let function_filter(x) = x !== typeof(M.with_runtime_dispatch)
-            @eval M $test_opt((Vector{Any},); function_filter=$function_filter) do xs
+        let function_filter(@nospecialize ft) = ft !== typeof(with_runtime_dispatch)
+            test_opt((Vector{Any},); function_filter) do xs
                 with_runtime_dispatch(xs[1])
+            end
+        end
+
+        # function_filter for types
+        let result = report_opt((Vector{Any},)) do xs
+                WithRuntimeDispatch(xs[1])
+            end
+            @test !isempty(get_reports_with_test(result))
+            @test any(r->isa(r,RuntimeDispatchReport), get_reports_with_test(result))
+        end
+        let function_filter(@nospecialize ft) = ft !== Type{WithRuntimeDispatch}
+            test_opt((Vector{Any},); function_filter) do xs
+                WithRuntimeDispatch(xs[1])
             end
         end
     end
 
     @testset "skip_noncompileable_calls" begin
-        let M = Module()
-            CALLF_DEFINITION_LINE = (@__LINE__)+1
-            @eval M callf(f, a) = f(a)
-
-            let # by default, we only report the runtime dispatch within the lambda function,
-                # and ignore error reports from `callf` calls
-                result = @eval M $report_opt((Vector{Any},)) do ary
-                    callf(sin, ary[1]) # runtime dispatch !
-                end
-                @test length(get_reports_with_test(result)) == 1
-                @test any(get_reports_with_test(result)) do r
-                    isa(r, RuntimeDispatchReport) &&
-                    last(r.vst).file === Symbol(@__FILE__) && last(r.vst).line == (@__LINE__) - 5 # report for the lambda function
-                end
+        let # by default, we only report the runtime dispatch within the lambda function,
+            # and ignore error reports from `callf` calls
+            result = report_opt((Vector{Any},)) do ary
+                skip_noncompileable_calls1(sin, ary[1]) # runtime dispatch !
             end
-
-            let # when the `skip_noncompileable_calls` configuration is turned off,
-                # we will get error reports from `callsin` as well
-                result = @eval M $report_opt((Vector{Any},); skip_noncompileable_calls=false) do ary
-                    callf(sin, ary[1]) # runtime dispatch !
-                end
-                @test length(get_reports_with_test(result)) == 2
-                @test any(get_reports_with_test(result)) do r
-                    isa(r, RuntimeDispatchReport) &&
-                    last(r.vst).file === Symbol(@__FILE__) && last(r.vst).line == (@__LINE__) - 5 # report for the lambda function
-                end
-                @test any(get_reports_with_test(result)) do r
-                    isa(r, RuntimeDispatchReport) &&
-                    last(r.vst).file === Symbol(@__FILE__) && last(r.vst).line == CALLF_DEFINITION_LINE # report for `f(a::Any)`
-                end
+            @test length(get_reports_with_test(result)) == 1
+            @test any(get_reports_with_test(result)) do r
+                isa(r, RuntimeDispatchReport) &&
+                last(r.vst).file === Symbol(@__FILE__) && last(r.vst).line == (@__LINE__) - 5 # report for the lambda function
             end
         end
 
-        let M = Module()
-            CALLG_DEFINITION_LINE = (@__LINE__)+1
-            @eval M callg(g, @nospecialize a) = g(a)
+        let # when the `skip_noncompileable_calls` configuration is turned off,
+            # we will get error reports from `callsin` as well
+            result = report_opt((Vector{Any},); skip_noncompileable_calls=false) do ary
+                skip_noncompileable_calls1(sin, ary[1]) # runtime dispatch !
+            end
+            @test length(get_reports_with_test(result)) == 2
+            @test any(get_reports_with_test(result)) do r
+                isa(r, RuntimeDispatchReport) &&
+                last(r.vst).file === Symbol(@__FILE__) && last(r.vst).line == (@__LINE__) - 5 # report for the lambda function
+            end
+            @test any(get_reports_with_test(result)) do r
+                isa(r, RuntimeDispatchReport) &&
+                last(r.vst).file === Symbol(@__FILE__) && last(r.vst).line == FNC_F1_DEF_LINE # report for `f(a::Any)`
+            end
+        end
 
-            let # `skip_noncompileable_calls` shouldn't ignore `@nospecialize` annotation
-                result = @eval M $report_opt((Vector{Any},)) do ary
-                    callg(sin, ary[1]) # no runtime dispatch here, but `g(a)` is runtime dispatch
-                end
-                @test length(get_reports_with_test(result)) == 1
-                @test any(get_reports_with_test(result)) do r
-                    isa(r, RuntimeDispatchReport) &&
-                    last(r.vst).file === Symbol(@__FILE__) && last(r.vst).line == CALLG_DEFINITION_LINE # report for `g(a::Any)`
-                end
+        let # `skip_noncompileable_calls` shouldn't ignore `@nospecialize` annotation
+            result = report_opt((Vector{Any},)) do ary
+                skip_noncompileable_calls_f2(sin, ary[1]) # no runtime dispatch here, but `g(a)` is runtime dispatch
+            end
+            @test length(get_reports_with_test(result)) == 1
+            @test any(get_reports_with_test(result)) do r
+                isa(r, RuntimeDispatchReport) &&
+                last(r.vst).file === Symbol(@__FILE__) && last(r.vst).line == FNC_F2_DEF_LINE # report for `g(a::Any)`
             end
         end
     end
 
     @testset "target_modules" begin
-        M = Module()
-        @eval M begin
-            # problem: when ∑1/n exceeds 30 ?
-            function compute(x)
-                r = 1
-                s = 0.0
-                n = 1
-                @time while r < x
-                    s += 1/n
-                    if s ≥ r
-                        println("round $r/$x has been finished") # we're not interested type-instabilities within this call
-                        r += 1
-                    end
-                    n += 1
-                end
-                return n, s
-            end
-        end
-
         let # we will get bunch of reports from the `println` call
-            result = @report_opt M.compute(30)
+            result = @report_opt target_modules_compute(30)
             @test !isempty(get_reports_with_test(result))
         end
 
-        let # if we use different `target_modules`, the reports from `println` should get filtered out
-            @test_opt target_modules=(@__MODULE__,) M.compute(30)
-        end
+        # if we use different `target_modules`, the reports from `println` should get filtered out
+        @test_opt target_modules=(@__MODULE__,) target_modules_compute(30)
     end
 end
 
