@@ -11,7 +11,8 @@ export
     # optanalyzer
     @report_opt, report_opt, @test_opt, test_opt,
     # configurations
-    LastFrameModule, AnyFrameModule
+    LastFrameModule, AnyFrameModule,
+    @analysispass
 
 let README = normpath(dirname(@__DIR__), "README.md")
     s = read(README, String)
@@ -42,8 +43,8 @@ using .CC: @nospecs, ⊑,
     OptimizationState, OptimizationParams, OverlayMethodTable, StmtInfo, UnionSplitInfo,
     UnionSplitMethodMatches, VarState, VarTable, WorldRange, WorldView,
     argextype, argtype_by_index, argtypes_to_type, hasintersect, ignorelimited,
-    instanceof_tfunc, istopfunction, singleton_type, slot_id, specialize_method,
-    tmeet, tmerge, typeinf_lattice, widenconst, widenlattice
+    instanceof_tfunc, istopfunction, retrieve_code_info, singleton_type, slot_id,
+    specialize_method, tmeet, tmerge, typeinf_lattice, widenconst, widenlattice
 
 using Base: IdSet, get_world_counter
 
@@ -1212,5 +1213,7 @@ using PrecompileTools
         push_inithook!(override_precompiled_cache)
     end
 end
+
+include("runtime.jl")
 
 end # module JET
