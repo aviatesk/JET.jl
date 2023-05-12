@@ -111,18 +111,7 @@ const JET_ANALYZER_CACHE = IdDict{UInt, AnalysisCache}()
 """
 The basic error analysis pass. This is used by default.
 """
-struct BasicPass{FF} <: ReportPass
-    function_filter::FF # TODO move this to JETAnalyzer?
-end
-function BasicPass(; function_filter = jetanalyzer_function_filter, __jetconfigs...)
-    return BasicPass(function_filter)
-end
-
-function jetanalyzer_function_filter(@nospecialize ft)
-    ft === typeof(Base.mapreduce_empty) && return false
-    ft === typeof(Base.reduce_empty) && return false
-    return true
-end
+struct BasicPass <: ReportPass end
 
 function basic_filter(analyzer::JETAnalyzer, sv::InferenceState)
     mi = sv.linfo
@@ -617,8 +606,6 @@ function (rp::BasicPass)(::Type{MethodErrorReport}, analyzer::JETAnalyzer,
     end
     if isa(info, MethodMatchInfo) || isa(info, UnionSplitInfo)
         basic_filter(analyzer, sv) || return false
-        ft = widenconst(first(argtypes))
-        rp.function_filter(ft) || return false
     end
     if isa(info, MethodMatchInfo)
         return report_method_error!(analyzer, sv, info, atype, call.rt, #=sound=#false)
@@ -1390,7 +1377,7 @@ function JETAnalyzer(;
     if isnothing(report_pass)
         # if `report_pass` isn't passed explicitly, here we configure it according to `mode`
         if mode === :basic
-            report_pass = BasicPass(; jetconfigs...)
+            report_pass = BasicPass()
         elseif mode === :sound
             report_pass = SoundPass()
         elseif mode === :typo
@@ -1409,7 +1396,7 @@ function JETAnalyzer(;
 end
 
 const JET_ANALYZER_CONFIGURATIONS = Set{Symbol}((
-    :report_pass, :mode, :function_filter))
+    :report_pass, :mode))
 
 let valid_keys = GENERAL_CONFIGURATIONS ∪ JET_ANALYZER_CONFIGURATIONS
     @eval JETInterface.valid_configurations(::JETAnalyzer) = $valid_keys
