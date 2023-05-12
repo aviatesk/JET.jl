@@ -1370,7 +1370,7 @@ end
 # =======
 
 # the entry constructor
-function JETAnalyzer(;
+function JETAnalyzer(world::UInt = Base.get_world_counter();
     report_pass::Union{Nothing,ReportPass} = nothing,
     mode::Symbol = :basic,
     jetconfigs...)
@@ -1391,7 +1391,7 @@ function JETAnalyzer(;
     jetconfigs = kwargs_dict(jetconfigs)
     set_if_missing!(jetconfigs, :aggressive_constant_propagation, true)
     set_if_missing!(jetconfigs, :unoptimize_throw_blocks, false)
-    state = AnalyzerState(; jetconfigs...)
+    state = AnalyzerState(world; jetconfigs...)
     return JETAnalyzer(state, report_pass)
 end
 

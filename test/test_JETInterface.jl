@@ -34,7 +34,8 @@ struct APIValidator <: AbstractAnalyzer
     analysis_cache::AnalysisCache
 end
 
-APIValidator(; jetconfigs...) = APIValidator(AnalyzerState(; jetconfigs...), AnalysisCache())
+APIValidator(world::UInt=Base.get_world_counter(); jetconfigs...) =
+    APIValidator(AnalyzerState(world; jetconfigs...), AnalysisCache())
 function report_apivalidator(args...; jetconfigs...)
     @nospecialize args jetconfigs
     analyzer = APIValidator(; jetconfigs...)

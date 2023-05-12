@@ -352,13 +352,13 @@ end
 # =======
 
 # the entry constructor
-function OptAnalyzer(;
+function OptAnalyzer(world::UInt = Base.get_world_counter();
     report_pass = OptAnalysisPass(),
     function_filter = optanalyzer_function_filter,
     skip_noncompileable_calls::Bool = true,
     skip_unoptimized_throw_blocks::Bool = true,
     jetconfigs...)
-    state = AnalyzerState(; jetconfigs...)
+    state = AnalyzerState(world; jetconfigs...)
     return OptAnalyzer(
         state,
         report_pass,

@@ -101,9 +101,9 @@ A new `AnalyzerState` is supposed to be constructed using the [general configura
 as keyword arguments `jetconfigs` of the [`NewAnalyzer(; jetconfigs...)`](@ref AbstractAnalyzer)
 constructor, and the constructed `AnalyzerState` is usually kept within `NewAnalyzer` itself:
 ```julia
-function NewAnalyzer(; jetconfigs...)
+function NewAnalyzer(world::UInt=Base.get_world_counter(); jetconfigs...)
     ...
-    state = AnalyzerState(; jetconfigs...)
+    state = AnalyzerState(world; jetconfigs...)
     return NewAnalyzer(..., state)
 end
 AnalyzerState(analyzer::NewAnalyzer) = analyzer.state

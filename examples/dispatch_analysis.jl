@@ -128,10 +128,10 @@ end
 using InteractiveUtils # to use `gen_call_with_extracted_types_and_kwargs`
 
 ## the constructor for creating a new configured `DispatchAnalyzer` instance
-function DispatchAnalyzer(;
+function DispatchAnalyzer(world::UInt = Base.get_world_counter();
     frame_filter = x::Core.MethodInstance->true,
     jetconfigs...)
-    state = AnalyzerState(; jetconfigs...)
+    state = AnalyzerState(world; jetconfigs...)
     ## just for the sake of simplicity, create a fresh code cache for each `DispatchAnalyzer` instance (i.e. don't globalize the cache)
     analysis_cache = AnalysisCache()
     return DispatchAnalyzer(state, analysis_cache, BitVector(), frame_filter)

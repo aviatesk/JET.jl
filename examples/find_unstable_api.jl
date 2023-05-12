@@ -183,10 +183,10 @@ end
 using InteractiveUtils # to use `gen_call_with_extracted_types_and_kwargs`
 
 ## the constructor for creating a new configured `UnstableAPIAnalyzer` instance
-function UnstableAPIAnalyzer(;
+function UnstableAPIAnalyzer(world::UInt = Base.get_world_counter();
     is_target_module = ==(@__MODULE__),
     jetconfigs...)
-    state = AnalyzerState(; jetconfigs...)
+    state = AnalyzerState(world; jetconfigs...)
     ## use a globalized code cache (, which is separated by `InferenceParams` configurations)
     cache_key = JET.compute_hash(state.inf_params)
     analysis_cache = get!(()->AnalysisCache(), UNSTABLE_API_ANALYZER_CACHE, cache_key)
