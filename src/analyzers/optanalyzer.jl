@@ -163,7 +163,7 @@ that are specific to the optimization analysis.
 
 ---
 """
-struct OptAnalyzer{RP,FF} <: AbstractAnalyzer
+struct OptAnalyzer{RP<:ReportPass,FF} <: AbstractAnalyzer
     state::AnalyzerState
     analysis_cache::AnalysisCache
     report_pass::RP
@@ -176,7 +176,7 @@ struct OptAnalyzer{RP,FF} <: AbstractAnalyzer
                          report_pass::RP,
                          function_filter::FF,
                          skip_noncompileable_calls::Bool,
-                         skip_unoptimized_throw_blocks::Bool) where {RP,FF}
+                         skip_unoptimized_throw_blocks::Bool) where {RP<:ReportPass,FF}
         if (@ccall jl_generating_output()::Cint) != 0
             # XXX Avoid storing analysis results into a cache that persists across the
             #     precompilation, as pkgimage currently doesn't support serializing
@@ -353,7 +353,7 @@ end
 
 # the entry constructor
 function OptAnalyzer(world::UInt = Base.get_world_counter();
-    report_pass = OptAnalysisPass(),
+    report_pass::ReportPass = OptAnalysisPass(),
     function_filter = optanalyzer_function_filter,
     skip_noncompileable_calls::Bool = true,
     skip_unoptimized_throw_blocks::Bool = true,

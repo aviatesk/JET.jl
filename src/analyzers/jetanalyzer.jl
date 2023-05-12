@@ -36,11 +36,11 @@ struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
     report_pass::RP
     method_table::CachedMethodTable{OverlayMethodTable}
 
-    function JETAnalyzer(state::AnalyzerState, analysis_cache::AnalysisCache, report_pass::RP) where RP
+    function JETAnalyzer(state::AnalyzerState, analysis_cache::AnalysisCache, report_pass::RP) where RP<:ReportPass
         method_table = CachedMethodTable(OverlayMethodTable(state.world, JET_METHOD_TABLE))
         return new{RP}(state, analysis_cache, report_pass, method_table)
     end
-    function JETAnalyzer(state::AnalyzerState, report_pass::RP) where RP
+    function JETAnalyzer(state::AnalyzerState, report_pass::RP) where RP<:ReportPass
         if (@ccall jl_generating_output()::Cint) != 0
             # XXX Avoid storing analysis results into a cache that persists across the
             #     precompilation, as pkgimage currently doesn't support serializing
