@@ -762,6 +762,15 @@ function analyze_and_report_call!(analyzer::AbstractAnalyzer, @nospecialize(tt::
     source = lazy"$analyzername: $sig"
     return JETCallResult(result, analyzer, source; jetconfigs...)
 end
+function analyze_and_report_call!(analyzer::AbstractAnalyzer, mi::MethodInstance;
+                                  jetconfigs...)
+    validate_configs(analyzer, jetconfigs)
+    analyzer, result = analyze_method_instance!(analyzer, mi)
+    analyzername = nameof(typeof(analyzer))
+    sig = LazyPrinter(io::IO->Base.show_tuple_as_call(io, Symbol(""), mi.specTypes))
+    source = lazy"$analyzername: $sig"
+    return JETCallResult(result, analyzer, source; jetconfigs...)
+end
 
 # TODO `analyze_builtin!` ?
 function analyze_gf_by_type!(analyzer::AbstractAnalyzer, @nospecialize(tt::Type{<:Tuple}))

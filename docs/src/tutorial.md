@@ -217,13 +217,13 @@ using MyPkg, JET, MethodAnalysis
 mis = methodinstances(MyPkg)    # get all the compiled methodinstances for functions owned by the package
 # Now let's filter out the ones that pass without issue
 badmis = filter(mis) do mi
-    !isempty(JET.get_reports(report_call(mi.specTypes)))
+    !isempty(JET.get_reports(report_call(mi)))
 end
 ```
 
-Then you can inspect the methodinstances in `badmis` individually with `report_call(mi.specTypes)`.
+Then you can inspect the methodinstances in `badmis` individually with `report_call(mi)`.
 
 There are two caveats to note:
 
 - `methodinstances(MyPkg)` only covers *functions* owned by `MyPkg`. If `MyPkg` defines an "extension" method `OtherPkg.f(...)`, any corresponding methodinstances would appear in the list for `OtherPkg`.
-- if you [disable precompilation](https://julialang.github.io/PrecompileTools.jl/stable/#Package-developers:-reducing-the-cost-of-precompilation-during-development) for your development version of the package, you'll get a greatly-reduced list of methodinstances that does not reflect ordinary usage. JET analysis should only be performed on packages that are actively using their precompilation workloads.
+- if you [disable precompilation](https://julialang.github.io/PrecompileTools.jl/stable/#Package-developers:-reducing-the-cost-of-precompilation-during-development) for your development version of the package, you'll get a greatly-reduced list of methodinstances that does not reflect ordinary usage. This style of JET analysis should only be performed on packages that are actively using their precompilation workloads.
