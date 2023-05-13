@@ -151,6 +151,24 @@ a package, or improve the accuracy of base abstract interpretation analysis.
 # getting rid of the false positive error from `getindex((), i)`.
 @overlay JET_METHOD_TABLE Base.iterate(::Tuple{}, ::Int) = nothing
 
+# take the effects of https://github.com/JuliaLang/julia/pull/49801 for release versions
+@static if VERSION < v"1.10.0-DEV.1289"
+@overlay JET_METHOD_TABLE Base.@assume_effects :foldable function Base.aligned_sizeof(@nospecialize T::Type)
+    if isa(T, Union)
+        if Base.allocatedinline(T)
+            # NOTE this check is equivalent to `isbitsunion(T)`, we can improve type
+            # inference in the second branch with the outer `isa(T, Union)` check
+            _, sz, al = Base.uniontype_layout(T)
+            return Base.LLT_ALIGN(sz, al)
+        end
+    elseif Base.allocatedinline(T)
+        al = Base.datatype_alignment(T)
+        return Base.LLT_ALIGN(Core.sizeof(T), al)
+    end
+    return Core.sizeof(Ptr{Cvoid})
+end
+end
+
 # overloads
 # =========
 

@@ -1070,4 +1070,7 @@ test_call(issue_404, (Bool,))
     end
 end
 
+# https://github.com/JuliaLang/julia/pull/49801
+test_call(Base.aligned_sizeof, (Union{DataType,Union},))
+
 end # module test_jetanalyzer
