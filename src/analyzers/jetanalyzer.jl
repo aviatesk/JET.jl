@@ -510,7 +510,7 @@ Represents general `throw` calls traced during inference.
 This is reported only when it's not caught by control flow.
 """
 @jetreport struct UncaughtExceptionReport <: InferenceErrorReport
-    throw_calls::Vector{Tuple{Int,Expr}} # (pc, call)
+    single_error::Bool
 end
 function UncaughtExceptionReport(sv::InferenceState, throw_calls::Vector{Tuple{Int,Expr}})
     vf = get_virtual_frame(sv.linfo)
@@ -521,10 +521,11 @@ function UncaughtExceptionReport(sv::InferenceState, throw_calls::Vector{Tuple{I
         append!(sig, call_sig)
         i ≠ ncalls && push!(sig, ", ")
     end
-    return UncaughtExceptionReport([vf], Signature(sig), throw_calls)
+    single_error = ncalls == 1
+    return UncaughtExceptionReport([vf], Signature(sig), single_error)
 end
-function print_report_message(io::IO, (; throw_calls)::UncaughtExceptionReport)
-    msg = length(throw_calls) == 1 ? "may throw" : "may throw either of"
+function print_report_message(io::IO, r::UncaughtExceptionReport)
+    msg = r.single_error ? "may throw" : "may throw either of"
     print(io, msg)
 end
 
