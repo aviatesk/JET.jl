@@ -1426,6 +1426,7 @@ end
 """
     report_call(f, [types]; jetconfigs...) -> JETCallResult
     report_call(tt::Type{<:Tuple}; jetconfigs...) -> JETCallResult
+    report_call(mi::Core.MethodInstance; jetconfigs...) -> JETCallResult
 
 Analyzes a function call with the given type signature to find type-level errors
 and returns back detected problems.
