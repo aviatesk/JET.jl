@@ -377,6 +377,7 @@ end
 """
     report_opt(f, [types]; jetconfigs...) -> JETCallResult
     report_opt(tt::Type{<:Tuple}; jetconfigs...) -> JETCallResult
+    report_opt(mi::Core.MethodInstance; jetconfigs...) -> JETCallResult
 
 Analyzes a function call with the given type signature to detect optimization failures and
 unresolved method dispatches.

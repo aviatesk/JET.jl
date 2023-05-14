@@ -10,6 +10,22 @@ using JET, Test
     test_call(getproperty, (Any,Symbol))
 end
 
+@static if isdefined(Base, :specializations)
+
+f_method_instance(s::AbstractString) = sum(s)
+try
+    f_method_instance("throws")
+catch
+end
+
+@testset "from MethodInstance" begin
+    mi = first(Base.specializations(only(methods(f_method_instance))))
+    @test !isempty(JET.get_reports(report_call(mi)))
+    @test !isempty(JET.get_reports(report_opt(mi)))
+end
+
+end # @static
+
 @testset "`find_pkg`" begin
     using Pkg, JET
     using JET: find_pkg

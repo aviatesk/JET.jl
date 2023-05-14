@@ -742,6 +742,7 @@ include("ui/vscode.jl")
 """
     analyze_and_report_call!(analyzer::AbstractAnalyzer, f, [types]; jetconfigs...) -> JETCallResult
     analyze_and_report_call!(analyzer::AbstractAnalyzer, tt::Type{<:Tuple}; jetconfigs...) -> JETCallResult
+    analyze_and_report_call!(analyzer::AbstractAnalyzer, mi::MethodInstance; jetconfigs...) -> JETCallResult
 
 A generic entry point to analyze a function call with `AbstractAnalyzer`.
 Finally returns the analysis result as [`JETCallResult`](@ref).
