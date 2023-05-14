@@ -208,4 +208,22 @@ end
 
 Because such usage necessarily requires passing concrete types to your functions, calling `@report_call exercise_mypkg()` leads to more precise analysis than `report_package`.
 
-Furthermore, once you have written a function like `exercise_mypkg`, you can use a package like [`SnoopPrecompile`](https://github.com/timholy/SnoopCompile.jl) to precompile the function, which will thus precompile all code exercised in the function, significantly reducing your package's latency.
+Furthermore, once you have written a function like `exercise_mypkg`, you can use a package like [`PrecompileTools`](https://github.com/JuliaLang/PrecompileTools.jl) to precompile the function, which will thus precompile all code exercised in the function, significantly reducing your package's latency.
+
+Conversely, if you've already implemented a precompile workload, you can do the following:
+
+```julia
+using MyPkg, JET, MethodAnalysis
+mis = methodinstances(MyPkg)    # get all the compiled methodinstances for functions owned by the package
+# Now let's filter out the ones that pass without issue
+badmis = filter(mis) do mi
+    !isempty(JET.get_reports(report_call(mi)))
+end
+```
+
+Then you can inspect the methodinstances in `badmis` individually with `report_call(mi)`.
+
+There are two caveats to note:
+
+- `methodinstances(MyPkg)` only covers *functions* owned by `MyPkg`. If `MyPkg` defines an "extension" method `OtherPkg.f(...)`, any corresponding methodinstances would appear in the list for `OtherPkg`.
+- if you [disable precompilation](https://julialang.github.io/PrecompileTools.jl/stable/#Package-developers:-reducing-the-cost-of-precompilation-during-development) for your development version of the package, you'll get a greatly-reduced list of methodinstances that does not reflect ordinary usage. This style of JET analysis should only be performed on packages that are actively using their precompilation workloads.

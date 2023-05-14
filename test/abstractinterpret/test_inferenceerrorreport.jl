@@ -204,5 +204,22 @@ sparams22(::Type{A}, ::Type{B}) where B where A = zero(A), zero(B)
     end
 end
 
+@testset "from MethodInstance" begin
+    m = @fixturedef begin
+        foo(s::AbstractString) = throw(ArgumentError(s))
+    end
+    if isdefined(Base, :specializations)
+        try
+            m.foo("throws")
+        catch
+        end
+        mi = first(Base.specializations(only(methods(m.foo))))
+        result = report_call(mi)
+        r = only(get_reports_with_test(result))
+        @test isa(r, UncaughtExceptionReport)
+        @test Any['(', 's', String, ')', ArgumentError] ⫇ r.sig._sig
+    end
+end
+
 # TODO set up a dedicated module context for this testset
 # end # module test_inferenceerrorreport
