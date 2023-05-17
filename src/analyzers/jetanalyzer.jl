@@ -51,7 +51,7 @@ struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
             analysis_cache = AnalysisCache()
         else
             cache_key = compute_hash(state.inf_params, report_pass)
-            analysis_cache = get!(()->AnalysisCache(), JET_ANALYZER_CACHE, cache_key)
+            analysis_cache = get!(AnalysisCache, JET_ANALYZER_CACHE, cache_key)
         end
         return JETAnalyzer(state, analysis_cache, report_pass)
     end

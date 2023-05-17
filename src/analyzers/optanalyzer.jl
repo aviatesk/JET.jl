@@ -189,7 +189,7 @@ struct OptAnalyzer{RP<:ReportPass,FF} <: AbstractAnalyzer
             cache_key = compute_hash(state.inf_params, state.opt_params, report_pass,
                                      skip_noncompileable_calls, skip_unoptimized_throw_blocks)
             cache_key = @invoke hash(function_filter::Any, cache_key::UInt) # HACK avoid dynamic dispatch
-            analysis_cache = get!(()->AnalysisCache(), OPT_ANALYZER_CACHE, cache_key)
+            analysis_cache = get!(AnalysisCache, OPT_ANALYZER_CACHE, cache_key)
         end
         return new{RP,FF}(state,
                           analysis_cache,

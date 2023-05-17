@@ -189,7 +189,7 @@ function UnstableAPIAnalyzer(world::UInt = Base.get_world_counter();
     state = AnalyzerState(world; jetconfigs...)
     ## use a globalized code cache (, which is separated by `InferenceParams` configurations)
     cache_key = JET.compute_hash(state.inf_params)
-    analysis_cache = get!(()->AnalysisCache(), UNSTABLE_API_ANALYZER_CACHE, cache_key)
+    analysis_cache = get!(AnalysisCache, UNSTABLE_API_ANALYZER_CACHE, cache_key)
     return UnstableAPIAnalyzer(state, analysis_cache, is_target_module)
 end
 function report_unstable_api(args...; jetconfigs...)
