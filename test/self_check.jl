@@ -33,20 +33,20 @@ let target_modules = (JET,)
 
     # ignore some dynamically-designed functions
     # TODO implement `signature_filter` and limit the ignorance scope
-    function function_filter(@nospecialize ft)
-        if (ft === typeof(JET.widenconst) ||
-            ft === typeof(JET.ignorelimited) ||
-            ft === typeof(JET.print) ||
-            ft === typeof(Base.CoreLogging.handle_message) ||
-            ft === typeof(get) ||
-            ft === typeof(sprint) ||
-            ft === typeof(string) ||
-            ft === typeof(zero) ||
-            ft === typeof(JET.copy_report) ||
-            ft === typeof(JET.handle_sig!) ||
-            ft === typeof(JET._which) ||
-            ft === typeof(JET.rewrap_unionall) ||
-            ft === typeof(JET.nameof) ||
+    function function_filter(@nospecialize f)
+        if (f === JET.widenconst ||
+            f === JET.ignorelimited ||
+            f === JET.print ||
+            f === Base.CoreLogging.handle_message ||
+            f === get ||
+            f === sprint ||
+            f === string ||
+            f === zero ||
+            f === JET.copy_report ||
+            f === JET.handle_sig! ||
+            f === JET._which ||
+            f === JET.rewrap_unionall ||
+            f === JET.nameof ||
             false)
             return false
         end

@@ -200,7 +200,7 @@ end
             @test !isempty(get_reports_with_test(result))
             @test any(r->isa(r,RuntimeDispatchReport), get_reports_with_test(result))
         end
-        let function_filter(@nospecialize ft) = ft !== typeof(with_runtime_dispatch)
+        let function_filter(@nospecialize f) = f !== with_runtime_dispatch
             test_opt((Vector{Any},); function_filter) do xs
                 with_runtime_dispatch(xs[1])
             end
@@ -213,7 +213,7 @@ end
             @test !isempty(get_reports_with_test(result))
             @test any(r->isa(r,RuntimeDispatchReport), get_reports_with_test(result))
         end
-        let function_filter(@nospecialize ft) = ft !== Type{WithRuntimeDispatch}
+        let function_filter(@nospecialize f) = f !== WithRuntimeDispatch
             test_opt((Vector{Any},); function_filter) do xs
                 WithRuntimeDispatch(xs[1])
             end
