@@ -16,9 +16,6 @@ function print_reports(io::IO, res::JETCallResult)
                          res.jetconfigs...)
 end
 
-# entry for test
-print_reports(res::AnyJETResult; jetconfigs...) = print_reports(stdout::IO, res; jetconfigs...)
-
 # configuration
 # =============
 
