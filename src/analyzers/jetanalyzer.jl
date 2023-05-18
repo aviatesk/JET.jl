@@ -627,7 +627,7 @@ function (rp::BasicPass)(::Type{MethodErrorReport}, analyzer::JETAnalyzer,
         basic_filter(analyzer, sv) || return false
     end
     if isa(info, MethodMatchInfo)
-        return report_method_error!(analyzer, sv, info, atype, call.rt, #=sound=#false)
+        return report_method_error!(analyzer, sv, info, atype, argtypes, call.rt, #=sound=#false)
     elseif isa(info, UnionSplitInfo)
         return report_method_error_for_union_split!(analyzer, sv, info, argtypes, call.rt, #=sound=#false)
     end
@@ -641,17 +641,44 @@ function (::SoundPass)(::Type{MethodErrorReport}, analyzer::JETAnalyzer,
         info = info.call
     end
     if isa(info, MethodMatchInfo)
-        return report_method_error!(analyzer, sv, info, atype, rt, #=sound=#true)
+        return report_method_error!(analyzer, sv, info, atype, argtypes, rt, #=sound=#true)
     elseif isa(info, UnionSplitInfo)
         return report_method_error_for_union_split!(analyzer, sv, info, argtypes, rt, #=sound=#true)
     end
     return false
 end
 
+const REDUCE_EMPTY_REPORT_SIG = let
+    sig = Any["MethodError: reducing over an empty collection is not allowed; consider supplying `init` to the reducer"]
+    Signature(sig)
+end
+
+# special case `reduce_empty` and `mapreduce_empty`:
+# In the `:basic` mode, downgrade `MethodErrorReport` on call of `reduce_empty` or `mapreduce_empty`
+# to `UncaughtExceptionReport` so that it can be filtered out in common cases.
+# xref: https://github.com/JuliaLang/julia/pull/41885/
+function report_reduce_empty_error!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Vector{Any})
+    f = singleton_type(argtypes[1])
+    if f !== nothing
+        if f === Base.reduce_empty || f === Base.mapreduce_empty
+            vf = get_virtual_frame(sv.linfo)
+            report = UncaughtExceptionReport([vf], REDUCE_EMPTY_REPORT_SIG, #=single_error=#true)
+            add_new_report!(analyzer, sv.result, report)
+            return true
+        end
+    end
+    return false
+end
+
 function report_method_error!(analyzer::JETAnalyzer,
-    sv::InferenceState, info::MethodMatchInfo, @nospecialize(atype), @nospecialize(rt), sound::Bool)
+    sv::InferenceState, info::MethodMatchInfo, @nospecialize(atype), argtypes::Vector{Any},
+    @nospecialize(rt), sound::Bool)
     if is_empty_match(info)
-        add_new_report!(analyzer, sv.result, MethodErrorReport(sv, atype, 0, #=uncovered=#false))
+        if !sound && report_reduce_empty_error!(analyzer, sv, argtypes)
+            return true
+        end
+        report = MethodErrorReport(sv, atype, 0, #=uncovered=#false)
+        add_new_report!(analyzer, sv.result, report)
         return true
     elseif sound && !is_fully_covered(info)
         report = MethodErrorReport(sv, atype, 0, #=uncovered=#true)
@@ -665,8 +692,8 @@ end
 function report_method_error_for_union_split!(analyzer::JETAnalyzer,
     sv::InferenceState, info::UnionSplitInfo, argtypes::Argtypes, @nospecialize(rt), sound::Bool)
     # check each match for union-split signature
-    split_argtypes = nothing
-    empty_matches = uncovered_matches = nothing
+    split_argtypes = empty_matches = uncovered_matches = nothing
+    reported = false
     for (i, matchinfo) in enumerate(info.matches)
         if is_empty_match(matchinfo)
             if isnothing(split_argtypes)
@@ -676,10 +703,15 @@ function report_method_error_for_union_split!(analyzer::JETAnalyzer,
                     split_argtypes = switchtupleunion(argtypes)
                 end
             end
+            argtypes′ = split_argtypes[i]::Vector{Any}
+            if !sound && report_reduce_empty_error!(analyzer, sv, argtypes′)
+                reported |= true
+                continue
+            end
             if empty_matches === nothing
                 empty_matches = (Any[], length(info.matches))
             end
-            sig_n = argtypes_to_type(split_argtypes[i]::Vector{Any})
+            sig_n = argtypes_to_type(argtypes′)
             push!(empty_matches[1], sig_n)
         elseif sound && !is_fully_covered(matchinfo)
             if isnothing(split_argtypes)
@@ -689,14 +721,14 @@ function report_method_error_for_union_split!(analyzer::JETAnalyzer,
                     split_argtypes = switchtupleunion(argtypes)
                 end
             end
+            argtypes′ = split_argtypes[i]::Vector{Any}
             if uncovered_matches === nothing
                 uncovered_matches = (Any[], length(info.matches))
             end
-            sig_n = argtypes_to_type(split_argtypes[i]::Vector{Any})
+            sig_n = argtypes_to_type(argtypes′)
             push!(uncovered_matches[1], sig_n)
         end
     end
-    reported = false
     if empty_matches !== nothing
         add_new_report!(analyzer, sv.result, MethodErrorReport(sv, empty_matches..., #=reason=#false))
         reported |= true
