@@ -1016,7 +1016,7 @@ function partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::Cod
     # here we create `JuliaInterpreter.Frame` by ourselves disabling the optimization (#277)
     frame = Frame(mod, src; optimize=false)
     @assert length(frame.framecode.src.code) == length(concretize)
-    selective_eval_fromstart!(interp, frame, concretize, #= istoplevel =# true)
+    selective_eval_fromstart!(interp, frame, concretize, #=istoplevel=#true)
 
     return concretize
 end
@@ -1026,7 +1026,7 @@ function select_statements(src::CodeInfo)
     stmts = src.code
     edges = CodeEdges(src)
 
-    concretize = fill(false, length(stmts))
+    concretize = falses(length(stmts))
 
     select_direct_requirement!(concretize, stmts, edges)
 

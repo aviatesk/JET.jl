@@ -157,14 +157,14 @@ for fld in fieldnames(AnalyzerState)
 end
 
 function AnalyzerState(world::UInt  = get_world_counter();
-                       results      = IdDict{InferenceResult,AnyAnalysisResult}(),
-                       inf_params   = nothing,
-                       opt_params   = nothing,
-                       concretized  = _CONCRETIZED,
-                       toplevelmod  = _TOPLEVELMOD,
-                       global_slots = _GLOBAL_SLOTS,
-                       depth        = 0,
-                       jetconfigs...)
+    results::IdDict{InferenceResult,AnyAnalysisResult} = IdDict{InferenceResult,AnyAnalysisResult}(),
+    inf_params::Union{Nothing,InferenceParams} = nothing,
+    opt_params::Union{Nothing,OptimizationParams} = nothing,
+    concretized::BitVector = _CONCRETIZED,
+    toplevelmod::Module = _TOPLEVELMOD,
+    global_slots::Dict{Int,Symbol} = _GLOBAL_SLOTS,
+    depth::Int = 0,
+    jetconfigs...)
     isnothing(inf_params) && (inf_params = JETInferenceParams(; jetconfigs...))
     isnothing(opt_params) && (opt_params = JETOptimizationParams(; jetconfigs...))
     inf_cache = InferenceResult[]
@@ -361,15 +361,15 @@ function AbstractAnalyzer(analyzer::T) where {T<:AbstractAnalyzer}
 end
 
 # constructor for sequential toplevel JET analysis
-function AbstractAnalyzer(analyzer::T, concretized, toplevelmod;
+function AbstractAnalyzer(analyzer::T, concretized::BitVector, toplevelmod::Module;
     # update world age to take in newly added methods defined by `ConcreteInterpreter`
     world::UInt = get_world_counter()
     ) where {T<:AbstractAnalyzer}
     newstate = AnalyzerState(world;
-                             inf_params  = InferenceParams(analyzer),
-                             opt_params  = OptimizationParams(analyzer),
-                             concretized = concretized, # or construct partial `CodeInfo` from remaining abstract statements ?
-                             toplevelmod = toplevelmod,
+                             inf_params = InferenceParams(analyzer),
+                             opt_params = OptimizationParams(analyzer),
+                             concretized, # or construct partial `CodeInfo` from remaining abstract statements ?
+                             toplevelmod,
                              )
     return AbstractAnalyzer(analyzer, newstate)
 end
