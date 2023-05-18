@@ -1073,4 +1073,21 @@ end
 # https://github.com/JuliaLang/julia/pull/49801
 test_call(Base.aligned_sizeof, (Union{DataType,Union},))
 
+# special case on `reduce_empty` and `mapreduce_empty`
+# In the `:basic` mode, downgrade `MethodErrorReport` on call of `reduce_empty` or `mapreduce_empty`
+# to `UncaughtExceptionReport` so that it can be filtered out in common cases.
+# xref: https://github.com/JuliaLang/julia/pull/41885/
+@test_call maximum(length, ["f", "ba", "baz"])
+@test_call maximum(length, ["f", "ba", "baz"]; init=0)
+
+# We should still be able to get an error that is obvious from the original `reduce_empty` definitions:
+# NOTE Since method matches with overlay method table do not consider method specialities
+# across both the native method table and the overlay one, we can't do something like:
+# `@overlay JET_METHOD_TABLE Base.reduce_empty(op, T) = Base._empty_reduce_error(op, T)`
+# since it it does not allow dispatch on `Base.reduce_empty(::typeof(add_sum), ::Type{Union{}})`
+# that is in the native method table (as the overlay definition fully-covers)
+@test !isempty(get_reports_with_test(@report_call sum(())))
+@test_call sum((1,2,3))
+@test_call sum(Int[])
+
 end # module test_jetanalyzer
