@@ -82,12 +82,21 @@ let # overload `abstract_call_method_with_const_args`
 end
 
 let # overload `concrete_eval_call`
-    sigs_ex = :(analyzer::AbstractAnalyzer,
-        @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState,
-        $(Expr(:kw, :(invokecall::Union{Nothing,CC.InvokeCall}), :nothing)))
-    args_ex = :(analyzer::AbstractInterpreter,
-        f::Any, result::MethodCallResult, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState,
-        invokecall::Union{Nothing,CC.InvokeCall})
+    @static if VERSION ≥ v"1.10.0-DEV.1345"
+        sigs_ex = :(analyzer::AbstractAnalyzer,
+            @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo,
+            sv::InferenceState, invokecall::Union{Nothing,CC.InvokeCall})
+        args_ex = :(analyzer::AbstractInterpreter,
+            f::Any, result::MethodCallResult, arginfo::ArgInfo,
+            sv::InferenceState, invokecall::Union{Nothing,CC.InvokeCall})
+    else
+        sigs_ex = :(analyzer::AbstractAnalyzer,
+            @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState,
+            $(Expr(:kw, :(invokecall::Union{Nothing,CC.InvokeCall}), :nothing)))
+        args_ex = :(analyzer::AbstractInterpreter,
+            f::Any, result::MethodCallResult, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState,
+            invokecall::Union{Nothing,CC.InvokeCall})
+    end
     @eval function CC.concrete_eval_call($(sigs_ex.args...))
         ret = @invoke CC.concrete_eval_call($(args_ex.args...))
         if $(isdefined(CC, :ConstCallResults) ? :(ret isa CC.ConstCallResults) : :(ret !== nothing))

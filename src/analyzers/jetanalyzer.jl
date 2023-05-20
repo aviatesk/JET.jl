@@ -292,21 +292,28 @@ end
 let # overload `concrete_eval_eligible`
     sigs_ex = :(analyzer::JETAnalyzer,
         @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
-    # TODO correctly reasons about error found by [semi-]concrete evaluation
-    # for now just always fallback to the constant-prop'
+    # TODO Reasons about error found by [semi-]concrete evaluation:
+    # For now JETAnalyzer always just uses the regular constant-prop'.
     @eval function CC.concrete_eval_eligible($(sigs_ex.args...))
         if f === typejoin
             # HACK special case this function: there had been a special handling in the base
             # Julia compiler to constant fold a call to this function and it turned out that
             # `JETAnalyzer` implicitly relies on it to get a reasonable analysis accuracy
             if concrete_eval_eligible_ignoring_overlay(result, arginfo)
-                return true
+                @static if VERSION ≥ v"1.10.0-DEV.1345"
+                    return :concrete_eval
+                else
+                    return true
+                end
             end
         end
-        @static if isdefined(CC, :ir_abstract_constant_propagation)
-            return nothing # disables both concrete evaluation and semi-concrete interpretation
+        # disables both concrete evaluation and semi-concrete interpretation
+        @static if VERSION ≥ v"1.10.0-DEV.1345"
+            return :none
+        elseif isdefined(CC, :ir_abstract_constant_propagation)
+            return nothing
         else
-            return false # disables concrete evaluation
+            return false
         end
     end
 end
