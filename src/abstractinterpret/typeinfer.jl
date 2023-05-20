@@ -387,7 +387,7 @@ end
 CC.get_inference_cache(analyzer::AbstractAnalyzer) = AbstractAnalyzerView(analyzer)
 
 let
-    if isdefined(CC, :AbstractLattice)
+    @static if isdefined(CC, :AbstractLattice)
         sigs_ex = :(lattice::CC.AbstractLattice, linfo::MethodInstance, given_argtypes::Argtypes, view::AbstractAnalyzerView)
         args_ex = :(lattice, linfo, given_argtypes, get_inf_cache(view.analyzer))
     else
