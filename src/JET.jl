@@ -20,8 +20,6 @@ let README = normpath(dirname(@__DIR__), "README.md")
     include_dependency(README)
 end
 
-@deprecate report_and_watch_file watch_file # to be removed by v0.8
-
 Base.Experimental.@optlevel 1
 
 const CC = Core.Compiler
@@ -1129,24 +1127,24 @@ function _watch_file_with_func(func, filename::AbstractString; jetconfigs...)
             if isa(err, InsufficientWatches)
                 included_files = err.included_files
                 continue
-            elseif isa(err, LoadError) ||
-                   (isa(err, ErrorException) && startswith(err.msg, "lowering returned an error")) ||
-                   isa(err, Revise.ReviseEvalException)
+            elseif (isa(err, LoadError) ||
+                    (isa(err, ErrorException) && startswith(err.msg, "lowering returned an error")) ||
+                    isa(err, Revise.ReviseEvalException))
                 continue
 
             # async errors
             elseif isa(err, CompositeException)
                 errs = err.exceptions
-                i = findfirst(e->isa(e, TaskFailedException), errs)
+                i = findfirst(@nospecialize(e)->isa(e, TaskFailedException), errs)
                 if !isnothing(i)
                     tfe = errs[i]::TaskFailedException
                     let res = tfe.task.result
                         if isa(res, InsufficientWatches)
                             included_files = res.included_files
                             continue
-                        elseif isa(res, LoadError) ||
-                               (isa(res, ErrorException) && startswith(res.msg, "lowering returned an error")) ||
-                               isa(res, Revise.ReviseEvalException)
+                        elseif (isa(res, LoadError) ||
+                                (isa(res, ErrorException) && startswith(res.msg, "lowering returned an error")) ||
+                                isa(res, Revise.ReviseEvalException))
                             continue
                         end
                     end
