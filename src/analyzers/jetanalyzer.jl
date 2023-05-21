@@ -64,32 +64,40 @@ CC.may_optimize(::JETAnalyzer) = false
 CC.method_table(analyzer::JETAnalyzer) = analyzer.method_table
 
 @static if VERSION ≥ v"1.10.0-DEV.25"
-    import .CC: typeinf_lattice, ipo_lattice
-    using .CC:
-        AbstractLattice, InferenceLattice, MustAliasesLattice,  InterMustAliasesLattice,
-        BaseInferenceLattice, IPOResultLattice
+import .CC: typeinf_lattice, ipo_lattice
+using .CC:
+    AbstractLattice, InferenceLattice, MustAliasesLattice,  InterMustAliasesLattice,
+    BaseInferenceLattice, IPOResultLattice
 
-    @static if VERSION ≥ v"1.10.0-DEV.197"
-        import .CC: widenlattice, is_valid_lattice_norec, ⊑, tmerge, tmeet, _getfield_tfunc
+@static if VERSION ≥ v"1.10.0-DEV.197"
+import .CC: widenlattice, is_valid_lattice_norec, ⊑, tmerge, tmeet, _getfield_tfunc
 
-        struct IntrinsicErrorCheckLattice{𝕃<:AbstractLattice} <: AbstractLattice
-            parent::𝕃
-        end
-        CC.widenlattice(𝕃::IntrinsicErrorCheckLattice) = 𝕃.parent
-        CC.is_valid_lattice_norec(::IntrinsicErrorCheckLattice, @nospecialize(elem)) = false
+@doc """
+    IntrinsicErrorCheckLattice <: AbstractLattice
 
-        @nospecs CC.:⊑(𝕃::IntrinsicErrorCheckLattice, x, y) = ⊑(widenlattice(𝕃), x, y)
-        @nospecs CC.tmerge(𝕃::IntrinsicErrorCheckLattice, x, y) = tmerge(widenlattice(𝕃), x, y)
-        @nospecs CC.tmeet(𝕃::IntrinsicErrorCheckLattice, x, t::Type) = tmeet(widenlattice(𝕃), x, t)
-        @nospecs CC._getfield_tfunc(𝕃::IntrinsicErrorCheckLattice, xs...) = _getfield_tfunc(widenlattice(𝕃), xs...)
-
-        CC.typeinf_lattice(::JETAnalyzer) = InferenceLattice(IntrinsicErrorCheckLattice(MustAliasesLattice(BaseInferenceLattice.instance)))
-        CC.ipo_lattice(::JETAnalyzer) = InferenceLattice(IntrinsicErrorCheckLattice(InterMustAliasesLattice(IPOResultLattice.instance)))
-    else
-        CC.typeinf_lattice(::JETAnalyzer) = InferenceLattice(MustAliasesLattice(BaseInferenceLattice.instance))
-        CC.ipo_lattice(::JETAnalyzer) = InferenceLattice(InterMustAliasesLattice(IPOResultLattice.instance))
-    end
+This lattice is used to check if an intrinsic function call is erroneous.
+It is not adjointing any lattice elements and is merely used to overload `tfunc`s for
+intrinsic calls that return `IntrinsicError` when the call is erroneous.
+"""
+struct IntrinsicErrorCheckLattice{𝕃<:AbstractLattice} <: AbstractLattice
+    inner::𝕃
 end
+CC.widenlattice(𝕃::IntrinsicErrorCheckLattice) = 𝕃.inner
+CC.is_valid_lattice_norec(::IntrinsicErrorCheckLattice, @nospecialize(elem)) = false
+@nospecs CC.:⊑(𝕃::IntrinsicErrorCheckLattice, x, y) = ⊑(widenlattice(𝕃), x, y)
+@nospecs CC.tmerge(𝕃::IntrinsicErrorCheckLattice, x, y) = tmerge(widenlattice(𝕃), x, y)
+@nospecs CC.tmeet(𝕃::IntrinsicErrorCheckLattice, x, t::Type) = tmeet(widenlattice(𝕃), x, t)
+@nospecs CC._getfield_tfunc(𝕃::IntrinsicErrorCheckLattice, xs...) = _getfield_tfunc(widenlattice(𝕃), xs...)
+
+CC.typeinf_lattice(::JETAnalyzer) = InferenceLattice(IntrinsicErrorCheckLattice(MustAliasesLattice(BaseInferenceLattice.instance)))
+CC.ipo_lattice(::JETAnalyzer) = InferenceLattice(IntrinsicErrorCheckLattice(InterMustAliasesLattice(IPOResultLattice.instance)))
+
+else # @static if VERSION ≥ v"1.10.0-DEV.197"
+CC.typeinf_lattice(::JETAnalyzer) = InferenceLattice(MustAliasesLattice(BaseInferenceLattice.instance))
+CC.ipo_lattice(::JETAnalyzer) = InferenceLattice(InterMustAliasesLattice(IPOResultLattice.instance))
+
+end # @static if VERSION ≥ v"1.10.0-DEV.197"
+end # @static if VERSION ≥ v"1.10.0-DEV.25"
 
 # AbstractAnalyzer API
 # ====================
