@@ -1095,12 +1095,12 @@ end
 # HACK to avoid Revise loading overhead when just using interactive entry points like `@report_call`
 init_revise!() = @eval (@__MODULE__) using Revise
 
-function _watch_file_with_func(func, filename::AbstractString; jetconfigs...)
+function _watch_file_with_func(func, args...; jetconfigs...)
     local included_files::Set{String}
 
     config = WatchConfig(; jetconfigs...)
 
-    included_files = let res = func(filename; jetconfigs...)
+    included_files = let res = func(args...; jetconfigs...)
         display(res)
         res.res.included_files
     end
@@ -1110,7 +1110,7 @@ function _watch_file_with_func(func, filename::AbstractString; jetconfigs...)
         try
             Revise.entr(collect(included_files), config.revise_modules;
                         postpone = true, all = config.revise_all) do
-                next_included_files = let res = func(filename; jetconfigs...)
+                next_included_files = let res = func(args...; jetconfigs...)
                     display(res)
                     res.res.included_files
                 end
