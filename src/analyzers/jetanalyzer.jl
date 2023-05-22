@@ -243,6 +243,8 @@ given that the number of matching methods are limited beforehand.
 """
 CC.bail_out_call(::JETAnalyzer, ::CC.InferenceLoopState, ::InferenceState) = false
 
+struct __DummyConcrete__ end
+
 @doc """
     add_call_backedges!(analyzer::JETAnalyzer, ...)
 
@@ -250,28 +252,16 @@ An overload for `abstract_call_gf_by_type(analyzer::JETAnalyzer, ...)`, which al
 backedges (even if a new method can't refine the return type grew up to `Any`).
 This is because a new method definition always has a potential to change `JETAnalyzer`'s analysis result.
 """
-function CC.add_call_backedges!(analyzer::JETAnalyzer,
-    @nospecialize(rettype), edges::Vector{MethodInstance},
-    matches::Union{MethodMatches,UnionSplitMethodMatches}, @nospecialize(atype),
-    sv::InferenceState)
-    return @invoke CC.add_call_backedges!(analyzer::AbstractInterpreter,
-        # NOTE this `__DummyAny__` hack forces `add_call_backedges!(::AbstractInterpreter,...)` to add backedges
-        __DummyAny__::Any, edges::Vector{MethodInstance},
-        matches::Union{MethodMatches,UnionSplitMethodMatches}, atype::Any,
-        sv::InferenceState)
-end
-
-function CC.add_call_backedges!(analyzer::JETAnalyzer,
-    @nospecialize(rettype), effects::CC.Effects,
+function CC.add_call_backedges!(
+    analyzer::JETAnalyzer, @nospecialize(rettype), effects::CC.Effects,
     edges::Vector{MethodInstance}, matches::Union{MethodMatches,UnionSplitMethodMatches}, @nospecialize(atype),
     sv::InferenceState)
-    return @invoke CC.add_call_backedges!(analyzer::AbstractInterpreter,
-        # NOTE this `__DummyAny__` hack forces `add_call_backedges!(::AbstractInterpreter,...)` to add backedges
-        __DummyAny__::Any, effects::CC.Effects,
+    return @invoke CC.add_call_backedges!(
+        # NOTE this `__DummyConcrete__` hack forces `add_call_backedges!(::AbstractInterpreter,...)` to add backedges
+        analyzer::AbstractInterpreter, __DummyConcrete__::Any, effects::CC.Effects,
         edges::Vector{MethodInstance}, matches::Union{MethodMatches,UnionSplitMethodMatches}, atype::Any,
         sv::InferenceState)
 end
-struct __DummyAny__ end
 
 let # overload `const_prop_entry_heuristic`
     @static if @isdefined(StmtInfo)
