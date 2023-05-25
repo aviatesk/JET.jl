@@ -177,6 +177,37 @@ a package, or improve the accuracy of base abstract interpretation analysis.
 end
 end
 
+# take the effects of https://github.com/JuliaLang/julia/pull/48136 for release versions
+@static if VERSION < v"1.10.0-DEV.286" # || VERSION ≥ v"1.9"
+@overlay JET_METHOD_TABLE Base.@assume_effects :total function Base.array_subpadding(S, T)
+    lcm_size = lcm(sizeof(S), sizeof(T))
+    s, t = Base.CyclePadding(S), Base.CyclePadding(T)
+    checked_size = 0
+    # use of Stateful harms inference and makes this vulnerable to invalidation
+    (pad, tstate) = let
+        it = iterate(t)
+        it === nothing && return true
+        it
+    end
+    (ps, sstate) = let
+        it = iterate(s)
+        it === nothing && return false
+        it
+    end
+    while checked_size < lcm_size
+        while true
+            # See if there's corresponding padding in S
+            ps.offset > pad.offset && return false
+            intersect(ps, pad) == pad && break
+            ps, sstate = iterate(s, sstate)
+        end
+        checked_size = pad.offset + pad.size
+        pad, tstate = iterate(t, tstate)
+    end
+    return true
+end
+end # @static if VERSION < v"1.10.0-DEV.286"
+
 # overloads
 # =========
 
