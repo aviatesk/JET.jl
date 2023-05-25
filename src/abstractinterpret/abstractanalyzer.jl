@@ -531,18 +531,16 @@ identical as far as they're collected at the same file and line.
 aggregation_policy(::AbstractAnalyzer) = default_aggregation_policy
 function default_aggregation_policy(@nospecialize(report::InferenceErrorReport))
     return DefaultReportIdentity(
-        typeof(Base.inferencebarrier(report))::DataType,
+        typeof(Base.inferencebarrier(report)),
         report.sig,
         # VirtualFrameNoLinfo(first(report.vst)),
-        VirtualFrameNoLinfo(last(report.vst)),
-        )
+        VirtualFrameNoLinfo(last(report.vst)))
 end
 @withmixedhash struct VirtualFrameNoLinfo
     file::Symbol
     line::Int
-    sig::Signature
     # linfo::MethodInstance # ignore the identity of `MethodInstance`
-    VirtualFrameNoLinfo(vf::VirtualFrame) = new(vf.file, vf.line, vf.sig)
+    VirtualFrameNoLinfo(vf::VirtualFrame) = new(vf.file, vf.line)
 end
 @withmixedhash struct DefaultReportIdentity
     T::DataType

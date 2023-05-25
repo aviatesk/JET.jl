@@ -3,14 +3,14 @@ module VSCode
 import ..JET:
     gen_postprocess,
     tofullpath,
-    print_signature,
     AbstractAnalyzer,
     JETToplevelResult,
     ToplevelErrorReport,
     JETCallResult,
     InferenceErrorReport,
     get_reports,
-    print_report
+    print_report,
+    print_frame_sig
 
 # common
 # ======
@@ -102,8 +102,7 @@ function vscode_diagnostics(analyzer::Analyzer,
                             line = showpoint.line,
                             severity = 1, # 0: Error, 1: Warning, 2: Information, 3: Hint
                             relatedInformation = map((order ? identity : reverse)(report.vst)) do frame
-                                sig = sprint(print_signature, frame.sig, (; annotate_types = true))
-                                return (; msg = postprocess(sig),
+                                return (; msg = postprocess(sprint(print_frame_sig, frame)),
                                           path = tovscodepath(frame.file),
                                           line = frame.line,
                                           )

@@ -50,7 +50,6 @@ collected during abstract interpration, not collected from actual execution.
 @withmixedhash struct VirtualFrame
     file::Symbol
     line::Int
-    sig::Signature
     linfo::MethodInstance
 end
 
@@ -71,17 +70,15 @@ const INFERENCE_ERROR_REPORT_FIELD_DECLS = [
 
 # get location information at the given program counter (or a current counter if not specified)
 function get_virtual_frame(state::StateAtPC)
-    sig = get_sig(state)
     file, line = get_file_line(state)
     linfo = isa(state, MethodInstance) ? state : first(state).linfo
-    return VirtualFrame(file, line, sig, linfo)
+    return VirtualFrame(file, line, linfo)
 end
 get_virtual_frame(sv::InferenceState) = get_virtual_frame((sv, get_currpc(sv)))
 get_virtual_frame(caller::InferenceResult) = get_virtual_frame(get_linfo(caller))
 function get_virtual_frame(linfo::MethodInstance)
-    sig = get_sig(linfo)
     file, line = get_file_line(linfo)
-    return VirtualFrame(file, line, sig, linfo)
+    return VirtualFrame(file, line, linfo)
 end
 
 get_file_line(s::StateAtPC) = get_file_line(get_lin(s)::LineInfoNode)
@@ -97,8 +94,11 @@ end
 # signature
 # ---------
 
-get_sig(mi::MethodInstance) = Signature(Any[mi])
 @inline get_sig(s::StateAtPC, @nospecialize(x=get_stmt(s))) = Signature(get_sig_nowrap(s, x))
+get_sig(sv::InferenceState) = get_sig((sv, get_currpc(sv)))
+
+get_sig(mi::MethodInstance) = Signature(Any[mi])
+get_sig(caller::InferenceResult) = get_sig(get_linfo(caller))
 
 function get_sig_nowrap(@nospecialize args...)
     sig = Any[]
@@ -529,7 +529,9 @@ Base.show(io::IO, ::MIME"application/prs.juno.inline", report::InferenceErrorRep
 # the default constructor to create a report from abstract interpretation
 function (T::Type{<:InferenceErrorReport})(state, @nospecialize(spec_args...))
     vf = get_virtual_frame(state)
-    return T([vf], vf.sig, spec_args...)
+    vst = VirtualFrame[vf]
+    sig = get_sig(state)
+    return T(vst, sig, spec_args...)
 end
 
 # utility

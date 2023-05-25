@@ -42,9 +42,6 @@ onlystr(s::String) = length(s)
         buf = IOBuffer()
         print_reports(buf, get_reports_with_test(result))
         s = String(take!(buf))
-        @test occursin("onlystr(onlystr(s))", s)
-        print_reports(buf, get_reports_with_test(result); annotate_types=true)
-        s = String(take!(buf))
         @test occursin("onlystr(onlystr(s::String)::$Int)", s)
     end
 end
@@ -56,7 +53,7 @@ end
         buf = IOBuffer()
         print_reports(buf, get_reports_with_test(result))
         s = String(take!(buf))
-        @test occursin("a + b", s)
+        @test occursin("a::String + b::String", s)
     end
 
     # nested
@@ -66,105 +63,8 @@ end
         buf = IOBuffer()
         print_reports(buf, get_reports_with_test(result))
         s = String(take!(buf))
-        @test occursin("onlystr(a + b)", s)
-        print_reports(buf, get_reports_with_test(result); annotate_types=true)
-        s = String(take!(buf))
         @test occursin("onlystr((a::$Int + b::$Int)::$Int)", s)
     end
-end
-
-@testset "getproperty signature" begin
-    let result = report_call((Regex,)) do r
-            r.nonexist
-        end
-        buf = IOBuffer()
-        print_reports(buf, get_reports_with_test(result))
-        s = String(take!(buf))
-        @test occursin("r.nonexist", s)
-        print_reports(buf, get_reports_with_test(result); annotate_types=true)
-        s = String(take!(buf))
-        @test occursin("(r::Regex).nonexist", s)
-    end
-
-    # nested
-    let result = report_call((Regex,)) do r
-            Some(r).value.nonexist
-        end
-        buf = IOBuffer()
-        print_reports(buf, get_reports_with_test(result))
-        s = String(take!(buf))
-        @test occursin("Some(r).value.nonexist", s)
-        print_reports(buf, get_reports_with_test(result); annotate_types=true)
-        s = String(take!(buf))
-        @test occursin("((Some(r::Regex)::Some{Regex}).value::Regex).nonexist", s)
-    end
-end
-
-@testset "setproperty! signature" begin
-    let result = report_call((Base.RefValue{String},)) do r
-            r.x = nothing
-        end
-        buf = IOBuffer()
-        print_reports(buf, get_reports_with_test(result))
-        s = String(take!(buf))
-        @test occursin("r.x = nothing", s)
-        print_reports(buf, get_reports_with_test(result); annotate_types=true)
-        s = String(take!(buf))
-        @test occursin("(r::Base.RefValue{String}).x = nothing", s)
-    end
-end
-
-@testset "getindex signature" begin
-    let result = report_call((String,)) do s
-            sum(Ref(s)[])
-        end
-        buf = IOBuffer()
-        print_reports(buf, get_reports_with_test(result))
-        s = String(take!(buf))
-        @test occursin("sum(Ref(s)[])", s)
-        print_reports(buf, get_reports_with_test(result); annotate_types=true)
-        s = String(take!(buf))
-        @test occursin("sum((Ref(s::String)::Base.RefValue{String})[]::String)", s)
-    end
-
-    # nested
-    let result = report_call((Regex,)) do r
-            sum(Ref(Ref(r))[][])
-        end
-        buf = IOBuffer()
-        print_reports(buf, get_reports_with_test(result))
-        s = String(take!(buf))
-        @test occursin("sum(Ref(Ref(r))[][])", s)
-        print_reports(buf, get_reports_with_test(result); annotate_types=true)
-        s = String(take!(buf))
-        @test occursin("sum(((Ref(Ref(r::Regex)::Base.RefValue{Regex})::Base.RefValue{Base.RefValue{Regex}})[]::Base.RefValue{Regex})[]::Regex)", s)
-    end
-end
-
-@testset "setindex! signature" begin
-    let result = report_call((Base.RefValue{String},)) do r
-            r[] = nothing
-        end
-        buf = IOBuffer()
-        print_reports(buf, get_reports_with_test(result))
-        s = String(take!(buf))
-        @test occursin("r[] = nothing", s)
-        print_reports(buf, get_reports_with_test(result); annotate_types=true)
-        s = String(take!(buf))
-        @test occursin("(r::Base.RefValue{String})[] = nothing", s)
-    end
-end
-
-@testset "Core.apply_type signature" begin
-    result = report_call() do
-        NamedTuple{(:x,:y)}(1,2)
-    end
-
-    buf = IOBuffer()
-    print_reports(buf, get_reports_with_test(result))
-    s = String(take!(buf))
-    @test !occursin("Core.apply_type", s)
-    @test occursin("NamedTuple{(:x, :y)}", s)
 end
 
 invoke_error(s::AbstractString) = throw(ArgumentError(s))

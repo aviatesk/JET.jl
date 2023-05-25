@@ -255,33 +255,98 @@ function print_stack(io, report, config, wrote_linfos, depth = 1)
     push!(wrote_linfos, linfo_hash)
 
     # print current frame and go into deeper
-    should_print && print_frame(io, frame, config, depth)
+    if should_print
+        color = RAIL_COLORS[(depth)%N_RAILS+1]
+        print_rails(io, depth-1)
+        printstyled(io, "┌ "; color)
+        print_frame_sig(io, frame)
+        print(io, " ")
+        print_frame_loc(io, frame, config, color)
+        println(io)
+    end
     print_stack(io, report, config, wrote_linfos, depth + 1)
 end
 
-function print_frame(io, frame, config, depth, color = RAIL_COLORS[(depth)%N_RAILS+1])
-    print_rails(io, depth-1)
-
-    s = string("┌ @ ", (config.fullpath ? tofullpath : identity)(string(frame.file)), ':', frame.line)
-    printstyled(io, s, ' '; color)
-    print_signature(io, frame.sig, config)
-    println(io)
-
-    return length(s) # the length of frame info string
+function print_frame_sig(io, frame)
+    mi = frame.linfo
+    m = mi.def
+    if m isa Module
+        Base.show_mi(io, mi, #=from_stackframe=#true)
+    else
+        show_spec_sig(IOContext(io, :backtrace=>true), m, mi.specTypes)
+    end
 end
+
+function print_frame_loc(io, frame, config, color)
+    def = frame.linfo.def
+    mod = def isa Module ? def : def.module
+    path = String(frame.file)
+    if config.fullpath
+        path = tofullpath(path)
+    elseif !isabspath(path)
+        path = "./" * path
+    end
+    printstyled(io, "@ "; color)
+    # IDEA use the same coloring as the Base stacktrace?
+    # modulecolor = get!(Base.STACKTRACE_FIXEDCOLORS, mod) do
+    #     popfirst!(Base.STACKTRACE_MODULECOLORS)
+    # end
+    modulecolor = color
+    printstyled(io, mod; color = modulecolor)
+    printstyled(io, ' ', path, ':', frame.line; color)
+end
+
+@static if VERSION ≥ v"1.10.0-DEV.1394"
+using Base.StackTraces: show_spec_sig
+else
+function show_spec_sig(io::IO, m::Method, @nospecialize(sig::Type))
+    if get(io, :limit, :false)::Bool
+        if !haskey(io, :displaysize)
+            io = IOContext(io, :displaysize => displaysize(io))
+        end
+    end
+    argnames = Base.method_argnames(m)
+    argnames = replace(argnames, :var"#unused#" => :var"")
+    if m.nkw > 0
+        # rearrange call kw_impl(kw_args..., func, pos_args...) to func(pos_args...; kw_args)
+        kwarg_types = Any[ fieldtype(sig, i) for i = 2:(1+m.nkw) ]
+        uw = Base.unwrap_unionall(sig)::DataType
+        pos_sig = Base.rewrap_unionall(Tuple{uw.parameters[(m.nkw+2):end]...}, sig)
+        kwnames = argnames[2:(m.nkw+1)]
+        for i = 1:length(kwnames)
+            str = string(kwnames[i])::String
+            if endswith(str, "...")
+                kwnames[i] = Symbol(str[1:end-3])
+            end
+        end
+        Base.show_tuple_as_call(io, m.name, pos_sig;
+                                demangle=true,
+                                kwargs=zip(kwnames, kwarg_types),
+                                argnames=argnames[m.nkw+2:end])
+    else
+        Base.show_tuple_as_call(io, m.name, sig; demangle=true, argnames)
+    end
+end
+end # @static if VERSION ≥ v"1.10.0-DEV.1394"
 
 function print_error_frame(io, report, config, depth)
     frame = report.vst[depth]
-
     color = report_color(report)
-    len = print_frame(io, frame, config, depth, color)
+
+    print_rails(io, depth-1)
+    printstyled(io, "┌ "; color)
+    print_frame_sig(io, frame)
+    print(io, " ")
+    print_frame_loc(io, frame, config, color)
+    println(io)
+
     print_rails(io, depth-1)
     printstyled(io, "│ "; color)
     print_report(io, report)
     println(io)
 
     print_rails(io, depth-1)
-    printlnstyled(io, '└', '─'^len; color)
+    printlnstyled(io, '└', '─'^20; color)
 end
 
 function print_report(io::IO, report::InferenceErrorReport)

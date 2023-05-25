@@ -516,15 +516,17 @@ This is reported only when it's not caught by control flow.
 end
 function UncaughtExceptionReport(sv::InferenceState, throw_calls::Vector{Tuple{Int,Expr}})
     vf = get_virtual_frame(sv.linfo)
-    sig = Any[]
+    vst = VirtualFrame[vf]
+    sigs = Any[]
     ncalls = length(throw_calls)
     for (i, (pc, call)) in enumerate(throw_calls)
         call_sig = get_sig_nowrap((sv, pc), call)
-        append!(sig, call_sig)
-        i ≠ ncalls && push!(sig, ", ")
+        append!(sigs, call_sig)
+        i ≠ ncalls && push!(sigs, ", ")
     end
+    sig = Signature(sigs)
     single_error = ncalls == 1
-    return UncaughtExceptionReport([vf], Signature(sig), single_error)
+    return UncaughtExceptionReport(vst, sig, single_error)
 end
 function print_report_message(io::IO, r::UncaughtExceptionReport)
     msg = r.single_error ? "may throw" : "may throw either of"
@@ -845,7 +847,6 @@ function print_report_message(io::IO, r::UndefVarErrorReport)
     end
     print(io, " is not defined")
 end
-print_signature(::UndefVarErrorReport) = false
 
 # undefined global variable report passes
 
@@ -1105,10 +1106,8 @@ abstract type AbstractBuiltinErrorReport <: InferenceErrorReport end
     @nospecialize(f)
     argtypes::Argtypes
     msg::AbstractString
-    print_signature::Bool = false
 end
 print_report_message(io::IO, r::BuiltinErrorReport) = print(io, r.msg)
-print_signature(r::BuiltinErrorReport) = r.print_signature
 const GENERAL_BUILTIN_ERROR_MSG = "invalid builtin function call"
 
 @static if VERSION ≥ v"1.10.0-DEV.197"
@@ -1218,7 +1217,7 @@ function (::BasicPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer
     end
     if @static VERSION >= v"1.10.0-DEV.197" ? (ret isa IntrinsicError) : false
         msg = LazyString(f, ": ", ret.reason)
-        report = BuiltinErrorReport(sv, f, argtypes, msg, #=print_signature=#true)
+        report = BuiltinErrorReport(sv, f, argtypes, msg)
         add_new_report!(analyzer, sv.result, report)
         return true
     end
@@ -1388,7 +1387,7 @@ function handle_invalid_builtins!(analyzer::JETAnalyzer, sv::InferenceState, @no
     # we don't bail out using `basic_filter` here because the native tfuncs are already very permissive
     if ret === Bottom
         msg = GENERAL_BUILTIN_ERROR_MSG
-        report = BuiltinErrorReport(sv, f, argtypes, msg, #=print_signature=#true)
+        report = BuiltinErrorReport(sv, f, argtypes, msg)
         add_new_report!(analyzer, sv.result, report)
         return true
     end
@@ -1401,7 +1400,6 @@ end
     msg::String = "this builtin function call may throw"
 end
 print_report_message(io::IO, r::UnsoundBuiltinErrorReport) = print(io, r.msg)
-print_signature(::UnsoundBuiltinErrorReport) = true
 
 function (::SoundPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(rt))
     @assert !(f === throw) "`throw` calls should be handled either by the report pass of `SeriousExceptionReport` or `UncaughtExceptionReport`"

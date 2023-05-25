@@ -121,7 +121,6 @@ function JETInterface.print_report_message(io::IO, (; g)::UnstableAPI)
     msg = lazy"usage of unstable API `$mod.$name` found"
     print(io, "usage of unstable API `", mod, '.', name, "` found")
 end
-JETInterface.print_signature(::UnstableAPI) = false
 JETInterface.report_color(::UnstableAPI) = :yellow
 
 function (::UnstableAPIAnalysisPass)(::Type{UnstableAPI}, analyzer::UnstableAPIAnalyzer, sv, @nospecialize(e))
