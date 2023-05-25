@@ -40,7 +40,7 @@ struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
         method_table = CachedMethodTable(OverlayMethodTable(state.world, JET_METHOD_TABLE))
         return new{RP}(state, analysis_cache, report_pass, method_table)
     end
-    function JETAnalyzer(state::AnalyzerState, report_pass::RP) where RP<:ReportPass
+    function JETAnalyzer(state::AnalyzerState, report_pass::ReportPass)
         if (@ccall jl_generating_output()::Cint) != 0
             # XXX Avoid storing analysis results into a cache that persists across the
             #     precompilation, as pkgimage currently doesn't support serializing
@@ -292,8 +292,10 @@ let # overload `concrete_eval_eligible`
         @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
     # TODO Reasons about error found by [semi-]concrete evaluation:
     # For now JETAnalyzer always just uses the regular constant-prop'.
+    # TODO enable concrete-evaluation for `:nothrow_strict` methods, and remove the special cases.
     @eval function CC.concrete_eval_eligible($(sigs_ex.args...))
-        if f === typejoin
+        if (istopfunction(f, :typejoin) || istopfunction(f, :fieldcount) ||
+            istopfunction(f, :fieldindex) || is_svec_length(f, result))
             # HACK special case this function: there had been a special handling in the base
             # Julia compiler to constant fold a call to this function and it turned out that
             # `JETAnalyzer` implicitly relies on it to get a reasonable analysis accuracy
@@ -314,6 +316,18 @@ let # overload `concrete_eval_eligible`
             return false
         end
     end
+end
+
+function is_svec_length(@nospecialize(f), result::MethodCallResult)
+    istopfunction(f, :length) || return false
+    (; edge) = result
+    edge === nothing && return false
+    (; sig) = edge.def::Method
+    sig isa DataType || return false
+    length(sig.parameters) == 2 || return false
+    sig.parameters[1] === typeof(length) || return false
+    sig.parameters[2] === SimpleVector || return false
+    return true
 end
 
 function concrete_eval_eligible_ignoring_overlay(result::MethodCallResult, arginfo::ArgInfo)
