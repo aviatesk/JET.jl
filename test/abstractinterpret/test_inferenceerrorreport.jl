@@ -167,11 +167,10 @@ end
     @test occursin("NamedTuple{(:x, :y)}", s)
 end
 
+invoke_error(s::AbstractString) = throw(ArgumentError(s))
+
 @testset ":invoke signature" begin
-    m = @fixturedef begin
-        foo(s::AbstractString) = throw(ArgumentError(s))
-    end
-    result = report_call(m.foo, (String,))
+    result = report_call(invoke_error, (String,))
     r = only(get_reports_with_test(result))
     @test isa(r, UncaughtExceptionReport)
     @test Any['(', 's', String, ')', ArgumentError] ⫇ r.sig._sig
