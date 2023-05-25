@@ -76,7 +76,7 @@ using .CC:
     VarTable, WorldRange, WorldView,
     argextype, argtype_by_index, argtype_tail, argtypes_to_type, compute_basic_blocks,
     get_compileable_sig, hasintersect, has_free_typevars, ignorelimited, inlining_enabled,
-    instanceof_tfunc, is_throw_call, isType, isconstType, issingletontype,
+    instanceof_tfunc, is_throw_call, isType, isconstType, issingletontype, istopfunction,
     may_invoke_generator, singleton_type, slot_id, specialize_method, switchtupleunion,
     tmerge, widenconst,
     ⊑

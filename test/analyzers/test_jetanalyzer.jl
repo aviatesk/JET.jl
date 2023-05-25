@@ -1090,4 +1090,22 @@ test_call(Base.aligned_sizeof, (Union{DataType,Union},))
 @test_call sum((1,2,3))
 @test_call sum(Int[])
 
+# allow concrete evaluation for core reflection methods
+# https://github.com/aviatesk/JET.jl/issues/522
+@test Base.return_types(; interp=JET.JETAnalyzer()) do
+    Val(fieldcount(Int))
+end |> only === Val{0}
+@test Base.return_types(; interp=JET.JETAnalyzer()) do
+    Val(fieldcount(Vector))
+end |> only === Val{0}
+struct CheckFieldIndex; a; end
+@test Base.return_types(; interp=JET.JETAnalyzer()) do
+    Val(Base.fieldindex(CheckFieldIndex, :a))
+end |> only === Val{1}
+@test @eval Base.return_types(; interp=JET.JETAnalyzer()) do
+    Val(length($(Core.svec(1,2,3))))
+end |> only === Val{3}
+@test_call sort([1,2,3])
+@test_call sort!([1,2,3])
+
 end # module test_jetanalyzer
