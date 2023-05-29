@@ -546,7 +546,7 @@ function (::SoundBasicPass)(::Type{GeneratorErrorReport}, analyzer::JETAnalyzer,
             # if user code throws error, wrap and report it
             report = add_new_report!(analyzer, result, GeneratorErrorReport(mi, err))
             # we will return back to the caller immediately
-            add_caller_cache!(analyzer, report)
+            stash_report!(analyzer, report)
             return true
         end
     end

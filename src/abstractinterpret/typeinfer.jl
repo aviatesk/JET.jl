@@ -2,7 +2,7 @@
 # ================
 
 function collect_callee_reports!(analyzer::AbstractAnalyzer, sv::InferenceState)
-    reports = get_caller_cache(analyzer)
+    reports = get_report_stash(analyzer)
     if !isempty(reports)
         vf = get_virtual_frame(sv)
         for report in reports
@@ -12,7 +12,6 @@ function collect_callee_reports!(analyzer::AbstractAnalyzer, sv::InferenceState)
         empty!(reports)
     end
 end
-
 
 let # overload `abstract_call_method`
     @static if @isdefined(StmtInfo)
@@ -67,14 +66,14 @@ let # overload `abstract_call_method_with_const_args`
             sv::InferenceState)
     end
     @eval function CC.abstract_call_method_with_const_args($(sigs_ex.args...))
-        set_cacher!(analyzer, :abstract_call_method_with_const_args => sv.result)
+        set_cache_target!(analyzer, :abstract_call_method_with_const_args => sv.result)
         const_result =
             @invoke CC.abstract_call_method_with_const_args($(args_ex.args...))
-        # we should make sure we reset the cacher because at this point we may have not hit
+        # make sure we reset the cache target because at this point we may have not hit
         # `CC.cache_lookup(linfo::MethodInstance, given_argtypes::Argtypes, view::AbstractAnalyzerView)`
-        set_cacher!(analyzer, nothing)
+        set_cache_target!(analyzer, nothing)
         if const_result !== nothing
-            # successful constant prop', we also need to update reports
+            # successful constant prop', we need to update reports
             collect_callee_reports!(analyzer, sv)
         end
         return const_result
@@ -252,7 +251,7 @@ CC.haskey(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance) = haskey(A
 
 function CC.typeinf_edge(analyzer::AbstractAnalyzer, method::Method, @nospecialize(atype), sparams::SimpleVector, caller::InferenceState)
     # enable the report cache restoration at `code = get(code_cache(interp), mi, nothing)`
-    set_cacher!(analyzer, :typeinf_edge => caller.result)
+    set_cache_target!(analyzer, :typeinf_edge => caller.result)
     return @invoke typeinf_edge(analyzer::AbstractInterpreter, method::Method, atype::Any, sparams::SimpleVector, caller::InferenceState)
 end
 
@@ -267,11 +266,11 @@ function CC.get(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance, defa
     # want to use report cache only in edge inference, but we can't tell which context is
     # the caller of this specific method call here and thus can't tell whether we should
     # enable report cache reconstruction without the information
-    # XXX move this logic into `typeinf_edge` ?
-    cacher = get_cacher(analyzer)
-    if isa(cacher, Pair{Symbol,InferenceResult})
-        setter, caller = cacher
-        if setter === :typeinf_edge
+    # XXX move this logic into `typeinf_edge`?
+    cache_target = get_cache_target(analyzer)
+    if isa(cache_target, Pair{Symbol,InferenceResult})
+        context, caller = cache_target
+        if context === :typeinf_edge
             if isa(codeinf, CodeInstance)
                 # cache hit, now we need to append cached reports associated with this `MethodInstance`
                 inferred = @atomic :monotonic codeinf.inferred
@@ -281,10 +280,10 @@ function CC.get(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance, defa
                         actual, expected = first(restored.vst).linfo, mi
                         @assert actual === expected "invalid global cache restoration, expected $expected but got $actual"
                     end
-                    add_caller_cache!(analyzer, restored) # should be updated in `abstract_call` (after exiting `typeinf_edge`)
+                    stash_report!(analyzer, restored) # should be updated in `abstract_call` (after exiting `typeinf_edge`)
                 end
             end
-            set_cacher!(analyzer, nothing)
+            set_cache_target!(analyzer, nothing)
         end
     end
 
@@ -397,11 +396,11 @@ let
     @eval function CC.cache_lookup($(sigs_ex.args...))
         # XXX the very dirty analyzer state observation again
         # this method should only be called from the single context i.e. `abstract_call_method_with_const_args`,
-        # and so we should reset the cacher immediately we reach here
+        # and so we should reset the cache target immediately we reach here
         analyzer = view.analyzer
-        setter, caller = get_cacher(analyzer)::Pair{Symbol,InferenceResult}
-        @assert setter === :abstract_call_method_with_const_args
-        set_cacher!(analyzer, nothing)
+        context, caller = get_cache_target(analyzer)::Pair{Symbol,InferenceResult}
+        @assert context === :abstract_call_method_with_const_args "invalid JET analysis state"
+        set_cache_target!(analyzer, nothing)
 
         inf_result = cache_lookup($(args_ex.args...))
 
@@ -425,7 +424,7 @@ let
                 actual, expected = first(restored.vst).linfo, linfo
                 @assert actual === expected "invalid local cache restoration, expected $expected but got $actual"
             end
-            add_caller_cache!(analyzer, restored) # should be updated in `abstract_call_method_with_const_args`
+            stash_report!(analyzer, restored) # should be updated in `abstract_call_method_with_const_args`
         end
 
         return inf_result
@@ -615,7 +614,7 @@ function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
 
         if frame.parent !== nothing
             # inter-procedural handling: get back to the caller what we got from these results
-            add_caller_cache!(analyzer, reports)
+            stash_report!(analyzer, reports)
 
             # local cache management
             # TODO there are duplicated work here and `transform_result_for_cache`

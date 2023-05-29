@@ -121,12 +121,13 @@ mutable struct AnalyzerState
 
     results::IdDict{InferenceResult,AnyAnalysisResult}
 
-    # temporal stash to keep reports that are collected within the currently-analyzed frame
-    # and should be appended to the caller when returning back to the caller frame next time
-    caller_cache::Vector{InferenceErrorReport}
+    # the temporal stash to keep reports that are collected within the currently-analyzed frame:
+    # they will be appended to the caller when returning back to the caller inference/optimization
+    report_stash::Vector{InferenceErrorReport}
 
-    # temporal stash to keep track of inference caller, to which reconstructed cached reports will be appended
-    cacher::Union{Nothing,Pair{Symbol,InferenceResult}}
+    # the temporal stash to keep track of the context of caller inference/optimization and
+    # the caller itself, to which reconstructed cached reports will be appended
+    cache_target::Union{Nothing,Pair{Symbol,InferenceResult}}
 
     ## abstract toplevel execution ##
 
@@ -168,14 +169,14 @@ function AnalyzerState(world::UInt  = get_world_counter();
     isnothing(inf_params) && (inf_params = JETInferenceParams(; jetconfigs...))
     isnothing(opt_params) && (opt_params = JETOptimizationParams(; jetconfigs...))
     inf_cache = InferenceResult[]
-    caller_cache = InferenceErrorReport[]
+    report_stash = InferenceErrorReport[]
     return AnalyzerState(#=world::UInt=# world,
                          #=inf_cache::Vector{InferenceResult}=# inf_cache,
                          #=inf_params::InferenceParams=# inf_params,
                          #=opt_params::OptimizationParams=# opt_params,
                          #=results::IdDict{InferenceResult,AnyAnalysisResult}=# results,
-                         #=caller_cache::Vector{InferenceErrorReport}=# caller_cache,
-                         #=cacher::Union{Nothing,InferenceResult}=# nothing,
+                         #=report_stash::Vector{InferenceErrorReport}=# report_stash,
+                         #=cache_target::Union{Nothing,InferenceResult}=# nothing,
                          #=concretized::BitVector=# concretized,
                          #=toplevelmod::Module=# toplevelmod,
                          #=global_slots::Dict{Int,Symbol}=# global_slots,
@@ -586,8 +587,8 @@ function add_cached_report!(analyzer::AbstractAnalyzer, caller::InferenceResult,
     return cached
 end
 
-add_caller_cache!(analyzer::AbstractAnalyzer, @nospecialize(report::InferenceErrorReport)) = push!(get_caller_cache(analyzer), report)
-add_caller_cache!(analyzer::AbstractAnalyzer, reports::Vector{InferenceErrorReport}) = append!(get_caller_cache(analyzer), reports)
+stash_report!(analyzer::AbstractAnalyzer, @nospecialize(report::InferenceErrorReport)) = push!(get_report_stash(analyzer), report)
+stash_report!(analyzer::AbstractAnalyzer, reports::Vector{InferenceErrorReport}) = append!(get_report_stash(analyzer), reports)
 
 # AbstractInterpreter
 # ===================
