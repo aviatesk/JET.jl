@@ -304,9 +304,8 @@ let # overload `const_prop_entry_heuristic`
         @doc """
             const_prop_entry_heuristic(analyzer::JETAnalyzer, result::MethodCallResult, sv::InferenceState)
 
-        This overload for `abstract_call_method_with_const_args(analyzer::JETAnalyzer, ...)` forces
-        constant prop' even if an inference result can't be improved anymore _with respect to the
-        return type_, e.g. when `result.rt` is already `Const`.
+        This overload forces constant prop' even if an inference result can't be improved
+        anymore _with respect to the return type_, e.g. when `result.rt` is already `Const`.
         Especially, this overload implements an heuristic to force constant prop' when any error points
         have been reported while the previous abstract method call without constant arguments.
         The reason we want much more aggressive constant propagation by that heuristic is that it's

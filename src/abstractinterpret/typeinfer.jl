@@ -32,6 +32,20 @@ let # overload `abstract_call_method`
     end
 end
 
+@static if VERSION ≥ v"1.10.0-DEV.1345"
+function CC.const_prop_call(analyzer::AbstractAnalyzer,
+    mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
+    set_cache_target!(analyzer, :const_prop_call => sv.result)
+    const_result = @invoke CC.const_prop_call(analyzer::AbstractInterpreter,
+        mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
+    @assert get_cache_target(analyzer) === nothing "invalid JET analysis state"
+    if const_result !== nothing
+        # successful constant prop', we need to update reports
+        collect_callee_reports!(analyzer, sv)
+    end
+    return const_result
+end
+else
 let # overload `abstract_call_method_with_const_args`
     @static if @isdefined(StmtInfo)
         sigs_ex = :(analyzer::AbstractAnalyzer,
@@ -79,6 +93,7 @@ let # overload `abstract_call_method_with_const_args`
         return const_result
     end
 end
+end # @static if VERSION ≥ v"1.10.0-DEV.1345"
 
 let # overload `concrete_eval_call`
     @static if VERSION ≥ v"1.10.0-DEV.1345"
@@ -401,7 +416,11 @@ let
         # and so we should reset the cache target immediately we reach here
         analyzer = view.analyzer
         context, caller = get_cache_target(analyzer)::Pair{Symbol,InferenceResult}
-        @assert context === :abstract_call_method_with_const_args "invalid JET analysis state"
+        @static if VERSION ≥ v"1.10.0-DEV.1345"
+            @assert context === :const_prop_call "invalid JET analysis state"
+        else
+            @assert context === :abstract_call_method_with_const_args "invalid JET analysis state"
+        end
         set_cache_target!(analyzer, nothing)
 
         inf_result = cache_lookup($(args_ex.args...))
