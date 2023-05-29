@@ -39,7 +39,6 @@ that are specific to the optimization analysis.
   ┌ @ REPL[2]:3 Main.fill_twos!(%46)
   │ runtime dispatch detected: Main.fill_twos!(%46::Vector)
   └─────────────
-  Vector (alias for Array{_A, 1} where _A)
 
   # we can get reports from non-concrete calls with `skip_noncompileable_calls=false`
   julia> @report_opt skip_noncompileable_calls=false strange_twos(3)
@@ -58,7 +57,6 @@ that are specific to the optimization analysis.
   ┌ @ REPL[2]:3 Main.fill_twos!(%46)
   │ runtime dispatch detected: Main.fill_twos!(%46::Vector)
   └─────────────
-  Vector (alias for Array{_A, 1} where _A)
   ```
 
   !!! note "Non-compileable calls"
@@ -74,8 +72,7 @@ that are specific to the optimization analysis.
                else
                    return 0
                end
-           end
-           maybesin (generic function with 1 method)
+           end;
 
            julia> report_opt((Vector{Any},)) do xs
                for x in xs
@@ -95,8 +92,7 @@ that are specific to the optimization analysis.
                       else
                           return 0
                       end
-                  end
-                  maybesin (generic function with 1 method)
+                  end;
 
            julia> report_opt((Vector{Any},)) do xs
                       for x in xs
@@ -117,7 +113,7 @@ that are specific to the optimization analysis.
 
   ```julia-repl
   # ignore `Core.Compiler.widenconst` calls (since it's designed to be runtime-dispatched):
-  julia> function_filter(@nospecialize f) = f !== Core.Compiler.widenconst
+  julia> function_filter(@nospecialize f) = f !== Core.Compiler.widenconst;
 
   julia> @test_opt function_filter=function_filter f(args...)
   ...
