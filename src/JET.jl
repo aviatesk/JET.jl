@@ -68,7 +68,7 @@ using Core:
     IntrinsicFunction, Intrinsics, LineInfoNode, MethodInstance, MethodMatch, MethodTable,
     ReturnNode, SSAValue, SimpleVector, SlotNumber, svec
 
-using .CC:
+using .CC: ⊑,
     AbstractInterpreter, ArgInfo, BasicBlock, Bottom, CFG, CachedMethodTable, CallMeta,
     ConstCallInfo, InferenceResult, InternalMethodTable, InvokeCallInfo, LimitedAccuracy,
     MethodCallResult, MethodLookupResult, MethodMatchInfo, MethodMatches, NOT_FOUND,
@@ -76,10 +76,9 @@ using .CC:
     VarTable, WorldRange, WorldView,
     argextype, argtype_by_index, argtype_tail, argtypes_to_type, compute_basic_blocks,
     get_compileable_sig, hasintersect, has_free_typevars, ignorelimited, inlining_enabled,
-    instanceof_tfunc, is_throw_call, isType, isconstType, issingletontype, istopfunction,
-    may_invoke_generator, singleton_type, slot_id, specialize_method, switchtupleunion,
-    tmerge, widenconst,
-    ⊑
+    instanceof_tfunc, is_inlineable, is_throw_call, isType, isconstType, issingletontype,
+    istopfunction, may_invoke_generator, singleton_type, slot_id, specialize_method,
+    switchtupleunion, tmerge, widenconst
 
 using Base:
     @invoke, @invokelatest, IdSet, default_tt, destructure_callex, parse_input_line,

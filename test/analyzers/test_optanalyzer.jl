@@ -306,4 +306,23 @@ let result = report_opt() do
     @test isempty(get_reports_with_test(result))
 end
 
+# report runtime dispatches within "noncompileable" but inlineable frames
+@inline noncompileable_inlined1(a, b) = a + b
+let result = report_opt((Any,Any)) do a, b
+        noncompileable_inlined1(a, b)
+    end
+    @test any(get_reports_with_test(result)) do @nospecialize report
+        report isa RuntimeDispatchReport
+    end
+end
+
+noncompileable_inlined2(a, b) = a + b
+let result = report_opt((Any,Any)) do a, b
+        @inline noncompileable_inlined2(a, b)
+    end
+    @test_broken any(get_reports_with_test(result)) do @nospecialize report
+        report isa RuntimeDispatchReport
+    end
+end
+
 end # module test_optanalyzer

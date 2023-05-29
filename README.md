@@ -25,16 +25,21 @@ Note that, because JET relies on Julia's type inference, if a chain of inference
 
 ```julia
 julia> @report_opt foldl(+, Any[]; init=0)
-═════ 1 possible error found ═════
-┌ @ reduce.jl:198 Base.:(var"#foldl#291")(kw..., _3, op, itr)
+═════ 2 possible errors found ═════
+┌ @ reduce.jl:198 Base.:(var"#foldl#295")(kw..., _3, op, itr)
 │┌ @ reduce.jl:198 Core.kwcall(merge(Base.NamedTuple(), kw), mapfoldl, identity, op, itr)
-││┌ @ reduce.jl:175 Base.:(var"#mapfoldl#290")(_8, _3, f, op, itr)
+││┌ @ reduce.jl:175 Base.:(var"#mapfoldl#294")(_8, _3, f, op, itr)
 │││┌ @ reduce.jl:175 Base.mapfoldl_impl(f, op, init, itr)
 ││││┌ @ reduce.jl:44 Base.foldl_impl(op′, nt, itr′)
 │││││┌ @ reduce.jl:48 v = Base._foldl_impl(op, nt, itr)
-││││││┌ @ reduce.jl:62 op(%20, %37)
-│││││││ runtime dispatch detected: op::Base.BottomRF{typeof(+)}(%20::Any, %37::Any)::Any
-││││││└────────────────
+││││││┌ @ reduce.jl:58 v = op(init, y[1])
+│││││││┌ @ reduce.jl:86 +(acc, x)
+││││││││ runtime dispatch detected: +(acc::Int64, x::Any)::Any
+│││││││└────────────────
+││││││┌ @ reduce.jl:62 v = op(v, y[1])
+│││││││┌ @ reduce.jl:86 +(acc, x)
+││││││││ runtime dispatch detected: +(acc::Any, x::Any)::Any
+│││││││└────────────────
 ```
 
 ### Detect type errors with `@report_call`

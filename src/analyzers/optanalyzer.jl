@@ -279,7 +279,13 @@ function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState)
 
     ret = @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
 
-    if popfirst!(analyzer.__analyze_frame)
+    analyze = popfirst!(analyzer.__analyze_frame)
+    if !analyze && isa(ret, CodeInfo)
+        # if this inferred source is not "compileable" but still is going to be inlined,
+        # we should add report runtime dispatches within it
+        analyze = CC.is_inlineable(ret)
+    end
+    if analyze
         ReportPass(analyzer)(OptimizationFailureReport, analyzer, caller)
 
         if src isa OptimizationState{typeof(analyzer)}
