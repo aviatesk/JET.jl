@@ -92,9 +92,9 @@ getsomething(::Missing) = throw(ArgumentError(&quot;too philosophical&quot;))</c
 </code></pre><p>But if the argument isn&#39;t well-typed, compiler can&#39;t determine which method to call, and it will lead to runtime dispatch:</p><pre><code class="language-julia hljs">report_dispatch((Any,)) do a
     getsomething(a) # runtime dispatch !
 end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi"><span class="sgr7">═════ 1 possible error found ═════</span>
-<span class="sgr91">┌ @ dispatch_analysis.md:183 </span><span class="sgr1">(::Main.var&quot;#7#8&quot;)(</span><span class="sgr90">a</span>::Any<span class="sgr1">)</span>
+<span class="sgr91">┌ </span><span class="sgr1">(::Main.var&quot;#7#8&quot;)(</span><span class="sgr90">a</span>::Any<span class="sgr1">)</span> <span class="sgr91">@ Main ./dispatch_analysis.md:183</span>
 <span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.getsomething(a<span class="sgr96">::Any</span>)<span class="sgr96">::Any</span></span>
-<span class="sgr91">└────────────────────────────</span>
+<span class="sgr91">└────────────────────</span>
 </code></pre><p>Note that even if a call is not &quot;well-typed&quot; (i.e. it&#39;s not a concrete call), runtime dispatch won&#39;t happen as far as a single method can be resolved statically:</p><pre><code class="language-julia hljs">report_dispatch((AbstractString,)) do a
     getsomething(a) # this call isn&#39;t very concrete, but ok, Julia can optimize it
 end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi"><span class="sgr92">No errors detected</span>
@@ -124,19 +124,19 @@ end</code></pre><pre class="documenter-example-output"><code class="nohighlight 
     r′ = isTypelike′(x) # this call will be statically resolved (not runtime-dispatched)
     return r, r′
 end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi"><span class="sgr7">═════ 4 possible errors found ═════</span>
-<span class="sgr35">┌ @ dispatch_analysis.md:243 </span><span class="sgr1">(::Main.var&quot;#11#12&quot;)(</span><span class="sgr90">xs</span>::Vector<span class="sgr90">{Any}</span><span class="sgr1">)</span>
-<span class="sgr35">│</span><span class="sgr91">┌ @ dispatch_analysis.md:211 </span><span class="sgr1">isTypelike(</span><span class="sgr90">x</span>::Any<span class="sgr1">)</span>
+<span class="sgr35">┌ </span><span class="sgr1">(::Main.var&quot;#11#12&quot;)(</span><span class="sgr90">xs</span>::Vector<span class="sgr90">{Any}</span><span class="sgr1">)</span> <span class="sgr35">@ Main ./dispatch_analysis.md:243</span>
+<span class="sgr35">│</span><span class="sgr91">┌ </span><span class="sgr1">isTypelike(</span><span class="sgr90">x</span>::Any<span class="sgr1">)</span> <span class="sgr91">@ Main ./dispatch_analysis.md:211</span>
 <span class="sgr35">│</span><span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.isTypelike(%10<span class="sgr96">::Any</span>)<span class="sgr96">::Bool</span></span>
-<span class="sgr35">│</span><span class="sgr91">└────────────────────────────</span>
-<span class="sgr35">│</span><span class="sgr91">┌ @ dispatch_analysis.md:211 </span><span class="sgr1">isTypelike(</span><span class="sgr90">x</span>::Any<span class="sgr1">)</span>
+<span class="sgr35">│</span><span class="sgr91">└────────────────────</span>
+<span class="sgr35">│</span><span class="sgr91">┌ </span><span class="sgr1">isTypelike(</span><span class="sgr90">x</span>::Any<span class="sgr1">)</span> <span class="sgr91">@ Main ./dispatch_analysis.md:211</span>
 <span class="sgr35">│</span><span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.isTypelike(%14<span class="sgr96">::Any</span>)<span class="sgr96">::Bool</span></span>
-<span class="sgr35">│</span><span class="sgr91">└────────────────────────────</span>
-<span class="sgr35">│</span><span class="sgr91">┌ @ dispatch_analysis.md:213 </span><span class="sgr1">isTypelike(</span><span class="sgr90">x</span>::Any<span class="sgr1">)</span>
+<span class="sgr35">│</span><span class="sgr91">└────────────────────</span>
+<span class="sgr35">│</span><span class="sgr91">┌ </span><span class="sgr1">isTypelike(</span><span class="sgr90">x</span>::Any<span class="sgr1">)</span> <span class="sgr91">@ Main ./dispatch_analysis.md:213</span>
 <span class="sgr35">│</span><span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.isTypelike(%21<span class="sgr96">::Any</span>)<span class="sgr96">::Bool</span></span>
-<span class="sgr35">│</span><span class="sgr91">└────────────────────────────</span>
-<span class="sgr91">┌ @ dispatch_analysis.md:243 </span><span class="sgr1">(::Main.var&quot;#11#12&quot;)(</span><span class="sgr90">xs</span>::Vector<span class="sgr90">{Any}</span><span class="sgr1">)</span>
+<span class="sgr35">│</span><span class="sgr91">└────────────────────</span>
+<span class="sgr91">┌ </span><span class="sgr1">(::Main.var&quot;#11#12&quot;)(</span><span class="sgr90">xs</span>::Vector<span class="sgr90">{Any}</span><span class="sgr1">)</span> <span class="sgr91">@ Main ./dispatch_analysis.md:243</span>
 <span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.isTypelike(%1<span class="sgr96">::Any</span>)<span class="sgr96">::Bool</span></span>
-<span class="sgr91">└────────────────────────────</span>
+<span class="sgr91">└────────────────────</span>
 </code></pre><p>We can assert this report by looking at the output of <code>code_typed</code>, where <code>isTypelike(x)</code> remains as <code>:call</code> expression (meaning it will be dispatched at runtime) while <code>isTypelike′(x)</code> has been statically resolved and even inlined:</p><pre><code class="language-julia hljs">code_typed((Vector{Any},)) do xs
     x  = xs[1]
     r  = isTypelike(x)  # this call will be runtime-dispatched
@@ -206,4 +206,4 @@ end
 # `compute(30)` will take more than hours in actual execution, according to https://twitter.com/genkuroki/status/1401332946707963909,
 # but `@report_dispatch` will just do abstract interpretation of the call, so will finish instantly
 @report_dispatch frame_filter=module_filter(@__MODULE__) compute(30)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi"><span class="sgr92">No errors detected</span>
-</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../generated-plugin-api/">« API</a><a class="docs-footer-nextpage" href="../find_unstable_api/">&quot;Unstable API&quot; Analysis »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.24 on <span class="colophon-date" title="Thursday 25 May 2023 15:11">Thursday 25 May 2023</span>. Using Julia version 1.10.0-DEV.1380.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../generated-plugin-api/">« API</a><a class="docs-footer-nextpage" href="../find_unstable_api/">&quot;Unstable API&quot; Analysis »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.24 on <span class="colophon-date" title="Monday 29 May 2023 09:32">Monday 29 May 2023</span>. Using Julia version 1.10.0-DEV.1392.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
