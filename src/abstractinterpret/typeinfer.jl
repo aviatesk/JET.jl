@@ -252,7 +252,9 @@ CC.haskey(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance) = haskey(A
 function CC.typeinf_edge(analyzer::AbstractAnalyzer, method::Method, @nospecialize(atype), sparams::SimpleVector, caller::InferenceState)
     # enable the report cache restoration at `code = get(code_cache(interp), mi, nothing)`
     set_cache_target!(analyzer, :typeinf_edge => caller.result)
-    return @invoke typeinf_edge(analyzer::AbstractInterpreter, method::Method, atype::Any, sparams::SimpleVector, caller::InferenceState)
+    ret = @invoke typeinf_edge(analyzer::AbstractInterpreter, method::Method, atype::Any, sparams::SimpleVector, caller::InferenceState)
+    @assert get_cache_target(analyzer) === nothing "invalid JET analysis state"
+    return ret
 end
 
 function CC.get(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance, default)
