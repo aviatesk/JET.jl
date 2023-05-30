@@ -65,45 +65,54 @@ that are specific to the optimization analysis.
       Julia compiles the call even if those `@nospecialize`d arguments aren't fully concrete.
       `skip_noncompileable_calls = true` also respects this behavior, i.e. doesn't skip
       compileable abstract calls:
+      ```julia-repl
+      julia> function maybesin(x)
+                 if isa(x, Number)
+                     return sin(x)
+                 else
+                     return 0
+                 end
+             end;
 
-          julia> function maybesin(@nospecialize x)
-               if isa(x, Number)
-                   return sin(x) # this call is dynamically dispatched
-               else
-                   return 0
-               end
-           end;
+      julia> report_opt((Vector{Any},)) do xs
+                 for x in xs
+                     # This `maybesin` call is dynamically dispatched since `maybesin(::Any)`
+                     # is not compileable. Therefore, JET by default will only report the
+                     # runtime dispatch of `maybesin` while it will not report the runtime
+                     # dispatch within `maybesin(::Any)`.
+                     s = maybesin(x)
+                     s !== 0 && return s
+                 end
+             end
+             ═════ 1 possible error found ═════
+             ┌ @ REPL[3]:7 maybesin(%19)
+             │ runtime dispatch detected: maybesin(%19::Any)::Any
+             └─────────────
 
-           julia> report_opt((Vector{Any},)) do xs
-               for x in xs
-                   s = maybesin(x) # this call is resolved statically and compiled
-                   s !== 0 && return s
-               end
-           end
-           ═════ 1 possible error found ═════
-           ┌ @ none:3 s = maybesin(x)
-           │┌ @ none:3 sin(%3)
-           ││ runtime dispatch detected: sin(%3::Number)::Any
-           │└──────────
+      julia> function maybesin(@nospecialize x) # mark `x` with `@nospecialize`
+                 if isa(x, Number)
+                     return sin(x)
+                 else
+                     return 0
+                 end
+             end;
 
-           julia> function maybesin(x)  # now `maybesin` is always called with concrete `x`
-                      if isa(x, Number)
-                          return sin(x) # this call is dynamically dispatched
-                      else
-                          return 0
-                      end
-                  end;
-
-           julia> report_opt((Vector{Any},)) do xs
-                      for x in xs
-                          s = maybesin(x) # this call is dynamically dispatched
-                          s !== 0 && return s
-                      end
-                  end
-           ═════ 1 possible error found ═════
-           ┌ @ none:3 maybesin(%21)
-           │ runtime dispatch detected: maybesin(%21::Any)::Any
-           └──────────
+      julia> report_opt((Vector{Any},)) do xs
+                 for x in xs
+                     # Now `maybesin` is marked with `@nospecialize` allowing `maybesin(::Any)`
+                     # to be resolved statically and compiled. Thus JET will not report the
+                     # runtime dispatch of `maybesin(::Any)`, although it now reports the
+                     # runtime dispatch _within_ `maybesin(::Any)`.
+                     s = maybesin(x)
+                     s !== 0 && return s
+                 end
+             end
+             ═════ 1 possible error found ═════
+             ┌ @ REPL[5]:7 s = maybesin(x)
+             │┌ @ REPL[4]:3 sin(%3)
+             ││ runtime dispatch detected: sin(%3::Number)::Any
+             │└─────────────
+      ```
 
 ---
 - `function_filter = @nospecialize(f)->true`:\\
