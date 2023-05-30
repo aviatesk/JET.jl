@@ -529,18 +529,19 @@ ignores the identity of error point's `MethodInstance`, under the assumption tha
 identical as far as they're collected at the same file and line.
 """
 aggregation_policy(::AbstractAnalyzer) = default_aggregation_policy
-function default_aggregation_policy(@nospecialize(report::InferenceErrorReport))
+const default_aggregation_policy = function (report::InferenceErrorReport)
+    @nospecialize report
     # fvf = first(report.vst)
     lvf = last(report.vst)
     return DefaultReportIdentity(
         typeof(Base.inferencebarrier(report)),
-        report.sig,
+        # report.sig,
         # fvf.file, fvf.line
         lvf.file, lvf.line)
 end
 @withmixedhash struct DefaultReportIdentity
     T::DataType
-    sig::Signature
+    # sig::Signature
     # entry_file::Symbol
     # entry_inle::Int
     error_file::Symbol
