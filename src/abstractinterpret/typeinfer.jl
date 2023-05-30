@@ -81,8 +81,7 @@ let # overload `abstract_call_method_with_const_args`
     end
     @eval function CC.abstract_call_method_with_const_args($(sigs_ex.args...))
         set_cache_target!(analyzer, :abstract_call_method_with_const_args => sv.result)
-        const_result =
-            @invoke CC.abstract_call_method_with_const_args($(args_ex.args...))
+        const_result = @invoke CC.abstract_call_method_with_const_args($(args_ex.args...))
         # make sure we reset the cache target because at this point we may have not hit
         # `CC.cache_lookup(linfo::MethodInstance, given_argtypes::Argtypes, view::AbstractAnalyzerView)`
         set_cache_target!(analyzer, nothing)
@@ -114,8 +113,8 @@ let # overload `concrete_eval_call`
     @eval function CC.concrete_eval_call($(sigs_ex.args...))
         ret = @invoke CC.concrete_eval_call($(args_ex.args...))
         if ret isa CC.ConstCallResults
-            # this frame has been happily concretized, now we throw away reports collected
-            # during the previous abstract-interpretation based analysis
+            # this frame has been concretized, now we throw away reports collected
+            # during the previous non-constant, abstract-interpretation
             filter_lineages!(analyzer, sv.result, result.edge::MethodInstance)
         end
         return ret
@@ -265,7 +264,6 @@ AnalysisCache(wvc::WorldView{<:AbstractAnalyzerView}) = AnalysisCache(wvc.cache.
 CC.haskey(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance) = haskey(AnalysisCache(wvc), mi)
 
 function CC.typeinf_edge(analyzer::AbstractAnalyzer, method::Method, @nospecialize(atype), sparams::SimpleVector, caller::InferenceState)
-    # enable the report cache restoration at `code = get(code_cache(interp), mi, nothing)`
     set_cache_target!(analyzer, :typeinf_edge => caller.result)
     ret = @invoke typeinf_edge(analyzer::AbstractInterpreter, method::Method, atype::Any, sparams::SimpleVector, caller::InferenceState)
     @assert get_cache_target(analyzer) === nothing "invalid JET analysis state"
@@ -434,9 +432,12 @@ let
             isa(inf_result.result, InferenceState) && return inf_result
         end
 
-        # cache hit, try to restore local report caches
+        # cache hit, restore reports from the local report cache
 
-        # corresponds to the throw-away logic in `_typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)`
+        # as the analyzer uses the reports that are cached by the abstract-interpretation
+        # with the extended lattice elements, here we should throw-away the error reports
+        # that are collected during the previous non-constant abstract-interpretation
+        # (see the `CC.typeinf(::AbstractAnalyzer, ::InferenceState)` overload)
         filter_lineages!(analyzer, caller, linfo)
 
         for cached in get_cached_reports(analyzer, inf_result)
@@ -475,17 +476,12 @@ function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
     # set_depth!(analyzer, get_depth(analyzer) + 1) # manipulate this only in debug mode
     #= logging stage1 end =#
 
-    # some methods like `getproperty` can't propagate accurate types without actual values,
-    # and constant prop' plays a somewhat critical role in those cases by overwriteing the
-    # previous non-constant inference result (under the current design constant prop' always
-    # happens after inference with non-constant abstract elements)
-    # JET also needs that in order to reduce false positive reports, and here we will
-    # throw-away previously-collected error reports that are "lineage" of this frame,
-    # when it is being re-inferred with constants
-    # NOTE `frame.linfo` is the exactly same object as that of the previous non-constant inference
-    # IDEA we may still want to keep some "serious" error reports like `UndefVarErrorReport`
-    # even when constant prop' reveals it never happ∫ens given the current constant arguments
+    # JET is going to perform the abstract-interpretation with the extended lattice elements:
+    # now we throw-away the error reports that are collected during the previous
+    # non-constant abstract-interpretation
     if is_constant_propagated(frame) && !isentry
+        # NOTE the `linfo` here is the exactly same object as the method instance
+        #      used for the previous non-constant abstract-interpretation
         filter_lineages!(analyzer, (parent::InferenceState).result, linfo)
     end
 
