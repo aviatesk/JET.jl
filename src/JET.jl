@@ -1295,7 +1295,7 @@ const GENERAL_CONFIGURATIONS = Set{Symbol}((
     # toplevel
     :context, :analyze_from_definitions, :concretization_patterns, :virtualize, :toplevel_logger,
     # ui
-    :print_toplevel_success, :print_inference_success, :annotate_types, :fullpath, :vscode_console_output,
+    :print_toplevel_success, :print_inference_success, :fullpath, :vscode_console_output,
     # watch
     :revise_all, :revise_modules))
 for (Params, Func) = ((InferenceParams, JETInferenceParams),
@@ -1355,13 +1355,13 @@ include("analyzers/optanalyzer.jl")
 using PrecompileTools
 @setup_workload let
     @compile_workload let
-        result = @report_call annotate_types=true sum("julia")
+        result = @report_call sum("julia")
         show(IOContext(devnull, :color=>true), result)
-        result = @report_call annotate_types=true rand(String)
+        result = @report_call rand(String)
         show(IOContext(devnull, :color=>true), result)
-        result = @report_opt annotate_types=true sum("julia")
+        result = @report_opt sum("julia")
         show(IOContext(devnull, :color=>true), result)
-        result = @report_opt annotate_types=true rand(String)
+        result = @report_opt rand(String)
         show(IOContext(devnull, :color=>true), result)
     end
 end

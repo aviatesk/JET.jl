@@ -24,73 +24,6 @@ Configurations for report printing.
 The configurations below will be active whenever `show`ing [JET's analysis result](@ref analysis-result) within REPL.
 
 ---
-- `annotate_types::Bool = false` \\
-  When set to `true`, annotates types when printing analyzed call stack.
-
-  > Examples:
-  * with `annotate_types = false` (default):
-    ```julia-repl
-    julia> @report_call sum("julia")
-    ═════ 2 possible errors found ═════
-    ┌ @ reduce.jl:549 Base.:(var"#sum#281")(pairs(NamedTuple()), #self#, a)
-    │┌ @ reduce.jl:549 sum(identity, a)
-    ││┌ @ reduce.jl:520 Base.:(var"#sum#280")(pairs(NamedTuple()), #self#, f, a)
-    │││┌ @ reduce.jl:520 mapreduce(f, Base.add_sum, a)
-    ││││┌ @ reduce.jl:294 Base.:(var"#mapreduce#277")(pairs(NamedTuple()), #self#, f, op, itr)
-    │││││┌ @ reduce.jl:294 mapfoldl(f, op, itr)
-    ││││││┌ @ reduce.jl:162 Base.:(var"#mapfoldl#273")(Base._InitialValue(), #self#, f, op, itr)
-    │││││││┌ @ reduce.jl:162 Base.mapfoldl_impl(f, op, init, itr)
-    ││││││││┌ @ reduce.jl:44 Base.foldl_impl(op′, nt, itr′)
-    │││││││││┌ @ reduce.jl:48 v = Base._foldl_impl(op, nt, itr)
-    ││││││││││┌ @ reduce.jl:62 v = op(v, y[1])
-    │││││││││││┌ @ reduce.jl:81 op.rf(acc, x)
-    ││││││││││││┌ @ reduce.jl:24 x + y
-    │││││││││││││ no matching method found for `+(::Char, ::Char)`: (x::Char + y::Char)::Union{}
-    ││││││││││││└────────────────
-    │││││││││┌ @ reduce.jl:49 Base.reduce_empty_iter(op, itr)
-    ││││││││││┌ @ reduce.jl:370 Base.reduce_empty_iter(op, itr, Base.IteratorEltype(itr))
-    │││││││││││┌ @ reduce.jl:371 Base.reduce_empty(op, eltype(itr))
-    ││││││││││││┌ @ reduce.jl:347 Base.reduce_empty(op.rf, T)
-    │││││││││││││┌ @ reduce.jl:339 Base.reduce_empty(+, T)
-    ││││││││││││││┌ @ reduce.jl:330 zero(T)
-    │││││││││││││││ no matching method found for `zero(::Type{Char})`: zero(T::Type{Char})::Union{}
-    ││││││││││││││└─────────────────
-    ```
-  * with `annotate_types = true`
-    ```julia-repl
-    julia> @report_call annotate_types = true sum("julia")
-    ═════ 2 possible errors found ═════
-    ┌ @ reduce.jl:549 Base.:(var"#sum#281")(pairs(NamedTuple()::NamedTuple{(), Tuple{}})::Base.Pairs{Symbol, Union{}, Tuple{}, NamedTuple{(), Tuple{}}}, #self#::typeof(sum), a::String)::Union{}
-    │┌ @ reduce.jl:549 sum(identity, a::String)::Union{}
-    ││┌ @ reduce.jl:520 Base.:(var"#sum#280")(pairs(NamedTuple()::NamedTuple{(), Tuple{}})::Base.Pairs{Symbol, Union{}, Tuple{}, NamedTuple{(), Tuple{}}}, #self#::typeof(sum), f::typeof(identity), a::String)::Union{}
-    │││┌ @ reduce.jl:520 mapreduce(f::typeof(identity), Base.add_sum, a::String)::Union{}
-    ││││┌ @ reduce.jl:294 Base.:(var"#mapreduce#277")(pairs(NamedTuple()::NamedTuple{(), Tuple{}})::Base.Pairs{Symbol, Union{}, Tuple{}, NamedTuple{(), Tuple{}}}, #self#::typeof(mapreduce), f::typeof(identity), op::typeof(Base.add_sum), itr::String)::Union{}
-    │││││┌ @ reduce.jl:294 mapfoldl(f::typeof(identity), op::typeof(Base.add_sum), itr::String)::Union{}
-    ││││││┌ @ reduce.jl:162 Base.:(var"#mapfoldl#273")(Base._InitialValue()::Base._InitialValue, #self#::typeof(mapfoldl), f::typeof(identity), op::typeof(Base.add_sum), itr::String)::Union{}
-    │││││││┌ @ reduce.jl:162 Base.mapfoldl_impl(f::typeof(identity), op::typeof(Base.add_sum), init::Base._InitialValue, itr::String)::Union{}
-    ││││││││┌ @ reduce.jl:44 Base.foldl_impl(op′::Union{}, nt::Base._InitialValue, itr′::Union{})::Union{}
-    │││││││││┌ @ reduce.jl:48 v = Base._foldl_impl(op::Base.BottomRF{typeof(Base.add_sum)}, nt::Base._InitialValue, itr::String)::Union{}
-    ││││││││││┌ @ reduce.jl:62 v = op::Base.BottomRF{typeof(Base.add_sum)}(v::Char, (y::Tuple{Char, Int64})[1]::Char)::Union{}
-    │││││││││││┌ @ reduce.jl:81 (op::Base.BottomRF{typeof(Base.add_sum)}).rf::typeof(Base.add_sum)(acc::Char, x::Char)::Union{}
-    ││││││││││││┌ @ reduce.jl:24 (x::Char + y::Char)::Union{}
-    │││││││││││││ no matching method found for `+(::Char, ::Char)`: (x::Char + y::Char)::Union{}
-    ││││││││││││└────────────────
-    │││││││││┌ @ reduce.jl:49 Base.reduce_empty_iter(op::Base.BottomRF{typeof(Base.add_sum)}, itr::String)::Union{}
-    ││││││││││┌ @ reduce.jl:370 Base.reduce_empty_iter(op::Base.BottomRF{typeof(Base.add_sum)}, itr::String, Base.IteratorEltype(itr::String)::Base.HasEltype)::Union{}
-    │││││││││││┌ @ reduce.jl:371 Base.reduce_empty(op::Base.BottomRF{typeof(Base.add_sum)}, eltype(itr::String)::Type{Char})::Union{}
-    ││││││││││││┌ @ reduce.jl:347 Base.reduce_empty((op::Base.BottomRF{typeof(Base.add_sum)}).rf::typeof(Base.add_sum), T::Type{Char})::Union{}
-    │││││││││││││┌ @ reduce.jl:339 Base.reduce_empty(+, T::Type{Char})::Union{}
-    ││││││││││││││┌ @ reduce.jl:330 zero(T::Type{Char})::Union{}
-    │││││││││││││││ no matching method found for `zero(::Type{Char})`: zero(T::Type{Char})::Union{}
-    ││││││││││││││└─────────────────
-    ```
-
-  !!! note
-      JET always annotates types when printing the error point, e.g. in the example above,
-      the error points below are always type-annotated regardless of this configuration:
-      - `no matching method found for call signature: Base.zero(_::Type{Char})`
-      - `no matching method found for call signature: Base.+(x::Char, y::Char)`
----
 - `fullpath::Bool = false` \\
   Controls whether or not expand a file path to full path when printing analyzed call stack.
   Note that paths of Julia's `Base` files will also be expanded when set to `true`.
@@ -105,16 +38,13 @@ The configurations below will be active whenever `show`ing [JET's analysis resul
 struct PrintConfig
     print_toplevel_success::Bool
     print_inference_success::Bool
-    annotate_types::Bool
     fullpath::Bool
     function PrintConfig(; print_toplevel_success::Bool  = false,
                            print_inference_success::Bool = true,
-                           annotate_types::Bool          = false,
                            fullpath::Bool                = false,
                            __jetconfigs...)
         return new(print_toplevel_success,
                    print_inference_success,
-                   annotate_types,
                    fullpath)
     end
 end
@@ -357,7 +287,7 @@ function print_report(io::IO, report::InferenceErrorReport)
     printstyled(io, msg; color)
     if print_signature(report)
         printstyled(io, ": "; color)
-        print_signature(io, report.sig, (; annotate_types=true); bold=true)
+        print_signature(io, report.sig, (;); bold=true)
     end
 end
 
@@ -368,17 +298,13 @@ function print_signature(io, sig::Signature, config; kwargs...)
 end
 function _print_signature(io, @nospecialize(x), config; kwargs...)
     if isa(x, Type)
-        if config.annotate_types
-            if x !== Union{}
-                printstyled(io, "::", x; color = TYPE_ANNOTATION_COLOR, kwargs...)
-            end
+        if x !== Union{}
+            printstyled(io, "::", x; color = TYPE_ANNOTATION_COLOR, kwargs...)
         end
     elseif isa(x, Repr)
         printstyled(io, sprint(show, x.val); kwargs...)
     elseif isa(x, AnnotationMaker)
-        if config.annotate_types
-            printstyled(io, x.switch ? '(' : ')'; kwargs...)
-        end
+        printstyled(io, x.switch ? '(' : ')'; kwargs...)
     elseif isa(x, ApplyTypeResult)
         printstyled(io, x.typ; kwargs...)
     elseif isa(x, IgnoreMarker)
