@@ -26,20 +26,20 @@ Note that, because JET relies on Julia's type inference, if a chain of inference
 ```julia
 julia> @report_opt foldl(+, Any[]; init=0)
 ═════ 2 possible errors found ═════
-┌ @ reduce.jl:198 Base.:(var"#foldl#295")(kw..., _3, op, itr)
-│┌ @ reduce.jl:198 Core.kwcall(merge(Base.NamedTuple(), kw), mapfoldl, identity, op, itr)
-││┌ @ reduce.jl:175 Base.:(var"#mapfoldl#294")(_8, _3, f, op, itr)
-│││┌ @ reduce.jl:175 Base.mapfoldl_impl(f, op, init, itr)
-││││┌ @ reduce.jl:44 Base.foldl_impl(op′, nt, itr′)
-│││││┌ @ reduce.jl:48 v = Base._foldl_impl(op, nt, itr)
-││││││┌ @ reduce.jl:58 v = op(init, y[1])
-│││││││┌ @ reduce.jl:86 +(acc, x)
+┌ kwcall(::@NamedTuple{init::Int64}, ::typeof(foldl), op::typeof(+), itr::Vector{Any}) @ Base ./reduce.jl:198
+│┌ foldl(op::typeof(+), itr::Vector{Any}; kw::@Kwargs{init::Int64}) @ Base ./reduce.jl:198
+││┌ kwcall(::@NamedTuple{init::Int64}, ::typeof(mapfoldl), f::typeof(identity), op::typeof(+), itr::Vector{Any}) @ Base ./reduce.jl:175
+│││┌ mapfoldl(f::typeof(identity), op::typeof(+), itr::Vector{Any}; init::Int64) @ Base ./reduce.jl:175
+││││┌ mapfoldl_impl(f::typeof(identity), op::typeof(+), nt::Int64, itr::Vector{Any}) @ Base ./reduce.jl:44
+│││││┌ foldl_impl(op::Base.BottomRF{typeof(+)}, nt::Int64, itr::Vector{Any}) @ Base ./reduce.jl:48
+││││││┌ _foldl_impl(op::Base.BottomRF{typeof(+)}, init::Int64, itr::Vector{Any}) @ Base ./reduce.jl:58
+│││││││┌ (::Base.BottomRF{typeof(+)})(acc::Int64, x::Any) @ Base ./reduce.jl:86
 ││││││││ runtime dispatch detected: +(acc::Int64, x::Any)::Any
-│││││││└────────────────
-││││││┌ @ reduce.jl:62 v = op(v, y[1])
-│││││││┌ @ reduce.jl:86 +(acc, x)
+│││││││└────────────────────
+││││││┌ _foldl_impl(op::Base.BottomRF{typeof(+)}, init::Int64, itr::Vector{Any}) @ Base ./reduce.jl:62
+│││││││┌ (::Base.BottomRF{typeof(+)})(acc::Any, x::Any) @ Base ./reduce.jl:86
 ││││││││ runtime dispatch detected: +(acc::Any, x::Any)::Any
-│││││││└────────────────
+│││││││└────────────────────
 ```
 
 ### Detect type errors with `@report_call`
@@ -47,51 +47,79 @@ This works best on type stable code, so use `@report_opt` liberally before using
 ```julia
 julia> @report_call foldl(+, Char[])
 ═════ 2 possible errors found ═════
-┌ @ reduce.jl:198 Base.:(var"#foldl#291")(pairs(NamedTuple()), #self#, op, itr)
-│┌ @ reduce.jl:198 mapfoldl(identity, op, itr)
-││┌ @ reduce.jl:175 Base.:(var"#mapfoldl#290")(Base._InitialValue(), #self#, f, op, itr)
-│││┌ @ reduce.jl:175 Base.mapfoldl_impl(f, op, init, itr)
-││││┌ @ reduce.jl:44 Base.foldl_impl(op′, nt, itr′)
-│││││┌ @ reduce.jl:48 v = Base._foldl_impl(op, nt, itr)
-││││││┌ @ reduce.jl:62 v = op(v, y[1])
-│││││││┌ @ reduce.jl:86 op.rf(acc, x)
+┌ foldl(op::typeof(+), itr::Vector{Char}) @ Base ./reduce.jl:198
+│┌ foldl(op::typeof(+), itr::Vector{Char}; kw::@Kwargs{}) @ Base ./reduce.jl:198
+││┌ mapfoldl(f::typeof(identity), op::typeof(+), itr::Vector{Char}) @ Base ./reduce.jl:175
+│││┌ mapfoldl(f::typeof(identity), op::typeof(+), itr::Vector{Char}; init::Base._InitialValue) @ Base ./reduce.jl:175
+││││┌ mapfoldl_impl(f::typeof(identity), op::typeof(+), nt::Base._InitialValue, itr::Vector{Char}) @ Base ./reduce.jl:44
+│││││┌ foldl_impl(op::Base.BottomRF{typeof(+)}, nt::Base._InitialValue, itr::Vector{Char}) @ Base ./reduce.jl:48
+││││││┌ _foldl_impl(op::Base.BottomRF{typeof(+)}, init::Base._InitialValue, itr::Vector{Char}) @ Base ./reduce.jl:62
+│││││││┌ (::Base.BottomRF{typeof(+)})(acc::Char, x::Char) @ Base ./reduce.jl:86
 ││││││││ no matching method found `+(::Char, ::Char)`: (op::Base.BottomRF{typeof(+)}).rf::typeof(+)(acc::Char, x::Char)
-│││││││└────────────────
-│││││┌ @ reduce.jl:49 Base.reduce_empty_iter(op, itr)
-││││││┌ @ reduce.jl:383 Base.reduce_empty_iter(op, itr, Base.IteratorEltype(itr))
-│││││││┌ @ reduce.jl:384 Base.reduce_empty(op, eltype(itr))
-││││││││┌ @ reduce.jl:360 Base.reduce_empty(op.rf, T)
-│││││││││┌ @ reduce.jl:343 zero(T)
+│││││││└────────────────────
+│││││┌ foldl_impl(op::Base.BottomRF{typeof(+)}, nt::Base._InitialValue, itr::Vector{Char}) @ Base ./reduce.jl:49
+││││││┌ reduce_empty_iter(op::Base.BottomRF{typeof(+)}, itr::Vector{Char}) @ Base ./reduce.jl:383
+│││││││┌ reduce_empty_iter(op::Base.BottomRF{typeof(+)}, itr::Vector{Char}, ::Base.HasEltype) @ Base ./reduce.jl:384
+││││││││┌ reduce_empty(op::Base.BottomRF{typeof(+)}, ::Type{Char}) @ Base ./reduce.jl:360
+│││││││││┌ reduce_empty(::typeof(+), ::Type{Char}) @ Base ./reduce.jl:343
 ││││││││││ no matching method found `zero(::Type{Char})`: zero(T::Type{Char})
-│││││││││└─────────────────
+│││││││││└────────────────────
 ```
 
 ### Analyze packages with `report_package`
 This looks for all method definitions and analyses function calls based on their signatures. Note that this is less accurate than `@report_call`, because the actual input types cannot be known for generic methods.
 
 ```julia
-julia> using AbstractTrees
+(@v1.9) pkg> activate --temp; add AbstractTrees
+  Activating new project at `/var/folders/xh/6zzly9vx71v05_y67nm_s9_c0000gn/T/jl_FpCMsK`
+   Resolving package versions...
+    Updating `/private/var/folders/xh/6zzly9vx71v05_y67nm_s9_c0000gn/T/jl_FpCMsK/Project.toml`
+  [1520ce14] + AbstractTrees v0.4.4
+    Updating `/private/var/folders/xh/6zzly9vx71v05_y67nm_s9_c0000gn/T/jl_FpCMsK/Manifest.toml`
+  [1520ce14] + AbstractTrees v0.4.4
 
-julia> report_package(AbstractTrees)
- [ some output elided ]
-═════ 4 possible errors found ═════
-┌ @ ~/.julia/packages/AbstractTrees/x9S7q/src/base.jl:260 AbstractTrees.collect(Core.apply_type(StableNode, T), ch)
-│┌ @ array.jl:647 Base._collect(T, itr, Base.IteratorSize(itr))
-││┌ @ array.jl:649 Base._array_for(T, isz, Base._similar_shape(itr, isz))
-│││┌ @ array.jl:679 Base._similar_shape(itr, isz)
-││││┌ @ array.jl:664 axes(itr)
-│││││┌ @ abstractarray.jl:95 size(A)
-││││││ no matching method found `size(::Base.HasLength)`: size(A::Base.HasLength)
-│││││└───────────────────────
-││││┌ @ array.jl:663 length(itr)
-│││││ no matching method found `length(::Base.HasLength)`: length(itr::Base.HasLength)
-││││└────────────────
-┌ @ ~/.julia/packages/AbstractTrees/x9S7q/src/indexing.jl:137 AbstractTrees.idx.tree
-│ `AbstractTrees.idx` is not defined
-└───────────────────────────────────────────────────────────────────────
-┌ @ ~/.julia/packages/AbstractTrees/x9S7q/src/indexing.jl:137 AbstractTrees.idx.index
-│ `AbstractTrees.idx` is not defined
-└───────────────────────────────────────────────────────────────────────
+julia> report_package("AbstractTrees")
+[toplevel-info] virtualized the context of Main (took 0.002 sec)
+[toplevel-info] entered into ~/.julia/packages/AbstractTrees/EUx8s/src/AbstractTrees.jl
+[toplevel-info] entered into ~/.julia/packages/AbstractTrees/EUx8s/src/traits.jl
+[toplevel-info]  exited from ~/.julia/packages/AbstractTrees/EUx8s/src/traits.jl (took 0.021 sec)
+[toplevel-info] entered into ~/.julia/packages/AbstractTrees/EUx8s/src/base.jl
+[toplevel-info]  exited from ~/.julia/packages/AbstractTrees/EUx8s/src/base.jl (took 0.024 sec)
+[toplevel-info] entered into ~/.julia/packages/AbstractTrees/EUx8s/src/indexing.jl
+[toplevel-info]  exited from ~/.julia/packages/AbstractTrees/EUx8s/src/indexing.jl (took 0.011 sec)
+[toplevel-info] entered into ~/.julia/packages/AbstractTrees/EUx8s/src/cursors.jl
+[toplevel-info]  exited from ~/.julia/packages/AbstractTrees/EUx8s/src/cursors.jl (took 0.048 sec)
+[toplevel-info] entered into ~/.julia/packages/AbstractTrees/EUx8s/src/iteration.jl
+[toplevel-info]  exited from ~/.julia/packages/AbstractTrees/EUx8s/src/iteration.jl (took 0.044 sec)
+[toplevel-info] entered into ~/.julia/packages/AbstractTrees/EUx8s/src/builtins.jl
+[toplevel-info]  exited from ~/.julia/packages/AbstractTrees/EUx8s/src/builtins.jl (took 0.001 sec)
+[toplevel-info] entered into ~/.julia/packages/AbstractTrees/EUx8s/src/printing.jl
+[toplevel-info]  exited from ~/.julia/packages/AbstractTrees/EUx8s/src/printing.jl (took 0.025 sec)
+[toplevel-info]  exited from ~/.julia/packages/AbstractTrees/EUx8s/src/AbstractTrees.jl (took 0.179 sec)
+[toplevel-info] analyzing from top-level definitions (257/257)
+[toplevel-info] analyzed 257 top-level definitions (took 0.112 sec)
+═════ 7 possible errors found ═════
+┌ isroot(root::Any, x::Any) @ AbstractTrees ~/.julia/packages/AbstractTrees/EUx8s/src/base.jl:102
+│ no matching method found `parent(::Any, ::Any)`: AbstractTrees.parent(root::Any, x::Any)
+└────────────────────
+┌ AbstractTrees.IndexNode(tree::Any) @ AbstractTrees ~/.julia/packages/AbstractTrees/EUx8s/src/indexing.jl:117
+│ no matching method found `rootindex(::Any)`: rootindex(tree::Any)
+└────────────────────
+┌ parent(idx::AbstractTrees.IndexNode) @ AbstractTrees ~/.julia/packages/AbstractTrees/EUx8s/src/indexing.jl:127
+│ no matching method found `parentindex(::Any, ::Any)`: pidx = parentindex((idx::AbstractTrees.IndexNode).tree::Any, (idx::AbstractTrees.IndexNode).index::Any)
+└────────────────────
+┌ nextsibling(idx::AbstractTrees.IndexNode) @ AbstractTrees ~/.julia/packages/AbstractTrees/EUx8s/src/indexing.jl:132
+│ no matching method found `nextsiblingindex(::Any, ::Any)`: sidx = nextsiblingindex((idx::AbstractTrees.IndexNode).tree::Any, (idx::AbstractTrees.IndexNode).index::Any)
+└────────────────────
+┌ prevsibling(idx::AbstractTrees.IndexNode) @ AbstractTrees ~/.julia/packages/AbstractTrees/EUx8s/src/indexing.jl:137
+│ no matching method found `prevsiblingindex(::Any, ::Any)`: sidx = prevsiblingindex((idx::AbstractTrees.IndexNode).tree::Any, (idx::AbstractTrees.IndexNode).index::Any)
+└────────────────────
+┌ prevsibling(csr::AbstractTrees.IndexedCursor) @ AbstractTrees ~/.julia/packages/AbstractTrees/EUx8s/src/cursors.jl:234
+│ no matching method found `getindex(::Nothing, ::Int64)` (1/2 union split): (AbstractTrees.parent(csr::AbstractTrees.IndexedCursor)::Union{Nothing, AbstractTrees.IndexedCursor})[idx::Int64]
+└────────────────────
+┌ (::AbstractTrees.var"#17#18")(n::Any) @ AbstractTrees ~/.julia/packages/AbstractTrees/EUx8s/src/iteration.jl:323
+│ no matching method found `parent(::Any, ::Any)`: AbstractTrees.parent(getfield(#self#::AbstractTrees.var"#17#18", :tree)::Any, n::Any)
+└────────────────────
 ```
 
 ## Limitations

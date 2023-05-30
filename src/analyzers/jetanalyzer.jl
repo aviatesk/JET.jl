@@ -1554,15 +1554,15 @@ julia> @testset "check errors" begin
            @test_call g(ref)             # fail
            @test_call broken=true f(ref) # annotated as broken, thus still "pass"
        end
-check errors: JET-test failed at REPL[9]:3
-  Expression: #= REPL[9]:3 =# JET.@test_call f(ref)
+check errors: JET-test failed at REPL[21]:3
+  Expression: #= REPL[21]:3 =# JET.@test_call f(ref)
   ═════ 1 possible error found ═════
-  ┌ @ REPL[7]:1 sin(ref[])
-  │ no matching method found for `sin(::Nothing)` (1/2 union split): sin((ref::Base.RefValue{Union{Nothing, Int64}})[]::Union{Nothing, Int64})::Union{}
-  └─────────────
+  ┌ f(ref::Base.RefValue{Union{Nothing, Int64}}) @ Main ./REPL[19]:1
+  │ no matching method found `sin(::Nothing)` (1/2 union split): sin((ref::Base.RefValue{Union{Nothing, Int64}})[]::Union{Nothing, Int64})
+  └────────────────────
 
-Test Summary: | Pass  Fail  Broken  Total
-check errors  |    1     1       1      3
+Test Summary: | Pass  Fail  Broken  Total  Time
+check errors  |    1     1       1      3  0.2s
 ERROR: Some tests did not pass: 1 passed, 1 failed, 0 errored, 1 broken.
 ```
 """

@@ -33,30 +33,29 @@ that are specific to the optimization analysis.
   # and those within non-concrete calls (`fill_twos!(a)`) are not reported
   julia> @report_opt strange_twos(3)
   ═════ 2 possible errors found ═════
-  ┌ @ REPL[2]:2 %45(Main.undef, n)
-  │ runtime dispatch detected: %45::Type{Vector{_A}} where _A(Main.undef, n::Int64)
-  └─────────────
-  ┌ @ REPL[2]:3 Main.fill_twos!(%46)
-  │ runtime dispatch detected: Main.fill_twos!(%46::Vector)
-  └─────────────
+  ┌ strange_twos(n::Int64) @ Main ./REPL[23]:2
+  │ runtime dispatch detected: %33::Type{Vector{_A}} where _A(undef, n::Int64)::Vector
+  └────────────────────
+  ┌ strange_twos(n::Int64) @ Main ./REPL[23]:3
+  │ runtime dispatch detected: fill_twos!(%34::Vector)::Any
+  └────────────────────
 
   # we can get reports from non-concrete calls with `skip_noncompileable_calls=false`
   julia> @report_opt skip_noncompileable_calls=false strange_twos(3)
-  ═════ 4 possible errors found ═════
-  ┌ @ REPL[2]:3 Main.fill_twos!(a)
-  │┌ @ REPL[1]:3 a[%14] = 2
-  ││ runtime dispatch detected: Base.setindex!(a::Vector, 2, %14::Int64)
-  │└─────────────
-  │┌ @ REPL[1]:3 a[i] = 2
-  ││┌ @ array.jl:877 Base.convert(_, x)
-  │││ runtime dispatch detected: Base.convert(_::Any, x::Int64)
-  ││└────────────────
-  ┌ @ REPL[2]:2 %45(Main.undef, n)
-  │ runtime dispatch detected: %45::Type{Vector{_A}} where _A(Main.undef, n::Int64)
-  └─────────────
-  ┌ @ REPL[2]:3 Main.fill_twos!(%46)
-  │ runtime dispatch detected: Main.fill_twos!(%46::Vector)
-  └─────────────
+  ┌ strange_twos(n::Int64) @ Main ./REPL[23]:3
+  │┌ fill_twos!(a::Vector) @ Main ./REPL[22]:3
+  ││┌ setindex!(A::Vector, x::Int64, i1::Int64) @ Base ./array.jl:1014
+  │││ runtime dispatch detected: convert(%5::Any, x::Int64)::Any
+  ││└────────────────────
+  │┌ fill_twos!(a::Vector) @ Main ./REPL[22]:3
+  ││ runtime dispatch detected: ((a::Vector)[%13::Int64] = 2::Any)
+  │└────────────────────
+  ┌ strange_twos(n::Int64) @ Main ./REPL[23]:2
+  │ runtime dispatch detected: %33::Type{Vector{_A}} where _A(undef, n::Int64)::Vector
+  └────────────────────
+  ┌ strange_twos(n::Int64) @ Main ./REPL[23]:3
+  │ runtime dispatch detected: fill_twos!(%34::Vector)::Any
+  └────────────────────
   ```
 
   !!! note "Non-compileable calls"
@@ -85,9 +84,9 @@ that are specific to the optimization analysis.
                  end
              end
       ═════ 1 possible error found ═════
-      ┌ @ REPL[3]:7 maybesin(%19)
+      ┌ (::var"#3#4")(xs::Vector{Any}) @ Main ./REPL[3]:7
       │ runtime dispatch detected: maybesin(%19::Any)::Any
-      └─────────────
+      └────────────────────
 
       julia> function maybesin(@nospecialize x) # mark `x` with `@nospecialize`
                  if isa(x, Number)
@@ -108,10 +107,10 @@ that are specific to the optimization analysis.
                  end
              end
       ═════ 1 possible error found ═════
-      ┌ @ REPL[5]:7 s = maybesin(x)
-      │┌ @ REPL[4]:3 sin(%3)
+      ┌ (::var"#5#6")(xs::Vector{Any}) @ Main ./REPL[5]:7
+      │┌ maybesin(x::Any) @ Main ./REPL[4]:3
       ││ runtime dispatch detected: sin(%3::Number)::Any
-      │└─────────────
+      │└────────────────────
       ```
 
 ---
