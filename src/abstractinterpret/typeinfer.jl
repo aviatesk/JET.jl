@@ -476,12 +476,11 @@ function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
     # set_depth!(analyzer, get_depth(analyzer) + 1) # manipulate this only in debug mode
     #= logging stage1 end =#
 
-    # JET is going to perform the abstract-interpretation with the extended lattice elements:
-    # now we throw-away the error reports that are collected during the previous
-    # non-constant abstract-interpretation
     if is_constant_propagated(frame) && !isentry
-        # NOTE the `linfo` here is the exactly same object as the method instance
-        #      used for the previous non-constant abstract-interpretation
+        # JET is going to perform the abstract-interpretation with the extended lattice elements:
+        # throw-away the error reports that are collected during the previous non-constant abstract-interpretation
+        # NOTE that the `linfo` here is the exactly same object as the method instance used
+        # for the previous non-constant abstract-interpretation
         filter_lineages!(analyzer, (parent::InferenceState).result, linfo)
     end
 
