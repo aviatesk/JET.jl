@@ -391,19 +391,6 @@ is_constant_propagated(frame::InferenceState) =
            is_constant_propagated(frame.result)
 is_constant_propagated(result::InferenceResult) = CC.any(result.overridden_by_const)
 
-prewalk_inf_frame(@nospecialize(f), ::Nothing) = return
-function prewalk_inf_frame(@nospecialize(f), frame::InferenceState)
-    ret = f(frame)
-    prewalk_inf_frame(f, frame.parent)
-    return ret
-end
-
-postwalk_inf_frame(@nospecialize(f), ::Nothing) = return
-function postwalk_inf_frame(@nospecialize(f), frame::InferenceState)
-    postwalk_inf_frame(f, frame.parent)
-    return f(frame)
-end
-
 # XXX this should be upstreamed
 function Base.show(io::IO, frame::InferenceState)
     print(io, "InfernceState for ")
