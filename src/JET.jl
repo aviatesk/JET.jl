@@ -72,8 +72,8 @@ using .CC: ⊑,
     AbstractInterpreter, ArgInfo, BasicBlock, Bottom, CFG, CachedMethodTable, CallMeta,
     ConstCallInfo, InferenceResult, InternalMethodTable, InvokeCallInfo, LimitedAccuracy,
     MethodCallResult, MethodLookupResult, MethodMatchInfo, MethodMatches, NOT_FOUND,
-    OptimizationState, OverlayMethodTable,UnionSplitInfo, UnionSplitMethodMatches, VarState,
-    VarTable, WorldRange, WorldView,
+    OptimizationState, OverlayMethodTable, StmtInfo, UnionSplitInfo, UnionSplitMethodMatches,
+    VarState, VarTable, WorldRange, WorldView,
     argextype, argtype_by_index, argtype_tail, argtypes_to_type, compute_basic_blocks,
     get_compileable_sig, hasintersect, has_free_typevars, ignorelimited, inlining_enabled,
     instanceof_tfunc, is_inlineable, is_throw_call, isType, isconstType, issingletontype,
@@ -142,12 +142,6 @@ function anypush!(a::Vector{Any}, @nospecialize x...)
     end
     return a
 end
-
-@static if !@isdefined(getglobal)
-    const getglobal = getfield
-end
-
-@static isdefined(CC, :StmtInfo) && import .CC: StmtInfo
 
 @static if VERSION ≥ v"1.10.0-DEV.96"
     using Base: _which
@@ -351,11 +345,7 @@ get_lin((sv, pc)::StateAtPC) = begin
     else
         # Packages might dynamically generate code, which does not reference
         # a source, see https://github.com/aviatesk/JET.jl/issues/273
-        @static if fieldtype(LineInfoNode, :line) === Int32
-            return LineInfoNode(sv.mod, :unknown, :unknown, Int32(0), Int32(0))
-        else
-            return LineInfoNode(sv.mod, :unknown, :unknown, 0, 0)
-        end
+        return LineInfoNode(sv.mod, :unknown, :unknown, Int32(0), Int32(0))
     end
 end
 get_ssavaluetype((sv, pc)::StateAtPC) = (sv.src.ssavaluetypes::Vector{Any})[pc]
@@ -380,18 +370,10 @@ get_currpc(sv::InferenceState) = min(sv.currpc, length(sv.src.code))
 struct StmtTypes
     sv::InferenceState
 end
-function stmt_types(sv::InferenceState)
-    @static if hasfield(InferenceState, :bb_vartables)
-        return StmtTypes(sv)
-    else
-        return sv.stmt_types
-    end
-end
-@static if hasfield(InferenceState, :bb_vartables)
+stmt_types(sv::InferenceState) = StmtTypes(sv)
 function Base.getindex(st::StmtTypes, pc::Int)
     block = CC.block_for_inst(st.sv.cfg, pc)
     return st.sv.bb_vartables[block]::VarTable
-end
 end
 
 function is_compileable_mi(mi::MethodInstance)
@@ -996,18 +978,11 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer,
 end
 
 function find_pkg(pkgname::AbstractString)
-    @static if isdefined(Base, :identify_package_env)
-        pkgenv = Base.identify_package_env(pkgname)
-        isnothing(pkgenv) && error(lazy"Unknown package $pkgname.")
-        pkgid, env = pkgenv
-        filename = Base.locate_package(pkgid, env)
-        isnothing(filename) && error(lazy"Expected $pkgname to have a source file.")
-    else
-        pkgid = Base.identify_package(pkgname)
-        isnothing(pkgid) && error(lazy"Unknown package $pkgname.")
-        filename = Base.locate_package(pkgid)
-        isnothing(filename) && error(lazy"Expected $pkgname to have a source file.")
-    end
+    pkgenv = Base.identify_package_env(pkgname)
+    isnothing(pkgenv) && error(lazy"Unknown package $pkgname.")
+    pkgid, env = pkgenv
+    filename = Base.locate_package(pkgid, env)
+    isnothing(filename) && error(lazy"Expected $pkgname to have a source file.")
     return (; pkgid, filename)
 end
 

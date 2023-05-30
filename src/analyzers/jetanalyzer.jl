@@ -294,28 +294,19 @@ function CC.add_call_backedges!(
         sv::InferenceState)
 end
 
-let # overload `const_prop_entry_heuristic`
-    @static if @isdefined(StmtInfo)
-        sigs_ex = :(::JETAnalyzer, result::MethodCallResult, si::StmtInfo, sv::InferenceState)
-    else
-        sigs_ex = :(::JETAnalyzer, result::MethodCallResult, sv::InferenceState)
-    end
-    @eval begin
-        @doc """
-            const_prop_entry_heuristic(analyzer::JETAnalyzer, result::MethodCallResult, sv::InferenceState)
+@doc """
+    const_prop_entry_heuristic(analyzer::JETAnalyzer, result::MethodCallResult, sv::InferenceState)
 
-        This overload forces constant prop' even if an inference result can't be improved
-        anymore _with respect to the return type_, e.g. when `result.rt` is already `Const`.
-        Especially, this overload implements an heuristic to force constant prop' when any error points
-        have been reported while the previous abstract method call without constant arguments.
-        The reason we want much more aggressive constant propagation by that heuristic is that it's
-        highly possible constant prop' can produce more accurate analysis result, by throwing away
-        false positive error reports by cutting off the unreachable control flow or detecting
-        must-reachable `throw` calls.
-        """
-        CC.const_prop_entry_heuristic($(sigs_ex.args...)) = true
-    end
-end
+This overload forces constant prop' even if an inference result can't be improved
+anymore _with respect to the return type_, e.g. when `result.rt` is already `Const`.
+Especially, this overload implements an heuristic to force constant prop' when any error points
+have been reported while the previous abstract method call without constant arguments.
+The reason we want much more aggressive constant propagation by that heuristic is that it's
+highly possible constant prop' can produce more accurate analysis result, by throwing away
+false positive error reports by cutting off the unreachable control flow or detecting
+must-reachable `throw` calls.
+"""
+CC.const_prop_entry_heuristic(::JETAnalyzer, result::MethodCallResult, si::StmtInfo, sv::InferenceState) = true
 
 let # overload `concrete_eval_eligible`
     sigs_ex = :(analyzer::JETAnalyzer,
@@ -365,40 +356,16 @@ function concrete_eval_eligible_ignoring_overlay(result::MethodCallResult, argin
     return CC.is_foldable(result.effects) && CC.is_all_const_arg(arginfo, #=start=#2)
 end
 
-let # overload `return_type_tfunc`
-    @static if @isdefined(StmtInfo)
-        sigs_ex = :(analyzer::JETAnalyzer, argtypes::Argtypes, si::StmtInfo, sv::InferenceState)
-        args_ex = :(analyzer::AbstractAnalyzer, argtypes::Argtypes, si::StmtInfo, sv::InferenceState)
-    else
-        sigs_ex = :(analyzer::JETAnalyzer, argtypes::Argtypes, sv::InferenceState)
-        args_ex = :(analyzer::AbstractAnalyzer, argtypes::Argtypes, sv::InferenceState)
-    end
-    @eval function CC.return_type_tfunc($(sigs_ex.args...))
-        # report pass for invalid `Core.Compiler.return_type` call
-        ReportPass(analyzer)(InvalidReturnTypeCall, analyzer, sv, argtypes)
-        return @invoke CC.return_type_tfunc($(args_ex.args...))
-    end
+function CC.return_type_tfunc(analyzer::JETAnalyzer, argtypes::Argtypes, si::StmtInfo, sv::InferenceState)
+    # report pass for invalid `Core.Compiler.return_type` call
+    ReportPass(analyzer)(InvalidReturnTypeCall, analyzer, sv, argtypes)
+    return @invoke CC.return_type_tfunc(analyzer::AbstractAnalyzer, argtypes::Argtypes, si::StmtInfo, sv::InferenceState)
 end
 
-let # overload `abstract_invoke`
-    @static if @isdefined(StmtInfo)
-        sigs_ex = :(analyzer::JETAnalyzer, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState)
-        args_ex = :(analyzer::AbstractAnalyzer, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState)
-        argtypes_ex = :(arginfo.argtypes)
-    else
-        sigs_ex = :(analyzer::JETAnalyzer, arginfo::ArgInfo, sv::InferenceState)
-        args_ex = :(analyzer::AbstractAnalyzer, arginfo::ArgInfo, sv::InferenceState)
-        argtypes_ex = :(arginfo.argtypes)
-    end
-    @eval function CC.abstract_invoke($(sigs_ex.args...))
-        ret = @invoke CC.abstract_invoke($(args_ex.args...))
-        if isa(ret, CallMeta)
-            ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret, $argtypes_ex)
-        else # otherwise https://github.com/JuliaLang/julia/pull/44764 is active
-            ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret[1], $argtypes_ex)
-        end
-        return ret
-    end
+function CC.abstract_invoke(analyzer::JETAnalyzer, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState)
+    ret = @invoke CC.abstract_invoke(analyzer::AbstractAnalyzer, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState)
+    ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret, arginfo.argtypes)
+    return ret
 end
 
 # TODO enable this with https://github.com/JuliaLang/julia/pull/46791 to close https://github.com/aviatesk/JET.jl/issues/285
@@ -437,7 +404,6 @@ end
 
 # N.B. this report pass won't be necessary as the frontend will generate code
 # that `typeassert`s the value type as the binding type beforehand
-@static if isdefined(CC, :abstract_eval_basic_statement)
 @inline function CC.abstract_eval_basic_statement(analyzer::JETAnalyzer,
     @nospecialize(stmt), pc_vartable::VarTable, frame::InferenceState)
     ret = @invoke CC.abstract_eval_basic_statement(analyzer::AbstractAnalyzer,
@@ -448,19 +414,6 @@ end
     end
     return ret
 end
-else # @static if isdefined(CC, :abstract_eval_basic_statement)
-function CC.abstract_eval_statement(analyzer::JETAnalyzer,
-    @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    ret = @invoke CC.abstract_eval_statement(analyzer::AbstractAnalyzer,
-        e::Any, vtypes::VarTable, sv::InferenceState)
-    stmt = get_stmt((sv, get_currpc(sv)))
-    if isexpr(stmt, :(=)) && (lhs = stmt.args[1]; isa(lhs, GlobalRef))
-        ReportPass(analyzer)(InvalidGlobalAssignmentError, analyzer,
-            sv, lhs.mod, lhs.name, ret)
-    end
-    return ret
-end
-end # @static if isdefined(CC, :abstract_eval_basic_statement)
 
 function CC.abstract_eval_value(analyzer::JETAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
     ret = @invoke CC.abstract_eval_value(analyzer::AbstractAnalyzer, e::Any, vtypes::VarTable, sv::InferenceState)
@@ -1256,9 +1209,9 @@ function (::BasicPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer
         report_setfield!!(analyzer, sv, argtypes, ret) && return true
     elseif f === fieldtype
         report_fieldtype!(analyzer, sv, argtypes, ret) && return true
-    elseif @static @isdefined(getglobal) ? (f === getglobal) : false
+    elseif f === getglobal
         report_getglobal!(analyzer, sv, argtypes, ret) && return true
-    elseif @static @isdefined(setglobal!) ? (f === setglobal!) : false
+    elseif f === setglobal!
         report_setglobal!!(analyzer, sv, argtypes) && return true
     elseif length(argtypes) == 2 && is_division_func(f)
         report_divide_error!(analyzer, sv, f, argtypes) && return true
@@ -1275,9 +1228,9 @@ end
 function (::TypoPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(ret))
     if f === getfield
         report_getfield!(analyzer, sv, argtypes, ret) && return true
-    elseif @static @isdefined(getglobal) ? (f === getglobal) : false
+    elseif f === getglobal
         report_getglobal!(analyzer, sv, argtypes, ret) && return true
-    elseif @static @isdefined(setglobal!) ? (f === setglobal!) : false
+    elseif f === setglobal!
         report_setglobal!!(analyzer, sv, argtypes) && return true
     end
     return false

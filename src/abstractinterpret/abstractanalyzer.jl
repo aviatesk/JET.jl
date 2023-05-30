@@ -621,16 +621,11 @@ let # overload `inlining_policy`
     @static if isdefined(CC, :InliningInfo)
         sigs_ex = :(analyzer::AbstractAnalyzer, @nospecialize(src), iinfo::CC.InliningInfo)
         args_ex = :(analyzer::AbstractInterpreter, src::Any, iinfo::CC.InliningInfo)
-    elseif isdefined(CC, :CallInfo)
+    else
         sigs_ex = :(analyzer::AbstractAnalyzer,
             @nospecialize(src), @nospecialize(info::CC.CallInfo), stmt_flag::UInt8, mi::MethodInstance, argtypes::Argtypes)
         args_ex = :(analyzer::AbstractInterpreter,
             src::Any, info::CC.CallInfo, stmt_flag::UInt8, mi::MethodInstance, argtypes::Argtypes)
-    else
-        sigs_ex = :(analyzer::AbstractAnalyzer,
-            @nospecialize(src), stmt_flag::UInt8, mi::MethodInstance, argtypes::Argtypes)
-        args_ex = :(analyzer::AbstractInterpreter,
-            src::Any, stmt_flag::UInt8, mi::MethodInstance, argtypes::Argtypes)
     end
     @eval begin
         @doc """
