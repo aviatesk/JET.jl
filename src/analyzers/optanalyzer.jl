@@ -84,10 +84,10 @@ that are specific to the optimization analysis.
                      s !== 0 && return s
                  end
              end
-             ═════ 1 possible error found ═════
-             ┌ @ REPL[3]:7 maybesin(%19)
-             │ runtime dispatch detected: maybesin(%19::Any)::Any
-             └─────────────
+      ═════ 1 possible error found ═════
+      ┌ @ REPL[3]:7 maybesin(%19)
+      │ runtime dispatch detected: maybesin(%19::Any)::Any
+      └─────────────
 
       julia> function maybesin(@nospecialize x) # mark `x` with `@nospecialize`
                  if isa(x, Number)
@@ -107,11 +107,11 @@ that are specific to the optimization analysis.
                      s !== 0 && return s
                  end
              end
-             ═════ 1 possible error found ═════
-             ┌ @ REPL[5]:7 s = maybesin(x)
-             │┌ @ REPL[4]:3 sin(%3)
-             ││ runtime dispatch detected: sin(%3::Number)::Any
-             │└─────────────
+      ═════ 1 possible error found ═════
+      ┌ @ REPL[5]:7 s = maybesin(x)
+      │┌ @ REPL[4]:3 sin(%3)
+      ││ runtime dispatch detected: sin(%3::Number)::Any
+      │└─────────────
       ```
 
 ---
