@@ -554,7 +554,8 @@ end
 # define how AbstractAnalyzer manages `InferenceResult`
 
 Base.getindex(analyzer::AbstractAnalyzer, result::InferenceResult) = get_results(analyzer)[result]
-Base.setindex!(analyzer::AbstractAnalyzer, AnalysisResult::AnyAnalysisResult, result::InferenceResult) = get_results(analyzer)[result] = AnalysisResult
+Base.setindex!(analyzer::AbstractAnalyzer, analysis_result::AnyAnalysisResult, result::InferenceResult) =
+    get_results(analyzer)[result] = analysis_result
 
 function init_result!(analyzer::AbstractAnalyzer, result::InferenceResult)
     analyzer[result] = AnalysisResult(InferenceErrorReport[])
