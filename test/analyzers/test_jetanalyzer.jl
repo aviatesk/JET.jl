@@ -203,7 +203,7 @@ end
             @test is_global_undef_var(r, :undefvar)
         end
 
-        @static @isdefined(getglobal) && let result = @eval Module() begin
+        let result = @eval Module() begin
                 $report_call() do
                     getglobal(@__MODULE__, :undefvar)
                 end
@@ -337,16 +337,14 @@ end
     end
 end
 
-@static isdefined(@__MODULE__, :setglobal!) && @testset "InvalidGlobalAssignmentError" begin
-    global __int_globalvar__::Int
-    let result = report_call((Nothing,)) do x
-            setglobal!(@__MODULE__, :__int_globalvar__, x)
-        end
-        report = only(get_reports_with_test(result))
-        @test report isa InvalidGlobalAssignmentError
-        @test report.mod === @__MODULE__
-        @test report.name === :__int_globalvar__
+global __int_globalvar__::Int
+let result = report_call((Nothing,)) do x
+        setglobal!(@__MODULE__, :__int_globalvar__, x)
     end
+    report = only(get_reports_with_test(result))
+    @test report isa InvalidGlobalAssignmentError
+    @test report.mod === @__MODULE__
+    @test report.name === :__int_globalvar__
 end
 
 @testset "report non-boolean condition error" begin

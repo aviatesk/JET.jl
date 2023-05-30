@@ -13,23 +13,14 @@ function collect_callee_reports!(analyzer::AbstractAnalyzer, sv::InferenceState)
     end
 end
 
-let # overload `abstract_call_method`
-    @static if @isdefined(StmtInfo)
-        sigs_ex = :(analyzer::AbstractAnalyzer,
-            method::Method, @nospecialize(sig), sparams::SimpleVector, hardlimit::Bool, si::StmtInfo, sv::InferenceState)
-        args_ex = :(analyzer::AbstractInterpreter,
-            method::Method, sig::Any, sparams::SimpleVector, hardlimit::Bool, si::StmtInfo, sv::InferenceState)
-    else
-        sigs_ex = :(analyzer::AbstractAnalyzer,
-            method::Method, @nospecialize(sig), sparams::SimpleVector, hardlimit::Bool, sv::InferenceState)
-        args_ex = :(analyzer::AbstractInterpreter,
-            method::Method, sig::Any, sparams::SimpleVector, hardlimit::Bool, sv::InferenceState)
-    end
-    @eval function CC.abstract_call_method($(sigs_ex.args...))
-        ret = @invoke CC.abstract_call_method($(args_ex.args...))
-        collect_callee_reports!(analyzer, sv)
-        return ret
-    end
+function CC.abstract_call_method(analyzer::AbstractAnalyzer,
+    method::Method, @nospecialize(sig), sparams::SimpleVector,
+    hardlimit::Bool, si::StmtInfo, sv::InferenceState)
+    ret = @invoke CC.abstract_call_method(analyzer::AbstractInterpreter,
+        method::Method, sig::Any, sparams::SimpleVector,
+        hardlimit::Bool, si::StmtInfo, sv::InferenceState)
+    collect_callee_reports!(analyzer, sv)
+    return ret
 end
 
 @static if VERSION ≥ v"1.10.0-DEV.1345"
@@ -46,51 +37,21 @@ function CC.const_prop_call(analyzer::AbstractAnalyzer,
     return const_result
 end
 else
-let # overload `abstract_call_method_with_const_args`
-    @static if @isdefined(StmtInfo)
-        sigs_ex = :(analyzer::AbstractAnalyzer,
-            result::MethodCallResult, @nospecialize(f), arginfo::ArgInfo, si::StmtInfo, match::MethodMatch,
-            sv::InferenceState, $(Expr(:kw, :(invokecall::Union{Nothing,CC.InvokeCall}), :nothing)))
-        args_ex = :(analyzer::AbstractInterpreter,
-            result::MethodCallResult, f::Any, arginfo::ArgInfo, si::StmtInfo, match::MethodMatch,
-            sv::InferenceState, invokecall::Union{Nothing,CC.InvokeCall})
-    elseif isdefined(CC, :InvokeCall)
-        # https://github.com/JuliaLang/julia/pull/46743
-        sigs_ex = :(analyzer::AbstractAnalyzer,
-            result::MethodCallResult, @nospecialize(f), arginfo::ArgInfo, match::MethodMatch,
-            sv::InferenceState, $(Expr(:kw, :(invokecall::Union{Nothing,CC.InvokeCall}), :nothing)))
-        args_ex = :(analyzer::AbstractInterpreter,
-            result::MethodCallResult, f::Any, arginfo::ArgInfo, match::MethodMatch,
-            sv::InferenceState, invokecall::Union{Nothing,CC.InvokeCall})
-    elseif hasmethod(CC.abstract_call_method_with_const_args, (AbstractInterpreter,
-        MethodCallResult, Any, ArgInfo, MethodMatch,
-        InferenceState, Any))
-        sigs_ex = :(analyzer::AbstractAnalyzer,
-            result::MethodCallResult, @nospecialize(f), arginfo::ArgInfo, match::MethodMatch,
-            sv::InferenceState, @nospecialize(invoketypes=nothing))
-        args_ex = :(analyzer::AbstractInterpreter,
-            result::MethodCallResult, f::Any, arginfo::ArgInfo, match::MethodMatch,
-            sv::InferenceState, invoketypes::Any)
-    else
-        sigs_ex = :(analyzer::AbstractAnalyzer,
-            result::MethodCallResult, @nospecialize(f), arginfo::ArgInfo, match::MethodMatch,
-            sv::InferenceState)
-        args_ex = :(analyzer::AbstractInterpreter,
-            result::MethodCallResult, f::Any, arginfo::ArgInfo, match::MethodMatch,
-            sv::InferenceState)
+function CC.abstract_call_method_with_const_args(analyzer::AbstractAnalyzer,
+    result::MethodCallResult, @nospecialize(f), arginfo::ArgInfo, si::StmtInfo, match::MethodMatch,
+    sv::InferenceState, invokecall::Union{Nothing,CC.InvokeCall}=nothing)
+    set_cache_target!(analyzer, :abstract_call_method_with_const_args => sv.result)
+    const_result = @invoke CC.abstract_call_method_with_const_args(analyzer::AbstractInterpreter,
+        result::MethodCallResult, f::Any, arginfo::ArgInfo, si::StmtInfo, match::MethodMatch,
+        sv::InferenceState, invokecall::Union{Nothing,CC.InvokeCall})
+    # make sure we reset the cache target because at this point we may have not hit
+    # `CC.cache_lookup(linfo::MethodInstance, given_argtypes::Argtypes, view::AbstractAnalyzerView)`
+    set_cache_target!(analyzer, nothing)
+    if const_result !== nothing
+        # successful constant prop', we need to update reports
+        collect_callee_reports!(analyzer, sv)
     end
-    @eval function CC.abstract_call_method_with_const_args($(sigs_ex.args...))
-        set_cache_target!(analyzer, :abstract_call_method_with_const_args => sv.result)
-        const_result = @invoke CC.abstract_call_method_with_const_args($(args_ex.args...))
-        # make sure we reset the cache target because at this point we may have not hit
-        # `CC.cache_lookup(linfo::MethodInstance, given_argtypes::Argtypes, view::AbstractAnalyzerView)`
-        set_cache_target!(analyzer, nothing)
-        if const_result !== nothing
-            # successful constant prop', we need to update reports
-            collect_callee_reports!(analyzer, sv)
-        end
-        return const_result
-    end
+    return const_result
 end
 end # @static if VERSION ≥ v"1.10.0-DEV.1345"
 
@@ -128,16 +89,10 @@ let # overload `abstract_call`
         args_ex = :(analyzer::AbstractInterpreter, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState,
             max_methods::Int)
         argtypes_ex = :(arginfo.argtypes)
-    elseif @isdefined(StmtInfo)
+    else
         sigs_ex = :(analyzer::AbstractAnalyzer, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState,
             $(Expr(:kw, :(max_methods::Int), :(InferenceParams(analyzer).MAX_METHODS))))
         args_ex = :(analyzer::AbstractInterpreter, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState,
-            max_methods::Int)
-        argtypes_ex = :(arginfo.argtypes)
-    else
-        sigs_ex = :(analyzer::AbstractAnalyzer, arginfo::ArgInfo, sv::InferenceState,
-            $(Expr(:kw, :(max_methods::Int), :(InferenceParams(analyzer).MAX_METHODS))))
-        args_ex = :(analyzer::AbstractInterpreter, arginfo::ArgInfo, sv::InferenceState,
             max_methods::Int)
         argtypes_ex = :(arginfo.argtypes)
     end
@@ -209,23 +164,14 @@ function analyze_additional_pass_by_type!(analyzer::AbstractAnalyzer, @nospecial
     # the threaded code block as a usual code block, and thus the side-effects won't (hopefully)
     # confuse the abstract interpretation, which is supposed to terminate on any kind of code
     match = find_single_match(tt, newanalyzer)
-    @static if @isdefined(StmtInfo)
-        abstract_call_method(newanalyzer, match.method, match.spec_types, match.sparams, #=hardlimit=#false, #=si=#StmtInfo(false), sv)
-    else
-        abstract_call_method(newanalyzer, match.method, match.spec_types, match.sparams, #=hardlimit=#false, sv)
-    end
+    abstract_call_method(newanalyzer, match.method, match.spec_types, match.sparams, #=hardlimit=#false, #=si=#StmtInfo(false), sv)
 
     return nothing
 end
 
 let # overload `return_type_tfunc`
-    @static if @isdefined(StmtInfo)
-        sigs_ex = :(analyzer::AbstractAnalyzer, argtypes::Argtypes, si::StmtInfo, sv::InferenceState)
-        args_ex = :(AbstractAnalyzer(analyzer)::AbstractInterpreter, argtypes::Argtypes, si::StmtInfo, sv::InferenceState)
-    else
-        sigs_ex = :(analyzer::AbstractAnalyzer, argtypes::Argtypes, sv::InferenceState)
-        args_ex = :(AbstractAnalyzer(analyzer)::AbstractInterpreter, argtypes::Argtypes, sv::InferenceState)
-    end
+    sigs_ex = :(analyzer::AbstractAnalyzer, argtypes::Argtypes, si::StmtInfo, sv::InferenceState)
+    args_ex = :(AbstractAnalyzer(analyzer)::AbstractInterpreter, argtypes::Argtypes, si::StmtInfo, sv::InferenceState)
     # `return_type_tfunc` internally uses `abstract_call` to model `Core.Compiler.return_type`
     # and here we should NOT catch error reports detected within the virtualized call
     # because it is not abstraction of actual execution
@@ -311,33 +257,6 @@ function CC.getindex(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance)
     return r::CodeInstance
 end
 
-@static if !hasmethod(CC.transform_result_for_cache, (
-    AbstractInterpreter, MethodInstance, WorldRange, InferenceResult))
-function CC.cache_result!(analyzer::AbstractAnalyzer, result::InferenceResult)
-    valid_worlds = result.valid_worlds
-    if CC.last(valid_worlds) == get_world_counter()
-        # if we've successfully recorded all of the backedges in the global reverse-cache,
-        # we can now widen our applicability in the global cache too
-        valid_worlds = WorldRange(CC.first(valid_worlds), typemax(UInt))
-    end
-    # check if the existing linfo metadata is also sufficient to describe the current inference result
-    # to decide if it is worth caching this
-    linfo = result.linfo
-    already_inferred = CC.already_inferred_quick_test(analyzer, linfo)
-    if !already_inferred && CC.haskey(WorldView(code_cache(analyzer), valid_worlds), linfo)
-        already_inferred = true
-    end
-
-    # TODO: also don't store inferred code if we've previously decided to interpret this function
-    if !already_inferred
-        inferred_result = transform_result_for_cache(analyzer, linfo, valid_worlds, result)
-        CC.setindex!(code_cache(analyzer), CodeInstance(result, inferred_result, valid_worlds), linfo)
-    end
-    unlock_mi_inference(analyzer, linfo)
-    nothing
-end
-end # @static if hasmethod(CC.transform_result_for_cache, (...))
-
 function CC.transform_result_for_cache(analyzer::AbstractAnalyzer,
     linfo::MethodInstance, valid_worlds::WorldRange, result::InferenceResult)
     cache = InferenceErrorReport[]
@@ -348,14 +267,8 @@ function CC.transform_result_for_cache(analyzer::AbstractAnalyzer,
         end
         cache_report!(cache, report)
     end
-    @static if hasmethod(CC.transform_result_for_cache, (
-        AbstractInterpreter, MethodInstance, WorldRange, InferenceResult))
-        inferred_result = @invoke transform_result_for_cache(analyzer::AbstractInterpreter,
+    inferred_result = @invoke transform_result_for_cache(analyzer::AbstractInterpreter,
         linfo::MethodInstance, valid_worlds::WorldRange, result::InferenceResult)
-    else
-        inferred_result = @invoke transform_result_for_cache(analyzer::AbstractInterpreter,
-        linfo::MethodInstance, valid_worlds::WorldRange, result.src::Any, result.ipo_effects::CC.Effects)
-    end
     return CachedAnalysisResult(inferred_result, cache)
 end
 
@@ -872,37 +785,6 @@ function is_deterministic(cfg::CFG, pc::Int)
     return CC.dominates(domtree, bb, length(cfg.blocks))
 end
 
-# at this point all the types of SSA values are iterated to maximum fixed point,
-# and we can compute types of slot as least upper bound of types of all the possible
-# assignment of the slot (the type of assignment statement is available as SSA value type)
-# the implementation is mostly same as `record_slot_assign!(sv::InferenceState)`, but
-# we don't `widenconst` each SSA value type
-@static if hasfield(InferenceState, :stmt_types)
-function collect_slottypes(sv::InferenceState)
-    states = sv.stmt_types
-    ssavaluetypes = sv.src.ssavaluetypes::Vector{Any}
-    stmts = sv.src.code::Vector{Any}
-    slottypes = Any[Bottom for _ in 1:length(sv.slottypes)]
-    for i = 1:length(stmts)
-        stmt = stmts[i]
-        state = states[i]
-        # find all reachable assignments to locals
-        if isa(state, VarTable) && isexpr(stmt, :(=))
-            lhs = first(stmt.args)
-            if isa(lhs, SlotNumber)
-                vt = ssavaluetypes[i] # don't widen const
-                @assert vt !== NOT_FOUND "active slot in unreached region"
-                if vt !== Bottom
-                    id = slot_id(lhs)
-                    otherTy = slottypes[id]
-                    slottypes[id] = tmerge(otherTy, vt)
-                end
-            end
-        end
-    end
-    return slottypes
-end
-else
 function collect_slottypes(sv::InferenceState)
     body = sv.src.code::Vector{Any}
     slottypes = Any[Bottom for _ in 1:length(sv.slottypes)]
@@ -931,7 +813,6 @@ function collect_slottypes(sv::InferenceState)
         end
     end
     return slottypes
-end
 end
 
 function set_abstract_global!(analyzer::AbstractAnalyzer, mod::Module, name::Symbol,
