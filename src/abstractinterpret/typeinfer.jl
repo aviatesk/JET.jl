@@ -113,7 +113,7 @@ let # overload `concrete_eval_call`
     end
     @eval function CC.concrete_eval_call($(sigs_ex.args...))
         ret = @invoke CC.concrete_eval_call($(args_ex.args...))
-        if $(isdefined(CC, :ConstCallResults) ? :(ret isa CC.ConstCallResults) : :(ret !== nothing))
+        if ret isa CC.ConstCallResults
             # this frame has been happily concretized, now we throw away reports collected
             # during the previous abstract-interpretation based analysis
             filter_lineages!(analyzer, sv.result, result.edge::MethodInstance)
