@@ -570,47 +570,47 @@ julia> function foo(a)
 # by default, JET will print all the collected reports:
 julia> @report_call foo("julia")
 ═════ 3 possible errors found ═════
-┌ @ REPL[1]:2 r1 = sum(a)
-│┌ @ reduce.jl:549 Base.:(var"#sum#281")(pairs(NamedTuple()), #self#, a)
-││┌ @ reduce.jl:549 sum(identity, a)
-│││┌ @ reduce.jl:520 Base.:(var"#sum#280")(pairs(NamedTuple()), #self#, f, a)
-││││┌ @ reduce.jl:520 mapreduce(f, Base.add_sum, a)
-│││││┌ @ reduce.jl:294 Base.:(var"#mapreduce#277")(pairs(NamedTuple()), #self#, f, op, itr)
-││││││┌ @ reduce.jl:294 mapfoldl(f, op, itr)
-│││││││┌ @ reduce.jl:162 Base.:(var"#mapfoldl#273")(Base._InitialValue(), #self#, f, op, itr)
-││││││││┌ @ reduce.jl:162 Base.mapfoldl_impl(f, op, init, itr)
-│││││││││┌ @ reduce.jl:44 Base.foldl_impl(op′, nt, itr′)
-││││││││││┌ @ reduce.jl:48 v = Base._foldl_impl(op, nt, itr)
-│││││││││││┌ @ reduce.jl:62 v = op(v, y[1])
-││││││││││││┌ @ reduce.jl:81 op.rf(acc, x)
-│││││││││││││┌ @ reduce.jl:24 x + y
-││││││││││││││ no matching method found for `+(::Char, ::Char)`: (x::Char + y::Char)::Union{}
-│││││││││││││└────────────────
-││││││││││┌ @ reduce.jl:49 Base.reduce_empty_iter(op, itr)
-│││││││││││┌ @ reduce.jl:370 Base.reduce_empty_iter(op, itr, Base.IteratorEltype(itr))
-││││││││││││┌ @ reduce.jl:371 Base.reduce_empty(op, eltype(itr))
-│││││││││││││┌ @ reduce.jl:347 Base.reduce_empty(op.rf, T)
-││││││││││││││┌ @ reduce.jl:339 Base.reduce_empty(+, T)
-│││││││││││││││┌ @ reduce.jl:330 zero(T)
-││││││││││││││││ no matching method found for `zero(::Type{Char})`: zero(T::Type{Char})::Union{}
-│││││││││││││││└─────────────────
-┌ @ REPL[1]:3 r2 = undefsum(a)
-│ `undefsum` is not defined
-└─────────────
+┌ foo(a::String) @ Main ./REPL[14]:2
+│┌ sum(a::String) @ Base ./reduce.jl:564
+││┌ sum(a::String; kw::@Kwargs{}) @ Base ./reduce.jl:564
+│││┌ sum(f::typeof(identity), a::String) @ Base ./reduce.jl:535
+││││┌ sum(f::typeof(identity), a::String; kw::@Kwargs{}) @ Base ./reduce.jl:535
+│││││┌ mapreduce(f::typeof(identity), op::typeof(Base.add_sum), itr::String) @ Base ./reduce.jl:307
+││││││┌ mapreduce(f::typeof(identity), op::typeof(Base.add_sum), itr::String; kw::@Kwargs{}) @ Base ./reduce.jl:307
+│││││││┌ mapfoldl(f::typeof(identity), op::typeof(Base.add_sum), itr::String) @ Base ./reduce.jl:175
+││││││││┌ mapfoldl(f::typeof(identity), op::typeof(Base.add_sum), itr::String; init::Base._InitialValue) @ Base ./reduce.jl:175
+│││││││││┌ mapfoldl_impl(f::typeof(identity), op::typeof(Base.add_sum), nt::Base._InitialValue, itr::String) @ Base ./reduce.jl:44
+││││││││││┌ foldl_impl(op::Base.BottomRF{typeof(Base.add_sum)}, nt::Base._InitialValue, itr::String) @ Base ./reduce.jl:48
+│││││││││││┌ _foldl_impl(op::Base.BottomRF{typeof(Base.add_sum)}, init::Base._InitialValue, itr::String) @ Base ./reduce.jl:62
+││││││││││││┌ (::Base.BottomRF{typeof(Base.add_sum)})(acc::Char, x::Char) @ Base ./reduce.jl:86
+│││││││││││││┌ add_sum(x::Char, y::Char) @ Base ./reduce.jl:24
+││││││││││││││ no matching method found `+(::Char, ::Char)`: (x::Char + y::Char)
+│││││││││││││└────────────────────
+││││││││││┌ foldl_impl(op::Base.BottomRF{typeof(Base.add_sum)}, nt::Base._InitialValue, itr::String) @ Base ./reduce.jl:49
+│││││││││││┌ reduce_empty_iter(op::Base.BottomRF{typeof(Base.add_sum)}, itr::String) @ Base ./reduce.jl:383
+││││││││││││┌ reduce_empty_iter(op::Base.BottomRF{typeof(Base.add_sum)}, itr::String, ::Base.HasEltype) @ Base ./reduce.jl:384
+│││││││││││││┌ reduce_empty(op::Base.BottomRF{typeof(Base.add_sum)}, ::Type{Char}) @ Base ./reduce.jl:360
+││││││││││││││┌ reduce_empty(::typeof(Base.add_sum), ::Type{Char}) @ Base ./reduce.jl:352
+│││││││││││││││┌ reduce_empty(::typeof(+), ::Type{Char}) @ Base ./reduce.jl:343
+││││││││││││││││ no matching method found `zero(::Type{Char})`: zero(T::Type{Char})
+│││││││││││││││└────────────────────
+┌ foo(a::String) @ Main ./REPL[14]:3
+│ `Main.undefsum` is not defined: r2 = undefsum(a::String)
+└────────────────────
 
 # with `target_modules=(@__MODULE__,)`, JET will only report the problems detected within the `@__MODULE__` module:
 julia> @report_call target_modules=(@__MODULE__,) foo("julia")
-════ 1 possible error found ═════
-┌ @ REPL[1]:3 r2 = undefsum(a)
-│ `undefsum` is not defined
-└─────────────
+═════ 1 possible error found ═════
+┌ foo(a::String) @ Main ./REPL[14]:3
+│ `Main.undefsum` is not defined: r2 = undefsum(a::String)
+└────────────────────
 
 # with `ignored_modules=(Base,)`, JET will ignore the errors detected within the `Base` module:
 julia> @report_call ignored_modules=(Base,) foo("julia")
-════ 1 possible error found ═════
-┌ @ REPL[1]:3 r2 = undefsum(a)
-│ `undefsum` is not defined
-└─────────────
+═════ 1 possible error found ═════
+┌ foo(a::String) @ Main ./REPL[14]:3
+│ `Main.undefsum` is not defined: r2 = undefsum(a::String)
+└────────────────────
 ```
 ---
 """
@@ -1295,7 +1295,7 @@ const GENERAL_CONFIGURATIONS = Set{Symbol}((
     # toplevel
     :context, :analyze_from_definitions, :concretization_patterns, :virtualize, :toplevel_logger,
     # ui
-    :print_toplevel_success, :print_inference_success, :annotate_types, :fullpath, :vscode_console_output,
+    :print_toplevel_success, :print_inference_success, :fullpath, :vscode_console_output,
     # watch
     :revise_all, :revise_modules))
 for (Params, Func) = ((InferenceParams, JETInferenceParams),
@@ -1355,13 +1355,13 @@ include("analyzers/optanalyzer.jl")
 using PrecompileTools
 @setup_workload let
     @compile_workload let
-        result = @report_call annotate_types=true sum("julia")
+        result = @report_call sum("julia")
         show(IOContext(devnull, :color=>true), result)
-        result = @report_call annotate_types=true rand(String)
+        result = @report_call rand(String)
         show(IOContext(devnull, :color=>true), result)
-        result = @report_opt annotate_types=true sum("julia")
+        result = @report_opt sum("julia")
         show(IOContext(devnull, :color=>true), result)
-        result = @report_opt annotate_types=true rand(String)
+        result = @report_opt rand(String)
         show(IOContext(devnull, :color=>true), result)
     end
 end

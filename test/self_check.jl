@@ -6,27 +6,20 @@ let target_modules = (JET,)
     JETAnalyzerT   = typeof(JET.JETAnalyzer())
     OptAnalyzerT   = typeof(JET.OptAnalyzer())
     InferenceState = Core.Compiler.InferenceState
-    annotate_types = true
 
     # error analysis
     # ==============
 
     # JETAnalyzer
-    test_call(JET.analyze_frame!, (JETAnalyzerT, InferenceState);
-                target_modules, annotate_types)
+    test_call(JET.analyze_frame!, (JETAnalyzerT, InferenceState); target_modules)
     # OptAnalyzer
-    test_call(JET.analyze_frame!, (OptAnalyzerT, InferenceState);
-                target_modules, annotate_types)
+    test_call(JET.analyze_frame!, (OptAnalyzerT, InferenceState); target_modules)
     # top-level
-    test_call(JET.virtual_process, (String, String, Nothing, JETAnalyzerT, JET.ToplevelConfig{Vector{Expr}});
-                target_modules, annotate_types)
-    test_call(JET.virtual_process, (String, String, Base.PkgId, JETAnalyzerT, JET.ToplevelConfig{Vector{Expr}});
-                target_modules, annotate_types)
+    test_call(JET.virtual_process, (String, String, Nothing, JETAnalyzerT, JET.ToplevelConfig{Vector{Expr}}); target_modules)
+    test_call(JET.virtual_process, (String, String, Base.PkgId, JETAnalyzerT, JET.ToplevelConfig{Vector{Expr}}); target_modules)
     # entries
-    test_call(JET.report_file, (String,);
-                target_modules, annotate_types)
-    test_call(JET.report_package, (Union{String,Module,Nothing},);
-                target_modules, annotate_types)
+    test_call(JET.report_file, (String,); target_modules)
+    test_call(JET.report_package, (Union{String,Module,Nothing},); target_modules)
 
     # optimization analysis
     # =====================
@@ -53,13 +46,9 @@ let target_modules = (JET,)
         return true
     end
     # JETAnalyzer
-    test_opt(JET.analyze_frame!, (JETAnalyzerT, InferenceState);
-                target_modules,
-                function_filter, annotate_types)
+    test_opt(JET.analyze_frame!, (JETAnalyzerT, InferenceState); function_filter, target_modules)
     # OptAnalyzer
-    test_opt(JET.analyze_frame!, (OptAnalyzerT, InferenceState);
-                target_modules,
-                function_filter, annotate_types)
+    test_opt(JET.analyze_frame!, (OptAnalyzerT, InferenceState); function_filter, target_modules)
 end
 
 end # module self_check
