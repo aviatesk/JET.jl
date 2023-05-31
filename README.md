@@ -70,13 +70,11 @@ julia> @report_call foldl(+, Char[])
 This looks for all method definitions and analyses function calls based on their signatures. Note that this is less accurate than `@report_call`, because the actual input types cannot be known for generic methods.
 
 ```julia
-julia> using Pkg; Pkg.activate(; temp=true); Pkg.add("AbstractTrees")
-  Activating new project at `/var/folders/xh/6zzly9vx71v05_y67nm_s9_c0000gn/T/jl_vcwypJ`
-   Resolving package versions...
-    Updating `/private/var/folders/xh/6zzly9vx71v05_y67nm_s9_c0000gn/T/jl_vcwypJ/Project.toml`
-  [1520ce14] + AbstractTrees v0.4.4
-    Updating `/private/var/folders/xh/6zzly9vx71v05_y67nm_s9_c0000gn/T/jl_vcwypJ/Manifest.toml`
-  [1520ce14] + AbstractTrees v0.4.4
+julia> using Pkg; Pkg.activate(; temp=true, io=devnull); Pkg.add("AbstractTrees"; io=devnull);
+
+julia> Pkg.status()
+Status `/private/var/folders/xh/6zzly9vx71v05_y67nm_s9_c0000gn/T/jl_h07K2m/Project.toml`
+  [1520ce14] AbstractTrees v0.4.4
 
 julia> report_package("AbstractTrees")
 [ some output elided ]
