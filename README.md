@@ -79,25 +79,7 @@ julia> using Pkg; Pkg.activate(; temp=true); Pkg.add("AbstractTrees")
   [1520ce14] + AbstractTrees v0.4.4
 
 julia> report_package("AbstractTrees")
-[toplevel-info] virtualized the context of Main (took 0.002 sec)
-[toplevel-info] entered into ~/.julia/packages/AbstractTrees/EUx8s/src/AbstractTrees.jl
-[toplevel-info] entered into ~/.julia/packages/AbstractTrees/EUx8s/src/traits.jl
-[toplevel-info]  exited from ~/.julia/packages/AbstractTrees/EUx8s/src/traits.jl (took 0.021 sec)
-[toplevel-info] entered into ~/.julia/packages/AbstractTrees/EUx8s/src/base.jl
-[toplevel-info]  exited from ~/.julia/packages/AbstractTrees/EUx8s/src/base.jl (took 0.024 sec)
-[toplevel-info] entered into ~/.julia/packages/AbstractTrees/EUx8s/src/indexing.jl
-[toplevel-info]  exited from ~/.julia/packages/AbstractTrees/EUx8s/src/indexing.jl (took 0.011 sec)
-[toplevel-info] entered into ~/.julia/packages/AbstractTrees/EUx8s/src/cursors.jl
-[toplevel-info]  exited from ~/.julia/packages/AbstractTrees/EUx8s/src/cursors.jl (took 0.048 sec)
-[toplevel-info] entered into ~/.julia/packages/AbstractTrees/EUx8s/src/iteration.jl
-[toplevel-info]  exited from ~/.julia/packages/AbstractTrees/EUx8s/src/iteration.jl (took 0.044 sec)
-[toplevel-info] entered into ~/.julia/packages/AbstractTrees/EUx8s/src/builtins.jl
-[toplevel-info]  exited from ~/.julia/packages/AbstractTrees/EUx8s/src/builtins.jl (took 0.001 sec)
-[toplevel-info] entered into ~/.julia/packages/AbstractTrees/EUx8s/src/printing.jl
-[toplevel-info]  exited from ~/.julia/packages/AbstractTrees/EUx8s/src/printing.jl (took 0.025 sec)
-[toplevel-info]  exited from ~/.julia/packages/AbstractTrees/EUx8s/src/AbstractTrees.jl (took 0.179 sec)
-[toplevel-info] analyzing from top-level definitions (257/257)
-[toplevel-info] analyzed 257 top-level definitions (took 0.112 sec)
+[ some output elided ]
 ═════ 7 possible errors found ═════
 ┌ isroot(root::Any, x::Any) @ AbstractTrees ~/.julia/packages/AbstractTrees/EUx8s/src/base.jl:102
 │ no matching method found `parent(::Any, ::Any)`: AbstractTrees.parent(root::Any, x::Any)
