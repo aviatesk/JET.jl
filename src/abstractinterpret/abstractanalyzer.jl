@@ -529,7 +529,8 @@ ignores the identity of error point's `MethodInstance`, under the assumption tha
 identical as far as they're collected at the same file and line.
 """
 aggregation_policy(::AbstractAnalyzer) = default_aggregation_policy
-function default_aggregation_policy(@nospecialize(report::InferenceErrorReport))
+const default_aggregation_policy = function (report::InferenceErrorReport)
+    @nospecialize report
     return DefaultReportIdentity(
         typeof(Base.inferencebarrier(report)),
         report.sig,
