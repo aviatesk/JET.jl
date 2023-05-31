@@ -298,7 +298,14 @@ function print_signature(io, sig::Signature, config; kwargs...)
 end
 function _print_signature(io, @nospecialize(x), config; kwargs...)
     if isa(x, Type)
-        if x !== Union{}
+        if x == pairs(NamedTuple)
+            if isdefined(Base, Symbol("@Kwargs"))
+                printstyled(io, "::@Kwargs{…}"; color = TYPE_ANNOTATION_COLOR, kwargs...)
+            else
+                printstyled(io, "::Base.Pairs{…}"; color = TYPE_ANNOTATION_COLOR, kwargs...)
+            end
+        elseif x !== Union{}
+            io = IOContext(io, :backtrace=>true)
             printstyled(io, "::", x; color = TYPE_ANNOTATION_COLOR, kwargs...)
         end
     elseif isa(x, Repr)
