@@ -1106,4 +1106,6 @@ end |> only === Val{3}
 @test_call sort([1,2,3])
 @test_call sort!([1,2,3])
 
+@test isconcretetype(only(Base.return_types(pairs, (@NamedTuple{kw1::Int,kw2::String},); interp=JET.JETAnalyzer())))
+
 end # module test_jetanalyzer

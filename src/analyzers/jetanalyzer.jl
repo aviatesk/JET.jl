@@ -308,47 +308,43 @@ must-reachable `throw` calls.
 """
 CC.const_prop_entry_heuristic(::JETAnalyzer, result::MethodCallResult, si::StmtInfo, sv::InferenceState) = true
 
-let # overload `concrete_eval_eligible`
-    sigs_ex = :(analyzer::JETAnalyzer,
-        @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
-    # TODO Reasons about error found by [semi-]concrete evaluation:
-    # For now JETAnalyzer always just uses the regular constant-prop'.
-    # TODO enable concrete-evaluation for `:nothrow_strict` methods, and remove the special cases.
-    @eval function CC.concrete_eval_eligible($(sigs_ex.args...))
-        if (istopfunction(f, :typejoin) || istopfunction(f, :fieldcount) ||
-            istopfunction(f, :fieldindex) || is_svec_length(f, result))
-            # HACK special case this function: there had been a special handling in the base
-            # Julia compiler to constant fold a call to this function and it turned out that
-            # `JETAnalyzer` implicitly relies on it to get a reasonable analysis accuracy
-            if concrete_eval_eligible_ignoring_overlay(result, arginfo)
-                @static if VERSION ≥ v"1.10.0-DEV.1345"
-                    return :concrete_eval
-                else
-                    return true
-                end
+# TODO Reasons about error found by [semi-]concrete evaluation:
+# For now JETAnalyzer allows the regular constant-prop' only,
+# unless the analyzed effects are proven to be `:nothrow`.
+function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
+    @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
+    if CC.is_nothrow(result.effects)
+        neweffects = CC.Effects(result.effects; nonoverlayed=true)
+        newresult = MethodCallResult(result.rt, result.edgecycle, result.edgelimited,
+                                     result.edge, neweffects)
+        res = @invoke CC.concrete_eval_eligible(analyzer::AbstractAnalyzer,
+            f::Any, newresult::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
+        @static if VERSION ≥ v"1.10.0-DEV.1345"
+            if res === :concrete_eval
+                return :concrete_eval
+            end
+        else
+            if res === true
+                return true
             end
         end
-        # disables both concrete evaluation and semi-concrete interpretation
-        @static if VERSION ≥ v"1.10.0-DEV.1345"
-            return :none
-        elseif isdefined(CC, :ir_abstract_constant_propagation)
-            return nothing
-        else
-            return false
+    elseif istopfunction(f, :fieldindex)
+        if concrete_eval_eligible_ignoring_overlay(result, arginfo)
+            @static if VERSION ≥ v"1.10.0-DEV.1345"
+                return :concrete_eval
+            else
+                return true
+            end
         end
     end
-end
-
-function is_svec_length(@nospecialize(f), result::MethodCallResult)
-    istopfunction(f, :length) || return false
-    (; edge) = result
-    edge === nothing && return false
-    (; sig) = edge.def::Method
-    sig isa DataType || return false
-    length(sig.parameters) == 2 || return false
-    sig.parameters[1] === typeof(length) || return false
-    sig.parameters[2] === SimpleVector || return false
-    return true
+    # disables both concrete evaluation and semi-concrete interpretation
+    @static if VERSION ≥ v"1.10.0-DEV.1345"
+        return :none
+    elseif isdefined(CC, :ir_abstract_constant_propagation)
+        return nothing
+    else
+        return false
+    end
 end
 
 function concrete_eval_eligible_ignoring_overlay(result::MethodCallResult, arginfo::ArgInfo)
@@ -424,12 +420,6 @@ function CC.abstract_eval_value(analyzer::JETAnalyzer, @nospecialize(e), vtypes:
         t = widenconst(ret)
         if t !== Bottom
             ReportPass(analyzer)(NonBooleanCondErrorReport, analyzer, sv, t)
-            # if this condition leads to an "non-boolean (t) used in boolean context" error,
-            # we can turn it into Bottom and bail out early
-            # TODO upstream this ?
-            if !hasintersect(t, Bool)
-                ret = Bottom
-            end
         end
     end
 
