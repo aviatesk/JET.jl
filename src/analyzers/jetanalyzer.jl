@@ -308,34 +308,32 @@ must-reachable `throw` calls.
 """
 CC.const_prop_entry_heuristic(::JETAnalyzer, result::MethodCallResult, si::StmtInfo, sv::InferenceState) = true
 
-let # overload `concrete_eval_eligible`
-    sigs_ex = :(analyzer::JETAnalyzer,
-        @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
-    # TODO Reasons about error found by [semi-]concrete evaluation:
-    # For now JETAnalyzer always just uses the regular constant-prop'.
-    # TODO enable concrete-evaluation for `:nothrow_strict` methods, and remove the special cases.
-    @eval function CC.concrete_eval_eligible($(sigs_ex.args...))
-        if (istopfunction(f, :typejoin) || istopfunction(f, :fieldcount) ||
-            istopfunction(f, :fieldindex) || is_svec_length(f, result))
-            # HACK special case this function: there had been a special handling in the base
-            # Julia compiler to constant fold a call to this function and it turned out that
-            # `JETAnalyzer` implicitly relies on it to get a reasonable analysis accuracy
-            if concrete_eval_eligible_ignoring_overlay(result, arginfo)
-                @static if VERSION ≥ v"1.10.0-DEV.1345"
-                    return :concrete_eval
-                else
-                    return true
-                end
+# TODO Reasons about error found by [semi-]concrete evaluation:
+# For now JETAnalyzer always just uses the regular constant-prop'.
+# TODO enable concrete-evaluation for `:nothrow_strict` methods, and remove the special cases.
+function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
+    @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
+    if (istopfunction(f, :typejoin) || istopfunction(f, :fieldcount) ||
+        istopfunction(f, :fieldindex) || is_svec_length(f, result) ||
+        istopfunction(f, :_tuple_unique_fieldtypes))
+        # HACK special case this function: there had been a special handling in the base
+        # Julia compiler to constant fold a call to this function and it turned out that
+        # `JETAnalyzer` implicitly relies on it to get a reasonable analysis accuracy
+        if concrete_eval_eligible_ignoring_overlay(result, arginfo)
+            @static if VERSION ≥ v"1.10.0-DEV.1345"
+                return :concrete_eval
+            else
+                return true
             end
         end
-        # disables both concrete evaluation and semi-concrete interpretation
-        @static if VERSION ≥ v"1.10.0-DEV.1345"
-            return :none
-        elseif isdefined(CC, :ir_abstract_constant_propagation)
-            return nothing
-        else
-            return false
-        end
+    end
+    # disables both concrete evaluation and semi-concrete interpretation
+    @static if VERSION ≥ v"1.10.0-DEV.1345"
+        return :none
+    elseif isdefined(CC, :ir_abstract_constant_propagation)
+        return nothing
+    else
+        return false
     end
 end
 
