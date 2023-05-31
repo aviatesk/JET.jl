@@ -5,11 +5,47 @@ const INDEX_FILENAME       = normpath(DOC_SRC_DIR, "index.md")
 const PLUGIN_API_FILENAME  = normpath(DOC_SRC_DIR, "generated-plugin-api.md")
 const PLUGIN_EXAMPLES_DIRS = (normpath(@__DIR__, "..", "examples"), normpath(DOC_SRC_DIR, "generated-plugin-examples"))
 
+writeln(io, xs...) = write(io, xs..., '\n')
+
 function generate_index!()
     isfile(INDEX_FILENAME) && rm(INDEX_FILENAME)
     open(INDEX_FILENAME, write=true) do io
-        s = string(@doc JET)
-        write(io, s)
+        writeln(io, """
+        ```@setup index
+        using JET
+        ```
+        """)
+
+        README = string(@doc JET)
+        incode = false
+        for line in split(README, '\n')
+            if startswith(line, "```julia-repl")
+                incode = true
+                writeln(io, "```@repl index")
+                continue
+            elseif endswith(line, "```")
+                incode = false
+                writeln(io, "```")
+                continue
+            elseif incode
+                if startswith(line, "julia> ")
+                    writeln(io, replace(line,
+                        "julia> "=>"",
+                        r"report_package\((.*)\)"=>s"report_package(\1; toplevel_logger=nothing)"))
+                end
+                continue
+            end
+            line_ref = replace(line,
+                r"`(.+?)`" => function (word)
+                    if any(names(JET)) do name
+                            occursin(String(name), word)
+                        end
+                        return "[$word](@ref)"
+                    end
+                    return word
+                end)
+            writeln(io, line_ref)
+        end
     end
 
     return relpath(INDEX_FILENAME, DOC_SRC_DIR)
