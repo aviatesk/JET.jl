@@ -503,21 +503,6 @@ function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
             else
                 CC.optimize(analyzer, opt, OptimizationParams(analyzer), caller)
             end
-            # # COMBAK we may want to enable inlining ?
-            # if opt.const_api
-            #     # XXX: The work in ir_to_codeinf! is essentially wasted. The only reason
-            #     # we're doing it is so that code_llvm can return the code
-            #     # for the `return ...::Const` (which never runs anyway). We should do this
-            #     # as a post processing step instead.
-            #     CC.ir_to_codeinf!(opt)
-            #     if result_type isa Const
-            #         caller.src = result_type
-            #     else
-            #         @assert CC.isconstType(result_type)
-            #         caller.src = Const(result_type.parameters[1])
-            #     end
-            # end
-            caller.valid_worlds = CC.getindex((opt.inlining.et::CC.EdgeTracker).valid_worlds)
         end
     end
 
