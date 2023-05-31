@@ -15,7 +15,7 @@ export
 
 let README = normpath(dirname(@__DIR__), "README.md")
     s = read(README, String)
-    s = replace(s, ":bangbang:"=>"!!! note")
+    s = replace(s, ":bangbang:"=>"!!! note", "```julia"=>"```julia-repl")
     @doc s JET
     include_dependency(README)
 end
