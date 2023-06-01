@@ -31,11 +31,12 @@ runtime dispatch will happen, and where Julia gives up the optimization work due
 
 ## [Quick Start](@id optanalysis-quick-start)
 
-JET exports [`@report_opt`](@ref), which analyzes the entire call graph of a given generic function call,
-and then reports detected performance pitfalls:
 ```@repl quickstart
 using JET
 ```
+
+JET exports [`@report_opt`](@ref), which analyzes the entire call graph of a given generic function call,
+and then reports detected performance pitfalls.
 
 As a first example, let's see how we can find and fix runtime dispatches using JET:
 ```@repl quickstart

@@ -19,6 +19,18 @@ JET employs Julia's type inference system to detect potential bugs and type inst
 ## Quickstart
 See more commands, options and explanations in the documentation.
 
+### Installation
+
+JET is a standard Julia package.
+So you can just install it via Julia's built-in package manager and use it just like any other package:
+
+```julia noeval
+julia> using Pkg; Pkg.add("JET")
+[ some output elided ]
+
+julia> using JET
+```
+
 ### Detect type instability with `@report_opt`
 Type instabilities can be detected in function calls using the `@report_opt` macro, which works similar to the `@code_warntype` macro.
 Note that, because JET relies on Julia's type inference, if a chain of inference is broken due to dynamic dispatch, then all downstream function calls will be unknown to the compiler, and so JET cannot analyze them.

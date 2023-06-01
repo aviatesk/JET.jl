@@ -10,8 +10,6 @@ writeln(io, xs...) = write(io, xs..., '\n')
 function generate_index!()
     isfile(INDEX_FILENAME) && rm(INDEX_FILENAME)
     open(INDEX_FILENAME, write=true) do io
-        #=FIXME=# return write(io, string(@doc JET))
-
         writeln(io, """
         ```@setup index
         using JET
@@ -21,7 +19,7 @@ function generate_index!()
         README = string(@doc JET)
         incode = false
         for line in split(README, '\n')
-            if startswith(line, "```julia-repl")
+            if startswith(line, "```julia-repl") && !endswith(line, "noeval")
                 incode = true
                 writeln(io, "```@repl index")
                 continue
@@ -48,6 +46,15 @@ function generate_index!()
                 end)
             writeln(io, line_ref)
         end
+
+        # Switch back to the original environment. Otherwise the `@repl` blocks in
+        # jetanalysis.md/optanalysis.md would end up using the temporary environment
+        # we set up for the `report_package` demo.
+        writeln(io, """
+        ```@setup index
+        using Pkg; Pkg.activate(normpath(@__DIR__, ".."))
+        ```
+        """)
     end
 
     return relpath(INDEX_FILENAME, DOC_SRC_DIR)
