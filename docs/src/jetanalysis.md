@@ -31,11 +31,7 @@ the program, as effectively as the Julia compiler can optimize your Julia progra
 
 ## [Quick Start](@id jetanalysis-quick-start)
 
-First of all, you need to install JET: JET is an ordinary Julia package, so you can install it via
-Julia's built-in package manager and use it as like other packages.
 ```@repl quickstart
-# using Pkg; Pkg.add("JET") # install JET via the built-in package manager
-
 using JET
 ```
 

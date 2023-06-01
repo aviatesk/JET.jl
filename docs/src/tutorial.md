@@ -7,11 +7,16 @@ Because JET relies on the compiler's type inference, it is not able to effective
 Making your code type stable is a prerequisite for effectively using JET's type error analysis.
 Therefore, we will begin by showing how to use JET to fix type instabilities.
 
-First of all, you need to install JET: JET is an ordinary Julia package, so you can install it via
-Julia's built-in package manager and use it as like other packages.
-```@repl tutorial
-; # ] add JET # install JET via the built-in package manager
+First of all, you need to install JET: JET is a standard Julia package.
+So you can just install it via Julia's built-in package manager and use it just like any other package:
+```julia-repl
+julia> using Pkg; Pkg.add("JET")
+[ some output elided ]
 
+julia> using JET
+```
+
+```@setup tutorial
 using JET
 ```
 
