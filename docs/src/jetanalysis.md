@@ -34,7 +34,7 @@ the program, as effectively as the Julia compiler can optimize your Julia progra
 First of all, you need to install JET: JET is an ordinary Julia package, so you can install it via
 Julia's built-in package manager and use it as like other packages.
 ```@repl quickstart
-; # ] add JET # install JET via the built-in package manager
+# using Pkg; Pkg.add("JET") # install JET via the built-in package manager
 
 using JET
 ```
