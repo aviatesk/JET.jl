@@ -10,6 +10,8 @@ writeln(io, xs...) = write(io, xs..., '\n')
 function generate_index!()
     isfile(INDEX_FILENAME) && rm(INDEX_FILENAME)
     open(INDEX_FILENAME, write=true) do io
+        #=FIXME=# return write(io, string(@doc JET))
+
         writeln(io, """
         ```@setup index
         using JET
