@@ -444,7 +444,7 @@ function virtual_process(x::Union{AbstractString,Expr},
         analyze_from_definitions!(analyzer, res, config)
     end
 
-    # TODO want to do in `analyze_from_definitions!` ?
+    # TODO move this aggregation to `analyze_from_definitions!`?
     unique!(aggregation_policy(analyzer), res.inference_error_reports)
 
     return res
@@ -515,13 +515,17 @@ function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProce
     n = length(res.toplevel_signatures)
     state = AnalyzerState(analyzer)
     inf_params, world = state.inf_params, state.world
-    # XXX make this less specific to `JETAnalyzer`?
+    # XXX make these tweaks analyzer-agnostic?
     new_inf_params = analyzer isa JETAnalyzer ?
                      JETInferenceParams(inf_params; max_methods=1) :
                      inf_params
     new_world = get_world_counter()
     state.inf_params, state.world = new_inf_params, new_world
-    analyzer = AbstractAnalyzer(analyzer, state)
+    if analyzer isa JETAnalyzer && analyzer.report_pass === BasicPass()
+        analyzer = JETAnalyzer(state, DefinitionAnalysisPass())
+    else
+        analyzer = AbstractAnalyzer(analyzer, state)
+    end
     for (i, tt) in enumerate(res.toplevel_signatures)
         match = _which(tt;
             # NOTE use the latest world counter with `method_table(analyzer)` unwrapped,
@@ -536,7 +540,8 @@ function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProce
             end
             analyzer, result = analyze_method_signature!(analyzer,
                 match.method, match.spec_types, match.sparams)
-            append!(res.inference_error_reports, get_reports(analyzer, result))
+            reports = get_reports(analyzer, result)
+            append!(res.inference_error_reports, reports)
             continue
         end
         # something went wrong

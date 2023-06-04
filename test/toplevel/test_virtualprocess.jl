@@ -1645,6 +1645,26 @@ end
         @test length(reports) == 2
         @test all(r->isa(r,MethodErrorReport), reports)
     end
+
+    # avoid unassigned keyword argument error from top-level definition analysis
+    # https://github.com/aviatesk/JET.jl/issues/487
+    let res = @analyze_toplevel analyze_from_definitions=true begin
+            struct Bar
+                x
+            end
+            Bar(; x) = Bar(x)
+        end
+        @test isempty(res.res.inference_error_reports)
+    end
+
+    # avoid error report from methods that are written to throw
+    # https://github.com/aviatesk/JET.jl/issues/477
+    let res = @analyze_toplevel analyze_from_definitions=true begin
+            function foo end
+            @noinline foo(::T) where T = error(lazy"`foo(::$T)` is not implemented")
+        end
+        @test isempty(res.res.inference_error_reports)
+    end
 end
 
 @testset "top-level statement selection" begin
