@@ -1901,6 +1901,24 @@ end
         end
         @test isempty(res.res.toplevel_error_reports)
     end
+
+    # force concretization of type aliases
+    @testset "concretization of type aliases" begin
+        let res = @analyze_toplevel begin
+                const ParamType = Tuple{Real, Vararg{Real, N} where N}
+                const OptParamType = Vector{ParamType}
+                f(o::OptParamType) = true
+            end
+            @test isempty(res.res.toplevel_error_reports)
+        end
+        let res = @analyze_toplevel begin
+                ParamType = Tuple{Real, Vararg{Real, N} where N}
+                OptParamType = Vector{ParamType}
+                f(o::OptParamType) = true
+            end
+            @test isempty(res.res.toplevel_error_reports)
+        end
+    end
 end
 
 # in this e2e test suite, we just check usage of test macros doesn't lead to (false positive)
