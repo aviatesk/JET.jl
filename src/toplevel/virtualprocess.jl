@@ -300,6 +300,10 @@ struct ToplevelConfig{CP<:Any}
               # here we add them as pre-defined concretization patterns and make sure
               # false positive top-level errors won't happen by the macro expansion
               :(@enum(args__)), :(Base.@enum(args__)),
+              # concretize type aliases
+              # https://github.com/aviatesk/JET.jl/issues/237
+              :(T_ = U_{P__}),
+              :(const T_ = U_{P__}),
               )
         concretization_patterns = CP[striplines(normalise(x)) for x in concretization_patterns]
         if isa(toplevel_logger, IO)
@@ -1263,13 +1267,13 @@ end
 
 isinclude(@nospecialize f) = isa(f, Function) && nameof(f) === :include
 
-function handle_include(interp::ConcreteInterpreter, args)
+function handle_include(interp::ConcreteInterpreter, args::Vector{Any})
     filename = interp.filename
     res = interp.res
     lnn = interp.lnn
     context = interp.context
 
-    function handle_actual_method_error!(args)
+    function handle_actual_method_error!(args::Vector{Any})
         err = MethodError(args[1], args[2:end])
         local report = ActualErrorWrapped(err, [], filename, lnn.line)
         push!(res.toplevel_error_reports, report)
