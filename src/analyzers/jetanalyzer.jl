@@ -1407,6 +1407,14 @@ function (::SoundPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer
     end
 end
 
+# A report pass that is used for `analyze_from_definitions!`.
+# Especially, this report pass ignores `UncaughtExceptionReport` to avoid false positives
+# from methods that are intentionally written to throw errors.
+struct DefinitionAnalysisPass <: ReportPass end
+(::DefinitionAnalysisPass)(@nospecialize args...) = BasicPass()(args...)
+(::DefinitionAnalysisPass)(::Type{UncaughtExceptionReport}, @nospecialize _...) = false
+(::DefinitionAnalysisPass)(::Type{SeriousExceptionReport}, @nospecialize _...) = false
+
 # entries
 # =======
 
