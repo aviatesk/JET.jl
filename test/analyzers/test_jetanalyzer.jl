@@ -169,6 +169,19 @@ end
             report.sig[end] === Symbol
         end
     end
+
+    # unanalyzed calls
+    # only in :sound mode
+    test_call((Any,Any)) do x, y
+        x + y
+    end
+    let result = report_call((Any,Any); mode=:sound) do x, y
+             x + y
+        end
+        report = only(get_reports_with_test(result))
+        @test report isa UnanalyzedCallReport
+        report.type === Tuple{typeof(+),Any,Any}
+    end
 end
 
 @testset "UndefVarErrorReport" begin
