@@ -751,7 +751,7 @@ end
 (::TypoPass)(::Type{UnanalyzedCallReport}, ::JETAnalyzer, ::InferenceState, ::CallMeta, @nospecialize(_)) = false
 function (::SoundPass)(::Type{UnanalyzedCallReport}, analyzer::JETAnalyzer,
     sv::InferenceState, call::CallMeta, @nospecialize(atype))
-    if call.info === false
+    if call.info === CC.NoCallInfo()
         @assert call.rt === Any "unexpected call info"
         report = UnanalyzedCallReport(sv, atype)
         add_new_report!(analyzer, sv.result, report)
