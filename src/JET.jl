@@ -916,7 +916,9 @@ function process_config_dict!(config_dict::Dict{Symbol,Any})
         isa(concretization_patterns, Vector{String}) || throw(JETConfigError(
             "`concretization_patterns` should be array of string of Julia expression",
             :concretization_patterns, concretization_patterns))
-        concretization_patterns = trymetaparse.(concretization_patterns, :concretization_patterns)
+        concretization_patterns = Any[
+            trymetaparse(pat, :concretization_patterns)
+            for pat in concretization_patterns]
         config_dict[:concretization_patterns] = concretization_patterns
     end
     toplevel_logger = get(config_dict, :toplevel_logger, nothing)

@@ -144,7 +144,7 @@ These configurations will be active for all the top-level entries explained in t
 
   Also see: [`report_file`](@ref), [`watch_file`](@ref)
 ---
-- `concretization_patterns::Vector{<:Any} = Expr[]` \\
+- `concretization_patterns::Vector{Any} = Any[]` \\
   Specifies a customized top-level code concretization strategy.
 
   When analyzing a top-level code, JET first splits the entire code into appropriate units
@@ -273,49 +273,48 @@ These configurations will be active for all the top-level entries explained in t
   See [`virtualize_module_context`](@ref) for the internal.
 ---
 """
-struct ToplevelConfig{CP<:Any}
+struct ToplevelConfig
     context::Module
     analyze_from_definitions::Bool
-    concretization_patterns::Vector{CP}
+    concretization_patterns::Vector{Any}
     virtualize::Bool
     toplevel_logger # ::Union{Nothing,IO}
-    function ToplevelConfig(; context::Module                    = Main,
-                              analyze_from_definitions::Bool     = false,
-                              concretization_patterns::Vector{T} = Expr[],
-                              virtualize::Bool                   = true,
-                              toplevel_logger::Union{Nothing,IO} = nothing,
-                              __jetconfigs...) where {T<:Any}
-        if hasintersect(T, Expr)
-            CP = T
-        else
-            CP = tmerge(T, Expr)
-            concretization_patterns = convert(Vector{CP}, concretization_patterns)
+    function ToplevelConfig(;
+        context::Module = Main,
+        analyze_from_definitions::Bool = false,
+        concretization_patterns = Any[],
+        virtualize::Bool = true,
+        toplevel_logger::Union{Nothing,IO} = nothing,
+        __jetconfigs...)
+        concretization_patterns = Any[striplines(normalise(x)) for x in concretization_patterns]
+        for pat in default_concretization_patterns()
+            push!(concretization_patterns, striplines(normalise(pat)))
         end
-        push!(concretization_patterns,
-              # `@enum` macro is fairly complex and especially the `let insts = (Any[ $(esc(typename))(v) for v in $values ]...,)`
-              # (adapted from https://github.com/JuliaLang/julia/blob/e5d7ef01b06f44cb75c871e54c81eb92eceae738/base/Enums.jl#L198)
-              # part requires the statement selection logic to choose statements that only
-              # pushes elements (`v`) into a slot representing an array (`insts`),
-              # which is very hard to be generalized;
-              # here we add them as pre-defined concretization patterns and make sure
-              # false positive top-level errors won't happen by the macro expansion
-              :(@enum(args__)), :(Base.@enum(args__)),
-              # concretize type aliases
-              # https://github.com/aviatesk/JET.jl/issues/237
-              :(T_ = U_{P__}),
-              :(const T_ = U_{P__}),
-              )
-        concretization_patterns = CP[striplines(normalise(x)) for x in concretization_patterns]
         if isa(toplevel_logger, IO)
             @assert jet_logger_level(toplevel_logger) in keys(JET_LOGGER_LEVELS) "toplevel_logger's $JET_LOGGER_LEVEL should be either of $JET_LOGGER_LEVELS_DESC"
         end
-        return new{CP}(context,
-                       analyze_from_definitions,
-                       concretization_patterns,
-                       virtualize,
-                       toplevel_logger)
+        return new(
+            context,
+            analyze_from_definitions,
+            concretization_patterns,
+            virtualize,
+            toplevel_logger)
     end
 end
+
+default_concretization_patterns() = (
+    # `@enum` macro is fairly complex and especially the `let insts = (Any[ $(esc(typename))(v) for v in $values ]...,)`
+    # (adapted from https://github.com/JuliaLang/julia/blob/e5d7ef01b06f44cb75c871e54c81eb92eceae738/base/Enums.jl#L198)
+    # part requires the statement selection logic to choose statements that only
+    # pushes elements (`v`) into a slot representing an array (`insts`),
+    # which is very hard to be generalized;
+    # here we add them as pre-defined concretization patterns and make sure
+    # false positive top-level errors won't happen by the macro expansion
+    :(@enum(args__)), :(Base.@enum(args__)),
+    # concretize type aliases
+    # https://github.com/aviatesk/JET.jl/issues/237
+    :(T_ = U_{P__}),
+    :(const T_ = U_{P__}))
 
 @nospecialize
 with_toplevel_logger(f, config::ToplevelConfig; kwargs...) =
@@ -990,14 +989,14 @@ The trait to inject code into JuliaInterpreter's interpretation process; JET.jl 
 - `JuliaInterpreter.handle_err` to wrap an error happened during interpretation into
   `ActualErrorWrapped`
 """
-struct ConcreteInterpreter{F,Analyzer<:AbstractAnalyzer,CP}
+struct ConcreteInterpreter{F,Analyzer<:AbstractAnalyzer}
     filename::String
     pkgid::Union{Nothing,Base.PkgId}
     lnn::LineNumberNode
     usemodule_with_err_handling::F
     context::Module
     analyzer::Analyzer
-    config::ToplevelConfig{CP}
+    config::ToplevelConfig
     res::VirtualProcessResult
 end
 

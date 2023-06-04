@@ -15,8 +15,8 @@ let target_modules = (JET,)
     # OptAnalyzer
     test_call(JET.analyze_frame!, (OptAnalyzerT, InferenceState); target_modules)
     # top-level
-    test_call(JET.virtual_process, (String, String, Nothing, JETAnalyzerT, JET.ToplevelConfig{Vector{Expr}}); target_modules)
-    test_call(JET.virtual_process, (String, String, Base.PkgId, JETAnalyzerT, JET.ToplevelConfig{Vector{Expr}}); target_modules)
+    test_call(JET.virtual_process, (String, String, Nothing, JETAnalyzerT, JET.ToplevelConfig); target_modules)
+    test_call(JET.virtual_process, (String, String, Base.PkgId, JETAnalyzerT, JET.ToplevelConfig); target_modules)
     # entries
     test_call(JET.report_file, (String,); target_modules)
     test_call(JET.report_package, (Union{String,Module,Nothing},); target_modules)
