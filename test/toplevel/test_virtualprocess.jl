@@ -1437,14 +1437,12 @@ end
 
 @testset "custom concretization pattern" begin
     # custom concretization pattern should work on AST level
-    let
-        vmod, res = @analyze_toplevel2 begin
+    let (vmod, res) = @analyze_toplevel2 begin
             const foo = Dict() # won't be concretized by default
         end
         @test !is_concrete(vmod, :foo)
     end
-    let
-        vmod, res = @analyze_toplevel2 begin
+    let (vmod, res) = @analyze_toplevel2 begin
             const foo = Dict() # now this will be forcibly concretized
         end concretization_patterns = [:(const foo = Dict())]
         @test is_concrete(vmod, :foo)
@@ -1452,24 +1450,21 @@ end
 
     # the analysis on `test/fixtures/concretization_patterns.jl` will produce inappropriate
     # top-level error report because of missing concretization
-    let
-        res = report_file2(CONCRETIZATION_PATTERNS_FILE)
+    let res = report_file2(CONCRETIZATION_PATTERNS_FILE)
         let r = only(res.res.toplevel_error_reports)
             @test isa(r, MissingConcretization)
         end
     end
 
     # we can circumvent the issue by using the `concretization_patterns` configuration !
-    let
-        res = report_file2(CONCRETIZATION_PATTERNS_FILE;
+    let res = report_file2(CONCRETIZATION_PATTERNS_FILE;
                            concretization_patterns = [:(const GLOBAL_CODE_STORE = Dict())],
                            )
         @test isempty(res.res.toplevel_error_reports)
     end
 
     # we can specify whatever pattern `@capture` can accept
-    let
-        vmod, res = @analyze_toplevel2 begin
+    let (vmod, res) = @analyze_toplevel2 begin
             foo() = rand((1,2,3))
             a = foo()
             b = foo()
@@ -1479,8 +1474,7 @@ end
     end
 
     # `concretization_patterns` should "intuitively" work for code with documentations attached
-    let
-        vmod, res = @analyze_toplevel2 begin
+    let (vmod, res) = @analyze_toplevel2 begin
             """
                 foo
 
