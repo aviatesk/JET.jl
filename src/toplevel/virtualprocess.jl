@@ -313,8 +313,8 @@ default_concretization_patterns() = (
     :(@enum(args__)), :(Base.@enum(args__)),
     # concretize type aliases
     # https://github.com/aviatesk/JET.jl/issues/237
-    :(T_ = U_{P__}),
-    :(const T_ = U_{P__}))
+    :(const T_ = U_{P__}), :(T_ = U_{P__}),
+    )
 
 @nospecialize
 with_toplevel_logger(f, config::ToplevelConfig; kwargs...) =
