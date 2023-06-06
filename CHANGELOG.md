@@ -84,14 +84,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   myfilter(@nospecialize ft) = !(
       ft === typeof(Base.mapreduce_empty) ||
       ft === typeof(Base.reduce_empty))
-  @test_call function_filter=myfilter func(args...)
+  @test_opt function_filter=myfilter func(args...)
   ```
   should now be written:
   ```julia
   myfilter(@nospecialize f) = !(
       f === Base.mapreduce_empty ||
       f === Base.reduce_empty)
-  @test_call function_filter=myfilter func(args...)
+  @test_opt function_filter=myfilter func(args...)
   ```
   (aviatesk/JET.jl#507).
 
