@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   See the [documentation](https://aviatesk.github.io/JET.jl/dev/tutorial/#Analyze-packages-using-a-representative-workload)
   for the details.
   (aviatesk/JET.jl#510)
+
 - This CHANGELOG.md has been added and will be updated (aviatesk/JET.jl#536).
 
 ### Changed
@@ -97,6 +98,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - Dropped the support for Julia 1.8. JET now supports Julia 1.9 and above (aviatesk/JET.jl#527).
+
 - `report_and_watch_file` has been removed. Use `watch_file` instead.
 
 ### Fixed
@@ -104,11 +106,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Concrete evaluation is now enabled within JET's error analysis. This fixes numerous false
   positive error reports, and leads to faster analysis speed (aviatesk/JET.jl#529,
   aviatesk/JET.jl#523, aviatesk/JET.jl#522).
+
 - `report_package` no longer reports error from methods that are intentionally designed to throw, e.g.
   ```julia
   @noinline raise_error(x::T) where T = error(lazy"Missing interface implementation for $T")
   ```
-  (#532, #477).
+  (aviatesk/JET.jl#532, aviatesk/JET.jl#477).
+
 - `report_package` no longer reports error from methods with keyword arguments that don't
   have default values, e.g.
   ```julia
@@ -117,14 +121,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   end
   Bar(; x) = Bar(x)
   ```
-  (aviatesk/JET.jl#532, aviatesk/JET.jl#478)
+  (aviatesk/JET.jl#532, aviatesk/JET.jl#478).
+
 - Fixed false error report from `Base.aligned_sizeof` (aviatesk/JET.jl#512,
   aviatesk/JET.jl#514, JuliaLang/julia#49801).
+
 - The optimization analysis has been adjusted to prevent skipping the reporting of runtime
   dispatches within non-compileable but inlineable frames (aviatesk/JET.jl#526).
+
 - The sound error analysis mode has been fixed and now reports if there are any unanalyzed
   function calls, which typically occur due to excessive matching methods (aviatesk/JET.jl#533).
+
 - `report_file` can now handle parameterized type alias definitions (aviatesk/JET.jl#534).
+
 - Extensive refactoring and cleanup has been carried out.
 
 <!-- links -->
