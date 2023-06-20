@@ -1720,12 +1720,12 @@ function report_text(args...; jetconfigs...)
 end
 
 """
-    test_text(package::Union{AbstractString,Module}; jetconfigs...)
-    test_text(; jetconfigs...)
+    test_text(text::AbstractString; jetconfigs...)
+    test_text(text::AbstractString, filename::AbstractString; jetconfigs...)
 
-Runs [`report_package`](@ref) and tests that there are no problems detected.
+Runs [`report_text`](@ref) and tests that there are no problems detected.
 
-As with [`report_package`](@ref), the [general configurations](@ref) and
+As with [`report_text`](@ref), the [general configurations](@ref) and
 [the error analysis specific configurations](@ref jetanalysis-config)
 can be specified as an optional argument.
 
