@@ -9,10 +9,12 @@ include("../setup.jl")
         end
 
         end
-        """
+        """ |> strip
 
         res = report_text(s)
-        @test only(res.res.toplevel_error_reports) isa SyntaxErrorReport
+        report = only(res.res.toplevel_error_reports)
+        @test report isa SyntaxErrorReport
+        @test report.line == 5
     end
 end
 
@@ -1233,8 +1235,7 @@ end
 
         # errors from user functions (i.e. those from `@invokelatest f(fargs...)` in the overload
         # `JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)`)
-        let
-            res = @analyze_toplevel begin
+        let res = @analyze_toplevel begin
                 foo() = throw("don't call me, pal")
                 struct A <: foo() end
             end

@@ -577,11 +577,12 @@ function _virtual_process!(res::VirtualProcessResult,
     push!(res.included_files, filename)
     push!(res.files_stack, filename)
 
+    s = String(s)::String
     toplevelex = parse_input_line(s; filename)
 
     if isexpr(toplevelex, (:error, :incomplete))
         # if there's any syntax error, try to identify all the syntax error location
-        append!(res.toplevel_error_reports, collect_syntax_errors(s, filename))
+        report_syntax_errors!(res, s, filename)
     elseif isnothing(toplevelex)
         # just return if there is nothing to analyze
     else
@@ -1402,8 +1403,7 @@ let s = string(nameof(AbstractGlobal))
     end
 end
 
-function collect_syntax_errors(s, filename)
-    reports = SyntaxErrorReport[]
+function report_syntax_errors!(res, s, filename)
     index = line = 1
     while begin
             ex, nextindex = _parse_string(s, filename, line, index, :statement)
@@ -1413,10 +1413,9 @@ function collect_syntax_errors(s, filename)
         report = isexpr(ex, :error) ? SyntaxErrorReport(lazy"syntax: $(first(ex.args))", filename, line) :
                  isexpr(ex, :incomplete) ? SyntaxErrorReport(first(ex.args)::String, filename, line) :
                  nothing
-        isnothing(report) || push!(reports, report)
+        isnothing(report) || push!(res.toplevel_error_reports, report)
         index = nextindex
     end
-    return reports
 end
 
 # a bridge to abstract interpretation

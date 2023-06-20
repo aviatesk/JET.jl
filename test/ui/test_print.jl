@@ -3,8 +3,7 @@ module test_print
 include("../setup.jl")
 
 @testset "print toplevel errors" begin
-    let
-        io = IOBuffer()
+    let io = IOBuffer()
         s = """
             a = begin
                 b =
