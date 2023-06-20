@@ -9,13 +9,14 @@ include("../setup.jl")
                 b =
             end
             """
+        msg = @static JET.JULIA_SYNTAX_ENABLED ? "Expected `end`" : "syntax: unexpected \"end\""
 
         res = report_text(s, @__FILE__)
         print_reports(io, res.res.toplevel_error_reports)
         let s = String(take!(io))
             @test occursin("1 toplevel error found", s)
             @test occursin(Regex("@ $(@__FILE__):\\d"), s)
-            @test occursin("syntax: unexpected \"end\"", s)
+            @test occursin(msg, s)
         end
 
         res = report_text(s, "foo")
@@ -23,7 +24,7 @@ include("../setup.jl")
         let s = String(take!(io))
             @test occursin("1 toplevel error found", s)
             @test occursin(r"@ foo:\d", s)
-            @test occursin("syntax: unexpected \"end\"", s)
+            @test occursin(msg, s)
         end
     end
 end

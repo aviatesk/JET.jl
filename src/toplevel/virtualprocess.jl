@@ -22,10 +22,13 @@ function Base.getproperty(er::ToplevelErrorReport, sym::Symbol)
 end
 
 struct SyntaxErrorReport <: ToplevelErrorReport
-    err::ErrorException
+    err::Exception
     file::String
     line::Int
-    SyntaxErrorReport(msg::AbstractString, file, line) = new(ErrorException(msg), file, line)
+    function SyntaxErrorReport(@nospecialize(err), file, line)
+        isa(err, Exception) || (err = ErrorException(err))
+        return new(err, file, line)
+    end
 end
 # don't show stacktrace for syntax errors
 print_report(io::IO, report::SyntaxErrorReport) = showerror(io, report.err)
@@ -1410,9 +1413,23 @@ function report_syntax_errors!(res, s, filename)
             !isnothing(ex)
         end
         line += count(==('\n'), s[index:nextindex-1])
-        report = isexpr(ex, :error) ? SyntaxErrorReport(lazy"syntax: $(first(ex.args))", filename, line) :
-                 isexpr(ex, :incomplete) ? SyntaxErrorReport(first(ex.args)::String, filename, line) :
-                 nothing
+        if isexpr(ex, :error)
+            err = only(ex.args)
+            if (@static JULIA_SYNTAX_ENABLED && true) && isa(err, ParseError)
+                report = SyntaxErrorReport(err, filename, line)
+            else
+                report = SyntaxErrorReport(lazy"syntax: $err", filename, line)
+            end
+        elseif isexpr(ex, :incomplete)
+            err = only(ex.args)
+            if (@static JULIA_SYNTAX_ENABLED && true) && isa(err, ParseError)
+                report = SyntaxErrorReport(err, filename, line)
+            else
+                report = SyntaxErrorReport(lazy"syntax: $err", filename, line)
+            end
+        else
+            report = nothing
+        end
         isnothing(report) || push!(res.toplevel_error_reports, report)
         index = nextindex
     end

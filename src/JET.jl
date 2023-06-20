@@ -85,7 +85,7 @@ using Base:
     rewrap_unionall, uniontypes, unwrap_unionall
 
 using Base.Meta:
-    _parse_string, isexpr, lower
+    ParseError, _parse_string, isexpr, lower
 
 using Base.Experimental:
     @MethodTable, @overlay
@@ -441,6 +441,9 @@ include("abstractinterpret/typeinfer.jl")
 function print_report end
 
 include("toplevel/graph.jl")
+
+const JULIA_SYNTAX_ENABLED = VERSION ≥ v"1.10.0-DEV.1520" && Base.get_bool_env("JULIA_USE_NEW_PARSER", true) === true
+
 include("toplevel/virtualprocess.jl")
 
 # results
