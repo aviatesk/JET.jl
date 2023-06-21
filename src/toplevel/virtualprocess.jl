@@ -440,7 +440,7 @@ function virtual_process(x::Union{AbstractString,Expr},
     end
     res = VirtualProcessResult(actual2virtual, context)
     try
-        _virtual_process!(res, x, filename, pkgid, analyzer, config, context)
+        _virtual_process!(res, x, filename, pkgid, analyzer, config, context, #=pkg_mod_depth=#0)
     finally
         Preferences.main_uuid[] = old_main_uuid
     end
@@ -570,7 +570,8 @@ function _virtual_process!(res::VirtualProcessResult,
                            pkgid::Union{Nothing,Base.PkgId},
                            analyzer::AbstractAnalyzer,
                            config::ToplevelConfig,
-                           context::Module)
+                           context::Module,
+                           pkg_mod_depth::Int)
     start = time()
 
     with_toplevel_logger(config) do @nospecialize(io)
@@ -590,7 +591,7 @@ function _virtual_process!(res::VirtualProcessResult,
         # just return if there is nothing to analyze
     else
         @assert isexpr(toplevelex, :toplevel)
-        _virtual_process!(res, toplevelex, filename, pkgid, analyzer, config, context)
+        _virtual_process!(res, toplevelex, filename, pkgid, analyzer, config, context, pkg_mod_depth)
     end
     pop!(res.files_stack)
 
@@ -609,6 +610,7 @@ function _virtual_process!(res::VirtualProcessResult,
                            analyzer::AbstractAnalyzer,
                            config::ToplevelConfig,
                            context::Module,
+                           pkg_mod_depth::Int,
                            force_concretize::Bool = false)
     local lnnref = Ref(LineNumberNode(0, filename))
 
@@ -672,24 +674,32 @@ function _virtual_process!(res::VirtualProcessResult,
             dep = first(modpath)::Symbol
             if !(dep === :. || # relative module doesn't need to be fixed
                  dep === :Base || dep === :Core) # modules available by default
-                if dep ∉ dependencies
-                    depstr = String(dep)
-                    depid = Base.identify_package(pkgid, depstr)
-                    if depid === nothing
-                        # IDEA better message in a case of `any(m::Module->dep===nameof(m), res.defined_modules))`?
-                        local report = DependencyError(pkgid.name, depstr, filename, lnnref[].line)
-                        push!(res.toplevel_error_reports, report)
-                        return nothing
+                if dep === Symbol(pkgid.name)
+                    # it's somehow allowed to use the package itself without the relative module path,
+                    # so we need to special case it and fix it to use the relative module path
+                    for _ = 1:pkg_mod_depth
+                        pushfirst!(modpath, :.)
                     end
-                    require_ex = :(const $dep = $require_pkg($depid))
-                    # TODO better handling of loading errors that may happen here
-                    require_res = with_err_handling(err_handler, #=scrub_offset=#3) do
-                        return Core.eval(mod, require_ex)
+                else
+                    if dep ∉ dependencies
+                        depstr = String(dep)
+                        depid = Base.identify_package(pkgid, depstr)
+                        if depid === nothing
+                            # IDEA better message in a case of `any(m::Module->dep===nameof(m), res.defined_modules))`?
+                            local report = DependencyError(pkgid.name, depstr, filename, lnnref[].line)
+                            push!(res.toplevel_error_reports, report)
+                            return nothing
+                        end
+                        require_ex = :(const $dep = $require_pkg($depid))
+                        # TODO better handling of loading errors that may happen here
+                        require_res = with_err_handling(err_handler, #=scrub_offset=#3) do
+                            return Core.eval(mod, require_ex)
+                        end
+                        isnothing(require_res) && return nothing
+                        push!(dependencies, dep)
                     end
-                    isnothing(require_res) && return nothing
-                    push!(dependencies, dep)
+                    pushfirst!(modpath, :.)
                 end
-                pushfirst!(modpath, :.)
                 if isa(alias, Symbol) && isa(name, Symbol)
                     ex = form_module_usage_alias(head, modpath, name, alias)
                 elseif isa(name, Symbol)
@@ -786,7 +796,8 @@ function _virtual_process!(res::VirtualProcessResult,
 
             newmod = newcontext::Module
             push!(res.defined_modules, newmod)
-            _virtual_process!(res, newtoplevelex, filename, pkgid, analyzer, config, newmod, force_concretize)
+            _virtual_process!(res, newtoplevelex, filename, pkgid, analyzer, config, newmod,
+                              pkg_mod_depth+1, force_concretize)
 
             continue
         end
@@ -808,7 +819,7 @@ function _virtual_process!(res::VirtualProcessResult,
         fix_self_references!(res.actual2virtual, src)
 
         interp = ConcreteInterpreter(filename, pkgid, lnnref[], usemodule_with_err_handling,
-                                     context, analyzer, config, res)
+                                     context, analyzer, config, res, pkg_mod_depth)
         if force_concretize
             JuliaInterpreter.finish!(interp, Frame(context, src), true)
             continue
@@ -1002,6 +1013,7 @@ struct ConcreteInterpreter{F,Analyzer<:AbstractAnalyzer}
     analyzer::Analyzer
     config::ToplevelConfig
     res::VirtualProcessResult
+    pkg_mod_depth::Int
 end
 
 """
@@ -1324,7 +1336,8 @@ function handle_include(interp::ConcreteInterpreter, args::Vector{Any})
     end
     isnothing(include_text) && return nothing # typically no file error
 
-    _virtual_process!(interp.res, include_text::String, include_file, interp.pkgid, interp.analyzer, interp.config, context)
+    _virtual_process!(interp.res, include_text::String, include_file, interp.pkgid,
+                      interp.analyzer, interp.config, context, interp.pkg_mod_depth)
 
     # TODO: actually, here we need to try to get the lastly analyzed result of the `_virtual_process!` call above
     return nothing
