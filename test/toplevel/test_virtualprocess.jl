@@ -2327,6 +2327,55 @@ end
         end) do res
         @test isempty(res.res.toplevel_error_reports)
     end
+
+    test_report_package("SelfImport1" => quote
+            function overload end
+            module SubModule
+            using SelfImport1
+            import SelfImport1: overload
+            overload(::Integer) = :integer
+            end # module SubModule
+            call_overload(x::Number) = overload(x)
+        end) do res
+        show(res)
+    end
+
+    test_report_package("SelfImport2" => quote
+            function overload end
+            module SubModule
+            using SelfImport2
+            import SelfImport2: overload
+            overload(::Integer) = :integer
+            module SubSubModule
+            using SelfImport2
+            import SelfImport2: overload
+            overload(::Int) = :int
+            end # module SubSubModule
+            end # module SubModule
+            call_overload(x::Number) = overload(x)
+        end) do res
+        show(res)
+    end
+
+    test_report_package("SelfImport5" => quote
+            function overload end
+            module SubModule
+            module SubSubModule
+            module SubSubSubModule
+            module SubSubSubSubModule
+            module SubSubSubSubSubModule
+            using SelfImport5
+            import SelfImport5: overload
+            overload(::Int) = :int
+            end # module SubSubSubSubSubModule
+            end # module SubSubSubSubModule
+            end # module SubSubSubModule
+            end # module SubSubModule
+            end # module SubModule
+            call_overload(x::Number) = overload(x)
+        end) do res
+        show(res)
+    end
 end
 
 end # module test_virtualprocess
