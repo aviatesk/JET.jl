@@ -2337,7 +2337,7 @@ end
             end # module SubModule
             call_overload(x::Number) = overload(x)
         end) do res
-        show(res)
+        @test isempty(res.res.toplevel_error_reports)
     end
 
     test_report_package("SelfImport2" => quote
@@ -2354,7 +2354,7 @@ end
             end # module SubModule
             call_overload(x::Number) = overload(x)
         end) do res
-        show(res)
+        @test isempty(res.res.toplevel_error_reports)
     end
 
     test_report_package("SelfImport5" => quote
@@ -2374,7 +2374,7 @@ end
             end # module SubModule
             call_overload(x::Number) = overload(x)
         end) do res
-        show(res)
+        @test isempty(res.res.toplevel_error_reports)
     end
 end
 
