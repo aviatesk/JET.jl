@@ -277,12 +277,14 @@ These configurations will be active for all the top-level entries explained in t
 ---
 """
 struct ToplevelConfig
+    pkgid::Union{Nothing,Base.PkgId}
     context::Module
     analyze_from_definitions::Bool
     concretization_patterns::Vector{Any}
     virtualize::Bool
     toplevel_logger # ::Union{Nothing,IO}
-    function ToplevelConfig(;
+    function ToplevelConfig(
+        pkgid::Union{Nothing,Base.PkgId} = nothing;
         context::Module = Main,
         analyze_from_definitions::Bool = false,
         concretization_patterns = Any[],
@@ -297,6 +299,7 @@ struct ToplevelConfig
             @assert jet_logger_level(toplevel_logger) in keys(JET_LOGGER_LEVELS) "toplevel_logger's $JET_LOGGER_LEVEL should be either of $JET_LOGGER_LEVELS_DESC"
         end
         return new(
+            pkgid,
             context,
             analyze_from_definitions,
             concretization_patterns,
@@ -371,7 +374,6 @@ end
 """
     virtual_process(s::AbstractString,
                     filename::AbstractString,
-                    pkgid::Union{Nothing,Base.PkgId},
                     analyzer::AbstractAnalyzer,
                     config::ToplevelConfig) -> res::VirtualProcessResult
 
@@ -400,7 +402,6 @@ following steps on each code block (`blk`) of `toplevelex`:
 """
 function virtual_process(x::Union{AbstractString,Expr},
                          filename::AbstractString,
-                         pkgid::Union{Nothing,Base.PkgId},
                          analyzer::AbstractAnalyzer,
                          config::ToplevelConfig)
     if config.virtualize
@@ -434,13 +435,14 @@ function virtual_process(x::Union{AbstractString,Expr},
     # Note that we can't use the CassetteOverlay-like mechanism here for a cleaner
     # implementation, since Preferences.jl might be called within `macroexpand` or `lower`
     # of the main `_virtual_process!` loop, where we don't have control over execution.
+    pkgid = config.pkgid
     old_main_uuid = Preferences.main_uuid[]
     if pkgid !== nothing && pkgid.uuid !== nothing
         Preferences.main_uuid[] = pkgid.uuid
     end
     res = VirtualProcessResult(actual2virtual, context)
     try
-        _virtual_process!(res, x, filename, pkgid, analyzer, config, context, #=pkg_mod_depth=#0)
+        _virtual_process!(res, x, filename, analyzer, config, context, #=pkg_mod_depth=#0)
     finally
         Preferences.main_uuid[] = old_main_uuid
     end
@@ -567,7 +569,6 @@ clearline(io) = print(io, '\r')
 function _virtual_process!(res::VirtualProcessResult,
                            s::AbstractString,
                            filename::AbstractString,
-                           pkgid::Union{Nothing,Base.PkgId},
                            analyzer::AbstractAnalyzer,
                            config::ToplevelConfig,
                            context::Module,
@@ -591,7 +592,7 @@ function _virtual_process!(res::VirtualProcessResult,
         # just return if there is nothing to analyze
     else
         @assert isexpr(toplevelex, :toplevel)
-        _virtual_process!(res, toplevelex, filename, pkgid, analyzer, config, context, pkg_mod_depth)
+        _virtual_process!(res, toplevelex, filename, analyzer, config, context, pkg_mod_depth)
     end
     pop!(res.files_stack)
 
@@ -606,7 +607,6 @@ end
 function _virtual_process!(res::VirtualProcessResult,
                            toplevelex::Expr,
                            filename::AbstractString,
-                           pkgid::Union{Nothing,Base.PkgId},
                            analyzer::AbstractAnalyzer,
                            config::ToplevelConfig,
                            context::Module,
@@ -653,6 +653,7 @@ function _virtual_process!(res::VirtualProcessResult,
     local dependencies = Set{Symbol}()
     function usemodule_with_err_handling(mod::Module, ex::Expr)
         # TODO recursive analysis on dependencies?
+        pkgid = config.pkgid
         if pkgid !== nothing && !isexpr(ex, :export)
             modpath = name = alias = nothing
             if @capture(ex, import modpath__)
@@ -794,9 +795,9 @@ function _virtual_process!(res::VirtualProcessResult,
 
             isnothing(newcontext) && continue # error happened, e.g. duplicated naming
 
-            newmod = newcontext::Module
-            push!(res.defined_modules, newmod)
-            _virtual_process!(res, newtoplevelex, filename, pkgid, analyzer, config, newmod,
+            newcontext = newcontext::Module
+            push!(res.defined_modules, newcontext)
+            _virtual_process!(res, newtoplevelex, filename, analyzer, config, newcontext,
                               pkg_mod_depth+1, force_concretize)
 
             continue
@@ -818,7 +819,7 @@ function _virtual_process!(res::VirtualProcessResult,
 
         fix_self_references!(res.actual2virtual, src)
 
-        interp = ConcreteInterpreter(filename, pkgid, lnnref[], usemodule_with_err_handling,
+        interp = ConcreteInterpreter(filename, lnnref[], usemodule_with_err_handling,
                                      context, analyzer, config, res, pkg_mod_depth)
         if force_concretize
             JuliaInterpreter.finish!(interp, Frame(context, src), true)
@@ -1006,7 +1007,6 @@ The trait to inject code into JuliaInterpreter's interpretation process; JET.jl 
 """
 struct ConcreteInterpreter{F,Analyzer<:AbstractAnalyzer}
     filename::String
-    pkgid::Union{Nothing,Base.PkgId}
     lnn::LineNumberNode
     usemodule_with_err_handling::F
     context::Module
@@ -1336,8 +1336,8 @@ function handle_include(interp::ConcreteInterpreter, args::Vector{Any})
     end
     isnothing(include_text) && return nothing # typically no file error
 
-    _virtual_process!(interp.res, include_text::String, include_file, interp.pkgid,
-                      interp.analyzer, interp.config, context, interp.pkg_mod_depth)
+    _virtual_process!(interp.res, include_text::String, include_file, interp.analyzer,
+                      interp.config, context, interp.pkg_mod_depth)
 
     # TODO: actually, here we need to try to get the lastly analyzed result of the `_virtual_process!` call above
     return nothing

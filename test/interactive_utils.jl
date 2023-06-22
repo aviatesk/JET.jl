@@ -103,7 +103,6 @@ function _analyze_toplevel(ex, lnn, jetconfigs)
         config = ToplevelConfig(; $(map(esc, jetconfigs)...))
         res = $virtual_process($toplevelex,
                                $(string(lnn.file)),
-                               nothing,
                                analyzer,
                                config)
         JET.JETToplevelResult(analyzer, res, "analyze_toplevel"; $(map(esc, jetconfigs)...))

@@ -1007,8 +1007,8 @@ function analyze_and_report_text!(analyzer::AbstractAnalyzer, text::AbstractStri
                                   pkgid::Union{Nothing,Base.PkgId} = nothing;
                                   jetconfigs...)
     validate_configs(analyzer, jetconfigs)
-    config = ToplevelConfig(; jetconfigs...)
-    res = virtual_process(text, filename, pkgid, analyzer, config)
+    config = ToplevelConfig(pkgid; jetconfigs...)
+    res = virtual_process(text, filename, analyzer, config)
     analyzername = nameof(typeof(analyzer))
     source = lazy"$analyzername: \"$filename\""
     return JETToplevelResult(analyzer, res, source; jetconfigs...)
