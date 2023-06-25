@@ -522,13 +522,9 @@ function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProce
     start = time()
     n = length(res.toplevel_signatures)
     state = AnalyzerState(analyzer)
-    inf_params, world = state.inf_params, state.world
-    # XXX make these tweaks analyzer-agnostic?
-    new_inf_params = analyzer isa JETAnalyzer ?
-                     JETInferenceParams(inf_params; max_methods=1) :
-                     inf_params
+    oldworld = state.world
     new_world = get_world_counter()
-    state.inf_params, state.world = new_inf_params, new_world
+    state.world = new_world
     if analyzer isa JETAnalyzer && analyzer.report_pass === BasicPass()
         analyzer = JETAnalyzer(state, DefinitionAnalysisPass())
     else
@@ -557,7 +553,7 @@ function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProce
             println(io, "couldn't find a single method matching the signature `", tt, "`")
         end
     end
-    state.inf_params, state.world = inf_params, world
+    state.world = oldworld
     with_toplevel_logger(config) do @nospecialize(io)
         sec = round(time() - start; digits = 3)
         println(io, "analyzed $(succeeded[]) top-level definitions (took $sec sec)")
