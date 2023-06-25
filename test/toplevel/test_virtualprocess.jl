@@ -1615,15 +1615,25 @@ end
         test_sum_over_string(res)
     end
 
-    # skip errors on abstract entry frame entered by `analyze_from_definitions!`
+    # avoid error report from branching on the return value of uninferred `==` calls
+    # https://github.com/aviatesk/JET.jl/issues/542
     let res = @analyze_toplevel analyze_from_definitions=true begin
-            struct Foo end
-            function foo_or_nothing(x)
-                # (::Missing == ::Foo)::Missing will lead to `NonBooleanCondErrorReport` otherwise
-                return x == Foo() ? :foo : nothing
-            end
+            struct Issue542 end
+            isa542(x) = x == Issue542() ? true : false
         end
-        @test !any(r->isa(r,NonBooleanCondErrorReport), res.res.inference_error_reports)
+        @test isempty(res.res.inference_error_reports)
+    end
+    # xref: https://github.com/JuliaGraphs/Graphs.jl/pull/249#issuecomment-1605290837
+    let res = @analyze_toplevel analyze_from_definitions=true begin
+            f(a::Vector{T}, b::Vector{T}) where T<:Integer = a == b ? true : false
+        end
+        @test isempty(res.res.inference_error_reports)
+    end
+    # make sure we get the error report from the interactive entry
+    let res = report_call((Any, Some{Any})) do x, y
+            x == y ? true : false
+        end
+        @test isa(only(get_reports_with_test(res)), NonBooleanCondErrorReport)
     end
 
     # https://github.com/aviatesk/JET.jl/issues/426
