@@ -1615,11 +1615,17 @@ end
         test_sum_over_string(res)
     end
 
-    # avoid error report from branching on the return value of uninferred `==` calls
+    # avoid error report from branching on the return value of uninferred comparison operator calls
     # https://github.com/aviatesk/JET.jl/issues/542
     let res = @analyze_toplevel analyze_from_definitions=true begin
             struct Issue542 end
             isa542(x) = x == Issue542() ? true : false
+        end
+        @test isempty(res.res.inference_error_reports)
+    end
+    let res = @analyze_toplevel analyze_from_definitions=true begin
+            struct Issue542; x; end
+            isa542(x) = x in (Issue542, Issue542) ? true : false
         end
         @test isempty(res.res.inference_error_reports)
     end
