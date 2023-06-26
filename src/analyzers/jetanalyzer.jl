@@ -241,12 +241,12 @@ end
     ReportPass(analyzer)(MethodErrorReport, analyzer, sv, ret, arginfo.argtypes, atype)
     ReportPass(analyzer)(UnanalyzedCallReport, analyzer, sv, ret, atype)
     if ReportPass(analyzer) === DefinitionAnalysisPass()
-        # Widen the return type of `==` to ignore the possibility of it returning `missing`
-        # when analyzing from top-level.
+        # Widen the return type of comparison operator calls to ignore the possibility of
+        # they returning `missing` when analyzing from top-level.
         # Otherwise we will see frustrating false positive errors from branching on the
         # return value (aviatesk/JET.jl#542), since the analysis often uses loose
         # top-level argument types as input.
-        if f === (==) && ret.rt === Union{Bool,Missing}
+        if ret.rt === Union{Bool,Missing}
             ret = CallMeta(Any, ret.effects, ret.info)
         end
     end
