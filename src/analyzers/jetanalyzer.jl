@@ -329,10 +329,8 @@ function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
     # disables both concrete evaluation and semi-concrete interpretation
     @static if VERSION ≥ v"1.10.0-DEV.1345"
         return :none
-    elseif isdefined(CC, :ir_abstract_constant_propagation)
-        return nothing
     else
-        return false
+        return nothing
     end
 end
 
