@@ -1617,20 +1617,20 @@ end
 
     # avoid error report from branching on the return value of uninferred comparison operator calls
     # https://github.com/aviatesk/JET.jl/issues/542
-    let res = @analyze_toplevel analyze_from_definitions=true begin
+    let res = @analyze_toplevel analyze_from_definitions=true ignore_missing_comparison=true begin
             struct Issue542 end
             isa542(x) = x == Issue542() ? true : false
         end
         @test isempty(res.res.inference_error_reports)
     end
-    let res = @analyze_toplevel analyze_from_definitions=true begin
+    let res = @analyze_toplevel analyze_from_definitions=true ignore_missing_comparison=true begin
             struct Issue542; x; end
             isa542(x) = x in (Issue542, Issue542) ? true : false
         end
         @test isempty(res.res.inference_error_reports)
     end
     # xref: https://github.com/JuliaGraphs/Graphs.jl/pull/249#issuecomment-1605290837
-    let res = @analyze_toplevel analyze_from_definitions=true begin
+    let res = @analyze_toplevel analyze_from_definitions=true ignore_missing_comparison=true begin
             f(a::Vector{T}, b::Vector{T}) where T<:Integer = a == b ? true : false
         end
         @test isempty(res.res.inference_error_reports)
@@ -2144,7 +2144,11 @@ end
 
 using Pkg
 function test_report_package(test_func, (pkgname, code);
-                             additional_setup=()->nothing)
+                             base_setup=function ()
+                                Pkg.develop(; path=normpath(FIXTURE_DIR, "PkgAnalysisDep"), io=devnull)
+                             end,
+                             additional_setup=()->nothing,
+                             jetconfigs...)
     old = Pkg.project().path
     pkgcode = Base.remove_linenums!(code)
     mktempdir() do tempdir
@@ -2152,9 +2156,8 @@ function test_report_package(test_func, (pkgname, code);
             pkgpath = normpath(tempdir, pkgname)
             Pkg.generate(pkgpath; io=devnull)
             Pkg.activate(pkgpath; io=devnull)
-            Pkg.develop(; path=normpath(FIXTURE_DIR, "PkgAnalysisDep"), io=devnull)
 
-            additional_setup()
+            base_setup(); additional_setup();
 
             Pkg.activate(; temp=true, io=devnull)
             Pkg.develop(; path=pkgpath, io=devnull)
@@ -2163,7 +2166,7 @@ function test_report_package(test_func, (pkgname, code);
             pkgfile = normpath(pkgpath, "src", "$pkgname.jl")
             write(pkgfile, string(pkgcode))
 
-            res = report_package(pkgname; toplevel_logger=nothing)
+            res = report_package(pkgname; toplevel_logger=nothing, jetconfigs...)
 
             @eval @testset $pkgname $test_func($res)
 
@@ -2391,6 +2394,23 @@ end
             call_overload(x::Number) = overload(x)
         end) do res
         @test isempty(res.res.toplevel_error_reports)
+    end
+
+    # ignore_missing_comparison should be turned on by default for `report_package`
+    test_report_package("Issue542" => quote
+            struct Issue542 end
+            isa542(x) = x == Issue542() ? true : false
+        end;
+        base_setup=()->nothing) do res
+        @test isempty(res.res.inference_error_reports)
+    end
+    test_report_package("Issue542_2" => quote
+            struct Issue542 end
+            isa542(x) = x == Issue542() ? true : false
+        end;
+        base_setup=()->nothing,
+        ignore_missing_comparison=false) do res
+        @test isa(only(res.res.inference_error_reports), NonBooleanCondErrorReport)
     end
 end
 

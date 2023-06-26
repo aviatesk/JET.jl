@@ -526,7 +526,7 @@ function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProce
     new_world = get_world_counter()
     state.world = new_world
     if analyzer isa JETAnalyzer && analyzer.report_pass === BasicPass()
-        analyzer = JETAnalyzer(state, DefinitionAnalysisPass())
+        analyzer = JETAnalyzer(state, DefinitionAnalysisPass(), JETAnalyzerConfig(analyzer))
     else
         analyzer = AbstractAnalyzer(analyzer, state)
     end

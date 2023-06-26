@@ -45,7 +45,7 @@ import .CC:
     abstract_call, abstract_call_gf_by_type, abstract_call_method,
     abstract_call_method_with_const_args, abstract_eval_value_expr, abstract_eval_special_value,
     abstract_eval_statement, abstract_eval_value, abstract_invoke, add_call_backedges!,
-    concrete_eval_call, concrete_eval_eligible, const_prop_entry_heuristic,
+    concrete_eval_call, concrete_eval_eligible, const_prop_entry_heuristic, from_interprocedural!,
     #= typeinfer.jl =#
     _typeinf, finish!, finish, transform_result_for_cache, typeinf, typeinf_edge,
     #= optimize.jl =#
@@ -966,6 +966,7 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer,
     jetconfigs = kwargs_dict(jetconfigs)
     set_if_missing!(jetconfigs, :analyze_from_definitions, true)
     set_if_missing!(jetconfigs, :concretization_patterns, [:(x_)]) # concretize all top-level code
+    set_if_missing!(jetconfigs, :ignore_missing_comparison, true)
     return analyze_and_report_file!(analyzer, filename, pkgid; jetconfigs...)
 end
 
