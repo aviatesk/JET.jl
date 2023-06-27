@@ -55,15 +55,15 @@ struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
     analysis_cache::AnalysisCache
     report_pass::RP
     method_table::CachedMethodTable{OverlayMethodTable}
-    ignore_missing_comparison::Bool
+    config::JETAnalyzerConfig
 
     function JETAnalyzer(state::AnalyzerState, analysis_cache::AnalysisCache, report_pass::RP,
-                         ignore_missing_comparison::Bool) where RP<:ReportPass
+                         config::JETAnalyzerConfig) where RP<:ReportPass
         method_table = CachedMethodTable(OverlayMethodTable(state.world, JET_METHOD_TABLE))
-        return new{RP}(state, analysis_cache, report_pass, method_table, ignore_missing_comparison)
+        return new{RP}(state, analysis_cache, report_pass, method_table, config)
     end
     function JETAnalyzer(state::AnalyzerState, report_pass::ReportPass,
-                         ignore_missing_comparison::Bool)
+                         config::JETAnalyzerConfig)
         if (@ccall jl_generating_output()::Cint) != 0
             # XXX Avoid storing analysis results into a cache that persists across the
             #     precompilation, as pkgimage currently doesn't support serializing
@@ -73,10 +73,10 @@ struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
             #     (see https://github.com/JuliaLang/julia/issues/48453).
             analysis_cache = AnalysisCache()
         else
-            cache_key = compute_hash(state.inf_params, report_pass, ignore_missing_comparison)
+            cache_key = compute_hash(state.inf_params, report_pass, config)
             analysis_cache = get!(AnalysisCache, JET_ANALYZER_CACHE, cache_key)
         end
-        return JETAnalyzer(state, analysis_cache, report_pass, ignore_missing_comparison)
+        return JETAnalyzer(state, analysis_cache, report_pass, config)
     end
 end
 
@@ -127,12 +127,14 @@ end # @static if VERSION ≥ v"1.10.0-DEV.25"
 
 JETInterface.AnalyzerState(analyzer::JETAnalyzer) = analyzer.state
 function JETInterface.AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerState)
-    return JETAnalyzer(state, ReportPass(analyzer), analyzer.ignore_missing_comparison)
+    return JETAnalyzer(state, ReportPass(analyzer), JETAnalyzerConfig(analyzer))
 end
 JETInterface.ReportPass(analyzer::JETAnalyzer) = analyzer.report_pass
 JETInterface.AnalysisCache(analyzer::JETAnalyzer) = analyzer.analysis_cache
 
 const JET_ANALYZER_CACHE = IdDict{UInt, AnalysisCache}()
+
+JETAnalyzerConfig(analyzer::JETAnalyzer) = analyzer.config
 
 # report passes
 # =============
@@ -266,7 +268,7 @@ function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer,
     @static if !hasmethod(CC.from_interprocedural!, (AbstractInterpreter,
         Any, InferenceState, ArgInfo, Any))
         # For v1.9 compatibility (see the `CC.from_interprocedural!` overload below)
-        if analyzer.ignore_missing_comparison
+        if JETAnalyzerConfig(analyzer).ignore_missing_comparison
             if ret.rt === Union{Bool,Missing}
                 ret = CallMeta(Any, ret.effects, ret.info)
             end
@@ -279,7 +281,7 @@ function CC.from_interprocedural!(analyzer::JETAnalyzer,
     @nospecialize(rt), sv::InferenceState, arginfo::ArgInfo, @nospecialize(maybecondinfo))
     ret = @invoke CC.from_interprocedural!(analyzer::AbstractAnalyzer,
         rt::Any, sv::InferenceState, arginfo::ArgInfo, maybecondinfo::Any)
-    if analyzer.ignore_missing_comparison
+    if JETAnalyzerConfig(analyzer).ignore_missing_comparison
         # Widen the return type of comparison operator calls to ignore the possibility of
         # they returning `missing` when analyzing from top-level.
         # Otherwise we will see frustrating false positive errors from branching on the
@@ -1448,7 +1450,6 @@ struct DefinitionAnalysisPass <: ReportPass end
 function JETAnalyzer(world::UInt = Base.get_world_counter();
     report_pass::Union{Nothing,ReportPass} = nothing,
     mode::Symbol = :basic,
-    ignore_missing_comparison::Bool=false,
     jetconfigs...)
     if isnothing(report_pass)
         # if `report_pass` isn't passed explicitly, here we configure it according to `mode`
@@ -1468,7 +1469,8 @@ function JETAnalyzer(world::UInt = Base.get_world_counter();
     set_if_missing!(jetconfigs, :aggressive_constant_propagation, true)
     set_if_missing!(jetconfigs, :unoptimize_throw_blocks, false)
     state = AnalyzerState(world; jetconfigs...)
-    return JETAnalyzer(state, report_pass, ignore_missing_comparison)
+    config = JETAnalyzerConfig(; jetconfigs...)
+    return JETAnalyzer(state, report_pass, config)
 end
 
 const JET_ANALYZER_CONFIGURATIONS = Set{Symbol}((
