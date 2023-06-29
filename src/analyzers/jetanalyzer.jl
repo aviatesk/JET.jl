@@ -1,3 +1,13 @@
+struct JETAnalyzerConfig
+    ignore_missing_comparison::Bool
+    function JETAnalyzerConfig(;
+        ignore_missing_comparison::Bool=false,
+        __jetconfigs...)
+        return new(
+            ignore_missing_comparison)
+    end
+end
+
 """
 Every [entry point of error analysis](@ref jetanalysis-entry) can accept
 any of the [general configurations](@ref) as well as the following additional configurations
@@ -29,18 +39,31 @@ that are specific to the error analysis.
   !!! note
       You can also set up your own analysis using JET's [`AbstractAnalyzer`-Framework](@ref).
 ---
+- `ignore_missing_comparison::Bool = false`:\\
+  If `true`, JET will ignores the possibility of a poorly-inferred comparison operator call
+  (e.g. `==`) returning `missing` in order to hide the error reports from branching on the
+  potential `missing` return value of such a comparison operator call.
+  This is turned off by default, because a comparison call results in a
+  `Union{Bool,Missing}` possibility, it likely signifies an inferrability issue or the
+  `missing` possibility should be handled someway. But this is useful to reduce the noisy
+  error reports in the situations where specific input arguments type is not available at
+  the beginning of the analysis like [`report_package`](@ref).
+---
 """
 struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
     state::AnalyzerState
     analysis_cache::AnalysisCache
     report_pass::RP
     method_table::CachedMethodTable{OverlayMethodTable}
+    config::JETAnalyzerConfig
 
-    function JETAnalyzer(state::AnalyzerState, analysis_cache::AnalysisCache, report_pass::RP) where RP<:ReportPass
+    function JETAnalyzer(state::AnalyzerState, analysis_cache::AnalysisCache, report_pass::RP,
+                         config::JETAnalyzerConfig) where RP<:ReportPass
         method_table = CachedMethodTable(OverlayMethodTable(state.world, JET_METHOD_TABLE))
-        return new{RP}(state, analysis_cache, report_pass, method_table)
+        return new{RP}(state, analysis_cache, report_pass, method_table, config)
     end
-    function JETAnalyzer(state::AnalyzerState, report_pass::ReportPass)
+    function JETAnalyzer(state::AnalyzerState, report_pass::ReportPass,
+                         config::JETAnalyzerConfig)
         if (@ccall jl_generating_output()::Cint) != 0
             # XXX Avoid storing analysis results into a cache that persists across the
             #     precompilation, as pkgimage currently doesn't support serializing
@@ -50,10 +73,10 @@ struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
             #     (see https://github.com/JuliaLang/julia/issues/48453).
             analysis_cache = AnalysisCache()
         else
-            cache_key = compute_hash(state.inf_params, report_pass)
+            cache_key = compute_hash(state.inf_params, report_pass, config)
             analysis_cache = get!(AnalysisCache, JET_ANALYZER_CACHE, cache_key)
         end
-        return JETAnalyzer(state, analysis_cache, report_pass)
+        return JETAnalyzer(state, analysis_cache, report_pass, config)
     end
 end
 
@@ -104,12 +127,14 @@ end # @static if VERSION ≥ v"1.10.0-DEV.25"
 
 JETInterface.AnalyzerState(analyzer::JETAnalyzer) = analyzer.state
 function JETInterface.AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerState)
-    return JETAnalyzer(state, ReportPass(analyzer))
+    return JETAnalyzer(state, ReportPass(analyzer), JETAnalyzerConfig(analyzer))
 end
 JETInterface.ReportPass(analyzer::JETAnalyzer) = analyzer.report_pass
 JETInterface.AnalysisCache(analyzer::JETAnalyzer) = analyzer.analysis_cache
 
 const JET_ANALYZER_CACHE = IdDict{UInt, AnalysisCache}()
+
+JETAnalyzerConfig(analyzer::JETAnalyzer) = analyzer.config
 
 # report passes
 # =============
@@ -233,21 +258,37 @@ function CC.finish!(analyzer::JETAnalyzer, frame::InferenceState)
     end
 end
 
-@eval function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer,
+function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer,
     @nospecialize(f), arginfo::ArgInfo, si::StmtInfo, @nospecialize(atype), sv::InferenceState,
     max_methods::Int)
     ret = @invoke CC.abstract_call_gf_by_type(analyzer::AbstractAnalyzer,
         f::Any, arginfo::ArgInfo, si::StmtInfo, atype::Any, sv::InferenceState, max_methods::Int)
     ReportPass(analyzer)(MethodErrorReport, analyzer, sv, ret, arginfo.argtypes, atype)
     ReportPass(analyzer)(UnanalyzedCallReport, analyzer, sv, ret, atype)
-    if ReportPass(analyzer) === DefinitionAnalysisPass()
+    @static if !hasmethod(CC.from_interprocedural!, (AbstractInterpreter,
+        Any, InferenceState, ArgInfo, Any))
+        # For v1.9 compatibility (see the `CC.from_interprocedural!` overload below)
+        if JETAnalyzerConfig(analyzer).ignore_missing_comparison
+            if ret.rt === Union{Bool,Missing}
+                ret = CallMeta(Any, ret.effects, ret.info)
+            end
+        end
+    end
+    return ret
+end
+
+function CC.from_interprocedural!(analyzer::JETAnalyzer,
+    @nospecialize(rt), sv::InferenceState, arginfo::ArgInfo, @nospecialize(maybecondinfo))
+    ret = @invoke CC.from_interprocedural!(analyzer::AbstractAnalyzer,
+        rt::Any, sv::InferenceState, arginfo::ArgInfo, maybecondinfo::Any)
+    if JETAnalyzerConfig(analyzer).ignore_missing_comparison
         # Widen the return type of comparison operator calls to ignore the possibility of
         # they returning `missing` when analyzing from top-level.
         # Otherwise we will see frustrating false positive errors from branching on the
         # return value (aviatesk/JET.jl#542), since the analysis often uses loose
         # top-level argument types as input.
-        if ret.rt === Union{Bool,Missing}
-            ret = CallMeta(Any, ret.effects, ret.info)
+        if ret === Union{Bool,Missing}
+            ret = Any
         end
     end
     return ret
@@ -1428,11 +1469,12 @@ function JETAnalyzer(world::UInt = Base.get_world_counter();
     set_if_missing!(jetconfigs, :aggressive_constant_propagation, true)
     set_if_missing!(jetconfigs, :unoptimize_throw_blocks, false)
     state = AnalyzerState(world; jetconfigs...)
-    return JETAnalyzer(state, report_pass)
+    config = JETAnalyzerConfig(; jetconfigs...)
+    return JETAnalyzer(state, report_pass, config)
 end
 
 const JET_ANALYZER_CONFIGURATIONS = Set{Symbol}((
-    :report_pass, :mode))
+    :report_pass, :mode, :ignore_missing_comparison))
 
 let valid_keys = GENERAL_CONFIGURATIONS ∪ JET_ANALYZER_CONFIGURATIONS
     @eval JETInterface.valid_configurations(::JETAnalyzer) = $valid_keys
@@ -1648,7 +1690,15 @@ The error analysis performed by this function is configured as follows by defaul
   The concretizations are generally preferred for successful analysis as far as they can be
   performed cheaply. In most cases it is indeed cheap to interpret and concretize top-level
   code written in a package since it usually only defines types and methods.
-See [`ToplevelConfig`](@ref) for more details.
+- `ignore_missing_comparison = true`: JET ignores the possibility of a poorly-inferred
+  comparison operator call (e.g. `==`) returning `missing`. This is useful because
+  `report_package` often relies on poor input argument type information at the beginning of
+  analysis, leading to noisy error reports from branching on the potential `missing` return
+  value of such a comparison operator call. If a target package needs to handle `missing`,
+  this  configuration shuold be turned off since it hides the possibility of errors that
+  may actually at runtime.
+
+See [`ToplevelConfig`](@ref) and [`JETAnalyzer`](@ref) for more details.
 
 Still the [general configurations](@ref) and [the error analysis specific configurations](@ref jetanalysis-config)
 can be specified as a keyword argument, and if given, they are preferred over the default
