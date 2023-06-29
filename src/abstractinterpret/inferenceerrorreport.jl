@@ -285,7 +285,11 @@ function handle_sig_assignment!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
         lhs = first(expr.args)
         if isa(lhs, SlotNumber)
             name = get_slotname(sv, lhs)
-            pushfirst!(sig, String(name), " = ")
+            if name === Symbol("")
+                pushfirst!(sig, "@_", lhs.id, " = ")
+            else
+                pushfirst!(sig, String(name), " = ")
+            end
         end
     end
     handle_sig!(sig, s, last(expr.args))
