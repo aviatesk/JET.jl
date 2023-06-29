@@ -34,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for function definitions like:
   ```julia
   struct MyToken end
-  ismytoken(x) = x == MyToken()
+  ismytoken(x) = x == MyToken() ? true : false
   ```
   This error is arguably just noise when the target package does not handle `missing`.
   `report_package` is designed as an entry point for easy analysis, even at the cost of
