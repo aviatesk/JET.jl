@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.4]
+
+### Added
+
+- Made the `(x == y)::Union{Missing,Bool} → Any` widening behavior for `report_package`
+  (that was added in aviatesk/JET.jl#542) configurable. Specify `report_package("TargetPkg", ignore_missing_comparison=false)`
+  if `TargetPkg` handles `missing` (aviatesk/JET.jl#547).
+
+## [0.8.3]
+
+### Changed
+
+- Generalized the `(x == y)::Union{Missing,Bool} → Any` widening behavior for
+  `report_package` that was added in aviatesk/JET.jl#542 to other comparison operators
+  (e.g. `in`) (aviatesk/JET.jl#545).
+
+## [0.8.2]
+
+### Changed
+
+- JET now ignores the possibility of a poorly-inferred `x == y` call returning `missing`
+  during the `report_package` analysis. Refer to issue aviatesk/JET.jl#542 for reasons
+  justifying this behavior. Essentially, `report_package` often relies on poor input
+  argument type information at the beginning of analysis, leading to noisy error reports
+  for function definitions like:
+  ```julia
+  struct MyToken end
+  ismytoken(x) = x == MyToken()
+  ```
+  This error is arguably just noise when the target package does not handle `missing`.
+  `report_package` is designed as an entry point for easy analysis, even at the cost of
+  accuracy, so it is not sound from the beginning. Hence, it might be beneficial to simply
+  ignore such noise.
+
+  However note that in interactive entry points like `report_call`, where concrete input
+  argument types are available, this behavior should be turned off. This is because,
+  if the code, when given specific input argument types, results in a `Union{Bool,Missing}`
+  possibility, it likely signifies an inferrability issue or the code really needs to handle
+  `missing`
+  (aviatesk/JET.jl#541, aviatesk/JET.jl#542).
+
+## [0.8.1]
+
+### Fixed
+
+- `report_package` now supports the `using MyPkg` syntax (without specifying relative module
+  path `...`) from inner modules of `MyPkg` (aviatesk/JET.jl#539, aviatesk/JET.jl#540).
+
 ## [0.8.0]
 
 ### Added
@@ -139,4 +187,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- links -->
 
 [unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.8.0...HEAD
+[0.8.4]: https://github.com/aviatesk/JET.jl/compare/v0.8.3...v0.8.4
+[0.8.3]: https://github.com/aviatesk/JET.jl/compare/v0.8.2...v0.8.3
+[0.8.2]: https://github.com/aviatesk/JET.jl/compare/v0.8.1...v0.8.2
+[0.8.1]: https://github.com/aviatesk/JET.jl/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/aviatesk/JET.jl/compare/v0.7.15...v0.8.0
