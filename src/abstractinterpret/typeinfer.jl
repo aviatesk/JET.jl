@@ -82,29 +82,16 @@ let # overload `concrete_eval_call`
     end
 end
 
-let # overload `abstract_call`
-    @static if hasfield(InferenceParams, :max_methods) # VERSION ≥ v"1.10.0-DEV.105"
-        sigs_ex = :(analyzer::AbstractAnalyzer, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState,
-            $(Expr(:kw, :(max_methods::Int), :(InferenceParams(analyzer).max_methods))))
-        args_ex = :(analyzer::AbstractInterpreter, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState,
-            max_methods::Int)
-        argtypes_ex = :(arginfo.argtypes)
-    else
-        sigs_ex = :(analyzer::AbstractAnalyzer, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState,
-            $(Expr(:kw, :(max_methods::Int), :(InferenceParams(analyzer).MAX_METHODS))))
-        args_ex = :(analyzer::AbstractInterpreter, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState,
-            max_methods::Int)
-        argtypes_ex = :(arginfo.argtypes)
-    end
-    @eval function CC.abstract_call($(sigs_ex.args...))
-        ret = @invoke CC.abstract_call($(args_ex.args...))
-        analyze_task_parallel_code!(analyzer, $(argtypes_ex), sv)
-        return ret
-    end
+function CC.abstract_call_known(analyzer::AbstractAnalyzer,
+    @nospecialize(f), arginfo::ArgInfo, si::StmtInfo, sv::InferenceState, max_methods::Int)
+    ret = @invoke CC.abstract_call_known(analyzer::AbstractInterpreter,
+        f::Any, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState, max_methods::Int)
+    analyze_task_parallel_code!(analyzer, f, arginfo, sv)
+    return ret
 end
 
 """
-    analyze_task_parallel_code!(analyzer::AbstractAnalyzer, argtypes::Argtypes, sv::InferenceState)
+    analyze_task_parallel_code!(analyzer::AbstractAnalyzer, arginfo::ArgInfo, sv::InferenceState)
 
 Adds special cased analysis pass for task parallelism.
 In Julia's task parallelism implementation, parallel code is represented as closure and it's
@@ -120,37 +107,33 @@ See also: <https://github.com/aviatesk/JET.jl/issues/114>
     track <https://github.com/JuliaLang/julia/pull/39773> for the changes in native abstract
     interpretation routine.
 """
-function analyze_task_parallel_code!(analyzer::AbstractAnalyzer, argtypes::Argtypes, sv::InferenceState)
-    f = singleton_type(argtypes[1])
-
+function analyze_task_parallel_code!(analyzer::AbstractAnalyzer,
+    @nospecialize(f), arginfo::ArgInfo, sv::InferenceState)
     # TODO we should analyze a closure wrapped in a `Task` only when it's `schedule`d
     # But the `Task` construction may not happen in the same frame where it's `schedule`d
     # and so we may not be able to access to the closure at that point.
     # As a compromise, here we invoke the additional analysis on `Task` construction,
     # regardless of whether it's really `schedule`d or not.
-    if f === Task && length(argtypes) ≥ 2
-        v = argtypes[2]
-        if v ⊑ Function
-            # if we encounter `Task(::Function)`,
-            # try to get its inner function and run analysis on it:
-            # the closure can be a nullary lambda that really doesn't depend on
-            # the captured environment, and in that case we can retrieve it as
-            # a function object, otherwise we will try to retrieve the type of the closure
-            ft = nothing
-            if isa(v, Const)
-                ft = Core.Typeof(v.val)
-            elseif isa(v, Core.PartialStruct)
-                ft = v.typ
-            elseif isa(v, DataType)
-                ft = v
-            end
-            if ft !== nothing
-                analyze_additional_pass_by_type!(analyzer, Tuple{ft}, sv)
-            end
-        end
+    f === Task || return nothing
+    argtypes = arginfo.argtypes
+    length(argtypes) ≥ 2 || return nothing
+    v = argtypes[2]
+    v ⊑ Function || return nothing
+    # if we encounter `Task(::Function)`,
+    # try to get its inner function and run analysis on it:
+    # the closure can be a nullary lambda that really doesn't depend on
+    # the captured environment, and in that case we can retrieve it as
+    # a function object, otherwise we will try to retrieve the type of the closure
+    if isa(v, Const)
+        ft = Core.Typeof(v.val)
+    elseif isa(v, Core.PartialStruct)
+        ft = v.typ
+    elseif isa(v, DataType)
+        ft = v
+    else
+        return nothing
     end
-
-    return nothing
+    analyze_additional_pass_by_type!(analyzer, Tuple{ft}, sv)
 end
 
 # run additional interpretation with a new analyzer
@@ -164,7 +147,8 @@ function analyze_additional_pass_by_type!(analyzer::AbstractAnalyzer, @nospecial
     # the threaded code block as a usual code block, and thus the side-effects won't (hopefully)
     # confuse the abstract interpretation, which is supposed to terminate on any kind of code
     match = find_single_match(tt, newanalyzer)
-    abstract_call_method(newanalyzer, match.method, match.spec_types, match.sparams, #=hardlimit=#false, #=si=#StmtInfo(false), sv)
+    abstract_call_method(newanalyzer, match.method, match.spec_types, match.sparams,
+        #=hardlimit=#false, #=si=#StmtInfo(false), sv)
 
     return nothing
 end
