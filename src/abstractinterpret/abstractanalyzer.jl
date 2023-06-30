@@ -442,9 +442,7 @@ end
 # their own report pass)
 # otherwise, it means malformed report pass call, and we should inform users of it
 function (rp::ReportPass)(T#=::Type{<:InferenceErrorReport}=#, @nospecialize(args...))
-    if !(T === NativeRemark ||
-         T === InvalidConstantRedefinition ||
-         T === InvalidConstantDeclaration)
+    if !(T === InvalidConstantRedefinition || T === InvalidConstantDeclaration)
         throw(MethodError(rp, (T, args...)))
     end
     return false
@@ -597,22 +595,6 @@ stash_report!(analyzer::AbstractAnalyzer, reports::Vector{InferenceErrorReport})
 CC.InferenceParams(analyzer::AbstractAnalyzer)    = get_inf_params(analyzer)
 CC.OptimizationParams(analyzer::AbstractAnalyzer) = get_opt_params(analyzer)
 CC.get_world_counter(analyzer::AbstractAnalyzer)  = get_world(analyzer)
-
-"""
-    NativeRemark <: InferenceErrorReport
-
-This special `InferenceErrorReport` wraps remarks by the default abstract interpretation.
-"remarks" are information that Julia's native compiler emits about how its type inference goes,
-and those remarks are less interesting in term of "error checking", so currently any of JET's
-pre-defined report passes doesn't make any use of `NativeRemark`.
-"""
-@jetreport struct NativeRemark <: InferenceErrorReport
-    s::String
-end
-function print_report_message(io::IO, (; s)::NativeRemark)
-    print(io, s)
-end
-CC.add_remark!(analyzer::AbstractAnalyzer, sv::InferenceState, s) = ReportPass(analyzer)(NativeRemark, sv, s) # ignored by default
 
 CC.may_compress(analyzer::AbstractAnalyzer)      = false
 CC.may_discard_trees(analyzer::AbstractAnalyzer) = false
