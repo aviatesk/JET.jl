@@ -1722,10 +1722,10 @@ Like above but analyzes the package of the current project.
 
 See also [`report_file`](@ref).
 """
-function report_package(args...; jetconfigs...)
+function report_package(args...; ignore_missing_comparison::Bool=true, jetconfigs...)
     # TODO read a configuration file and apply it here?
-    analyzer = JETAnalyzer(; jetconfigs...)
-    return analyze_and_report_package!(analyzer, args...; jetconfigs...)
+    analyzer = JETAnalyzer(; ignore_missing_comparison, jetconfigs...)
+    return analyze_and_report_package!(analyzer, args...; ignore_missing_comparison, jetconfigs...)
 end
 
 """

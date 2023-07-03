@@ -966,7 +966,6 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer,
     jetconfigs = kwargs_dict(jetconfigs)
     set_if_missing!(jetconfigs, :analyze_from_definitions, true)
     set_if_missing!(jetconfigs, :concretization_patterns, [:(x_)]) # concretize all top-level code
-    set_if_missing!(jetconfigs, :ignore_missing_comparison, true)
     return analyze_and_report_file!(analyzer, filename, pkgid; jetconfigs...)
 end
 
