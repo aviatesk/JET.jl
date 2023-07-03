@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.6]
+
+### Fixed
+
+- Fixed the default `ignore_missing_comparison` configuration for `report_package`.
+
 ## [0.8.5]
 
 ### Fixed
@@ -193,7 +199,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- links -->
 
-[unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.8.5...HEAD
+[unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.8.6...HEAD
+[0.8.6]: https://github.com/aviatesk/JET.jl/compare/v0.8.5...v0.8.6
 [0.8.5]: https://github.com/aviatesk/JET.jl/compare/v0.8.4...v0.8.5
 [0.8.4]: https://github.com/aviatesk/JET.jl/compare/v0.8.3...v0.8.4
 [0.8.3]: https://github.com/aviatesk/JET.jl/compare/v0.8.2...v0.8.3
