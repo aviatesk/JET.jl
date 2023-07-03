@@ -166,6 +166,12 @@ A typo detection pass.
 struct TypoPass <: ReportPass end
 (::TypoPass)(@nospecialize _...) = return false # ignore everything except UndefVarErrorReport and field error report
 
+# A report pass that is used for `analyze_from_definitions!`.
+# Especially, this report pass ignores `UncaughtExceptionReport` to avoid false positives
+# from methods that are intentionally written to throw errors.
+struct DefinitionAnalysisPass <: ReportPass end
+(::DefinitionAnalysisPass)(@nospecialize args...) = BasicPass()(args...)
+
 # overlay method table
 # ====================
 
@@ -566,6 +572,16 @@ function (::BasicPass)(::Type{UncaughtExceptionReport}, analyzer::JETAnalyzer, f
         filter!(get_reports(analyzer, frame.result)) do @nospecialize(report::InferenceErrorReport)
             return !isa(report, UncaughtExceptionReport)
         end
+    end
+    return false
+end
+function (::DefinitionAnalysisPass)(::Type{UncaughtExceptionReport}, analyzer::JETAnalyzer, frame::InferenceState, stmts::Vector{Any})
+    # the non-`Bottom` result may mean `throw` calls from the children frames
+    # (if exists) are caught and not propagated here
+    # we don't want to cache the caught `UncaughtExceptionReport`s for this frame and
+    # its parents, and just filter them away now
+    filter!(get_reports(analyzer, frame.result)) do @nospecialize(report::InferenceErrorReport)
+        return !isa(report, UncaughtExceptionReport)
     end
     return false
 end
@@ -1091,6 +1107,8 @@ end
     basic_filter(analyzer, sv) && report_serious_exception!(analyzer, sv, argtypes)
 (::SoundPass)(::Type{SeriousExceptionReport}, analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes) =
     report_serious_exception!(analyzer, sv, argtypes) # any (non-serious) `throw` calls will be caught by the report pass for `UncaughtExceptionReport`
+(::DefinitionAnalysisPass)(::Type{SeriousExceptionReport}, analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes) =
+    false
 function report_serious_exception!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes)
     if length(argtypes) ≥ 1
         a = first(argtypes)
@@ -1434,14 +1452,6 @@ function (::SoundPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer
         end
     end
 end
-
-# A report pass that is used for `analyze_from_definitions!`.
-# Especially, this report pass ignores `UncaughtExceptionReport` to avoid false positives
-# from methods that are intentionally written to throw errors.
-struct DefinitionAnalysisPass <: ReportPass end
-(::DefinitionAnalysisPass)(@nospecialize args...) = BasicPass()(args...)
-(::DefinitionAnalysisPass)(::Type{UncaughtExceptionReport}, @nospecialize _...) = false
-(::DefinitionAnalysisPass)(::Type{SeriousExceptionReport}, @nospecialize _...) = false
 
 # entries
 # =======

@@ -2412,6 +2412,14 @@ end
         ignore_missing_comparison=false) do res
         @test isa(only(res.res.inference_error_reports), NonBooleanCondErrorReport)
     end
+
+    # special cases for `reduce_empty` and `mapreduce_empty`
+    test_report_package("ReduceEmpty" => quote
+            reducer(a::Vector{String}) = maximum(length, a)
+        end;
+        base_setup=()->nothing) do res
+        @test isempty(res.res.inference_error_reports)
+    end
 end
 
 end # module test_virtualprocess
