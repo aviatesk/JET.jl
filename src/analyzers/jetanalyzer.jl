@@ -1751,8 +1751,8 @@ Test Summary: | Pass  Total  Time
 test_package  |    1      1  0.0s
 ```
 """
-function test_package(args...; jetconfigs...)
-    return func_test(report_package, :test_package, args...; jetconfigs...)
+function test_package(args...; toplevel_logger=nothing, jetconfigs...)
+    return func_test(report_package, :test_package, args...; toplevel_logger, jetconfigs...)
 end
 
 """
