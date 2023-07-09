@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.7]
+
+### Changed
+
+- Changed the default `toplevel_logger` configuration for `test_package` to `nothing`.
+  `test_package` no longer emits logs like `[toplevel-info] analyzing from top-level definitions (xxx/yyy)`
+  (aviatesk/JET.jl#550).
+
 ## [0.8.6]
 
 ### Fixed
@@ -199,7 +207,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- links -->
 
-[unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.8.6...HEAD
+[unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.8.7...HEAD
+[0.8.7]: https://github.com/aviatesk/JET.jl/compare/v0.8.6...v0.8.7
 [0.8.6]: https://github.com/aviatesk/JET.jl/compare/v0.8.5...v0.8.6
 [0.8.5]: https://github.com/aviatesk/JET.jl/compare/v0.8.4...v0.8.5
 [0.8.4]: https://github.com/aviatesk/JET.jl/compare/v0.8.3...v0.8.4
