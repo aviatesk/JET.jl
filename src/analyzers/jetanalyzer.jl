@@ -1346,7 +1346,7 @@ function report_fieldaccess!(analyzer::JETAnalyzer, sv::InferenceState, @nospeci
     end
 
     isa(name, Const) || return false
-    s = unwrap_unionall(s00)
+    s = Base.unwrap_unionall(s00)
     if isType(s)
         if f === fieldtype
             # XXX this is a hack to share more code between `getfield`/`setfield!`/`fieldtype`

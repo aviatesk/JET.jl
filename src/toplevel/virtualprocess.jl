@@ -579,7 +579,7 @@ function _virtual_process!(res::VirtualProcessResult,
     push!(res.files_stack, filename)
 
     s = String(s)::String
-    toplevelex = parse_input_line(s; filename)
+    toplevelex = Base.parse_input_line(s; filename)
 
     if isexpr(toplevelex, (:error, :incomplete))
         # if there's any syntax error, try to identify all the syntax error location

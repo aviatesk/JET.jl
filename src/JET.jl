@@ -52,13 +52,10 @@ import .CC:
     inlining_policy
 
 # `ConcreteInterpreter`
-import JuliaInterpreter:
-    #= interpreter.jl =#
-    evaluate_call_recurse!, handle_err, step_expr!
+import JuliaInterpreter: evaluate_call_recurse!, handle_err, step_expr!
 
 # Test.jl integration
-import Test:
-    record
+import Test: record
 
 # usings
 # ======
@@ -80,15 +77,11 @@ using .CC: ⊑,
     istopfunction, may_invoke_generator, singleton_type, slot_id, specialize_method,
     switchtupleunion, tmerge, widenconst
 
-using Base:
-    @invoke, @invokelatest, IdSet, default_tt, destructure_callex, parse_input_line,
-    rewrap_unionall, uniontypes, unwrap_unionall
+using Base: IdSet
 
-using Base.Meta:
-    ParseError, _parse_string, isexpr, lower
+using Base.Meta: ParseError, _parse_string, isexpr, lower
 
-using Base.Experimental:
-    @MethodTable, @overlay
+using Base.Experimental: @MethodTable, @overlay
 
 using LoweredCodeUtils, JuliaInterpreter
 
@@ -101,8 +94,7 @@ using JuliaInterpreter:
     @lookup, _INACTIVE_EXCEPTION, bypass_builtins, collect_args, #=finish!,=#
     is_quotenode_egal, is_return, maybe_evaluate_builtin, moduleof
 
-using MacroTools:
-    @capture, MacroTools, normalise, striplines
+using MacroTools: @capture, MacroTools, normalise, striplines
 
 using InteractiveUtils
 
@@ -718,7 +710,7 @@ Finally returns the analysis result as [`JETCallResult`](@ref).
 Note that this is intended to be used by developers of `AbstractAnalyzer` only.
 General users should use high-level entry points like [`report_call`](@ref) and [`report_opt`](@ref).
 """
-function analyze_and_report_call!(analyzer::AbstractAnalyzer, @nospecialize(f), @nospecialize(types = default_tt(f));
+function analyze_and_report_call!(analyzer::AbstractAnalyzer, @nospecialize(f), @nospecialize(types = Base.default_tt(f));
                                   jetconfigs...)
     tt = Base.signature_type(f, types)
     return analyze_and_report_call!(analyzer, tt::Type{<:Tuple}; jetconfigs...)
