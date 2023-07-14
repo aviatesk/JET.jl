@@ -651,23 +651,8 @@ function _virtual_process!(res::VirtualProcessResult,
         # TODO recursive analysis on dependencies?
         pkgid = config.pkgid
         if pkgid !== nothing && !isexpr(ex, :export)
-            modpath = name = alias = nothing
-            if @capture(ex, import modpath__)
-                head = :import
-            elseif @capture(ex, using modpath__)
-                head = :using
-            elseif @capture(ex, import modpath__: name_)
-                head = :import
-            elseif @capture(ex, using modpath__: name_)
-                head = :using
-            elseif @capture(ex, import modpath__: name_ as alias_)
-                head = :import
-            elseif @capture(ex, using modpath__: name_ as alias_)
-                head = :using
-            else
-                error(lazy"unexpected module usage found: $ex")
-            end
-            modpath = modpath::Vector{Any}
+            module_usage = pattern_match_module_usage(ex)
+            (; modpath) = module_usage
             dep = first(modpath)::Symbol
             if !(dep === :. || # relative module doesn't need to be fixed
                  dep === :Base || dep === :Core) # modules available by default
@@ -697,13 +682,8 @@ function _virtual_process!(res::VirtualProcessResult,
                     end
                     pushfirst!(modpath, :.)
                 end
-                if isa(alias, Symbol) && isa(name, Symbol)
-                    ex = form_module_usage_alias(head, modpath, name, alias)
-                elseif isa(name, Symbol)
-                    ex = form_module_usage_specific(head, modpath, name)
-                else
-                    ex = form_module_usage(head, modpath)
-                end
+                fixed_module_usage = ModuleUsage(module_usage; modpath)
+                ex = form_module_usage(fixed_module_usage)
             end
         end
         # `scrub_offset = 3` corresponds to `with_err_handling` -> `f` -> `Core.eval`
@@ -871,6 +851,57 @@ function split_module_path!(m::Module, ret)
     push!(ret, nameof(m))
 end
 
+struct ModuleUsage
+    head::Symbol
+    modpath::Vector{Any}
+    name::Union{Symbol,Nothing}
+    alias::Union{Symbol,Nothing}
+end
+function ModuleUsage(m::ModuleUsage;
+                     head::Symbol = m.head,
+                     modpath::Vector{Any} = m.modpath,
+                     name::Union{Symbol,Nothing} = m.name,
+                     alias::Union{Symbol,Nothing} = m.alias)
+    return ModuleUsage(head, modpath, name, alias)
+end
+
+function pattern_match_module_usage(usage::Expr)
+    modpath = name = alias = nothing
+    if @capture(usage, import modpath__)
+        head = :import
+    elseif @capture(usage, using modpath__)
+        head = :using
+    elseif @capture(usage, import modpath__: name_)
+        head = :import
+    elseif @capture(usage, using modpath__: name_)
+        head = :using
+    elseif @capture(usage, import modpath__ as alias_)
+        head = :import
+    elseif @capture(usage, import modpath__: name_ as alias_)
+        head = :import
+    elseif @capture(usage, using modpath__: name_ as alias_)
+        head = :using
+    else
+        error(lazy"unexpected module usage found: $usage")
+    end
+    return ModuleUsage(head, modpath::Vector{Any}, name::Union{Nothing,Symbol}, alias::Union{Nothing,Symbol})
+end
+
+function form_module_usage(moduleusage::ModuleUsage)
+    (; head, modpath, name, alias) = moduleusage
+    if isa(alias, Symbol)
+        if isa(name, Symbol)
+            return form_module_usage_alias(head, modpath, name, alias)
+        else
+            @assert isnothing(name) lazy"unexpected pattern match happened: $usage"
+            return form_module_import_alias(modpath, alias)
+        end
+    elseif isa(name, Symbol)
+        return form_module_usage_specific(head, modpath, name)
+    end
+    return form_module_usage(head, modpath)
+end
+
 # using A.B.C
 form_module_usage(head::Symbol, modpath::Vector{Any}) =
     Expr(head, Expr(:., modpath...))
@@ -880,6 +911,9 @@ form_module_usage_specific(head::Symbol, modpath::Vector{Any}, name::Symbol) =
 # using A.B.C: abc as abc′
 form_module_usage_alias(head::Symbol, modpath::Vector{Any}, name::Symbol, alias::Symbol) =
     Expr(head, Expr(:(:), Expr(:., modpath...), Expr(:as, Expr(:., name), alias)))
+# import A.B.C as abc
+form_module_import_alias(modpath::Vector{Any}, alias::Symbol) =
+    Expr(:import, Expr(:as, Expr(:., modpath...), alias))
 
 # if virtualized, replace self references of `actualmod` with `virtualmod` (as is)
 fix_self_references!(::Nothing, @nospecialize(x)) = x
@@ -914,30 +948,10 @@ function fix_self_references!((actualmod, virtualmod)::Actual2Virtual, @nospecia
         if isexpr(usage, :export)
             return usage
         end
-        modpath = name = alias = nothing
-        if @capture(usage, import modpath__)
-            head = :import
-        elseif @capture(usage, using modpath__)
-            head = :using
-        elseif @capture(usage, import modpath__: name_)
-            head = :import
-        elseif @capture(usage, using modpath__: name_)
-            head = :using
-        elseif @capture(usage, import modpath__: name_ as alias_)
-            head = :import
-        elseif @capture(usage, using modpath__: name_ as alias_)
-            head = :using
-        else
-            error(lazy"unexpected module usage found: $usage")
-        end
-        modpath = modpath::Vector{Any}
-        any_self(modpath) || return usage
-        if isa(alias, Symbol) && isa(name, Symbol)
-            return form_module_usage_alias(head, fix_self(modpath), name, alias)
-        elseif isa(name, Symbol)
-            return form_module_usage_specific(head, fix_self(modpath), name)
-        end
-        return form_module_usage(head, fix_self(modpath))
+        module_usage = pattern_match_module_usage(usage)
+        any_self(module_usage.modpath) || return usage
+        fixed_module_usage = ModuleUsage(module_usage; modpath = fix_self(module_usage.modpath))
+        return form_module_usage(fixed_module_usage)
     end
 
     function fix_self_reference(usage::Expr)

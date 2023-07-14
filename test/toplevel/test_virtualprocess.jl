@@ -2183,6 +2183,7 @@ end
             makebox() = Core.Box()
         end) do res
         @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
     end
     test_report_package("ImportBase" => quote
             import Base: show
@@ -2208,12 +2209,14 @@ end
             callfunc1() = func1()
         end) do res
         @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
     end
     test_report_package("UsingAlias" => quote
             using PkgAnalysisDep: func1 as func
             callfunc1() = func()
         end) do res
         @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
     end
     test_report_package("UsingInner" => quote
             using PkgAnalysisDep.Inner
@@ -2253,18 +2256,35 @@ end
             callfunc1() = PkgAnalysisDep.func1()
         end) do res
         @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
+    end
+    test_report_package("ImportAlias" => quote
+            import PkgAnalysisDep as PAD
+            callfunc1() = PAD.func1()
+        end) do res
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
+    end
+    test_report_package("ImportInnerAlias" => quote
+            import PkgAnalysisDep.Inner as PADI
+            callfunc3() = PADI.func3()
+        end) do res
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
     end
     test_report_package("ImportSpecific" => quote
             import PkgAnalysisDep: func1
             callfunc1() = func1()
         end) do res
         @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
     end
     test_report_package("ImportAlias" => quote
             import PkgAnalysisDep: func1 as func
             callfunc1() = func()
         end) do res
         @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
     end
     test_report_package("ImportInner" => quote
             import PkgAnalysisDep.Inner
@@ -2282,6 +2302,7 @@ end
             end
         end) do res
         @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
     end
     test_report_package("ImportBlock" => quote
             global truecond::Bool = true
@@ -2291,6 +2312,7 @@ end
             end
         end) do res
         @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
     end
 
     test_report_package("RelativeDependency" => quote
@@ -2345,6 +2367,7 @@ end
             Pkg.add("Preferences"; io=devnull)
         end) do res
         @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
     end
 
     test_report_package("SelfImport1" => quote
@@ -2357,6 +2380,7 @@ end
             call_overload(x::Number) = overload(x)
         end) do res
         @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
     end
 
     test_report_package("SelfImport2" => quote
@@ -2374,6 +2398,7 @@ end
             call_overload(x::Number) = overload(x)
         end) do res
         @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
     end
 
     test_report_package("SelfImport5" => quote
@@ -2394,22 +2419,25 @@ end
             call_overload(x::Number) = overload(x)
         end) do res
         @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
     end
 
     # ignore_missing_comparison should be turned on by default for `report_package`
-    test_report_package("Issue542" => quote
-            struct Issue542 end
-            isa542(x) = x == Issue542() ? true : false
+    test_report_package("Issue542_1" => quote
+            struct Issue542Typ end
+            isa542(x) = x == Issue542Typ() ? true : false
         end;
         base_setup=()->nothing) do res
+        @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
     test_report_package("Issue542_2" => quote
-            struct Issue542 end
-            isa542(x) = x == Issue542() ? true : false
+            struct Issue542Typ end
+            isa542(x) = x == Issue542Typ() ? true : false
         end;
         base_setup=()->nothing,
         ignore_missing_comparison=false) do res
+        @test isempty(res.res.toplevel_error_reports)
         @test isa(only(res.res.inference_error_reports), NonBooleanCondErrorReport)
     end
 
@@ -2418,6 +2446,7 @@ end
             reducer(a::Vector{String}) = maximum(length, a)
         end;
         base_setup=()->nothing) do res
+        @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
 end
