@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.8]
+
+### Fixed
+
+- `report_package` now supports the `import Module as Alias` syntax
+  (aviatesk/JET.jl#521, aviatesk/JET.jl#553).
+
 ## [0.8.7]
 
 ### Changed
@@ -207,7 +214,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- links -->
 
-[unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.8.7...HEAD
+[unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.8.8...HEAD
+[0.8.8]: https://github.com/aviatesk/JET.jl/compare/v0.8.7...v0.8.8
 [0.8.7]: https://github.com/aviatesk/JET.jl/compare/v0.8.6...v0.8.7
 [0.8.6]: https://github.com/aviatesk/JET.jl/compare/v0.8.5...v0.8.6
 [0.8.5]: https://github.com/aviatesk/JET.jl/compare/v0.8.4...v0.8.5
