@@ -1680,8 +1680,7 @@ end
 
 @testset "top-level statement selection" begin
     # simplest example
-    let
-        # global function
+    let # global function
         vmod, res = @analyze_toplevel2 begin
             foo() = return # should be concretized
         end
@@ -1709,20 +1708,28 @@ end
         end
         slice = JET.select_statements(src)
 
+        found_w = found_sum = found_product = found_write = false
         for (i, stmt) in enumerate(src.code)
             if JET.isexpr(stmt, :(=))
                 lhs, rhs = stmt.args
                 if isa(lhs, Core.SlotNumber)
-                    if src.slotnames[lhs.id] === :w || src.slotnames[lhs.id] === :sum
+                    if src.slotnames[lhs.id] === :w
+                        found_w = true
+                        @test slice[i]
+                    elseif src.slotnames[lhs.id] === :sum
+                        found_sum = true
                         @test slice[i]
                     elseif src.slotnames[lhs.id] === :product
+                        found_product = true
                         @test !slice[i]
                     end
                 end
             elseif JET.@capture(stmt, write(x_))
+                found_write = true
                 @test !slice[i]
             end
         end
+        @test found_w; @test found_sum; @test found_product; @test found_write
     end
 
     @testset "captured variables" begin
