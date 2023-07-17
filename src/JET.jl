@@ -235,7 +235,8 @@ struct JETConfigError <: Exception
     msg::AbstractString
     key::Symbol
     val
-    JETConfigError(msg::AbstractString, key::Symbol, @nospecialize(val)) = new(msg, key, val)
+    JETConfigError(msg::AbstractString, key::Symbol, val) =
+        (@nospecialize msg val; new(msg, key, val))
 end
 Base.showerror(io::IO, err::JETConfigError) = print(io, "JETConfigError: ", err.msg)
 
@@ -609,8 +610,8 @@ struct ReportConfig{S,T}
     ignored_modules::T
 end
 
-struct LastFrameModule mod::Module end
-struct AnyFrameModule mod::Module end
+struct LastFrameModule; mod::Module; end
+struct AnyFrameModule;  mod::Module; end
 
 match_module(mod::Module, @nospecialize(report::InferenceErrorReport)) = match_module(LastFrameModule(mod), report)
 function match_module(mod::LastFrameModule, @nospecialize(report::InferenceErrorReport))
@@ -635,8 +636,8 @@ function configured_reports(config::ReportConfig, reports::Vector{InferenceError
     end
     return reports
 end
-@noinline configured_reports(x::Any, reports::Vector{InferenceErrorReport}) =
-    error(lazy"`JET.configured_reports(::$x, ::Vector{InferenceErrorReport})` is not implemented")
+@noinline configured_reports(@nospecialize(x::Any), ::Vector{InferenceErrorReport}) =
+    error(lazy"`JET.configured_reports(report_config::$(typeof(x)), reports::Vector{InferenceErrorReport})` is not implemented")
 
 linfomod(linfo::MethodInstance) = (def = linfo.def; isa(def, Method) ? def.module : def)
 
