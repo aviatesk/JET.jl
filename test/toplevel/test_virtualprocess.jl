@@ -868,8 +868,7 @@ end
 end
 
 @testset "sequential" begin
-    let
-        res = @analyze_toplevel begin
+    let res = @analyze_toplevel begin
             foo(1:1000)
 
             foo(a) = length(a)
@@ -877,13 +876,14 @@ end
         @test only(res.res.inference_error_reports) isa UndefVarErrorReport
     end
 
-    let
-        res = @analyze_toplevel begin
-            foo(a) = length(a)
-            foo("julia") # should not error
+    let res = @analyze_toplevel begin
+            usefunc(a) = sin(func_impl(a))
 
-            foo(a) = sum(a)
-            foo(1:1000)  # should not error too
+            func_impl(a) = length(a)
+            usefunc("julia") # should not error
+
+            func_impl(a) = a
+            usefunc(42)  # should not error too
         end
         @test isempty(res.res.inference_error_reports)
     end
