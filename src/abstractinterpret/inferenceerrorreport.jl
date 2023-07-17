@@ -305,7 +305,7 @@ function handle_sig_static_parameter!(sig::Vector{Any}, s::StateAtPC, expr::Expr
     else
         typ = widenconst(CC.unwrap_maybeundefsp(sv.sptypes[i]))
     end
-    anypush!(sig, String(name), typ)
+    push!(sig, String(name), typ)
     return sig
 end
 
@@ -324,7 +324,7 @@ function handle_sig!(sig::Vector{Any}, (sv, _)::StateAtPC, ssa::SSAValue)
         # when working on `OptimizationState`, the SSA traverse could be really long because
         # of inlining, so just give up for such a case
         typ = safewidenconst(get_ssavaluetype(newstate))
-        anypush!(sig, ssa, typ)
+        push!(sig, ssa, typ)
     else
         # XXX the same problem may happen for `InferenceState` too ?
         handle_sig!(sig, newstate, get_stmt(newstate))
@@ -353,7 +353,7 @@ function handle_sig!(sig::Vector{Any}, s::StateAtPC, slot::SlotNumber)
         typ = safewidenconst((sv isa InferenceState && sv.inferred) ?
             get_slottype(sv, slot) : get_slottype(s, slot))
     end
-    anypush!(sig, repr, typ)
+    push!(sig, repr, typ)
     return sig
 end
 
@@ -394,7 +394,7 @@ function handle_sig!(sig::Vector{Any}, ::StateAtPC, qn::QuoteNode)
         return sig
     end
     typ = typeof(v)
-    anypush!(sig, qn, typ)
+    push!(sig, qn, typ)
     return sig
 end
 

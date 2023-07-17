@@ -125,16 +125,6 @@ __init__() = foreach(@nospecialize(f)->f(), INIT_HOOKS)
 # compat
 # ------
 
-function anypush!(a::Vector{Any}, @nospecialize x...)
-    na = length(a)
-    nx = length(x)
-    Base._growend!(a, nx)
-    for i = 1:nx
-        Base.arrayset(true, a, x[i], na+i)
-    end
-    return a
-end
-
 @static if VERSION ≥ v"1.10.0-DEV.96"
     using Base: _which
 else
