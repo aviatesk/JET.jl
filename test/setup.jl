@@ -34,3 +34,7 @@ function test_sum_over_string(ers)
 end
 test_sum_over_string(res::JET.JETCallResult) = test_sum_over_string(get_reports_with_test(res))
 test_sum_over_string(res::JET.JETToplevelResult) = test_sum_over_string(get_reports_with_test(res))
+
+# for inspection
+macro lwr(ex) QuoteNode(Meta.lower(__module__, ex)) end
+macro src(ex) QuoteNode(only(Meta.lower(__module__, ex).args)) end

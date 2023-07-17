@@ -153,10 +153,6 @@ end
 
 islnn(@nospecialize(x)) = isa(x, LineNumberNode)
 
-# for inspection
-macro lwr(ex) QuoteNode(lower(__module__, ex)) end
-macro src(ex) QuoteNode(first(lower(__module__, ex).args)) end
-
 """
     @withmixedhash (mutable) struct T
         fields ...

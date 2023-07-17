@@ -1696,8 +1696,7 @@ end
 
     # simple negative case test, which checks we do NOT select statements not involved with any definition
     # this particular example is adapted from https://en.wikipedia.org/wiki/Program_slicing
-    let
-        src = JET.@src let
+    let src = @src let
             sum = 0
             product = 1 # should NOT be selected
             w = 7
