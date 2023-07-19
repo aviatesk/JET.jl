@@ -363,7 +363,6 @@ function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
     (; linfo, parent, result) = frame
     isentry = isnothing(parent)
 
-    #= logging stage1 start =#
     # io = stdout
     # sec = time()
     # depth = get_depth(analyzer)
@@ -374,7 +373,6 @@ function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
     # print(io, ' ', file, ':', line)
     # println(io)
     # set_depth!(analyzer, get_depth(analyzer) + 1) # manipulate this only in debug mode
-    #= logging stage1 end =#
 
     if is_constant_propagated(frame) && !isentry
         # JET is going to perform the abstract-interpretation with the extended lattice elements:
@@ -386,7 +384,6 @@ function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
 
     ret = @invoke typeinf(analyzer::AbstractInterpreter, frame::InferenceState)
 
-    #= logging stage2 start =#
     # elapsed = round(time() - sec; digits = 3)
     # print_rails(io, depth)
     # printstyled(io, "└─→ "; color = RAIL_COLORS[(depth+1)%N_RAILS+1])
@@ -394,12 +391,12 @@ function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
     # println(io, " (", join(filter(!isnothing, (
     #                  linfo,
     #                  ret ? nothing : "in cycle",
+    #                  is_constant_propagated(frame) ? "[const-prop]" : nothing,
     #                  string(length(get_any_reports(analyzer, result)), " reports"),
     #                  string(elapsed, " sec"),
     #                  )), ", "),
     #              ')')
     # set_depth!(analyzer, get_depth(analyzer) - 1) # manipulate this only in debug mode
-    #= logging stage2 end =#
 
     return ret
 end
