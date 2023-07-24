@@ -664,8 +664,7 @@ end
 
 @testset "module usage" begin
     # using
-    let
-        res = @analyze_toplevel begin
+    let res = @analyze_toplevel begin
             module foo
 
             using Base.Meta: isexpr
@@ -683,8 +682,7 @@ end
     end
 
     # error handling for module usages
-    let
-        res = @analyze_toplevel begin
+    let res = @analyze_toplevel begin
             using Base: foo
         end
 
@@ -696,8 +694,7 @@ end
     end
 
     # sequential usage
-    let
-        res = @analyze_toplevel begin
+    let res = @analyze_toplevel begin
             module foo
 
             bar(s) = sum(s)
@@ -719,8 +716,7 @@ end
     end
 
     # usage of global objects
-    let
-        res = @analyze_toplevel begin
+    let res = @analyze_toplevel begin
             module foo
 
             bar(s) = sum(s)
@@ -740,8 +736,7 @@ end
         test_sum_over_string(res)
     end
 
-    let
-        res = @analyze_toplevel begin
+    let res = @analyze_toplevel begin
             module foo
 
             bar(s) = sum(s)
@@ -762,8 +757,7 @@ end
     end
 
     # module usage within a block
-    let
-        res = @analyze_toplevel begin
+    let res = @analyze_toplevel begin
             module foo
 
             bar(s) = sum(s)
@@ -785,8 +779,7 @@ end
     end
 
     @testset "module usage of abstract global variable" begin
-        let
-            res = @analyze_toplevel begin
+        let res = @analyze_toplevel begin
                 module foo
 
                 const bar = sum
@@ -806,8 +799,7 @@ end
             test_sum_over_string(res)
         end
 
-        let
-            res = @analyze_toplevel begin
+        let res = @analyze_toplevel begin
                 module foo
 
                 const bar = "julia"
@@ -827,8 +819,7 @@ end
             test_sum_over_string(res)
         end
 
-        let
-            res = @analyze_toplevel begin
+        let res = @analyze_toplevel begin
                 module foo
 
                 const bar = "julia"
@@ -847,8 +838,7 @@ end
     end
 
     # export
-    let
-        res = @analyze_toplevel begin
+    let res = @analyze_toplevel begin
             module foo
 
             bar(s) = sum(s)
@@ -2452,6 +2442,43 @@ end
             reducer(a::Vector{String}) = maximum(length, a)
         end;
         base_setup=()->nothing) do res
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
+    end
+
+    test_report_package("Issue554_1" => quote
+            using PkgAnalysisDep: Inner.func3
+            callfunc3() = func3()
+        end) do res
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
+    end
+    test_report_package("Issue554_2" => quote
+            using PkgAnalysisDep: Inner.func3 as func
+            callfunc() = func()
+        end) do res
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
+    end
+    test_report_package("Issue554_3" => quote
+            import PkgAnalysisDep: Inner.func3
+            callfunc3() = func3()
+        end) do res
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
+    end
+    test_report_package("Issue554_4" => quote
+            import PkgAnalysisDep: Inner.func3 as func
+            callfunc() = func()
+        end) do res
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
+    end
+    test_report_package("Issue554" => quote
+            using LinearAlgebra: BLAS.BlasFloat
+            issue554(x::BlasFloat) = x
+        end,
+        base_setup=()->Pkg.add("LinearAlgebra", io=devnull)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
