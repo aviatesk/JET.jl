@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.9]
+
+### Fixed
+
+- `report_package` now supports the `using Module: Inner.object` syntax
+  (aviatesk/JET.jl#554, aviatesk/JET.jl#555).
+- Various internal improvements.
+
 ## [0.8.8]
 
 ### Fixed
@@ -214,7 +222,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- links -->
 
-[unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.8.8...HEAD
+[unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.8.9...HEAD
+[0.8.8]: https://github.com/aviatesk/JET.jl/compare/v0.8.8...v0.8.9
 [0.8.8]: https://github.com/aviatesk/JET.jl/compare/v0.8.7...v0.8.8
 [0.8.7]: https://github.com/aviatesk/JET.jl/compare/v0.8.6...v0.8.7
 [0.8.6]: https://github.com/aviatesk/JET.jl/compare/v0.8.5...v0.8.6
