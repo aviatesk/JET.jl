@@ -854,50 +854,49 @@ end
 struct ModuleUsage
     head::Symbol
     modpath::Vector{Any}
-    name::Union{Symbol,Nothing}
+    namepath::Union{Vector{Any},Nothing}
     alias::Union{Symbol,Nothing}
 end
 function ModuleUsage(m::ModuleUsage;
                      head::Symbol = m.head,
                      modpath::Vector{Any} = m.modpath,
-                     name::Union{Symbol,Nothing} = m.name,
+                     namepath::Union{Vector{Any},Nothing} = m.namepath,
                      alias::Union{Symbol,Nothing} = m.alias)
-    return ModuleUsage(head, modpath, name, alias)
+    return ModuleUsage(head, modpath, namepath, alias)
 end
 
 function pattern_match_module_usage(usage::Expr)
-    modpath = name = alias = nothing
+    modpath = namepath = alias = nothing
     if @capture(usage, import modpath__)
         head = :import
     elseif @capture(usage, using modpath__)
         head = :using
-    elseif @capture(usage, import modpath__: name_)
+    elseif @capture(usage, import modpath__: namepath__)
         head = :import
-    elseif @capture(usage, using modpath__: name_)
+    elseif @capture(usage, using modpath__: namepath__)
         head = :using
     elseif @capture(usage, import modpath__ as alias_)
         head = :import
-    elseif @capture(usage, import modpath__: name_ as alias_)
+    elseif @capture(usage, import modpath__: namepath__ as alias_)
         head = :import
-    elseif @capture(usage, using modpath__: name_ as alias_)
+    elseif @capture(usage, using modpath__: namepath__ as alias_)
         head = :using
     else
         error(lazy"unexpected module usage found: $usage")
     end
-    return ModuleUsage(head, modpath::Vector{Any}, name::Union{Nothing,Symbol}, alias::Union{Nothing,Symbol})
+    return ModuleUsage(head, modpath::Vector{Any}, namepath::Union{Nothing,Vector{Any}}, alias::Union{Nothing,Symbol})
 end
 
 function form_module_usage(moduleusage::ModuleUsage)
-    (; head, modpath, name, alias) = moduleusage
+    (; head, modpath, namepath, alias) = moduleusage
     if isa(alias, Symbol)
-        if isa(name, Symbol)
-            return form_module_usage_alias(head, modpath, name, alias)
+        if !isnothing(namepath)
+            return form_module_usage_alias(head, modpath, namepath, alias)
         else
-            @assert isnothing(name) lazy"unexpected pattern match happened: $usage"
             return form_module_import_alias(modpath, alias)
         end
-    elseif isa(name, Symbol)
-        return form_module_usage_specific(head, modpath, name)
+    elseif !isnothing(namepath)
+        return form_module_usage_specific(head, modpath, namepath)
     end
     return form_module_usage(head, modpath)
 end
@@ -906,11 +905,11 @@ end
 form_module_usage(head::Symbol, modpath::Vector{Any}) =
     Expr(head, Expr(:., modpath...))
 # using A.B.C: abc
-form_module_usage_specific(head::Symbol, modpath::Vector{Any}, name::Symbol) =
-    Expr(head, Expr(:(:), Expr(:., modpath...), Expr(:., name)))
+form_module_usage_specific(head::Symbol, modpath::Vector{Any}, namepath::Vector{Any}) =
+    Expr(head, Expr(:(:), Expr(:., modpath...), Expr(:., namepath...)))
 # using A.B.C: abc as abc′
-form_module_usage_alias(head::Symbol, modpath::Vector{Any}, name::Symbol, alias::Symbol) =
-    Expr(head, Expr(:(:), Expr(:., modpath...), Expr(:as, Expr(:., name), alias)))
+form_module_usage_alias(head::Symbol, modpath::Vector{Any}, namepath::Vector{Any}, alias::Symbol) =
+    Expr(head, Expr(:(:), Expr(:., modpath...), Expr(:as, Expr(:., namepath...), alias)))
 # import A.B.C as abc
 form_module_import_alias(modpath::Vector{Any}, alias::Symbol) =
     Expr(:import, Expr(:as, Expr(:., modpath...), alias))
