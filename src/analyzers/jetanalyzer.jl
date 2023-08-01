@@ -999,7 +999,7 @@ function report_global_assignment!(analyzer::JETAnalyzer,
         btyp = ccall(:jl_binding_type, Any, (Any, Any), mod, name)
     end
     if btyp !== nothing
-        vtyp = widenconst(vtyp)
+        vtyp = widenconst(ignorelimited(vtyp))
         if !(sound ? vtyp ⊑ btyp : hasintersect(vtyp, btyp))
             add_new_report!(analyzer, sv.result, InvalidGlobalAssignmentError(sv, vtyp, btyp, mod, name))
             return true
