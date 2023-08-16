@@ -24,17 +24,30 @@ function CC.abstract_call_method(analyzer::AbstractAnalyzer,
 end
 
 @static if VERSION ≥ v"1.10.0-DEV.1345"
-function CC.const_prop_call(analyzer::AbstractAnalyzer,
-    mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
-    set_cache_target!(analyzer, :const_prop_call => sv.result)
-    const_result = @invoke CC.const_prop_call(analyzer::AbstractInterpreter,
-        mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
-    @assert get_cache_target(analyzer) === nothing "invalid JET analysis state"
-    if const_result !== nothing
-        # successful constant prop', we need to update reports
-        collect_callee_reports!(analyzer, sv)
+let # overload `const_prop_call`
+    @static if VERSION ≥ v"1.11.0-DEV.233"
+        sigs_ex = :(analyzer::AbstractAnalyzer,
+            mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
+            $(Expr(:kw, :(concrete_eval_result::Union{Nothing,CC.ConstCallResults}), :nothing)))
+        args_ex = :(analyzer::AbstractInterpreter,
+            mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
+            concrete_eval_result::Union{Nothing,CC.ConstCallResults})
+    else
+        sigs_ex = :(analyzer::AbstractAnalyzer,
+            mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
+        args_ex = :(analyzer::AbstractInterpreter,
+            mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
     end
-    return const_result
+    @eval function CC.const_prop_call($(sigs_ex.args...))
+        set_cache_target!(analyzer, :const_prop_call => sv.result)
+        const_result = @invoke CC.const_prop_call($(args_ex.args...))
+        @assert get_cache_target(analyzer) === nothing "invalid JET analysis state"
+        if const_result !== nothing
+            # successful constant prop', we need to update reports
+            collect_callee_reports!(analyzer, sv)
+        end
+        return const_result
+    end
 end
 else
 function CC.abstract_call_method_with_const_args(analyzer::AbstractAnalyzer,
