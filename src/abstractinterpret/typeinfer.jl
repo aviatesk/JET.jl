@@ -25,7 +25,7 @@ end
 
 @static if VERSION ≥ v"1.10.0-DEV.1345"
 let # overload `const_prop_call`
-    @static if VERSION ≥ v"1.11.0-DEV.233"
+    @static if VERSION ≥ v"1.11.0-DEV.233" || VERSION ≥ v"1.10.0-beta1.11"
         sigs_ex = :(analyzer::AbstractAnalyzer,
             mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
             $(Expr(:kw, :(concrete_eval_result::Union{Nothing,CC.ConstCallResults}), :nothing)))
