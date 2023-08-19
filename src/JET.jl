@@ -421,7 +421,9 @@ function print_report end
 
 include("toplevel/graph.jl")
 
-const JULIA_SYNTAX_ENABLED = VERSION ≥ v"1.10.0-DEV.1520" && Base.get_bool_env("JULIA_USE_NEW_PARSER", true) === true
+const JULIA_SYNTAX_ENABLED =
+    VERSION ≥ v"1.11.0-DEV.123" || VERSION ≥ v"1.10.0-beta1.1" ? !(Base.get_bool_env("JULIA_USE_FLISP_PARSER", false) === true) :
+    VERSION ≥ v"1.10.0-DEV.1520" && Base.get_bool_env("JULIA_USE_NEW_PARSER", true) === true
 
 include("toplevel/virtualprocess.jl")
 

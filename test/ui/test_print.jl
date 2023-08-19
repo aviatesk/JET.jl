@@ -4,27 +4,34 @@ include("../setup.jl")
 
 @testset "print toplevel errors" begin
     let io = IOBuffer()
-        s = """
+        src = """
             a = begin
                 b =
             end
             """
-        msg = @static JET.JULIA_SYNTAX_ENABLED ? "Expected `end`" : "syntax: unexpected \"end\""
 
-        res = report_text(s, @__FILE__)
+        res = report_text(src, @__FILE__)
         print_reports(io, res.res.toplevel_error_reports)
         let s = String(take!(io))
             @test occursin("1 toplevel error found", s)
             @test occursin(Regex("@ $(@__FILE__):\\d"), s)
-            @test occursin(msg, s)
+            @static if JET.JULIA_SYNTAX_ENABLED
+                @test occursin("invalid identifier", s) || occursin("Expected `end`", s)
+            else
+                @test occursin("syntax: unexpected \"end\"", s)
+            end
         end
 
-        res = report_text(s, "foo")
+        res = report_text(src, "foo")
         print_reports(io, res.res.toplevel_error_reports)
         let s = String(take!(io))
             @test occursin("1 toplevel error found", s)
             @test occursin(r"@ foo:\d", s)
-            @test occursin(msg, s)
+            @static if JET.JULIA_SYNTAX_ENABLED
+                @test occursin("invalid identifier", s) || occursin("Expected `end`", s)
+            else
+                @test occursin("syntax: unexpected \"end\"", s)
+            end
         end
     end
 end
