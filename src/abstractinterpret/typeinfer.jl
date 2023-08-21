@@ -28,7 +28,7 @@ let # overload `const_prop_call`
     @static if VERSION ≥ v"1.11.0-DEV.233" || v"1.11.0-DEV" > VERSION ≥ v"1.10.0-beta1.11"
         sigs_ex = :(analyzer::AbstractAnalyzer,
             mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
-            $(Expr(:kw, :(concrete_eval_result::Union{Nothing,CC.ConstCallResults}), :nothing)))
+            concrete_eval_result::Union{Nothing,CC.ConstCallResults})
         args_ex = :(analyzer::AbstractInterpreter,
             mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
             concrete_eval_result::Union{Nothing,CC.ConstCallResults})
@@ -78,11 +78,11 @@ let # overload `concrete_eval_call`
             sv::InferenceState, invokecall::Union{Nothing,CC.InvokeCall})
     else
         sigs_ex = :(analyzer::AbstractAnalyzer,
-            @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState,
-            $(Expr(:kw, :(invokecall::Union{Nothing,CC.InvokeCall}), :nothing)))
+            @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, si::StmtInfo,
+            sv::InferenceState, invokecall::Union{Nothing,CC.InvokeCall})
         args_ex = :(analyzer::AbstractInterpreter,
-            f::Any, result::MethodCallResult, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState,
-            invokecall::Union{Nothing,CC.InvokeCall})
+            f::Any, result::MethodCallResult, arginfo::ArgInfo, si::StmtInfo,
+            sv::InferenceState, invokecall::Union{Nothing,CC.InvokeCall})
     end
     @eval function CC.concrete_eval_call($(sigs_ex.args...))
         ret = @invoke CC.concrete_eval_call($(args_ex.args...))
