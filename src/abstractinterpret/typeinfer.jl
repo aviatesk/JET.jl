@@ -46,6 +46,11 @@ let # overload `const_prop_call`
             # successful constant prop', we need to update reports
             collect_callee_reports!(analyzer, sv)
         end
+        @static if VERSION ≥ v"1.11.0-DEV.233" || v"1.11.0-DEV" > VERSION ≥ v"1.10.0-beta1.11"
+            if concrete_eval_result !== nothing
+                filter_lineages!(analyzer, sv.result, mi)
+            end
+        end
         return const_result
     end
 end
