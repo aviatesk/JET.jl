@@ -295,15 +295,13 @@ let result = @report_opt issue335_callf(issue335_problematic_callee, 42)
     end
 end
 
-let result = report_opt() do
-        issue335_callf(42) do val
-            if val < 0
-                return issue335_problematic_callee(val)
-            end
-            return sin(val)
+test_opt() do
+    issue335_callf(42) do val
+        if val < 0
+            return issue335_problematic_callee(val)
         end
+        return sin(val)
     end
-    @test isempty(get_reports_with_test(result))
 end
 
 # report runtime dispatches within "noncompileable" but inlineable frames
@@ -324,5 +322,11 @@ let result = report_opt((Any,Any)) do a, b
         report isa RuntimeDispatchReport
     end
 end
+
+using StaticArrays
+const Issue560Vec3 = SVector{3, Float64}
+const issue560μ = zeros(Issue560Vec3, 2, 3, 4, 5)
+issue560f(μ) = reinterpret(reshape, Float64, μ)
+@test_opt issue560f(issue560μ)
 
 end # module test_optanalyzer
