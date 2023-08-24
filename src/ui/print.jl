@@ -117,16 +117,16 @@ function print_reports(io::IO,
         end
 
         for report in reports
-            s = string("┌ @ ", (config.fullpath ? tofullpath : identity)(string(report.file)), ':', report.line, ' ')
-            printlnstyled(io, s; color)
+            filepath = (config.fullpath ? tofullpath : identity)(report.file)
+            printlnstyled(io, "┌ @ ", filepath, ':', report.line, ' '; color)
 
             errlines = with_bufferring(arg) do io
                 print_report(io, report)
             end |> strip
-            println(io, join(string.(rail, split(errlines, '\n')), '\n'))
+            join(io, string.(rail, split(errlines, '\n')), '\n')
+            println(io)
 
-            s = string('└', '─'^(length(s)-1))
-            printlnstyled(io, s; color)
+            printlnstyled(io, '└', '─'^(length(s)-1); color)
         end
     end |> postprocess |> (x->print(io::IO,x))
 
