@@ -603,6 +603,11 @@ let # overload `inlining_policy`
     @static if isdefined(CC, :InliningInfo)
         sigs_ex = :(analyzer::AbstractAnalyzer, @nospecialize(src), iinfo::CC.InliningInfo)
         args_ex = :(analyzer::AbstractInterpreter, src::Any, iinfo::CC.InliningInfo)
+    elseif VERSION ≥ v"1.11.0-DEV.377"
+        sigs_ex = :(analyzer::AbstractAnalyzer,
+            @nospecialize(src), @nospecialize(info::CC.CallInfo), stmt_flag::UInt32, mi::MethodInstance, argtypes::Argtypes)
+        args_ex = :(analyzer::AbstractInterpreter,
+            src::Any, info::CC.CallInfo, stmt_flag::UInt32, mi::MethodInstance, argtypes::Argtypes)
     else
         sigs_ex = :(analyzer::AbstractAnalyzer,
             @nospecialize(src), @nospecialize(info::CC.CallInfo), stmt_flag::UInt8, mi::MethodInstance, argtypes::Argtypes)
