@@ -370,18 +370,6 @@ is_constant_propagated(frame::InferenceState) =
            is_constant_propagated(frame.result)
 is_constant_propagated(result::InferenceResult) = CC.any(result.overridden_by_const)
 
-# XXX this should be upstreamed
-function Base.show(io::IO, frame::InferenceState)
-    print(io, "InfernceState for ")
-    show(io, frame.linfo)
-    print(io, " at pc ", frame.currpc, '/', length(frame.src.code))
-end
-Base.show(io::IO, ::MIME"application/prs.juno.inline", frame::InferenceState) =
-    return frame
-
-Base.show(io::IO, cache::CachedMethodTable) =
-    print(io, typeof(cache), "(", Core.Compiler.length(cache.cache), " entries)")
-
 # lattice
 
 ignorenotfound(@nospecialize(t)) = t === NOT_FOUND ? Bottom : t
@@ -1253,8 +1241,6 @@ function Base.show(io::IO, t::JETTestFailure)
     lines = replace(String(take!(buf)), '\n'=>string('\n',TEST_INDENTS))
     print(io, TEST_INDENTS, lines)
 end
-Base.show(io::IO, ::MIME"application/prs.juno.inline", t::JETTestFailure) =
-    return t
 
 function Test.record(::FallbackTestSet, t::JETTestFailure)
     println(t)

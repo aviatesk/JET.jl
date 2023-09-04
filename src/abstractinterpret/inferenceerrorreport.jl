@@ -527,8 +527,6 @@ function Base.show(io::IO, report::InferenceErrorReport)
     print_report(io, report)
     print(io, ')')
 end
-Base.show(io::IO, ::MIME"application/prs.juno.inline", report::InferenceErrorReport) =
-    return report
 
 # the default constructor to create a report from abstract interpretation
 function (T::Type{<:InferenceErrorReport})(state, @nospecialize(spec_args...))
