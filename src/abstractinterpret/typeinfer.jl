@@ -281,7 +281,7 @@ function CC.setindex!(wvc::WorldView{<:AbstractAnalyzerView}, ci::CodeInstance, 
 end
 
 function add_jet_callback!(mi::MethodInstance, analysis_cache::AnalysisCache)
-    callback = jet_callback(analysis_cache)
+    callback = JETCallback(analysis_cache)
     if !isdefined(mi, :callbacks)
         mi.callbacks = Any[callback]
     else
@@ -293,21 +293,22 @@ function add_jet_callback!(mi::MethodInstance, analysis_cache::AnalysisCache)
     return nothing
 end
 
-function jet_callback(analysis_cache::AnalysisCache)
-    return function (replaced::MethodInstance, max_world,
-                     seen::IdSet{MethodInstance} = IdSet{MethodInstance}())
-        push!(seen, replaced)
-        delete!(analysis_cache, replaced)
-        if isdefined(replaced, :backedges)
-            for item in replaced.backedges
-                isa(item, MethodInstance) || continue # might be `Type` object representing an `invoke` signature
-                mi = item
-                mi in seen && continue # otherwise fail into an infinite loop
-                var"#self#"(mi, max_world, seen)
-            end
+struct JETCallback
+    analysis_cache::AnalysisCache
+end
+function (callback::JETCallback)(replaced::MethodInstance, max_world,
+                                 seen::IdSet{MethodInstance} = IdSet{MethodInstance}())
+    push!(seen, replaced)
+    delete!(callback.analysis_cache, replaced)
+    if isdefined(replaced, :backedges)
+        for item in replaced.backedges
+            isa(item, MethodInstance) || continue # might be `Type` object representing an `invoke` signature
+            mi = item
+            mi in seen && continue # otherwise fail into an infinite loop
+            callback(mi, max_world, seen)
         end
-        return nothing
     end
+    return nothing
 end
 
 # local
