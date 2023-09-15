@@ -135,7 +135,7 @@ end</code></pre><pre class="documenter-example-output"><code class="nohighlight 
 <span class="sgr35">│</span><span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.isTypelike(%22<span class="sgr96">::Any</span>)<span class="sgr96">::Bool</span></span>
 <span class="sgr35">│</span><span class="sgr91">└────────────────────</span>
 <span class="sgr91">┌ </span><span class="sgr1">(::Main.var&quot;#11#12&quot;)(</span><span class="sgr90">xs</span>::Vector<span class="sgr90">{Any}</span><span class="sgr1">)</span> <span class="sgr91">@ Main ./dispatch_analysis.md:243</span>
-<span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.isTypelike(%1<span class="sgr96">::Any</span>)<span class="sgr96">::Bool</span></span>
+<span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Main.isTypelike(%2<span class="sgr96">::Any</span>)<span class="sgr96">::Bool</span></span>
 <span class="sgr91">└────────────────────</span>
 </code></pre><p>We can assert this report by looking at the output of <code>code_typed</code>, where <code>isTypelike(x)</code> remains as <code>:call</code> expression (meaning it will be dispatched at runtime) while <code>isTypelike′(x)</code> has been statically resolved and even inlined:</p><pre><code class="language-julia hljs">code_typed((Vector{Any},)) do xs
     x  = xs[1]
@@ -144,35 +144,36 @@ end</code></pre><pre class="documenter-example-output"><code class="nohighlight 
     return r, r′
 end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">1-element Vector{Any}:
  CodeInfo(
-<span class="sgr90">1 ──</span> %1  = Base.arrayref(true, xs, 1)<span class="sgr36">::Any</span>
-<span class="sgr90">│   </span> %2  = Main.isTypelike(%1)<span class="sgr36">::Bool</span>
-<span class="sgr90">│   </span> %3  = (%1 isa Main.DataType)<span class="sgr36">::Bool</span>
-<span class="sgr90">└───</span>       goto #3 if not %3
-<span class="sgr90">2 ──</span> %5  = π (%1, <span class="sgr36">DataType</span>)
-<span class="sgr90">│   </span> %6  = Base.getfield(%5, :name)<span class="sgr36">::Core.TypeName</span>
-<span class="sgr90">│   </span> %7  = (%6 === $(QuoteNode(typename(Type))))<span class="sgr36">::Bool</span>
+<span class="sgr90">1 ──</span> %1  = $(Expr(:boundscheck, true))<span class="sgr36">::Bool</span>
+<span class="sgr90">│   </span> %2  = Base.arrayref(%1, xs, 1)<span class="sgr36">::Any</span>
+<span class="sgr90">│   </span> %3  = Main.isTypelike(%2)<span class="sgr36">::Bool</span>
+<span class="sgr90">│   </span> %4  = (%2 isa Main.DataType)<span class="sgr36">::Bool</span>
+<span class="sgr90">└───</span>       goto #3 if not %4
+<span class="sgr90">2 ──</span> %6  = π (%2, <span class="sgr36">DataType</span>)
+<span class="sgr90">│   </span> %7  = Base.getfield(%6, :name)<span class="sgr36">::Core.TypeName</span>
+<span class="sgr90">│   </span> %8  = (%7 === $(QuoteNode(typename(Type))))<span class="sgr36">::Bool</span>
 <span class="sgr90">└───</span>       goto #10
-<span class="sgr90">3 ──</span> %9  = (%1 isa Main.Union)<span class="sgr36">::Bool</span>
-<span class="sgr90">└───</span>       goto #7 if not %9
-<span class="sgr90">4 ──</span> %11 = π (%1, <span class="sgr36">Union</span>)
-<span class="sgr90">│   </span> %12 = Base.getfield(%11, :a)<span class="sgr36">::Any</span>
-<span class="sgr90">│   </span> %13 = invoke Main.isTypelike′(%12::Any)<span class="sgr36">::Bool</span>
-<span class="sgr90">└───</span>       goto #6 if not %13
-<span class="sgr90">5 ──</span> %15 = π (%1, <span class="sgr36">Union</span>)
-<span class="sgr90">│   </span> %16 = Base.getfield(%15, :b)<span class="sgr36">::Any</span>
-<span class="sgr90">│   </span> %17 = invoke Main.isTypelike′(%16::Any)<span class="sgr36">::Bool</span>
+<span class="sgr90">3 ──</span> %10 = (%2 isa Main.Union)<span class="sgr36">::Bool</span>
+<span class="sgr90">└───</span>       goto #7 if not %10
+<span class="sgr90">4 ──</span> %12 = π (%2, <span class="sgr36">Union</span>)
+<span class="sgr90">│   </span> %13 = Base.getfield(%12, :a)<span class="sgr36">::Any</span>
+<span class="sgr90">│   </span> %14 = invoke Main.isTypelike′(%13::Any)<span class="sgr36">::Bool</span>
+<span class="sgr90">└───</span>       goto #6 if not %14
+<span class="sgr90">5 ──</span> %16 = π (%2, <span class="sgr36">Union</span>)
+<span class="sgr90">│   </span> %17 = Base.getfield(%16, :b)<span class="sgr36">::Any</span>
+<span class="sgr90">│   </span> %18 = invoke Main.isTypelike′(%17::Any)<span class="sgr36">::Bool</span>
 <span class="sgr90">└───</span>       goto #10
 <span class="sgr90">6 ──</span>       goto #10
-<span class="sgr90">7 ──</span> %20 = (%1 isa Main.UnionAll)<span class="sgr36">::Bool</span>
-<span class="sgr90">└───</span>       goto #9 if not %20
-<span class="sgr90">8 ──</span> %22 = π (%1, <span class="sgr36">UnionAll</span>)
-<span class="sgr90">│   </span> %23 = Base.getfield(%22, :body)<span class="sgr36">::Any</span>
-<span class="sgr90">│   </span> %24 = invoke Main.isTypelike′(%23::Any)<span class="sgr36">::Bool</span>
+<span class="sgr90">7 ──</span> %21 = (%2 isa Main.UnionAll)<span class="sgr36">::Bool</span>
+<span class="sgr90">└───</span>       goto #9 if not %21
+<span class="sgr90">8 ──</span> %23 = π (%2, <span class="sgr36">UnionAll</span>)
+<span class="sgr90">│   </span> %24 = Base.getfield(%23, :body)<span class="sgr36">::Any</span>
+<span class="sgr90">│   </span> %25 = invoke Main.isTypelike′(%24::Any)<span class="sgr36">::Bool</span>
 <span class="sgr90">└───</span>       goto #10
 <span class="sgr90">9 ──</span>       goto #10
-<span class="sgr90">10 ┄</span> %27 = φ (#2 =&gt; %7, #5 =&gt; %17, #6 =&gt; false, #8 =&gt; %24, #9 =&gt; false)<span class="sgr36">::Bool</span>
-<span class="sgr90">│   </span> %28 = Core.tuple(%2, %27)<span class="sgr36">::Tuple{Bool, Bool}</span>
-<span class="sgr90">└───</span>       return %28
+<span class="sgr90">10 ┄</span> %28 = φ (#2 =&gt; %8, #5 =&gt; %18, #6 =&gt; false, #8 =&gt; %25, #9 =&gt; false)<span class="sgr36">::Bool</span>
+<span class="sgr90">│   </span> %29 = Core.tuple(%3, %28)<span class="sgr36">::Tuple{Bool, Bool}</span>
+<span class="sgr90">└───</span>       return %29
 ) =&gt; Tuple{Bool, Bool}</code></pre><h3 id="Real-world-targets"><a class="docs-heading-anchor" href="#Real-world-targets">Real-world targets</a><a id="Real-world-targets-1"></a><a class="docs-heading-anchor-permalink" href="#Real-world-targets" title="Permalink"></a></h3><p>Let&#39;s run <code>DispatchAnalyzer</code> on real-world code and check how it works. Here we will test with Julia&#39;s <code>Base</code> module.</p><p>Random number generation might be one of the most important feature for numerical computations, and so Julia&#39;s <code>rand</code> function should run fast. Let&#39;s see if it is free from runtime-dispatch.</p><pre><code class="language-julia hljs">@report_dispatch rand(1:1000)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi"><span class="sgr92">No errors detected</span>
 </code></pre><p>Oh no, runtime dispatch happens there even in <code>Base</code>. Well, actually, this specific dispatch is expected. Especially, <a href="https://github.com/JuliaLang/julia/pull/35982">https://github.com/JuliaLang/julia/pull/35982</a> implements an heuristic to intentionally <em>disable</em> inference (and so succeeding optimizations too) in order to ease <a href="https://julialang.org/blog/2020/08/invalidations/">the latency problem, a.k.a. &quot;first-time-to-plot&quot;</a>. The report trace certainly suggests a dispatch was detected where <code>ArgumentError</code> can be thrown. We can turn off the heuristic by turning off <a href="../../config/#abstractinterpret-config">the <code>unoptimize_throw_blocks::Bool</code> configuration</a>, and this time any runtime dispatch won&#39;t be reported:</p><pre><code class="language-julia hljs">@report_dispatch unoptimize_throw_blocks=false rand(1:1000) # nothing should be reported</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi"><span class="sgr92">No errors detected</span>
 </code></pre><p>Finally, let&#39;s see an example of very &quot;type-instable&quot; code maintained within <code>Base</code>. Typically, anything involving I/O is written in a very dynamic way for good reasons, and certainly, e.g. <code>println(QuoteNode(nothing))</code> will yield bunch of runtime dispatches:</p><pre><code class="language-julia hljs">@report_dispatch println(QuoteNode(nothing))
@@ -207,6 +208,6 @@ end
 # but `@report_dispatch` will just do abstract interpretation of the call, so will finish instantly
 @report_dispatch frame_filter=module_filter(@__MODULE__) compute(30)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi"><span class="sgr7">═════ 1 possible error found ═════</span>
 <span class="sgr91">┌ </span><span class="sgr1">compute(</span><span class="sgr90">x</span>::Int64<span class="sgr1">)</span> <span class="sgr91">@ Main ./timing.jl:289</span>
-<span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Core.kwcall([quote]<span class="sgr96">::@NamedTuple{msg::Nothing}</span>, Base.time_print, %104<span class="sgr96">::IO</span>, %61<span class="sgr96">::UInt64</span>, %85<span class="sgr96">::Int64</span>, %100<span class="sgr96">::Int64</span>, %103<span class="sgr96">::Int64</span>, %66<span class="sgr96">::UInt64</span>, %68<span class="sgr96">::UInt64</span>, true)<span class="sgr96">::Any</span></span>
+<span class="sgr91">│ runtime dispatch detected: </span><span class="sgr1">Core.kwcall([quote]<span class="sgr96">::@NamedTuple{msg::Nothing}</span>, Base.time_print, %106<span class="sgr96">::IO</span>, %61<span class="sgr96">::UInt64</span>, %87<span class="sgr96">::Int64</span>, %102<span class="sgr96">::Int64</span>, %105<span class="sgr96">::Int64</span>, %67<span class="sgr96">::UInt64</span>, %70<span class="sgr96">::UInt64</span>, true)<span class="sgr96">::Any</span></span>
 <span class="sgr91">└────────────────────</span>
-</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../generated-plugin-api/">« API</a><a class="docs-footer-nextpage" href="../find_unstable_api/">&quot;Unstable API&quot; Analysis »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.25 on <span class="colophon-date" title="Thursday 24 August 2023 05:56">Thursday 24 August 2023</span>. Using Julia version 1.11.0-DEV.331.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../generated-plugin-api/">« API</a><a class="docs-footer-nextpage" href="../find_unstable_api/">&quot;Unstable API&quot; Analysis »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.25 on <span class="colophon-date" title="Friday 15 September 2023 06:48">Friday 15 September 2023</span>. Using Julia version 1.11.0-DEV.471.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
