@@ -242,14 +242,14 @@ function report_package_unstable_api(args...; jetconfigs...)
     return analyze_and_report_package!(analyzer, args...; jetconfigs...)
 end
 
-using Pkg #src
-if "IRTools" in keys(Pkg.project().dependencies) #src
+using Pkg #hide
+if "IRTools" in keys(Pkg.project().dependencies) #hide
 report_package_unstable_api("IRTools";
                             ## to only find errors detected within the module context of `IRTools`
                             target_defined_modules=true)
-else #src
-@warn "IRTools isn't installed in the current environment at $(Pkg.project().path)" #src
-end #src
+else #hide
+@warn "IRTools isn't installed in the current environment at $(Pkg.project().path)" #hide
+end #hide
 
 # ```
 # ═════ 59 possible errors found ═════

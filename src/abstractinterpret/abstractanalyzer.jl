@@ -456,14 +456,6 @@ end
     AnalysisCache
 
 JET's internal representation of a global analysis cache.
-
----
-
-    AnalysisCache(analyzer::AbstractAnalyzer) -> analysis_cache::AnalysisCache
-
-Returns [`AnalysisCache`](@ref) for this `analyzer::AbstractAnalyzer`.
-`AbstractAnalyzer` instances can share the same cache if they perform the same analysis,
-otherwise their cache should be separated.
 """
 struct AnalysisCache
     cache::IdDict{MethodInstance,CodeInstance}
@@ -477,6 +469,13 @@ Base.setindex!(analysis_cache::AnalysisCache, ci::CodeInstance, mi::MethodInstan
 Base.delete!(analysis_cache::AnalysisCache, mi::MethodInstance) = delete!(analysis_cache.cache, mi)
 Base.show(io::IO, analysis_cache::AnalysisCache) = print(io, typeof(analysis_cache), "(", length(analysis_cache.cache), " entries)")
 
+"""
+    AnalysisCache(analyzer::AbstractAnalyzer) -> analysis_cache::AnalysisCache
+
+Returns [`AnalysisCache`](@ref) for this `analyzer::AbstractAnalyzer`.
+`AbstractAnalyzer` instances can share the same cache if they perform the same analysis,
+otherwise their cache should be separated.
+"""
 @noinline function AnalysisCache(analyzer::AbstractAnalyzer)
     AnalyzerType = nameof(typeof(analyzer))
     error(lazy"""

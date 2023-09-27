@@ -409,33 +409,47 @@ handle_sig!(sig::Vector{Any}, ::StateAtPC, @nospecialize(x)) = (push!(sig, x); r
 # ----------
 
 """
+    abstract type InferenceErrorReport end
+
+An interface type of error reports collected by JET's abstract interpretation based analysis.
+All `InferenceErrorReport`s have the following fields,
+which explains _where_ and _how_ this error is reported:
+- [`vst::VirtualStackTrace`](@ref VirtualStackTrace): a virtual stack trace of the error
+- [`sig::Signature`](@ref Signature): a signature of the error point
+
+Note that some `InferenceErrorReport` may have additional fields other than `vst` and `sig`
+to explain _why_ they are reported.
+"""
+abstract type InferenceErrorReport end
+
+"""
     InferenceErrorReport
 
-An interface type of error reports that JET collects by abstract interpration.
-In order for `R<:InferenceErrorReport` to implement the interface,
+In order for `Report <: InferenceErrorReport` to implement the interface,
 it should satisfy the following requirements:
 
 - **Required fields** \\
-  `R` should have the following fields, which explains _where_ and _how_ this error is reported:
+  `Report` should have the following fields,
+  which explains _where_ and _how_ this error is reported:
   * `vst::VirtualStackTrace`: a virtual stack trace of the error
   * [`sig::Signature`](@ref Signature): a signature of the error point
 
-  Note that `R` can have additional fields other than `vst` and `sig` to explain
+  Note that `Report` can have additional fields other than `vst` and `sig` to explain
   _why_ this error is reported (mostly used for [`print_report_message`](@ref)).
 
 - **Required overloads** \\
 
-  * [`copy_report(report::R) -> new::R`](@ref copy_report)
-  * [`print_report_message(io::IO, report::R)`](@ref print_report_message)
+  * [`copy_report(report::Report) -> new::Report`](@ref copy_report)
+  * [`print_report_message(io::IO, report::Report)`](@ref print_report_message)
 
 - **Optional overloads** \\
 
-  * [`print_signature(::R) -> Bool`](@ref print_signature)
-  * [`report_color(::R) -> Symbol`](@ref report_color)
+  * [`print_signature(::Report) -> Bool`](@ref print_signature)
+  * [`report_color(::Report) -> Symbol`](@ref report_color)
 
-`R<:InferenceErrorReport` is supposed to be constructed using the following constructor
+`Report <: InferenceErrorReport` is supposed to be constructed using the following constructor
 
-    R(::AbstractAnalyzer, state, spec_args...) -> R
+    Report(::AbstractAnalyzer, state, spec_args...) -> Report
 
 where `state` can be either of:
 - `state::$StateAtPC`: a state with the current program counter specified
@@ -445,15 +459,15 @@ where `state` can be either of:
 
 See also: [`@jetreport`](@ref), [`VirtualStackTrace`](@ref), [`VirtualFrame`](@ref)
 """
-abstract type InferenceErrorReport end
+function InferenceErrorReport() end
 
 # interfaces
 # ----------
 
 """
-    copy_report(report::R) where R<:InferenceErrorReport -> new::R
+    copy_report(report::Report) where Report<:InferenceErrorReport -> new::Report
 
-Returns new `new::R`, that should be identical to the original `report::R`, except
+Returns new `new::Report`, that should be identical to the original `report::Report`, except
 that `new.vst` is copied from `report.vst` so that the further modification on `report.vst`
 that may happen in later abstract interpretation doesn't affect `new.vst`.
 """
@@ -461,7 +475,7 @@ that may happen in later abstract interpretation doesn't affect `new.vst`.
     error(lazy"`copy_report(::$(typeof(report)))` is not implemented"))
 
 """
-    print_report_message(io::IO, report::R) where R<:InferenceErrorReport
+    print_report_message(io::IO, report::Report) where Report<:InferenceErrorReport
 
 Prints to `io` and describes _why_ `report` is reported.
 """
@@ -469,16 +483,16 @@ Prints to `io` and describes _why_ `report` is reported.
     error(lazy"`print_report_message(::IO, ::$(typeof(report)))` is not implemented"))
 
 """
-    print_signature(::R) where R<:InferenceErrorReport -> Bool
+    print_signature(::Report) where Report<:InferenceErrorReport -> Bool
 
-Configures whether or not to print the report signature when printing `R` (defaults to `true`).
+Configures whether or not to print the report signature when printing `Report` (defaults to `true`).
 """
 print_signature(::InferenceErrorReport) = true
 
 """
-    report_color(::R) where R<:InferenceErrorReport -> Symbol
+    report_color(::Report) where Report<:InferenceErrorReport -> Symbol
 
-Configures the color for `R` (defaults to `:red`).
+Configures the color for `Report` (defaults to `:red`).
 """
 report_color(::InferenceErrorReport) = ERROR_COLOR
 
@@ -500,11 +514,11 @@ end
 function copy_report′(@nospecialize report::InferenceErrorReport)
     @static if JET_DEV_MODE
         new = copy_report(report)
-        R = typeof(report)
-        if !isa(new, R)
+        Report = typeof(report)
+        if !isa(new, Report)
             error(lazy"""
             bad `$InferenceErrorReport` interface:
-            `$copy_report(::$R)` should return new `$R`.
+            `$copy_report(::$Report)` should return new `$Report`.
             See the documentation of `$InferenceErrorReport` and `$copy_report`
             """)
         end
@@ -512,7 +526,7 @@ function copy_report′(@nospecialize report::InferenceErrorReport)
         if report.vst === new.vst && (@static JET_DEV_MODE ? report.vst == new.vst : true)
             error(lazy"""
             bad `$InferenceErrorReport` interface:
-            `$copy_report(report::$R).vst` should be a copy of `report.vst`.
+            `$copy_report(report::$Report).vst` should be a copy of `report.vst`.
             See the documentation of `$InferenceErrorReport` and `$copy_report`
             """)
         end
@@ -529,11 +543,11 @@ function Base.show(io::IO, report::InferenceErrorReport)
 end
 
 # the default constructor to create a report from abstract interpretation
-function (T::Type{<:InferenceErrorReport})(state, @nospecialize(spec_args...))
+function (Report::Type{<:InferenceErrorReport})(state, @nospecialize(spec_args...))
     vf = get_virtual_frame(state)
     vst = VirtualFrame[vf]
     sig = get_sig(state)
-    return T(vst, sig, spec_args...)
+    return Report(vst, sig, spec_args...)
 end
 
 # utility
@@ -542,7 +556,7 @@ end
 # TODO parametric definition?
 
 """
-    @jetreport struct T <: InferenceErrorReport
+    @jetreport struct NewReport <: InferenceErrorReport
         ...
     end
 
@@ -551,8 +565,8 @@ It can be very tedious to manually satisfy the `InferenceErrorReport` interfaces
 JET internally uses this `@jetreport` utility macro, which takes a `struct` definition of
 `InferenceErrorReport` without the required fields specified, and automatically defines
 the `struct` as well as constructor definitions.
-If the report `T <: InferenceErrorReport` is defined using `@jetreport`,
-then `T` just needs to implement the `print_report_message` interface.
+If the report `NewReport <: InferenceErrorReport` is defined using `@jetreport`,
+then `NewReport` just needs to implement the `print_report_message` interface.
 
 For example, [`JETAnalyzer`](@ref)'s `MethodErrorReport` is defined as follows:
 ```julia
@@ -578,8 +592,8 @@ end
 and constructed as like `MethodErrorReport(sv::InferenceState, atype::Any, 0)`.
 """
 macro jetreport(ex)
-    @assert @capture(ex, struct T_ <: S_; spec_sigs__; end)
-    @assert Core.eval(__module__, S) <: InferenceErrorReport
+    @assert @capture(ex, struct NewReport_ <: Super_; spec_sigs__; end)
+    @assert Core.eval(__module__, Super) <: InferenceErrorReport
 
     spec_decls = Any[]
     for i in 1:length(spec_sigs)
@@ -596,12 +610,12 @@ macro jetreport(ex)
     spec_names = extract_decl_name.(spec_decls)
     spec_types = esc.(extract_decl_type.(spec_decls))
 
-    T, S = esc(T), esc(S)
+    NewReport, Super = esc(NewReport), esc(Super)
 
     # copy_report
     copy_report = let
-        sig = :($(GlobalRef(JET, :copy_report))(report::$T))
-        call = :($T(copy(report.vst), report.sig))
+        sig = :($(GlobalRef(JET, :copy_report))(report::$NewReport))
+        call = :($NewReport(copy(report.vst), report.sig))
         for name in spec_names
             push!(call.args, :(getproperty(report, $(QuoteNode(name)))))
         end
@@ -609,11 +623,11 @@ macro jetreport(ex)
     end
 
     return quote
-        Base.@__doc__ struct $T <: $S
+        Base.@__doc__ struct $NewReport <: $Super
             $(INFERENCE_ERROR_REPORT_FIELD_DECLS...)
             $(map(esc, spec_decls)...)
             # esc is needed here since signanture might be `@nospecialize`d
-            function $T($(INFERENCE_ERROR_REPORT_FIELD_DECLS...), $(map(esc, spec_sigs)...))
+            function $NewReport($(INFERENCE_ERROR_REPORT_FIELD_DECLS...), $(map(esc, spec_sigs)...))
                 new($(extract_decl_name.(INFERENCE_ERROR_REPORT_FIELD_DECLS)...), $(map(esc, spec_names)...))
             end
         end
