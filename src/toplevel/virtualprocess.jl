@@ -1464,8 +1464,8 @@ function analyze_toplevel!(analyzer::AbstractAnalyzer, src::CodeInfo)
     mi.specTypes = Tuple{}
 
     mi.def = mod = get_toplevelmod(analyzer)
-    src = transform_abstract_global_symbols!(analyzer, src)
-    src = resolve_toplevel_symbols!(mod, src)
+    transform_abstract_global_symbols!(src, analyzer)
+    resolve_toplevel_symbols!(src, mod)
     @static if VERSION ≥ v"1.10.0-DEV.112"
         @atomic mi.uninferred = src
     else
@@ -1489,7 +1489,7 @@ end
 # NOTE that `transform_abstract_global_symbols!` will produce really invalid code for
 # actual interpretation or execution, but all the statements won't be interpreted anymore
 # by `ConcreteInterpreter` nor executed by the native compilation pipeline anyway
-function transform_abstract_global_symbols!(analyzer::AbstractAnalyzer, src::CodeInfo)
+function transform_abstract_global_symbols!(src::CodeInfo, analyzer::AbstractAnalyzer)
     nslots = length(src.slotnames)
     abstract_global_variables = Dict{Symbol,Int}()
     concretized = get_concretized(analyzer)
@@ -1528,15 +1528,14 @@ function transform_abstract_global_symbols!(analyzer::AbstractAnalyzer, src::Cod
     return src
 end
 
-# resolve toplevel symbols (and other expressions like `:foreigncall`)
-# so that the returned `CodeInfo` is eligible for abstractintepret and optimization
-# TODO `jl_resolve_globals_in_ir` may throw, and we want to redirect it to `ToplevelErrorReport`
-function resolve_toplevel_symbols!(mod::Module, src::CodeInfo)
-    newsrc = copy(src)
+# resolve toplevel symbols (and other expressions like `:foreigncall`) within `src`
+# so that it is eligible for abstractintepret and optimization
+# TODO `jl_resolve_globals_in_ir` may throw, and we should redirect the error to `ToplevelErrorReport`
+function resolve_toplevel_symbols!(src::CodeInfo, mod::Module)
     @ccall jl_resolve_globals_in_ir(
-        #=jl_array_t *stmts=# newsrc.code::Any,
+        #=jl_array_t *stmts=# src.code::Any,
         #=jl_module_t *m=# mod::Any,
         #=jl_svec_t *sparam_vals=# svec()::Any,
         #=int binding_effects=# 0::Int)::Cvoid
-    return newsrc
+    return src
 end
