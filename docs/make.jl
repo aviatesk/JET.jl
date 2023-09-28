@@ -71,7 +71,7 @@ function generate_example_docs!(dir = PLUGIN_EXAMPLES_DIRS[1], outs = String[])
             push!(outs, Literate.markdown(normpath(root, file), outdir; documenter=true))
         end
         for dir in dirs
-            gen_example_doc!(normpath(root, dir), outs)
+            generate_example_docs!(normpath(root, dir), outs)
         end
     end
 
@@ -94,7 +94,15 @@ function generate_api_doc(examples_pages)
         contents = codeblock("Pages = $(repr([out]))", "@contents")
         interface_docs = let
             objs = getfield.(Ref(JET.JETInterface), JET.JETInterface.DOCUMENTED_NAMES)
-            codeblock(join(string.(parentmodule.(objs), '.', nameof.(objs)), '\n'))
+            map(objs) do @nospecialize obj
+                if obj === JET.AnalysisCache
+                    return "JET.AnalysisCache(::JET.AbstractAnalyzer)"
+                elseif obj === JET.InferenceErrorReport
+                    return "JET.InferenceErrorReport()"
+                else
+                    return string(parentmodule(obj), '.', nameof(obj))
+                end
+            end |> Base.Fix2(join, '\n') |> codeblock
         end
         examples_contents = codeblock("Pages = $(repr(examples_pages))", "@contents")
 
@@ -140,22 +148,18 @@ let
                     "Tutorial" => "tutorial.md",
                     "Analyses" => Any[
                         "Error Analysis" => "jetanalysis.md",
-                        "Optimization Analysis" => "optanalysis.md",
-                    ],
+                        "Optimization Analysis" => "optanalysis.md"],
                     "Configurations" => "config.md",
                     "Internals" => "internals.md",
                     "`AbstractAnalyzer` Framework" => Any[
-                        "API"      => generate_api_doc(examples),
-                        "Examples" => examples,
-                    ]
+                        "API" => generate_api_doc(examples),
+                        "Examples" => examples]
                ],
                format = Documenter.HTML(;
                    prettyurls = get(ENV, "CI", nothing) == "true",
-                   ansicolor = true,
-               ),
-             )
+                   ansicolor = true),
+               warnonly = [:missing_docs, :cross_references])
 end
 
 deploydocs(; repo = "github.com/aviatesk/JET.jl.git",
-             push_preview = true,
-             )
+             push_preview = true)
