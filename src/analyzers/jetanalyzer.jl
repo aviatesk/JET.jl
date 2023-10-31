@@ -1440,17 +1440,15 @@ print_report_message(io::IO, r::UnsoundBuiltinErrorReport) = print(io, r.msg)
 function (::SoundPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(rt))
     @assert !(f === throw) "`throw` calls should be handled either by the report pass of `SeriousExceptionReport` or `UncaughtExceptionReport`"
     if isa(f, IntrinsicFunction)
-        if !Core.Compiler.intrinsic_nothrow(f, argtypes)
-            add_new_report!(analyzer, sv.result, UnsoundBuiltinErrorReport(sv, f, argtypes))
-        end
+        nothrow = Core.Compiler.intrinsic_nothrow(f, argtypes)
     else
-        nothrow = !(@static isdefined(CC, :typeinf_lattice) ?
+        nothrow = (@static isdefined(CC, :typeinf_lattice) ?
             Core.Compiler.builtin_nothrow(CC.typeinf_lattice(analyzer), f, argtypes, rt) :
             Core.Compiler.builtin_nothrow(f, argtypes, rt))
-        if nothrow
-            add_new_report!(analyzer, sv.result, UnsoundBuiltinErrorReport(sv, f, argtypes))
-        end
     end
+    nothrow && return false
+    add_new_report!(analyzer, sv.result, UnsoundBuiltinErrorReport(sv, f, argtypes))
+    return true
 end
 
 # entries
