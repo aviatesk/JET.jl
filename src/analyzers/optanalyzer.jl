@@ -236,6 +236,14 @@ function CC.finish(frame::InferenceState, analyzer::OptAnalyzer)
             analyze = false
         end
     end
+    @static if VERSION ≥ v"1.11.0-DEV.404"
+    if analyze && CC.is_result_constabi_eligible(frame.result)
+        analyze = false
+        # turn off optimization for this frame in order to achieve a minor perf gain,
+        # similar to the effect of setting `may_discard_trees(::OptAnalyzer) = true`
+        frame.result.src = nothing
+    end
+    end
 
     push!(analyzer.__analyze_frame, analyze)
     if analyze
@@ -283,34 +291,37 @@ function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState)
     caller = frame.result
 
     # get the source before running `finish!` to keep the reference to `OptimizationState`
-    src = caller.src
+    oldsrc = caller.src
 
-    ret = @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
+    @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
+
+    newsrc = caller.src
 
     analyze = popfirst!(analyzer.__analyze_frame)
-    if !analyze && isa(ret, CodeInfo)
+    if !analyze && isa(newsrc, CodeInfo)
         # if this inferred source is not "compileable" but still is going to be inlined,
         # we should add report runtime dispatches within it
-        analyze = CC.is_inlineable(ret)
+        analyze = CC.is_inlineable(newsrc)
     end
     if analyze
         ReportPass(analyzer)(OptimizationFailureReport, analyzer, caller)
 
-        if src isa OptimizationState{typeof(analyzer)}
-            ReportPass(analyzer)(RuntimeDispatchReport, analyzer, caller, src)
+        if oldsrc isa OptimizationState{typeof(analyzer)}
+            ReportPass(analyzer)(RuntimeDispatchReport, analyzer, caller, oldsrc)
         elseif (@static JET_DEV_MODE ? true : false)
-            if (@static VERSION < v"1.10.0-DEV.551" && true) && isa(src, CC.ConstAPI)
+            if (@static VERSION < v"1.10.0-DEV.551" && true) && isa(oldsrc, CC.ConstAPI)
                 # the optimization was very successful (i.e. fully constant folded),
                 # nothing to report
-            elseif src === nothing # the optimization didn't happen
+            elseif oldsrc === nothing # the optimization didn't happen
             else # and this pass should never happen
-                Core.eval(@__MODULE__, :(src = $src))
+                # NOTE `src` never be `CodeInfo` since `CC.may_discard_trees(::OptAnalyzer) === false`
+                Core.eval(@__MODULE__, :(oldsrc = $oldsrc))
                 throw("unexpected state happened, inspect `$(@__MODULE__).src`")
             end
         end
     end
 
-    return ret
+    return newsrc
 end
 
 # report optimization failure due to recursive calls, etc.
