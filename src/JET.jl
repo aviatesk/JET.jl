@@ -365,9 +365,15 @@ get_linfo(sv::State) = sv.linfo
 get_linfo(result::InferenceResult) = result.linfo
 get_linfo(linfo::MethodInstance) = linfo
 
-is_constant_propagated(frame::InferenceState) =
-    return !frame.cached && # const-prop'ed frame is never cached globally
-           is_constant_propagated(frame.result)
+function is_constant_propagated(frame::InferenceState)
+    @static if VERSION ≥ v"1.11.0-DEV.737"
+        return frame.cache_mode === :local &&
+               is_constant_propagated(frame.result)
+    else
+        return !frame.cached && # const-prop'ed frame is never cached globally
+               is_constant_propagated(frame.result)
+    end
+end
 is_constant_propagated(result::InferenceResult) = CC.any(result.overridden_by_const)
 
 # lattice
