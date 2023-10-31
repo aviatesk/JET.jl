@@ -989,11 +989,26 @@ end
         end
     end
 
-    let # https://github.com/aviatesk/JET.jl/issues/311
-        result = report_call((Vector{Any},); mode=:sound) do xs
-            xs[5]
+    # https://github.com/aviatesk/JET.jl/issues/311
+    @static if VERSION ≥ v"1.11.0-DEV.753"
+        let result = report_call((Vector{Int},); mode=:sound) do xs
+                xs[5]
+            end
+            reports = get_reports_with_test(result)
+            @test length(reports) == 1 # bounds error check
         end
-        @test only(get_reports_with_test(result)) isa UnsoundBuiltinErrorReport
+        let result = report_call((Vector{Any},); mode=:sound) do xs
+                xs[5]
+            end
+            reports = get_reports_with_test(result)
+            @test length(reports) == 2 # bounds error check + potential UndefRefError
+        end
+    else
+        let result = report_call((Vector{Int},); mode=:sound) do xs
+                xs[5]
+            end
+            @test only(get_reports_with_test(result)) isa UnsoundBuiltinErrorReport
+        end
     end
 end
 
@@ -1106,9 +1121,11 @@ test_call(Base.aligned_sizeof, (Union{DataType,Union},))
 @test Base.return_types(; interp=JET.JETAnalyzer()) do
     Val(fieldcount(Int))
 end |> only === Val{0}
-@test Base.return_types(; interp=JET.JETAnalyzer()) do
-    Val(fieldcount(Vector))
-end |> only === Val{0}
+let n = @static VERSION ≥ v"1.11.0-DEV.753" ? 2 : 0
+    @test Base.return_types(; interp=JET.JETAnalyzer()) do
+        Val(fieldcount(Vector))
+    end |> only === Val{n}
+end
 struct CheckFieldIndex; a; end
 @test Base.return_types(; interp=JET.JETAnalyzer()) do
     Val(Base.fieldindex(CheckFieldIndex, :a))
