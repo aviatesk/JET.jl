@@ -293,7 +293,7 @@ function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState)
     # get the source before running `finish!` to keep the reference to `OptimizationState`
     oldsrc = caller.src
 
-    @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
+    ret = @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
 
     newsrc = caller.src
 
@@ -321,7 +321,7 @@ function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState)
         end
     end
 
-    return newsrc
+    return ret
 end
 
 # report optimization failure due to recursive calls, etc.

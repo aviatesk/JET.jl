@@ -250,17 +250,17 @@ function CC.InferenceState(result::InferenceResult, cache::Symbol, analyzer::JET
     return frame
 end
 
-function CC.finish!(analyzer::JETAnalyzer, frame::InferenceState)
-    src = @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
-
+function CC.finish!(analyzer::JETAnalyzer, caller::InferenceState)
+    ret = @invoke CC.finish!(analyzer::AbstractAnalyzer, caller::InferenceState)
+    src = caller.result.src
     if isnothing(src)
         # caught in cycle, similar error should have been reported where the source is available
-        return src
+        return ret
     else
         code = (src::CodeInfo).code
         # report pass for uncaught `throw` calls
-        ReportPass(analyzer)(UncaughtExceptionReport, analyzer, frame, code)
-        return src
+        ReportPass(analyzer)(UncaughtExceptionReport, analyzer, caller, code)
+        return ret
     end
 end
 
