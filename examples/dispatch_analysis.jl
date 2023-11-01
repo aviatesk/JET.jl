@@ -77,9 +77,10 @@ function CC.finish!(analyzer::DispatchAnalyzer, frame::CC.InferenceState)
 
     ## get the source before running `finish!` to keep the reference to `OptimizationState`
     src = caller.src
-
-    ## run `finish!(::AbstractAnalyzer, ::CC.InferenceState)` first to convert the optimized `IRCode` into optimized `CodeInfo`
-    ret = Base.@invoke CC.finish!(analyzer::AbstractAnalyzer, frame::CC.InferenceState)
+    if src isa CC.OptimizationState{typeof(analyzer)}
+        ## allow the following analysis passes to see the optimized `CodeInfo`
+        caller.src = CC.ir_to_codeinf!(src)
+    end
 
     if analyzer.frame_filter(frame.linfo)
         if isa(src, Core.Const) # the optimization was very successful, nothing to report
@@ -93,7 +94,7 @@ function CC.finish!(analyzer::DispatchAnalyzer, frame::CC.InferenceState)
         end
     end
 
-    return ret
+    return @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::CC.InferenceState)
 end
 
 @jetreport struct OptimizationFailureReport <: InferenceErrorReport end

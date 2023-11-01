@@ -262,7 +262,7 @@ end
 function CC.transform_result_for_cache(analyzer::AbstractAnalyzer,
     linfo::MethodInstance, valid_worlds::WorldRange, result::InferenceResult)
     cache = InferenceErrorReport[]
-    for report in get_reports(analyzer, result)
+    for report in get_any_reports(analyzer, result)
         @static if JET_DEV_MODE
             actual, expected = first(report.vst).linfo, linfo
             @assert actual === expected "invalid global caching detected, expected $expected but got $actual"
@@ -464,6 +464,44 @@ function filter_lineages!(analyzer::AbstractAnalyzer, caller::InferenceResult, c
      filter!(!islineage(caller.linfo, current), get_reports(analyzer, caller))
 end
 
+function finish_frame!(analyzer::AbstractAnalyzer, frame::InferenceState)
+    caller = frame.result
+
+    reports = get_reports(analyzer, caller)
+
+    # XXX this is a dirty fix for performance problem, we need more "proper" fix
+    # https://github.com/aviatesk/JET.jl/issues/75
+    unique!(aggregation_policy(analyzer), reports)
+
+    if frame.parent !== nothing
+        # inter-procedural handling: get back to the caller what we got from these results
+        stash_report!(analyzer, reports)
+
+        # local cache management
+        # TODO there are duplicated work here and `transform_result_for_cache`
+        cache_reports_locally!(analyzer, caller, reports)
+    end
+end
+
+function cache_reports_locally!(analyzer::AbstractAnalyzer, caller::InferenceResult,
+                                reports::Vector{InferenceErrorReport})
+    cache = InferenceErrorReport[]
+    for report in reports
+        cache_report!(cache, report)
+    end
+    set_cached_result!(analyzer, caller, cache)
+end
+
+@static if VERSION ≥ v"1.11.0-DEV.737"
+
+function CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
+    ret = @invoke CC.finish!(analyzer::AbstractInterpreter, frame::InferenceState)
+    finish_frame!(analyzer, frame)
+    return ret
+end
+
+else
+
 # in this overload we can work on `frame.src::CodeInfo` (and also `frame::InferenceState`)
 # where type inference (and also optimization if applied) already ran on
 function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
@@ -486,14 +524,6 @@ function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
             caller.inferred = true
         end
     end
-    # NOTE we don't discard `InferenceState`s here so that some analyzers can use them in `finish!`
-    # # collect results for the new expanded frame
-    # results = Tuple{InferenceResult, Vector{Any}, Bool}[
-    #         ( frames[i].result,
-    #           frames[i].stmt_edges[1]::Vector{Any},
-    #           frames[i].cached )
-    #     for i in 1:length(frames) ]
-    # empty!(frames)
     for frame in frames
         caller = frame.result
         opt = caller.src
@@ -505,11 +535,9 @@ function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
             end
         end
     end
-
     for frame in frames
         caller = frame.result
         edges = frame.stmt_edges[1]::Vector{Any}
-        cached = frame.cached
         valid_worlds = caller.valid_worlds
         if CC.last(valid_worlds) >= get_world_counter()
             # if we aren't cached, we don't need this edge
@@ -517,29 +545,9 @@ function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
             CC.store_backedges(caller, edges)
         end
         CC.finish!(analyzer, frame)
-
-        reports = get_reports(analyzer, caller)
-
-        # XXX this is a dirty fix for performance problem, we need more "proper" fix
-        # https://github.com/aviatesk/JET.jl/issues/75
-        unique!(aggregation_policy(analyzer), reports)
-
         # global cache management
-        if cached && !istoplevel(frame)
+        if frame.cached && !istoplevel(frame)
             CC.cache_result!(analyzer, caller)
-        end
-
-        if frame.parent !== nothing
-            # inter-procedural handling: get back to the caller what we got from these results
-            stash_report!(analyzer, reports)
-
-            # local cache management
-            # TODO there are duplicated work here and `transform_result_for_cache`
-            cache = InferenceErrorReport[]
-            for report in reports
-                cache_report!(cache, report)
-            end
-            set_cached_result!(analyzer, caller, cache)
         end
     end
 
@@ -550,7 +558,11 @@ end
 # but the only reason we have this overload is that some analyzers (like `JETAnalyzer`)
 # can further overload this to generate `InferenceErrorReport` with an access to `frame`
 function CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
-    return CC.finish!(analyzer, frame.result)
+    ret = CC.finish!(analyzer, frame.result)
+    finish_frame!(analyzer, frame)
+    return ret
+end
+
 end
 
 # top-level bridge
