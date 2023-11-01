@@ -291,37 +291,38 @@ function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState)
     caller = frame.result
 
     # get the source before running `finish!` to keep the reference to `OptimizationState`
-    oldsrc = caller.src
-
-    ret = @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
-
-    newsrc = caller.src
-
     analyze = popfirst!(analyzer.__analyze_frame)
-    if !analyze && isa(newsrc, CodeInfo)
-        # if this inferred source is not "compileable" but still is going to be inlined,
-        # we should add report runtime dispatches within it
-        analyze = CC.is_inlineable(newsrc)
+    src = caller.src
+    if src isa OptimizationState{typeof(analyzer)}
+        # allow the following analysis passes to see the optimized `CodeInfo`
+        caller.src = CC.ir_to_codeinf!(src)
+
+        if !analyze
+            # if this inferred source is not "compileable" but still is going to be inlined,
+            # we should add report runtime dispatches within it
+            analyze = CC.is_inlineable(src.src)
+        end
     end
+
     if analyze
         ReportPass(analyzer)(OptimizationFailureReport, analyzer, caller)
 
-        if oldsrc isa OptimizationState{typeof(analyzer)}
-            ReportPass(analyzer)(RuntimeDispatchReport, analyzer, caller, oldsrc)
+        if src isa OptimizationState{typeof(analyzer)}
+            ReportPass(analyzer)(RuntimeDispatchReport, analyzer, caller, src)
         elseif (@static JET_DEV_MODE ? true : false)
-            if (@static VERSION < v"1.10.0-DEV.551" && true) && isa(oldsrc, CC.ConstAPI)
+            if (@static VERSION < v"1.10.0-DEV.551" && true) && isa(src, CC.ConstAPI)
                 # the optimization was very successful (i.e. fully constant folded),
                 # nothing to report
-            elseif oldsrc === nothing # the optimization didn't happen
+            elseif src === nothing # the optimization didn't happen
             else # and this pass should never happen
                 # NOTE `src` never be `CodeInfo` since `CC.may_discard_trees(::OptAnalyzer) === false`
-                Core.eval(@__MODULE__, :(oldsrc = $oldsrc))
+                Core.eval(@__MODULE__, :(src = $src))
                 throw("unexpected state happened, inspect `$(@__MODULE__).src`")
             end
         end
     end
 
-    return ret
+    return @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
 end
 
 # report optimization failure due to recursive calls, etc.

@@ -251,17 +251,21 @@ function CC.InferenceState(result::InferenceResult, cache::Symbol, analyzer::JET
 end
 
 function CC.finish!(analyzer::JETAnalyzer, caller::InferenceState)
-    ret = @invoke CC.finish!(analyzer::AbstractAnalyzer, caller::InferenceState)
     src = caller.result.src
+    if src isa OptimizationState
+        # allow the following analysis passes to see the optimized `CodeInfo`
+        src = caller.result.src = CC.ir_to_codeinf!(src)
+    end
+
     if isnothing(src)
         # caught in cycle, similar error should have been reported where the source is available
-        return ret
     else
         code = (src::CodeInfo).code
         # report pass for uncaught `throw` calls
         ReportPass(analyzer)(UncaughtExceptionReport, analyzer, caller, code)
-        return ret
     end
+
+    return @invoke CC.finish!(analyzer::AbstractAnalyzer, caller::InferenceState)
 end
 
 function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer,
