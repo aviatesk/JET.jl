@@ -69,7 +69,7 @@ function CC.abstract_eval_special_value(analyzer::UnstableAPIAnalyzer, @nospecia
     end
 
     ## recurse into JET's default abstract interpretation routine
-    return Base.@invoke CC.abstract_eval_special_value(analyzer::AbstractAnalyzer, e, vtypes::CC.VarTable, sv::CC.InferenceState)
+    return @invoke CC.abstract_eval_special_value(analyzer::AbstractAnalyzer, e, vtypes::CC.VarTable, sv::CC.InferenceState)
 end
 
 function CC.builtin_tfunction(analyzer::UnstableAPIAnalyzer, @nospecialize(f), argtypes::Vector{Any}, sv::CC.InferenceState)
@@ -88,7 +88,7 @@ function CC.builtin_tfunction(analyzer::UnstableAPIAnalyzer, @nospecialize(f), a
     end
 
     ## recurse into JET's default abstract interpretation routine
-    return Base.@invoke CC.builtin_tfunction(analyzer::AbstractAnalyzer, f, argtypes::Vector{Any}, sv::CC.InferenceState)
+    return @invoke CC.builtin_tfunction(analyzer::AbstractAnalyzer, f, argtypes::Vector{Any}, sv::CC.InferenceState)
 end
 
 # Additionally, we can cut off the performance cost involved with Julia's native compiler's optimizations passes:

@@ -572,7 +572,7 @@ end
 
     # invalid `argtype`
     result = report_call() do
-        Base.@invoke sin(1.0::Int)
+        @invoke sin(1.0::Int)
     end
     @test length(get_reports_with_test(result)) == 1
     r = first(get_reports_with_test(result))
@@ -582,7 +582,7 @@ end
     result = @eval Module() begin
         foo(i::Integer) = throw(string(i))
         $report_call((Int,)) do a
-            Base.@invoke foo(a::Integer)
+            @invoke foo(a::Integer)
         end
     end
     @test !isempty(get_reports_with_test(result))
@@ -595,7 +595,7 @@ end
         bar(a) = return a + undefvar
         function baz(a)
             a += 1
-            Base.@invoke bar(a::Int) # `invoke` is valid, but error should happen within `bar`
+            @invoke bar(a::Int) # `invoke` is valid, but error should happen within `bar`
         end
         $report_call(baz, (Any,))
     end
