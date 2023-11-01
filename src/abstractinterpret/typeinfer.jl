@@ -280,6 +280,22 @@ function CC.setindex!(wvc::WorldView{<:AbstractAnalyzerView}, ci::CodeInstance, 
     analysis_cache[mi] = ci
 end
 
+struct JETCallback
+    analysis_cache::AnalysisCache
+end
+
+@static if VERSION ≥ v"1.11.0-DEV.798"
+
+function add_jet_callback!(mi::MethodInstance, analysis_cache::AnalysisCache)
+    callback = JETCallback(analysis_cache)
+    CC.add_invalidation_callback!(callback, mi)
+end
+function (callback::JETCallback)(replaced::MethodInstance, max_world::UInt32)
+    delete!(callback.analysis_cache, replaced)
+end
+
+else
+
 function add_jet_callback!(mi::MethodInstance, analysis_cache::AnalysisCache)
     callback = JETCallback(analysis_cache)
     if !isdefined(mi, :callbacks)
@@ -293,10 +309,7 @@ function add_jet_callback!(mi::MethodInstance, analysis_cache::AnalysisCache)
     return nothing
 end
 
-struct JETCallback
-    analysis_cache::AnalysisCache
-end
-function (callback::JETCallback)(replaced::MethodInstance, max_world,
+function (callback::JETCallback)(replaced::MethodInstance, max_world::UInt32,
                                  seen::IdSet{MethodInstance} = IdSet{MethodInstance}())
     push!(seen, replaced)
     delete!(callback.analysis_cache, replaced)
@@ -309,6 +322,8 @@ function (callback::JETCallback)(replaced::MethodInstance, max_world,
         end
     end
     return nothing
+end
+
 end
 
 # local
