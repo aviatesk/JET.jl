@@ -1477,7 +1477,7 @@ function analyze_toplevel!(analyzer::AbstractAnalyzer, src::CodeInfo)
     # NOTE toplevel frames don't really need to be cached, but still better to be optimized
     # in order to get reasonable `UncaughtExceptionReport`, and also, otherwise
     # `typeinf_edge` won't add "toplevel-to-callee" edges
-    frame = InferenceState(result, src, #=cache=# :global, analyzer)::InferenceState
+    frame = InferenceState(result, src, #=cache_mode=#:global, analyzer)::InferenceState
 
     return analyze_frame!(analyzer, frame)
 end
