@@ -365,15 +365,7 @@ get_linfo(sv::State) = sv.linfo
 get_linfo(result::InferenceResult) = result.linfo
 get_linfo(linfo::MethodInstance) = linfo
 
-function is_constant_propagated(frame::InferenceState)
-    @static if VERSION ≥ v"1.11.0-DEV.737"
-        return frame.cache_mode === :local &&
-               is_constant_propagated(frame.result)
-    else
-        return !frame.cached && # const-prop'ed frame is never cached globally
-               is_constant_propagated(frame.result)
-    end
-end
+is_constant_propagated(frame::InferenceState) = is_constant_propagated(frame.result)
 is_constant_propagated(result::InferenceResult) = CC.any(result.overridden_by_const)
 
 # lattice
@@ -755,16 +747,23 @@ end
 function analyze_method_instance!(analyzer::AbstractAnalyzer, mi::MethodInstance)
     result = InferenceResult(mi)
 
-    frame = InferenceState(result, #=cache=# :global, analyzer)
+    frame = InferenceState(result, #=cache_mode=#:global, analyzer)
 
     isnothing(frame) && return analyzer, result
 
     return analyze_frame!(analyzer, frame)
 end
 
-function InferenceState(result::InferenceResult, cache::Symbol, analyzer::AbstractAnalyzer)
+@static if VERSION ≥ v"1.11.0-DEV.843"
+function InferenceState(result::InferenceResult, cache_mode::UInt8,  analyzer::AbstractAnalyzer)
     init_result!(analyzer, result)
-    return @invoke InferenceState(result::InferenceResult, cache::Symbol, analyzer::AbstractInterpreter)
+    return @invoke InferenceState(result::InferenceResult, cache_mode::UInt8, analyzer::AbstractInterpreter)
+end
+else
+function InferenceState(result::InferenceResult, cache_mode::Symbol, analyzer::AbstractAnalyzer)
+    init_result!(analyzer, result)
+    return @invoke InferenceState(result::InferenceResult, cache_mode::Symbol, analyzer::AbstractInterpreter)
+end
 end
 
 function analyze_frame!(analyzer::AbstractAnalyzer, frame::InferenceState)

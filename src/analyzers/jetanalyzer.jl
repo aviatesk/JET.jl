@@ -242,12 +242,22 @@ end # @static if VERSION < v"1.10.0-DEV.286"
 # overloads
 # =========
 
-function CC.InferenceState(result::InferenceResult, cache::Symbol, analyzer::JETAnalyzer)
-    frame = @invoke CC.InferenceState(result::InferenceResult, cache::Symbol, analyzer::AbstractAnalyzer)
+@static if VERSION ≥ v"1.11.0-DEV.843"
+function CC.InferenceState(result::InferenceResult, cache_mode::UInt8, analyzer::JETAnalyzer)
+    frame = @invoke CC.InferenceState(result::InferenceResult, cache_mode::UInt8, analyzer::AbstractAnalyzer)
     if isnothing(frame) # indicates something bad happened within `retrieve_code_info`
         ReportPass(analyzer)(GeneratorErrorReport, analyzer, result)
     end
     return frame
+end
+else
+function CC.InferenceState(result::InferenceResult, cache_mode::Symbol, analyzer::JETAnalyzer)
+    frame = @invoke CC.InferenceState(result::InferenceResult, cache_mode::Symbol, analyzer::AbstractAnalyzer)
+    if isnothing(frame) # indicates something bad happened within `retrieve_code_info`
+        ReportPass(analyzer)(GeneratorErrorReport, analyzer, result)
+    end
+    return frame
+end
 end
 
 function CC.finish!(analyzer::JETAnalyzer, caller::InferenceState)
