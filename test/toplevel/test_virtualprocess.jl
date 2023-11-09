@@ -689,7 +689,7 @@ end
         @test !isempty(res.res.toplevel_error_reports)
         er = first(res.res.toplevel_error_reports)
         @test er isa ActualErrorWrapped
-        @test er.err == UndefVarError(:foo)
+        @test er.err isa UndefVarError && er.err.var === :foo
         @test er.file == (@__FILE__) && er.line == (@__LINE__) - 7
     end
 
@@ -1186,7 +1186,7 @@ end
 
         er = only(res.res.toplevel_error_reports)
         @test er isa ActualErrorWrapped
-        @test er.err == UndefVarError(:B)
+        @test er.err isa UndefVarError && er.err.var === :B
         @test er.file == (@__FILE__) && er.line == (@__LINE__) - 6
     end
 
@@ -1218,7 +1218,7 @@ end
 
             er = only(res.res.toplevel_error_reports)
             @test er isa ActualErrorWrapped
-            @test er.err == UndefVarError(:UndefinedType)
+            @test er.err isa UndefVarError && er.err.var === :UndefinedType
             @test er.file == (@__FILE__) && er.line == (@__LINE__) - 8
             @test isempty(er.st)
         end
@@ -2001,7 +2001,11 @@ end
             @test 1234 === @test_nowarn(1234)
             @test 5678 === @test_warn("WARNING: foo", begin println(stderr, "WARNING: foo"); 5678; end)
             let a
-                @test_throws UndefVarError(:a) a
+                @static if VERSION ≥ v"1.11.0-DEV.867"
+                    @test_throws UndefVarError(:a, :local) a
+                else
+                    @test_throws UndefVarError(:a) a
+                end
                 @test_nowarn a = 1
                 @test a === 1
             end
