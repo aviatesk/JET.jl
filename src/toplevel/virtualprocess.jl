@@ -1082,11 +1082,11 @@ function select_direct_requirement!(concretize, stmts, edges)
             stmt = rhs
         end
         if isexpr(stmt, :call)
-            if is_known_call(stmt, :include)
+            if is_known_call(stmt, :include, stmts)
                 # `include` calls are special cased
                 select_stmt_requirement!(concretize, i, edges)
                 continue
-            elseif is_known_call(stmt, :eval)
+            elseif is_known_call(stmt, :eval, stmts)
                 # analysis of `eval` calls are difficult, let's give up it and just evaluate
                 # toplevel `eval` calls; they may contain toplevel definitions
                 select_stmt_requirement!(concretize, i, edges)
@@ -1099,8 +1099,11 @@ end
 # adapted from
 # - https://github.com/timholy/Revise.jl/blob/266ed68d7dd3bea67c39f96513cda30bbcd7d441/src/lowered.jl#L53
 # - https://github.com/timholy/Revise.jl/blob/266ed68d7dd3bea67c39f96513cda30bbcd7d441/src/lowered.jl#L87-L88
-function is_known_call(stmt::Expr, func::Symbol)
+function is_known_call(stmt::Expr, func::Symbol, stmts::Vector{Any})
     f = stmt.args[1]
+    if f isa SSAValue
+        f = stmts[f.id]
+    end
     isa(f, Symbol) && f === func && return true
     isa(f, GlobalRef) && f.name === :eval && return true
     callee_matches(f, Base, :getproperty) && is_quotenode_egal(stmt.args[end], func) && return true

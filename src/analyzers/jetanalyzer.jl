@@ -622,7 +622,11 @@ function report_uncaught_exceptions!(analyzer::JETAnalyzer, frame::InferenceStat
     throw_calls = nothing
     for (pc, stmt) in enumerate(stmts)
         isa(stmt, Expr) || continue
-        is_throw_call(stmt) || continue
+        @static if VERSION ≥ v"1.11.0-DEV.888"
+            is_throw_call(stmt, stmts) || continue
+        else
+            is_throw_call(stmt) || continue
+        end
         # if this `throw` is already reported, don't duplicate
         if !isnothing(reported_locs) && linetable[codelocs[pc]]::LineInfoNode in reported_locs
             continue
