@@ -365,8 +365,13 @@ function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
     @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
     if CC.is_nothrow(result.effects)
         neweffects = CC.Effects(result.effects; nonoverlayed=true)
+        @static if VERSION ≥ v"1.11.0-DEV.945"
+        newresult = MethodCallResult(result.rt, result.exct, result.edgecycle, result.edgelimited,
+                                     result.edge, neweffects)
+        else
         newresult = MethodCallResult(result.rt, result.edgecycle, result.edgelimited,
                                      result.edge, neweffects)
+        end
         res = @invoke CC.concrete_eval_eligible(analyzer::AbstractAnalyzer,
             f::Any, newresult::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
         @static if VERSION ≥ v"1.10.0-DEV.1345"
@@ -453,8 +458,9 @@ end
     ret = @invoke CC.abstract_eval_basic_statement(analyzer::AbstractAnalyzer,
         stmt::Any, pc_vartable::VarTable, frame::InferenceState)
     if isexpr(stmt, :(=)) && (lhs = stmt.args[1]; isa(lhs, GlobalRef))
+        rt = @static VERSION ≥ v"1.11.0-DEV.945" ? ret.rt : ret.type
         ReportPass(analyzer)(InvalidGlobalAssignmentError, analyzer,
-            frame, lhs.mod, lhs.name, ret.type)
+            frame, lhs.mod, lhs.name, rt)
     end
     return ret
 end

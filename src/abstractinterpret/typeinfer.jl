@@ -639,7 +639,9 @@ function CC.abstract_eval_special_value(analyzer::AbstractAnalyzer, @nospecializ
                 # in this call graph, but it's highly possible this is a toplevel callsite
                 # and we take a risk here since we can't enter the analysis otherwise
                 val = getglobal(mod, name)
-                @static if VERSION ≥ v"1.11.0-DEV.797"
+                @static if VERSION ≥ v"1.11.0-DEV.945"
+                ret = CC.RTEffects(isa(val, AbstractGlobal) ? val.t : Const(val), ret.exct, ret.effects)
+                elseif VERSION ≥ v"1.11.0-DEV.797"
                 ret = CC.RTEffects(isa(val, AbstractGlobal) ? val.t : Const(val), ret.effects)
                 else
                 ret = isa(val, AbstractGlobal) ? val.t : Const(val)
@@ -675,7 +677,11 @@ end
 function CC.abstract_eval_statement(analyzer::AbstractAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
     if istoplevel(sv)
         if get_concretized(analyzer)[get_currpc(sv)]
+            @static if VERSION ≥ v"1.11.0-DEV.945"
+            return CC.RTEffects(Any, Any, CC.Effects()) # bail out if it has been interpreted by `ConcreteInterpreter`
+            else
             return Any # bail out if it has been interpreted by `ConcreteInterpreter`
+            end
         end
     end
 
