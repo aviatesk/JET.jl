@@ -552,6 +552,16 @@ end
     end
 end
 
+abstract_invoke1(i::Integer) = throw(string(i))
+#== LINE SENSITIVITY START ===#
+const _ABSTRACT_INVOKE2_LINE = (@__LINE__) + 2
+const ABSTRACT_INVOKE2_LINE = (@__LINE__) + 4
+_abstract_invoke2(a) = return a + undefvar
+function abstract_invoke2(a)
+    a += 1
+    return @invoke _abstract_invoke2(a::Int) # `invoke` is valid, but error should happen within `bar`
+end
+#== LINE SENSITIVITY END ===#
 @testset "abstract_invoke" begin
     # non-`Type` `argtypes`
     result = report_call() do
@@ -570,26 +580,13 @@ end
     @test isa(r, InvalidInvokeErrorReport)
 
     # don't report errors collected in `invoke`d functions
-    result = @eval Module() begin
-        foo(i::Integer) = throw(string(i))
-        $report_call((Int,)) do a
-            @invoke foo(a::Integer)
-        end
+    result = report_call((Int,)) do a
+        @invoke abstract_invoke1(a::Integer)
     end
     @test !isempty(get_reports_with_test(result))
     @test !any(r->isa(r, InvalidInvokeErrorReport), get_reports_with_test(result))
 
-    #== LINE SENSITIVITY START ===#
-    BAR_LINE = (@__LINE__) + 3
-    BAZ_LINE = (@__LINE__) + 5
-    result = @eval begin
-        bar(a) = return a + undefvar
-        function baz(a)
-            a += 1
-            @invoke bar(a::Int) # `invoke` is valid, but error should happen within `bar`
-        end
-        $report_call(baz, (Any,))
-    end
+    result = report_call(abstract_invoke2, (Any,))
     #== LINE SENSITIVITY END ===#
     @test !isempty(get_reports_with_test(result))
     @test !any(r->isa(r, InvalidInvokeErrorReport), get_reports_with_test(result))
@@ -599,53 +596,49 @@ end
     @test all(get_reports_with_test(result)) do r
         any(r.vst) do vf
             vf.file === Symbol(@__FILE__) &&
-            vf.line == BAR_LINE && # `bar`
-            vf.linfo.def.name === :bar
+            vf.line == _ABSTRACT_INVOKE2_LINE && # `_abstract_invoke2`
+            vf.linfo.def.name === :_abstract_invoke2
         end || return false
         any(r.vst) do vf
             vf.file === Symbol(@__FILE__) &&
-            vf.line == BAZ_LINE && # `baz`
-            vf.linfo.def.name === :baz
+            vf.line == ABSTRACT_INVOKE2_LINE && # `abstract_invoke2`
+            vf.linfo.def.name === :abstract_invoke2
         end || return false
         return true
     end
 end
 
-@testset "staged programming" begin
-    m = @fixturedef begin
-        @generated function foo(a)
-            if a <: Integer
-                return :(a)
-            elseif a <: Number
-                return :(undefvar) # report me this case
-            end
-            throw("invalid argument")
-        end
-
-        bar(args...) = foo(args...)
+@generated function staged_func(a)
+    if a <: Integer
+        return :(a)
+    elseif a <: Number
+        return :(undefvar) # report me this case
     end
-
+    throw("invalid argument")
+end
+call_staged_func(args...) = staged_func(args...)
+@testset "staged programming" begin
     let # successful code generation, valid code
-        result = report_call(m.foo, (Int,))
+        result = report_call(staged_func, (Int,))
         @test isempty(get_reports_with_test(result))
     end
 
     let # successful code generation, invalid code
-        result = report_call(m.foo, (Float64,))
+        result = report_call(staged_func, (Float64,))
         @test length(get_reports_with_test(result)) == 1
-        r = first(get_reports_with_test(result))
+        r = only(get_reports_with_test(result))
         @test is_global_undef_var(r, :undefvar)
     end
 
     let # unsuccessful code generation
-        result = report_call(m.foo, (String,))
+        result = report_call(staged_func, (String,))
         @test length(get_reports_with_test(result)) == 1
-        r = first(get_reports_with_test(result))
+        r = only(get_reports_with_test(result))
         @test isa(r, GeneratorErrorReport) && r.err == "invalid argument"
     end
 
     let # should work if cached
-        result = report_call(m.bar, (String,))
+        result = report_call(call_staged_func, (String,))
         @test length(get_reports_with_test(result)) == 1
         r = first(get_reports_with_test(result))
         @test isa(r, GeneratorErrorReport) && r.err == "invalid argument"
@@ -654,13 +647,13 @@ end
 
 struct InvalidBuiltinStruct; v; end
 access_field(x::InvalidBuiltinStruct, sym) = getfield(x, sym)
-
 @testset "report invalid builtin call" begin
-    result = report_call((Int, Type{Int}, Any)) do a, b, c
-        isa(a, b, c)
+    let result = report_call((Int, Type{Int}, Any)) do a, b, c
+            isa(a, b, c)
+        end
+        report = only(get_reports_with_test(result))
+        @test report isa BuiltinErrorReport && report.f === isa
     end
-    report = only(get_reports_with_test(result))
-    @test report isa BuiltinErrorReport && report.f === isa
 
     @testset "constant propagation" begin
         result = report_call(x::InvalidBuiltinStruct->access_field(x,:v))
