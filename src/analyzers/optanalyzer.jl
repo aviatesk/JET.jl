@@ -225,6 +225,35 @@ struct OptAnalysisPass <: ReportPass end
 
 optanalyzer_function_filter(@nospecialize f) = true
 
+@static if VERSION ≥ v"1.11.0-DEV.233" || VERSION ≥ v"1.10.0-beta1.11"
+function CC.const_prop_call(analyzer::OptAnalyzer,
+    mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
+    concrete_eval_result::Union{Nothing,CC.ConstCallResults})
+    ret = @invoke CC.const_prop_call(analyzer::AbstractAnalyzer,
+        mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
+        concrete_eval_result::Union{Nothing,CC.ConstCallResults})
+    if concrete_eval_result !== nothing
+        # HACK disable the whole `OptAnalyzer` analysis as far as the frame has been concretized
+        # (otherwise we may end up with useless reports from recursive calls)
+        filter_lineages!(analyzer, sv.result, result.edge::MethodInstance)
+    end
+    return ret
+end
+
+function CC.const_prop_call(analyzer::OptAnalyzer,
+    mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::CC.IRInterpretationState,
+    concrete_eval_result::Union{Nothing,CC.ConstCallResults})
+    if concrete_eval_result !== nothing
+        # HACK disable the whole `OptAnalyzer` analysis as far as the frame has been concretized
+        # (otherwise we may end up with useless reports from recursive calls)
+        return concrete_eval_result
+    end
+    return @invoke CC.const_prop_call(analyzer::AbstractInterpreter,
+        mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::CC.IRInterpretationState,
+        nothing::Nothing)
+end
+end
+
 # TODO better to work only `finish!`
 function CC.finish(frame::InferenceState, analyzer::OptAnalyzer)
     ret = @invoke CC.finish(frame::InferenceState, analyzer::AbstractAnalyzer)
