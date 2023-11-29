@@ -481,9 +481,9 @@ function CC.abstract_eval_value(analyzer::JETAnalyzer, @nospecialize(e), vtypes:
 end
 
 function CC.builtin_tfunction(analyzer::JETAnalyzer,
-    @nospecialize(f), argtypes::Array{Any,1}, sv::InferenceState) # `AbstractAnalyzer` isn't overloaded on `return_type`
+    @nospecialize(f), argtypes::Vector{Any}, sv::InferenceState) # `AbstractAnalyzer` isn't overloaded on `return_type`
     ret = @invoke CC.builtin_tfunction(analyzer::AbstractAnalyzer,
-        f::Any, argtypes::Array{Any,1}, sv::InferenceState)
+        f::Any, argtypes::Vector{Any}, sv::InferenceState)
 
     if f === fieldtype
         # the valid widest possible return type of `fieldtype_tfunc` is `Union{Type,TypeVar}`

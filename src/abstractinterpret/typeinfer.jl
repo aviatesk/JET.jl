@@ -689,11 +689,9 @@ function CC.abstract_eval_statement(analyzer::AbstractAnalyzer, @nospecialize(e)
 end
 
 function CC.builtin_tfunction(analyzer::AbstractAnalyzer,
-    @nospecialize(f), argtypes::Vector{Any},
-    sv::InferenceState) # `AbstractAnalyzer` isn't overloaded on `return_type`
+    @nospecialize(f), argtypes::Vector{Any}, sv::InferenceState) # `AbstractAnalyzer` isn't overloaded on `return_type`
     ret = @invoke CC.builtin_tfunction(analyzer::AbstractInterpreter,
-        f::Any, argtypes::Vector{Any},
-        sv::Union{InferenceState,Nothing})
+        f::Any, argtypes::Vector{Any}, sv::Union{InferenceState,Nothing})
 
     if f === getglobal
         if istoplevel_getproperty(sv)

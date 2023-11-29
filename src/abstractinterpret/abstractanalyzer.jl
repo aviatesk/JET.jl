@@ -64,6 +64,9 @@ struct AnalysisResult
     reports::Vector{InferenceErrorReport}
 end
 
+# TODO use `(result::InferenceResult).analysis_results` to cache JET analysis result
+#      when updating to v1.11.
+
 """
     CachedAnalysisResult
 
