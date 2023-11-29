@@ -1038,6 +1038,7 @@ Partially interprets statements in `src` using JuliaInterpreter.jl:
 """
 function partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::CodeInfo)
     concretize = select_statements(src)
+    @assert length(src.code) == length(concretize)
 
     with_toplevel_logger(interp.config; filter=≥(JET_LOGGER_LEVEL_DEBUG)) do @nospecialize(io)
         line, file = interp.lnn.line, interp.lnn.file
@@ -1048,7 +1049,6 @@ function partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::Cod
     # NOTE if `JuliaInterpreter.optimize!` may modify `src`, `src` and `concretize` can be inconsistent
     # here we create `JuliaInterpreter.Frame` by ourselves disabling the optimization (#277)
     frame = Frame(mod, src; optimize=false)
-    @assert length(frame.framecode.src.code) == length(concretize)
     selective_eval_fromstart!(interp, frame, concretize, #=istoplevel=#true)
 
     return concretize
