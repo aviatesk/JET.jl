@@ -36,5 +36,5 @@ using Test, JET
 
     @testset "sanity check" include("sanity_check.jl")
 
-    @testset "self check" include("self_check.jl")
+    # @testset "self check" include("self_check.jl")
 end

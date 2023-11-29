@@ -1163,8 +1163,7 @@ abstract type AbstractBuiltinErrorReport <: InferenceErrorReport end
 
 # TODO: docs
 @jetreport struct BuiltinErrorReport <: AbstractBuiltinErrorReport
-    @nospecialize(f)
-    argtypes::Argtypes
+    @nospecialize f
     msg::AbstractString
 end
 print_report_message(io::IO, r::BuiltinErrorReport) = print(io, r.msg)
@@ -1277,7 +1276,7 @@ function (::BasicPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer
     end
     if @static VERSION >= v"1.10.0-DEV.197" ? (ret isa IntrinsicError) : false
         msg = LazyString(f, ": ", ret.reason)
-        report = BuiltinErrorReport(sv, f, argtypes, msg)
+        report = BuiltinErrorReport(sv, f, msg)
         add_new_report!(analyzer, sv.result, report)
         return true
     end
@@ -1363,7 +1362,7 @@ function report_fieldaccess!(analyzer::JETAnalyzer, sv::InferenceState, @nospeci
     if issetfield!
         if !_mutability_errorcheck(s00)
             msg = lazy"setfield!: immutable struct of type $s00 cannot be changed"
-            report = BuiltinErrorReport(sv, setfield!, argtypes, msg)
+            report = BuiltinErrorReport(sv, setfield!, msg)
             add_new_report!(analyzer, sv.result, report)
             return true
         end
@@ -1385,14 +1384,14 @@ function report_fieldaccess!(analyzer::JETAnalyzer, sv::InferenceState, @nospeci
     isabstracttype(s) && return false
     if s <: Module
         if issetfield!
-            report = BuiltinErrorReport(sv, setfield!, argtypes, MODULE_SETFIELD_MSG)
+            report = BuiltinErrorReport(sv, setfield!, MODULE_SETFIELD_MSG)
             add_new_report!(analyzer, sv.result, report)
             return true
         end
         nametyp = widenconst(name)
         if !hasintersect(nametyp, Symbol)
             msg = type_error_msg(getglobal, Symbol, nametyp)
-            report = BuiltinErrorReport(sv, getglobal, argtypes, msg)
+            report = BuiltinErrorReport(sv, getglobal, msg)
             add_new_report!(analyzer, sv.result, report)
             return true
         end
@@ -1414,7 +1413,7 @@ function report_fieldaccess!(analyzer::JETAnalyzer, sv::InferenceState, @nospeci
     else
         @assert false "invalid field analysis"
     end
-    add_new_report!(analyzer, sv.result, BuiltinErrorReport(sv, f, argtypes, msg))
+    add_new_report!(analyzer, sv.result, BuiltinErrorReport(sv, f, msg))
     return true
 end
 
@@ -1435,7 +1434,7 @@ function report_divide_error!(analyzer::JETAnalyzer, sv::InferenceState, @nospec
     t = widenconst(a)
     if isprimitivetype(t) && t <: Number
         if isa(a, Const) && a.val === zero(t)
-            report = BuiltinErrorReport(sv, f, argtypes, DIVIDE_ERROR_MSG)
+            report = BuiltinErrorReport(sv, f, DIVIDE_ERROR_MSG)
             add_new_report!(analyzer, sv.result, report)
             return true
         end
@@ -1447,7 +1446,7 @@ function handle_invalid_builtins!(analyzer::JETAnalyzer, sv::InferenceState, @no
     # we don't bail out using `basic_filter` here because the native tfuncs are already very permissive
     if ret === Bottom
         msg = GENERAL_BUILTIN_ERROR_MSG
-        report = BuiltinErrorReport(sv, f, argtypes, msg)
+        report = BuiltinErrorReport(sv, f, msg)
         add_new_report!(analyzer, sv.result, report)
         return true
     end

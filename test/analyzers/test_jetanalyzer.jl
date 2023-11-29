@@ -547,17 +547,8 @@ end
     # `bar(::Foo1)` is valid but its return type is `Any`, and so we can't collect possible
     # error points for `bar(::Foo2)` and `bar(::Foo3)` if we bail out on `Any`-grew return type
     @test length(res.res.inference_error_reports) === 2
-    @test any(res.res.inference_error_reports) do er
-        return er isa BuiltinErrorReport &&
-               er.f === getfield &&
-               er.argtypes[1] === vmod.Foo2 &&
-               er.argtypes[2] === Core.Const(:bar)
-    end
-    @test any(res.res.inference_error_reports) do er
-        return er isa BuiltinErrorReport &&
-               er.f === getfield &&
-               er.argtypes[1] === vmod.Foo3 &&
-               er.argtypes[2] === Core.Const(:bar)
+    @test all(res.res.inference_error_reports) do report
+        report isa BuiltinErrorReport && report.f === getfield
     end
 end
 
@@ -661,41 +652,25 @@ end
     end
 end
 
+struct InvalidBuiltinStruct; v; end
+access_field(x::InvalidBuiltinStruct, sym) = getfield(x, sym)
+
 @testset "report invalid builtin call" begin
     result = report_call((Int, Type{Int}, Any)) do a, b, c
         isa(a, b, c)
     end
     report = only(get_reports_with_test(result))
-    @test report isa BuiltinErrorReport
-    @test report.f === isa
-    @test widenconst.(report.argtypes) == [Int, Type{Int}, Any]
+    @test report isa BuiltinErrorReport && report.f === isa
 
     @testset "constant propagation" begin
-        m = gen_virtual_module()
-        Core.eval(m, quote
-            struct T
-                v
-            end
-            access_field(t, sym) = getfield(t, sym)
-        end)
-
-        result = Core.eval(m, quote
-            $report_call(t->access_field(t,:v), (T,))
-        end)
+        result = report_call(x::InvalidBuiltinStruct->access_field(x,:v))
         @test isempty(get_reports_with_test(result))
 
-        result = Core.eval(m, quote
-            $report_call(t->access_field(t,:w), (T,))
-        end)
-        er = only(get_reports_with_test(result))
-        @test er isa BuiltinErrorReport
-        @test er.f === getfield
-        @test er.argtypes[1] === m.T
-        @test er.argtypes[2] === Core.Const(:w)
+        result = report_call(x::InvalidBuiltinStruct->access_field(x,:w))
+        report = only(get_reports_with_test(result))
+        @test report isa BuiltinErrorReport && report.f === getfield
 
-        result = Core.eval(m, quote
-            $report_call(t->access_field(t,:v), (T,))
-        end)
+        result = report_call(x::InvalidBuiltinStruct->access_field(x,:v))
         @test isempty(get_reports_with_test(result))
     end
 end
@@ -804,15 +779,14 @@ end
             getfield(a)
         end
         report = only(get_reports_with_test(result))
-        @test report.f === getfield
-        @test report isa BuiltinErrorReport
+        @test report isa BuiltinErrorReport && report.f === getfield
     end
 
     let result = report_call() do
             getfield((1,2,3), :x)
         end
         report = only(get_reports_with_test(result))
-        @test report isa BuiltinErrorReport
+        @test report isa BuiltinErrorReport && report.f === getfield
         test_builtinerror_compatibility(result) do
             getfield((1,2,3), :x)
         end
@@ -822,7 +796,7 @@ end
             getfield(@__MODULE__, 42)
         end
         report = only(get_reports_with_test(result))
-        @test report isa BuiltinErrorReport
+        @test report isa BuiltinErrorReport && report.f === getglobal
         # XXX Julia raises `BoundsError` when ran in the compiler
         # test_builtinerror_compatibility(result) do
         #     getfield(@__MODULE__, 42)
@@ -836,8 +810,7 @@ end
             setfield!(a)
         end
         report = only(get_reports_with_test(result))
-        @test report isa BuiltinErrorReport
-        @test report.f === setfield!
+        @test report isa BuiltinErrorReport && report.f === setfield!
     end
 
     # `setfield!` to a module raises an error
@@ -845,8 +818,7 @@ end
             setfield!(@__MODULE__, :___xxx___, 42)
         end
         report = only(get_reports_with_test(result))
-        @test report isa BuiltinErrorReport
-        @test report.f === setfield!
+        @test report isa BuiltinErrorReport && report.f === setfield!
         test_builtinerror_compatibility(result) do
             setfield!(@__MODULE__, :___xxx___, 42)
         end
@@ -858,8 +830,7 @@ end
             x.value = s
         end
         report = only(get_reports_with_test(result))
-        @test report isa BuiltinErrorReport
-        @test report.f === setfield!
+        @test report isa BuiltinErrorReport && report.f === setfield!
     end
 end
 
@@ -1012,6 +983,10 @@ end
     end
 end
 
+struct NoFieldStruct; v; end
+access_field(x::NoFieldStruct, sym) = getfield(x, sym)
+
+
 @testset "TypoPass" begin
     @test_call mode=:typo sum("julia") # don't report NoMethodError, etc.
 
@@ -1040,20 +1015,9 @@ end
     end
 
     @testset "no field" begin
-        m = @fixturedef begin
-            struct T
-                v
-            end
-            access_field(t, sym) = getfield(t, sym)
-        end
-
-        result = Core.eval(m, :($report_call(t->access_field(t,:w), (T,); mode=:typo)))
-        @test length(get_reports_with_test(result)) === 1
-        er = first(get_reports_with_test(result))
-        @test er isa BuiltinErrorReport
-        @test er.f === getfield
-        @test er.argtypes[1] === m.T
-        @test er.argtypes[2] === Core.Const(:w)
+        result = report_call(x::NoFieldStruct->access_field(x,:w); mode=:typo)
+        report = only(get_reports_with_test(result))
+        @test report isa BuiltinErrorReport && report.f === getfield
     end
 end
 
@@ -1071,8 +1035,7 @@ test_call(issue_404, (Bool,))
             return Core.Intrinsics.add_int(x, y)
         end
         r = only(get_reports_with_test(result))
-        @test r isa BuiltinErrorReport
-        @test r.f === Core.Intrinsics.add_int
+        @test r isa BuiltinErrorReport && r.f === Core.Intrinsics.add_int
         err = (try
             Core.Intrinsics.add_int(zero(Int32), zero(Int64))
         catch err
@@ -1085,8 +1048,7 @@ test_call(issue_404, (Bool,))
             return Core.Intrinsics.bitcast(Int64, x)
         end
         r = only(get_reports_with_test(result))
-        @test r isa BuiltinErrorReport
-        @test r.f === Core.Intrinsics.bitcast
+        @test r isa BuiltinErrorReport && r.f === Core.Intrinsics.bitcast
         err = (try
             Core.Intrinsics.bitcast(Int64, zero(Int32))
         catch err
