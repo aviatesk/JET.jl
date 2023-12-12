@@ -948,9 +948,6 @@ end
 # validated exhausively by its test suite and real-world usages.
 function is_corecompiler_undefglobal(gr::GlobalRef)
     gr.mod === CC && return isdefined(Base, gr.name)
-    @static if isdefined(CC, :Sort)
-        gr.mod === CC.Sort && return isdefined(Base.Sort, gr.name)
-    end
     return false
 end
 
@@ -1482,9 +1479,7 @@ function (::SoundPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer
     if isa(f, IntrinsicFunction)
         nothrow = Core.Compiler.intrinsic_nothrow(f, argtypes)
     else
-        nothrow = (@static isdefined(CC, :typeinf_lattice) ?
-            Core.Compiler.builtin_nothrow(CC.typeinf_lattice(analyzer), f, argtypes, rt) :
-            Core.Compiler.builtin_nothrow(f, argtypes, rt))
+        nothrow = Core.Compiler.builtin_nothrow(CC.typeinf_lattice(analyzer), f, argtypes, rt)
     end
     nothrow && return false
     add_new_report!(analyzer, sv.result, UnsoundBuiltinErrorReport(sv, f, argtypes))

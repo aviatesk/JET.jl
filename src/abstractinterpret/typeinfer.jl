@@ -326,60 +326,51 @@ end
 
 CC.get_inference_cache(analyzer::AbstractAnalyzer) = AbstractAnalyzerView(analyzer)
 
-let
-    @static if isdefined(CC, :AbstractLattice)
-        sigs_ex = :(lattice::CC.AbstractLattice, linfo::MethodInstance, given_argtypes::Argtypes, view::AbstractAnalyzerView)
-        args_ex = :(lattice, linfo, given_argtypes, get_inf_cache(view.analyzer))
+function CC.cache_lookup(𝕃ᵢ::CC.AbstractLattice, mi::MethodInstance, given_argtypes::Argtypes, view::AbstractAnalyzerView)
+    # XXX the very dirty analyzer state observation again
+    # this method should only be called from the single context i.e. `abstract_call_method_with_const_args`,
+    # and so we should reset the cache target immediately we reach here
+    analyzer = view.analyzer
+    cache_target = get_cache_target(analyzer)
+    set_cache_target!(analyzer, nothing)
+
+    inf_result = cache_lookup(𝕃ᵢ, mi, given_argtypes, get_inf_cache(view.analyzer))
+
+    isa(inf_result, InferenceResult) || return inf_result
+
+    # constant prop' hits a cycle (recur into same non-constant analysis), we just bail out
+    @static if VERSION ≥ v"1.10.0-DEV.750"
+        inf_result.result === nothing && return inf_result
     else
-        sigs_ex = :(linfo::MethodInstance, given_argtypes::Argtypes, view::AbstractAnalyzerView)
-        args_ex = :(linfo, given_argtypes, get_inf_cache(view.analyzer))
+        isa(inf_result.result, InferenceState) && return inf_result
     end
-    @eval function CC.cache_lookup($(sigs_ex.args...))
-        # XXX the very dirty analyzer state observation again
-        # this method should only be called from the single context i.e. `abstract_call_method_with_const_args`,
-        # and so we should reset the cache target immediately we reach here
-        analyzer = view.analyzer
-        cache_target = get_cache_target(analyzer)
-        set_cache_target!(analyzer, nothing)
 
-        inf_result = cache_lookup($(args_ex.args...))
+    # cache hit, restore reports from the local report cache
 
-        isa(inf_result, InferenceResult) || return inf_result
-
-        # constant prop' hits a cycle (recur into same non-constant analysis), we just bail out
-        @static if VERSION ≥ v"1.10.0-DEV.750"
-            inf_result.result === nothing && return inf_result
+    if cache_target !== nothing
+        context, caller = cache_target
+        @static if VERSION ≥ v"1.10.0-DEV.1345"
+            @assert context === :const_prop_call "invalid JET analysis state"
         else
-            isa(inf_result.result, InferenceState) && return inf_result
+            @assert context === :abstract_call_method_with_const_args "invalid JET analysis state"
         end
 
-        # cache hit, restore reports from the local report cache
+        # as the analyzer uses the reports that are cached by the abstract-interpretation
+        # with the extended lattice elements, here we should throw-away the error reports
+        # that are collected during the previous non-constant abstract-interpretation
+        # (see the `CC.typeinf(::AbstractAnalyzer, ::InferenceState)` overload)
+        filter_lineages!(analyzer, caller, mi)
 
-        if cache_target !== nothing
-            context, caller = cache_target
-            @static if VERSION ≥ v"1.10.0-DEV.1345"
-                @assert context === :const_prop_call "invalid JET analysis state"
-            else
-                @assert context === :abstract_call_method_with_const_args "invalid JET analysis state"
+        for cached in get_cached_reports(analyzer, inf_result)
+            restored = add_cached_report!(analyzer, caller, cached)
+            @static if JET_DEV_MODE
+                actual, expected = first(restored.vst).linfo, mi
+                @assert actual === expected "invalid local cache restoration, expected $expected but got $actual"
             end
-
-            # as the analyzer uses the reports that are cached by the abstract-interpretation
-            # with the extended lattice elements, here we should throw-away the error reports
-            # that are collected during the previous non-constant abstract-interpretation
-            # (see the `CC.typeinf(::AbstractAnalyzer, ::InferenceState)` overload)
-            filter_lineages!(analyzer, caller, linfo)
-
-            for cached in get_cached_reports(analyzer, inf_result)
-                restored = add_cached_report!(analyzer, caller, cached)
-                @static if JET_DEV_MODE
-                    actual, expected = first(restored.vst).linfo, linfo
-                    @assert actual === expected "invalid local cache restoration, expected $expected but got $actual"
-                end
-                stash_report!(analyzer, restored) # should be updated in `abstract_call_method_with_const_args`
-            end
+            stash_report!(analyzer, restored) # should be updated in `abstract_call_method_with_const_args`
         end
-        return inf_result
     end
+    return inf_result
 end
 
 CC.push!(view::AbstractAnalyzerView, inf_result::InferenceResult) = CC.push!(get_inf_cache(view.analyzer), inf_result)
