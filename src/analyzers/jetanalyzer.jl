@@ -1148,6 +1148,14 @@ function report_serious_exception!(analyzer::JETAnalyzer, sv::InferenceState, ar
                     return true
                 end
             end
+        elseif widenconst(a) <: ArgumentError
+            # promote `ArgumentError` thrown by `to_index` method
+            # so that we get reports from dangerous indexing (aviatesk/JET.jl#581)
+            def = sv.linfo.def
+            if isa(def, Method) && def.name === :to_index
+                add_new_report!(analyzer, sv.result, SeriousExceptionReport(sv, ArgumentError("invalid index"), get_lin((sv, get_currpc(sv)))))
+                return true
+            end
         end
     end
     return false
