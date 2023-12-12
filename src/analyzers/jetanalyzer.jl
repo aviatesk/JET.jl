@@ -480,6 +480,15 @@ function CC.abstract_eval_value(analyzer::JETAnalyzer, @nospecialize(e), vtypes:
     return ret
 end
 
+@static if VERSION ≥ v"1.11.0-DEV.1080"
+function CC.abstract_throw(analyzer::JETAnalyzer, argtypes::Vector{Any}, sv::InferenceState)
+    ft = popfirst!(argtypes)
+    ReportPass(analyzer)(SeriousExceptionReport, analyzer, sv, argtypes)
+    pushfirst!(argtypes, ft)
+    return @invoke CC.abstract_throw(analyzer::AbstractAnalyzer, argtypes::Vector{Any}, sv::InferenceState)
+end
+end
+
 function CC.builtin_tfunction(analyzer::JETAnalyzer,
     @nospecialize(f), argtypes::Vector{Any}, sv::InferenceState) # `AbstractAnalyzer` isn't overloaded on `return_type`
     ret = @invoke CC.builtin_tfunction(analyzer::AbstractAnalyzer,

@@ -409,23 +409,17 @@ end
     end
 end
 
+func_undef_keyword(a; kw) =  a, kw # `kw` can be undefined
 @testset "UndefKeywordError" begin
-    isa2(t) = x -> isa(x, t)
-    let
-        m = gen_virtual_module()
-        result = Core.eval(m, quote
-            foo(a; #= can be undef =# kw) =  a, kw
-            $report_call(foo, (Any,))
-        end)
-        @test !isempty(get_reports_with_test(result))
-        @test any(get_reports_with_test(result)) do r
-            r isa SeriousExceptionReport || return false
-            err = r.err
-            err isa UndefKeywordError && err.var === :kw
-        end
-        # there shouldn't be duplicated report for the `throw` call
-        @test !any(isa2(UncaughtExceptionReport), get_reports_with_test(result))
+    result = report_call(func_undef_keyword, (Any,))
+    @test !isempty(get_reports_with_test(result))
+    @test any(get_reports_with_test(result)) do r
+        r isa SeriousExceptionReport || return false
+        err = r.err
+        err isa UndefKeywordError && err.var === :kw
     end
+    # there shouldn't be duplicated report for the `throw` call
+    @test !any(r->isa(r,UncaughtExceptionReport), get_reports_with_test(result))
 end
 
 func_invalid_index(xs, i) = xs[i]
