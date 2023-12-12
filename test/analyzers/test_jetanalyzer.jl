@@ -428,6 +428,21 @@ end
     end
 end
 
+func_invalid_index(xs, i) = xs[i]
+func_invalid_index(xs::Vector{Int}) = xs[findfirst(>(0), xs)]
+@testset "report invalid index" begin
+    let result = report_call(func_invalid_index, (Vector{Int},Nothing))
+        @test count(get_reports_with_test(result)) do r
+            r isa SeriousExceptionReport
+        end == 1
+    end
+    let result = report_call(func_invalid_index, (Vector{Int},))
+        @test count(get_reports_with_test(result)) do r
+            r isa SeriousExceptionReport
+        end == 1
+    end
+end
+
 @testset "DivideError" begin
     let result = report_call() do
             div(1, 0)
