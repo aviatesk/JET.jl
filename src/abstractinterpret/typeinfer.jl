@@ -656,9 +656,7 @@ function CC.abstract_eval_value(analyzer::AbstractAnalyzer, @nospecialize(e), vt
     return ret
 end
 
-function is_inactive_exception(@nospecialize rt)
-    return isa(rt, Const) && rt.val === _INACTIVE_EXCEPTION()
-end
+is_inactive_exception(@nospecialize rt) = isa(rt, Const) && rt.val === _INACTIVE_EXCEPTION()
 
 function CC.abstract_eval_statement(analyzer::AbstractAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
     if istoplevel(sv)
@@ -749,7 +747,6 @@ function CC.finish(me::InferenceState, analyzer::AbstractAnalyzer)
     # so that later analysis can refer to them
 
     stmts = me.src.code
-    cfg = compute_basic_blocks(stmts)
     assigns = Dict{Int,Bool}() # slot id => is this deterministic
     for (pc, stmt) in enumerate(stmts)
         if isexpr(stmt, :(=))
@@ -757,15 +754,10 @@ function CC.finish(me::InferenceState, analyzer::AbstractAnalyzer)
             if isa(lhs, SlotNumber)
                 slot = slot_id(lhs)
                 if is_global_slot(analyzer, slot)
-                    isd = is_deterministic(cfg, pc)
-
+                    isd = is_deterministic(me.cfg, pc)
                     # COMBAK this approach is really not true when there're multiple
                     # assignments in different basic blocks
-                    if haskey(assigns, slot)
-                        assigns[slot] &= isd
-                    else
-                        assigns[slot] = isd
-                    end
+                    assigns[slot] = isd & get!(assigns, slot, isd)
                 end
             end
         end
@@ -826,8 +818,7 @@ end
 
 function set_abstract_global!(analyzer::AbstractAnalyzer, mod::Module, name::Symbol,
                               @nospecialize(t), is_deterministic::Bool, sv::InferenceState)
-    prev_agv = nothing
-    prev_t = nothing
+    prev_agv = prev_t = nothing
     isconst = is_constant_declared(name, sv)
 
     # check if this global variable is already assigned previously
