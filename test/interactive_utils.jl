@@ -58,7 +58,7 @@ macro fixturedef(ex)
 end
 
 """
-    @analyze_toplevel [jetconfigs...] ex -> JET.VirtualProcessResult
+    @analyze_toplevel [jetconfigs...] ex -> JET.JETToplevelResult
 
 Enters JET analysis from toplevel expression `ex`, and returns the analysis result.
 """
@@ -71,7 +71,7 @@ macro analyze_toplevel(xs...)
 end
 
 """
-    @analyze_toplevel2 [jetconfigs...] ex -> (Module, JET.VirtualProcessResult)
+    @analyze_toplevel2 [jetconfigs...] ex -> (Module, JET.JETToplevelResult)
 
 Works similarly to `@analyze_toplevel`, but also creates a virtual module beforehand and
 returns that as well after the whole analysis for the later inspection.
