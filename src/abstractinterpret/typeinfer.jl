@@ -23,76 +23,33 @@ function CC.abstract_call_method(analyzer::AbstractAnalyzer,
     return ret
 end
 
-@static if VERSION ≥ v"1.10.0-DEV.1345"
-let # overload `const_prop_call`
-    @static if VERSION ≥ v"1.11.0-DEV.233" || v"1.11.0-DEV" > VERSION ≥ v"1.10.0-beta1.11"
-        sigs_ex = :(analyzer::AbstractAnalyzer,
-            mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
-            concrete_eval_result::Union{Nothing,CC.ConstCallResults})
-        args_ex = :(analyzer::AbstractInterpreter,
-            mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
-            concrete_eval_result::Union{Nothing,CC.ConstCallResults})
-    else
-        sigs_ex = :(analyzer::AbstractAnalyzer,
-            mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
-        args_ex = :(analyzer::AbstractInterpreter,
-            mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
-    end
-    @eval function CC.const_prop_call($(sigs_ex.args...))
-        set_cache_target!(analyzer, :const_prop_call => sv.result)
-        const_result = @invoke CC.const_prop_call($(args_ex.args...))
-        @assert get_cache_target(analyzer) === nothing "invalid JET analysis state"
-        if const_result !== nothing
-            # successful constant prop', we need to update reports
-            collect_callee_reports!(analyzer, sv)
-        end
-        return const_result
-    end
-end
-else
-function CC.abstract_call_method_with_const_args(analyzer::AbstractAnalyzer,
-    result::MethodCallResult, @nospecialize(f), arginfo::ArgInfo, si::StmtInfo, match::MethodMatch,
-    sv::InferenceState, invokecall::Union{Nothing,CC.InvokeCall}=nothing)
-    set_cache_target!(analyzer, :abstract_call_method_with_const_args => sv.result)
-    const_result = @invoke CC.abstract_call_method_with_const_args(analyzer::AbstractInterpreter,
-        result::MethodCallResult, f::Any, arginfo::ArgInfo, si::StmtInfo, match::MethodMatch,
-        sv::InferenceState, invokecall::Union{Nothing,CC.InvokeCall})
-    # make sure we reset the cache target because at this point we may have not hit
-    # `CC.cache_lookup(linfo::MethodInstance, given_argtypes::Argtypes, view::AbstractAnalyzerView)`
-    set_cache_target!(analyzer, nothing)
+@eval function CC.const_prop_call(analyzer::AbstractAnalyzer,
+    mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
+    concrete_eval_result::Union{Nothing,CC.ConstCallResults})
+    set_cache_target!(analyzer, :const_prop_call => sv.result)
+    const_result = @invoke CC.const_prop_call(analyzer::AbstractInterpreter,
+        mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
+        concrete_eval_result::Union{Nothing,CC.ConstCallResults})
+    @assert get_cache_target(analyzer) === nothing "invalid JET analysis state"
     if const_result !== nothing
         # successful constant prop', we need to update reports
         collect_callee_reports!(analyzer, sv)
     end
     return const_result
 end
-end # @static if VERSION ≥ v"1.10.0-DEV.1345"
 
-let # overload `concrete_eval_call`
-    @static if VERSION ≥ v"1.10.0-DEV.1345"
-        sigs_ex = :(analyzer::AbstractAnalyzer,
-            @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo,
-            sv::InferenceState, invokecall::Union{Nothing,CC.InvokeCall})
-        args_ex = :(analyzer::AbstractInterpreter,
-            f::Any, result::MethodCallResult, arginfo::ArgInfo,
-            sv::InferenceState, invokecall::Union{Nothing,CC.InvokeCall})
-    else
-        sigs_ex = :(analyzer::AbstractAnalyzer,
-            @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, si::StmtInfo,
-            sv::InferenceState, invokecall::Union{Nothing,CC.InvokeCall})
-        args_ex = :(analyzer::AbstractInterpreter,
-            f::Any, result::MethodCallResult, arginfo::ArgInfo, si::StmtInfo,
-            sv::InferenceState, invokecall::Union{Nothing,CC.InvokeCall})
+function CC.concrete_eval_call(analyzer::AbstractAnalyzer,
+    @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo,
+    sv::InferenceState, invokecall::Union{Nothing,CC.InvokeCall})
+    ret = @invoke CC.concrete_eval_call(analyzer::AbstractInterpreter,
+        f::Any, result::MethodCallResult, arginfo::ArgInfo,
+        sv::InferenceState, invokecall::Union{Nothing,CC.InvokeCall})
+    if ret isa CC.ConstCallResults
+        # this frame has been concretized, now we throw away reports collected
+        # during the previous non-constant, abstract-interpretation
+        filter_lineages!(analyzer, sv.result, result.edge::MethodInstance)
     end
-    @eval function CC.concrete_eval_call($(sigs_ex.args...))
-        ret = @invoke CC.concrete_eval_call($(args_ex.args...))
-        if ret isa CC.ConstCallResults
-            # this frame has been concretized, now we throw away reports collected
-            # during the previous non-constant, abstract-interpretation
-            filter_lineages!(analyzer, sv.result, result.edge::MethodInstance)
-        end
-        return ret
-    end
+    return ret
 end
 
 function CC.abstract_call_known(analyzer::AbstractAnalyzer,
@@ -280,7 +237,6 @@ struct JETCallback
 end
 
 @static if VERSION ≥ v"1.11.0-DEV.798"
-
 function add_jet_callback!(mi::MethodInstance, analysis_cache::AnalysisCache)
     callback = JETCallback(analysis_cache)
     CC.add_invalidation_callback!(callback, mi)
@@ -288,9 +244,7 @@ end
 function (callback::JETCallback)(replaced::MethodInstance, max_world::UInt32)
     delete!(callback.analysis_cache, replaced)
 end
-
 else
-
 function add_jet_callback!(mi::MethodInstance, analysis_cache::AnalysisCache)
     callback = JETCallback(analysis_cache)
     if !isdefined(mi, :callbacks)
@@ -303,7 +257,6 @@ function add_jet_callback!(mi::MethodInstance, analysis_cache::AnalysisCache)
     end
     return nothing
 end
-
 function (callback::JETCallback)(replaced::MethodInstance, max_world::UInt32,
                                  seen::IdSet{MethodInstance} = IdSet{MethodInstance}())
     push!(seen, replaced)
@@ -318,7 +271,6 @@ function (callback::JETCallback)(replaced::MethodInstance, max_world::UInt32,
     end
     return nothing
 end
-
 end
 
 # local
@@ -339,21 +291,13 @@ function CC.cache_lookup(𝕃ᵢ::CC.AbstractLattice, mi::MethodInstance, given_
     isa(inf_result, InferenceResult) || return inf_result
 
     # constant prop' hits a cycle (recur into same non-constant analysis), we just bail out
-    @static if VERSION ≥ v"1.10.0-DEV.750"
-        inf_result.result === nothing && return inf_result
-    else
-        isa(inf_result.result, InferenceState) && return inf_result
-    end
+    inf_result.result === nothing && return inf_result
 
     # cache hit, restore reports from the local report cache
 
     if cache_target !== nothing
         context, caller = cache_target
-        @static if VERSION ≥ v"1.10.0-DEV.1345"
-            @assert context === :const_prop_call "invalid JET analysis state"
-        else
-            @assert context === :abstract_call_method_with_const_args "invalid JET analysis state"
-        end
+        @assert context === :const_prop_call "invalid JET analysis state"
 
         # as the analyzer uses the reports that are cached by the abstract-interpretation
         # with the extended lattice elements, here we should throw-away the error reports
@@ -520,20 +464,12 @@ function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
     for caller in frames
         caller.valid_worlds = valid_worlds
         CC.finish(caller, analyzer)
-        @static if !(VERSION ≥ v"1.10.0-DEV.750")
-            # finalize and record the linfo result
-            caller.inferred = true
-        end
     end
     for frame in frames
         caller = frame.result
         opt = caller.src
         if opt isa OptimizationState{typeof(analyzer)}
-            @static if VERSION ≥ v"1.10.0-DEV.757"
-                CC.optimize(analyzer, opt, caller)
-            else
-                CC.optimize(analyzer, opt, OptimizationParams(analyzer), caller)
-            end
+            CC.optimize(analyzer, opt, caller)
         end
     end
     for frame in frames

@@ -65,7 +65,7 @@ using Core:
     IntrinsicFunction, Intrinsics, LineInfoNode, MethodInstance, MethodMatch, MethodTable,
     ReturnNode, SSAValue, SimpleVector, SlotNumber, svec
 
-using .CC: ⊑,
+using .CC: @nospecs, ⊑,
     AbstractInterpreter, ArgInfo, BasicBlock, Bottom, CFG, CachedMethodTable, CallMeta,
     ConstCallInfo, InferenceResult, InternalMethodTable, InvokeCallInfo, LimitedAccuracy,
     MethodCallResult, MethodLookupResult, MethodMatchInfo, MethodMatches, NOT_FOUND,
@@ -124,29 +124,6 @@ __init__() = foreach(@nospecialize(f)->f(), INIT_HOOKS)
 
 # compat
 # ------
-
-@static if VERSION ≥ v"1.10.0-DEV.96"
-    using Base: _which
-else
-    function _which(@nospecialize(tt::Type);
-        method_table::Union{Nothing,MethodTable,Core.Compiler.MethodTableView}=nothing,
-        world::UInt=get_world_counter(),
-        raise::Bool=false)
-        if method_table === nothing
-            table = Core.Compiler.InternalMethodTable(world)
-        elseif isa(method_table, MethodTable)
-            table = Core.Compiler.OverlayMethodTable(world, method_table)
-        else
-            table = method_table
-        end
-        match, = Core.Compiler.findsup(tt, table)
-        if match === nothing
-            raise && error("no unique matching method found for the specified argument types")
-            return nothing
-        end
-        return match
-    end
-end
 
 # macros
 # ------
@@ -239,61 +216,6 @@ struct JETConfigError <: Exception
         (@nospecialize msg val; new(msg, key, val))
 end
 Base.showerror(io::IO, err::JETConfigError) = print(io, "JETConfigError: ", err.msg)
-
-@static if VERSION ≥ v"1.10.0-DEV.117"
-    using .CC: @nospecs
-else
-    using Base: is_function_def
-
-    @doc """
-        @nospecs def
-
-    Adds `@nospecialize` annotation to non-annotated arguments of `def`.
-    ```julia
-    (Core.Compiler) julia> @macroexpand @nospecs function tfunc(𝕃::AbstractLattice, x, y::Bool, zs...)
-                               x, ys
-                           end
-    :(function tfunc(\$(Expr(:meta, :specialize, :(𝕃::AbstractLattice))), x, y::Bool, zs...)
-          #= REPL[3]:1 =#
-          \$(Expr(:meta, :nospecialize, :x, :zs))
-          #= REPL[3]:2 =#
-          (x, ys)
-      end)
-    ```
-    """
-    macro nospecs(ex)
-        is_function_def(ex) || throw(ArgumentError("expected function definition"))
-        args, body = ex.args
-        while isexpr(args, :where)
-            args = args.args[1]
-        end
-        if isexpr(args, :call)
-            args = args.args[2:end] # skip marking `@nospecialize` on the function itself
-        else
-            @assert isexpr(args, :tuple) # anonymous function
-            args = args.args
-        end
-        names = Symbol[]
-        for arg in args
-            isexpr(arg, :macrocall) && continue
-            if isexpr(arg, :...)
-                arg = arg.args[1]
-            elseif isexpr(arg, :kw)
-                arg = arg.args[1]
-            end
-            isexpr(arg, :(::)) && continue
-            @assert arg isa Symbol
-            push!(names, arg)
-        end
-        @assert isexpr(body, :block)
-        if !isempty(names)
-            lin = first(body.args)::LineNumberNode
-            nospec = Expr(:macrocall, Symbol("@nospecialize"), lin, names...)
-            insert!(body.args, 2, nospec)
-        end
-        return esc(ex)
-    end
-end
 
 # utils
 # -----
@@ -407,9 +329,7 @@ function print_report end
 
 include("toplevel/graph.jl")
 
-const JULIA_SYNTAX_ENABLED =
-    VERSION ≥ v"1.11.0-DEV.123" || VERSION ≥ v"1.10.0-beta1.1" ? !(Base.get_bool_env("JULIA_USE_FLISP_PARSER", false) === true) :
-    VERSION ≥ v"1.10.0-DEV.1520" && Base.get_bool_env("JULIA_USE_NEW_PARSER", true) === true
+const JULIA_SYNTAX_ENABLED = !(Base.get_bool_env("JULIA_USE_FLISP_PARSER", false))
 
 include("toplevel/virtualprocess.jl")
 
@@ -716,7 +636,7 @@ function analyze_gf_by_type!(analyzer::AbstractAnalyzer, @nospecialize(tt::Type{
 end
 
 function find_single_match(@nospecialize(tt), analyzer::AbstractAnalyzer)
-    match = _which(tt; method_table=method_table(analyzer), world=get_world_counter(analyzer), raise=false)
+    match = Base._which(tt; method_table=method_table(analyzer), world=get_world_counter(analyzer), raise=false)
     match === nothing && single_match_error(tt)
     return match
 end

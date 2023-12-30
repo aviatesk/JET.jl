@@ -300,11 +300,7 @@ function handle_sig_static_parameter!(sig::Vector{Any}, s::StateAtPC, expr::Expr
     i = first(expr.args)::Int
     sv = first(s)
     name = sparam_name((sv.linfo.def::Method).sig::UnionAll, i)
-    @static if VERSION ≥ v"1.10.0-DEV.556"
-        typ = widenconst(sv.sptypes[i].typ)
-    else
-        typ = widenconst(CC.unwrap_maybeundefsp(sv.sptypes[i]))
-    end
+    typ = widenconst(sv.sptypes[i].typ)
     push!(sig, String(name), typ)
     return sig
 end
@@ -346,13 +342,8 @@ function handle_sig!(sig::Vector{Any}, s::StateAtPC, slot::SlotNumber)
         repr = String(name)
     end
     # we can use per-program counter type after inference
-    @static if VERSION ≥ v"1.10.0-DEV.750"
-        typ = safewidenconst((sv isa InferenceState && CC.is_inferred(sv)) ?
-            get_slottype(sv, slot) : get_slottype(s, slot))
-    else
-        typ = safewidenconst((sv isa InferenceState && sv.inferred) ?
-            get_slottype(sv, slot) : get_slottype(s, slot))
-    end
+    typ = safewidenconst((sv isa InferenceState && CC.is_inferred(sv)) ?
+        get_slottype(sv, slot) : get_slottype(s, slot))
     push!(sig, repr, typ)
     return sig
 end

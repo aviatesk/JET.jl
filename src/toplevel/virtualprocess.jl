@@ -531,7 +531,7 @@ function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProce
         analyzer = AbstractAnalyzer(analyzer, state)
     end
     for (i, tt) in enumerate(res.toplevel_signatures)
-        match = _which(tt;
+        match = Base._which(tt;
             # NOTE use the latest world counter with `method_table(analyzer)` unwrapped,
             # otherwise it may use a world counter when this method isn't defined yet
             method_table=unwrap_method_table(method_table(analyzer)),
@@ -1469,11 +1469,7 @@ function analyze_toplevel!(analyzer::AbstractAnalyzer, src::CodeInfo)
     mi.def = mod = get_toplevelmod(analyzer)
     transform_abstract_global_symbols!(src, analyzer)
     resolve_toplevel_symbols!(src, mod)
-    @static if VERSION ≥ v"1.10.0-DEV.112"
-        @atomic mi.uninferred = src
-    else
-        mi.uninferred = src
-    end
+    @atomic mi.uninferred = src
 
     result = InferenceResult(mi);
     init_result!(analyzer, result)

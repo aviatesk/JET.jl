@@ -225,7 +225,6 @@ struct OptAnalysisPass <: ReportPass end
 
 optanalyzer_function_filter(@nospecialize f) = true
 
-@static if VERSION ≥ v"1.11.0-DEV.233" || VERSION ≥ v"1.10.0-beta1.11"
 function CC.const_prop_call(analyzer::OptAnalyzer,
     mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
     concrete_eval_result::Union{Nothing,CC.ConstCallResults})
@@ -239,7 +238,6 @@ function CC.const_prop_call(analyzer::OptAnalyzer,
     end
     return ret
 end
-
 function CC.const_prop_call(analyzer::OptAnalyzer,
     mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::CC.IRInterpretationState,
     concrete_eval_result::Union{Nothing,CC.ConstCallResults})
@@ -251,7 +249,6 @@ function CC.const_prop_call(analyzer::OptAnalyzer,
     return @invoke CC.const_prop_call(analyzer::AbstractInterpreter,
         mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::CC.IRInterpretationState,
         nothing::Nothing)
-end
 end
 
 # TODO better to work only `finish!`
@@ -339,10 +336,7 @@ function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState)
         if src isa OptimizationState{typeof(analyzer)}
             ReportPass(analyzer)(RuntimeDispatchReport, analyzer, caller, src)
         elseif (@static JET_DEV_MODE ? true : false)
-            if (@static VERSION < v"1.10.0-DEV.551" && true) && isa(src, CC.ConstAPI)
-                # the optimization was very successful (i.e. fully constant folded),
-                # nothing to report
-            elseif src === nothing # the optimization didn't happen
+            if src === nothing # the optimization didn't happen
             else # and this pass should never happen
                 # NOTE `src` never be `CodeInfo` since `CC.may_discard_trees(::OptAnalyzer) === false`
                 Core.eval(@__MODULE__, :(src = $src))
