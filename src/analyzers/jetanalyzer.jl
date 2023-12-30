@@ -86,14 +86,12 @@ CC.may_optimize(::JETAnalyzer) = false
 
 CC.method_table(analyzer::JETAnalyzer) = analyzer.method_table
 
-@static if VERSION ≥ v"1.10.0-DEV.25"
-import .CC: typeinf_lattice, ipo_lattice
+import .CC:
+    typeinf_lattice, ipo_lattice, widenlattice, is_valid_lattice_norec,
+    ⊑, tmerge, tmeet, _getfield_tfunc
 using .CC:
     AbstractLattice, InferenceLattice, MustAliasesLattice,  InterMustAliasesLattice,
     BaseInferenceLattice, IPOResultLattice
-
-@static if VERSION ≥ v"1.10.0-DEV.197"
-import .CC: widenlattice, is_valid_lattice_norec, ⊑, tmerge, tmeet, _getfield_tfunc
 
 @doc """
     IntrinsicErrorCheckLattice <: AbstractLattice
@@ -111,16 +109,8 @@ CC.is_valid_lattice_norec(::IntrinsicErrorCheckLattice, @nospecialize(elem)) = f
 @nospecs CC.tmerge(𝕃::IntrinsicErrorCheckLattice, x, y) = tmerge(widenlattice(𝕃), x, y)
 @nospecs CC.tmeet(𝕃::IntrinsicErrorCheckLattice, x, t::Type) = tmeet(widenlattice(𝕃), x, t)
 @nospecs CC._getfield_tfunc(𝕃::IntrinsicErrorCheckLattice, xs...) = _getfield_tfunc(widenlattice(𝕃), xs...)
-
 CC.typeinf_lattice(::JETAnalyzer) = InferenceLattice(IntrinsicErrorCheckLattice(MustAliasesLattice(BaseInferenceLattice.instance)))
 CC.ipo_lattice(::JETAnalyzer) = InferenceLattice(IntrinsicErrorCheckLattice(InterMustAliasesLattice(IPOResultLattice.instance)))
-
-else # @static if VERSION ≥ v"1.10.0-DEV.197"
-CC.typeinf_lattice(::JETAnalyzer) = InferenceLattice(MustAliasesLattice(BaseInferenceLattice.instance))
-CC.ipo_lattice(::JETAnalyzer) = InferenceLattice(InterMustAliasesLattice(IPOResultLattice.instance))
-
-end # @static if VERSION ≥ v"1.10.0-DEV.197"
-end # @static if VERSION ≥ v"1.10.0-DEV.25"
 
 # AbstractAnalyzer API
 # ====================
@@ -190,55 +180,6 @@ a package, or improve the accuracy of base abstract interpretation analysis.
 # getting rid of the false positive error from `getindex((), i)`.
 @overlay JET_METHOD_TABLE Base.iterate(::Tuple{}, ::Int) = nothing
 
-# take the effects of https://github.com/JuliaLang/julia/pull/49801 for release versions
-@static if VERSION < v"1.10.0-DEV.1289"
-@overlay JET_METHOD_TABLE Base.@assume_effects :foldable function Base.aligned_sizeof(@nospecialize T::Type)
-    if isa(T, Union)
-        if Base.allocatedinline(T)
-            # NOTE this check is equivalent to `isbitsunion(T)`, we can improve type
-            # inference in the second branch with the outer `isa(T, Union)` check
-            _, sz, al = Base.uniontype_layout(T)
-            return Base.LLT_ALIGN(sz, al)
-        end
-    elseif Base.allocatedinline(T)
-        al = Base.datatype_alignment(T)
-        return Base.LLT_ALIGN(Core.sizeof(T), al)
-    end
-    return Core.sizeof(Ptr{Cvoid})
-end
-end
-
-# take the effects of https://github.com/JuliaLang/julia/pull/48136 for release versions
-@static if VERSION < v"1.10.0-DEV.286" # || VERSION ≥ v"1.9"
-@overlay JET_METHOD_TABLE Base.@assume_effects :total function Base.array_subpadding(S, T)
-    lcm_size = lcm(sizeof(S), sizeof(T))
-    s, t = Base.CyclePadding(S), Base.CyclePadding(T)
-    checked_size = 0
-    # use of Stateful harms inference and makes this vulnerable to invalidation
-    (pad, tstate) = let
-        it = iterate(t)
-        it === nothing && return true
-        it
-    end
-    (ps, sstate) = let
-        it = iterate(s)
-        it === nothing && return false
-        it
-    end
-    while checked_size < lcm_size
-        while true
-            # See if there's corresponding padding in S
-            ps.offset > pad.offset && return false
-            intersect(ps, pad) == pad && break
-            ps, sstate = iterate(s, sstate)
-        end
-        checked_size = pad.offset + pad.size
-        pad, tstate = iterate(t, tstate)
-    end
-    return true
-end
-end # @static if VERSION < v"1.10.0-DEV.286"
-
 # overloads
 # =========
 
@@ -285,15 +226,6 @@ function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer,
         f::Any, arginfo::ArgInfo, si::StmtInfo, atype::Any, sv::InferenceState, max_methods::Int)
     ReportPass(analyzer)(MethodErrorReport, analyzer, sv, ret, arginfo.argtypes, atype)
     ReportPass(analyzer)(UnanalyzedCallReport, analyzer, sv, ret, atype)
-    @static if !hasmethod(CC.from_interprocedural!, (AbstractInterpreter,
-        Any, InferenceState, ArgInfo, Any))
-        # For v1.9 compatibility (see the `CC.from_interprocedural!` overload below)
-        if JETAnalyzerConfig(analyzer).ignore_missing_comparison
-            if ret.rt === Union{Bool,Missing}
-                ret = CallMeta(Any, ret.effects, ret.info)
-            end
-        end
-    end
     return ret
 end
 
@@ -374,30 +306,16 @@ function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
         end
         res = @invoke CC.concrete_eval_eligible(analyzer::AbstractAnalyzer,
             f::Any, newresult::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
-        @static if VERSION ≥ v"1.10.0-DEV.1345"
-            if res === :concrete_eval
-                return :concrete_eval
-            end
-        else
-            if res === true
-                return true
-            end
+        if res === :concrete_eval
+            return :concrete_eval
         end
     elseif istopfunction(f, :fieldindex)
         if concrete_eval_eligible_ignoring_overlay(result, arginfo)
-            @static if VERSION ≥ v"1.10.0-DEV.1345"
-                return :concrete_eval
-            else
-                return true
-            end
+            return :concrete_eval
         end
     end
     # disables both concrete evaluation and semi-concrete interpretation
-    @static if VERSION ≥ v"1.10.0-DEV.1345"
-        return :none
-    else
-        return nothing
-    end
+    return :none
 end
 
 function concrete_eval_eligible_ignoring_overlay(result::MethodCallResult, arginfo::ArgInfo)
@@ -520,7 +438,7 @@ function CC.builtin_tfunction(analyzer::JETAnalyzer,
 
     # `IntrinsicError` is a special marker object that JET uses to indicate an erroneous
     # intrinsic function call, so fix it up here to `Bottom`
-    if @static VERSION ≥ v"1.10.0-DEV.197" ? (ret isa IntrinsicError) : false
+    if ret isa IntrinsicError
         ret = Bottom
     end
 
@@ -768,11 +686,7 @@ function report_method_error_for_union_split!(analyzer::JETAnalyzer,
     for (i, matchinfo) in enumerate(info.matches)
         if is_empty_match(matchinfo)
             if isnothing(split_argtypes)
-                @static if VERSION ≥ v"1.10.0-DEV.833"
-                    split_argtypes = switchtupleunion(typeinf_lattice(analyzer), argtypes)
-                else
-                    split_argtypes = switchtupleunion(argtypes)
-                end
+                split_argtypes = switchtupleunion(typeinf_lattice(analyzer), argtypes)
             end
             argtypes′ = split_argtypes[i]::Vector{Any}
             if !sound && report_reduce_empty_error!(analyzer, sv, argtypes′)
@@ -786,11 +700,7 @@ function report_method_error_for_union_split!(analyzer::JETAnalyzer,
             push!(empty_matches[1], sig_n)
         elseif sound && !is_fully_covered(matchinfo)
             if isnothing(split_argtypes)
-                @static if VERSION ≥ v"1.10.0-DEV.833"
-                    split_argtypes = switchtupleunion(typeinf_lattice(analyzer), argtypes)
-                else
-                    split_argtypes = switchtupleunion(argtypes)
-                end
+                split_argtypes = switchtupleunion(typeinf_lattice(analyzer), argtypes)
             end
             argtypes′ = split_argtypes[i]::Vector{Any}
             if uncovered_matches === nothing
@@ -929,11 +839,7 @@ function report_undef_global_var!(analyzer::JETAnalyzer, sv::InferenceState, gr:
     is_corecompiler_undefglobal(gr) && return false
     # if this global var is explicitly type-declared, it will be likely get assigned somewhere
     # TODO give this permission only to top-level analysis
-    @static if VERSION ≥ v"1.10.0-DEV.145"
-        ccall(:jl_get_binding_type, Any, (Any, Any), gr.mod, gr.name) !== nothing && return false
-    else
-        ccall(:jl_binding_type, Any, (Any, Any), gr.mod, gr.name) !== nothing && return false
-    end
+    ccall(:jl_get_binding_type, Any, (Any, Any), gr.mod, gr.name) !== nothing && return false
     begin @label report
         add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, gr))
         return true
@@ -961,7 +867,7 @@ end
     report_undef_static_parameter!(analyzer, sv, n)
 function report_undef_static_parameter!(analyzer::JETAnalyzer, sv::InferenceState, n::Int)
     if 1 ≤ n ≤ length(sv.sptypes)
-        if (@static VERSION ≥ v"1.10.0-DEV.556" ? sv.sptypes[n].typ : sv.sptypes[n]) === Any
+        if sv.sptypes[n].typ === Any
             tv = sv.linfo.sparam_vals[n]
             add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, tv))
             return true
@@ -1023,11 +929,7 @@ end
     report_global_assignment!(analyzer, sv, mod, name, vtyp, #=sound=#false)
 function report_global_assignment!(analyzer::JETAnalyzer,
     sv::InferenceState, mod::Module, name::Symbol, @nospecialize(vtyp), sound::Bool)
-    @static if VERSION ≥ v"1.10.0-DEV.145"
-        btyp = ccall(:jl_get_binding_type, Any, (Any, Any), mod, name)
-    else
-        btyp = ccall(:jl_binding_type, Any, (Any, Any), mod, name)
-    end
+    btyp = ccall(:jl_get_binding_type, Any, (Any, Any), mod, name)
     if btyp !== nothing
         vtyp = widenconst(ignorelimited(vtyp))
         if !(sound ? vtyp ⊑ btyp : hasintersect(vtyp, btyp))
@@ -1183,8 +1085,6 @@ end
 print_report_message(io::IO, r::BuiltinErrorReport) = print(io, r.msg)
 const GENERAL_BUILTIN_ERROR_MSG = "invalid builtin function call"
 
-@static if VERSION ≥ v"1.10.0-DEV.197"
-
 # report erroneous intrinsic function calls
 
 @doc """
@@ -1271,8 +1171,6 @@ import .CC: bitcast_tfunc, conversion_tfunc, math_tfunc, shift_tfunc, cmp_tfunc,
 @nospecs CC.cmp_tfunc(𝕃::IntrinsicErrorCheckLattice, a, b) = with_intrinsic_errorcheck(Bool, a, b, #=shift=#true)
 @nospecs CC.chk_tfunc(𝕃::IntrinsicErrorCheckLattice, a, b) = with_intrinsic_errorcheck(Tuple{widenconst(a),Bool}, a, b, #=shift=#true)
 
-end # @static if VERSION >= v"1.10.0-DEV.197"
-
 function (::BasicPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(ret))
     @assert !(f === throw) "`throw` calls should be handled either by the report pass of `SeriousExceptionReport` or `UncaughtExceptionReport`"
     if f === getfield
@@ -1288,7 +1186,7 @@ function (::BasicPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer
     elseif length(argtypes) == 2 && is_division_func(f)
         report_divide_error!(analyzer, sv, f, argtypes) && return true
     end
-    if @static VERSION >= v"1.10.0-DEV.197" ? (ret isa IntrinsicError) : false
+    if ret isa IntrinsicError
         msg = LazyString(f, ": ", ret.reason)
         report = BuiltinErrorReport(sv, f, msg)
         add_new_report!(analyzer, sv.result, report)

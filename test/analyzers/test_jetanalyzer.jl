@@ -1032,7 +1032,7 @@ function issue_404(c::Bool)
 end
 test_call(issue_404, (Bool,))
 
-@static VERSION ≥ v"1.10.0-DEV.197" && @testset "intrinsic errors" begin
+@testset "intrinsic errors" begin
     let result = report_call((Int32,Int64)) do x, y
             return Core.Intrinsics.add_int(x, y)
         end

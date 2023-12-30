@@ -203,7 +203,7 @@ function print_frame_sig(io, frame)
     if m isa Module
         Base.show_mi(io, mi, #=from_stackframe=#true)
     else
-        show_spec_sig(IOContext(io, :backtrace=>true), m, mi.specTypes)
+        Base.StackTraces.show_spec_sig(IOContext(io, :backtrace=>true), m, mi.specTypes)
     end
 end
 
@@ -225,39 +225,6 @@ function print_frame_loc(io, frame, config, color)
     printstyled(io, mod; color = modulecolor)
     printstyled(io, ' ', path, ':', frame.line; color)
 end
-
-@static if VERSION ≥ v"1.10.0-DEV.1394"
-using Base.StackTraces: show_spec_sig
-else
-function show_spec_sig(io::IO, m::Method, @nospecialize(sig::Type))
-    if get(io, :limit, :false)::Bool
-        if !haskey(io, :displaysize)
-            io = IOContext(io, :displaysize => displaysize(io))
-        end
-    end
-    argnames = Base.method_argnames(m)
-    argnames = replace(argnames, :var"#unused#" => :var"")
-    if m.nkw > 0
-        # rearrange call kw_impl(kw_args..., func, pos_args...) to func(pos_args...; kw_args)
-        kwarg_types = Any[ fieldtype(sig, i) for i = 2:(1+m.nkw) ]
-        uw = Base.unwrap_unionall(sig)::DataType
-        pos_sig = Base.rewrap_unionall(Tuple{uw.parameters[(m.nkw+2):end]...}, sig)
-        kwnames = argnames[2:(m.nkw+1)]
-        for i = 1:length(kwnames)
-            str = string(kwnames[i])::String
-            if endswith(str, "...")
-                kwnames[i] = Symbol(str[1:end-3])
-            end
-        end
-        Base.show_tuple_as_call(io, m.name, pos_sig;
-                                demangle=true,
-                                kwargs=zip(kwnames, kwarg_types),
-                                argnames=argnames[m.nkw+2:end])
-    else
-        Base.show_tuple_as_call(io, m.name, sig; demangle=true, argnames)
-    end
-end
-end # @static if VERSION ≥ v"1.10.0-DEV.1394"
 
 function print_error_frame(io, report, config, depth)
     frame = report.vst[depth]

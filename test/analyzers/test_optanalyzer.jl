@@ -188,11 +188,7 @@ end
 
 @testset "OptAnalyzer configurations" begin
     @testset "function_filter" begin
-        @static if hasfield(Core.Compiler.InferenceParams, :max_methods) # VERSION ≥ v"1.10.0-DEV.105"
-            @assert JET.InferenceParams(JET.OptAnalyzer()).max_union_splitting < 5
-        else
-            @assert JET.InferenceParams(JET.OptAnalyzer()).MAX_UNION_SPLITTING < 5
-        end
+        @assert JET.InferenceParams(JET.OptAnalyzer()).max_union_splitting < 5
 
         let result = report_opt((Vector{Any},)) do xs
                 with_runtime_dispatch(xs[1])

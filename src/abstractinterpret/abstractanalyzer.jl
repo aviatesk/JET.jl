@@ -253,7 +253,6 @@ function JETInferenceParams end
 function JETOptimizationParams end
 
 # define wrappers of `InferenceParams(...)` and `OptimizationParams(...)` that can accept JET configurations
-@static if hasfield(InferenceParams, :max_methods) # VERSION ≥ v"1.10.0-DEV.105"
 for (Params, Func) = ((InferenceParams, JETInferenceParams),
                       (OptimizationParams, JETOptimizationParams))
     params = Params()
@@ -273,61 +272,14 @@ for (Params, Func) = ((InferenceParams, JETInferenceParams),
     def = Expr(:(=), sig, body)
     Core.eval(@__MODULE__, def)
 end
-else
-function JETInferenceParams(
-    params::InferenceParams = InferenceParams();
-    ipo_constant_propagation::Bool = params.ipo_constant_propagation,
-    aggressive_constant_propagation::Bool = params.aggressive_constant_propagation,
-    unoptimize_throw_blocks::Bool = params.unoptimize_throw_blocks,
-    max_methods::Int = params.MAX_METHODS,
-    union_splitting::Int = params.MAX_UNION_SPLITTING,
-    apply_union_enum::Int = params.MAX_APPLY_UNION_ENUM,
-    tupletype_depth::Int = params.TUPLE_COMPLEXITY_LIMIT_DEPTH,
-    tuple_splat::Int = params.MAX_TUPLE_SPLAT,
-    __jetconfigs...)
-    return InferenceParams(; ipo_constant_propagation,
-                             aggressive_constant_propagation,
-                             unoptimize_throw_blocks,
-                             max_methods,
-                             union_splitting,
-                             apply_union_enum,
-                             tupletype_depth,
-                             tuple_splat)
-end
-function JETOptimizationParams(
-    params::OptimizationParams=OptimizationParams();
-    inlining::Bool = params.inlining,
-    inline_cost_threshold::Int = params.inline_cost_threshold,
-    inline_nonleaf_penalty::Int = params.inline_nonleaf_penalty,
-    inline_tupleret_bonus::Int = params.inline_tupleret_bonus,
-    inline_error_path_cost::Int = params.inline_error_path_cost,
-    tuple_splat::Int = params.MAX_TUPLE_SPLAT,
-    compilesig_invokes::Bool = params.compilesig_invokes,
-    trust_inference::Bool = params.trust_inference,
-    assume_fatal_throw::Bool = params.assume_fatal_throw,
-    __jetconfigs...)
-    return OptimizationParams(; inlining,
-                               inline_cost_threshold,
-                               inline_nonleaf_penalty,
-                               inline_tupleret_bonus,
-                               inline_error_path_cost,
-                               tuple_splat,
-                               compilesig_invokes,
-                               trust_inference,
-                               assume_fatal_throw)
-end
-end # hasfield(InferenceParams, :max_methods) # VERSION ≥ v"1.10.0-DEV.105"
 
 # assert that the wrappers create same objects as the original constructors
 for (Params, Func) = ((InferenceParams, JETInferenceParams),
                       (OptimizationParams, JETOptimizationParams))
     @assert Params() == Func()
 end
-@static if hasfield(InferenceParams, :max_methods) # VERSION ≥ v"1.10.0-DEV.105"
-    # assert that `Effects(::Effects; ...)`-like constructors work as expected
-    @assert JETInferenceParams(InferenceParams(); max_methods=1).max_methods == 1
-    @assert !JETOptimizationParams(OptimizationParams(); inlining=false).inlining
-end
+@assert JETInferenceParams(InferenceParams(); max_methods=1).max_methods == 1
+@assert !JETOptimizationParams(OptimizationParams(); inlining=false).inlining
 
 Base.show(io::IO, state::AnalyzerState) = print(io, typeof(state), "(...)")
 

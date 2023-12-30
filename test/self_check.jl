@@ -36,7 +36,7 @@ let target_modules = (JET,)
             f === zero ||
             f === JET.copy_report ||
             f === JET.handle_sig! ||
-            f === JET._which ||
+            f === Base._which ||
             f === Base.rewrap_unionall ||
             f === JET.nameof ||
             false)
