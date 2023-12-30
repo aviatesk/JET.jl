@@ -23,7 +23,7 @@ function CC.abstract_call_method(analyzer::AbstractAnalyzer,
     return ret
 end
 
-@eval function CC.const_prop_call(analyzer::AbstractAnalyzer,
+function CC.const_prop_call(analyzer::AbstractAnalyzer,
     mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
     concrete_eval_result::Union{Nothing,CC.ConstCallResults})
     set_cache_target!(analyzer, :const_prop_call => sv.result)
@@ -123,21 +123,18 @@ function analyze_additional_pass_by_type!(analyzer::AbstractAnalyzer, @nospecial
     return nothing
 end
 
-let # overload `return_type_tfunc`
-    sigs_ex = :(analyzer::AbstractAnalyzer, argtypes::Argtypes, si::StmtInfo, sv::InferenceState)
-    args_ex = :(AbstractAnalyzer(analyzer)::AbstractInterpreter, argtypes::Argtypes, si::StmtInfo, sv::InferenceState)
-    # `return_type_tfunc` internally uses `abstract_call` to model `Core.Compiler.return_type`
-    # and here we should NOT catch error reports detected within the virtualized call
-    # because it is not abstraction of actual execution
-    @eval function CC.return_type_tfunc($(sigs_ex.args...))
-        # stash and discard the result from the simulated call, and keep the original result (`result0`)
-        result = sv.result
-        oldresult = analyzer[result]
-        init_result!(analyzer, result)
-        ret = @invoke return_type_tfunc($(args_ex.args...))
-        analyzer[result] = oldresult
-        return ret
-    end
+# `return_type_tfunc` internally uses `abstract_call` to model `Core.Compiler.return_type`
+# and here we should NOT catch error reports detected within the virtualized call
+# because it is not abstraction of actual execution
+function CC.return_type_tfunc(analyzer::AbstractAnalyzer, argtypes::Argtypes, si::StmtInfo, sv::InferenceState)
+    # stash and discard the result from the simulated call, and keep the original result (`result0`)
+    result = sv.result
+    oldresult = analyzer[result]
+    init_result!(analyzer, result)
+    newanalyzer = AbstractAnalyzer(analyzer)
+    ret = @invoke return_type_tfunc(newanalyzer::AbstractInterpreter, argtypes::Argtypes, si::StmtInfo, sv::InferenceState)
+    analyzer[result] = oldresult
+    return ret
 end
 
 # cache
