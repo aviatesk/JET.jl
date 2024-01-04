@@ -140,7 +140,7 @@ end
 # cache
 # =====
 
-cache_report!(cache, @nospecialize(report::InferenceErrorReport)) =
+cache_report!(cache::Vector{InferenceErrorReport}, @nospecialize(report::InferenceErrorReport)) =
     push!(cache, copy_report′(report)::InferenceErrorReport)
 
 struct AbstractAnalyzerView{Analyzer<:AbstractAnalyzer}

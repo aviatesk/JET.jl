@@ -335,15 +335,25 @@ function CC.abstract_invoke(analyzer::JETAnalyzer, arginfo::ArgInfo, si::StmtInf
     return ret
 end
 
-# TODO enable this with https://github.com/JuliaLang/julia/pull/46791 to close https://github.com/aviatesk/JET.jl/issues/285
-# function CC.abstract_eval_value_expr(analyzer::JETAnalyzer, e::Expr, sv::InferenceState)
-#     ret = @invoke CC.abstract_eval_value_expr(analyzer::AbstractInterpreter, e::Expr, sv::InferenceState)
-#     if e.head === :static_parameter
-#         # report pass for undefined static parameter
-#         ReportPass(analyzer)(UndefVarErrorReport, analyzer, sv, e.args[1]::Int)
-#     end
-#     return ret
-# end
+@static if VERSION ≥ v"1.11.0-DEV.888"
+function CC.abstract_eval_statement_expr(analyzer::JETAnalyzer, e::Expr, vtypes::VarTable, sv::InferenceState)
+    ret = @invoke CC.abstract_eval_statement_expr(analyzer::AbstractInterpreter, e::Expr, vtypes::VarTable, sv::InferenceState)
+    if e.head === :static_parameter
+        # report pass for undefined static parameter
+        ReportPass(analyzer)(UndefVarErrorReport, analyzer, sv, e.args[1]::Int)
+    end
+    return ret
+end
+else
+function CC.abstract_eval_value_expr(analyzer::JETAnalyzer, e::Expr, vtypes::VarTable, sv::InferenceState)
+    ret = @invoke CC.abstract_eval_value_expr(analyzer::AbstractInterpreter, e::Expr, vtypes::VarTable, sv::InferenceState)
+    if e.head === :static_parameter
+        # report pass for undefined static parameter
+        ReportPass(analyzer)(UndefVarErrorReport, analyzer, sv, e.args[1]::Int)
+    end
+    return ret
+end
+end
 
 function CC.abstract_eval_special_value(analyzer::JETAnalyzer,
     @nospecialize(e), vtypes::VarTable, sv::InferenceState)
@@ -815,14 +825,16 @@ end
 end
 function print_report_message(io::IO, r::UndefVarErrorReport)
     var = r.var
-    if isa(var, GlobalRef)
-        print(io, "`", var.mod, '.', var.name, "`")
-    elseif isa(var, TypeVar)
-        print(io, "static parameter `", var.name, "`")
+    if isa(var, TypeVar)
+        print(io, "`", var.name, "` not defined in static parameter matching")
     else
-        print(io, "local variable `", var, "`")
+        if isa(var, GlobalRef)
+            print(io, "`", var.mod, '.', var.name, "`")
+        else
+            print(io, "local variable `", var, "`")
+        end
+        print(io, " is not defined")
     end
-    print(io, " is not defined")
 end
 
 # undefined global variable report passes
@@ -860,15 +872,16 @@ end
 # undefined static parameter report passes
 
 (::SoundPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, n::Int) =
-    report_undef_static_parameter!(analyzer, sv, n)
+    report_undef_static_parameter!(analyzer, sv, n, true)
 (::BasicPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, n::Int) =
-    report_undef_static_parameter!(analyzer, sv, n)
+    report_undef_static_parameter!(analyzer, sv, n, false)
 (::TypoPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, n::Int) =
-    report_undef_static_parameter!(analyzer, sv, n)
-function report_undef_static_parameter!(analyzer::JETAnalyzer, sv::InferenceState, n::Int)
+    report_undef_static_parameter!(analyzer, sv, n, false)
+function report_undef_static_parameter!(analyzer::JETAnalyzer, sv::InferenceState, n::Int, sound::Bool)
     if 1 ≤ n ≤ length(sv.sptypes)
-        if sv.sptypes[n].typ === Any
-            tv = sv.linfo.sparam_vals[n]
+        mi = sv.linfo
+        if sv.sptypes[n].undef && (sound || is_compileable_mi(mi))
+            tv = mi.sparam_vals[n]::TypeVar
             add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, tv))
             return true
         end
