@@ -881,7 +881,7 @@ function report_undef_static_parameter!(analyzer::JETAnalyzer, sv::InferenceStat
     if 1 ≤ n ≤ length(sv.sptypes)
         mi = sv.linfo
         if sv.sptypes[n].undef && (sound || is_compileable_mi(mi))
-            tv = mi.sparam_vals[n]
+            tv = mi.sparam_vals[n]::TypeVar
             add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, tv))
             return true
         end
