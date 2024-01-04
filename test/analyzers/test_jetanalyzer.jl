@@ -184,6 +184,9 @@ end
     end
 end
 
+issue285(x, y::Vararg{T}) where {T} = T
+issue586(t::Vararg{Type{<:T}}) where {T} = T
+
 @testset "UndefVarErrorReport" begin
     @testset "global" begin
         let result = report_call(()->foo)
@@ -345,6 +348,39 @@ end
             end
             let r = only(res.res.inference_error_reports)
                 @test is_local_undef_var(r, :bar)
+            end
+        end
+    end
+
+    @testset "static parameter" begin
+        @test_call issue285(1, 2)
+        let result = @report_call issue285(1)
+            r = only(get_reports_with_test(result))
+            @test r isa UndefVarErrorReport && r.var isa TypeVar && r.var.name == :T
+        end
+        test_call((Vector{Any},)) do xs
+            issue285(xs...)
+        end
+        let result = report_call((Vector{Any},); mode=:sound) do xs
+                issue285(xs...)
+            end
+            @test any(get_reports_with_test(result)) do r
+                r isa UndefVarErrorReport && r.var isa TypeVar && r.var.name == :T
+            end
+        end
+        @test_call issue586(Int, Int)
+        let result = @report_call issue586(Int, String)
+            r = only(get_reports_with_test(result))
+            @test r isa UndefVarErrorReport && r.var isa TypeVar && r.var.name == :T
+        end
+        test_call((Vector{Type},)) do ts
+            issue586(ts...)
+        end
+        let result = report_call((Vector{Type},); mode=:sound) do ts
+                issue586(ts...)
+            end
+            @test any(get_reports_with_test(result)) do r
+                r isa UndefVarErrorReport && r.var isa TypeVar && r.var.name == :T
             end
         end
     end
