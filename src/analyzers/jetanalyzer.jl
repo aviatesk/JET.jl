@@ -335,20 +335,19 @@ function CC.abstract_invoke(analyzer::JETAnalyzer, arginfo::ArgInfo, si::StmtInf
     return ret
 end
 
+# report pass for undefined static parameter
 @static if VERSION ≥ v"1.11.0-DEV.888"
 function CC.abstract_eval_statement_expr(analyzer::JETAnalyzer, e::Expr, vtypes::VarTable, sv::InferenceState)
-    ret = @invoke CC.abstract_eval_statement_expr(analyzer::AbstractInterpreter, e::Expr, vtypes::VarTable, sv::InferenceState)
+    ret = @invoke CC.abstract_eval_statement_expr(analyzer::AbstractAnalyzer, e::Expr, vtypes::VarTable, sv::InferenceState)
     if e.head === :static_parameter
-        # report pass for undefined static parameter
         ReportPass(analyzer)(UndefVarErrorReport, analyzer, sv, e.args[1]::Int)
     end
     return ret
 end
 else
 function CC.abstract_eval_value_expr(analyzer::JETAnalyzer, e::Expr, vtypes::VarTable, sv::InferenceState)
-    ret = @invoke CC.abstract_eval_value_expr(analyzer::AbstractInterpreter, e::Expr, vtypes::VarTable, sv::InferenceState)
+    ret = @invoke CC.abstract_eval_value_expr(analyzer::AbstractAnalyzer, e::Expr, vtypes::VarTable, sv::InferenceState)
     if e.head === :static_parameter
-        # report pass for undefined static parameter
         ReportPass(analyzer)(UndefVarErrorReport, analyzer, sv, e.args[1]::Int)
     end
     return ret
@@ -461,9 +460,7 @@ end
 @jetreport struct GeneratorErrorReport <: InferenceErrorReport
     @nospecialize err # actual error wrapped
 end
-function print_report_message(io::IO, (; err)::GeneratorErrorReport)
-    showerror(io, err)
-end
+print_report_message(io::IO, rep::GeneratorErrorReport) = showerror(io, rep.err)
 
 # XXX what's the "soundness" of a `@generated` function ?
 # adapted from https://github.com/JuliaLang/julia/blob/f806df603489cfca558f6284d52a38f523b81881/base/compiler/utilities.jl#L107-L137
