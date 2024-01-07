@@ -1159,11 +1159,8 @@ function Base.show(io::IO, t::JETTestFailure)
     printstyled(io, something(t.source.file, :none), ":", t.source.line, "\n"; bold=true, color=:default)
     println(io, TEST_INDENTS, "Expression: ", t.orig_expr)
     # print abstract call stack, with appropriate indents
-    _, ctx = Base.unwrapcontext(io)
-    buf = IOBuffer()
-    ioctx = IOContext(buf, ctx)
-    show(ioctx, t.result)
-    lines = replace(String(take!(buf)), '\n'=>string('\n',TEST_INDENTS))
+    result = repr(t.result, context=io)
+    lines = replace(result, '\n'=>string('\n', TEST_INDENTS))
     print(io, TEST_INDENTS, lines)
 end
 
