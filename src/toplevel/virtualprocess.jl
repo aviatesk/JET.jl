@@ -1181,13 +1181,13 @@ function select_dependencies!(concretize, src, edges)
             # push!(critical_blocks, minimum(loop) - 1)
         end
     end
+    # Mark the exit statement of each critical block
+    for i in critical_blocks
+        concretize[cfg.blocks[i].stmts[end]] = true
+    end
 
     norequire = BitSet()
-    for (i, block) in enumerate(cfg.blocks)
-        if i ∉ critical_blocks
-            pushall!(norequire, rng(block))
-        end
-    end
+    paths = enumerate_paths(cfg)
 
     changed = true
     while changed
@@ -1195,7 +1195,7 @@ function select_dependencies!(concretize, src, edges)
 
         # track SSA predecessors and control flows of the critical blocks
         changed |= add_ssa_preds!(concretize, src, edges, norequire)
-        changed |= add_control_flow!(concretize, cfg, norequire)
+        changed |= add_control_flow!(concretize, cfg, paths)
     end
 end
 
