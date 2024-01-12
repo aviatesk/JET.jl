@@ -92,8 +92,8 @@ function strongly_connected_components(g::CFG)
     end
 
     # # assert with the original implementation
-    # components′ = Graphs.strongly_connected_components(cfg_to_sdg(g))
-    # @assert Set(Set.(components)) == Set(Set.(components′))
+    # oracle_components = oracle_scc(cfg_to_sdg(g))
+    # @assert Set(Set.(components)) == Set(Set.(oracle_components))
 
     return components
 end
@@ -103,7 +103,7 @@ end
 @inline vertices(cfg::CFG) = 1:nv(cfg)
 @inline outneighbors(cfg::CFG, v) = cfg.blocks[v].succs
 
-# using Graphs: Graphs, SimpleDiGraph, add_edge!
+# using Graphs: SimpleDiGraph, add_edge!, strongly_connected_components as oracle_scc
 # function cfg_to_sdg(cfg::CFG)
 #     g = SimpleDiGraph(length(cfg.blocks))
 #     for (v, block) in enumerate(cfg.blocks)
