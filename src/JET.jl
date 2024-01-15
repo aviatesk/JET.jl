@@ -1060,22 +1060,23 @@ function call_test_ex(funcname::Symbol, testname::Symbol, ex0, __module__, __sou
     deleteat!(ex0, idx)
 
     testres, orig_expr = _call_test_ex(funcname, testname, ex0, __module__, __source__)
+    isskip, isbroken = (!isnothing(skip) && skip), (!isnothing(broken) && broken)
 
     return quote
-        if $(!isnothing(skip) && skip)
-            $(Test.record)($get_testset(), $Broken(:skipped, $orig_expr))
+        if $isskip
+            Test.record(get_testset(), Broken(:skipped, $orig_expr))
         else
             testres = $testres
-            if $(!isnothing(broken) && broken)
-                if isa(testres, $JETTestFailure)
-                    testres = $Broken($(QuoteNode(testname)), $orig_expr)
-                elseif isa(testres, $Pass)
-                    testres = $Error(:test_unbroken, $orig_expr, nothing, nothing, $(QuoteNode(__source__)))
+            if $isbroken
+                if isa(testres, JETTestFailure)
+                    testres = Broken($(QuoteNode(testname)), $orig_expr)
+                elseif isa(testres, Pass)
+                    testres = Error(:test_unbroken, $orig_expr, nothing, nothing, $(QuoteNode(__source__)))
                 end
             else
-                isa(testres, $Pass) || ccall(:jl_breakpoint, $Cvoid, ($Any,), testres)
+                isa(testres, Pass) || ccall(:jl_breakpoint, Cvoid, (Any,), testres)
             end
-            $(Test.record)($get_testset(), testres)
+            Test.record(get_testset(), testres)
         end
     end
 end
@@ -1086,14 +1087,14 @@ function _call_test_ex(funcname::Symbol, testname::Symbol, ex0, __module__, __so
     source = QuoteNode(__source__)
     testres = :(try
         result = $analysis
-        if $length($get_reports(result)) == 0
-            $Pass($(QuoteNode(testname)), $orig_expr, nothing, nothing, $source)
+        if length(get_reports(result)) == 0
+            Pass($(QuoteNode(testname)), $orig_expr, nothing, nothing, $source)
         else
-            $JETTestFailure($orig_expr, $source, result)
+            JETTestFailure($orig_expr, $source, result)
         end
     catch err
-        isa(err, $InterruptException) && rethrow()
-        $Error(:test_error, $orig_expr, err, $(Base.current_exceptions()), $source)
+        isa(err, InterruptException) && rethrow()
+        Error(:test_error, $orig_expr, err, Base.current_exceptions(), $source)
     end) |> Base.remove_linenums!
     return testres, orig_expr
 end
