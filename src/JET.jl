@@ -261,7 +261,7 @@ get_slotname(sv::State, slot::Int) = sv.src.slotnames[slot]
 
 # check if we're in a toplevel module
 istoplevel(sv::State) = istoplevel(sv.linfo)
-istoplevel(linfo::MethodInstance) = isa(linfo.def, Module)
+istoplevel(mi::MethodInstance) = isa(mi.def, Module)
 
 # we can retrieve program-counter-level slottype during inference
 get_slottype(s::Tuple{InferenceState,Int}, slot::Int) = (get_states(s)[slot]::VarState).typ

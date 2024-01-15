@@ -499,6 +499,11 @@ end
 
 end
 
+function CC.cache_result!(analyzer::AbstractAnalyzer, caller::InferenceResult)
+    istoplevel(caller.linfo) && return nothing # don't need to cache toplevel frame
+    @invoke CC.cache_result!(analyzer::AbstractInterpreter, caller::InferenceResult)
+end
+
 # top-level bridge
 # ================
 
