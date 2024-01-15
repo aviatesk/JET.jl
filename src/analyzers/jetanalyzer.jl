@@ -276,20 +276,6 @@ function CC.add_call_backedges!(
         sv::InferenceState)
 end
 
-@doc """
-    const_prop_entry_heuristic(analyzer::JETAnalyzer, result::MethodCallResult, sv::InferenceState)
-
-This overload forces constant prop' even if an inference result can't be improved
-anymore _with respect to the return type_, e.g. when `result.rt` is already `Const`.
-Especially, this overload implements an heuristic to force constant prop' when any error points
-have been reported while the previous abstract method call without constant arguments.
-The reason we want much more aggressive constant propagation by that heuristic is that it's
-highly possible constant prop' can produce more accurate analysis result, by throwing away
-false positive error reports by cutting off the unreachable control flow or detecting
-must-reachable `throw` calls.
-"""
-CC.const_prop_entry_heuristic(::JETAnalyzer, result::MethodCallResult, si::StmtInfo, sv::InferenceState) = true
-
 # TODO Reasons about error found by [semi-]concrete evaluation:
 # For now JETAnalyzer allows the regular constant-prop' only,
 # unless the analyzed effects are proven to be `:nothrow`.
