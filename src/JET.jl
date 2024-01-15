@@ -45,7 +45,7 @@ import .CC:
     abstract_call_known, abstract_call_gf_by_type, abstract_call_method,
     abstract_call_method_with_const_args, abstract_eval_value_expr, abstract_eval_special_value,
     abstract_eval_statement, abstract_eval_value, abstract_invoke, add_call_backedges!,
-    concrete_eval_call, concrete_eval_eligible, const_prop_entry_heuristic, from_interprocedural!,
+    concrete_eval_call, concrete_eval_eligible, from_interprocedural!,
     #= typeinfer.jl =#
     _typeinf, finish!, finish, transform_result_for_cache, typeinf, typeinf_edge,
     #= optimize.jl =#
