@@ -64,7 +64,7 @@ struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
     end
     function JETAnalyzer(state::AnalyzerState, report_pass::ReportPass,
                          config::JETAnalyzerConfig)
-        if (@ccall jl_generating_output()::Cint) != 0
+        if ((@static VERSION < v"1.11.0-DEV.1255" && true) && !iszero(@ccall jl_generating_output()::Cint))
             # XXX Avoid storing analysis results into a cache that persists across the
             #     precompilation, as pkgimage currently doesn't support serializing
             #     externally created `CodeInstance`. Otherwise, `CodeInstance`s created by

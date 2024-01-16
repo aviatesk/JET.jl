@@ -92,7 +92,7 @@ using LoweredCodeUtils:
 
 using JuliaInterpreter:
     @lookup, _INACTIVE_EXCEPTION, bypass_builtins, collect_args, #=finish!,=#
-    is_quotenode_egal, is_return, maybe_evaluate_builtin, moduleof
+    is_quotenode_egal, maybe_evaluate_builtin, moduleof
 
 using MacroTools: @capture, MacroTools, normalise, striplines
 
@@ -1258,6 +1258,25 @@ using PrecompileTools
         show(IOContext(devnull, :color=>true), result)
         result = @report_opt rand(String)
         show(IOContext(devnull, :color=>true), result)
+    end
+    @static VERSION ≥ v"1.11.0-DEV.1255" && let
+        # register an initialization callback that fixes up `max_world` which is overridden
+        # to `one(UInt) == WORLD_AGE_REVALIDATION_SENTINEL` by staticdata.c
+        # otherwise using cached analysis results would result in world age assertion error
+        function override_precompiled_cache()
+            for precache in (JET_ANALYZER_CACHE, OPT_ANALYZER_CACHE),
+                (_, cache) in precache
+                iddict = cache.cache
+                for (_, codeinst) in iddict
+                    if codeinst.max_world == one(UInt) # == WORLD_AGE_REVALIDATION_SENTINEL
+                        codeinst.max_world = typemax(UInt)
+                    end
+                end
+                Base.rehash!(iddict) # XXX why is this needed?
+            end
+        end
+        override_precompiled_cache() # to precompile this callback itself
+        push_inithook!(override_precompiled_cache)
     end
 end
 
