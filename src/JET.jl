@@ -1266,13 +1266,12 @@ using PrecompileTools
         function override_precompiled_cache()
             for precache in (JET_ANALYZER_CACHE, OPT_ANALYZER_CACHE),
                 (_, cache) in precache
-                iddict = cache.cache
-                for (_, codeinst) in iddict
+                for (_, codeinst) in cache.cache
                     if codeinst.max_world == one(UInt) # == WORLD_AGE_REVALIDATION_SENTINEL
                         codeinst.max_world = typemax(UInt)
                     end
                 end
-                Base.rehash!(iddict) # XXX why is this needed?
+                Base.rehash!(cache.cache) # HACK to avoid JuliaLang/julia#52915
             end
         end
         override_precompiled_cache() # to precompile this callback itself
