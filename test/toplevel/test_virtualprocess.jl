@@ -1479,44 +1479,40 @@ end
 
 # NOTE better to be in test_misc.jl, but here it is since this test is only valid when the testset above gets passed
 @testset "configuration file" begin
-    dir = mktempdir()
-    analysis_target = normpath(dir, "concretization_patterns.jl")
-    config_target   = normpath(dir, JET.CONFIG_FILE_NAME)
+    mktempdir() do dir
+        analysis_target = normpath(dir, "concretization_patterns.jl")
+        config_target   = normpath(dir, JET.CONFIG_FILE_NAME)
 
-    back = pwd()
-    try
-        # in order to check the functionality, fixtures/..JET.toml logs toplevel analysis
-        # into toplevel.txt (relative to the current working directory)
-        # and so let's `cd` into the temporary directory to not pollute this directory
-        cd(dir)
+        back = pwd()
+        try # in order to check the functionality, fixtures/..JET.toml logs toplevel analysis
+            # into toplevel.txt (relative to the current working directory)
+            # and so let's `cd` into the temporary directory to not pollute this directory
+            cd(dir)
 
-        open(CONCRETIZATION_PATTERNS_FILE) do f
-            write(analysis_target, f)
+            open(CONCRETIZATION_PATTERNS_FILE) do f
+                write(analysis_target, f)
+            end
+
+            # no configuration, thus top-level analysis should fail
+            let res = report_file2(analysis_target)
+                nreported = print_reports(IOBuffer(), res)
+                @test !iszero(nreported) # error reported
+            end
+
+            # setup a configuration file
+            open(CONCRETIZATION_PATTERNS_CONFIG) do f
+                write(config_target, f)
+            end
+
+            # now any top-level analysis failure shouldn't happen
+            let res = report_file2(analysis_target)
+                nreported = print_reports(IOBuffer(), res)
+                @test iszero(nreported) # no error happened
+                @test isfile("toplevel.txt") # not closed yet
+            end
+        finally
+            cd(back)
         end
-
-        # no configuration, thus top-level analysis should fail
-        let
-            res = report_file2(analysis_target)
-            nreported = print_reports(IOBuffer(), res)
-            @test !iszero(nreported) # error reported
-        end
-
-        # setup a configuration file
-        open(CONCRETIZATION_PATTERNS_CONFIG) do f
-            write(config_target, f)
-        end
-
-        # now any top-level analysis failure shouldn't happen
-        let
-            res = report_file2(analysis_target)
-            nreported = print_reports(IOBuffer(), res)
-            @test iszero(nreported) # no error happened
-            @test isfile("toplevel.txt") # not closed yet
-        end
-    catch err
-        rethrow(err)
-    finally
-        cd(back)
     end
 end
 
