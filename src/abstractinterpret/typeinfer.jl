@@ -442,6 +442,41 @@ function CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
     return ret
 end
 
+# N.B. this overload essentially reverts JuliaLang/julia#50469 for type stability,
+# but this is safe since `AbstractAnalyzer` doesn't currently support any compositions
+# with other abstract interpreters
+function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
+    CC.typeinf_nocycle(analyzer, frame) || return false # frame is now part of a higher cycle
+    # with no active ip's, frame is done
+    frames = frame.callers_in_cycle
+    isempty(frames) && push!(frames, frame)
+    valid_worlds = WorldRange()
+    for caller in frames
+        @assert !(caller.dont_work_on_me)
+        caller.dont_work_on_me = true
+        # might might not fully intersect these earlier, so do that now
+        valid_worlds = CC.intersect(caller.valid_worlds, valid_worlds)
+    end
+    for caller in frames
+        caller.valid_worlds = valid_worlds
+        CC.finish(caller, #=CHANGED caller.interp=#analyzer)
+    end
+    for caller in frames
+        opt = caller.result.src
+        if opt isa OptimizationState{typeof(analyzer)} # CHANGED: added {typeof(analyzer)}
+            CC.optimize(#=CHANGED caller.interp=#analyzer, opt, caller.result)
+        end
+    end
+    for caller in frames
+        finish!(#=CHANGED caller.interp=#analyzer, caller)
+        if CC.is_cached(caller)
+            CC.cache_result!(#=CHANGED caller.interp=#analyzer, caller.result)
+        end
+    end
+    empty!(frames)
+    return true
+end
+
 else
 
 # in this overload we can work on `frame.src::CodeInfo` (and also `frame::InferenceState`)
