@@ -203,17 +203,16 @@ end
 
 function CC.finish!(analyzer::JETAnalyzer, caller::InferenceState)
     src = caller.result.src
-    if src isa OptimizationState
-        # allow the following analysis passes to see the optimized `CodeInfo`
-        src = caller.result.src = CC.ir_to_codeinf!(src)
-    end
 
     if isnothing(src)
         # caught in cycle, similar error should have been reported where the source is available
-    else
-        code = (src::CodeInfo).code
+    elseif src isa CodeInfo
         # report pass for uncaught `throw` calls
-        ReportPass(analyzer)(UncaughtExceptionReport, analyzer, caller, code)
+        ReportPass(analyzer)(UncaughtExceptionReport, analyzer, caller, src.code)
+    else
+        # NOTE `src` never be `OptpimizationState` since `CC.may_optimize(::JETAnalyzer) === false`
+        Core.eval(@__MODULE__, :(src = $src))
+        throw("unexpected state happened, inspect `$(@__MODULE__).src`")
     end
 
     return @invoke CC.finish!(analyzer::AbstractAnalyzer, caller::InferenceState)
