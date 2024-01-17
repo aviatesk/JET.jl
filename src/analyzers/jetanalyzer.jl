@@ -93,7 +93,7 @@ using .CC:
     AbstractLattice, InferenceLattice, MustAliasesLattice,  InterMustAliasesLattice,
     BaseInferenceLattice, IPOResultLattice
 
-@doc """
+"""
     IntrinsicErrorCheckLattice <: AbstractLattice
 
 This lattice is used to check if an intrinsic function call is erroneous.
@@ -246,7 +246,7 @@ function CC.from_interprocedural!(analyzer::JETAnalyzer,
     return ret
 end
 
-@doc """
+"""
     bail_out_call(analyzer::JETAnalyzer, ...)
 
 This overload makes call inference performed by `JETAnalyzer` not bail out even when
@@ -258,7 +258,7 @@ CC.bail_out_call(::JETAnalyzer, ::CC.InferenceLoopState, ::InferenceState) = fal
 
 struct __DummyConcrete__ end
 
-@doc """
+"""
     add_call_backedges!(analyzer::JETAnalyzer, ...)
 
 An overload for `abstract_call_gf_by_type(analyzer::JETAnalyzer, ...)`, which always add
@@ -1083,7 +1083,7 @@ const GENERAL_BUILTIN_ERROR_MSG = "invalid builtin function call"
 
 # report erroneous intrinsic function calls
 
-@doc """
+"""
     IntrinsicError(reason::String)
 
 A special lattice element that represents an erroneous intrinsic function call.

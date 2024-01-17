@@ -528,7 +528,7 @@ mutable struct AbstractGlobal
     AbstractGlobal(@nospecialize(t), isconst::Bool) = new(t, isconst)
 end
 
-@doc """
+"""
     bail_out_toplevel_call(analyzer::AbstractAnalyzer, ...)
 
 This overload allows JET to keep inference performed by `AbstractAnalyzer` going on
