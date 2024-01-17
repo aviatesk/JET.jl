@@ -484,7 +484,7 @@ function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
             CC.cache_result!(analyzer, caller)
         end
     end
-
+    empty!(frames)
     return true
 end
 
