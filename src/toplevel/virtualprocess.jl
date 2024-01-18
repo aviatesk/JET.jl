@@ -1105,10 +1105,13 @@ function is_known_call(stmt::Expr, func::Symbol, stmts::Vector{Any})
         f = stmts[f.id]
     end
     isa(f, Symbol) && f === func && return true
-    isa(f, GlobalRef) && f.name === :eval && return true
-    callee_matches(f, Base, :getproperty) && is_quotenode_egal(stmt.args[end], func) && return true
-    callee_matches(f, Core, :getproperty) && is_quotenode_egal(stmt.args[end], func) && return true
-    callee_matches(f, Core.Compiler, :getproperty) && is_quotenode_egal(stmt.args[end], func) && return true
+    isa(f, GlobalRef) && f.name === func && return true
+    callee_matches(f, Base, :getproperty) &&
+        is_quotenode_egal(stmt.args[end], func) && return true
+    callee_matches(f, Core, :getproperty) &&
+        is_quotenode_egal(stmt.args[end], func) && return true
+    callee_matches(f, Core.Compiler, :getproperty) &&
+        is_quotenode_egal(stmt.args[end], func) && return true
     return false
 end
 
