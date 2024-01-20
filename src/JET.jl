@@ -45,7 +45,7 @@ import .CC:
     abstract_call_known, abstract_call_gf_by_type, abstract_call_method,
     abstract_call_method_with_const_args, abstract_eval_value_expr, abstract_eval_special_value,
     abstract_eval_statement, abstract_eval_value, abstract_invoke, add_call_backedges!,
-    concrete_eval_call, concrete_eval_eligible, const_prop_entry_heuristic, from_interprocedural!,
+    concrete_eval_call, concrete_eval_eligible, from_interprocedural!,
     #= typeinfer.jl =#
     _typeinf, finish!, finish, transform_result_for_cache, typeinf, typeinf_edge,
     #= optimize.jl =#
@@ -92,7 +92,7 @@ using LoweredCodeUtils:
 
 using JuliaInterpreter:
     @lookup, _INACTIVE_EXCEPTION, bypass_builtins, collect_args, #=finish!,=#
-    is_quotenode_egal, is_return, maybe_evaluate_builtin, moduleof
+    is_quotenode_egal, maybe_evaluate_builtin, moduleof
 
 using MacroTools: @capture, MacroTools, normalise, striplines
 
@@ -261,7 +261,7 @@ get_slotname(sv::State, slot::Int) = sv.src.slotnames[slot]
 
 # check if we're in a toplevel module
 istoplevel(sv::State) = istoplevel(sv.linfo)
-istoplevel(linfo::MethodInstance) = isa(linfo.def, Module)
+istoplevel(mi::MethodInstance) = isa(mi.def, Module)
 
 # we can retrieve program-counter-level slottype during inference
 get_slottype(s::Tuple{InferenceState,Int}, slot::Int) = (get_states(s)[slot]::VarState).typ
@@ -1060,22 +1060,23 @@ function call_test_ex(funcname::Symbol, testname::Symbol, ex0, __module__, __sou
     deleteat!(ex0, idx)
 
     testres, orig_expr = _call_test_ex(funcname, testname, ex0, __module__, __source__)
+    isskip, isbroken = (!isnothing(skip) && skip), (!isnothing(broken) && broken)
 
     return quote
-        if $(!isnothing(skip) && skip)
-            $(Test.record)($get_testset(), $Broken(:skipped, $orig_expr))
+        if $isskip
+            Test.record(get_testset(), Broken(:skipped, $orig_expr))
         else
             testres = $testres
-            if $(!isnothing(broken) && broken)
-                if isa(testres, $JETTestFailure)
-                    testres = $Broken($(QuoteNode(testname)), $orig_expr)
-                elseif isa(testres, $Pass)
-                    testres = $Error(:test_unbroken, $orig_expr, nothing, nothing, $(QuoteNode(__source__)))
+            if $isbroken
+                if isa(testres, JETTestFailure)
+                    testres = Broken($(QuoteNode(testname)), $orig_expr)
+                elseif isa(testres, Pass)
+                    testres = Error(:test_unbroken, $orig_expr, nothing, nothing, $(QuoteNode(__source__)))
                 end
             else
-                isa(testres, $Pass) || ccall(:jl_breakpoint, $Cvoid, ($Any,), testres)
+                isa(testres, Pass) || ccall(:jl_breakpoint, Cvoid, (Any,), testres)
             end
-            $(Test.record)($get_testset(), testres)
+            Test.record(get_testset(), testres)
         end
     end
 end
@@ -1086,14 +1087,14 @@ function _call_test_ex(funcname::Symbol, testname::Symbol, ex0, __module__, __so
     source = QuoteNode(__source__)
     testres = :(try
         result = $analysis
-        if $length($get_reports(result)) == 0
-            $Pass($(QuoteNode(testname)), $orig_expr, nothing, nothing, $source)
+        if length(get_reports(result)) == 0
+            Pass($(QuoteNode(testname)), $orig_expr, nothing, nothing, $source)
         else
-            $JETTestFailure($orig_expr, $source, result)
+            JETTestFailure($orig_expr, $source, result)
         end
     catch err
-        isa(err, $InterruptException) && rethrow()
-        $Error(:test_error, $orig_expr, err, $(Base.current_exceptions()), $source)
+        isa(err, InterruptException) && rethrow()
+        Error(:test_error, $orig_expr, err, Base.current_exceptions(), $source)
     end) |> Base.remove_linenums!
     return testres, orig_expr
 end
@@ -1257,6 +1258,24 @@ using PrecompileTools
         show(IOContext(devnull, :color=>true), result)
         result = @report_opt rand(String)
         show(IOContext(devnull, :color=>true), result)
+    end
+    @static VERSION ≥ v"1.11.0-DEV.1255" && let
+        # register an initialization callback that fixes up `max_world` which is overridden
+        # to `one(UInt) == WORLD_AGE_REVALIDATION_SENTINEL` by staticdata.c
+        # otherwise using cached analysis results would result in world age assertion error
+        function override_precompiled_cache()
+            for precache in (JET_ANALYZER_CACHE, OPT_ANALYZER_CACHE),
+                (_, cache) in precache
+                for (_, codeinst) in cache.cache
+                    if codeinst.max_world == one(UInt) # == WORLD_AGE_REVALIDATION_SENTINEL
+                        codeinst.max_world = typemax(UInt)
+                    end
+                end
+                Base.rehash!(cache.cache) # HACK to avoid JuliaLang/julia#52915
+            end
+        end
+        override_precompiled_cache() # to precompile this callback itself
+        push_inithook!(override_precompiled_cache)
     end
 end
 

@@ -2,36 +2,31 @@ using JET, InteractiveUtils
 
 const CC = JET.CC
 
-import .CC:
-    Bottom, widenconst, ⊑
+using .CC: Bottom, widenconst, ⊑
 
-import JET:
+using JET:
     AbstractAnalyzer, AbstractGlobal, InferenceErrorReport, JETAnalyzer, ToplevelConfig,
     ToplevelErrorReport, gen_virtual_module, get_reports, get_result, print_reports,
     virtual_process, virtualize_module_context
 
-import Base.Meta:
-    isexpr
+using Base.Meta: isexpr
 
 get_cache(analyzer::AbstractAnalyzer) = JET.get_inf_cache(analyzer)
 
-function subtypes_recursive!(t, ts)
-    push!(ts, t)
-    if isabstracttype(t)
-        for ct in subtypes(t)
-            subtypes_recursive!(ct, ts)
+let ts = Type[]
+    function subtypes_recursive!(t)
+        push!(ts, t)
+        if isabstracttype(t)
+            for ct in subtypes(t)
+                subtypes_recursive!(ct)
+            end
         end
     end
-    return ts
-end
-
-let ts = Type[]
-    subtypes_recursive!(ToplevelErrorReport, ts)
-    subtypes_recursive!(InferenceErrorReport, ts)
+    subtypes_recursive!(ToplevelErrorReport)
+    subtypes_recursive!(InferenceErrorReport)
     for t in ts
         canonicalname = Symbol(parentmodule(t), '.', nameof(t))
         canonicalpath = Symbol.(split(string(canonicalname), '.'))
-
         modpath = Expr(:., canonicalpath[1:end-1]...)
         symname = Expr(:., last(canonicalpath))
         ex = Expr(:import, Expr(:(:), modpath, symname))
@@ -48,13 +43,13 @@ Creates a virtual module and defines fixtures from toplevel expression `ex`
 """
 macro fixturedef(ex)
     @assert isexpr(ex, :block)
-    return quote let
-        vmod = $gen_virtual_module()
+    return :(let
+        vmod = gen_virtual_module()
         for x in $(ex.args)
             Core.eval(vmod, x)
         end
         vmod # return virtual module
-    end end
+    end)
 end
 
 """
@@ -87,7 +82,7 @@ macro analyze_toplevel2(xs...)
     jetconfigs = (:(virtualize = false), jetconfigs...,)
     ex2 = _analyze_toplevel(ex, __source__, jetconfigs)
     return :(let
-        $(esc(vmod)) = $gen_virtual_module()
+        $(esc(vmod)) = gen_virtual_module()
         ret2 = $ex2
         $(esc(vmod)), ret2
     end)
@@ -99,12 +94,12 @@ function _analyze_toplevel(ex, lnn, jetconfigs)
                   Expr(:toplevel, lnn, ex)
                   ) |> QuoteNode
     return :(let
-        analyzer = $(GlobalRef(JET, :JETAnalyzer))(; $(map(esc, jetconfigs)...))
+        analyzer = JETAnalyzer(; $(map(esc, jetconfigs)...))
         config = ToplevelConfig(; $(map(esc, jetconfigs)...))
-        res = $virtual_process($toplevelex,
-                               $(string(lnn.file)),
-                               analyzer,
-                               config)
+        res = virtual_process($toplevelex,
+                              $(string(lnn.file)),
+                              analyzer,
+                              config)
         JET.JETToplevelResult(analyzer, res, "analyze_toplevel"; $(map(esc, jetconfigs)...))
     end)
 end

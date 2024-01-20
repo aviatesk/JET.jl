@@ -44,8 +44,6 @@ end
 
         Pkg.activate(; temp=true, io=devnull)
         @test_throws ErrorException find_pkg(nothing)
-    catch err
-        rethrow(err)
     finally
         Pkg.activate(old; io=devnull)
     end

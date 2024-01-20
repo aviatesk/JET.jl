@@ -22,7 +22,6 @@ JET.islineage
 JET.bail_out_toplevel_call
 JET.bail_out_call
 JET.add_call_backedges!
-JET.const_prop_entry_heuristic
 JET.analyze_task_parallel_code!
 ```
 

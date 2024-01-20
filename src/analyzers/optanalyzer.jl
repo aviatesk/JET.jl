@@ -181,7 +181,7 @@ struct OptAnalyzer{RP<:ReportPass,FF} <: AbstractAnalyzer
                          function_filter::FF,
                          skip_noncompileable_calls::Bool,
                          skip_unoptimized_throw_blocks::Bool) where {RP<:ReportPass,FF}
-        if (@ccall jl_generating_output()::Cint) != 0
+        if ((@static VERSION < v"1.11.0-DEV.1255" && true) && !iszero(@ccall jl_generating_output()::Cint))
             # XXX Avoid storing analysis results into a cache that persists across the
             #     precompilation, as pkgimage currently doesn't support serializing
             #     externally created `CodeInstance`. Otherwise, `CodeInstance`s created by
