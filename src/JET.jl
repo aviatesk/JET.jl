@@ -88,7 +88,7 @@ using LoweredCodeUtils, JuliaInterpreter
 using LoweredCodeUtils:
     #=NamedVar,=# add_control_flow!, #=add_named_dependencies!, add_requests!,=#
     add_ssa_preds!, add_typedefs!, callee_matches, find_typedefs, ismethod, istypedef,
-    print_with_code, pushall!, rng
+    print_with_code, pushall!, rng, strongly_connected_components
 
 using JuliaInterpreter:
     @lookup, _INACTIVE_EXCEPTION, bypass_builtins, collect_args, #=finish!,=#
@@ -326,8 +326,6 @@ include("abstractinterpret/abstractanalyzer.jl")
 include("abstractinterpret/typeinfer.jl")
 
 function print_report end
-
-include("toplevel/graph.jl")
 
 const JULIA_SYNTAX_ENABLED = !(Base.get_bool_env("JULIA_USE_FLISP_PARSER", false))
 
