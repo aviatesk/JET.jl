@@ -86,7 +86,7 @@ using Base.Experimental: @MethodTable, @overlay
 using LoweredCodeUtils, JuliaInterpreter
 
 using LoweredCodeUtils:
-    #=NamedVar,=# add_control_flow!, enumerate_paths, #=add_named_dependencies!, add_requests!,=#
+    #=NamedVar,=# add_control_flow!, #=add_named_dependencies!, add_requests!,=#
     add_ssa_preds!, add_typedefs!, callee_matches, find_typedefs, ismethod, istypedef,
     print_with_code, pushall!, rng
 
