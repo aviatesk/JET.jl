@@ -1,8 +1,14 @@
+function Base_type_depth_limit(io::IO; maxdepth=1)
+    sz = get(io, :displaysize, displaysize(io))::Tuple{Int, Int}
+    return Base.type_depth_limit(String(take!(io)), max(sz[2], 120); maxdepth)
+end
+
 # entry
 # =====
 
 Base.show(io::IO, res::JETToplevelResult) = print_reports(io, res)
 function print_reports(io::IO, res::JETToplevelResult)
+    io = IOContext(io, :limit => true)
     return print_reports(io,
                          get_reports(res),
                          gen_postprocess(res.res.actual2virtual);
@@ -11,6 +17,7 @@ end
 
 Base.show(io::IO, res::JETCallResult) = print_reports(io, res)
 function print_reports(io::IO, res::JETCallResult)
+    io = IOContext(io, :limit => true)
     return print_reports(io,
                          get_reports(res);
                          res.jetconfigs...)
@@ -203,7 +210,10 @@ function print_frame_sig(io, frame)
     if m isa Module
         Base.show_mi(io, mi, #=from_stackframe=#true)
     else
-        Base.StackTraces.show_spec_sig(IOContext(io, :backtrace=>true), m, mi.specTypes)
+        buf = IOBuffer()
+        Base.StackTraces.show_spec_sig(buf, m, mi.specTypes)
+        io = IOContext(io, :backtrace=>true, :limit=>true)
+        write(io, Base_type_depth_limit(buf));
     end
 end
 
@@ -260,7 +270,11 @@ end
 
 function print_signature(io, sig::Signature, config; kwargs...)
     for a in sig
-        _print_signature(io, a, config; kwargs...)
+        buf = IOBuffer()
+        _print_signature(buf, a, config; kwargs...)
+        # Let's use maxdepth=2, so that unnamed
+        # functions still show types we recognize.
+        write(io, Base_type_depth_limit(buf; maxdepth=2));
     end
 end
 function _print_signature(io, @nospecialize(x), config; kwargs...)
