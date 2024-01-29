@@ -1267,8 +1267,14 @@ using PrecompileTools
             for precache in (JET_ANALYZER_CACHE, OPT_ANALYZER_CACHE),
                 (_, cache) in precache
                 for (_, codeinst) in cache.cache
+                    @static if VERSION ≥ v"1.11.0-DEV.1390"
+                    if (@atomic :monotonic codeinst.max_world) == one(UInt) # == WORLD_AGE_REVALIDATION_SENTINEL
+                        @atomic :monotonic codeinst.max_world = typemax(UInt)
+                    end
+                    else
                     if codeinst.max_world == one(UInt) # == WORLD_AGE_REVALIDATION_SENTINEL
                         codeinst.max_world = typemax(UInt)
+                    end
                     end
                 end
                 Base.rehash!(cache.cache) # HACK to avoid JuliaLang/julia#52915
