@@ -1138,4 +1138,16 @@ end |> only === Val{3}
 
 @test isconcretetype(only(Base.return_types(pairs, (@NamedTuple{kw1::Int,kw2::String},); interp=JET.JETAnalyzer())))
 
+# Broken: cache consistency with undefined bindings (xref: JuliaLang/julia#40399)
+func40399() = sin(Main.binding40399)
+let res = report_call() do
+        func40399()
+    end
+    @test only(get_reports_with_test(res)) isa UndefVarErrorReport
+end
+global binding40399::Float64 = rand()
+test_call(; broken=true) do
+    func40399()
+end
+
 end # module test_jetanalyzer
