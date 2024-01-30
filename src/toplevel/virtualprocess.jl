@@ -672,7 +672,7 @@ function _virtual_process!(res::VirtualProcessResult,
                             push!(res.toplevel_error_reports, report)
                             return nothing
                         end
-                        require_ex = :(const $dep = $require_pkg($depid))
+                        require_ex = :(const $dep = Base.require($depid))
                         # TODO better handling of loading errors that may happen here
                         require_res = with_err_handling(err_handler, #=scrub_offset=#3) do
                             return Core.eval(mod, require_ex)
@@ -816,12 +816,6 @@ function _virtual_process!(res::VirtualProcessResult,
     return res
 end
 
-function require_pkg(pkg::Base.PkgId)
-    @lock Base.require_lock begin
-        return Base._require_prelocked(pkg)
-    end
-end
-
 struct VExpr
     x
     force_concretize::Bool
@@ -830,8 +824,8 @@ end
 
 function push_vex_stack!(exs::Vector{VExpr}, newex::Expr, force_concretize::Bool)
     nargs = length(newex.args)
-    for i in 0:(nargs-1)
-        push!(exs, VExpr(newex.args[nargs-i], force_concretize))
+    for i = nargs:-1:1
+        push!(exs, VExpr(newex.args[i], force_concretize))
     end
     return exs
 end
