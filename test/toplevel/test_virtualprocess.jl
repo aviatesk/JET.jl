@@ -516,8 +516,8 @@ end
 
 @testset "handle `include`" begin
     let
-        f1 = normpath(FIXTURE_DIR, "include1.jl")
-        f2 = normpath(FIXTURE_DIR, "include2.jl")
+        f1 = normpath(FIXTURES_DIR, "include1.jl")
+        f2 = normpath(FIXTURES_DIR, "include2.jl")
 
         context = gen_virtual_module(@__MODULE__)
         res = report_file2(f1; context, virtualize = false)
@@ -530,7 +530,7 @@ end
     end
 
     let
-        f = normpath(FIXTURE_DIR, "nonexistinclude.jl")
+        f = normpath(FIXTURES_DIR, "nonexistinclude.jl")
         res = report_file2(f)
 
         @test f in res.res.included_files
@@ -541,7 +541,7 @@ end
     end
 
     let
-        f = normpath(FIXTURE_DIR, "selfrecursiveinclude.jl")
+        f = normpath(FIXTURES_DIR, "selfrecursiveinclude.jl")
         res = report_file2(f)
 
         @test f in res.res.included_files
@@ -550,8 +550,8 @@ end
     end
 
     let
-        f1 = normpath(FIXTURE_DIR, "chainrecursiveinclude1.jl")
-        f2 = normpath(FIXTURE_DIR, "chainrecursiveinclude2.jl")
+        f1 = normpath(FIXTURES_DIR, "chainrecursiveinclude1.jl")
+        f2 = normpath(FIXTURES_DIR, "chainrecursiveinclude2.jl")
         res = report_file2(f1)
 
         @test f1 in res.res.included_files
@@ -568,8 +568,8 @@ end
     end
 
     let
-        f1 = normpath(FIXTURE_DIR, "includetwice.jl")
-        f2 = normpath(FIXTURE_DIR, "include2.jl")
+        f1 = normpath(FIXTURES_DIR, "includetwice.jl")
+        f2 = normpath(FIXTURES_DIR, "include2.jl")
         res = report_file2(f1)
 
         @test f1 in res.res.included_files
@@ -578,8 +578,8 @@ end
     end
 
     let
-        modf = normpath(FIXTURE_DIR, "modinclude.jl")
-        inc2 = normpath(FIXTURE_DIR, "include2.jl")
+        modf = normpath(FIXTURES_DIR, "modinclude.jl")
+        inc2 = normpath(FIXTURES_DIR, "include2.jl")
 
         context = gen_virtual_module(@__MODULE__)
         res = report_file2(modf; context, virtualize=false)
@@ -2066,7 +2066,7 @@ end
 # produce (false positive) top-level errors (e.g., by actually running test code, etc.)
 # NOTE this could be very fragile ...
 @testset "test file targets" begin
-    TARGET_DIR = normpath(FIXTURE_DIR, "targets")
+    TARGET_DIR = normpath(FIXTURES_DIR, "targets")
 
     let res = report_file2(normpath(TARGET_DIR, "error.jl"))
         @test isempty(res.res.toplevel_error_reports)
@@ -2141,7 +2141,7 @@ end
 using Pkg
 function test_report_package(test_func, (pkgname, code);
                              base_setup=function ()
-                                Pkg.develop(; path=normpath(FIXTURE_DIR, "PkgAnalysisDep"), io=devnull)
+                                Pkg.develop(; path=normpath(FIXTURES_DIR, "PkgAnalysisDep"), io=devnull)
                              end,
                              additional_setup=()->nothing,
                              jetconfigs...)
@@ -2481,6 +2481,21 @@ end
         base_setup=()->Pkg.add("LinearAlgebra", io=devnull)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
+    end
+end
+
+# aviatesk/JET.jl#597: don't try to concrete-interpret `:jl_extern_c`
+let old = Pkg.project().path
+    try
+        Pkg.activate(; temp=true, io=devnull)
+        Pkg.develop(; path=normpath(FIXTURES_DIR, "JET597"), io=devnull)
+
+        using JET597
+
+        res = report_package(JET597; toplevel_logger=nothing)
+        @test isempty(res.res.toplevel_error_reports)
+    finally
+        Pkg.activate(old; io=devnull)
     end
 end
 

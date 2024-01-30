@@ -1289,32 +1289,40 @@ function JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, fr
     ret = @invokelatest maybe_evaluate_builtin(frame, call_expr, false)
     isa(ret, Some{Any}) && return ret.value
     args = collect_args(interp, frame, call_expr)
-    f = first(args)
-    isinclude(f) && return handle_include(interp, args)
-    popfirst!(args)  # now it's really just `args`
+    f = popfirst!(args) # now it's really just `args`
+    isinclude(f) && return handle_include(interp, f, args)
+    if f === Base._ccallable
+        # skip concrete-interpretation of `jl_extern_c` as the C-side function definition
+        # isn't really essential for Julia-level analysis (currently at least)
+        if length(args) == 2 && args[1] isa Type && args[2] isa Type
+            # ignore it only if the method dispatch is successful
+            return nothing
+        else
+            # otherwise just call it to trigger a method error
+        end
+    end
     return @invokelatest f(args...)
 end
 
 isinclude(@nospecialize f) = isa(f, Function) && nameof(f) === :include
 
-function handle_include(interp::ConcreteInterpreter, args::Vector{Any})
+function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func), args::Vector{Any})
     filename = interp.filename
     res = interp.res
     lnn = interp.lnn
     context = interp.context
 
     function handle_actual_method_error!(args::Vector{Any})
-        err = MethodError(args[1], args[2:end])
+        err = MethodError(include_func, args)
         local report = ActualErrorWrapped(err, [], filename, lnn.line)
         push!(res.toplevel_error_reports, report)
     end
 
     nargs = length(args)
-    if nargs == 2
-        fname = args[2]
-    elseif nargs == 3
-        x = args[2]
-        fname = args[3]
+    if nargs == 1
+        fname = only(args)
+    elseif nargs == 2
+        x, fname = args
         if isa(x, Module)
             context = x
         elseif isa(x, Function)
@@ -1346,7 +1354,7 @@ function handle_include(interp::ConcreteInterpreter, args::Vector{Any})
         return nothing
     end
     # `scrub_offset = 3` corresponds to `with_err_handling` -> `f`
-    include_text = with_err_handling(read_err_handler, #= scrub_offset =# 2) do
+    include_text = with_err_handling(read_err_handler, #=scrub_offset=#2) do
         read(include_file, String)
     end
     isnothing(include_text) && return nothing # typically no file error
