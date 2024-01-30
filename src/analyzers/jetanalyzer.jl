@@ -347,15 +347,8 @@ function CC.abstract_eval_special_value(analyzer::JETAnalyzer,
     if isa(e, GlobalRef)
         # report pass for undefined global reference
         ReportPass(analyzer)(UndefVarErrorReport, analyzer, sv, e)
-
-        # NOTE `Core.Compiler.NativeInterpreter` should return `ret = Any` `ret` even if `mod.name`
-        # isn't defined and we just pass it as is to collect as much error points as possible
-        # we can change it to `Bottom` to suppress any further inference with this variable,
-        # but then we also need to make sure to invalidate the cache for the analysis on
-        # the future re-definition of this (currently) undefined binding
-        # return Bottom
-    # TODO enable this
     # elseif isa(e, SlotNumber)
+    #     # TODO enable this (aviatesk/JET.jl#596)
     #     # report pass for (local) undef var error
     #     ReportPass(analyzer)(UndefVarErrorReport, analyzer, sv, e, vtypes, ret)
     end
@@ -1404,6 +1397,12 @@ function JETAnalyzer(world::UInt = Base.get_world_counter();
     jetconfigs = kwargs_dict(jetconfigs)
     set_if_missing!(jetconfigs, :aggressive_constant_propagation, true)
     set_if_missing!(jetconfigs, :unoptimize_throw_blocks, false)
+    # Enable the `assume_bindings_static` option to terminate analysis a bit earlier when
+    # there are undefined bindings detected. Note that this option will cause inference
+    # cache inconsistency until JuliaLang/julia#40399 is merged. But the analysis cache of
+    # JETAnalyzer has the same problem already anyway, so enabling this option does not
+    # make the situation worse.
+    set_if_missing!(jetconfigs, :assume_bindings_static, true)
     state = AnalyzerState(world; jetconfigs...)
     config = JETAnalyzerConfig(; jetconfigs...)
     return JETAnalyzer(state, report_pass, config)
