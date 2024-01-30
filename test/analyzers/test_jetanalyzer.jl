@@ -810,6 +810,16 @@ end
             x.y = "bar"
         end
     end
+    let # Note: on v1.11 and above, we need to disable `bail_out_const_call`
+        # in order to get a nicer report for this case
+        result = report_call((Float64,)) do x
+            x.num
+        end
+        @test only(get_reports_with_test(result)) isa BuiltinErrorReport
+        test_builtinerror_compatibility(result) do
+            (0.0).num
+        end
+    end
 end
 
 @testset "getfield analysis" begin

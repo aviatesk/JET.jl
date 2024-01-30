@@ -275,6 +275,13 @@ function CC.add_call_backedges!(
         sv::InferenceState)
 end
 
+@static if VERSION ≥ v"1.11.0-DEV.1284"
+CC.bail_out_const_call(::JETAnalyzer, ::MethodCallResult, ::StmtInfo, ::MethodMatch, ::InferenceState) = false
+else
+CC.const_prop_enabled(::JETAnalyzer, ::MethodMatch, ::InferenceState) = true
+CC.bail_out_const_call(::JETAnalyzer, ::MethodCallResult, ::StmtInfo, ::InferenceState) = false
+end
+
 # TODO Reasons about error found by [semi-]concrete evaluation:
 # For now JETAnalyzer allows the regular constant-prop' only,
 # unless the analyzed effects are proven to be `:nothrow`.
