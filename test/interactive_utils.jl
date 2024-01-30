@@ -62,7 +62,7 @@ macro analyze_toplevel(xs...)
     xs′ = filter(!iskwarg, xs)
     @assert length(xs′) == 1
     ex = first(xs′)
-    return _analyze_toplevel(ex, __source__, jetconfigs)
+    return _analyze_toplevel_ex(ex, __source__, jetconfigs)
 end
 
 """
@@ -80,28 +80,27 @@ macro analyze_toplevel2(xs...)
     vmod = gensym(:vmod)
     jetconfigs = (:(context = $vmod), jetconfigs...,)
     jetconfigs = (:(virtualize = false), jetconfigs...,)
-    ex2 = _analyze_toplevel(ex, __source__, jetconfigs)
+    ex = _analyze_toplevel_ex(ex, __source__, jetconfigs)
+    vmodname = esc(vmod)
     return :(let
-        $(esc(vmod)) = gen_virtual_module()
-        ret2 = $ex2
-        $(esc(vmod)), ret2
+        $vmodname = gen_virtual_module()
+        ret = $ex
+        $vmodname, ret
     end)
 end
 
-function _analyze_toplevel(ex, lnn, jetconfigs)
+_analyze_toplevel_ex(ex, lnn, jetconfigs) =
+    :(analyze_toplevel($(QuoteNode(ex)), $(QuoteNode(lnn)); $(map(esc, jetconfigs)...)))
+
+function analyze_toplevel(ex, lnn; jetconfigs...)
     toplevelex = (isexpr(ex, :block) ?
                   Expr(:toplevel, lnn, ex.args...) : # flatten here
-                  Expr(:toplevel, lnn, ex)
-                  ) |> QuoteNode
-    return :(let
-        analyzer = JETAnalyzer(; $(map(esc, jetconfigs)...))
-        config = ToplevelConfig(; $(map(esc, jetconfigs)...))
-        res = virtual_process($toplevelex,
-                              $(string(lnn.file)),
-                              analyzer,
-                              config)
-        JET.JETToplevelResult(analyzer, res, "analyze_toplevel"; $(map(esc, jetconfigs)...))
-    end)
+                  Expr(:toplevel, lnn, ex))
+    analyzer = JETAnalyzer(; jetconfigs...)
+    config = ToplevelConfig(; jetconfigs...)
+    filename = let file = lnn.file; isnothing(file) ? "top-level" : String(file) end
+    res = virtual_process(toplevelex, filename, analyzer, config)
+    return JET.JETToplevelResult(analyzer, res, "analyze_toplevel"; jetconfigs...)
 end
 
 # `report_file` with silent top-level logger
