@@ -1297,13 +1297,11 @@ function report_fieldaccess!(analyzer::JETAnalyzer, sv::InferenceState, @nospeci
         end
     end
     fidx = _getfield_fieldindex(s, name)
-    fidx === nothing && @goto report_nofield_error
-    ftypes = Base.datatype_fieldtypes(s)
-    nf = length(ftypes)
-    (fidx < 1 || fidx > nf) && @goto report_nofield_error
-    return false
+    if fidx !== nothing
+        nf = length(Base.datatype_fieldtypes(s))
+        1 ≤ fidx ≤ nf && return false
+    end
 
-    @label report_nofield_error
     namev = (name::Const).val
     objtyp = s00
     if namev isa Symbol

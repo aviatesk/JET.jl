@@ -701,15 +701,16 @@ access_field(x::InvalidBuiltinStruct, sym) = getfield(x, sym)
     end
 
     @testset "constant propagation" begin
-        result = report_call(x::InvalidBuiltinStruct->access_field(x,:v))
-        @test isempty(get_reports_with_test(result))
-
-        result = report_call(x::InvalidBuiltinStruct->access_field(x,:w))
-        report = only(get_reports_with_test(result))
-        @test report isa BuiltinErrorReport && report.f === getfield
-
-        result = report_call(x::InvalidBuiltinStruct->access_field(x,:v))
-        @test isempty(get_reports_with_test(result))
+        let result = report_call(x::InvalidBuiltinStruct->access_field(x,:v))
+            @test isempty(get_reports_with_test(result))
+        end
+        let result = report_call(x::InvalidBuiltinStruct->access_field(x,:w))
+            report = only(get_reports_with_test(result))
+            @test report isa BuiltinErrorReport && report.f === getfield
+        end
+        let result = report_call(x::InvalidBuiltinStruct->access_field(x,:v))
+            @test isempty(get_reports_with_test(result))
+        end
     end
 end
 
