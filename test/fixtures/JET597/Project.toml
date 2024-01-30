@@ -1,0 +1,4 @@
+name = "JET597"
+uuid = "4ca48d18-89c2-426a-bed1-3230a526f9a7"
+authors = ["Shuhei Kadowaki <aviatesk@gmail.com>"]
+version = "0.1.0"
