@@ -1155,6 +1155,9 @@ function select_dependencies!(concretize, src, edges)
     # and thus the analysis here should terminate in reasonable time even with a fairly
     # complex control flow graph
     cfg = compute_basic_blocks(src.code)
+    domtree = LoweredCodeUtils.construct_domtree(cfg.blocks)
+    postdomtree = LoweredCodeUtils.construct_postdomtree(cfg.blocks)
+
     loops = filter!(>(1)∘length, strongly_connected_components(cfg))
 
     critical_blocks = BitSet()
@@ -1178,13 +1181,12 @@ function select_dependencies!(concretize, src, edges)
             # push!(critical_blocks, minimum(loop) - 1)
         end
     end
+    # Mark the exit statement of each critical block
+    for i in critical_blocks
+        concretize[cfg.blocks[i].stmts[end]] = true
+    end
 
     norequire = BitSet()
-    for (i, block) in enumerate(cfg.blocks)
-        if i ∉ critical_blocks
-            pushall!(norequire, rng(block))
-        end
-    end
 
     changed = true
     while changed
@@ -1192,7 +1194,7 @@ function select_dependencies!(concretize, src, edges)
 
         # track SSA predecessors and control flows of the critical blocks
         changed |= add_ssa_preds!(concretize, src, edges, norequire)
-        changed |= add_control_flow!(concretize, cfg, norequire)
+        changed |= add_control_flow!(concretize, cfg, domtree, postdomtree)
     end
 end
 
