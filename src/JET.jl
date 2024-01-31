@@ -1268,11 +1268,13 @@ using PrecompileTools
                 (_, cache) in precache
                 for (_, codeinst) in cache.cache
                     @static if VERSION ≥ v"1.11.0-DEV.1390"
-                    if (@atomic :monotonic codeinst.max_world) == one(UInt) # == WORLD_AGE_REVALIDATION_SENTINEL
+                    if ((@atomic :monotonic codeinst.min_world) > zero(UInt) &&
+                        (@atomic :monotonic codeinst.max_world) == one(UInt)) # == WORLD_AGE_REVALIDATION_SENTINEL
                         @atomic :monotonic codeinst.max_world = typemax(UInt)
                     end
                     else
-                    if codeinst.max_world == one(UInt) # == WORLD_AGE_REVALIDATION_SENTINEL
+                    if (codeinst.min_world > zero(UInt) &&
+                        codeinst.max_world == one(UInt)) # == WORLD_AGE_REVALIDATION_SENTINEL
                         codeinst.max_world = typemax(UInt)
                     end
                     end
