@@ -1,7 +1,7 @@
 # JET.jl
 
 [![](https://img.shields.io/badge/docs-latest-blue.svg)](https://aviatesk.github.io/JET.jl/dev/)
-[![](https://github.com/aviatesk/JET.jl/workflows/CI/badge.svg)](https://github.com/aviatesk/JET.jl/actions/workflows/ci.yml?query=branch%3Amaster)
+[![](https://github.com/aviatesk/JET.jl/actions/workflows/ci.yml/badge.svg)](https://github.com/aviatesk/JET.jl/actions/workflows/ci.yml)
 [![](https://codecov.io/gh/aviatesk/JET.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/aviatesk/JET.jl)
 
 JET employs Julia's type inference system to detect potential bugs and type instabilities.
