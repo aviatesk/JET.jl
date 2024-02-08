@@ -307,7 +307,7 @@ end
 
 # constructor for additional JET analysis in the middle of parent (non top-level) abstractinterpret
 function AbstractAnalyzer(analyzer::T) where {T<:AbstractAnalyzer}
-    newstate = AnalyzerState(get_world_counter(analyzer);
+    newstate = AnalyzerState(get_inference_world(analyzer);
                              results    = get_results(analyzer),
                              inf_params = InferenceParams(analyzer),
                              opt_params = OptimizationParams(analyzer),
@@ -546,11 +546,11 @@ stash_report!(analyzer::AbstractAnalyzer, reports::Vector{InferenceErrorReport})
 # ===================
 # provide default implementations for the API requirements
 
-CC.InferenceParams(analyzer::AbstractAnalyzer)    = get_inf_params(analyzer)
+CC.InferenceParams(analyzer::AbstractAnalyzer) = get_inf_params(analyzer)
 CC.OptimizationParams(analyzer::AbstractAnalyzer) = get_opt_params(analyzer)
-CC.get_world_counter(analyzer::AbstractAnalyzer)  = get_world(analyzer)
+#=CC.=#get_inference_world(analyzer::AbstractAnalyzer) = get_world(analyzer)
 
-CC.may_compress(analyzer::AbstractAnalyzer)      = false
+CC.may_compress(analyzer::AbstractAnalyzer) = false
 CC.may_discard_trees(analyzer::AbstractAnalyzer) = false
 
 let # overload `inlining_policy`
