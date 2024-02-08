@@ -152,7 +152,7 @@ end
 
 function CC.code_cache(analyzer::AbstractAnalyzer)
     view = AbstractAnalyzerView(analyzer)
-    worlds = WorldRange(get_world_counter(analyzer))
+    worlds = WorldRange(get_inference_world(analyzer))
     return WorldView(view, worlds)
 end
 

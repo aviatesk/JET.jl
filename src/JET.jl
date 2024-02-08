@@ -33,8 +33,8 @@ import .CC:
     # get, getindex, haskey, push!, setindex!,
     #= types.jl =#
     InferenceParams, OptimizationParams, add_remark!, bail_out_call, bail_out_toplevel_call,
-    code_cache, get_inference_cache, get_world_counter, lock_mi_inference, may_compress,
-    may_discard_trees, may_optimize, unlock_mi_inference, verbose_stmt_info, method_table,
+    code_cache, get_inference_cache, lock_mi_inference, may_compress, may_discard_trees,
+    may_optimize, unlock_mi_inference, verbose_stmt_info, method_table,
     #= inferenceresult.jl =#
     cache_lookup,
     #= inferencestate.jl =#
@@ -124,6 +124,13 @@ __init__() = foreach(@nospecialize(f)->f(), INIT_HOOKS)
 
 # compat
 # ------
+
+@static if VERSION ≥ v"1.11.0-DEV.1498"
+    import .CC: get_inference_world
+    using Base: get_world_counter
+else
+    import .CC: get_world_counter, get_world_counter as get_inference_world
+end
 
 # macros
 # ------
@@ -636,7 +643,7 @@ function analyze_gf_by_type!(analyzer::AbstractAnalyzer, @nospecialize(tt::Type{
 end
 
 function find_single_match(@nospecialize(tt), analyzer::AbstractAnalyzer)
-    match = Base._which(tt; method_table=method_table(analyzer), world=get_world_counter(analyzer), raise=false)
+    match = Base._which(tt; method_table=method_table(analyzer), world=get_inference_world(analyzer), raise=false)
     match === nothing && single_match_error(tt)
     return match
 end
