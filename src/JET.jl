@@ -234,7 +234,9 @@ function compute_hash(objs...)
     return _compute_hash(objs...)
 end
 _compute_hash(o, objs...) = hash(o, _compute_hash(objs...))
-_compute_hash() = @static UInt === UInt64 ? 0xa49bd446c0a5d90e : 0xe45361ac
+let hash_seed = rand(UInt)
+    global _compute_hash() = hash_seed
+end
 
 # state
 
