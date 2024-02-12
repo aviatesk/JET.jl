@@ -168,7 +168,7 @@ function CC.typeinf_edge(analyzer::AbstractAnalyzer, method::Method, @nospeciali
 end
 
 function CC.get(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance, default)
-    codeinf = get(AnalysisCache(wvc), mi, default) # will ignore native code cache for a `MethodInstance` that is not analyzed by JET yet
+    codeinst = get(AnalysisCache(wvc), mi, default) # will ignore native code cache for a `MethodInstance` that is not analyzed by JET yet
 
     analyzer = wvc.cache.analyzer
 
@@ -183,9 +183,9 @@ function CC.get(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance, defa
     if isa(cache_target, Pair{Symbol,InferenceResult})
         context, caller = cache_target
         if context === :typeinf_edge
-            if isa(codeinf, CodeInstance)
+            if isa(codeinst, CodeInstance)
                 # cache hit, now we need to append cached reports associated with this `MethodInstance`
-                inferred = @atomic :monotonic codeinf.inferred
+                inferred = @atomic :monotonic codeinst.inferred
                 for cached in (inferred::CachedAnalysisResult).reports
                     restored = add_cached_report!(analyzer, caller, cached)
                     @static if JET_DEV_MODE
@@ -199,13 +199,13 @@ function CC.get(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance, defa
         end
     end
 
-    return codeinf
+    return codeinst
 end
 
 function CC.getindex(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance)
-    r = CC.get(wvc, mi, nothing)
-    r === nothing && throw(KeyError(mi))
-    return r::CodeInstance
+    codeinst = CC.get(wvc, mi, nothing)
+    codeinst === nothing && throw(KeyError(mi))
+    return codeinst::CodeInstance
 end
 
 function CC.transform_result_for_cache(analyzer::AbstractAnalyzer,
@@ -223,10 +223,10 @@ function CC.transform_result_for_cache(analyzer::AbstractAnalyzer,
     return CachedAnalysisResult(inferred_result, cache)
 end
 
-function CC.setindex!(wvc::WorldView{<:AbstractAnalyzerView}, ci::CodeInstance, mi::MethodInstance)
+function CC.setindex!(wvc::WorldView{<:AbstractAnalyzerView}, codeinst::CodeInstance, mi::MethodInstance)
     analysis_cache = AnalysisCache(wvc)
     add_jet_callback!(mi, analysis_cache)
-    analysis_cache[mi] = ci
+    return analysis_cache[mi] = codeinst
 end
 
 struct JETCallback
