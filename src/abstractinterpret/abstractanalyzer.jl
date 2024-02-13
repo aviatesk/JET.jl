@@ -550,8 +550,11 @@ CC.InferenceParams(analyzer::AbstractAnalyzer) = get_inf_params(analyzer)
 CC.OptimizationParams(analyzer::AbstractAnalyzer) = get_opt_params(analyzer)
 #=CC.=#get_inference_world(analyzer::AbstractAnalyzer) = get_world(analyzer)
 
-CC.may_compress(analyzer::AbstractAnalyzer) = false
-CC.may_discard_trees(analyzer::AbstractAnalyzer) = false
+# allow compression during precompilation only
+CC.may_compress(::AbstractAnalyzer) = generating_output()
+
+# this overload is necessary to avoid caching with the const ABI
+CC.may_discard_trees(::AbstractAnalyzer) = false
 
 let # overload `inlining_policy`
     @static if isdefined(CC, :InliningInfo)

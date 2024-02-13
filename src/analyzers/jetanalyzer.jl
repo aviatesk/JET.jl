@@ -64,7 +64,7 @@ struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
     end
     function JETAnalyzer(state::AnalyzerState, report_pass::ReportPass,
                          config::JETAnalyzerConfig)
-        if ((@static VERSION < v"1.11.0-DEV.1255" && true) && !iszero(@ccall jl_generating_output()::Cint))
+        if ((@static VERSION < v"1.11.0-DEV.1255" && true) && generating_output())
             # XXX Avoid storing analysis results into a cache that persists across the
             #     precompilation, as pkgimage currently doesn't support serializing
             #     externally created `CodeInstance`. Otherwise, `CodeInstance`s created by
@@ -79,6 +79,9 @@ struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
         return JETAnalyzer(state, analysis_cache, report_pass, config)
     end
 end
+
+# JETAnalyzer does not need any sources, so discard them always
+CC.maybe_compress_codeinfo(::JETAnalyzer, ::MethodInstance, ::CodeInfo) = nothing
 
 # JETAnalyzer hooks on abstract interpretation only,
 # and so the cost of running the optimization passes is just unnecessary

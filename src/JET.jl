@@ -125,6 +125,18 @@ __init__() = foreach(@nospecialize(f)->f(), INIT_HOOKS)
 # compat
 # ------
 
+@static if VERSION ≥ v"1.11.0-DEV.439"
+    using Base: generating_output
+else
+    function generating_output(incremental::Union{Bool,Nothing}=nothing)
+        ccall(:jl_generating_output, Cint, ()) == 0 && return false
+        if incremental !== nothing
+            JLOptions().incremental == incremental || return false
+        end
+        return true
+    end
+end
+
 @static if VERSION ≥ v"1.11.0-DEV.1498"
     import .CC: get_inference_world
     using Base: get_world_counter
