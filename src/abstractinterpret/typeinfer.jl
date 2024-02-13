@@ -185,8 +185,8 @@ function CC.get(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance, defa
         if context === :typeinf_edge
             if isa(codeinst, CodeInstance)
                 # cache hit, now we need to append cached reports associated with this `MethodInstance`
-                inferred = @atomic :monotonic codeinst.inferred
-                for cached in (inferred::CachedAnalysisResult).reports
+                inferred = (@atomic :monotonic codeinst.inferred)::CachedAnalysisResult
+                for cached in inferred.reports
                     restored = add_cached_report!(analyzer, caller, cached)
                     @static if JET_DEV_MODE
                         actual, expected = first(restored.vst).linfo, mi
