@@ -150,6 +150,10 @@ end
 # global
 # ------
 
+@static if VERSION ≥ v"1.11.0-DEV.1552"
+CC.cache_owner(analyzer::AbstractAnalyzer) = AnalysisCache(analyzer)
+end
+
 function CC.code_cache(analyzer::AbstractAnalyzer)
     view = AbstractAnalyzerView(analyzer)
     worlds = WorldRange(get_inference_world(analyzer))
@@ -225,7 +229,9 @@ end
 
 function CC.setindex!(wvc::WorldView{<:AbstractAnalyzerView}, codeinst::CodeInstance, mi::MethodInstance)
     analysis_cache = AnalysisCache(wvc)
+    @static if VERSION < v"1.11.0-DEV.1552"
     add_jet_callback!(mi, analysis_cache)
+    end
     return analysis_cache[mi] = codeinst
 end
 
