@@ -130,7 +130,7 @@ mutable struct AnalyzerState
 
     # the temporal stash to keep track of the context of caller inference/optimization and
     # the caller itself, to which reconstructed cached reports will be appended
-    cache_target::Union{Nothing,Pair{Symbol,InferenceResult}}
+    cache_target::(@static VERSION ≥ v"1.11.0-DEV.1552" ? Nothing : Union{Nothing,Pair{Symbol,InferenceResult}})
 
     ## abstract toplevel execution ##
 
@@ -417,12 +417,12 @@ struct AnalysisCache
 end
 AnalysisCache() = AnalysisCache(IdDict{MethodInstance,CodeInstance}())
 
-Base.haskey(analysis_cache::AnalysisCache, mi::MethodInstance) = haskey(analysis_cache.cache, mi)
-Base.get(analysis_cache::AnalysisCache, mi::MethodInstance, default) = get(analysis_cache.cache, mi, default)
-Base.getindex(analysis_cache::AnalysisCache, mi::MethodInstance) = getindex(analysis_cache.cache, mi)
-Base.setindex!(analysis_cache::AnalysisCache, ci::CodeInstance, mi::MethodInstance) = setindex!(analysis_cache.cache, ci, mi)
-Base.delete!(analysis_cache::AnalysisCache, mi::MethodInstance) = delete!(analysis_cache.cache, mi)
-Base.show(io::IO, analysis_cache::AnalysisCache) = print(io, typeof(analysis_cache), "(", length(analysis_cache.cache), " entries)")
+# Base.haskey(analysis_cache::AnalysisCache, mi::MethodInstance) = haskey(analysis_cache.cache, mi)
+# Base.get(analysis_cache::AnalysisCache, mi::MethodInstance, default) = get(analysis_cache.cache, mi, default)
+# Base.getindex(analysis_cache::AnalysisCache, mi::MethodInstance) = getindex(analysis_cache.cache, mi)
+# Base.setindex!(analysis_cache::AnalysisCache, ci::CodeInstance, mi::MethodInstance) = setindex!(analysis_cache.cache, ci, mi)
+# Base.delete!(analysis_cache::AnalysisCache, mi::MethodInstance) = delete!(analysis_cache.cache, mi)
+# Base.show(io::IO, analysis_cache::AnalysisCache) = print(io, typeof(analysis_cache), "(", length(analysis_cache.cache), " entries)")
 
 """
     AnalysisCache(analyzer::AbstractAnalyzer) -> analysis_cache::AnalysisCache

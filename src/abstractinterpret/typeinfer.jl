@@ -26,11 +26,15 @@ end
 function CC.const_prop_call(analyzer::AbstractAnalyzer,
     mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
     concrete_eval_result::Union{Nothing,CC.ConstCallResults})
+    @static if VERSION < v"1.11.0-DEV.1552"
     set_cache_target!(analyzer, :const_prop_call => sv.result)
+    end
     const_result = @invoke CC.const_prop_call(analyzer::AbstractInterpreter,
         mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
         concrete_eval_result::Union{Nothing,CC.ConstCallResults})
+    @static if VERSION < v"1.11.0-DEV.1552"
     @assert get_cache_target(analyzer) === nothing "invalid JET analysis state"
+    end
     if const_result !== nothing
         # successful constant prop', we need to update reports
         collect_callee_reports!(analyzer, sv)
@@ -151,8 +155,24 @@ end
 # ------
 
 @static if VERSION ≥ v"1.11.0-DEV.1552"
+
 CC.cache_owner(analyzer::AbstractAnalyzer) = AnalysisCache(analyzer)
+
+function CC.return_cached_result(analyzer::AbstractAnalyzer, codeinst::CodeInstance, caller::InferenceState)
+    # cache hit, now we need to append cached reports associated with this `MethodInstance`
+    inferred = @atomic :monotonic codeinst.inferred
+    for cached in (inferred::CachedAnalysisResult).reports
+        restored = add_cached_report!(analyzer, caller.result, cached)
+        @static if JET_DEV_MODE
+            actual, expected = first(restored.vst).linfo, codeinst.def
+            @assert actual === expected "invalid global cache restoration, expected $expected but got $actual"
+        end
+        stash_report!(analyzer, restored) # should be updated in `abstract_call` (after exiting `typeinf_edge`)
+    end
+    return @invoke CC.return_cached_result(analyzer::AbstractInterpreter, codeinst::CodeInstance, caller::InferenceState)
 end
+
+else # if VERSION ≥ v"1.11.0-DEV.1552"
 
 function CC.code_cache(analyzer::AbstractAnalyzer)
     view = AbstractAnalyzerView(analyzer)
@@ -232,7 +252,7 @@ end
 function (callback::JETCallback)(replaced::MethodInstance, max_world::UInt32)
     delete!(callback.analysis_cache, replaced)
 end
-else
+else # if VERSION ≥ v"1.11.0-DEV.798"
 function add_jet_callback!(mi::MethodInstance, analysis_cache::AnalysisCache)
     callback = JETCallback(analysis_cache)
     if !isdefined(mi, :callbacks)
@@ -259,10 +279,35 @@ function (callback::JETCallback)(replaced::MethodInstance, max_world::UInt32,
     end
     return nothing
 end
-end
+end # if VERSION ≥ v"1.11.0-DEV.798"
+
+end # if VERSION ≥ v"1.11.0-DEV.1552"
 
 # local
 # -----
+
+@static if VERSION ≥ v"1.11.0-DEV.1552"
+
+CC.get_inference_cache(analyzer::AbstractAnalyzer) = get_inf_cache(analyzer)
+
+function CC.return_cached_result(analyzer::AbstractAnalyzer, inf_result::InferenceResult, caller::InferenceState)
+    # as the analyzer uses the reports that are cached by the abstract-interpretation
+    # with the extended lattice elements, here we should throw-away the error reports
+    # that are collected during the previous non-constant abstract-interpretation
+    # (see the `CC.typeinf(::AbstractAnalyzer, ::InferenceState)` overload)
+    filter_lineages!(analyzer, caller.result, inf_result.linfo)
+    for cached in get_cached_reports(analyzer, inf_result)
+        restored = add_cached_report!(analyzer, caller.result, cached)
+        @static if JET_DEV_MODE
+            actual, expected = first(restored.vst).linfo, inf_result.linfo
+            @assert actual === expected "invalid local cache restoration, expected $expected but got $actual"
+        end
+        stash_report!(analyzer, restored) # should be updated in `abstract_call_method_with_const_args`
+    end
+    return @invoke CC.return_cached_result(analyzer::AbstractInterpreter, inf_result::InferenceResult, caller::InferenceState)
+end
+
+else # if VERSION ≥ v"1.11.0-DEV.1552"
 
 CC.get_inference_cache(analyzer::AbstractAnalyzer) = AbstractAnalyzerView(analyzer)
 
@@ -306,6 +351,8 @@ function CC.cache_lookup(𝕃ᵢ::CC.AbstractLattice, mi::MethodInstance, given_
 end
 
 CC.push!(view::AbstractAnalyzerView, inf_result::InferenceResult) = CC.push!(get_inf_cache(view.analyzer), inf_result)
+
+end # if VERSION ≥ v"1.11.0-DEV.1552"
 
 # main driver
 # ===========
