@@ -212,21 +212,6 @@ function CC.getindex(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance)
     return codeinst::CodeInstance
 end
 
-function CC.transform_result_for_cache(analyzer::AbstractAnalyzer,
-    linfo::MethodInstance, valid_worlds::WorldRange, result::InferenceResult)
-    cache = InferenceErrorReport[]
-    for report in get_any_reports(analyzer, result)
-        @static if JET_DEV_MODE
-            actual, expected = first(report.vst).linfo, linfo
-            @assert actual === expected "invalid global caching detected, expected $expected but got $actual"
-        end
-        cache_report!(cache, report)
-    end
-    inferred_result = @invoke transform_result_for_cache(analyzer::AbstractInterpreter,
-        linfo::MethodInstance, valid_worlds::WorldRange, result::InferenceResult)
-    return CachedAnalysisResult(inferred_result, cache)
-end
-
 function CC.setindex!(wvc::WorldView{<:AbstractAnalyzerView}, codeinst::CodeInstance, mi::MethodInstance)
     analysis_cache = AnalysisCache(wvc)
     @static if VERSION < v"1.11.0-DEV.1552"
@@ -543,6 +528,21 @@ end
 function CC.cache_result!(analyzer::AbstractAnalyzer, caller::InferenceResult)
     istoplevel(caller.linfo) && return nothing # don't need to cache toplevel frame
     @invoke CC.cache_result!(analyzer::AbstractInterpreter, caller::InferenceResult)
+end
+
+function CC.transform_result_for_cache(analyzer::AbstractAnalyzer,
+    linfo::MethodInstance, valid_worlds::WorldRange, result::InferenceResult)
+    cache = InferenceErrorReport[]
+    for report in get_any_reports(analyzer, result)
+        @static if JET_DEV_MODE
+            actual, expected = first(report.vst).linfo, linfo
+            @assert actual === expected "invalid global caching detected, expected $expected but got $actual"
+        end
+        cache_report!(cache, report)
+    end
+    inferred_result = @invoke transform_result_for_cache(analyzer::AbstractInterpreter,
+        linfo::MethodInstance, valid_worlds::WorldRange, result::InferenceResult)
+    return CachedAnalysisResult(inferred_result, cache)
 end
 
 # top-level bridge
