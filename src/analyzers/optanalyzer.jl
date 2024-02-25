@@ -251,7 +251,7 @@ function CC.const_prop_call(analyzer::OptAnalyzer,
         nothing::Nothing)
 end
 
-# TODO better to work only `finish!`
+# TODO better to work only `CC.finish!`
 function CC.finish(frame::InferenceState, analyzer::OptAnalyzer)
     ret = @invoke CC.finish(frame::InferenceState, analyzer::AbstractAnalyzer)
 
@@ -449,7 +449,7 @@ The [general configurations](@ref) and [the optimization analysis specific confi
 can be specified as an optional argument.
 """
 macro report_opt(ex0...)
-    return InteractiveUtils.gen_call_with_extracted_types_and_kwargs(__module__, :report_opt, ex0)
+    return gen_call_with_extracted_types_and_kwargs(__module__, :report_opt, ex0)
 end
 
 """

@@ -117,7 +117,7 @@ function analyze_additional_pass_by_type!(analyzer::AbstractAnalyzer, @nospecial
     # the threaded code block as a usual code block, and thus the side-effects won't (hopefully)
     # confuse the abstract interpretation, which is supposed to terminate on any kind of code
     match = find_single_match(tt, newanalyzer)
-    abstract_call_method(newanalyzer, match.method, match.spec_types, match.sparams,
+    CC.abstract_call_method(newanalyzer, match.method, match.spec_types, match.sparams,
         #=hardlimit=#false, #=si=#StmtInfo(false), sv)
 
     return nothing
@@ -132,7 +132,7 @@ function CC.return_type_tfunc(analyzer::AbstractAnalyzer, argtypes::Argtypes, si
     oldresult = analyzer[result]
     init_result!(analyzer, result)
     newanalyzer = AbstractAnalyzer(analyzer)
-    ret = @invoke return_type_tfunc(newanalyzer::AbstractInterpreter, argtypes::Argtypes, si::StmtInfo, sv::InferenceState)
+    ret = @invoke CC.return_type_tfunc(newanalyzer::AbstractInterpreter, argtypes::Argtypes, si::StmtInfo, sv::InferenceState)
     analyzer[result] = oldresult
     return ret
 end
@@ -166,7 +166,7 @@ CC.haskey(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance) = haskey(A
 
 function CC.typeinf_edge(analyzer::AbstractAnalyzer, method::Method, @nospecialize(atype), sparams::SimpleVector, caller::InferenceState)
     set_cache_target!(analyzer, :typeinf_edge => caller.result)
-    ret = @invoke typeinf_edge(analyzer::AbstractInterpreter, method::Method, atype::Any, sparams::SimpleVector, caller::InferenceState)
+    ret = @invoke CC.typeinf_edge(analyzer::AbstractInterpreter, method::Method, atype::Any, sparams::SimpleVector, caller::InferenceState)
     @assert get_cache_target(analyzer) === nothing "invalid JET analysis state"
     return ret
 end
@@ -274,7 +274,7 @@ function CC.cache_lookup(𝕃ᵢ::CC.AbstractLattice, mi::MethodInstance, given_
     cache_target = get_cache_target(analyzer)
     set_cache_target!(analyzer, nothing)
 
-    inf_result = cache_lookup(𝕃ᵢ, mi, given_argtypes, get_inf_cache(view.analyzer))
+    inf_result = CC.cache_lookup(𝕃ᵢ, mi, given_argtypes, get_inf_cache(view.analyzer))
 
     isa(inf_result, InferenceResult) || return inf_result
 
@@ -334,7 +334,7 @@ function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
         filter_lineages!(analyzer, (parent::InferenceState).result, linfo)
     end
 
-    ret = @invoke typeinf(analyzer::AbstractInterpreter, frame::InferenceState)
+    ret = @invoke CC.typeinf(analyzer::AbstractInterpreter, frame::InferenceState)
 
     # elapsed = round(time() - sec; digits = 3)
     # print_rails(io, depth)
@@ -459,7 +459,7 @@ function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
         end
     end
     for caller in frames
-        finish!(#=CHANGED caller.interp=#analyzer, caller)
+        CC.finish!(#=CHANGED caller.interp=#analyzer, caller)
         if CC.is_cached(caller)
             CC.cache_result!(#=CHANGED caller.interp=#analyzer, caller.result)
         end
@@ -540,7 +540,7 @@ function CC.transform_result_for_cache(analyzer::AbstractAnalyzer,
         end
         cache_report!(cache, report)
     end
-    inferred_result = @invoke transform_result_for_cache(analyzer::AbstractInterpreter,
+    inferred_result = @invoke CC.transform_result_for_cache(analyzer::AbstractInterpreter,
         linfo::MethodInstance, valid_worlds::WorldRange, result::InferenceResult)
     return CachedAnalysisResult(inferred_result, cache)
 end

@@ -510,8 +510,8 @@ end
 
 const VIRTUAL_MODULE_NAME = :JETVirtualModule
 
-gen_virtual_module(root = Main; name = VIRTUAL_MODULE_NAME) =
-    Core.eval(root, :(module $(gensym(name)) end))::Module
+gen_virtual_module(parent::Module = Main; name = VIRTUAL_MODULE_NAME) =
+    Core.eval(parent, :(module $(gensym(name)) end))::Module
 
 # NOTE when `@generated` function has been defined, signatures of both its entry and
 # generator should have been collected, and we will just analyze them separately
@@ -534,7 +534,7 @@ function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProce
         match = Base._which(tt;
             # NOTE use the latest world counter with `method_table(analyzer)` unwrapped,
             # otherwise it may use a world counter when this method isn't defined yet
-            method_table=unwrap_method_table(method_table(analyzer)),
+            method_table=unwrap_method_table(CC.method_table(analyzer)),
             world=new_world,
             raise=false)
         if match !== nothing
@@ -1037,13 +1037,13 @@ function partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::Cod
     with_toplevel_logger(interp.config; filter=≥(JET_LOGGER_LEVEL_DEBUG)) do @nospecialize(io)
         line, file = interp.lnn.line, interp.lnn.file
         println(io, "concretization plan at $file:$line:")
-        print_with_code(io, src, concretize)
+        LoweredCodeUtils.print_with_code(io, src, concretize)
     end
 
     # NOTE if `JuliaInterpreter.optimize!` may modify `src`, `src` and `concretize` can be inconsistent
     # here we create `JuliaInterpreter.Frame` by ourselves disabling the optimization (#277)
     frame = Frame(mod, src; optimize=false)
-    selective_eval_fromstart!(interp, frame, concretize, #=istoplevel=#true)
+    LoweredCodeUtils.selective_eval_fromstart!(interp, frame, concretize, #=istoplevel=#true)
 
     return concretize
 end
@@ -1051,7 +1051,7 @@ end
 # select statements that should be concretized, and actually interpreted rather than abstracted
 function select_statements(src::CodeInfo)
     stmts = src.code
-    edges = CodeEdges(src)
+    edges = LoweredCodeUtils.CodeEdges(src)
 
     concretize = falses(length(stmts))
 
@@ -1064,8 +1064,8 @@ end
 
 function select_direct_requirement!(concretize, stmts, edges)
     for (i, stmt) in enumerate(stmts)
-        if (ismethod(stmt) ||    # don't abstract away method definitions
-            istypedef(stmt) ||   # don't abstract away type definitions
+        if (LoweredCodeUtils.ismethod(stmt) ||    # don't abstract away method definitions
+            LoweredCodeUtils.istypedef(stmt) ||   # don't abstract away type definitions
             ismoduleusage(stmt)) # module usages are handled by `ConcreteInterpreter`
             concretize[i] = true
             continue
@@ -1132,18 +1132,18 @@ function select_dependencies!(concretize, src, edges)
     # We'll mostly use generic graph traversal to discover all the lines we need,
     # but structs are in a bit of a different category (especially on Julia 1.5+).
     # It's easiest to discover these at the beginning.
-    typedefs = find_typedefs(src)
+    typedefs = LoweredCodeUtils.find_typedefs(src)
 
     changed = true
     while changed
         changed = false
 
         # track SSA predecessors of initial requirements
-        changed |= add_ssa_preds!(concretize, src, edges, ())
+        changed |= LoweredCodeUtils.add_ssa_preds!(concretize, src, edges, ())
 
         # add some domain-specific information
         # TODO changed |= add_iterblocks!(concretized, src, edges, iterblocks)
-        changed |= add_typedefs!(concretize, src, edges, typedefs, ())
+        changed |= LoweredCodeUtils.add_typedefs!(concretize, src, edges, typedefs, ())
     end
 
     # find a loop region and check if any of the requirements discovered so far is involved
@@ -1154,7 +1154,7 @@ function select_dependencies!(concretize, src, edges)
     # cycle dection (, whose worst time complexity is exponential with the number of vertices)
     # and thus the analysis here should terminate in reasonable time even with a fairly
     # complex control flow graph
-    cfg = compute_basic_blocks(src.code)
+    cfg = CC.compute_basic_blocks(src.code)
     loops = filter!(>(1)∘length, strongly_connected_components(cfg))
 
     critical_blocks = BitSet()
@@ -1182,7 +1182,7 @@ function select_dependencies!(concretize, src, edges)
     norequire = BitSet()
     for (i, block) in enumerate(cfg.blocks)
         if i ∉ critical_blocks
-            pushall!(norequire, rng(block))
+            LoweredCodeUtils.pushall!(norequire, LoweredCodeUtils.rng(block))
         end
     end
 
@@ -1191,8 +1191,8 @@ function select_dependencies!(concretize, src, edges)
         changed = false
 
         # track SSA predecessors and control flows of the critical blocks
-        changed |= add_ssa_preds!(concretize, src, edges, norequire)
-        changed |= add_control_flow!(concretize, cfg, norequire)
+        changed |= LoweredCodeUtils.add_ssa_preds!(concretize, src, edges, norequire)
+        changed |= LoweredCodeUtils.add_control_flow!(concretize, cfg, norequire)
     end
 end
 
@@ -1216,9 +1216,10 @@ end
 function collect_toplevel_signature!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node))
     if isexpr(node, :method, 3)
         sigs = node.args[2]
-        atype_params, sparams, #=linenode=#_ = @lookup(moduleof(frame), frame, sigs)::SimpleVector
+        atype_params, sparams, #=linenode=#_ =
+            JuliaInterpreter.@lookup(JuliaInterpreter.moduleof(frame), frame, sigs)::SimpleVector
         tt = form_method_signature(atype_params::SimpleVector, sparams::SimpleVector)
-        @assert !has_free_typevars(tt) "free type variable left in toplevel_signatures"
+        @assert !CC.has_free_typevars(tt) "free type variable left in toplevel_signatures"
         push!(interp.res.toplevel_signatures, tt)
     end
     return nothing
@@ -1278,11 +1279,11 @@ end
 function JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)
     # @assert !enter_generated
     pc = frame.pc
-    ret = bypass_builtins(interp, frame, call_expr, pc)
+    ret = JuliaInterpreter.bypass_builtins(interp, frame, call_expr, pc)
     isa(ret, Some{Any}) && return ret.value
-    ret = @invokelatest maybe_evaluate_builtin(frame, call_expr, false)
+    ret = @invokelatest JuliaInterpreter.maybe_evaluate_builtin(frame, call_expr, false)
     isa(ret, Some{Any}) && return ret.value
-    args = collect_args(interp, frame, call_expr)
+    args = JuliaInterpreter.collect_args(interp, frame, call_expr)
     f = popfirst!(args) # now it's really just `args`
     isinclude(f) && return handle_include(interp, f, args)
     if f === Base._ccallable
@@ -1394,7 +1395,7 @@ function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame, err)
             break
         end
 
-        # other general errors may happen at `collect_args`, etc.
+        # other general errors may happen at `JuliaInterpreter.collect_args`, etc.
         # we don't show any stacktrace for those errors (by keeping the original `i = 0`)
         # since they are hopefully self-explanatory
         continue
@@ -1439,7 +1440,7 @@ end
 function report_syntax_errors!(res, s, filename)
     index = line = 1
     while begin
-            ex, nextindex = _parse_string(s, filename, line, index, :statement)
+            ex, nextindex = Base.Meta._parse_string(s, filename, line, index, :statement)
             !isnothing(ex)
         end
         line += count(==('\n'), s[index:nextindex-1])
