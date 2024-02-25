@@ -89,13 +89,6 @@ CC.may_optimize(::JETAnalyzer) = false
 
 CC.method_table(analyzer::JETAnalyzer) = analyzer.method_table
 
-import .CC:
-    typeinf_lattice, ipo_lattice, widenlattice, is_valid_lattice_norec,
-    ⊑, tmerge, tmeet, _getfield_tfunc
-using .CC:
-    AbstractLattice, InferenceLattice, MustAliasesLattice,  InterMustAliasesLattice,
-    BaseInferenceLattice, IPOResultLattice
-
 """
     IntrinsicErrorCheckLattice <: AbstractLattice
 
@@ -111,9 +104,9 @@ CC.is_valid_lattice_norec(::IntrinsicErrorCheckLattice, @nospecialize(elem)) = f
 @nospecs CC.:⊑(𝕃::IntrinsicErrorCheckLattice, x, y) = ⊑(widenlattice(𝕃), x, y)
 @nospecs CC.tmerge(𝕃::IntrinsicErrorCheckLattice, x, y) = tmerge(widenlattice(𝕃), x, y)
 @nospecs CC.tmeet(𝕃::IntrinsicErrorCheckLattice, x, t::Type) = tmeet(widenlattice(𝕃), x, t)
-@nospecs CC._getfield_tfunc(𝕃::IntrinsicErrorCheckLattice, xs...) = _getfield_tfunc(widenlattice(𝕃), xs...)
-CC.typeinf_lattice(::JETAnalyzer) = InferenceLattice(IntrinsicErrorCheckLattice(MustAliasesLattice(BaseInferenceLattice.instance)))
-CC.ipo_lattice(::JETAnalyzer) = InferenceLattice(IntrinsicErrorCheckLattice(InterMustAliasesLattice(IPOResultLattice.instance)))
+@nospecs CC._getfield_tfunc(𝕃::IntrinsicErrorCheckLattice, xs...) = CC._getfield_tfunc(widenlattice(𝕃), xs...)
+CC.typeinf_lattice(::JETAnalyzer) = CC.InferenceLattice(IntrinsicErrorCheckLattice(CC.MustAliasesLattice(CC.BaseInferenceLattice.instance)))
+CC.ipo_lattice(::JETAnalyzer) = CC.InferenceLattice(IntrinsicErrorCheckLattice(CC.InterMustAliasesLattice(CC.IPOResultLattice.instance)))
 
 # AbstractAnalyzer API
 # ====================
@@ -249,7 +242,7 @@ function CC.from_interprocedural!(analyzer::JETAnalyzer,
 end
 
 """
-    bail_out_call(analyzer::JETAnalyzer, ...)
+    Core.Compiler.bail_out_call(analyzer::JETAnalyzer, ...)
 
 This overload makes call inference performed by `JETAnalyzer` not bail out even when
 inferred return type grows up to `Any` to collect as much error reports as possible.
@@ -261,7 +254,7 @@ CC.bail_out_call(::JETAnalyzer, ::CC.InferenceLoopState, ::InferenceState) = fal
 struct __DummyConcrete__ end
 
 """
-    add_call_backedges!(analyzer::JETAnalyzer, ...)
+    Core.Compiler.add_call_backedges!(analyzer::JETAnalyzer, ...)
 
 An overload for `abstract_call_gf_by_type(analyzer::JETAnalyzer, ...)`, which always add
 backedges (even if a new method can't refine the return type grew up to `Any`).
@@ -450,7 +443,7 @@ function (::SoundBasicPass)(::Type{GeneratorErrorReport}, analyzer::JETAnalyzer,
     m = mi.def::Method
     if isdefined(m, :generator)
         # analyze_method_instance!(analyzer, linfo) XXX doesn't work
-        may_invoke_generator(mi) || return false
+        CC.may_invoke_generator(mi) || return false
         try
             ccall(:jl_code_for_staged, Any, (Any,), mi) # invoke the "erroneous" generator again
         catch err
@@ -544,9 +537,9 @@ function report_uncaught_exceptions!(analyzer::JETAnalyzer, frame::InferenceStat
     for (pc, stmt) in enumerate(stmts)
         isa(stmt, Expr) || continue
         @static if VERSION ≥ v"1.11.0-DEV.888"
-            is_throw_call(stmt, stmts) || continue
+            CC.is_throw_call(stmt, stmts) || continue
         else
-            is_throw_call(stmt) || continue
+            CC.is_throw_call(stmt) || continue
         end
         # if this `throw` is already reported, don't duplicate
         if !isnothing(reported_locs) && linetable[codelocs[pc]]::LineInfoNode in reported_locs
@@ -674,7 +667,7 @@ function report_method_error_for_union_split!(analyzer::JETAnalyzer,
     for (i, matchinfo) in enumerate(info.matches)
         if is_empty_match(matchinfo)
             if isnothing(split_argtypes)
-                split_argtypes = switchtupleunion(typeinf_lattice(analyzer), argtypes)
+                split_argtypes = CC.switchtupleunion(typeinf_lattice(analyzer), argtypes)
             end
             argtypes′ = split_argtypes[i]::Vector{Any}
             if !sound && report_reduce_empty_error!(analyzer, sv, argtypes′)
@@ -688,7 +681,7 @@ function report_method_error_for_union_split!(analyzer::JETAnalyzer,
             push!(empty_matches[1], sig_n)
         elseif sound && !is_fully_covered(matchinfo)
             if isnothing(split_argtypes)
-                split_argtypes = switchtupleunion(typeinf_lattice(analyzer), argtypes)
+                split_argtypes = CC.switchtupleunion(typeinf_lattice(analyzer), argtypes)
             end
             argtypes′ = split_argtypes[i]::Vector{Any}
             if uncovered_matches === nothing
@@ -778,7 +771,7 @@ function print_report_message(io::IO, (; argtypes)::InvalidInvokeErrorReport)
         return
     end
 
-    argtype = argtypes_to_type(argtype_tail(argtypes, 4))
+    argtype = argtypes_to_type(CC.argtype_tail(argtypes, 4))
     nargtype = typeintersect(types, argtype)
     @assert nargtype === Bottom
     print(io, "actual argument type `", argtype, "` doesn't intersect with specified argument type `", types, '`')
@@ -1153,8 +1146,6 @@ end
     return ok
 end
 
-import .CC: bitcast_tfunc, conversion_tfunc, math_tfunc, shift_tfunc, cmp_tfunc, chk_tfunc
-
 @nospecs CC.bitcast_tfunc(𝕃::IntrinsicErrorCheckLattice, t, x) = with_conversion_errorcheck(t, x, #=bitshift=#true)
 @nospecs CC.conversion_tfunc(𝕃::IntrinsicErrorCheckLattice, t, x) = with_conversion_errorcheck(t, x)
 @nospecs CC.math_tfunc(𝕃::IntrinsicErrorCheckLattice, a, bs...) = with_intrinsic_errorcheck(widenconst(a), a, bs...)
@@ -1273,11 +1264,11 @@ function report_fieldaccess!(analyzer::JETAnalyzer, sv::InferenceState, @nospeci
 
     isa(name, Const) || return false
     s = Base.unwrap_unionall(s00)
-    if isType(s)
+    if CC.isType(s)
         if f === fieldtype
             # XXX this is a hack to share more code between `getfield`/`setfield!`/`fieldtype`
             s00 = s = s.parameters[1]
-        elseif isconstType(s)
+        elseif CC.isconstType(s)
             s = (s00::DataType).parameters[1]
         else
             return false

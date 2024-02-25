@@ -24,73 +24,32 @@ Base.Experimental.@optlevel 1
 
 const CC = Core.Compiler
 
-# imports
-# =======
-
-# `AbstractAnalyzer`
-import .CC:
-    #= cicache.jl =#
-    # get, getindex, haskey, push!, setindex!,
-    #= types.jl =#
-    InferenceParams, OptimizationParams, add_remark!, bail_out_call, bail_out_toplevel_call,
-    code_cache, get_inference_cache, may_compress, may_discard_trees, may_optimize,
-    method_table,
-    #= inferenceresult.jl =#
-    cache_lookup,
-    #= inferencestate.jl =#
-    InferenceState,
-    #= tfuncs.jl =#
-    builtin_tfunction, return_type_tfunc,
-    #= abstractinterpretation.jl =#
-    abstract_call_known, abstract_call_gf_by_type, abstract_call_method,
-    abstract_call_method_with_const_args, abstract_eval_value_expr, abstract_eval_special_value,
-    abstract_eval_statement, abstract_eval_value, abstract_invoke, add_call_backedges!,
-    concrete_eval_call, concrete_eval_eligible, from_interprocedural!,
-    #= typeinfer.jl =#
-    _typeinf, finish!, finish, transform_result_for_cache, typeinf, typeinf_edge,
-    #= optimize.jl =#
-    inlining_policy
-
-# `ConcreteInterpreter`
-import JuliaInterpreter: evaluate_call_recurse!, handle_err, step_expr!
-
-# Test.jl integration
-import Test: record
-
 # usings
 # ======
 
-using Core:
-    Argument, Builtin, CodeInfo, CodeInstance, Const, GlobalRef, GotoIfNot,
-    IntrinsicFunction, Intrinsics, LineInfoNode, MethodInstance,
-    ReturnNode, SSAValue, SimpleVector, SlotNumber, svec
+using Core: Builtin, IntrinsicFunction, Intrinsics, SimpleVector, svec
+
+using Core.IR
 
 using .CC: @nospecs, ⊑,
-    AbstractInterpreter, ArgInfo, Bottom, CFG, CachedMethodTable, CallMeta,
-    ConstCallInfo, InferenceResult, InternalMethodTable, InvokeCallInfo,
-    MethodCallResult, MethodMatchInfo, MethodMatches, NOT_FOUND,
-    OptimizationState, OverlayMethodTable, StmtInfo, UnionSplitInfo, UnionSplitMethodMatches,
-    VarState, VarTable, WorldRange, WorldView,
-    argextype, argtype_by_index, argtype_tail, argtypes_to_type, compute_basic_blocks,
-    get_compileable_sig, hasintersect, has_free_typevars, ignorelimited, inlining_enabled,
-    instanceof_tfunc, is_inlineable, is_throw_call, isType, isconstType, issingletontype,
-    istopfunction, may_invoke_generator, singleton_type, slot_id, specialize_method,
-    switchtupleunion, tmerge, widenconst
+    AbstractInterpreter, AbstractLattice, ArgInfo, Bottom, CFG, CachedMethodTable, CallMeta,
+    ConstCallInfo, InferenceParams, InferenceResult, InferenceState, InternalMethodTable,
+    InvokeCallInfo, MethodCallResult, MethodMatchInfo, MethodMatches, NOT_FOUND,
+    OptimizationState, OptimizationParams, OverlayMethodTable, StmtInfo, UnionSplitInfo,
+    UnionSplitMethodMatches, VarState, VarTable, WorldRange, WorldView,
+    argextype, argtype_by_index, argtypes_to_type, hasintersect, ignorelimited,
+    instanceof_tfunc, istopfunction, singleton_type, slot_id, specialize_method,
+    tmeet, tmerge, typeinf_lattice, widenconst, widenlattice
 
-using Base: IdSet
+using Base: IdSet, get_world_counter
 
-using Base.Meta: ParseError, _parse_string, isexpr, lower
+using Base.Meta: ParseError, isexpr, lower
 
 using Base.Experimental: @MethodTable, @overlay
 
-using LoweredCodeUtils:
-    CodeEdges, #=NamedVar,=# LoweredCodeUtils, add_control_flow!, #=add_named_dependencies!,
-    add_requests!,=# add_ssa_preds!, add_typedefs!, callee_matches, find_typedefs, ismethod,
-    istypedef, print_with_code, pushall!, rng
+using LoweredCodeUtils: LoweredCodeUtils, callee_matches
 
-using JuliaInterpreter:
-    @lookup, _INACTIVE_EXCEPTION, Frame, JuliaInterpreter, bypass_builtins, collect_args,
-    #=finish!,=# is_quotenode_egal, maybe_evaluate_builtin, moduleof
+using JuliaInterpreter: _INACTIVE_EXCEPTION, Frame, JuliaInterpreter, is_quotenode_egal
 
 using MacroTools: @capture, normalise, striplines
 
@@ -137,9 +96,8 @@ end
 
 @static if VERSION ≥ v"1.11.0-DEV.1498"
     import .CC: get_inference_world
-    using Base: get_world_counter
 else
-    import .CC: get_world_counter, get_world_counter as get_inference_world
+    import .CC: get_world_counter as get_inference_world
 end
 
 # macros
@@ -299,7 +257,7 @@ end
 function is_compileable_mi(mi::MethodInstance)
     def = mi.def
     isa(def, Method) || return false
-    return get_compileable_sig(def, mi.specTypes, mi.sparam_vals) !== nothing
+    return CC.get_compileable_sig(def, mi.specTypes, mi.sparam_vals) !== nothing
 end
 
 get_linfo(sv::State) = sv.linfo
@@ -655,7 +613,7 @@ function analyze_gf_by_type!(analyzer::AbstractAnalyzer, @nospecialize(tt::Type{
 end
 
 function find_single_match(@nospecialize(tt), analyzer::AbstractAnalyzer)
-    match = Base._which(tt; method_table=method_table(analyzer), world=get_inference_world(analyzer), raise=false)
+    match = Base._which(tt; method_table=CC.method_table(analyzer), world=get_inference_world(analyzer), raise=false)
     match === nothing && single_match_error(tt)
     return match
 end
@@ -707,7 +665,7 @@ end
 
 function analyze_frame!(analyzer::AbstractAnalyzer, frame::InferenceState)
     set_entry!(analyzer, frame.linfo)
-    typeinf(analyzer, frame)
+    CC.typeinf(analyzer, frame)
     return analyzer, frame.result
 end
 
