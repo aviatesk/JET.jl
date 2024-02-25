@@ -1448,7 +1448,7 @@ The [general configurations](@ref) and [the error analysis specific configuratio
 can be specified as an optional argument.
 """
 macro report_call(ex0...)
-    return InteractiveUtils.gen_call_with_extracted_types_and_kwargs(__module__, :report_call, ex0)
+    return gen_call_with_extracted_types_and_kwargs(__module__, :report_call, ex0)
 end
 
 # Test.jl integration

@@ -33,8 +33,8 @@ import .CC:
     # get, getindex, haskey, push!, setindex!,
     #= types.jl =#
     InferenceParams, OptimizationParams, add_remark!, bail_out_call, bail_out_toplevel_call,
-    code_cache, get_inference_cache, lock_mi_inference, may_compress, may_discard_trees,
-    may_optimize, unlock_mi_inference, verbose_stmt_info, method_table,
+    code_cache, get_inference_cache, may_compress, may_discard_trees, may_optimize,
+    method_table,
     #= inferenceresult.jl =#
     cache_lookup,
     #= inferencestate.jl =#
@@ -61,14 +61,14 @@ import Test: record
 # ======
 
 using Core:
-    Argument, Builtin, CodeInfo, CodeInstance, Const, GlobalRef, GotoIfNot, GotoNode,
-    IntrinsicFunction, Intrinsics, LineInfoNode, MethodInstance, MethodMatch, MethodTable,
+    Argument, Builtin, CodeInfo, CodeInstance, Const, GlobalRef, GotoIfNot,
+    IntrinsicFunction, Intrinsics, LineInfoNode, MethodInstance,
     ReturnNode, SSAValue, SimpleVector, SlotNumber, svec
 
 using .CC: @nospecs, ⊑,
-    AbstractInterpreter, ArgInfo, BasicBlock, Bottom, CFG, CachedMethodTable, CallMeta,
-    ConstCallInfo, InferenceResult, InternalMethodTable, InvokeCallInfo, LimitedAccuracy,
-    MethodCallResult, MethodLookupResult, MethodMatchInfo, MethodMatches, NOT_FOUND,
+    AbstractInterpreter, ArgInfo, Bottom, CFG, CachedMethodTable, CallMeta,
+    ConstCallInfo, InferenceResult, InternalMethodTable, InvokeCallInfo,
+    MethodCallResult, MethodMatchInfo, MethodMatches, NOT_FOUND,
     OptimizationState, OverlayMethodTable, StmtInfo, UnionSplitInfo, UnionSplitMethodMatches,
     VarState, VarTable, WorldRange, WorldView,
     argextype, argtype_by_index, argtype_tail, argtypes_to_type, compute_basic_blocks,
@@ -83,35 +83,33 @@ using Base.Meta: ParseError, _parse_string, isexpr, lower
 
 using Base.Experimental: @MethodTable, @overlay
 
-using LoweredCodeUtils, JuliaInterpreter
-
 using LoweredCodeUtils:
-    #=NamedVar,=# add_control_flow!, #=add_named_dependencies!, add_requests!,=#
-    add_ssa_preds!, add_typedefs!, callee_matches, find_typedefs, ismethod, istypedef,
-    print_with_code, pushall!, rng
+    CodeEdges, #=NamedVar,=# LoweredCodeUtils, add_control_flow!, #=add_named_dependencies!,
+    add_requests!,=# add_ssa_preds!, add_typedefs!, callee_matches, find_typedefs, ismethod,
+    istypedef, print_with_code, pushall!, rng
 
 using JuliaInterpreter:
-    @lookup, _INACTIVE_EXCEPTION, bypass_builtins, collect_args, #=finish!,=#
-    is_quotenode_egal, maybe_evaluate_builtin, moduleof
+    @lookup, _INACTIVE_EXCEPTION, Frame, JuliaInterpreter, bypass_builtins, collect_args,
+    #=finish!,=# is_quotenode_egal, maybe_evaluate_builtin, moduleof
 
-using MacroTools: @capture, MacroTools, normalise, striplines
+using MacroTools: @capture, normalise, striplines
 
-using InteractiveUtils
+using InteractiveUtils: gen_call_with_extracted_types_and_kwargs
 
-using Pkg, Pkg.TOML
+using Pkg: Pkg, TOML
 
 using Test:
     Broken, DefaultTestSet, Error, Fail, FallbackTestSet, FallbackTestSetException, Pass,
     Result, TESTSET_PRINT_ENABLE, Test, get_testset
 
-using Preferences
+using Preferences: Preferences
 
 # common
 # ======
 
 const Argtypes = Vector{Any}
 
-const JET_DEV_MODE = @load_preference("JET_DEV_MODE", false)
+const JET_DEV_MODE = Preferences.@load_preference("JET_DEV_MODE", false)
 
 const CONFIG_FILE_NAME = ".JET.toml"
 
@@ -1103,7 +1101,7 @@ function call_test_ex(funcname::Symbol, testname::Symbol, ex0, __module__, __sou
 end
 
 function _call_test_ex(funcname::Symbol, testname::Symbol, ex0, __module__, __source__)
-    analysis = InteractiveUtils.gen_call_with_extracted_types_and_kwargs(__module__, funcname, ex0)
+    analysis = gen_call_with_extracted_types_and_kwargs(__module__, funcname, ex0)
     orig_expr = QuoteNode(Expr(:macrocall, GlobalRef(@__MODULE__, testname), __source__, ex0...))
     source = QuoteNode(__source__)
     testres = :(try

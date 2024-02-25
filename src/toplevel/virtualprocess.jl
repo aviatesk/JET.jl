@@ -510,8 +510,8 @@ end
 
 const VIRTUAL_MODULE_NAME = :JETVirtualModule
 
-gen_virtual_module(root = Main; name = VIRTUAL_MODULE_NAME) =
-    Core.eval(root, :(module $(gensym(name)) end))::Module
+gen_virtual_module(parent::Module = Main; name = VIRTUAL_MODULE_NAME) =
+    Core.eval(parent, :(module $(gensym(name)) end))::Module
 
 # NOTE when `@generated` function has been defined, signatures of both its entry and
 # generator should have been collected, and we will just analyze them separately
