@@ -9,3 +9,4 @@
 !/examples/Manifest.toml
 LocalPreferences.toml
 Manifest.toml
+Manifest-*.toml
