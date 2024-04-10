@@ -220,6 +220,10 @@ get_lin((sv, pc)::StateAtPC) = begin
         return linetable[codeloc]::LineInfoNode
     elseif isa(sv, OptimizationState) && codeloc == 0
         return nothing
+    elseif length(linetable) == 1
+        # XXX `codelocs` seems to be broken for some reason,
+        # but we've got to use linetable /w single line info node if that's what's available
+        return only(linetable)::LineInfoNode
     else
         # Packages might dynamically generate code, which does not reference
         # a source, see https://github.com/aviatesk/JET.jl/issues/273
