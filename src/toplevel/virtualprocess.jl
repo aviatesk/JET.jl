@@ -1186,13 +1186,16 @@ function select_dependencies!(concretize, src, edges)
         end
     end
 
+    domtree = LoweredCodeUtils.construct_domtree(cfg.blocks)
+    postdomtree = LoweredCodeUtils.construct_postdomtree(cfg.blocks)
+
     changed = true
     while changed
         changed = false
 
         # track SSA predecessors and control flows of the critical blocks
         changed |= LoweredCodeUtils.add_ssa_preds!(concretize, src, edges, norequire)
-        changed |= LoweredCodeUtils.add_control_flow!(concretize, cfg, norequire)
+        changed |= LoweredCodeUtils.add_control_flow!(concretize, cfg, domtree, postdomtree)
     end
 end
 
