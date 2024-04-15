@@ -1229,7 +1229,7 @@ include("analyzers/jetanalyzer.jl")
 include("analyzers/optanalyzer.jl")
 
 using PrecompileTools
-@setup_workload let
+@static v"1.11.0-DEV.1552" > VERSION && @setup_workload let
     @compile_workload let
         result = @report_call sum("julia")
         show(IOContext(devnull, :color=>true), result)
