@@ -211,7 +211,8 @@ function print_frame_sig(io, frame)
         Base.show_mi(io, mi, #=from_stackframe=#true)
     else
         buf = IOBuffer()
-        Base.StackTraces.show_spec_sig(buf, m, mi.specTypes)
+        ioc = IOContext(buf, :backtrace=>true, :limit=>true)
+        Base.StackTraces.show_spec_sig(ioc, m, mi.specTypes)
         io = IOContext(io, :backtrace=>true, :limit=>true)
         write(io, Base_type_depth_limit(buf));
     end
