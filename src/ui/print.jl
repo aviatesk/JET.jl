@@ -1,6 +1,6 @@
-function Base_type_depth_limit(io::IO; maxdepth=1)
+function Base_type_depth_limit(io::IO; maxtypedepth=1)
     sz = get(io, :displaysize, displaysize(io))::Tuple{Int, Int}
-    return Base.type_depth_limit(String(take!(io)), max(sz[2], 120); maxdepth)
+    return Base.type_depth_limit(String(take!(io)), max(sz[2], 120); maxdepth = maxtypedepth)
 end
 
 # entry
@@ -214,7 +214,7 @@ function print_frame_sig(io, frame)
         ioc = IOContext(buf, :backtrace=>true, :limit=>true)
         Base.StackTraces.show_spec_sig(ioc, m, mi.specTypes)
         io = IOContext(io, :backtrace=>true, :limit=>true)
-        write(io, Base_type_depth_limit(buf; maxdepth=2));
+        write(io, Base_type_depth_limit(buf; maxtypedepth=2));
     end
 end
 
@@ -273,9 +273,9 @@ function print_signature(io, sig::Signature, config; kwargs...)
     for a in sig
         buf = IOBuffer()
         _print_signature(buf, a, config; kwargs...)
-        # Let's use maxdepth=2, so that unnamed
+        # Let's use maxtypedepth=2, so that unnamed
         # functions still show types we recognize.
-        write(io, Base_type_depth_limit(buf; maxdepth=2));
+        write(io, Base_type_depth_limit(buf; maxtypedepth=2));
     end
 end
 function _print_signature(io, @nospecialize(x), config; kwargs...)
