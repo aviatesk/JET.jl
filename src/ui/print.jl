@@ -214,7 +214,7 @@ function print_frame_sig(io, frame)
         ioc = IOContext(buf, :backtrace=>true, :limit=>true)
         Base.StackTraces.show_spec_sig(ioc, m, mi.specTypes)
         io = IOContext(io, :backtrace=>true, :limit=>true)
-        write(io, Base_type_depth_limit(buf));
+        write(io, Base_type_depth_limit(buf; maxdepth=2));
     end
 end
 

@@ -1,6 +1,7 @@
 module test_print
 
 include("../setup.jl")
+include("test_print_depth_limited_types.jl")
 
 @testset "print toplevel errors" begin
     let io = IOBuffer()
