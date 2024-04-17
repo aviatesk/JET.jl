@@ -1,11 +1,3 @@
-# Let's use maxtypedepth=2, so that unnamed
-# functions still show types we recognize.
-const maxtypedepth = Ref{Int}(2)
-function Base_type_depth_limit(io::IO)
-    sz = get(io, :displaysize, displaysize(io))::Tuple{Int, Int}
-    return Base.type_depth_limit(String(take!(io)), max(sz[2], 120); maxdepth = maxtypedepth[])
-end
-
 # entry
 # =====
 
@@ -44,18 +36,24 @@ The configurations below will be active whenever `show`ing [JET's analysis resul
 - `print_inference_success::Bool = true` \\
   If `true`, print a message when there is no errors found in abstract interpretation based analysis pass.
 ---
+- `stacktrace_types_limited::Bool = true` \\
+  If `true`, limit printing depth of argument types in stack traces.
+---
 """
 struct PrintConfig
     print_toplevel_success::Bool
     print_inference_success::Bool
     fullpath::Bool
-    function PrintConfig(; print_toplevel_success::Bool  = false,
+    stacktrace_types_limited::Bool
+    function PrintConfig(; print_toplevel_success::Bool = false,
                            print_inference_success::Bool = true,
-                           fullpath::Bool                = false,
+                           fullpath::Bool = false,
+                           stacktrace_types_limited::Bool = true,
                            __jetconfigs...)
         return new(print_toplevel_success,
                    print_inference_success,
-                   fullpath)
+                   fullpath,
+                   stacktrace_types_limited)
     end
 end
 
@@ -91,11 +89,18 @@ function print_rails(io, depth)
     end
 end
 
-function with_bufferring(f, args...)
+function with_bufferring(f, ctxargs...)
     buf = IOBuffer()
-    io = IOContext(buf, args...)
+    io = IOContext(buf, ctxargs...)
     f(io)
     return String(take!(buf))
+end
+
+colorctx(io::IO) = :color => get(io, :color, false)
+
+function type_depth_limit(io::IO, s::String)
+    sz = get(io, :displaysize, displaysize(io))::Tuple{Int, Int}
+    return Base.type_depth_limit(s, max(sz[2], 120)) # configure `maxdepth` here?
 end
 
 # toplevel
@@ -115,14 +120,14 @@ function print_reports(io::IO,
         return 0
     end
 
-    arg = :color => get(io, :color, false)
-    with_bufferring(arg) do io
+    ctx = colorctx(io)
+    with_bufferring(ctx) do io
         s = string(pluralize(n, "toplevel error"), " found")
         printlnstyled(io, LEFT_ROOF, s, RIGHT_ROOF; color = HEADER_COLOR)
 
         color = ERROR_COLOR
 
-        rail = with_bufferring(arg) do io
+        rail = with_bufferring(ctx) do io
             printstyled(io, "│ "; color)
         end
 
@@ -130,7 +135,7 @@ function print_reports(io::IO,
             filepath = (config.fullpath ? tofullpath : identity)(report.file)
             printlnstyled(io, "┌ @ ", filepath, ':', report.line, ' '; color)
 
-            errlines = with_bufferring(arg) do io
+            errlines = with_bufferring(ctx) do io
                 print_report(io, report)
             end |> strip
             join(io, string.(rail, split(errlines, '\n')), '\n')
@@ -161,7 +166,7 @@ function print_reports(io::IO,
         return 0
     end
 
-    with_bufferring(:color => get(io, :color, false)) do io
+    with_bufferring(colorctx(io)) do io
         s = string(pluralize(length(reports), "possible error"), " found")
         printlnstyled(io, LEFT_ROOF, s, RIGHT_ROOF; color = HEADER_COLOR)
 
@@ -199,7 +204,7 @@ function print_stack(io, report, config, wrote_linfos, depth = 1)
         color = RAIL_COLORS[(depth)%N_RAILS+1]
         print_rails(io, depth-1)
         printstyled(io, "┌ "; color)
-        print_frame_sig(io, frame)
+        print_frame_sig(io, frame, config)
         print(io, " ")
         print_frame_loc(io, frame, config, color)
         println(io)
@@ -207,17 +212,20 @@ function print_stack(io, report, config, wrote_linfos, depth = 1)
     print_stack(io, report, config, wrote_linfos, depth + 1)
 end
 
-function print_frame_sig(io, frame)
+function print_frame_sig(io, frame, config)
     mi = frame.linfo
     m = mi.def
     if m isa Module
         Base.show_mi(io, mi, #=from_stackframe=#true)
     else
-        buf = IOBuffer()
-        ioc = IOContext(buf, :backtrace=>true, :limit=>true)
-        Base.StackTraces.show_spec_sig(ioc, m, mi.specTypes)
-        io = IOContext(io, :backtrace=>true, :limit=>true)
-        write(io, Base_type_depth_limit(buf));
+        if config.stacktrace_types_limited
+            s = with_bufferring(colorctx(io), :backtrace=>true, :limit=>true) do io
+                Base.StackTraces.show_spec_sig(io, m, mi.specTypes)
+            end
+            write(io, type_depth_limit(io, s))
+        else
+            Base.StackTraces.show_spec_sig(IOContext(io, :backtrace=>true, :limit=>true), m, mi.specTypes)
+        end
     end
 end
 
@@ -246,21 +254,21 @@ function print_error_frame(io, report, config, depth)
 
     print_rails(io, depth-1)
     printstyled(io, "┌ "; color)
-    print_frame_sig(io, frame)
+    print_frame_sig(io, frame, config)
     print(io, " ")
     print_frame_loc(io, frame, config, color)
     println(io)
 
     print_rails(io, depth-1)
     printstyled(io, "│ "; color)
-    print_report(io, report)
+    print_report(io, report, config)
     println(io)
 
     print_rails(io, depth-1)
     printlnstyled(io, '└', '─'^20; color)
 end
 
-function print_report(io::IO, report::InferenceErrorReport)
+function print_report(io::IO, report::InferenceErrorReport, config=PrintConfig())
     color = report_color(report)
     msg = with_bufferring() do io
         print_report_message(io, report)
@@ -268,20 +276,26 @@ function print_report(io::IO, report::InferenceErrorReport)
     printstyled(io, msg; color)
     if print_signature(report)
         printstyled(io, ": "; color)
-        print_signature(io, report.sig, (;); bold=true)
+        print_signature(io, report.sig, config; bold=true)
     end
 end
 
 function print_signature(io, sig::Signature, config; kwargs...)
     for a in sig
-        buf = IOBuffer()
-        _print_signature(buf, a, config; kwargs...)
-        write(io, Base_type_depth_limit(buf));
+        if config.stacktrace_types_limited
+            s = with_bufferring(colorctx(io)) do io
+                _print_signature(io, a; kwargs...)
+            end
+            write(io, type_depth_limit(io, s))
+        else
+            _print_signature(io, a; kwargs...)
+        end
     end
 end
-function _print_signature(io, @nospecialize(x), config; kwargs...)
+function _print_signature(io, @nospecialize(x); kwargs...)
     if isa(x, Type)
         if x == pairs(NamedTuple)
+            # special case common verbose types related to keyword arguments
             if isdefined(Base, Symbol("@Kwargs"))
                 printstyled(io, "::@Kwargs{…}"; color = TYPE_ANNOTATION_COLOR, kwargs...)
             else

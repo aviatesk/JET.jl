@@ -1171,7 +1171,8 @@ const GENERAL_CONFIGURATIONS = Set{Symbol}((
     # toplevel
     :context, :analyze_from_definitions, :concretization_patterns, :virtualize, :toplevel_logger,
     # ui
-    :print_toplevel_success, :print_inference_success, :fullpath, :vscode_console_output,
+    :print_toplevel_success, :print_inference_success, :fullpath, :stacktrace_types_limited,
+    :vscode_console_output,
     # watch
     :revise_all, :revise_modules))
 for (Params, Func) = ((InferenceParams, JETInferenceParams),

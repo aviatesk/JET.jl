@@ -1,7 +1,6 @@
 module test_print
 
 include("../setup.jl")
-include("test_print_depth_limited_types.jl")
 
 @testset "print toplevel errors" begin
     let io = IOBuffer()
@@ -119,6 +118,36 @@ test_print_callf(f, a) = f(a)
         @test occursin("test_print_callf", s)
         @test !occursin(r"(Main|Base)\.test_print_callf", s)
     end
+end
+
+struct F49231{a,b,c,d,e,f,g}
+    num::g
+end;
+bar(x) = rand() > 0.5 ? x : Any[0][1]
+mysum(x) = sum(y-> bar(x.num), 1:5; init=0)
+
+@testset "Depth-limited type printing" begin
+    f = F49231{Float64,Float32,Int,String,AbstractString,6,Float64}(1)
+    Ftype = Tuple{Vector{typeof(f)}}
+    result = JET.report_opt(Ftype; stacktrace_types_limited=true) do a
+        mysum(a[1]) # runtime dispatch !
+    end
+    buf = IOBuffer()
+    show(buf, result)
+    s = String(take!(buf))
+    @test occursin("F49231{…}", s)
+end
+
+@testset "Depth-limited type printing - show types with large depth" begin
+    f = F49231{Float64,Float32,Int,String,AbstractString,6,Float64}(1)
+    Ftype = Tuple{Vector{typeof(f)}}
+    result = JET.report_opt(Ftype; stacktrace_types_limited=false) do a
+        mysum(a[1]) # runtime dispatch !
+    end
+    buf = IOBuffer()
+    show(buf, result)
+    s = String(take!(buf))
+    @test !occursin("F49231{…}", s)
 end
 
 end # module test_print
