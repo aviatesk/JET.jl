@@ -928,12 +928,19 @@ struct WatchConfig
     end
 end
 
-# Stub to be filled out by loading the Revise extension
-function watch_file_with_func end
-
-struct InsufficientWatches <: Exception
-    included_files::Set{String}
+function watch_file_with_func(func, args...; jetconfigs...)
+    try
+        return _watch_file_with_func(func, args...; jetconfigs...)
+    catch err
+        if !(err isa MethodError && err.f === _watch_file_with_func)
+            rethrow(err)
+        end
+        error("Revise.jl is not loaded; load Revise and try again.")
+    end
 end
+
+# Stub to be filled out by loading the Revise extension
+function _watch_file_with_func end
 
 # Test.jl integration
 # -------------------

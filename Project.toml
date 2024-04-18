@@ -45,8 +45,9 @@ Example = "7876af07-990d-54b4-ab0e-23690620f79a"
 Libdl = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
 Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Aqua", "BenchmarkTools", "Example", "Libdl", "Logging", "Random", "StaticArrays", "Test"]
+test = ["Aqua", "BenchmarkTools", "Example", "Libdl", "Logging", "Random", "Revise", "StaticArrays", "Test"]

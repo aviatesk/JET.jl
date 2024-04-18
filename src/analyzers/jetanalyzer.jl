@@ -1708,9 +1708,11 @@ Watches `file` and keeps re-triggering analysis with [`report_file`](@ref) on co
 JET will try to analyze all the `include`d files reachable from `file`, and it will
 re-trigger analysis if there is code update detected in any of the `include`d files.
 
-This function internally uses [Revise.jl](https://timholy.github.io/Revise.jl/stable/) to
-track code updates. Revise also offers possibilities to track changes in files that are
-not directly analyzed by JET, or even changes in `Base` files.
+This entry point currently uses [Revise.jl](https://timholy.github.io/Revise.jl/stable/) to
+monitor code updates, and _can only be used after Revise has been loaded into the session_.
+So note that you'll need to have run e.g., `using Revise` at some earlier stage to use it.
+Revise offers possibilities to track changes in files that are not directly analyzed by JET,
+including changes made to `Base` files using configurations like `revise_modules = [Base]`.
 See [watch configurations](@ref watch-config) for more details.
 
 !!! warning
@@ -1718,4 +1720,4 @@ See [watch configurations](@ref watch-config) for more details.
 
 See also [`report_file`](@ref).
 """
-watch_file(args...; jetconfigs...) = @invokelatest watch_file_with_func(report_file, args...; jetconfigs...)
+watch_file(args...; jetconfigs...) = watch_file_with_func(report_file, args...; jetconfigs...)

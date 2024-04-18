@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Revise.jl-related features are now implemented as a package extension, so in order to use
+  `watch_file`, you need to load Revise.jl into your session first
+  (aviatesk/JET.jl#624, aviatesk/JET.jl#625).
+
 ## [0.8.9]
 
 ### Fixed
