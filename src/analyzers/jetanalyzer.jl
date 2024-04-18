@@ -1718,4 +1718,4 @@ See [watch configurations](@ref watch-config) for more details.
 
 See also [`report_file`](@ref).
 """
-watch_file(args...; jetconfigs...) = watch_file_with_func(report_file, args...; jetconfigs...)
+watch_file(args...; jetconfigs...) = @invokelatest watch_file_with_func(report_file, args...; jetconfigs...)

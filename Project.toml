@@ -11,7 +11,6 @@ MacroTools = "1914dd2f-81c6-5fcd-8719-6d5c9610ff09"
 Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
 Preferences = "21216c6a-2e73-6563-6e65-726566657250"
-Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [compat]
@@ -32,6 +31,12 @@ Revise = "3.3"
 StaticArrays = "1.7.0"
 Test = "1.10"
 julia = "1.10"
+
+[weakdeps]
+Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
+
+[extensions]
+ReviseExt = "Revise"
 
 [extras]
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
