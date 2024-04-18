@@ -1,16 +1,20 @@
 module ReviseExt
 
 using Revise
-using JET: JET, WatchConfig, InsufficientWatches
-import JET: watch_file_with_func
+using JET: JET, WatchConfig
+import JET: _watch_file_with_func
 
-function JET.watch_file_with_func(func, args...; jetconfigs...)
+struct InsufficientWatches <: Exception
+    included_files::Set{String}
+end
+
+function JET._watch_file_with_func(func, args...; jetconfigs...)
     local included_files::Set{String}
 
-    config = JET.WatchConfig(; jetconfigs...)
+    config = WatchConfig(; jetconfigs...)
 
     included_files = let res = func(args...; jetconfigs...)
-        display(res)
+        show(res) # XXX use `display` here?
         res.res.included_files
     end
 
@@ -20,7 +24,7 @@ function JET.watch_file_with_func(func, args...; jetconfigs...)
             Revise.entr(collect(included_files), config.revise_modules;
                         postpone = true, all = config.revise_all) do
                 next_included_files = let res = func(args...; jetconfigs...)
-                    display(res)
+                    show(res) # XXX use `display` here?
                     res.res.included_files
                 end
                 if any(∉(included_files), next_included_files)
@@ -66,5 +70,4 @@ function JET.watch_file_with_func(func, args...; jetconfigs...)
     end
 end
 
-
-end
+end # module ReviseExt
