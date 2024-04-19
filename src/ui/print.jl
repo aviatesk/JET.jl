@@ -36,24 +36,26 @@ The configurations below will be active whenever `show`ing [JET's analysis resul
 - `print_inference_success::Bool = true` \\
   If `true`, print a message when there is no errors found in abstract interpretation based analysis pass.
 ---
-- `stacktrace_types_limited::Bool = true` \\
-  If `true`, limit printing depth of argument types in stack traces.
+- `stacktrace_types_limit::Union{Nothing, Int} = nothing` \\
+  If `nothing`, limit type-depth printing of argument types in stack traces based on the display size.
+  If a positive `Int`, limit type-depth printing to given depth
+  If a non-positive `Int`, do not limit type-depth printing
 ---
 """
 struct PrintConfig
     print_toplevel_success::Bool
     print_inference_success::Bool
     fullpath::Bool
-    stacktrace_types_limited::Bool
+    stacktrace_types_limit::Union{Nothing,Int}
     function PrintConfig(; print_toplevel_success::Bool = false,
                            print_inference_success::Bool = true,
                            fullpath::Bool = false,
-                           stacktrace_types_limited::Bool = true,
+                           stacktrace_types_limit::Union{Nothing,Int} = nothing,
                            __jetconfigs...)
         return new(print_toplevel_success,
                    print_inference_success,
                    fullpath,
-                   stacktrace_types_limited)
+                   stacktrace_types_limit)
     end
 end
 
@@ -98,9 +100,11 @@ end
 
 colorctx(io::IO) = :color => get(io, :color, false)
 
-function type_depth_limit(io::IO, s::String)
+should_limit(stacktrace_types_limit::Nothing)::Bool = true
+should_limit(stacktrace_types_limit::Int)::Bool = stacktrace_types_limit > 0
+function type_depth_limit(io::IO, s::String; maxtypedepth::Union{Nothing,Int})
     sz = get(io, :displaysize, displaysize(io))::Tuple{Int, Int}
-    return Base.type_depth_limit(s, max(sz[2], 120)) # configure `maxdepth` here?
+    return Base.type_depth_limit(s, max(sz[2], 120); maxdepth=maxtypedepth)
 end
 
 # toplevel
@@ -218,11 +222,11 @@ function print_frame_sig(io, frame, config)
     if m isa Module
         Base.show_mi(io, mi, #=from_stackframe=#true)
     else
-        if config.stacktrace_types_limited
+        if should_limit(config.stacktrace_types_limit)
             s = with_bufferring(colorctx(io), :backtrace=>true, :limit=>true) do io
                 Base.StackTraces.show_spec_sig(io, m, mi.specTypes)
             end
-            write(io, type_depth_limit(io, s))
+            write(io, type_depth_limit(io, s; maxtypedepth=config.stacktrace_types_limit))
         else
             Base.StackTraces.show_spec_sig(IOContext(io, :backtrace=>true, :limit=>true), m, mi.specTypes)
         end
@@ -282,11 +286,11 @@ end
 
 function print_signature(io, sig::Signature, config; kwargs...)
     for a in sig
-        if config.stacktrace_types_limited
+        if should_limit(config.stacktrace_types_limit)
             s = with_bufferring(colorctx(io)) do io
                 _print_signature(io, a; kwargs...)
             end
-            write(io, type_depth_limit(io, s))
+            write(io, type_depth_limit(io, s; maxtypedepth=config.stacktrace_types_limit))
         else
             _print_signature(io, a; kwargs...)
         end
