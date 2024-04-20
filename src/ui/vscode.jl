@@ -10,7 +10,8 @@ import ..JET:
     InferenceErrorReport,
     get_reports,
     print_report,
-    print_frame_sig
+    print_frame_sig,
+    PrintConfig
 
 # common
 # ======
@@ -57,15 +58,18 @@ Base.showable(::MIME"application/vnd.julia-vscode.diagnostics", ::JETToplevelRes
 function Base.show(io::IO, ::MIME"application/vnd.julia-vscode.diagnostics",
                    res::JETToplevelResult)
     forward_to_console_output(res; res.jetconfigs...)
+    config = PrintConfig(; res.jetconfigs...)
     postprocess = gen_postprocess(res.res.actual2virtual)
     return vscode_diagnostics(res.analyzer,
                               get_reports(res),
-                              res.source;
+                              res.source,
+                              config;
                               postprocess)
 end
 function vscode_diagnostics(analyzer::Analyzer,
                             reports::Vector{ToplevelErrorReport},
-                            source::AbstractString;
+                            source::AbstractString,
+                            config::PrintConfig=PrintConfig();
                             postprocess = identity) where {Analyzer<:AbstractAnalyzer}
     return (; source = String(source),
               items = map(reports) do report
@@ -84,13 +88,16 @@ Base.showable(::MIME"application/vnd.julia-vscode.diagnostics", ::JETCallResult)
 function Base.show(io::IO, ::MIME"application/vnd.julia-vscode.diagnostics",
                    res::JETCallResult)
     forward_to_console_output(res; res.jetconfigs...)
+    config = PrintConfig(; res.jetconfigs...)
     return vscode_diagnostics(res.analyzer,
                               get_reports(res),
-                              res.source)
+                              res.source,
+                              config)
 end
 function vscode_diagnostics(analyzer::Analyzer,
                             reports::Vector{InferenceErrorReport},
-                            source::AbstractString;
+                            source::AbstractString,
+                            config::PrintConfig=PrintConfig();
                             postprocess = identity) where {Analyzer<:AbstractAnalyzer}
     order = vscode_diagnostics_order(analyzer)
     return (; source = String(source),
@@ -102,7 +109,7 @@ function vscode_diagnostics(analyzer::Analyzer,
                             line = showpoint.line,
                             severity = 1, # 0: Error, 1: Warning, 2: Information, 3: Hint
                             relatedInformation = map((order ? identity : reverse)(report.vst)) do frame
-                                return (; msg = postprocess(sprint(print_frame_sig, frame)),
+                                return (; msg = postprocess(sprint(print_frame_sig, frame, config)),
                                           path = tovscodepath(frame.file),
                                           line = frame.line,
                                           )

@@ -120,4 +120,42 @@ test_print_callf(f, a) = f(a)
     end
 end
 
+struct F49231{a,b,c,d,e,f,g}
+    num::g
+end;
+bar(x) = rand() > 0.5 ? x : Any[0][1]
+mysum(x) = sum(y-> bar(x.num), 1:5; init=0)
+function result_string(result)
+    buf = IOBuffer()
+    show(buf, result)
+    return String(take!(buf))
+end
+
+@testset "Depth-limited type printing" begin
+    f = F49231{Float64,Float32,Int,String,AbstractString,6,Float64}(1)
+    Ftype = Tuple{Vector{typeof(f)}}
+
+    result = JET.report_opt(Ftype; stacktrace_types_limit=nothing) do a
+        mysum(a[1]) # runtime dispatch !
+    end
+    @test occursin("F49231{…}", result_string(result))
+
+    result = JET.report_opt(Ftype; stacktrace_types_limit=0) do a
+        mysum(a[1]) # runtime dispatch !
+    end
+    @test !occursin("F49231{…}", result_string(result))
+    @test occursin("F49231{", result_string(result))
+
+    result = JET.report_opt(Ftype; stacktrace_types_limit=1000) do a
+        mysum(a[1]) # runtime dispatch !
+    end
+    @test !occursin("F49231{…}", result_string(result))
+    @test occursin("F49231{", result_string(result))
+
+    result = JET.report_opt(Ftype; stacktrace_types_limit=2) do a
+        mysum(a[1]) # runtime dispatch !
+    end
+    @test occursin("F49231{…}", result_string(result))
+end
+
 end # module test_print
