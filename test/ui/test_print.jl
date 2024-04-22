@@ -2,6 +2,12 @@ module test_print
 
 include("../setup.jl")
 
+function result_string(result)
+    buf = IOBuffer()
+    show(buf, result)
+    return String(take!(buf))
+end
+
 @testset "print toplevel errors" begin
     let io = IOBuffer()
         src = """
@@ -70,19 +76,13 @@ end
     let result = report_call((Regex,)) do r
             getfield(r, :nonexist)
         end
-        buf = IOBuffer()
-        show(buf, result)
-        s = String(take!(buf))
-        @test occursin(":nonexist", s)
+        @test occursin(":nonexist", result_string(result))
     end
 
     let result = report_call() do
             sin("julia")
         end
-        buf = IOBuffer()
-        show(buf, result)
-        s = String(take!(buf))
-        @test occursin("sin(\"julia\")", s)
+        @test occursin("sin(\"julia\")", result_string(result))
     end
 end
 
@@ -90,9 +90,7 @@ test_print_callf(f, a) = f(a)
 @testset "simplified global references" begin
     # exported names should not be canonicalized
     let result = @report_call sum("julia")
-        buf = IOBuffer()
-        show(buf, result)
-        s = String(take!(buf))
+        s = result_string(result)
         @test occursin("+", s)
         @test !occursin("Base.:+", s)
         @test occursin("zero", s)
@@ -103,59 +101,59 @@ test_print_callf(f, a) = f(a)
     let result = report_call() do
             sin("42")
         end
-        buf = IOBuffer()
-        show(buf, result)
-        s = String(take!(buf))
+        s = result_string(result)
         @test occursin("sin", s)
         @test !occursin(r"(Main|Base)\.sin", s)
     end
     let result = report_call() do
             test_print_callf(sin, "42")
         end
-        buf = IOBuffer()
-        show(buf, result)
-        s = String(take!(buf))
+        s = result_string(result)
         @test occursin("test_print_callf", s)
         @test !occursin(r"(Main|Base)\.test_print_callf", s)
     end
 end
 
-struct F49231{a,b,c,d,e,f,g}
+struct StackTraceTypeLimited{g}
     num::g
 end;
-bar(x) = rand() > 0.5 ? x : Any[0][1]
-mysum(x) = sum(y-> bar(x.num), 1:5; init=0)
-function result_string(result)
-    buf = IOBuffer()
-    show(buf, result)
-    return String(take!(buf))
+function func_stacktrace_types_limit(x::StackTraceTypeLimited)
+    if x.num isa StackTraceTypeLimited
+        return func_stacktrace_types_limit(x.num)
+    end
+    return x.num + 1
 end
 
 @testset "Depth-limited type printing" begin
-    f = F49231{Float64,Float32,Int,String,AbstractString,6,Float64}(1)
-    Ftype = Tuple{Vector{typeof(f)}}
-
-    result = JET.report_opt(Ftype; stacktrace_types_limit=nothing) do a
-        mysum(a[1]) # runtime dispatch !
+    Typ = Any
+    for i = 1:10
+        Typ = StackTraceTypeLimited{Typ}
     end
-    @test occursin("F49231{…}", result_string(result))
+    STTL_str = repr(StackTraceTypeLimited)
 
-    result = JET.report_opt(Ftype; stacktrace_types_limit=0) do a
-        mysum(a[1]) # runtime dispatch !
+    result = report_opt() do x::Typ
+        func_stacktrace_types_limit(x) # runtime dispatch!
     end
-    @test !occursin("F49231{…}", result_string(result))
-    @test occursin("F49231{", result_string(result))
+    @test occursin("$STTL_str{…}", result_string(result))
+    @test !occursin(repr(Typ), result_string(result))
 
-    result = JET.report_opt(Ftype; stacktrace_types_limit=1000) do a
-        mysum(a[1]) # runtime dispatch !
+    result = report_opt(;stacktrace_types_limit=0) do x::Typ
+        func_stacktrace_types_limit(x) # runtime dispatch!
     end
-    @test !occursin("F49231{…}", result_string(result))
-    @test occursin("F49231{", result_string(result))
+    @test !occursin("$STTL_str{…}", result_string(result))
+    @test occursin(repr(Typ), result_string(result))
 
-    result = JET.report_opt(Ftype; stacktrace_types_limit=2) do a
-        mysum(a[1]) # runtime dispatch !
+    result = report_opt(;stacktrace_types_limit=1000) do x::Typ
+        func_stacktrace_types_limit(x) # runtime dispatch!
     end
-    @test occursin("F49231{…}", result_string(result))
+    @test !occursin("$STTL_str{…}", result_string(result))
+    @test occursin(repr(Typ), result_string(result))
+
+    result = report_opt(;stacktrace_types_limit=3) do x::Typ
+        func_stacktrace_types_limit(x) # runtime dispatch!
+    end
+    @test occursin("$STTL_str{$STTL_str{$STTL_str{…}}}", result_string(result))
+    @test !occursin(repr(Typ), result_string(result))
 end
 
 end # module test_print
