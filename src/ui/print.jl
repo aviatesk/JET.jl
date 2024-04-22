@@ -38,8 +38,8 @@ The configurations below will be active whenever `show`ing [JET's analysis resul
 ---
 - `stacktrace_types_limit::Union{Nothing, Int} = nothing` \\
   If `nothing`, limit type-depth printing of argument types in stack traces based on the display size.
-  If a positive `Int`, limit type-depth printing to given depth
-  If a non-positive `Int`, do not limit type-depth printing
+  If a positive `Int`, limit type-depth printing to given depth.
+  If a non-positive `Int`, do not limit type-depth printing.
 ---
 """
 struct PrintConfig
@@ -100,8 +100,8 @@ end
 
 colorctx(io::IO) = :color => get(io, :color, false)
 
-should_limit(stacktrace_types_limit::Nothing)::Bool = true
-should_limit(stacktrace_types_limit::Int)::Bool = stacktrace_types_limit > 0
+should_limit(stacktrace_types_limit::Nothing) = true
+should_limit(stacktrace_types_limit::Int) = stacktrace_types_limit > 0
 function type_depth_limit(io::IO, s::String; maxtypedepth::Union{Nothing,Int})
     sz = get(io, :displaysize, displaysize(io))::Tuple{Int, Int}
     return Base.type_depth_limit(s, max(sz[2], 120); maxdepth=maxtypedepth)
@@ -300,11 +300,7 @@ function _print_signature(io, @nospecialize(x); kwargs...)
     if isa(x, Type)
         if x == pairs(NamedTuple)
             # special case common verbose types related to keyword arguments
-            if isdefined(Base, Symbol("@Kwargs"))
-                printstyled(io, "::@Kwargs{…}"; color = TYPE_ANNOTATION_COLOR, kwargs...)
-            else
-                printstyled(io, "::Base.Pairs{…}"; color = TYPE_ANNOTATION_COLOR, kwargs...)
-            end
+            printstyled(io, "::@Kwargs{…}"; color = TYPE_ANNOTATION_COLOR, kwargs...)
         elseif x !== Union{}
             io = IOContext(io, :backtrace=>true)
             printstyled(io, "::", x; color = TYPE_ANNOTATION_COLOR, kwargs...)
