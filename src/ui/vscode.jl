@@ -76,8 +76,7 @@ function vscode_diagnostics(analyzer::Analyzer,
                   return (; msg = postprocess(sprint(print_report, report)),
                             path = tovscodepath(report.file),
                             line = report.line,
-                            severity = 0, # 0: Error, 1: Warning, 2: Information, 3: Hint
-                            )
+                            severity = 0) # 0: Error, 1: Warning, 2: Information, 3: Hint
               end)
 end
 
@@ -103,18 +102,15 @@ function vscode_diagnostics(analyzer::Analyzer,
     return (; source = String(source),
               items = map(reports) do report
                   showpoint = (order ? first : last)(report.vst)
-                  msg = sprint(print_report, report)
-                  return (; msg = postprocess(msg),
+                  return (; msg = postprocess(sprint(print_report, report, config)),
                             path = tovscodepath(showpoint.file),
                             line = showpoint.line,
                             severity = 1, # 0: Error, 1: Warning, 2: Information, 3: Hint
                             relatedInformation = map((order ? identity : reverse)(report.vst)) do frame
                                 return (; msg = postprocess(sprint(print_frame_sig, frame, config)),
                                           path = tovscodepath(frame.file),
-                                          line = frame.line,
-                                          )
-                            end,
-                            )
+                                          line = frame.line)
+                            end)
               end)
 end
 

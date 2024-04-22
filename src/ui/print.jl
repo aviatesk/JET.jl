@@ -272,7 +272,7 @@ function print_error_frame(io, report, config, depth)
     printlnstyled(io, '└', '─'^20; color)
 end
 
-function print_report(io::IO, report::InferenceErrorReport, config=PrintConfig())
+function print_report(io::IO, report::InferenceErrorReport, config::PrintConfig=PrintConfig())
     color = report_color(report)
     msg = with_bufferring() do io
         print_report_message(io, report)
