@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A new configuration `stacktrace_types_limit::Union{Nothing,Int}=nothing` has been added.
+  It's turned on by default and limits deeply nested types when JET prints reports.
+  If you prefer the old behavior, set `stacktrace_types_limit=0`.
+
 ### Changed
 
 - Revise.jl-related features are now implemented as a package extension, so in order to use
