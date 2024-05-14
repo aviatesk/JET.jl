@@ -1147,11 +1147,11 @@ function select_dependencies!(concretize, src, edges)
     end
 
     # find a loop region and check if any of the requirements discovered so far is involved
-    # with it, and if require everything involved with the loop in order to properly
+    # within it, and if require everything involved with the loop in order to properly
     # concretize the requirement — "require everything involved with the loop" means we will
     # care about "strongly connected components" rather than "cycles" of a directed graph, and
     # strongly connected components detection runs in linear time ``O(|V|+|E|)`` as opposed to
-    # cycle dection (, whose worst time complexity is exponential with the number of vertices)
+    # cycle detection, whose worst time complexity is exponential with the number of vertices,
     # and thus the analysis here should terminate in reasonable time even with a fairly
     # complex control flow graph
     cfg = CC.compute_basic_blocks(src.code)
@@ -1197,7 +1197,7 @@ function select_dependencies!(concretize, src, edges)
 end
 
 function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node), istoplevel::Bool)
-    @assert istoplevel "JET.ConcreteInterpreter can only work for top-level code"
+    @assert istoplevel "ConcreteInterpreter can only work for top-level code"
 
     if ismoduleusage(node)
         for ex in to_simple_module_usages(node)
@@ -1288,7 +1288,7 @@ function JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, fr
     isinclude(f) && return handle_include(interp, f, args)
     if f === Base._ccallable
         # skip concrete-interpretation of `jl_extern_c` as the C-side function definition
-        # isn't really essential for Julia-level analysis (currently at least)
+        # isn't really essential for Julia-level analysis
         if length(args) == 2 && args[1] isa Type && args[2] isa Type
             # ignore it only if the method dispatch is successful
             return nothing
