@@ -308,8 +308,6 @@ include("abstractinterpret/typeinfer.jl")
 
 function print_report end
 
-include("toplevel/graph.jl")
-
 const JULIA_SYNTAX_ENABLED = !(Base.get_bool_env("JULIA_USE_FLISP_PARSER", false))
 
 include("toplevel/virtualprocess.jl")

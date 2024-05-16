@@ -1713,14 +1713,17 @@ end
             elseif JET.@capture(stmt, write(x_))
                 found_write = true
                 @test !slice[i]
+            elseif (JET.isexpr(stmt, :call) && (arg1 = stmt.args[1]; arg1 isa Core.SSAValue) &&
+                src.code[arg1.id] === :write)
+                found_write = true
+                @test !slice[i]
             end
         end
         @test found_w; @test found_sum; @test found_product; @test found_write
     end
 
     @testset "captured variables" begin
-        let
-            vmod, res = @analyze_toplevel2 begin
+        let (vmod, res) = @analyze_toplevel2 begin
                 begin
                     s = join(rand(Char, 100))
                     foo() = return s
@@ -1731,8 +1734,7 @@ end
         end
 
         # captured variables for global functions
-        let
-            # XXX `s` below aren't necessarily concretized, but concretization of `foo` requires
+        let # XXX `s` below aren't necessarily concretized, but concretization of `foo` requires
             # it (since `s` will be embedded into `foo`'s body wrapped in `QuoteNode`)
             # and thus we can't abstract it away as far as we depend on JuliaInterpreter ...
             vmod, res = @analyze_toplevel2 let
@@ -1774,8 +1776,7 @@ end
     # with those macros
     @testset "try/catch control flow" begin
         # https://github.com/aviatesk/JET.jl/issues/150
-        let
-            res = @analyze_toplevel analyze_from_definitions=true try
+        let res = @analyze_toplevel analyze_from_definitions=true try
                 foo(a) = sum(a) # essentially same as inner function, should be concretized
                 foo("julia") # shouldn't be concretized
             catch err
@@ -1788,8 +1789,7 @@ end
         end
 
         # captured variables within a try clause
-        let
-            res = @analyze_toplevel analyze_from_definitions=true try
+        let res = @analyze_toplevel analyze_from_definitions=true try
                 s = "julia"
                 foo(f) = f(s) # should be concretized
                 foo(sum) # shouldn't be concretized
@@ -1803,8 +1803,7 @@ end
         end
 
         # captured variables within a catch clause
-        let
-            res = @analyze_toplevel analyze_from_definitions=true try
+        let res = @analyze_toplevel analyze_from_definitions=true try
                 s = "julia"
                 foo(f) = f(s) # should be concretized
                 foo(sum) # shouldn't be concretized

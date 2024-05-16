@@ -1116,84 +1116,51 @@ function select_stmt_requirement!(concretize, idx, edges)
     concretize[idx] = true
 end
 
+function add_control_flow!(concretize::BitVector, src::CodeInfo, cfg::CFG)
+    changed = false
+    nblocks = length(cfg.blocks)
+    for i = 1:nblocks
+        bb = cfg.blocks[nblocks-i+1]
+        if any(@view concretize[bb.stmts])
+            for pred = bb.preds
+                if pred == 0
+                    # this is a exception handler block, and it has a virtual predecessor
+                    # edge from the outside callee function
+                    continue
+                end
+                predbb = cfg.blocks[pred]
+                terminator_idx = predbb.stmts[end]
+                terminator = src.code[terminator_idx]
+                if terminator isa GotoNode || terminator isa GotoIfNot # COMBAK GotoNode does not need to be marked here?
+                    concretize[terminator_idx] = true
+                    changed = true
+                end
+            end
+        end
+    end
+    return changed
+end
+
 # TODO implement these prototypes and support a following pattern:
 # N = 10
 # let tpl = ([i for i in 1:N]...,)
 #     @eval gettpl() = $tpl # `tpl` here should be fully concretized
 # end
-function find_iterblocks(src) end
-function add_iterblocks!(cocretize, src, edges, iterblocks) end
 
-# implementation of https://github.com/aviatesk/JET.jl/issues/196
 function select_dependencies!(concretize, src, edges)
-    # find statement sets that come from iteration/iterator protocol
-    # TODO iterblocks = find_iterblocks(src)
-
-    # We'll mostly use generic graph traversal to discover all the lines we need,
-    # but structs are in a bit of a different category (especially on Julia 1.5+).
-    # It's easiest to discover these at the beginning.
+    # discover struct/method definitions at the beginning
     typedefs = LoweredCodeUtils.find_typedefs(src)
+    LoweredCodeUtils.add_typedefs!(concretize, src, edges, typedefs, ())
 
-    changed = true
-    while changed
-        changed = false
+    # propagate the definition requirements by tracking SSA precedessors
+    LoweredCodeUtils.add_ssa_preds!(concretize, src, edges, ())
 
-        # track SSA predecessors of initial requirements
-        changed |= LoweredCodeUtils.add_ssa_preds!(concretize, src, edges, ())
-
-        # add some domain-specific information
-        # TODO changed |= add_iterblocks!(concretized, src, edges, iterblocks)
-        changed |= LoweredCodeUtils.add_typedefs!(concretize, src, edges, typedefs, ())
-    end
-
-    # find a loop region and check if any of the requirements discovered so far is involved
-    # within it, and if require everything involved with the loop in order to properly
-    # concretize the requirement — "require everything involved with the loop" means we will
-    # care about "strongly connected components" rather than "cycles" of a directed graph, and
-    # strongly connected components detection runs in linear time ``O(|V|+|E|)`` as opposed to
-    # cycle detection, whose worst time complexity is exponential with the number of vertices,
-    # and thus the analysis here should terminate in reasonable time even with a fairly
-    # complex control flow graph
+    # mark necessary control flows
     cfg = CC.compute_basic_blocks(src.code)
-    loops = filter!(>(1)∘length, strongly_connected_components(cfg))
+    add_control_flow!(concretize, src, cfg)
 
-    critical_blocks = BitSet()
-    for (i, block) in enumerate(cfg.blocks)
-        if any(view(concretize, block.stmts))
-            for loop in loops
-                if i in loop
-                    push!(critical_blocks, i)
-                    for j in loop
-                        push!(critical_blocks, j)
-                    end
-                end
-            end
-        end
-    end
-    for loop in loops
-        if any(in(critical_blocks), loop)
-            for j in loop
-                push!(critical_blocks, j)
-            end
-            # push!(critical_blocks, minimum(loop) - 1)
-        end
-    end
-
-    norequire = BitSet()
-    for (i, block) in enumerate(cfg.blocks)
-        if i ∉ critical_blocks
-            LoweredCodeUtils.pushall!(norequire, LoweredCodeUtils.rng(block))
-        end
-    end
-
-    changed = true
-    while changed
-        changed = false
-
-        # track SSA predecessors and control flows of the critical blocks
-        changed |= LoweredCodeUtils.add_ssa_preds!(concretize, src, edges, norequire)
-        changed |= LoweredCodeUtils.add_control_flow!(concretize, cfg, norequire)
-    end
+    # propagate the control flow requirements by tracking SSA precedessors
+    LoweredCodeUtils.add_ssa_preds!(concretize, src, edges, ())
 end
 
 function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node), istoplevel::Bool)
