@@ -1055,11 +1055,11 @@ function select_statements(src::CodeInfo)
 end
 
 function select_direct_requirement!(concretize, stmts, edges)
-    for (i, stmt) in enumerate(stmts)
+    for (idx, stmt) in enumerate(stmts)
         if (LoweredCodeUtils.ismethod(stmt) ||    # don't abstract away method definitions
             LoweredCodeUtils.istypedef(stmt) ||   # don't abstract away type definitions
             ismoduleusage(stmt)) # module usages are handled by `ConcreteInterpreter`
-            concretize[i] = true
+            concretize[idx] = true
             continue
         end
 
@@ -1067,17 +1067,26 @@ function select_direct_requirement!(concretize, stmts, edges)
             lhs, rhs = stmt.args
             stmt = rhs
         end
-        if isexpr(stmt, :call)
-            if is_known_call(stmt, :include, stmts)
-                # `include` calls are special cased
-                select_stmt_requirement!(concretize, i, edges)
-                continue
-            elseif is_known_call(stmt, :eval, stmts)
-                # analysis of `eval` calls are difficult, let's give up it and just evaluate
-                # toplevel `eval` calls; they may contain toplevel definitions
-                select_stmt_requirement!(concretize, i, edges)
-                continue
-            end
+        # `include` calls are special cased
+        if is_known_call(stmt, :include, stmts)
+            concretize[idx] = true
+        elseif is_known_getproperty(stmt, :include, stmts)
+            # this is something like:
+            # ```
+            # %1 = getproperty(Base, :include)
+            # ...
+            # %x = Expr(:call, %1, ...)
+            # ```
+            # so require `%x` too
+            concretize[idx] = true
+            concretize[edges.succs[idx]] .= true
+        # `eval` calls are difficult to analyze, but since they may contain toplevel
+        # definitions, JET just concretizes them always
+        elseif is_known_call(stmt, :eval, stmts)
+            concretize[idx] = true
+        elseif is_known_getproperty(stmt, :eval, stmts)
+            concretize[idx] = true
+            concretize[edges.succs[idx]] .= true
         end
     end
 end
@@ -1085,27 +1094,29 @@ end
 # adapted from
 # - https://github.com/timholy/Revise.jl/blob/266ed68d7dd3bea67c39f96513cda30bbcd7d441/src/lowered.jl#L53
 # - https://github.com/timholy/Revise.jl/blob/266ed68d7dd3bea67c39f96513cda30bbcd7d441/src/lowered.jl#L87-L88
-function is_known_call(stmt::Expr, func::Symbol, stmts::Vector{Any})
+function is_known_call(@nospecialize(stmt), func::Symbol, stmts::Vector{Any})
+    isexpr(stmt, :call) || return false
     f = stmt.args[1]
     if f isa SSAValue
         f = stmts[f.id]
     end
     isa(f, Symbol) && f === func && return true
     isa(f, GlobalRef) && f.name === func && return true
-    callee_matches(f, Base, :getproperty) &&
-        is_quotenode_egal(stmt.args[end], func) && return true
-    callee_matches(f, Core, :getproperty) &&
-        is_quotenode_egal(stmt.args[end], func) && return true
-    callee_matches(f, Core.Compiler, :getproperty) &&
-        is_quotenode_egal(stmt.args[end], func) && return true
     return false
 end
-
-# statement `idx` may be the equivalent of `f = known_call`, so require each
-# stmt that calls `known_call` via `f(expr)`
-function select_stmt_requirement!(concretize, idx, edges)
-    concretize[edges.succs[idx]] .= true
-    concretize[idx] = true
+function is_known_getproperty(@nospecialize(stmt), func::Symbol, stmts::Vector{Any})
+    isexpr(stmt, :call) || return false
+    f = stmt.args[1]
+    if f isa SSAValue
+        f = stmts[f.id]
+    end
+    callee_matches(f, Base, :getproperty) && length(stmt.args) ≥ 3 &&
+        is_quotenode_egal(stmt.args[3], func) && return true
+    callee_matches(f, Core, :getproperty) && length(stmt.args) ≥ 3 &&
+        is_quotenode_egal(stmt.args[3], func) && return true
+    callee_matches(f, Core.Compiler, :getproperty) && length(stmt.args) ≥ 3 &&
+        is_quotenode_egal(stmt.args[3], func) && return true
+    return false
 end
 
 function add_control_flow!(concretize::BitVector, src::CodeInfo, cfg::CFG)
