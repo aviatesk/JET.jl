@@ -1124,8 +1124,9 @@ function add_control_flow!(concretize::BitVector, src::CodeInfo, cfg::CFG)
                 terminator_idx = predbb.stmts[end]
                 terminator = src.code[terminator_idx]
                 if terminator isa GotoNode || terminator isa GotoIfNot # COMBAK GotoNode does not need to be marked here?
-                    concretize[terminator_idx] = true
-                    changed = true
+                    if !concretize[terminator_idx]
+                        changed = concretize[terminator_idx] = true
+                    end
                 end
             end
         end
@@ -1147,8 +1148,9 @@ function add_required_inplace!(concretize::BitVector, src::CodeInfo, edges)
                     arg2 = stmt.args[2]
                     if arg2 isa SSAValue
                         if concretize[arg2.id] || any(@view concretize[edges.preds[arg2.id]])
-                            concretize[i] = true
-                            changed = true
+                            if !concretize[i]
+                                changed = concretize[i] = true
+                            end
                         end
                     end
                 end
@@ -1159,22 +1161,29 @@ function add_required_inplace!(concretize::BitVector, src::CodeInfo, edges)
 end
 
 function select_dependencies!(concretize::BitVector, src::CodeInfo, edges)
-    # discover struct/method definitions at the beginning,
-    # and propagate the definition requirements by tracking SSA precedessors
     typedefs = LoweredCodeUtils.find_typedefs(src)
-    LoweredCodeUtils.add_typedefs!(concretize, src, edges, typedefs, ())
-    add_ssa_preds!(concretize, src, edges, ())
-
-    # mark some common inplace operations like `push!(x, ...)` and `setindex!(x, ...)`
-    # when `x` has been marked already: otherwise we may end up using it with invalid state
-    add_required_inplace!(concretize, src, edges)
-    add_ssa_preds!(concretize, src, edges, ())
-
-    # mark necessary control flows,
-    # and propagate the definition requirements by tracking SSA precedessors
     cfg = CC.compute_basic_blocks(src.code)
-    add_control_flow!(concretize, src, cfg)
-    add_ssa_preds!(concretize, src, edges, ())
+
+    while true
+        changed = false
+
+        # discover struct/method definitions at the beginning,
+        # and propagate the definition requirements by tracking SSA precedessors
+        changed |= LoweredCodeUtils.add_typedefs!(concretize, src, edges, typedefs, ())
+        changed |= add_ssa_preds!(concretize, src, edges, ())
+
+        # mark some common inplace operations like `push!(x, ...)` and `setindex!(x, ...)`
+        # when `x` has been marked already: otherwise we may end up using it with invalid state
+        changed |= add_required_inplace!(concretize, src, edges)
+        changed |= add_ssa_preds!(concretize, src, edges, ())
+
+        # mark necessary control flows,
+        # and propagate the definition requirements by tracking SSA precedessors
+        changed |= add_control_flow!(concretize, src, cfg)
+        changed |= add_ssa_preds!(concretize, src, edges, ())
+
+        changed || break
+    end
 end
 
 function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node), istoplevel::Bool)
