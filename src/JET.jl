@@ -47,7 +47,7 @@ using Base.Meta: ParseError, isexpr, lower
 
 using Base.Experimental: @MethodTable, @overlay
 
-using LoweredCodeUtils: LoweredCodeUtils, callee_matches
+using LoweredCodeUtils: LoweredCodeUtils, add_ssa_preds!, callee_matches
 
 using JuliaInterpreter: _INACTIVE_EXCEPTION, Frame, JuliaInterpreter, is_quotenode_egal
 

@@ -1682,6 +1682,7 @@ end
     # simple negative case test, which checks we do NOT select statements not involved with any definition
     # this particular example is adapted from https://en.wikipedia.org/wiki/Program_slicing
     let src = @src let
+            N = 10
             sum = 0
             product = 1 # should NOT be selected
             w = 7
@@ -1694,7 +1695,7 @@ end
         end
         slice = JET.select_statements(src)
 
-        found_w = found_sum = found_product = found_write = false
+        found_N = found_sum = found_product = found_w = found_write = false
         for (i, stmt) in enumerate(src.code)
             if JET.isexpr(stmt, :(=))
                 lhs, rhs = stmt.args
@@ -1704,6 +1705,9 @@ end
                         @test slice[i]
                     elseif src.slotnames[lhs.id] === :sum
                         found_sum = true
+                        @test slice[i]
+                    elseif src.slotnames[lhs.id] === :N
+                        found_N = true
                         @test slice[i]
                     elseif src.slotnames[lhs.id] === :product
                         found_product = true
@@ -1719,7 +1723,29 @@ end
                 @test !slice[i]
             end
         end
-        @test found_w; @test found_sum; @test found_product; @test found_write
+        @test found_N; @test found_sum; @test found_product; @test found_w; @test found_write
+    end
+    let s = mktemp() do path, io # high level test
+            redirect_stdout(io) do
+                vmod, res = @analyze_toplevel2 let
+                    N = 10
+                    sum = 0
+                    product = 1 # should NOT be selected
+                    w = 7
+                    for i in 1:N
+                        sum += i + w
+                        product *= i # should NOT be selected
+                    end
+                    @eval global getsum() = $sum # concretization is forced
+                    println(product) # should NOT be selected
+                end
+                @test isempty(res.res.toplevel_error_reports)
+                @test is_concrete(vmod, :getsum)
+            end
+            flush(io)
+            read(path, String)
+        end
+        @test isempty(s)
     end
 
     @testset "captured variables" begin
@@ -1827,8 +1853,7 @@ end
         # I include this case just for the reference and won't expect this to work robustly
         # since it heavily depends on Julia's AST lowering and the implementation detail of
         # JuliaInterpreter.jl
-        let
-            vmod, res = @analyze_toplevel2 try
+        let (vmod, res) = @analyze_toplevel2 try
                 s = "julia"
                 foo(f) = f(s) # should be concretized
                 foo(sum) # shouldn't be concretized
@@ -1890,6 +1915,47 @@ end
             @test is_concrete(vmod, :isfoo)
             @test is_concrete(vmod, :isbar)
             @test is_concrete(vmod, :isbaz)
+        end
+    end
+
+    @testset "concretize inplace operations" begin
+        let (vmod, res) = @analyze_toplevel2 let
+                N = 10
+                tpl = (Any[i for i in 1:N]...,)
+                @eval gettpl() = $tpl # `tpl` here should be fully concretized
+            end
+            @test isempty(res.res.toplevel_error_reports)
+            @test is_concrete(vmod, :gettpl)
+        end
+
+        let (vmod, res) = @analyze_toplevel2 let
+                N = 10
+                ary = Vector{Any}(undef, N)
+                for i in 1:N
+                    ary[i] = i
+                end
+                tpl = (ary...,)
+                @eval gettpl() = $tpl # `tpl` here should be fully concretized
+            end
+            @test isempty(res.res.toplevel_error_reports)
+            @test is_concrete(vmod, :gettpl)
+        end
+
+        let s = mktemp() do path, io
+                redirect_stdout(io) do
+                    vmod, res = @analyze_toplevel2 let
+                        N = 10
+                        tpl1 = (Any[i for i in 1:N]...,)
+                        tpl2 = (Any[println(i) for i in 1:N]...,)
+                        @eval gettpl1() = $tpl1 # `tpl` here should be fully concretized
+                    end
+                    @test isempty(res.res.toplevel_error_reports)
+                    @test is_concrete(vmod, :gettpl1)
+                end
+                flush(io)
+                read(path, String)
+            end
+            @test isempty(s)
         end
     end
 

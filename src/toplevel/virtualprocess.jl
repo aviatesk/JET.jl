@@ -309,14 +309,6 @@ struct ToplevelConfig
 end
 
 default_concretization_patterns() = (
-    # `@enum` macro is fairly complex and especially the `let insts = (Any[ $(esc(typename))(v) for v in $values ]...,)`
-    # (adapted from https://github.com/JuliaLang/julia/blob/e5d7ef01b06f44cb75c871e54c81eb92eceae738/base/Enums.jl#L198)
-    # part requires the statement selection logic to choose statements that only
-    # pushes elements (`v`) into a slot representing an array (`insts`),
-    # which is very hard to be generalized;
-    # here we add them as pre-defined concretization patterns and make sure
-    # false positive top-level errors won't happen by the macro expansion
-    :(@enum(args__)), :(Base.@enum(args__)),
     # concretize type aliases
     # https://github.com/aviatesk/JET.jl/issues/237
     :(const T_ = U_{P__}), :(T_ = U_{P__}),
@@ -1141,26 +1133,48 @@ function add_control_flow!(concretize::BitVector, src::CodeInfo, cfg::CFG)
     return changed
 end
 
-# TODO implement these prototypes and support a following pattern:
-# N = 10
-# let tpl = ([i for i in 1:N]...,)
-#     @eval gettpl() = $tpl # `tpl` here should be fully concretized
-# end
+function add_required_inplace!(concretize::BitVector, src::CodeInfo, edges)
+    changed = false
+    for i = 1:length(src.code)
+        stmt = src.code[i]
+        if isexpr(stmt, :call)
+            func = stmt.args[1]
+            if (callee_matches(func, Base, :push!) ||
+                callee_matches(func, Base, :pop!) ||
+                callee_matches(func, Base, :empty!) ||
+                callee_matches(func, Base, :setindex!))
+                if length(stmt.args) ≥ 2
+                    arg2 = stmt.args[2]
+                    if arg2 isa SSAValue
+                        if concretize[arg2.id] || any(@view concretize[edges.preds[arg2.id]])
+                            concretize[i] = true
+                            changed = true
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return changed
+end
 
-function select_dependencies!(concretize, src, edges)
-    # discover struct/method definitions at the beginning
+function select_dependencies!(concretize::BitVector, src::CodeInfo, edges)
+    # discover struct/method definitions at the beginning,
+    # and propagate the definition requirements by tracking SSA precedessors
     typedefs = LoweredCodeUtils.find_typedefs(src)
     LoweredCodeUtils.add_typedefs!(concretize, src, edges, typedefs, ())
+    add_ssa_preds!(concretize, src, edges, ())
 
-    # propagate the definition requirements by tracking SSA precedessors
-    LoweredCodeUtils.add_ssa_preds!(concretize, src, edges, ())
+    # mark some common inplace operations like `push!(x, ...)` and `setindex!(x, ...)`
+    # when `x` has been marked already: otherwise we may end up using it with invalid state
+    add_required_inplace!(concretize, src, edges)
+    add_ssa_preds!(concretize, src, edges, ())
 
-    # mark necessary control flows
+    # mark necessary control flows,
+    # and propagate the definition requirements by tracking SSA precedessors
     cfg = CC.compute_basic_blocks(src.code)
     add_control_flow!(concretize, src, cfg)
-
-    # propagate the control flow requirements by tracking SSA precedessors
-    LoweredCodeUtils.add_ssa_preds!(concretize, src, edges, ())
+    add_ssa_preds!(concretize, src, edges, ())
 end
 
 function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node), istoplevel::Bool)
