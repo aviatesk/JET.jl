@@ -1945,8 +1945,9 @@ end
                 redirect_stdout(io) do
                     vmod, res = @analyze_toplevel2 let
                         N = 10
+                        S = "This should not be printed\n"
                         tpl1 = (Any[i for i in 1:N]...,)
-                        tpl2 = (Any[println(i) for i in 1:N]...,)
+                        tpl2 = (Any[print(i) for i in S]...,)
                         @eval gettpl1() = $tpl1 # `tpl` here should be fully concretized
                     end
                     @test isempty(res.res.toplevel_error_reports)
