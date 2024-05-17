@@ -1043,13 +1043,14 @@ end
 # select statements that should be concretized, and actually interpreted rather than abstracted
 function select_statements(src::CodeInfo)
     stmts = src.code
-    edges = LoweredCodeUtils.CodeEdges(src)
+    cl = LoweredCodeUtils.CodeLinks(src) # make `CodeEdges` hold `CodeLinks`?
+    edges = LoweredCodeUtils.CodeEdges(src, cl)
 
     concretize = falses(length(stmts))
 
     select_direct_requirement!(concretize, stmts, edges)
 
-    select_dependencies!(concretize, src, edges)
+    select_dependencies!(concretize, src, edges, cl)
 
     return concretize
 end
@@ -1145,7 +1146,7 @@ function add_control_flow!(concretize::BitVector, src::CodeInfo, cfg::CFG)
     return changed
 end
 
-function add_required_inplace!(concretize::BitVector, src::CodeInfo, edges)
+function add_required_inplace!(concretize::BitVector, src::CodeInfo, edges, cl)
     changed = false
     for i = 1:length(src.code)
         stmt = src.code[i]
@@ -1156,12 +1157,9 @@ function add_required_inplace!(concretize::BitVector, src::CodeInfo, edges)
                 callee_matches(func, Base, :empty!) ||
                 callee_matches(func, Base, :setindex!))
                 if length(stmt.args) ≥ 2
-                    arg2 = stmt.args[2]
-                    if arg2 isa SSAValue
-                        if concretize[arg2.id] || any(@view concretize[edges.preds[arg2.id]])
-                            if !concretize[i]
-                                changed = concretize[i] = true
-                            end
+                    if is_required(stmt.args[2], concretize, edges, cl)
+                        if !concretize[i]
+                            changed = concretize[i] = true
                         end
                     end
                 end
@@ -1170,8 +1168,18 @@ function add_required_inplace!(concretize::BitVector, src::CodeInfo, edges)
     end
     return changed
 end
+# check if the first argument is requested to be concretized
+function is_required(@nospecialize(arg), concretize, edges, cl)
+    if arg isa SSAValue
+        return concretize[arg.id] || any(@view concretize[edges.preds[arg.id]])
+    elseif arg isa SlotNumber
+        return any(@view concretize[cl.slotassigns[arg.id]])
+    else
+        return false
+    end
+end
 
-function select_dependencies!(concretize::BitVector, src::CodeInfo, edges)
+function select_dependencies!(concretize::BitVector, src::CodeInfo, edges, cl)
     typedefs = LoweredCodeUtils.find_typedefs(src)
     cfg = CC.compute_basic_blocks(src.code)
 
@@ -1185,7 +1193,7 @@ function select_dependencies!(concretize::BitVector, src::CodeInfo, edges)
 
         # mark some common inplace operations like `push!(x, ...)` and `setindex!(x, ...)`
         # when `x` has been marked already: otherwise we may end up using it with invalid state
-        changed |= add_required_inplace!(concretize, src, edges)
+        changed |= add_required_inplace!(concretize, src, edges, cl)
         changed |= add_ssa_preds!(concretize, src, edges, ())
 
         # mark necessary control flows,

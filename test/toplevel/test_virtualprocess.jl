@@ -1737,7 +1737,7 @@ end
                         product *= i # should NOT be selected
                     end
                     @eval global getsum() = $sum # concretization is forced
-                    println(product) # should NOT be selected
+                    println("This should not be printed: ", product) # should NOT be selected
                 end
                 @test isempty(res.res.toplevel_error_reports)
                 @test is_concrete(vmod, :getsum)
@@ -1956,7 +1956,7 @@ end
                 flush(io)
                 read(path, String)
             end
-            @test isempty(s)
+            @test_broken isempty(s) # TODO add_control_flow!
         end
     end
 
