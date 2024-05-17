@@ -1682,6 +1682,7 @@ end
     # simple negative case test, which checks we do NOT select statements not involved with any definition
     # this particular example is adapted from https://en.wikipedia.org/wiki/Program_slicing
     let src = @src let
+            N = 10
             sum = 0
             product = 1 # should NOT be selected
             w = 7
@@ -1694,7 +1695,7 @@ end
         end
         slice = JET.select_statements(src)
 
-        found_w = found_sum = found_product = found_write = false
+        found_N = found_sum = found_product = found_w = found_write = false
         for (i, stmt) in enumerate(src.code)
             if JET.isexpr(stmt, :(=))
                 lhs, rhs = stmt.args
@@ -1705,6 +1706,9 @@ end
                     elseif src.slotnames[lhs.id] === :sum
                         found_sum = true
                         @test slice[i]
+                    elseif src.slotnames[lhs.id] === :N
+                        found_N = true
+                        @test slice[i]
                     elseif src.slotnames[lhs.id] === :product
                         found_product = true
                         @test !slice[i]
@@ -1713,14 +1717,39 @@ end
             elseif JET.@capture(stmt, write(x_))
                 found_write = true
                 @test !slice[i]
+            elseif (JET.isexpr(stmt, :call) && (arg1 = stmt.args[1]; arg1 isa Core.SSAValue) &&
+                src.code[arg1.id] === :write)
+                found_write = true
+                @test !slice[i]
             end
         end
-        @test found_w; @test found_sum; @test found_product; @test found_write
+        @test found_N; @test found_sum; @test found_product; @test found_w; @test found_write
+    end
+    let s = mktemp() do path, io # high level test
+            redirect_stdout(io) do
+                vmod, res = @analyze_toplevel2 let
+                    N = 10
+                    sum = 0
+                    product = 1 # should NOT be selected
+                    w = 7
+                    for i in 1:N
+                        sum += i + w
+                        product *= i # should NOT be selected
+                    end
+                    @eval global getsum() = $sum # concretization is forced
+                    println("This should not be printed: ", product) # should NOT be selected
+                end
+                @test isempty(res.res.toplevel_error_reports)
+                @test is_concrete(vmod, :getsum)
+            end
+            flush(io)
+            read(path, String)
+        end
+        @test isempty(s)
     end
 
     @testset "captured variables" begin
-        let
-            vmod, res = @analyze_toplevel2 begin
+        let (vmod, res) = @analyze_toplevel2 begin
                 begin
                     s = join(rand(Char, 100))
                     foo() = return s
@@ -1731,8 +1760,7 @@ end
         end
 
         # captured variables for global functions
-        let
-            # XXX `s` below aren't necessarily concretized, but concretization of `foo` requires
+        let # XXX `s` below aren't necessarily concretized, but concretization of `foo` requires
             # it (since `s` will be embedded into `foo`'s body wrapped in `QuoteNode`)
             # and thus we can't abstract it away as far as we depend on JuliaInterpreter ...
             vmod, res = @analyze_toplevel2 let
@@ -1774,8 +1802,7 @@ end
     # with those macros
     @testset "try/catch control flow" begin
         # https://github.com/aviatesk/JET.jl/issues/150
-        let
-            res = @analyze_toplevel analyze_from_definitions=true try
+        let res = @analyze_toplevel analyze_from_definitions=true try
                 foo(a) = sum(a) # essentially same as inner function, should be concretized
                 foo("julia") # shouldn't be concretized
             catch err
@@ -1788,8 +1815,7 @@ end
         end
 
         # captured variables within a try clause
-        let
-            res = @analyze_toplevel analyze_from_definitions=true try
+        let res = @analyze_toplevel analyze_from_definitions=true try
                 s = "julia"
                 foo(f) = f(s) # should be concretized
                 foo(sum) # shouldn't be concretized
@@ -1803,8 +1829,7 @@ end
         end
 
         # captured variables within a catch clause
-        let
-            res = @analyze_toplevel analyze_from_definitions=true try
+        let res = @analyze_toplevel analyze_from_definitions=true try
                 s = "julia"
                 foo(f) = f(s) # should be concretized
                 foo(sum) # shouldn't be concretized
@@ -1828,8 +1853,7 @@ end
         # I include this case just for the reference and won't expect this to work robustly
         # since it heavily depends on Julia's AST lowering and the implementation detail of
         # JuliaInterpreter.jl
-        let
-            vmod, res = @analyze_toplevel2 try
+        let (vmod, res) = @analyze_toplevel2 try
                 s = "julia"
                 foo(f) = f(s) # should be concretized
                 foo(sum) # shouldn't be concretized
@@ -1891,6 +1915,48 @@ end
             @test is_concrete(vmod, :isfoo)
             @test is_concrete(vmod, :isbar)
             @test is_concrete(vmod, :isbaz)
+        end
+    end
+
+    @testset "concretize inplace operations" begin
+        let (vmod, res) = @analyze_toplevel2 let
+                N = 10
+                tpl = (Any[i for i in 1:N]...,)
+                @eval gettpl() = $tpl # `tpl` here should be fully concretized
+            end
+            @test isempty(res.res.toplevel_error_reports)
+            @test is_concrete(vmod, :gettpl)
+        end
+
+        let (vmod, res) = @analyze_toplevel2 let
+                N = 10
+                ary = Vector{Any}(undef, N)
+                for i in 1:N
+                    ary[i] = i
+                end
+                tpl = (ary...,)
+                @eval gettpl() = $tpl # `tpl` here should be fully concretized
+            end
+            @test isempty(res.res.toplevel_error_reports)
+            @test is_concrete(vmod, :gettpl)
+        end
+
+        let s = mktemp() do path, io
+                redirect_stdout(io) do
+                    vmod, res = @analyze_toplevel2 let
+                        N = 10
+                        S = "This should not be printed\n"
+                        tpl1 = (Any[i for i in 1:N]...,)
+                        tpl2 = (Any[print(i) for i in S]...,)
+                        @eval gettpl1() = $tpl1 # `tpl` here should be fully concretized
+                    end
+                    @test isempty(res.res.toplevel_error_reports)
+                    @test is_concrete(vmod, :gettpl1)
+                end
+                flush(io)
+                read(path, String)
+            end
+            @test_broken isempty(s) # TODO add_control_flow!
         end
     end
 

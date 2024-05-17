@@ -309,14 +309,6 @@ struct ToplevelConfig
 end
 
 default_concretization_patterns() = (
-    # `@enum` macro is fairly complex and especially the `let insts = (Any[ $(esc(typename))(v) for v in $values ]...,)`
-    # (adapted from https://github.com/JuliaLang/julia/blob/e5d7ef01b06f44cb75c871e54c81eb92eceae738/base/Enums.jl#L198)
-    # part requires the statement selection logic to choose statements that only
-    # pushes elements (`v`) into a slot representing an array (`insts`),
-    # which is very hard to be generalized;
-    # here we add them as pre-defined concretization patterns and make sure
-    # false positive top-level errors won't happen by the macro expansion
-    :(@enum(args__)), :(Base.@enum(args__)),
     # concretize type aliases
     # https://github.com/aviatesk/JET.jl/issues/237
     :(const T_ = U_{P__}), :(T_ = U_{P__}),
@@ -1051,23 +1043,24 @@ end
 # select statements that should be concretized, and actually interpreted rather than abstracted
 function select_statements(src::CodeInfo)
     stmts = src.code
-    edges = LoweredCodeUtils.CodeEdges(src)
+    cl = LoweredCodeUtils.CodeLinks(src) # make `CodeEdges` hold `CodeLinks`?
+    edges = LoweredCodeUtils.CodeEdges(src, cl)
 
     concretize = falses(length(stmts))
 
     select_direct_requirement!(concretize, stmts, edges)
 
-    select_dependencies!(concretize, src, edges)
+    select_dependencies!(concretize, src, edges, cl)
 
     return concretize
 end
 
 function select_direct_requirement!(concretize, stmts, edges)
-    for (i, stmt) in enumerate(stmts)
+    for (idx, stmt) in enumerate(stmts)
         if (LoweredCodeUtils.ismethod(stmt) ||    # don't abstract away method definitions
             LoweredCodeUtils.istypedef(stmt) ||   # don't abstract away type definitions
             ismoduleusage(stmt)) # module usages are handled by `ConcreteInterpreter`
-            concretize[i] = true
+            concretize[idx] = true
             continue
         end
 
@@ -1075,17 +1068,26 @@ function select_direct_requirement!(concretize, stmts, edges)
             lhs, rhs = stmt.args
             stmt = rhs
         end
-        if isexpr(stmt, :call)
-            if is_known_call(stmt, :include, stmts)
-                # `include` calls are special cased
-                select_stmt_requirement!(concretize, i, edges)
-                continue
-            elseif is_known_call(stmt, :eval, stmts)
-                # analysis of `eval` calls are difficult, let's give up it and just evaluate
-                # toplevel `eval` calls; they may contain toplevel definitions
-                select_stmt_requirement!(concretize, i, edges)
-                continue
-            end
+        # `include` calls are special cased
+        if is_known_call(stmt, :include, stmts)
+            concretize[idx] = true
+        elseif is_known_getproperty(stmt, :include, stmts)
+            # this is something like:
+            # ```
+            # %1 = getproperty(Base, :include)
+            # ...
+            # %x = Expr(:call, %1, ...)
+            # ```
+            # so require `%x` too
+            concretize[idx] = true
+            concretize[edges.succs[idx]] .= true
+        # `eval` calls are difficult to analyze, but since they may contain toplevel
+        # definitions, JET just concretizes them always
+        elseif is_known_call(stmt, :eval, stmts)
+            concretize[idx] = true
+        elseif is_known_getproperty(stmt, :eval, stmts)
+            concretize[idx] = true
+            concretize[edges.succs[idx]] .= true
         end
     end
 end
@@ -1093,106 +1095,113 @@ end
 # adapted from
 # - https://github.com/timholy/Revise.jl/blob/266ed68d7dd3bea67c39f96513cda30bbcd7d441/src/lowered.jl#L53
 # - https://github.com/timholy/Revise.jl/blob/266ed68d7dd3bea67c39f96513cda30bbcd7d441/src/lowered.jl#L87-L88
-function is_known_call(stmt::Expr, func::Symbol, stmts::Vector{Any})
+function is_known_call(@nospecialize(stmt), func::Symbol, stmts::Vector{Any})
+    isexpr(stmt, :call) || return false
     f = stmt.args[1]
     if f isa SSAValue
         f = stmts[f.id]
     end
     isa(f, Symbol) && f === func && return true
     isa(f, GlobalRef) && f.name === func && return true
-    callee_matches(f, Base, :getproperty) &&
-        is_quotenode_egal(stmt.args[end], func) && return true
-    callee_matches(f, Core, :getproperty) &&
-        is_quotenode_egal(stmt.args[end], func) && return true
-    callee_matches(f, Core.Compiler, :getproperty) &&
-        is_quotenode_egal(stmt.args[end], func) && return true
+    return false
+end
+function is_known_getproperty(@nospecialize(stmt), func::Symbol, stmts::Vector{Any})
+    isexpr(stmt, :call) || return false
+    f = stmt.args[1]
+    if f isa SSAValue
+        f = stmts[f.id]
+    end
+    callee_matches(f, Base, :getproperty) && length(stmt.args) ≥ 3 &&
+        is_quotenode_egal(stmt.args[3], func) && return true
+    callee_matches(f, Core, :getproperty) && length(stmt.args) ≥ 3 &&
+        is_quotenode_egal(stmt.args[3], func) && return true
+    callee_matches(f, Core.Compiler, :getproperty) && length(stmt.args) ≥ 3 &&
+        is_quotenode_egal(stmt.args[3], func) && return true
     return false
 end
 
-# statement `idx` may be the equivalent of `f = known_call`, so require each
-# stmt that calls `known_call` via `f(expr)`
-function select_stmt_requirement!(concretize, idx, edges)
-    concretize[edges.succs[idx]] .= true
-    concretize[idx] = true
-end
-
-# TODO implement these prototypes and support a following pattern:
-# N = 10
-# let tpl = ([i for i in 1:N]...,)
-#     @eval gettpl() = $tpl # `tpl` here should be fully concretized
-# end
-function find_iterblocks(src) end
-function add_iterblocks!(cocretize, src, edges, iterblocks) end
-
-# implementation of https://github.com/aviatesk/JET.jl/issues/196
-function select_dependencies!(concretize, src, edges)
-    # find statement sets that come from iteration/iterator protocol
-    # TODO iterblocks = find_iterblocks(src)
-
-    # We'll mostly use generic graph traversal to discover all the lines we need,
-    # but structs are in a bit of a different category (especially on Julia 1.5+).
-    # It's easiest to discover these at the beginning.
-    typedefs = LoweredCodeUtils.find_typedefs(src)
-
-    changed = true
-    while changed
-        changed = false
-
-        # track SSA predecessors of initial requirements
-        changed |= LoweredCodeUtils.add_ssa_preds!(concretize, src, edges, ())
-
-        # add some domain-specific information
-        # TODO changed |= add_iterblocks!(concretized, src, edges, iterblocks)
-        changed |= LoweredCodeUtils.add_typedefs!(concretize, src, edges, typedefs, ())
-    end
-
-    # find a loop region and check if any of the requirements discovered so far is involved
-    # within it, and if require everything involved with the loop in order to properly
-    # concretize the requirement — "require everything involved with the loop" means we will
-    # care about "strongly connected components" rather than "cycles" of a directed graph, and
-    # strongly connected components detection runs in linear time ``O(|V|+|E|)`` as opposed to
-    # cycle detection, whose worst time complexity is exponential with the number of vertices,
-    # and thus the analysis here should terminate in reasonable time even with a fairly
-    # complex control flow graph
-    cfg = CC.compute_basic_blocks(src.code)
-    loops = filter!(>(1)∘length, strongly_connected_components(cfg))
-
-    critical_blocks = BitSet()
-    for (i, block) in enumerate(cfg.blocks)
-        if any(view(concretize, block.stmts))
-            for loop in loops
-                if i in loop
-                    push!(critical_blocks, i)
-                    for j in loop
-                        push!(critical_blocks, j)
+function add_control_flow!(concretize::BitVector, src::CodeInfo, cfg::CFG)
+    changed = false
+    nblocks = length(cfg.blocks)
+    for i = 1:nblocks
+        bb = cfg.blocks[nblocks-i+1]
+        if any(@view concretize[bb.stmts])
+            for pred = bb.preds
+                if pred == 0
+                    # this is a exception handler block, and it has a virtual predecessor
+                    # edge from the outside callee function
+                    continue
+                end
+                predbb = cfg.blocks[pred]
+                terminator_idx = predbb.stmts[end]
+                terminator = src.code[terminator_idx]
+                if terminator isa GotoNode || terminator isa GotoIfNot # COMBAK GotoNode does not need to be marked here?
+                    if !concretize[terminator_idx]
+                        changed = concretize[terminator_idx] = true
                     end
                 end
             end
         end
     end
-    for loop in loops
-        if any(in(critical_blocks), loop)
-            for j in loop
-                push!(critical_blocks, j)
+    return changed
+end
+
+function add_required_inplace!(concretize::BitVector, src::CodeInfo, edges, cl)
+    changed = false
+    for i = 1:length(src.code)
+        stmt = src.code[i]
+        if isexpr(stmt, :call)
+            func = stmt.args[1]
+            if (callee_matches(func, Base, :push!) ||
+                callee_matches(func, Base, :pop!) ||
+                callee_matches(func, Base, :empty!) ||
+                callee_matches(func, Base, :setindex!))
+                if length(stmt.args) ≥ 2
+                    if is_required(stmt.args[2], concretize, edges, cl)
+                        if !concretize[i]
+                            changed = concretize[i] = true
+                        end
+                    end
+                end
             end
-            # push!(critical_blocks, minimum(loop) - 1)
         end
     end
-
-    norequire = BitSet()
-    for (i, block) in enumerate(cfg.blocks)
-        if i ∉ critical_blocks
-            LoweredCodeUtils.pushall!(norequire, LoweredCodeUtils.rng(block))
-        end
+    return changed
+end
+# check if the first argument is requested to be concretized
+function is_required(@nospecialize(arg), concretize, edges, cl)
+    if arg isa SSAValue
+        return concretize[arg.id] || any(@view concretize[edges.preds[arg.id]])
+    elseif arg isa SlotNumber
+        return any(@view concretize[cl.slotassigns[arg.id]])
+    else
+        return false
     end
+end
 
-    changed = true
-    while changed
+function select_dependencies!(concretize::BitVector, src::CodeInfo, edges, cl)
+    typedefs = LoweredCodeUtils.find_typedefs(src)
+    cfg = CC.compute_basic_blocks(src.code)
+
+    while true
         changed = false
 
-        # track SSA predecessors and control flows of the critical blocks
-        changed |= LoweredCodeUtils.add_ssa_preds!(concretize, src, edges, norequire)
-        changed |= LoweredCodeUtils.add_control_flow!(concretize, cfg, norequire)
+        # discover struct/method definitions at the beginning,
+        # and propagate the definition requirements by tracking SSA precedessors
+        changed |= LoweredCodeUtils.add_typedefs!(concretize, src, edges, typedefs, ())
+        changed |= add_ssa_preds!(concretize, src, edges, ())
+
+        # mark some common inplace operations like `push!(x, ...)` and `setindex!(x, ...)`
+        # when `x` has been marked already: otherwise we may end up using it with invalid state
+        changed |= add_required_inplace!(concretize, src, edges, cl)
+        changed |= add_ssa_preds!(concretize, src, edges, ())
+
+        # mark necessary control flows,
+        # and propagate the definition requirements by tracking SSA precedessors
+        changed |= add_control_flow!(concretize, src, cfg)
+        changed |= add_ssa_preds!(concretize, src, edges, ())
+
+        changed || break
     end
 end
 

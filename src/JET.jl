@@ -47,7 +47,7 @@ using Base.Meta: ParseError, isexpr, lower
 
 using Base.Experimental: @MethodTable, @overlay
 
-using LoweredCodeUtils: LoweredCodeUtils, callee_matches
+using LoweredCodeUtils: LoweredCodeUtils, add_ssa_preds!, callee_matches
 
 using JuliaInterpreter: _INACTIVE_EXCEPTION, Frame, JuliaInterpreter, is_quotenode_egal
 
@@ -307,8 +307,6 @@ include("abstractinterpret/abstractanalyzer.jl")
 include("abstractinterpret/typeinfer.jl")
 
 function print_report end
-
-include("toplevel/graph.jl")
 
 const JULIA_SYNTAX_ENABLED = !(Base.get_bool_env("JULIA_USE_FLISP_PARSER", false))
 
