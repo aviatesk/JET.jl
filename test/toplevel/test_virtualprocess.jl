@@ -1956,7 +1956,7 @@ end
                 flush(io)
                 read(path, String)
             end
-            @test_broken isempty(s) # TODO add_control_flow!
+            @test isempty(s)
         end
     end
 
