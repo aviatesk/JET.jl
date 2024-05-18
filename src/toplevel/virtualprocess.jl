@@ -1202,7 +1202,7 @@ function add_required_inplace!(concretize::BitVector, src::CodeInfo, edges, cl)
                 callee_matches(func, Base, :empty!) ||
                 callee_matches(func, Base, :setindex!))
                 if length(stmt.args) ≥ 2
-                    if is_required(stmt.args[2], concretize, edges, cl)
+                    if is_arg_requested(stmt.args[2], concretize, edges, cl)
                         if !concretize[i]
                             changed = concretize[i] = true
                         end
@@ -1214,7 +1214,7 @@ function add_required_inplace!(concretize::BitVector, src::CodeInfo, edges, cl)
     return changed
 end
 # check if the first argument is requested to be concretized
-function is_required(@nospecialize(arg), concretize, edges, cl)
+function is_arg_requested(@nospecialize(arg), concretize, edges, cl)
     if arg isa SSAValue
         return concretize[arg.id] || any(@view concretize[edges.preds[arg.id]])
     elseif arg isa SlotNumber
