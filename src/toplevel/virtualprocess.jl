@@ -1120,31 +1120,76 @@ function is_known_getproperty(@nospecialize(stmt), func::Symbol, stmts::Vector{A
     return false
 end
 
-function add_control_flow!(concretize::BitVector, src::CodeInfo, cfg::CFG)
-    changed = false
+# The goal of this function is to request concretization of the minimal necessary control
+# flow to evaluate statements whose concretization have already been requested.
+# The basic approach is to check if there are any active successors for each basic block,
+# and if there is an active successor and the terminator is not a fall-through, then request
+# the concretization of that terminator. Additionally, for conditional terminators, a simple
+# optimization using post-domination analysis is also performed.
+function add_control_flow!(concretize::BitVector, src::CodeInfo, cfg::CFG, postdomtree)
+    local changed::Bool = false
+    function mark_concretize!(idx::Int)
+        if !concretize[idx]
+            concretize[idx] = true
+            return true
+        end
+        return false
+    end
     nblocks = length(cfg.blocks)
-    for i = 1:nblocks
-        bb = cfg.blocks[nblocks-i+1]
-        if any(@view concretize[bb.stmts])
-            for pred = bb.preds
-                if pred == 0
-                    # this is a exception handler block, and it has a virtual predecessor
-                    # edge from the outside callee function
-                    continue
+    for bbidx = 1:nblocks
+        bb = cfg.blocks[bbidx] # forward traversal
+        nsuccs = length(bb.succs)
+        if nsuccs == 0
+            continue
+        elseif nsuccs == 1
+            terminator_idx = bb.stmts[end]
+            if src.code[terminator_idx] isa GotoNode
+                # If the destination of this `GotoNode` is not active, it's fine to ignore
+                # the control flow caused by this `GotoNode` and treat it as a fall-through.
+                # If the block that is fallen through to is active and has a dependency on
+                # this goto block, then the concretization of this goto block should already
+                # be requested (at some point of the higher concretization convergence cycle
+                # of `select_dependencies`), and thus, this `GotoNode` will be concretized.
+                if any(@view concretize[cfg.blocks[only(bb.succs)].stmts])
+                    changed |= mark_concretize!(terminator_idx)
                 end
-                predbb = cfg.blocks[pred]
-                terminator_idx = predbb.stmts[end]
-                terminator = src.code[terminator_idx]
-                if terminator isa GotoNode || terminator isa GotoIfNot # COMBAK GotoNode does not need to be marked here?
-                    if !concretize[terminator_idx]
-                        changed = concretize[terminator_idx] = true
-                    end
+            end
+        elseif nsuccs == 2
+            terminator_idx = bb.stmts[end]
+            @assert is_conditional_terminator(src.code[terminator_idx]) "invalid IR"
+            succ1, succ2 = bb.succs
+            succ1_req = any(@view concretize[cfg.blocks[succ1].stmts])
+            succ2_req = any(@view concretize[cfg.blocks[succ2].stmts])
+            if succ1_req
+                if succ2_req
+                    changed |= mark_concretize!(terminator_idx)
+                else
+                    active_bb, inactive_bb = succ1, succ2
+                    @goto asymmetric_case
                 end
+            elseif succ2_req
+                active_bb, inactive_bb = succ2, succ1
+                @label asymmetric_case
+                # We can ignore the control flow of this conditional terminator and treat
+                # it as a fall-through if only one of its successors is active and the
+                # active block post-dominates the inactive one, since the post-domination
+                # ensures that the active basic block will be reached regardless of the
+                # control flow.
+                if CC.postdominates(postdomtree, active_bb, inactive_bb)
+                    # fall through this block
+                else
+                    changed |= mark_concretize!(terminator_idx)
+                end
+            else
+                # both successors are inactive, just fall through this block
             end
         end
     end
     return changed
 end
+
+is_conditional_terminator(@nospecialize stmt) = stmt isa GotoIfNot ||
+    isexpr(stmt, :enter) || (@static isdefined(Core.IR, :EnterNode) && stmt isa Core.IR.EnterNode)
 
 function add_required_inplace!(concretize::BitVector, src::CodeInfo, edges, cl)
     changed = false
@@ -1182,6 +1227,7 @@ end
 function select_dependencies!(concretize::BitVector, src::CodeInfo, edges, cl)
     typedefs = LoweredCodeUtils.find_typedefs(src)
     cfg = CC.compute_basic_blocks(src.code)
+    postdomtree = CC.construct_postdomtree(cfg.blocks)
 
     while true
         changed = false
@@ -1198,7 +1244,7 @@ function select_dependencies!(concretize::BitVector, src::CodeInfo, edges, cl)
 
         # mark necessary control flows,
         # and propagate the definition requirements by tracking SSA precedessors
-        changed |= add_control_flow!(concretize, src, cfg)
+        changed |= add_control_flow!(concretize, src, cfg, postdomtree)
         changed |= add_ssa_preds!(concretize, src, edges, ())
 
         changed || break
