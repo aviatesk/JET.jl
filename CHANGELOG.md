@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.9.0]
 
 ### Added
 
@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Revise.jl-related features are now implemented as a package extension, so in order to use
   `watch_file`, you need to load Revise.jl into your session first
   (aviatesk/JET.jl#624, aviatesk/JET.jl#625).
+- The compatibility with LoweredCodeUtils has been raised to version 2.4 and later, so it's
+  now possible to use the latest version of Revise with JET again. Additionally, the
+  top-level statement selection algorithm internally used by top-level analysis functions
+  like `report_file` has been significantly improved.
 
 ## [0.8.9]
 
