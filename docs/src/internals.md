@@ -16,21 +16,13 @@ Most overloads use the [`invoke`](https://docs.julialang.org/en/v1/base/base/#Co
 `AbstractAnalyzer` to dispatch to the original `AbstractInterpreter`'s abstract interpretation methods while still
 passing `AbstractAnalyzer` to the subsequent (maybe overloaded) callees.
 
-```@docs
-JET.AnalysisResult
-JET.islineage
-JET.bail_out_toplevel_call
-JET.bail_out_call
-JET.add_call_backedges!
-JET.analyze_task_parallel_code!
-```
-
 ### How `AbstractAnalyzer` manages caches
 
 ```@docs
-JET.AnalysisCache
+JET.AnalysisResult
 JET.CachedAnalysisResult
-JET.inlining_policy
+JET.AnalysisCache
+Core.Compiler.inlining_policy
 ```
 
 ## [Top-level Analysis](@id toplevel)
