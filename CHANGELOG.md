@@ -238,8 +238,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- links -->
 
-[unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.8.9...HEAD
-[0.8.8]: https://github.com/aviatesk/JET.jl/compare/v0.8.8...v0.8.9
+[unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/aviatesk/JET.jl/compare/v0.8.29...v0.9.0
+[0.8.9]: https://github.com/aviatesk/JET.jl/compare/v0.8.8...v0.8.9
 [0.8.8]: https://github.com/aviatesk/JET.jl/compare/v0.8.7...v0.8.8
 [0.8.7]: https://github.com/aviatesk/JET.jl/compare/v0.8.6...v0.8.7
 [0.8.6]: https://github.com/aviatesk/JET.jl/compare/v0.8.5...v0.8.6
