@@ -1189,7 +1189,7 @@ function add_control_flow!(concretize::BitVector, src::CodeInfo, cfg::CFG, postd
 end
 
 is_conditional_terminator(@nospecialize stmt) = stmt isa GotoIfNot ||
-    isexpr(stmt, :enter) || (@static isdefined(Core.IR, :EnterNode) && stmt isa Core.IR.EnterNode)
+    (@static @isdefined(EnterNode) ? stmt isa EnterNode : isexpr(stmt, :enter))
 
 function add_required_inplace!(concretize::BitVector, src::CodeInfo, edges, cl)
     changed = false
