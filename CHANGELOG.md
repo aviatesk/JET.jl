@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1]
+
+### Fixed
+
+- Fixed the issue where the line numbers of methods whose locations were revised by Revise
+  were not being updated (aviatesk/JET.jl#513).
+
 ## [0.9.0]
 
 ### Added
@@ -238,7 +245,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- links -->
 
-[unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.9.0...HEAD
+[unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/aviatesk/JET.jl/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/aviatesk/JET.jl/compare/v0.8.29...v0.9.0
 [0.8.9]: https://github.com/aviatesk/JET.jl/compare/v0.8.8...v0.8.9
 [0.8.8]: https://github.com/aviatesk/JET.jl/compare/v0.8.7...v0.8.8
