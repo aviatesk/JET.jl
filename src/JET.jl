@@ -90,7 +90,7 @@ else
     function generating_output(incremental::Union{Bool,Nothing}=nothing)
         ccall(:jl_generating_output, Cint, ()) == 0 && return false
         if incremental !== nothing
-            JLOptions().incremental == incremental || return false
+            Base.JLOptions().incremental == incremental || return false
         end
         return true
     end
