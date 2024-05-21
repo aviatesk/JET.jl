@@ -456,10 +456,10 @@ function InferenceErrorReport() end
 # ----------
 
 """
-    copy_report(report::Report) where Report<:InferenceErrorReport -> new::Report
+    copy_report(orig::Report) where Report<:InferenceErrorReport -> new::Report
 
-Returns new `new::Report`, that should be identical to the original `report::Report`, except
-that `new.vst` is copied from `report.vst` so that the further modification on `report.vst`
+Returns new `new::Report`, that should be identical to the original `orig::Report`, except
+that `new.vst` is copied from `orig.vst` so that the further modification on `orig.vst`
 that may happen in later abstract interpretation doesn't affect `new.vst`.
 """
 @noinline copy_report(report::InferenceErrorReport) = (@nospecialize;
@@ -501,12 +501,12 @@ report_color(::InferenceErrorReport) = ERROR_COLOR
     end
 end
 
-# type stable version (assuming it satisfies the interface correctly)
-function copy_report′(@nospecialize report::InferenceErrorReport)
+# type stable version (assuming all reports satisfy the interface requirements)
+function copy_report_stable(@nospecialize report::InferenceErrorReport)
     @static if JET_DEV_MODE
         new = copy_report(report)
         Report = typeof(report)
-        if !isa(new, Report)
+        if !(new isa Report)
             error(lazy"""
             bad `$InferenceErrorReport` interface:
             `$copy_report(::$Report)` should return new `$Report`.
@@ -514,7 +514,7 @@ function copy_report′(@nospecialize report::InferenceErrorReport)
             """)
         end
         new = new::InferenceErrorReport
-        if report.vst === new.vst && (@static JET_DEV_MODE ? report.vst == new.vst : true)
+        if report.vst === new.vst
             error(lazy"""
             bad `$InferenceErrorReport` interface:
             `$copy_report(report::$Report).vst` should be a copy of `report.vst`.

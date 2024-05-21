@@ -534,7 +534,7 @@ function add_new_report!(analyzer::AbstractAnalyzer, result::InferenceResult, @n
 end
 
 function add_cached_report!(analyzer::AbstractAnalyzer, caller::InferenceResult, @nospecialize(cached::InferenceErrorReport))
-    cached = copy_report′(cached)
+    cached = copy_report_stable(cached)
     push!(get_reports(analyzer, caller), cached)
     return cached
 end
