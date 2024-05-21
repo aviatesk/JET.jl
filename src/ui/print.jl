@@ -237,6 +237,15 @@ function print_frame_loc(io, frame, config, color)
     def = frame.linfo.def
     mod = def isa Module ? def : def.module
     path = String(frame.file)
+    line = frame.line
+    Δline = 0
+    if def isa Method
+        # revise cached line number if method location has been updated
+        newline = CodeTracking.whereis(def)[2]
+        if newline != 0
+            Δline = newline - Int(def.line)
+        end
+    end
     if config.fullpath
         path = tofullpath(path)
     elseif !isabspath(path)
@@ -249,7 +258,7 @@ function print_frame_loc(io, frame, config, color)
     # end
     modulecolor = color
     printstyled(io, mod; color = modulecolor)
-    printstyled(io, ' ', path, ':', frame.line; color)
+    printstyled(io, ' ', path, ':', line+Δline; color)
 end
 
 function print_error_frame(io, report, config, depth)
