@@ -2410,7 +2410,7 @@ end
 
     test_report_package(:(module UninstalledDependency
             using UninstalledDep
-    end)) do res
+        end)) do res
         r = only(res.res.toplevel_error_reports)
         @test isa(r, DependencyError) && r.pkg == "UninstalledDependency" && r.dep == "UninstalledDep"
     end
@@ -2426,9 +2426,10 @@ end
             @load_preference("LoadSubConfig", false)
             const LoadSubConfig = @load_preference("LoadSubConfig", false)
             end
-        end); additional_setup = function ()
+        end);
+        additional_setup = function ()
             Pkg.add("Preferences"; io=devnull)
-    end) do res
+        end) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
@@ -2489,14 +2490,16 @@ end
     test_report_package(:(module Issue542_1
             struct Issue542Typ end
             isa542(x) = x == Issue542Typ() ? true : false
-        end); base_setup=()->nothing) do res
+        end);
+        base_setup=Returns(nothing)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
     test_report_package(:(module Issue542_2
             struct Issue542Typ end
             isa542(x) = x == Issue542Typ() ? true : false
-        end); base_setup=()->nothing,
+        end);
+        base_setup=Returns(nothing),
         ignore_missing_comparison=false) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isa(only(res.res.inference_error_reports), NonBooleanCondErrorReport)
@@ -2505,7 +2508,8 @@ end
     # special cases for `reduce_empty` and `mapreduce_empty`
     test_report_package(:(module ReduceEmpty
             reducer(a::Vector{String}) = maximum(length, a)
-        end); base_setup=()->nothing) do res
+        end);
+        base_setup=Returns(nothing)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
@@ -2541,9 +2545,40 @@ end
     test_report_package(:(module Issue554
             using LinearAlgebra: BLAS.BlasFloat
             issue554(x::BlasFloat) = x
-        end), base_setup=()->Pkg.add("LinearAlgebra", io=devnull)) do res
+        end);
+        base_setup = function ()
+            Pkg.add("LinearAlgebra", io=devnull)
+        end) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
+    end
+
+    # aviatesk/JET.jl#619: allow relative module that is overly deep in a package loading
+    test_report_package(:(module Issue619
+            module Inner
+            abstract type AbstractType619 end
+            end # module Inner
+            using .Inner
+            import ..Inner: AbstractType619 # this line works if loaded as a package
+            struct ConcreteType619 <: AbstractType619 end
+        end)) do res
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
+    end
+    let res = @analyze_toplevel module Issue619
+            module Inner
+            abstract type AbstractType619 end
+            end # module Inner
+            using .Inner
+            import ..Inner: AbstractType619 # this line should error if loaded as a script
+            struct ConcreteType619 <: AbstractType619 end
+        end # module Issue619
+        @test any(res.res.toplevel_error_reports) do r
+            r isa ActualErrorWrapped || return false
+            err = r.err
+            err isa UndefVarError || return false
+            return err.var === :Inner
+        end
     end
 end
 
