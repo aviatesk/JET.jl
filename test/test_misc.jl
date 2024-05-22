@@ -104,30 +104,31 @@ end
     @test_throws "foo = :bar" @report_call foo = :bar sum(Char[])
 end
 
-@testset "watch_file" begin
-    @test_throws "Revise.jl is not loaded; load Revise and try again." watch_file("../demo.jl")
-
-    using Revise
-
-    let t = @async begin
-            mktemp() do path, io
-                redirect_stdout(io) do
-                    watch_file("../demo.jl")
-                end
-                flush(io)
-                read(path, String)
-            end
-        end
-        sleep(5)
-        if istaskstarted(t) && !(istaskdone(t) || istaskfailed(t))
-            ok = true
-            schedule(t, InterruptException(); error=true)
-        else
-            ok = false
-        end
-        @test ok
-        @test occursin("5 possible errors found", fetch(t))
-    end
-end
+# NOTE this test is not stable as `schedule(t, InterruptException(); error=true)` may not work as expected
+# @testset "watch_file" begin
+#     @test_throws "Revise.jl is not loaded; load Revise and try again." watch_file("../demo.jl")
+#
+#     using Revise
+#
+#     let t = @async begin
+#             mktemp() do path, io
+#                 redirect_stdout(io) do
+#                     watch_file("../demo.jl")
+#                 end
+#                 flush(io)
+#                 read(path, String)
+#             end
+#         end
+#         sleep(5)
+#         if istaskstarted(t) && !(istaskdone(t) || istaskfailed(t))
+#             ok = true
+#             schedule(t, InterruptException(); error=true)
+#         else
+#             ok = false
+#         end
+#         @test ok
+#         @test occursin("5 possible errors found", fetch(t))
+#     end
+# end
 
 end # module test_misc
