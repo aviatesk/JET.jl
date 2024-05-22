@@ -120,7 +120,7 @@ These configurations will be active for all the top-level entries explained in t
 
   Note that this module context will be virtualized by default so that JET can repeat analysis
   in the same session without having "invalid redefinition of constant ..." error etc.
-  In other word, JET virtualize the module context of `context` and make sure the original
+  In other word, JET virtualizes the module context of `context` and make sure the original
   module context isn't polluted by JET.
 ---
 - `target_defined_modules::Bool = false` \\
@@ -676,6 +676,28 @@ function _virtual_process!(res::VirtualProcessResult,
                 end
                 fixed_module_usage = ModuleUsage(module_usage; modpath)
                 ex = form_module_usage(fixed_module_usage)
+            elseif dep === :.
+                # The syntax `import ..Submod` refers to the name that is available within
+                # a parent module specified by the number of `.` dots, indicating how many
+                # levels up the module hierarchy to go. However, when it comes to package
+                # loading, it seems to work regardless of the number of dots. For now, in
+                # `report_package`, adjust `modpath` here to mimic the package loading behavior.
+                topmodidx = findfirst(@nospecialize(mp)->mp!==:., modpath)::Int
+                topmodsym = modpath[topmodidx]
+                curmod = mod
+                for i = 1:(topmodidx-1)
+                    if topmodsym isa Symbol && isdefined(curmod, topmodsym)
+                        modpath = modpath[topmodidx:end]
+                        for j = 1:i
+                            pushfirst!(modpath, :.)
+                        end
+                        fixed_module_usage = ModuleUsage(module_usage; modpath)
+                        ex = form_module_usage(fixed_module_usage)
+                        break
+                    else
+                        curmod = parentmodule(curmod)
+                    end
+                end
             end
         end
         # `scrub_offset = 3` corresponds to `with_err_handling` -> `f` -> `Core.eval`
