@@ -2205,14 +2205,16 @@ end
 end
 
 using Pkg
-function test_report_package(test_func, (pkgname, code);
+function test_report_package(test_func, module_ex;
                              base_setup=function ()
                                 Pkg.develop(; path=normpath(FIXTURES_DIR, "PkgAnalysisDep"), io=devnull)
                              end,
                              additional_setup=()->nothing,
                              jetconfigs...)
+    Meta.isexpr(module_ex, :module) || throw(ArgumentError("Expected :module expression"))
+    pkgname = String(module_ex.args[2]::Symbol)
     old = Pkg.project().path
-    pkgcode = Base.remove_linenums!(code)
+    pkgcode = Base.remove_linenums!(module_ex)
     mktempdir() do tempdir
         try
             pkgpath = normpath(tempdir, pkgname)
@@ -2224,7 +2226,6 @@ function test_report_package(test_func, (pkgname, code);
             Pkg.activate(; temp=true, io=devnull)
             Pkg.develop(; path=pkgpath, io=devnull)
 
-            pkgcode = Expr(:module, true, Symbol(pkgname), pkgcode)
             pkgfile = normpath(pkgpath, "src", "$pkgname.jl")
             write(pkgfile, string(pkgcode))
 
@@ -2240,181 +2241,181 @@ function test_report_package(test_func, (pkgname, code);
 end
 
 @testset "package dependency" begin
-    test_report_package("UsingCore" => quote
+    test_report_package(:(module UsingCore
             using Core: Box
             makebox() = Core.Box()
-        end) do res
+        end)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
-    test_report_package("ImportBase" => quote
+    test_report_package(:(module ImportBase
             import Base: show
             struct XXX end
             show(io::IO, ::XXX) = xxx
-        end) do res
+        end)) do res
         @test isempty(res.res.toplevel_error_reports)
         r = only(res.res.inference_error_reports)
         @test isa(r, UndefVarErrorReport) && r.var.name === :xxx
     end
 
-    test_report_package("UsingSimple" => quote
+    test_report_package(:(module UsingSimple
             using PkgAnalysisDep
             callfunc1() = func1()
             callfunc3() = func3()
-        end) do res
+        end)) do res
         @test isempty(res.res.toplevel_error_reports)
         r = only(res.res.inference_error_reports)
         @test isa(r, UndefVarErrorReport) && r.var.name === :func3
     end
-    test_report_package("UsingSpecific" => quote
+    test_report_package(:(module UsingSpecific
             using PkgAnalysisDep: func1
             callfunc1() = func1()
-        end) do res
+        end)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
-    test_report_package("UsingAlias" => quote
+    test_report_package(:(module UsingAlias
             using PkgAnalysisDep: func1 as func
             callfunc1() = func()
-        end) do res
+        end)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
-    test_report_package("UsingInner" => quote
+    test_report_package(:(module UsingInner
             using PkgAnalysisDep.Inner
             callfunc1() = func1()
             callfunc3() = func3()
-        end) do res
+        end)) do res
         @test isempty(res.res.toplevel_error_reports)
         r = only(res.res.inference_error_reports)
         @test isa(r, UndefVarErrorReport) && r.var.name === :func1
     end
-    test_report_package("UsingBlock" => quote
+    test_report_package(:(module UsingBlock
             begin
                 using PkgAnalysisDep
                 callfunc1() = func1()
                 callfunc3() = func3()
             end
-        end) do res
+        end)) do res
         @test isempty(res.res.toplevel_error_reports)
         r = only(res.res.inference_error_reports)
         @test isa(r, UndefVarErrorReport) && r.var.name === :func3
     end
-    test_report_package("UsingBlock" => quote
+    test_report_package(:(module UsingBlock
             global truecond::Bool = true
             if truecond
                 using PkgAnalysisDep
                 callfunc1() = func1()
                 callfunc3() = func3()
             end
-        end) do res
+        end)) do res
         @test isempty(res.res.toplevel_error_reports)
         r = only(res.res.inference_error_reports)
         @test isa(r, UndefVarErrorReport) && r.var.name === :func3
     end
 
-    test_report_package("ImportSimple" => quote
+    test_report_package(:(module ImportSimple
             import PkgAnalysisDep
             callfunc1() = PkgAnalysisDep.func1()
-        end) do res
+        end)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
-    test_report_package("ImportAlias" => quote
+    test_report_package(:(module ImportAlias
             import PkgAnalysisDep as PAD
             callfunc1() = PAD.func1()
-        end) do res
+        end)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
-    test_report_package("ImportInnerAlias" => quote
+    test_report_package(:(module ImportInnerAlias
             import PkgAnalysisDep.Inner as PADI
             callfunc3() = PADI.func3()
-        end) do res
+        end)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
-    test_report_package("ImportSpecific" => quote
+    test_report_package(:(module ImportSpecific
             import PkgAnalysisDep: func1
             callfunc1() = func1()
-        end) do res
+        end)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
-    test_report_package("ImportAlias" => quote
+    test_report_package(:(module ImportAlias
             import PkgAnalysisDep: func1 as func
             callfunc1() = func()
-        end) do res
+        end)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
-    test_report_package("ImportInner" => quote
+    test_report_package(:(module ImportInner
             import PkgAnalysisDep.Inner
             callfunc1() = Inner.func1()
             callfunc3() = Inner.func3()
-        end) do res
+        end)) do res
         @test isempty(res.res.toplevel_error_reports)
         r = only(res.res.inference_error_reports)
         @test isa(r, UndefVarErrorReport) && r.var.name === :func1
     end
-    test_report_package("ImportBlock" => quote
+    test_report_package(:(module ImportBlock
             begin
                 import PkgAnalysisDep
                 callfunc1() = PkgAnalysisDep.func1()
             end
-        end) do res
+        end)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
-    test_report_package("ImportBlock" => quote
+    test_report_package(:(module ImportBlock
             global truecond::Bool = true
             if truecond
                 import PkgAnalysisDep
                 callfunc1() = PkgAnalysisDep.func1()
             end
-        end) do res
+        end)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
 
-    test_report_package("RelativeDependency" => quote
+    test_report_package(:(module RelativeDependency
             import PkgAnalysisDep
             using .PkgAnalysisDep: func2
             callfunc1() = func1()
             callfunc2() = func2()
-        end) do res
+        end)) do res
         @test isempty(res.res.toplevel_error_reports)
         r = only(res.res.inference_error_reports)
         @test isa(r, UndefVarErrorReport) && r.var.name === :func1
     end
-    test_report_package("RelativeInner" => quote
+    test_report_package(:(module RelativeInner
             module Inner
             struct XXX end
             export XXX
             end
             using .Inner
             Base.show(io::IO, ::XXX) = xxx
-        end) do res
+        end)) do res
         @test isempty(res.res.toplevel_error_reports)
         r = only(res.res.inference_error_reports)
         @test isa(r, UndefVarErrorReport) && r.var.name === :xxx
     end
-    test_report_package("BadRelativeInner" => quote
+    test_report_package(:(module BadRelativeInner
             module Inner end
             using Inner # should be `using .Inner`
-        end) do res
+        end)) do res
         r = only(res.res.toplevel_error_reports)
         @test isa(r, DependencyError) && r.pkg == "BadRelativeInner" && r.dep == "Inner"
     end
 
-    test_report_package("UninstalledDependency" => quote
+    test_report_package(:(module UninstalledDependency
             using UninstalledDep
-        end) do res
+    end)) do res
         r = only(res.res.toplevel_error_reports)
         @test isa(r, DependencyError) && r.pkg == "UninstalledDependency" && r.dep == "UninstalledDep"
     end
 
-    test_report_package("LoadPreferences" => quote
+    test_report_package(:(module LoadPreferences
             using Preferences
 
             @load_preference("LoadRootConfig", false)
@@ -2425,14 +2426,14 @@ end
             @load_preference("LoadSubConfig", false)
             const LoadSubConfig = @load_preference("LoadSubConfig", false)
             end
-        end; additional_setup = function ()
+        end); additional_setup = function ()
             Pkg.add("Preferences"; io=devnull)
-        end) do res
+    end) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
 
-    test_report_package("SelfImport1" => quote
+    test_report_package(:(module SelfImport1
             function overload end
             module SubModule
             using SelfImport1
@@ -2440,12 +2441,12 @@ end
             overload(::Integer) = :integer
             end # module SubModule
             call_overload(x::Number) = overload(x)
-        end) do res
+        end)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
 
-    test_report_package("SelfImport2" => quote
+    test_report_package(:(module SelfImport2
             function overload end
             module SubModule
             using SelfImport2
@@ -2458,12 +2459,12 @@ end
             end # module SubSubModule
             end # module SubModule
             call_overload(x::Number) = overload(x)
-        end) do res
+        end)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
 
-    test_report_package("SelfImport5" => quote
+    test_report_package(:(module SelfImport5
             function overload end
             module SubModule
             module SubSubModule
@@ -2479,72 +2480,68 @@ end
             end # module SubSubModule
             end # module SubModule
             call_overload(x::Number) = overload(x)
-        end) do res
+        end)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
 
     # ignore_missing_comparison should be turned on by default for `report_package`
-    test_report_package("Issue542_1" => quote
+    test_report_package(:(module Issue542_1
             struct Issue542Typ end
             isa542(x) = x == Issue542Typ() ? true : false
-        end;
-        base_setup=()->nothing) do res
+        end); base_setup=()->nothing) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
-    test_report_package("Issue542_2" => quote
+    test_report_package(:(module Issue542_2
             struct Issue542Typ end
             isa542(x) = x == Issue542Typ() ? true : false
-        end;
-        base_setup=()->nothing,
+        end); base_setup=()->nothing,
         ignore_missing_comparison=false) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isa(only(res.res.inference_error_reports), NonBooleanCondErrorReport)
     end
 
     # special cases for `reduce_empty` and `mapreduce_empty`
-    test_report_package("ReduceEmpty" => quote
+    test_report_package(:(module ReduceEmpty
             reducer(a::Vector{String}) = maximum(length, a)
-        end;
-        base_setup=()->nothing) do res
+        end); base_setup=()->nothing) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
 
-    test_report_package("Issue554_1" => quote
+    test_report_package(:(module Issue554_1
             using PkgAnalysisDep: Inner.func3
             callfunc3() = func3()
-        end) do res
+        end)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
-    test_report_package("Issue554_2" => quote
+    test_report_package(:(module Issue554_2
             using PkgAnalysisDep: Inner.func3 as func
             callfunc() = func()
-        end) do res
+        end)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
-    test_report_package("Issue554_3" => quote
+    test_report_package(:(module Issue554_3
             import PkgAnalysisDep: Inner.func3
             callfunc3() = func3()
-        end) do res
+        end)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
-    test_report_package("Issue554_4" => quote
+    test_report_package(:(module Issue554_4
             import PkgAnalysisDep: Inner.func3 as func
             callfunc() = func()
-        end) do res
+        end)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
-    test_report_package("Issue554" => quote
+    test_report_package(:(module Issue554
             using LinearAlgebra: BLAS.BlasFloat
             issue554(x::BlasFloat) = x
-        end,
-        base_setup=()->Pkg.add("LinearAlgebra", io=devnull)) do res
+        end), base_setup=()->Pkg.add("LinearAlgebra", io=devnull)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
