@@ -1,6 +1,6 @@
 module ReviseExt
 
-using Revise
+using Revise: Revise
 using JET: JET, WatchConfig
 import JET: _watch_file_with_func
 
