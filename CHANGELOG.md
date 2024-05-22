@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.2]
+
+### Fixed
+
+- Allow overly deep relative module paths when analyzing a package with `report_package`
+  (aviatesk/JET.jl#619, aviatesk/JET.jl#633)
+
 ## [0.9.1]
 
 ### Fixed
@@ -18,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A new configuration `stacktrace_types_limit::Union{Nothing,Int}=nothing` has been added.
   It's turned on by default and limits deeply nested types when JET prints reports.
-  If you prefer the old behavior, set `stacktrace_types_limit=0`.
+  If you prefer the old behavior, set `stacktrace_types_limit=0` (aviatesk/JET.jl#601).
 
 ### Changed
 
@@ -245,7 +252,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- links -->
 
-[unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.9.1...HEAD
+[unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.9.2...HEAD
+[0.9.1]: https://github.com/aviatesk/JET.jl/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/aviatesk/JET.jl/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/aviatesk/JET.jl/compare/v0.8.29...v0.9.0
 [0.8.9]: https://github.com/aviatesk/JET.jl/compare/v0.8.8...v0.8.9
