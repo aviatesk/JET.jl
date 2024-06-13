@@ -855,6 +855,17 @@ end
         @test isempty(res.res.toplevel_error_reports)
         test_sum_over_string(res)
     end
+
+    # public
+    @static VERSION ≥ v"1.11-" && let res = report_text(
+        """
+        module PublicTest
+            public getx
+            getx() = :x
+        end
+        """)
+        @test isempty(res.res.toplevel_error_reports)
+    end
 end
 
 @testset "sequential" begin
