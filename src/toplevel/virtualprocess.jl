@@ -640,9 +640,12 @@ function _virtual_process!(res::VirtualProcessResult,
     end
     local dependencies = Set{Symbol}()
     function usemodule_with_err_handling(mod::Module, ex::Expr)
+        if isexpr(ex, (:export, :public))
+            @goto eval_usemodule
+        end
         # TODO recursive analysis on dependencies?
         pkgid = config.pkgid
-        if pkgid !== nothing && !isexpr(ex, :export)
+        if pkgid !== nothing
             module_usage = pattern_match_module_usage(ex)
             (; modpath) = module_usage
             dep = first(modpath)::Symbol
@@ -701,6 +704,7 @@ function _virtual_process!(res::VirtualProcessResult,
             end
         end
         # `scrub_offset = 3` corresponds to `with_err_handling` -> `f` -> `Core.eval`
+        @label eval_usemodule
         return with_err_handling(err_handler, #=scrub_offset=#3) do
             return Core.eval(mod, ex)
         end
@@ -818,7 +822,9 @@ function _virtual_process!(res::VirtualProcessResult,
         concretized = partially_interpret!(interp, context, src)
 
         # bail out if nothing to analyze (just a performance optimization)
-        all(concretized) && continue
+        if bail_out_concretized(concretized, src)
+            continue
+        end
 
         analyzer = AbstractAnalyzer(analyzer, concretized, context)
 
@@ -828,6 +834,18 @@ function _virtual_process!(res::VirtualProcessResult,
     end
 
     return res
+end
+
+# check if all statements of `src` have been concretized
+function bail_out_concretized(concretized::BitVector, src::CodeInfo)
+    if all(concretized)
+        return true
+    elseif (length(concretized) == 2 && (concretized[1] && ismoduleusage(src.code[1])) &&
+            (!concretized[2] && src.code[2] isa ReturnNode))
+        # special case module usage statements
+        return true
+    end
+    return false
 end
 
 struct VExpr
@@ -952,7 +970,7 @@ function fix_self_references!((actualmod, virtualmod)::Actual2Virtual, @nospecia
     end
 
     function fix_self_reference_simple(usage::Expr)
-        if isexpr(usage, :export)
+        if isexpr(usage, (:export, :public))
             return usage
         end
         module_usage = pattern_match_module_usage(usage)
@@ -1311,7 +1329,7 @@ function form_method_signature(atype_params::SimpleVector, sparams::SimpleVector
     return atype
 end
 
-ismoduleusage(@nospecialize(x)) = isexpr(x, (:import, :using, :export))
+ismoduleusage(@nospecialize(x)) = isexpr(x, (:import, :using, :export, :public))
 
 # assuming `ismoduleusage(x)` holds
 function to_simple_module_usages(x::Expr)
@@ -1324,23 +1342,23 @@ function to_simple_module_usages(x::Expr)
 end
 function _to_simple_module_usages(x::Expr)
     if length(x.args) != 1
-        # using A, B, export a, b
+        # `using A, B`, `export a, b`, `public a, b`
         return Expr[Expr(x.head, arg) for arg in x.args]
     end
     arg = only(x.args)
     if isa(arg, Symbol)
-        # export a
+        # `export a`, `public a`
         return Expr[x]
     end
     if isexpr(arg, :as)
-        # import Pkg as P
+        # `import Pkg as P`
         arg = first(arg.args)
     end
     if isexpr(arg, :.)
-        # using A
+        # `using A`
         return Expr[x]
     end
-    # using A: sym1, sym2, ...
+    # `using A: sym1, sym2, ...`
     @assert isexpr(arg, :(:))
     a, as... = arg.args
     return Expr[Expr(x.head, ex) for ex in Expr[Expr(arg.head, a, a′) for a′ in as]]
