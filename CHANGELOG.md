@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.3]
+
+### Added
+
+- A simple logo badge for JET.jl is now available (thanks to @MilesCranmer!).
+  You can add the line `[![](https://img.shields.io/badge/%F0%9F%9B%A9%EF%B8%8F_tested_with-JET.jl-233f9a)](https://github.com/aviatesk/JET.jl)`
+  to your package's README to display the logo image [![](https://img.shields.io/badge/%F0%9F%9B%A9%EF%B8%8F_tested_with-JET.jl-233f9a)](https://github.com/aviatesk/JET.jl)
+  that shows your package uses JET.jl for code quality checks (aviatesk/JET.jl#635).
+- JET's top-level analyses such as `report_package` and `report_file` can now handle the
+  new `public` keyword that is introduced in v1.11. (aviatesk/JET.jl#637)
+
 ## [0.9.2]
 
 ### Fixed
@@ -252,7 +263,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- links -->
 
-[unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.9.2...HEAD
+[unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.9.3...HEAD
+[0.9.3]: https://github.com/aviatesk/JET.jl/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/aviatesk/JET.jl/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/aviatesk/JET.jl/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/aviatesk/JET.jl/compare/v0.8.29...v0.9.0
