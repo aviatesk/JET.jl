@@ -15,7 +15,11 @@ export
 
 let README = normpath(dirname(@__DIR__), "README.md")
     s = read(README, String)
-    s = replace(s, ":bangbang:"=>"!!! note", "```julia"=>"```julia-repl")
+    s = replace(s,
+        # replace the GitHub README admonition syntax with that of the Julia documentation
+        "> [!WARNING]" => "!!! warning",
+        r"^\> (.+)$"m=>s"    \1",
+        r"^\>$"m=>s"")
     @doc s JET
     include_dependency(README)
 end

@@ -1,5 +1,4 @@
 # JET.jl
-
 [![](https://img.shields.io/badge/docs-latest-blue.svg)](https://aviatesk.github.io/JET.jl/dev/)
 [![](https://github.com/aviatesk/JET.jl/actions/workflows/ci.yml/badge.svg)](https://github.com/aviatesk/JET.jl/actions/workflows/ci.yml)
 [![](https://codecov.io/gh/aviatesk/JET.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/aviatesk/JET.jl)
@@ -7,24 +6,27 @@
 
 JET employs Julia's type inference system to detect potential bugs and type instabilities.
 
-:bangbang:
-    JET is tightly coupled to the Julia compiler, and so each JET release supports a limited range of Julia versions. See the `Project.toml` file for the range of supported Julia versions. The Julia package manager should install a version of JET compatible with the Julia version you are running.
-    If you want to use JET on unreleased version of Julia where compatibility with JET is yet unknown, clone this git repository and `dev` it, such that Julia compatibility is ignored.
-
-:bangbang:
-    Also note that the tight coupling of JET and the Julia compiler means that JET results can vary depending on your Julia version.
-    In general, the newer your Julia version is, the more accurately and quickly you can expect JET to analyze your code,
-    assuming the Julia compiler keeps evolving all the time from now on.
+> [!WARNING]
+> Please note that due to JET's tight integration with the Julia compiler, the results
+> presented by JET can vary significantly depending on the version of Julia you are using.
+> Additionally, the implementation of the `Base` module and standard libraries bundled with
+> Julia can also affect the results.
+>
+> Moreover, the Julia compiler's plugin system is still unstable and its interface changes
+> frequently, so each version of JET is compatible with only limited versions of Julia.
+> The Julia package manager will automatically select and install the latest version of JET
+> that is compatible with your Julia version. However, if you are using the nightly version
+> of Julia, please note that a compatible version of JET may not have been released yet,
+> and JET installed via the Julia package manager may not function properly.
 
 ## Quickstart
-See more commands, options and explanations in the documentation.
+See more commands, options and explanations in [the documentation](https://aviatesk.github.io/JET.jl/dev/).
 
 ### Installation
-
 JET is a standard Julia package.
 So you can just install it via Julia's built-in package manager and use it just like any other package:
 
-```julia noeval
+```julia-repl noeval
 julia> using Pkg; Pkg.add("JET")
 [ some output elided ]
 
@@ -35,7 +37,7 @@ julia> using JET
 Type instabilities can be detected in function calls using the `@report_opt` macro, which works similar to the `@code_warntype` macro.
 Note that, because JET relies on Julia's type inference, if a chain of inference is broken due to dynamic dispatch, then all downstream function calls will be unknown to the compiler, and so JET cannot analyze them.
 
-```julia
+```julia-repl
 julia> @report_opt foldl(+, Any[]; init=0)
 ═════ 2 possible errors found ═════
 ┌ kwcall(::@NamedTuple{init::Int64}, ::typeof(foldl), op::typeof(+), itr::Vector{Any}) @ Base ./reduce.jl:198
@@ -56,7 +58,7 @@ julia> @report_opt foldl(+, Any[]; init=0)
 
 ### Detect type errors with `@report_call`
 This works best on type stable code, so use `@report_opt` liberally before using `@report_call`.
-```julia
+```julia-repl
 julia> @report_call foldl(+, Char[])
 ═════ 2 possible errors found ═════
 ┌ foldl(op::typeof(+), itr::Vector{Char}) @ Base ./reduce.jl:198
@@ -81,7 +83,7 @@ julia> @report_call foldl(+, Char[])
 ### Analyze packages with `report_package`
 This looks for all method definitions and analyses function calls based on their signatures. Note that this is less accurate than `@report_call`, because the actual input types cannot be known for generic methods.
 
-```julia
+```julia-repl
 julia> using Pkg; Pkg.activate(; temp=true, io=devnull); Pkg.add("AbstractTrees"; io=devnull);
 
 julia> Pkg.status()
@@ -122,7 +124,6 @@ JET integrates with [SnoopCompile](https://github.com/timholy/SnoopCompile.jl), 
 See [SnoopCompile's JET-integration documentation](https://timholy.github.io/SnoopCompile.jl/stable/jet/) for further details.
 
 ## Acknowledgement
-
 This project started as my undergrad thesis project at Kyoto University, supervised by Prof. Takashi Sakuragawa.
 We were heavily inspired by [ruby/typeprof](https://github.com/ruby/typeprof), an experimental type understanding/checking tool for Ruby.
 The grad thesis about this project is published at <https://github.com/aviatesk/grad-thesis>, but currently, it's only available in Japanese.
