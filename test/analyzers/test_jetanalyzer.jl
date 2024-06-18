@@ -1025,7 +1025,6 @@ end
 struct NoFieldStruct; v; end
 access_field(x::NoFieldStruct, sym) = getfield(x, sym)
 
-
 @testset "TypoPass" begin
     @test_call mode=:typo sum("julia") # don't report NoMethodError, etc.
 

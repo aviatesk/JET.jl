@@ -1235,14 +1235,14 @@ const MODULE_SETFIELD_MSG = "cannot assign variables in other modules"
 const DIVIDE_ERROR_MSG = sprint(showerror, DivideError())
 @nospecs type_error_msg(f, expected, actual) =
     lazy"TypeError: in $f, expected $expected, got a value of type $actual"
-function nofield_msg(@nospecialize(typ), name::Symbol)
+function field_error_msg(@nospecialize(typ), name::Symbol)
     if typ <: Tuple
         typ = Tuple # reproduce base error message
     end
     tname = nameof(typ::Union{DataType,UnionAll})
     return lazy"type $tname has no field $name"
 end
-function boundserror_msg(@nospecialize(typ), name::Int)
+function bounds_error_msg(@nospecialize(typ), name::Int)
     return lazy"BoundsError: attempt to access $typ at index [$name]"
 end
 
@@ -1299,9 +1299,9 @@ function report_fieldaccess!(analyzer::JETAnalyzer, sv::InferenceState, @nospeci
     namev = (name::Const).val
     objtyp = s00
     if namev isa Symbol
-        msg = nofield_msg(objtyp, namev)
+        msg = field_error_msg(objtyp, namev)
     elseif namev isa Int
-        msg = boundserror_msg(objtyp, namev)
+        msg = bounds_error_msg(objtyp, namev)
     else
         @assert false "invalid field analysis"
     end
