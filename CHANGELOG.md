@@ -5,10 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.4]
+### Changed
+- Made some adjustments to the warning text in the README.
+
 ## [0.9.3]
-
 ### Added
-
 - A simple logo badge for JET.jl is now available (thanks to @MilesCranmer!).
   You can add the line `[![](https://img.shields.io/badge/%F0%9F%9B%A9%EF%B8%8F_tested_with-JET.jl-233f9a)](https://github.com/aviatesk/JET.jl)`
   to your package's README to display the logo image [![](https://img.shields.io/badge/%F0%9F%9B%A9%EF%B8%8F_tested_with-JET.jl-233f9a)](https://github.com/aviatesk/JET.jl)
@@ -17,29 +19,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   new `public` keyword that is introduced in v1.11. (aviatesk/JET.jl#637)
 
 ## [0.9.2]
-
 ### Fixed
-
 - Allow overly deep relative module paths when analyzing a package with `report_package`
   (aviatesk/JET.jl#619, aviatesk/JET.jl#633)
 
 ## [0.9.1]
-
 ### Fixed
-
 - Fixed the issue where the line numbers of methods whose locations were revised by Revise
   were not being updated (aviatesk/JET.jl#513).
 
 ## [0.9.0]
-
 ### Added
-
 - A new configuration `stacktrace_types_limit::Union{Nothing,Int}=nothing` has been added.
   It's turned on by default and limits deeply nested types when JET prints reports.
   If you prefer the old behavior, set `stacktrace_types_limit=0` (aviatesk/JET.jl#601).
-
 ### Changed
-
 - Revise.jl-related features are now implemented as a package extension, so in order to use
   `watch_file`, you need to load Revise.jl into your session first
   (aviatesk/JET.jl#624, aviatesk/JET.jl#625).
@@ -49,61 +43,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   like `report_file` has been significantly improved.
 
 ## [0.8.9]
-
 ### Fixed
-
 - `report_package` now supports the `using Module: Inner.object` syntax
   (aviatesk/JET.jl#554, aviatesk/JET.jl#555).
 - Various internal improvements.
 
 ## [0.8.8]
-
 ### Fixed
-
 - `report_package` now supports the `import Module as Alias` syntax
   (aviatesk/JET.jl#521, aviatesk/JET.jl#553).
 
 ## [0.8.7]
-
 ### Changed
-
 - Changed the default `toplevel_logger` configuration for `test_package` to `nothing`.
   `test_package` no longer emits logs like `[toplevel-info] analyzing from top-level definitions (xxx/yyy)`
   (aviatesk/JET.jl#550).
 
 ## [0.8.6]
-
 ### Fixed
-
 - Fixed the default `ignore_missing_comparison` configuration for `report_package`.
 
 ## [0.8.5]
-
 ### Fixed
-
 - Fixed `report_package` so that it does not produce noisy error reports from reducing on
   potentially empty collections.
 
 ## [0.8.4]
-
 ### Added
-
 - Made the `(x == y)::Union{Missing,Bool} → Any` widening behavior for `report_package`
   (that was added in aviatesk/JET.jl#542) configurable. Specify `report_package("TargetPkg", ignore_missing_comparison=false)`
   if `TargetPkg` handles `missing` (aviatesk/JET.jl#547).
 
 ## [0.8.3]
-
 ### Changed
-
 - Generalized the `(x == y)::Union{Missing,Bool} → Any` widening behavior for
   `report_package` that was added in aviatesk/JET.jl#542 to other comparison operators
   (e.g. `in`) (aviatesk/JET.jl#545).
 
 ## [0.8.2]
-
 ### Changed
-
 - JET now ignores the possibility of a poorly-inferred `x == y` call returning `missing`
   during the `report_package` analysis. Refer to issue aviatesk/JET.jl#542 for reasons
   justifying this behavior. Essentially, `report_package` often relies on poor input
@@ -126,27 +104,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (aviatesk/JET.jl#541, aviatesk/JET.jl#542).
 
 ## [0.8.1]
-
 ### Fixed
-
 - `report_package` now supports the `using MyPkg` syntax (without specifying relative module
   path `...`) from inner modules of `MyPkg` (aviatesk/JET.jl#539, aviatesk/JET.jl#540).
 
 ## [0.8.0]
-
 ### Added
-
 - `report_call` and `report_opt` can now analyze `mi::MethodInstance`.
   This feature allows JET to analyze method instances collected by
   `MethodAnalysis.methodinstances`.
   See the [documentation](https://aviatesk.github.io/JET.jl/dev/tutorial/#Analyze-packages-using-a-representative-workload)
   for the details.
   (aviatesk/JET.jl#510)
-
 - This CHANGELOG.md has been added and will be updated (aviatesk/JET.jl#536).
-
 ### Changed
-
 - JET's tree-like view, which represents inference stacktrace leading to each error point,
   now closely resembles the stacktrace displayed by Julia Base upon exception.
   The new view should be more intuitive for general users and additionally, the type
@@ -200,7 +171,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ││││││││││││││││└────────────────────
   ```
   (aviatesk/JET.jl#524)
-
 - A predicate function that is specified as the
   [`function_filter`](https://aviatesk.github.io/JET.jl/dev/optanalysis/#JET.OptAnalyzer)
   configuration now takes a function object instead of its type.
@@ -219,25 +189,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   @test_opt function_filter=myfilter func(args...)
   ```
   (aviatesk/JET.jl#507).
-
 ### Removed
-
 - Dropped the support for Julia 1.8. JET now supports Julia 1.9 and above (aviatesk/JET.jl#527).
-
 - `report_and_watch_file` has been removed. Use `watch_file` instead.
-
 ### Fixed
-
 - Concrete evaluation is now enabled within JET's error analysis. This fixes numerous false
   positive error reports, and leads to faster analysis speed (aviatesk/JET.jl#529,
   aviatesk/JET.jl#523, aviatesk/JET.jl#522).
-
 - `report_package` no longer reports error from methods that are intentionally designed to throw, e.g.
   ```julia
   @noinline raise_error(x::T) where T = error(lazy"Missing interface implementation for $T")
   ```
   (aviatesk/JET.jl#532, aviatesk/JET.jl#477).
-
 - `report_package` no longer reports error from methods with keyword arguments that don't
   have default values, e.g.
   ```julia
@@ -247,23 +210,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Bar(; x) = Bar(x)
   ```
   (aviatesk/JET.jl#532, aviatesk/JET.jl#478).
-
 - Fixed false error report from `Base.aligned_sizeof` (aviatesk/JET.jl#512,
   aviatesk/JET.jl#514, JuliaLang/julia#49801).
-
 - The optimization analysis has been adjusted to prevent skipping the reporting of runtime
   dispatches within non-compileable but inlineable frames (aviatesk/JET.jl#526).
-
 - The sound error analysis mode has been fixed and now reports if there are any unanalyzed
   function calls, which typically occur due to excessive matching methods (aviatesk/JET.jl#533).
-
 - `report_file` can now handle parameterized type alias definitions (aviatesk/JET.jl#534).
-
 - Extensive refactoring and cleanup has been carried out.
 
 <!-- links -->
 
-[unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.9.3...HEAD
+[unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.9.4...HEAD
+[0.9.4]: https://github.com/aviatesk/JET.jl/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/aviatesk/JET.jl/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/aviatesk/JET.jl/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/aviatesk/JET.jl/compare/v0.9.0...v0.9.1
