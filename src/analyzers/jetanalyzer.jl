@@ -277,7 +277,8 @@ end
 function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
     @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
     if CC.is_nothrow(result.effects)
-        neweffects = CC.Effects(result.effects; nonoverlayed=true)
+        neweffects = CC.Effects(result.effects;
+            nonoverlayed=@static VERSION ≥ v"1.11.0-beta2.49" ? CC.ALWAYS_TRUE : true)
         @static if VERSION ≥ v"1.11.0-DEV.945"
         newresult = MethodCallResult(result.rt, result.exct, result.edgecycle, result.edgelimited,
                                      result.edge, neweffects)
