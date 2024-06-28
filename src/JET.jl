@@ -78,6 +78,23 @@ const JET_DEV_MODE = Preferences.@load_preference("JET_DEV_MODE", false)
 
 const CONFIG_FILE_NAME = ".JET.toml"
 
+# TODO define all interface functions in JETInterface?
+
+function copy_report end
+function print_report_message end
+function print_signature end
+
+"""
+    JETInterface
+
+This `baremodule` exports names that form the APIs of [`AbstractAnalyzer` Framework](@ref AbstractAnalyzer-Framework).
+`using JET.JETInterface` loads all names that are necessary to define a plugin analysis.
+"""
+baremodule JETInterface
+import ..JET: print_report_message, print_signature, copy_report
+export print_report_message, print_signature, copy_report
+end
+
 # hooks
 # -----
 
@@ -1127,15 +1144,7 @@ end
 # interface
 # =========
 
-"""
-    JETInterface
-
-This `baremodule` exports names that form the APIs of [`AbstractAnalyzer` Framework](@ref AbstractAnalyzer-Framework).
-`using JET.JETInterface` loads all names that are necessary to define a plugin analysis.
-"""
-baremodule JETInterface
-const DOCUMENTED_NAMES = Symbol[] # will be used in docs/make.jl
-end
+@eval JETInterface const DOCUMENTED_NAMES = Symbol[] # will be used in docs/make.jl
 
 function reexport_as_api!(xs...)
     for x in xs
@@ -1160,7 +1169,7 @@ reexport_as_api!(JETInterface,
     AbstractAnalyzer, AnalyzerState, ReportPass, AnalysisCache,
     valid_configurations, aggregation_policy, VSCode.vscode_diagnostics_order,
     # InferenceErrorReport API
-    InferenceErrorReport, copy_report, print_report_message, print_signature, report_color,
+    InferenceErrorReport, copy_report, #=print_report_message, print_signature,=# report_color,
     # generic entry points,
     analyze_and_report_call!, call_test_ex, func_test,
     analyze_and_report_file!, analyze_and_report_package!, analyze_and_report_text!,

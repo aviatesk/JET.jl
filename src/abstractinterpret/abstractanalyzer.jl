@@ -10,18 +10,18 @@ When a new type `NewAnalyzer` implements the `AbstractAnalyzer` interface, it sh
 as subtype of `AbstractAnalyzer`, and is expected to the following interfaces:
 
 ---
-1. `AnalyzerState(analyzer::NewAnalyzer) -> AnalyzerState`: \\
+1. `JETInterface.AnalyzerState(analyzer::NewAnalyzer) -> AnalyzerState`: \\
    Returns the [`AnalyzerState`](@ref) for `analyzer::NewAnalyzer`.
 ---
-2. `AbstractAnalyzer(analyzer::NewAnalyzer, state::AnalyzerState) -> NewAnalyzer`: \\
+2. `JETInterface.AbstractAnalyzer(analyzer::NewAnalyzer, state::AnalyzerState) -> NewAnalyzer`: \\
    Constructs an new `NewAnalyzer` instance in the middle of JET's [top-level analysis](@ref toplevel)
    or [abstract interpretation](@ref abstractinterpret), given the previous
    `analyzer::NewAnalyzer` and [`state::AnalyzerState`](@ref AnalyzerState).
 ---
-3. `ReportPass(analyzer::NewAnalyzer) -> ReportPass`: \\
+3. `JETInterface.ReportPass(analyzer::NewAnalyzer) -> ReportPass`: \\
    Returns [`ReportPass`](@ref) used for `analyzer::NewAnalyzer`.
 ---
-4. `AnalysisCache(analyzer::NewAnalyzer) -> analysis_cache::AnalysisCache`: \\
+4. `JETInterface.AnalysisCache(analyzer::NewAnalyzer) -> analysis_cache::AnalysisCache`: \\
    Returns code cache used for `analyzer::NewAnalyzer`.
 ---
 
@@ -40,10 +40,10 @@ struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
 end
 
 # AbstractAnalyzer API requirements
-AnalyzerState(analyzer::JETAnalyzer) = analyzer.state
-AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerState) = JETAnalyzer(ReportPass(analyzer), state)
-ReportPass(analyzer::JETAnalyzer) = analyzer.report_pass
-AnalysisCache(analyzer::JETAnalyzer) = analyzer.analysis_cache
+JETInterface.AnalyzerState(analyzer::JETAnalyzer) = analyzer.state
+JETInterface.AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerState) = JETAnalyzer(ReportPass(analyzer), state)
+JETInterface.ReportPass(analyzer::JETAnalyzer) = analyzer.report_pass
+JETInterface.AnalysisCache(analyzer::JETAnalyzer) = analyzer.analysis_cache
 ```
 """
 abstract type AbstractAnalyzer <: AbstractInterpreter end
@@ -95,7 +95,7 @@ The mutable object that holds various states that are consumed by all [`Abstract
 
 ---
 
-    AnalyzerState(analyzer::AbstractAnalyzer) -> AnalyzerState
+    JETInterface.AnalyzerState(analyzer::AbstractAnalyzer) -> AnalyzerState
 
 If `NewAnalyzer` implements the `AbstractAnalyzer` interface, `NewAnalyzer` should implement
 this `AnalyzerState(analyzer::NewAnalyzer) -> AnalyzerState` interface.
@@ -109,7 +109,7 @@ function NewAnalyzer(world::UInt=Base.get_world_counter(); jetconfigs...)
     state = AnalyzerState(world; jetconfigs...)
     return NewAnalyzer(..., state)
 end
-AnalyzerState(analyzer::NewAnalyzer) = analyzer.state
+JETInterface.AnalyzerState(analyzer::NewAnalyzer) = analyzer.state
 ```
 """
 mutable struct AnalyzerState
@@ -343,7 +343,7 @@ interface, which provides a flexible and efficient layer to configure the analys
 
 ---
 
-    ReportPass(analyzer::AbstractAnalyzer) -> ReportPass
+    JETInterface.ReportPass(analyzer::AbstractAnalyzer) -> ReportPass
 
 If `NewAnalyzer` implements the `AbstractAnalyzer` interface, `NewAnalyzer` should implement
 this `ReportPass(analyzer::NewAnalyzer) -> ReportPass` interface.
@@ -444,7 +444,7 @@ end
 # ------------
 
 """
-    valid_configurations(analyzer::AbstractAnalyzer) -> names or nothing
+    JETInterface.valid_configurations(analyzer::AbstractAnalyzer) -> names or nothing
 
 Returns a set of names that are valid as a configuration for `analyzer`.
 `names` should be an iterator of `Symbol`.
@@ -465,7 +465,7 @@ function validate_configs(analyzer::AbstractAnalyzer, jetconfigs)
 end
 
 """
-    aggregation_policy(analyzer::AbstractAnalyzer)
+    JETInterface.aggregation_policy(analyzer::AbstractAnalyzer)
 
 Defines how `analyzer` aggregates [`InferenceErrorReport`](@ref)s.
 Defaults to `default_aggregation_policy`.

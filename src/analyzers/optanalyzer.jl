@@ -283,14 +283,14 @@ end
 @jetreport struct CapturedVariableReport <: InferenceErrorReport
     name::Union{Nothing,Symbol}
 end
-function print_report_message(io::IO, (; name)::CapturedVariableReport)
+function JETInterface.print_report_message(io::IO, (; name)::CapturedVariableReport)
     if isnothing(name)
         print(io, "captured variable detected")
     else
         print(io, "captured variable `", name, "` detected")
     end
 end
-print_signature(::CapturedVariableReport) = false
+JETInterface.print_signature(::CapturedVariableReport) = false
 function (::OptAnalysisPass)(::Type{CapturedVariableReport}, analyzer::OptAnalyzer, frame::InferenceState)
     local reported = false
     code = frame.src.code
@@ -350,7 +350,7 @@ end
 
 # report optimization failure due to recursive calls, etc.
 @jetreport struct OptimizationFailureReport <: InferenceErrorReport end
-function print_report_message(io::IO, ::OptimizationFailureReport)
+function JETInterface.print_report_message(io::IO, ::OptimizationFailureReport)
     print(io, "failed to optimize due to recursion")
 end
 function (::OptAnalysisPass)(::Type{OptimizationFailureReport}, analyzer::OptAnalyzer, caller::InferenceResult)
@@ -362,7 +362,7 @@ function (::OptAnalysisPass)(::Type{OptimizationFailureReport}, analyzer::OptAna
 end
 
 @jetreport struct RuntimeDispatchReport <: InferenceErrorReport end
-function print_report_message(io::IO, ::RuntimeDispatchReport)
+function JETInterface.print_report_message(io::IO, ::RuntimeDispatchReport)
     print(io, "runtime dispatch detected")
 end
 function (::OptAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::OptAnalyzer, caller::InferenceResult, opt::OptimizationState)

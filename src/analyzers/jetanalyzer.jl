@@ -435,7 +435,7 @@ end
 @jetreport struct GeneratorErrorReport <: InferenceErrorReport
     @nospecialize err # actual error wrapped
 end
-print_report_message(io::IO, rep::GeneratorErrorReport) = showerror(io, rep.err)
+JETInterface.print_report_message(io::IO, rep::GeneratorErrorReport) = showerror(io, rep.err)
 
 # XXX what's the "soundness" of a `@generated` function ?
 # adapted from https://github.com/JuliaLang/julia/blob/f806df603489cfca558f6284d52a38f523b81881/base/compiler/utilities.jl#L107-L137
@@ -481,7 +481,7 @@ function UncaughtExceptionReport(sv::InferenceState, throw_calls::Vector{Tuple{I
     single_error = ncalls == 1
     return UncaughtExceptionReport(vst, sig, single_error)
 end
-function print_report_message(io::IO, r::UncaughtExceptionReport)
+function JETInterface.print_report_message(io::IO, r::UncaughtExceptionReport)
     msg = r.single_error ? "may throw" : "may throw either of"
     print(io, msg)
 end
@@ -563,7 +563,7 @@ end
     union_split::Int
     uncovered::Bool
 end
-function print_report_message(io::IO, report::MethodErrorReport)
+function JETInterface.print_report_message(io::IO, report::MethodErrorReport)
     (; t, union_split, uncovered) = report
     if uncovered
         print(io, "uncovered method match found ")
@@ -711,7 +711,7 @@ is_fully_covered(info::MethodMatchInfo) = CC._all(m->m.fully_covers, info.result
 @jetreport struct UnanalyzedCallReport <: InferenceErrorReport
     @nospecialize type
 end
-function print_report_message(io::IO, report::UnanalyzedCallReport)
+function JETInterface.print_report_message(io::IO, report::UnanalyzedCallReport)
     print(io, "unanalyzed method call ")
     print_callsig(io, report.type)
 end
@@ -731,7 +731,7 @@ function (::SoundPass)(::Type{UnanalyzedCallReport}, analyzer::JETAnalyzer,
 end
 
 @jetreport struct InvalidReturnTypeCall <: InferenceErrorReport end
-function print_report_message(io::IO, ::InvalidReturnTypeCall)
+function JETInterface.print_report_message(io::IO, ::InvalidReturnTypeCall)
     print(io, "invalid `Core.Compiler.return_type` call")
 end
 
@@ -751,7 +751,7 @@ end
 @jetreport struct InvalidInvokeErrorReport <: InferenceErrorReport
     argtypes::Argtypes
 end
-function print_report_message(io::IO, (; argtypes)::InvalidInvokeErrorReport)
+function JETInterface.print_report_message(io::IO, (; argtypes)::InvalidInvokeErrorReport)
     fallback_msg = "invalid invoke" # mostly because of runtime unreachable
 
     ft = widenconst(argtype_by_index(argtypes, 2))
@@ -795,7 +795,7 @@ end
 @jetreport struct UndefVarErrorReport <: InferenceErrorReport
     var::Union{GlobalRef,TypeVar,Symbol}
 end
-function print_report_message(io::IO, r::UndefVarErrorReport)
+function JETInterface.print_report_message(io::IO, r::UndefVarErrorReport)
     var = r.var
     if isa(var, TypeVar)
         print(io, "`", var.name, "` not defined in static parameter matching")
@@ -895,7 +895,7 @@ end
     mod::Module
     name::Symbol
 end
-function print_report_message(io::IO, report::InvalidGlobalAssignmentError)
+function JETInterface.print_report_message(io::IO, report::InvalidGlobalAssignmentError)
     print(io, "found invalid assignment of an incompatible value")
     print(io, " (`", report.vtyp, "`)")
     print(io, " to the value global")
@@ -932,7 +932,7 @@ end
     union_split::Int
     uncovered::Bool
 end
-function print_report_message(io::IO, report::NonBooleanCondErrorReport)
+function JETInterface.print_report_message(io::IO, report::NonBooleanCondErrorReport)
     (; t, union_split, uncovered) = report
     if union_split == 0
         print(io, "non-boolean `", t, "`")
@@ -1015,7 +1015,7 @@ This is reported regardless of whether it's caught by control flow or not, as op
     # in order to avoid duplicated reports from the same `throw` call
     loc::LineInfoNode
 end
-function print_report_message(io::IO, (; err)::SeriousExceptionReport)
+function JETInterface.print_report_message(io::IO, (; err)::SeriousExceptionReport)
     s = with_bufferring(io->showerror(io, err))
     print(io, first(split(s, '\n')))
 end
@@ -1067,7 +1067,7 @@ abstract type AbstractBuiltinErrorReport <: InferenceErrorReport end
     @nospecialize f
     msg::AbstractString
 end
-print_report_message(io::IO, r::BuiltinErrorReport) = print(io, r.msg)
+JETInterface.print_report_message(io::IO, r::BuiltinErrorReport) = print(io, r.msg)
 const GENERAL_BUILTIN_ERROR_MSG = "invalid builtin function call"
 
 # report erroneous intrinsic function calls
@@ -1351,7 +1351,7 @@ end
     argtypes::Argtypes
     msg::String = "this builtin function call may throw"
 end
-print_report_message(io::IO, r::UnsoundBuiltinErrorReport) = print(io, r.msg)
+JETInterface.print_report_message(io::IO, r::UnsoundBuiltinErrorReport) = print(io, r.msg)
 
 function (::SoundPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(rt))
     @assert !(f === throw) "`throw` calls should be handled either by the report pass of `SeriousExceptionReport` or `UncaughtExceptionReport`"

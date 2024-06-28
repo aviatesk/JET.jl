@@ -430,13 +430,13 @@ it should satisfy the following requirements:
 
 - **Required overloads** \\
 
-  * [`copy_report(report::Report) -> new::Report`](@ref copy_report)
-  * [`print_report_message(io::IO, report::Report)`](@ref print_report_message)
+  * [`JETInterface.copy_report(report::Report) -> new::Report`](@ref copy_report)
+  * [`JETInterface.print_report_message(io::IO, report::Report)`](@ref print_report_message)
 
 - **Optional overloads** \\
 
-  * [`print_signature(::Report) -> Bool`](@ref print_signature)
-  * [`report_color(::Report) -> Symbol`](@ref report_color)
+  * [`JETInterface.print_signature(::Report) -> Bool`](@ref print_signature)
+  * [`JETInterface.report_color(::Report) -> Symbol`](@ref report_color)
 
 `Report <: InferenceErrorReport` is supposed to be constructed using the following constructor
 
@@ -456,7 +456,7 @@ function InferenceErrorReport() end
 # ----------
 
 """
-    copy_report(orig::Report) where Report<:InferenceErrorReport -> new::Report
+    JETInterface.copy_report(orig::Report) where Report<:InferenceErrorReport -> new::Report
 
 Returns new `new::Report`, that should be identical to the original `orig::Report`, except
 that `new.vst` is copied from `orig.vst` so that the further modification on `orig.vst`
@@ -466,7 +466,7 @@ that may happen in later abstract interpretation doesn't affect `new.vst`.
     error(lazy"`copy_report(::$(typeof(report)))` is not implemented"))
 
 """
-    print_report_message(io::IO, report::Report) where Report<:InferenceErrorReport
+    JETInterface.print_report_message(io::IO, report::Report) where Report<:InferenceErrorReport
 
 Prints to `io` and describes _why_ `report` is reported.
 """
@@ -474,14 +474,14 @@ Prints to `io` and describes _why_ `report` is reported.
     error(lazy"`print_report_message(::IO, ::$(typeof(report)))` is not implemented"))
 
 """
-    print_signature(::Report) where Report<:InferenceErrorReport -> Bool
+    JETInterface.print_signature(::Report) where Report<:InferenceErrorReport -> Bool
 
 Configures whether or not to print the report signature when printing `Report` (defaults to `true`).
 """
 print_signature(::InferenceErrorReport) = true
 
 """
-    report_color(::Report) where Report<:InferenceErrorReport -> Symbol
+    JETInterface.report_color(::Report) where Report<:InferenceErrorReport -> Symbol
 
 Configures the color for `Report` (defaults to `:red`).
 """
@@ -605,7 +605,7 @@ macro jetreport(ex)
 
     # copy_report
     copy_report = let
-        sig = :($(GlobalRef(JET, :copy_report))(report::$NewReport))
+        sig = :($(GlobalRef(JETInterface, :copy_report))(report::$NewReport))
         call = :($NewReport(copy(report.vst), report.sig))
         for name in spec_names
             push!(call.args, :(getproperty(report, $(QuoteNode(name)))))
