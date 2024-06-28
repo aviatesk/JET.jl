@@ -127,15 +127,19 @@ These configurations will be active for all the top-level entries explained in t
   If `true`, automatically set the [`target_modules`](@ref result-config) configuration so that
   JET filters out errors that are reported within modules that JET doesn't analyze directly.
 ---
-- `analyze_from_definitions::Bool = false` \\
+- `analyze_from_definitions::Union{Bool,Symbol} = false` \\
   If `true`, JET will start analysis using signatures of top-level definitions (e.g. method signatures),
   after the top-level interpretation has been done (unless no serious top-level error has
   happened, like errors involved within a macro expansion).
-
   This can be handy when you want to analyze a package, which usually contains only definitions
   but not their usages (i.e. top-level callsites).
   With this option, JET can enter analysis just with method or type definitions, and we don't
   need to pass a file that uses the target package.
+
+  When `analyze_from_definitions` is specified as `name::Symbol`, JET starts its analysis
+  using the interpreted method signature whose name is equal to `name` as the analysis entry
+  point. For example, when analyzing a script that uses `@main` to specify the entry point,
+  it would be convenient to specify `analyze_from_definitions = :main`.
 
   !!! warning
       This feature is very experimental at this point, and you may face lots of false positive
@@ -279,14 +283,14 @@ These configurations will be active for all the top-level entries explained in t
 struct ToplevelConfig
     pkgid::Union{Nothing,Base.PkgId}
     context::Module
-    analyze_from_definitions::Bool
+    analyze_from_definitions::Union{Bool,Symbol}
     concretization_patterns::Vector{Any}
     virtualize::Bool
     toplevel_logger # ::Union{Nothing,IO}
     function ToplevelConfig(
         pkgid::Union{Nothing,Base.PkgId} = nothing;
         context::Module = Main,
-        analyze_from_definitions::Bool = false,
+        analyze_from_definitions::Union{Bool,Symbol} = false,
         concretization_patterns = Any[],
         virtualize::Bool = true,
         toplevel_logger::Union{Nothing,IO} = nothing,
@@ -307,6 +311,8 @@ struct ToplevelConfig
             toplevel_logger)
     end
 end
+
+should_analyze_from_definitions(config::ToplevelConfig) = config.analyze_from_definitions !== false
 
 default_concretization_patterns() = (
     # concretize type aliases
@@ -440,7 +446,7 @@ function virtual_process(x::Union{AbstractString,Expr},
     end
 
     # analyze collected signatures unless critical error happened
-    if config.analyze_from_definitions && isempty(res.toplevel_error_reports)
+    if should_analyze_from_definitions(config) && isempty(res.toplevel_error_reports)
         analyze_from_definitions!(analyzer, res, config)
     end
 
@@ -522,6 +528,7 @@ function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProce
     else
         analyzer = AbstractAnalyzer(analyzer, state)
     end
+    entrypoint = config.analyze_from_definitions
     for (i, tt) in enumerate(res.toplevel_signatures)
         match = Base._which(tt;
             # NOTE use the latest world counter with `method_table(analyzer)` unwrapped,
@@ -529,7 +536,9 @@ function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProce
             method_table=unwrap_method_table(CC.method_table(analyzer)),
             world=new_world,
             raise=false)
-        if match !== nothing
+        if match !== nothing && (
+            !(entrypoint isa Symbol)#=implies analyze_from_definitions === true=# ||
+            match.method.name === entrypoint)
             succeeded[] += 1
             with_toplevel_logger(config; pre=clearline) do @nospecialize(io)
                 (i == n ? println : print)(io, "analyzing from top-level definitions ($(succeeded[])/$n)")
@@ -1303,21 +1312,26 @@ function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, 
 
     res = @invoke JuliaInterpreter.step_expr!(interp::Any, frame::Any, node::Any, true::Bool)
 
-    interp.config.analyze_from_definitions && collect_toplevel_signature!(interp, frame, node)
+    should_analyze_from_definitions(interp.config) && collect_toplevel_signature!(interp, frame, node)
 
     return res
 end
 
 function collect_toplevel_signature!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node))
-    if isexpr(node, :method, 3)
-        sigs = node.args[2]
-        atype_params, sparams, #=linenode=#_ =
-            JuliaInterpreter.@lookup(JuliaInterpreter.moduleof(frame), frame, sigs)::SimpleVector
-        tt = form_method_signature(atype_params::SimpleVector, sparams::SimpleVector)
-        @assert !CC.has_free_typevars(tt) "free type variable left in toplevel_signatures"
-        push!(interp.res.toplevel_signatures, tt)
+    isexpr(node, :method, 3) || return nothing
+    entrypoint = interp.config.analyze_from_definitions
+    if entrypoint isa Symbol
+        methname = node.args[1]
+        if !(methname isa Symbol && methname === entrypoint)
+            return nothing
+        end
     end
-    return nothing
+    sigs = node.args[2]
+    atype_params, sparams, #=linenode=#_ =
+        JuliaInterpreter.@lookup(JuliaInterpreter.moduleof(frame), frame, sigs)::SimpleVector
+    tt = form_method_signature(atype_params::SimpleVector, sparams::SimpleVector)
+    @assert !CC.has_free_typevars(tt) "free type variable left in toplevel_signatures"
+    push!(interp.res.toplevel_signatures, tt)
 end
 
 # form a method signature from the first and second parameters of lowered `:method` expression

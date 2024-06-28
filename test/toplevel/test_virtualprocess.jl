@@ -1577,7 +1577,7 @@ end
     end
 end
 
-@testset "`analyze_from_definitions`" begin
+@testset "`analyze_from_definitions=true`" begin
     let res = @analyze_toplevel analyze_from_definitions=false begin
             foo() = return undefvar
         end
@@ -1673,6 +1673,37 @@ end
         end
         @test isempty(res.res.inference_error_reports)
     end
+end
+
+@testset "`analyze_from_definitions=name::Symbol`" begin
+    let res = @analyze_toplevel analyze_from_definitions=:entryfunc begin
+            entryfunc() = undefvar
+        end
+        let r = only(res.res.inference_error_reports)
+            @test is_global_undef_var(r, :undefvar)
+        end
+    end
+    # test used together with `@main`
+    @static if isdefined(@__MODULE__, Symbol("@main"))
+    let res = @analyze_toplevel analyze_from_definitions=:main begin
+            (@main)(args) = println("hello main: ", join(undefvar))
+        end
+        let r = only(res.res.inference_error_reports)
+            @test is_global_undef_var(r, :undefvar)
+        end
+    end
+    let res = @analyze_toplevel analyze_from_definitions=:main begin
+            module SomeApp
+            export main
+            (@main)(args) = println("hello main: ", join(undefvar))
+            end
+            using .SomeApp
+        end
+        let r = only(res.res.inference_error_reports)
+            @test is_global_undef_var(r, :undefvar)
+        end
+    end
+    end # @static if
 end
 
 @testset "top-level statement selection" begin
