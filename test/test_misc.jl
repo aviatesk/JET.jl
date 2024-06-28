@@ -65,6 +65,7 @@ macro toml_str(s); TOML.parse(TOML.Parser(s)); end
         """
 
         config = process_config_dict(config_dict)
+        @test (:analyze_from_definitions => true) in config
         @test (:context => Base) in config
         @test (:concretization_patterns => [:(const x_ = y_)]) in config
         @test (:toplevel_logger => stdout) in config
