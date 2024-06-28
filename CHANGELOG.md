@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+<!-- links start -->
+[0.9.5]: https://github.com/aviatesk/JET.jl/compare/v0.9.4...v0.9.5
+[0.9.4]: https://github.com/aviatesk/JET.jl/compare/v0.9.3...v0.9.4
+[0.9.3]: https://github.com/aviatesk/JET.jl/compare/v0.9.2...v0.9.3
+[0.9.2]: https://github.com/aviatesk/JET.jl/compare/v0.9.1...v0.9.2
+[0.9.1]: https://github.com/aviatesk/JET.jl/compare/v0.9.0...v0.9.1
+[0.9.0]: https://github.com/aviatesk/JET.jl/compare/v0.8.29...v0.9.0
+[0.8.9]: https://github.com/aviatesk/JET.jl/compare/v0.8.8...v0.8.9
+[0.8.8]: https://github.com/aviatesk/JET.jl/compare/v0.8.7...v0.8.8
+[0.8.7]: https://github.com/aviatesk/JET.jl/compare/v0.8.6...v0.8.7
+[0.8.6]: https://github.com/aviatesk/JET.jl/compare/v0.8.5...v0.8.6
+[0.8.5]: https://github.com/aviatesk/JET.jl/compare/v0.8.4...v0.8.5
+[0.8.4]: https://github.com/aviatesk/JET.jl/compare/v0.8.3...v0.8.4
+[0.8.3]: https://github.com/aviatesk/JET.jl/compare/v0.8.2...v0.8.3
+[0.8.2]: https://github.com/aviatesk/JET.jl/compare/v0.8.1...v0.8.2
+[0.8.1]: https://github.com/aviatesk/JET.jl/compare/v0.8.0...v0.8.1
+[0.8.0]: https://github.com/aviatesk/JET.jl/compare/v0.7.15...v0.8.0
+<!-- links end -->
+
+## [0.9.5]
+### Added
+- `analyze_from_definitions` can now be specified as `entry_point_name::Symbol` to make
+  JET's top-level analyses start analysis using the interpreted method signature whose name
+  is equal to `entry_point_name` as the analysis entry point. For example, when analyzing a
+  script that specifies its entry point using the new `@main` special macro, you can specify
+  `report_file(script_name; analyze_from_definitions=:main)` to automatically start the
+  analysis from the `main(args)` function.
+
 ## [0.9.4]
 ### Changed
 - Made some adjustments to the warning text in the README.
@@ -218,22 +246,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   function calls, which typically occur due to excessive matching methods (aviatesk/JET.jl#533).
 - `report_file` can now handle parameterized type alias definitions (aviatesk/JET.jl#534).
 - Extensive refactoring and cleanup has been carried out.
-
-<!-- links -->
-
-[unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.9.4...HEAD
-[0.9.4]: https://github.com/aviatesk/JET.jl/compare/v0.9.3...v0.9.4
-[0.9.3]: https://github.com/aviatesk/JET.jl/compare/v0.9.2...v0.9.3
-[0.9.2]: https://github.com/aviatesk/JET.jl/compare/v0.9.1...v0.9.2
-[0.9.1]: https://github.com/aviatesk/JET.jl/compare/v0.9.0...v0.9.1
-[0.9.0]: https://github.com/aviatesk/JET.jl/compare/v0.8.29...v0.9.0
-[0.8.9]: https://github.com/aviatesk/JET.jl/compare/v0.8.8...v0.8.9
-[0.8.8]: https://github.com/aviatesk/JET.jl/compare/v0.8.7...v0.8.8
-[0.8.7]: https://github.com/aviatesk/JET.jl/compare/v0.8.6...v0.8.7
-[0.8.6]: https://github.com/aviatesk/JET.jl/compare/v0.8.5...v0.8.6
-[0.8.5]: https://github.com/aviatesk/JET.jl/compare/v0.8.4...v0.8.5
-[0.8.4]: https://github.com/aviatesk/JET.jl/compare/v0.8.3...v0.8.4
-[0.8.3]: https://github.com/aviatesk/JET.jl/compare/v0.8.2...v0.8.3
-[0.8.2]: https://github.com/aviatesk/JET.jl/compare/v0.8.1...v0.8.2
-[0.8.1]: https://github.com/aviatesk/JET.jl/compare/v0.8.0...v0.8.1
-[0.8.0]: https://github.com/aviatesk/JET.jl/compare/v0.7.15...v0.8.0
