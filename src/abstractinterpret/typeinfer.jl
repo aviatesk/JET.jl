@@ -199,8 +199,8 @@ function CC.get(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance, defa
                     stash_report!(analyzer, restored) # should be updated in `abstract_call` (after exiting `typeinf_edge`)
                 end
             end
-            set_cache_target!(analyzer, nothing)
         end
+        set_cache_target!(analyzer, nothing)
     end
 
     return codeinst
