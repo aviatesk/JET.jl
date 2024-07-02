@@ -445,8 +445,13 @@ function (::SoundBasicPass)(::Type{GeneratorErrorReport}, analyzer::JETAnalyzer,
     if isdefined(m, :generator)
         # analyze_method_instance!(analyzer, linfo) XXX doesn't work
         CC.may_invoke_generator(mi) || return false
+        world = get_inference_world(interp)
         try
-            ccall(:jl_code_for_staged, Any, (Any,), mi) # invoke the "erroneous" generator again
+            @static if VERSION ≥ v"1.11-"
+            @ccall jl_code_for_staged(mi::Any, world::UInt)::Any
+            else
+            @ccall jl_code_for_staged(mi::Any)::Any
+            end
         catch err
             # if user code throws error, wrap and report it
             report = add_new_report!(analyzer, result, GeneratorErrorReport(mi, err))
