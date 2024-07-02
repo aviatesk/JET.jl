@@ -130,7 +130,7 @@ mutable struct AnalyzerState
 
     # the temporal stash to keep track of the context of caller inference/optimization and
     # the caller itself, to which reconstructed cached reports will be appended
-    cache_target::Union{Nothing,Pair{Symbol,InferenceResult}}
+    cache_target::(@static VERSION ≥ v"1.11.0-DEV.1552" ? Nothing : Union{Nothing,Pair{Symbol,InferenceResult}})
 
     ## abstract toplevel execution ##
 
