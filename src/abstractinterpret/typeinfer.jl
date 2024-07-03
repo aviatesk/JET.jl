@@ -11,6 +11,20 @@ function collect_callee_reports!(analyzer::AbstractAnalyzer, sv::InferenceState)
         end
         empty!(reports)
     end
+    return nothing
+end
+
+function collect_cached_callee_reports!(analyzer::AbstractAnalyzer, reports::Vector{InferenceErrorReport},
+                                        caller::InferenceState, origin_mi::MethodInstance)
+    for cached in reports
+        restored = add_cached_report!(analyzer, caller.result, cached)
+        @static if JET_DEV_MODE
+            actual, expected = first(restored.vst).linfo, origin_mi
+            @assert actual === expected "invalid local cache restoration, expected $expected but got $actual"
+        end
+        stash_report!(analyzer, restored) # should be updated in `abstract_call_method_with_const_args`
+    end
+    return nothing
 end
 
 function CC.abstract_call_method(analyzer::AbstractAnalyzer,
@@ -26,7 +40,7 @@ end
 function CC.const_prop_call(analyzer::AbstractAnalyzer,
     mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
     concrete_eval_result::Union{Nothing,CC.ConstCallResults})
-    set_cache_target!(analyzer, :const_prop_call => sv.result)
+    set_cache_target!(analyzer, :const_prop_call => sv)
     const_result = @invoke CC.const_prop_call(analyzer::AbstractInterpreter,
         mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
         concrete_eval_result::Union{Nothing,CC.ConstCallResults})
@@ -165,7 +179,7 @@ AnalysisCache(wvc::WorldView{<:AbstractAnalyzerView}) = AnalysisCache(wvc.cache.
 CC.haskey(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance) = haskey(AnalysisCache(wvc), mi)
 
 function CC.typeinf_edge(analyzer::AbstractAnalyzer, method::Method, @nospecialize(atype), sparams::SimpleVector, caller::InferenceState)
-    set_cache_target!(analyzer, :typeinf_edge => caller.result)
+    set_cache_target!(analyzer, :typeinf_edge => caller)
     ret = @invoke CC.typeinf_edge(analyzer::AbstractInterpreter, method::Method, atype::Any, sparams::SimpleVector, caller::InferenceState)
     @assert get_cache_target(analyzer) === nothing "invalid JET analysis state"
     return ret
@@ -184,20 +198,13 @@ function CC.get(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance, defa
     # enable report cache reconstruction without the information
     # XXX move this logic into `typeinf_edge`?
     cache_target = get_cache_target(analyzer)
-    if isa(cache_target, Pair{Symbol,InferenceResult})
+    if cache_target !== nothing
         context, caller = cache_target
         if context === :typeinf_edge
             if isa(codeinst, CodeInstance)
                 # cache hit, now we need to append cached reports associated with this `MethodInstance`
                 inferred = (@atomic :monotonic codeinst.inferred)::CachedAnalysisResult
-                for cached in inferred.reports
-                    restored = add_cached_report!(analyzer, caller, cached)
-                    @static if JET_DEV_MODE
-                        actual, expected = first(restored.vst).linfo, mi
-                        @assert actual === expected "invalid global cache restoration, expected $expected but got $actual"
-                    end
-                    stash_report!(analyzer, restored) # should be updated in `abstract_call` (after exiting `typeinf_edge`)
-                end
+                collect_cached_callee_reports!(analyzer, inferred.reports, caller, mi)
             end
         end
         set_cache_target!(analyzer, nothing)
@@ -251,7 +258,7 @@ function (callback::JETCallback)(replaced::MethodInstance, max_world::UInt32,
     delete!(callback.analysis_cache, replaced)
     if isdefined(replaced, :backedges)
         for item in replaced.backedges
-            isa(item, MethodInstance) || continue # might be `Type` object representing an `invoke` signature
+            item isa MethodInstance || continue # might be `Type` object representing an `invoke` signature
             mi = item
             mi in seen && continue # otherwise fail into an infinite loop
             callback(mi, max_world, seen)
@@ -291,16 +298,9 @@ function CC.cache_lookup(𝕃ᵢ::CC.AbstractLattice, mi::MethodInstance, given_
         # with the extended lattice elements, here we should throw-away the error reports
         # that are collected during the previous non-constant abstract-interpretation
         # (see the `CC.typeinf(::AbstractAnalyzer, ::InferenceState)` overload)
-        filter_lineages!(analyzer, caller, mi)
+        filter_lineages!(analyzer, caller.result, mi)
 
-        for cached in get_cached_reports(analyzer, inf_result)
-            restored = add_cached_report!(analyzer, caller, cached)
-            @static if JET_DEV_MODE
-                actual, expected = first(restored.vst).linfo, mi
-                @assert actual === expected "invalid local cache restoration, expected $expected but got $actual"
-            end
-            stash_report!(analyzer, restored) # should be updated in `abstract_call_method_with_const_args`
-        end
+        collect_cached_callee_reports!(analyzer, get_cached_reports(analyzer, inf_result), caller, mi)
     end
     return inf_result
 end

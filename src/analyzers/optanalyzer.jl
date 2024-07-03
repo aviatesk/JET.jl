@@ -251,6 +251,23 @@ function CC.const_prop_call(analyzer::OptAnalyzer,
         nothing::Nothing)
 end
 
+function collect_callee_reports!(analyzer::OptAnalyzer, sv::InferenceState)
+    if analyzer.skip_unoptimized_throw_blocks && CC.is_stmt_throw_block(CC.get_curr_ssaflag(sv))
+        empty!(get_report_stash(analyzer))
+        return nothing
+    end
+    @invoke collect_callee_reports!(analyzer::AbstractAnalyzer, sv::InferenceState)
+    return nothing
+end
+function collect_cached_callee_reports!(analyzer::OptAnalyzer, reports::Vector{InferenceErrorReport},
+                                        caller::InferenceState, origin_mi::MethodInstance)
+    if !(analyzer.skip_unoptimized_throw_blocks && CC.is_stmt_throw_block(CC.get_curr_ssaflag(caller)))
+        @invoke collect_cached_callee_reports!(analyzer::AbstractAnalyzer, reports::Vector{InferenceErrorReport},
+                                               caller::InferenceState, origin_mi::MethodInstance)
+    end
+    return nothing
+end
+
 # TODO better to work only `CC.finish!`
 function CC.finish(frame::InferenceState, analyzer::OptAnalyzer)
     ret = @invoke CC.finish(frame::InferenceState, analyzer::AbstractAnalyzer)
