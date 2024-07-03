@@ -445,7 +445,7 @@ function (::SoundBasicPass)(::Type{GeneratorErrorReport}, analyzer::JETAnalyzer,
     if isdefined(m, :generator)
         # analyze_method_instance!(analyzer, linfo) XXX doesn't work
         CC.may_invoke_generator(mi) || return false
-        world = get_inference_world(interp)
+        world = get_inference_world(analyzer)
         try
             @static if VERSION ≥ v"1.11-"
             @ccall jl_code_for_staged(mi::Any, world::UInt)::Any
