@@ -74,9 +74,6 @@ end
 a global cache maintained by `AbstractAnalyzer`. That means,
 `codeinf::CodeInstance = Core.Compiler.code_cache(analyzer::AbstractAnalyzer)[mi::MethodInstance])`
 is expected to have its field `codeinf.inferred::CachedAnalysisResult`.
-
-[`InferenceErrorReport`](@ref)s found within already-analyzed `result::InferenceResult`
-can be accessed with `get_cached_reports(analyzer, result)`.
 """
 struct CachedAnalysisResult
     src
@@ -130,7 +127,7 @@ mutable struct AnalyzerState
 
     # the temporal stash to keep track of the context of caller inference/optimization and
     # the caller itself, to which reconstructed cached reports will be appended
-    cache_target::Union{Nothing,Pair{Symbol,InferenceResult}}
+    cache_target::Union{Nothing,Pair{Symbol,InferenceState}}
 
     ## abstract toplevel execution ##
 
@@ -179,7 +176,7 @@ function AnalyzerState(world::UInt  = get_world_counter();
                          #=opt_params::OptimizationParams=# opt_params,
                          #=results::IdDict{InferenceResult,AnyAnalysisResult}=# results,
                          #=report_stash::Vector{InferenceErrorReport}=# report_stash,
-                         #=cache_target::Union{Nothing,InferenceResult}=# nothing,
+                         #=cache_target::Union{Nothing,Pair{Symbol,InferenceState}}=# nothing,
                          #=concretized::BitVector=# concretized,
                          #=toplevelmod::Module=# toplevelmod,
                          #=global_slots::Dict{Int,Symbol}=# global_slots,
