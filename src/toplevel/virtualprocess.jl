@@ -1156,16 +1156,18 @@ function is_known_call(@nospecialize(stmt), func::Symbol, stmts::Vector{Any})
 end
 function is_known_getproperty(@nospecialize(stmt), func::Symbol, stmts::Vector{Any})
     isexpr(stmt, :call) || return false
+    length(stmt.args) ≥ 3 || return false
     f = stmt.args[1]
     if f isa SSAValue
         f = stmts[f.id]
     end
-    callee_matches(f, Base, :getproperty) && length(stmt.args) ≥ 3 &&
-        is_quotenode_egal(stmt.args[3], func) && return true
-    callee_matches(f, Core, :getproperty) && length(stmt.args) ≥ 3 &&
-        is_quotenode_egal(stmt.args[3], func) && return true
-    callee_matches(f, Core.Compiler, :getproperty) && length(stmt.args) ≥ 3 &&
-        is_quotenode_egal(stmt.args[3], func) && return true
+    if (callee_matches(f, Base, :getproperty) ||
+        callee_matches(f, Core, :getproperty) ||
+        callee_matches(f, Core.Compiler, :getproperty))
+        if is_quotenode_egal(stmt.args[3], func)
+            return true
+        end
+    end
     return false
 end
 
@@ -1244,17 +1246,15 @@ function add_required_inplace!(concretize::BitVector, src::CodeInfo, edges, cl)
     changed = false
     for i = 1:length(src.code)
         stmt = src.code[i]
-        if isexpr(stmt, :call)
+        if isexpr(stmt, :call) && length(stmt.args) ≥ 2
             func = stmt.args[1]
             if (callee_matches(func, Base, :push!) ||
                 callee_matches(func, Base, :pop!) ||
                 callee_matches(func, Base, :empty!) ||
                 callee_matches(func, Base, :setindex!))
-                if length(stmt.args) ≥ 2
-                    if is_arg_requested(stmt.args[2], concretize, edges, cl)
-                        if !concretize[i]
-                            changed = concretize[i] = true
-                        end
+                if is_arg_requested(stmt.args[2], concretize, edges, cl)
+                    if !concretize[i]
+                        changed = concretize[i] = true
                     end
                 end
             end
@@ -1268,9 +1268,8 @@ function is_arg_requested(@nospecialize(arg), concretize, edges, cl)
         return concretize[arg.id] || any(@view concretize[edges.preds[arg.id]])
     elseif arg isa SlotNumber
         return any(@view concretize[cl.slotassigns[arg.id]])
-    else
-        return false
     end
+    return false
 end
 
 function select_dependencies!(concretize::BitVector, src::CodeInfo, edges, cl)
