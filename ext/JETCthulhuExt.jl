@@ -1,6 +1,6 @@
 module JETCthulhuExt
 
-using JET: JET, OptimizationFailureReport, RuntimeDispatchReport, VirtualFrame
+using JET: JET, InferenceErrorReport, VirtualFrame
 using Cthulhu: Cthulhu, Node, Data, callstring
 using Core: MethodInstance
 
@@ -10,7 +10,7 @@ struct CallFrames
     frames::Vector{VirtualFrame}
 end
 
-function Cthulhu.treelist(r::Union{OptimizationFailureReport,RuntimeDispatchReport})
+function Cthulhu.treelist(r::InferenceErrorReport)
     io = IOBuffer()
     cf = CallFrames(r.vst[1:end-1])
     frame = r.vst[end]
