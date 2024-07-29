@@ -1735,7 +1735,7 @@ end
             @eval global getsum() = $sum # concretization is forced
             write(product) # should NOT be selected
         end
-        slice = JET.select_statements(src)
+        slice = JET.select_statements(@__MODULE__, src)
 
         found_N = found_sum = found_product = found_w = found_write = false
         for (i, stmt) in enumerate(src.code)
