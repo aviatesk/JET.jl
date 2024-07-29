@@ -1072,7 +1072,7 @@ Partially interprets statements in `src` using JuliaInterpreter.jl:
 - special-cases `include` calls so that top-level analysis recursively enters the included file
 """
 function partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::CodeInfo)
-    concretize = select_statements(src)
+    concretize = select_statements(mod, src)
     @assert length(src.code) == length(concretize)
 
     with_toplevel_logger(interp.config; filter=≥(JET_LOGGER_LEVEL_DEBUG)) do @nospecialize(io)
@@ -1090,9 +1090,9 @@ function partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::Cod
 end
 
 # select statements that should be concretized, and actually interpreted rather than abstracted
-function select_statements(src::CodeInfo)
+function select_statements(mod::Module, src::CodeInfo)
     stmts = src.code
-    cl = LoweredCodeUtils.CodeLinks(src) # make `CodeEdges` hold `CodeLinks`?
+    cl = LoweredCodeUtils.CodeLinks(mod, src) # make `CodeEdges` hold `CodeLinks`?
     edges = LoweredCodeUtils.CodeEdges(src, cl)
 
     concretize = falses(length(stmts))
