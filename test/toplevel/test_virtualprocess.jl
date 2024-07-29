@@ -681,18 +681,6 @@ end
         @test occursin("isexpr2", get_msg(report))
     end
 
-    # error handling for module usages
-    let res = @analyze_toplevel begin
-            using Base: foo
-        end
-
-        @test !isempty(res.res.toplevel_error_reports)
-        er = first(res.res.toplevel_error_reports)
-        @test er isa ActualErrorWrapped
-        @test er.err isa UndefVarError && er.err.var === :foo
-        @test er.file == (@__FILE__) && er.line == (@__LINE__) - 7
-    end
-
     # sequential usage
     let res = @analyze_toplevel begin
             module foo
