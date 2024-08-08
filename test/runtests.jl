@@ -37,4 +37,8 @@ using Test, JET
     @testset "sanity check" include("sanity_check.jl")
 
     @testset "self check" include("self_check.jl")
+
+    @testset "extensions" begin
+        include("ext/test_cthulhu.jl")
+    end
 end
