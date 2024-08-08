@@ -27,7 +27,7 @@ JET implements such an analyzer that investigates the optimized representation o
 anywhere the compiler failed in optimization. Especially, it can find where Julia creates captured variables, where
 runtime dispatch will happen, and where Julia gives up the optimization work due to unresolvable recursive function call.
 
-[SnoopCompile also detects inference failures](https://timholy.github.io/SnoopCompile.jl/stable/snoopi_deep_analysis/), but JET and SnoopCompile use different mechanisms: JET performs *static* analysis of a particular call, while SnoopCompile performs *dynamic* analysis of new inference. As a consequence, JET's detection of inference failures is reproducible (you can run the same analysis repeatedly and get the same result) but terminates at any non-inferable node of the call graph: you will miss runtime dispatch in any non-inferable callees. Conversely, SnoopCompile's detection of inference failures can explore the entire callgraph, but only for those portions that have not been previously inferred, and the analysis cannot be repeated in the same session.
+[SnoopCompile also detects inference failures](https://timholy.github.io/SnoopCompile.jl/stable/tutorials/snoop_inference_analysis/), but JET and SnoopCompile use different mechanisms: JET performs *static* analysis of a particular call, while SnoopCompile performs *dynamic* analysis of new inference. As a consequence, JET's detection of inference failures is reproducible (you can run the same analysis repeatedly and get the same result) but terminates at any non-inferable node of the call graph: you will miss runtime dispatch in any non-inferable callees. Conversely, SnoopCompile's detection of inference failures can explore the entire callgraph, but only for those portions that have not been previously inferred, and the analysis cannot be repeated in the same session.
 
 ## [Quick Start](@id optanalysis-quick-start)
 
@@ -164,6 +164,30 @@ using Test
 end
 ```
 
+## [Integration with Cthulhu](@id cthulhu-integration)
+
+If you identify inference problems, you may want to fix them. Cthulhu can be a useful tool for gaining more insight, and JET integrates nicely with Cthulhu.
+
+To exploit Cthulhu, you first need to split the overall report into individual inference failures:
+
+```@repl quickstart
+report = @report_opt sumup(sin);
+rpts = JET.get_reports(report)
+```
+
+Now you can `ascend` individual reports:
+
+```
+julia> using Cthulhu
+
+julia> ascend(rpts[1])
+Choose a call for analysis (q to quit):
+ >   sumup(::typeof(sin))
+```
+
+`ascend` will show the full call-chain to reach a particlar runtime dispatch; in this case, it was our entry point, but in other cases it may be deeper in the call graph.
+
+Because Cthulhu is an interactive terminal program, we can't demonstrate it in this page, but you're encouraged to see Cthulhu's documentation which includes a video tutorial.
 
 ## [Entry Points](@id optanalysis-entry)
 
