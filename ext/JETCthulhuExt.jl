@@ -12,10 +12,9 @@ end
 
 function Cthulhu.treelist(r::InferenceErrorReport)
     io = IOBuffer()
-    cf = CallFrames(r.vst[1:end-1])
-    frame = r.vst[end]
-    str = callstring(io, frame.linfo)
-    Cthulhu.treelist!(Node(Data(str, frame.linfo)), io, cf, "", Base.IdSet{Union{MethodInstance,Nothing}}([nothing]))
+    cf = CallFrames(r.vst)
+    printstyled(IOContext(io, :color=>true), r.sig.tt, color=:red)
+    Cthulhu.treelist!(Node(Data{Union{MethodInstance,Type}}("runtime call to " * String(take!(io)), r.sig.tt)), io, cf, "", Base.IdSet{Union{MethodInstance,Nothing}}([nothing]))
 end
 
 Cthulhu.instance(cf::CallFrames) = isempty(cf.frames) ? nothing : cf.frames[end].linfo
