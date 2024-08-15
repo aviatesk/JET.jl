@@ -121,7 +121,6 @@ function handle_sig!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
         push!(sig, expr)
         sig, nothing
     end
-    @show tt head s[2]
     return sig, tt
 end
 
