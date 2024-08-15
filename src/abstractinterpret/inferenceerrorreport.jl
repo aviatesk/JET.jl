@@ -279,7 +279,7 @@ function handle_sig_call!(sig::Vector{Any}, s::StateAtPC, @nospecialize(f), args
     nargs = length(args)
     for (i, arg) in enumerate(args)
         handle_sig!(sig, s, arg)
-        push!(typs, sig[end])
+        push!(typs, typeof_sig_f(s, arg))
         if i ≠ nargs
             push!(sig, ", ")
         else
