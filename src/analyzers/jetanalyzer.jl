@@ -476,13 +476,14 @@ function UncaughtExceptionReport(sv::InferenceState, throw_calls::Vector{Tuple{I
     vf = get_virtual_frame(sv.linfo)
     vst = VirtualFrame[vf]
     sigs = Any[]
+    tt = Union{}
     ncalls = length(throw_calls)
     for (i, (pc, call)) in enumerate(throw_calls)
-        call_sig = get_sig_nowrap((sv, pc), call)
+        call_sig, tt = get_sig_nowrap((sv, pc), call)
         append!(sigs, call_sig)
         i ≠ ncalls && push!(sigs, ", ")
     end
-    sig = Signature(sigs, nothing)
+    sig = Signature(sigs, tt)
     single_error = ncalls == 1
     return UncaughtExceptionReport(vst, sig, single_error)
 end
