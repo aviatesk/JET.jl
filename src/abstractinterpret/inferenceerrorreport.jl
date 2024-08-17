@@ -12,6 +12,7 @@ Represents an expression signature.
 """
 struct Signature
     _sig::Vector{Any}
+    tt::Union{Type,Nothing}
 end
 
 # define equality functions that avoid dynamic dispatches
@@ -94,21 +95,18 @@ end
 # signature
 # ---------
 
-@inline get_sig(s::StateAtPC, @nospecialize(x=get_stmt(s))) = Signature(get_sig_nowrap(s, x))
+@inline get_sig(s::StateAtPC, @nospecialize(x=get_stmt(s))) = Signature(get_sig_nowrap(s, x)...)
 get_sig(sv::InferenceState) = get_sig((sv, get_currpc(sv)))
 
-get_sig(mi::MethodInstance) = Signature(Any[mi])
+get_sig(mi::MethodInstance) = Signature(Any[mi], mi.specTypes::DataType)
 get_sig(caller::InferenceResult) = get_sig(get_linfo(caller))
 
-function get_sig_nowrap(@nospecialize args...)
-    sig = Any[]
-    handle_sig!(sig, args...)
-    return sig
-end
+const HandleSigRT = Tuple{Vector{Any}, Union{Type,Nothing}}   # the return type of `handle_sig!`
+get_sig_nowrap(s::StateAtPC, @nospecialize(stmt)) = handle_sig!([], s, stmt)::HandleSigRT
 
 function handle_sig!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
     head = expr.head
-    if head === :call
+    sig, tt = if head === :call
         handle_sig_call!(sig, s, expr)
     elseif head === :invoke
         handle_sig_invoke!(sig, s, expr)
@@ -118,29 +116,35 @@ function handle_sig!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
         handle_sig_static_parameter!(sig, s, expr)
     else
         push!(sig, expr)
+        sig, nothing
     end
-    return sig
+    return sig, tt
 end
 
 function handle_sig_call!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
+    function splitlast!(list)
+        last = pop!(list)
+        return list, last
+    end
+
     f = first(expr.args)
     args = expr.args[2:end]
     splat = false
     if isa(f, GlobalRef)
-        handle_sig_binop!(sig, s, f, args) && return sig
-        handle_sig_getproperty!(sig, s, f, args) && return sig
-        handle_sig_setproperty!!(sig, s, f, args) && return sig
-        handle_sig_getindex!(sig, s, f, args) && return sig
-        handle_sig_setindex!!(sig, s, f, args) && return sig
-        handle_sig_const_apply_type!(sig, s, f, args) && return sig
+        handle_sig_binop!(sig, s, f, args) && return splitlast!(sig)
+        handle_sig_getproperty!(sig, s, f, args) && return splitlast!(sig)
+        handle_sig_setproperty!!(sig, s, f, args) && return splitlast!(sig)
+        handle_sig_getindex!(sig, s, f, args) && return splitlast!(sig)
+        handle_sig_setindex!!(sig, s, f, args) && return splitlast!(sig)
+        handle_sig_const_apply_type!(sig, s, f, args) && return splitlast!(sig)
         if issplat(f, args)
             f = args[2]
             args = args[3:end]
             splat = true
         end
     end
-    handle_sig_call!(sig, s, f, args, #=splat=#splat)
-    return sig
+    sig, tt = handle_sig_call!(sig, s, f, args, #=splat=#splat)
+    return sig, tt
 end
 
 # create a type-annotated signature for `([sig of ex]::T)`
@@ -164,12 +168,15 @@ function handle_sig_binop!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, args::V
     (Base.isbinaryoperator(f.name) && length(args) == 2) || return false
     @annotate_if_active sig begin
         handle_sig!(sig, s, args[1])
+        t1 = typeof_arg(s, args[1])
         push!(sig, ' ')
         handle_sig!(sig, s, f)
         push!(sig, ' ')
         handle_sig!(sig, s, args[2])
+        t2 = typeof_arg(s, args[2])
     end
     push!(sig, safewidenconst(get_ssavaluetype(s)))
+    push!(sig, Tuple{typeof_arg(s, f), t1, t2})
     return true
 end
 
@@ -184,6 +191,7 @@ function handle_sig_getproperty!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, a
     push!(sig, '.')
     push!(sig, String(val))
     push!(sig, safewidenconst(get_ssavaluetype(s)))
+    push!(sig, Tuple{typeof(getglobal(f.mod, f.name)), typeof_arg(s, args[1]), Symbol})
     return true
 end
 
@@ -202,6 +210,7 @@ function handle_sig_setproperty!!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, 
         handle_sig!(sig, s, args[3])
         push!(sig, safewidenconst(get_ssavaluetype(s)))
     end
+    push!(sig, Tuple{typeof(getglobal(f.mod, f.name)), typeof_arg(s, args[1]), Symbol, typeof_arg(s, args[3])})
     return true
 end
 
@@ -217,6 +226,7 @@ function handle_sig_getindex!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, args
     end
     push!(sig, ']')
     push!(sig, safewidenconst(get_ssavaluetype(s)))
+    push!(sig, Tuple{typeof(getglobal(f.mod, f.name)), [typeof_arg(s, arg) for arg in args]...})
     return true
 end
 
@@ -236,6 +246,7 @@ function handle_sig_setindex!!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, arg
         handle_sig!(sig, s, args[2])
         push!(sig, safewidenconst(get_ssavaluetype(s)))
     end
+    push!(sig, Tuple{typeof(getglobal(f.mod, f.name)), [typeof_arg(s, arg) for arg in args]...})
     return true
 end
 
@@ -244,6 +255,7 @@ function handle_sig_const_apply_type!(sig::Vector{Any}, s::StateAtPC, f::GlobalR
     typ = get_ssavaluetype(s)
     isa(typ, Const) || return false
     push!(sig, ApplyTypeResult(typ.val))
+    push!(sig, Tuple{typeof(getglobal(f.mod, f.name)), [typeof_arg(s, arg) for arg in args]...})
     return true
 end
 
@@ -258,25 +270,28 @@ function handle_sig_call!(sig::Vector{Any}, s::StateAtPC, @nospecialize(f), args
     splat::Bool = false)
     handle_sig!(sig, s, f)
     push!(sig, '(')
+    typs = Any[typeof_arg(s, f; callable=true)]
     nargs = length(args)
     for (i, arg) in enumerate(args)
+        push!(typs, typeof_arg(s, arg))
         handle_sig!(sig, s, arg)
         if i ≠ nargs
             push!(sig, ", ")
         else
             splat && push!(sig, "...")
         end
+
     end
     push!(sig, ')')
     push!(sig, safewidenconst(get_ssavaluetype(s)))
-    return sig
+    return sig, Tuple{typs...}
 end
 
 function handle_sig_invoke!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
     f = expr.args[2]
     args = expr.args[3:end]
-    handle_sig_call!(sig, s, f, args)
-    return sig
+    sig, tt = handle_sig_call!(sig, s, f, args)
+    return sig, tt
 end
 
 function handle_sig_assignment!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
@@ -292,8 +307,7 @@ function handle_sig_assignment!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
             end
         end
     end
-    handle_sig!(sig, s, last(expr.args))
-    return sig
+    return handle_sig!(sig, s, last(expr.args))::HandleSigRT
 end
 
 function handle_sig_static_parameter!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
@@ -302,7 +316,7 @@ function handle_sig_static_parameter!(sig::Vector{Any}, s::StateAtPC, expr::Expr
     name = sparam_name((sv.linfo.def::Method).sig::UnionAll, i)
     typ = widenconst(sv.sptypes[i].typ)
     push!(sig, String(name), typ)
-    return sig
+    return sig, nothing
 end
 
 function sparam_name(u::UnionAll, i::Int)
@@ -325,7 +339,7 @@ function handle_sig!(sig::Vector{Any}, (sv, _)::StateAtPC, ssa::SSAValue)
         # XXX the same problem may happen for `InferenceState` too ?
         handle_sig!(sig, newstate, get_stmt(newstate))
     end
-    return sig
+    return sig, nothing
 end
 
 function handle_sig!(sig::Vector{Any}, s::StateAtPC, slot::SlotNumber)
@@ -334,7 +348,7 @@ function handle_sig!(sig::Vector{Any}, s::StateAtPC, slot::SlotNumber)
     if istoplevel(sv)
         # this is a abstract global variable, form the global reference
         handle_sig!(sig, s, GlobalRef(sv.linfo.def::Module, name))
-        return sig
+        return sig, nothing
     end
     if name === Symbol("")
         repr = slot # fallback if no explicit slotname
@@ -345,7 +359,7 @@ function handle_sig!(sig::Vector{Any}, s::StateAtPC, slot::SlotNumber)
     typ = safewidenconst((sv isa InferenceState && CC.is_inferred(sv)) ?
         get_slottype(sv, slot) : get_slottype(s, slot))
     push!(sig, repr, typ)
-    return sig
+    return sig, nothing
 end
 
 # NOTE `Argument` is introduced by optimization, and so we don't need to handle abstract global variable here
@@ -358,13 +372,13 @@ function handle_sig!(sig::Vector{Any}, (sv, _)::StateAtPC, arg::Argument)
     end
     typ = safewidenconst(get_slottype(sv, arg)) # after optimization we shouldn't use `get_slottype(::StateAtPC, ::Any)`
     push!(sig, repr, typ)
-    return sig
+    return sig, nothing
 end
 
 function handle_sig!(sig::Vector{Any}, s::StateAtPC, gotoifnot::GotoIfNot)
     push!(sig, "goto ", SSAValue(gotoifnot.dest), " if not ")
     handle_sig!(sig, s, gotoifnot.cond)
-    return sig
+    return sig, nothing
 end
 
 function handle_sig!(sig::Vector{Any}, s::StateAtPC, rn::ReturnNode)
@@ -374,7 +388,7 @@ function handle_sig!(sig::Vector{Any}, s::StateAtPC, rn::ReturnNode)
         push!(sig, "return ")
         handle_sig!(sig, s, rn.val)
     end
-    return sig
+    return sig, nothing
 end
 is_unreachable(@nospecialize(x)) = isa(x, ReturnNode) && !isdefined(x, :val)
 
@@ -382,19 +396,41 @@ function handle_sig!(sig::Vector{Any}, ::StateAtPC, qn::QuoteNode)
     v = qn.value
     if isa(v, Symbol)
         push!(sig, Repr(v))
-        return sig
+        return sig, nothing
     end
     typ = typeof(v)
     push!(sig, qn, typ)
-    return sig
+    return sig, nothing
 end
 
 # reprs
-handle_sig!(sig::Vector{Any}, ::StateAtPC, x::Symbol) = (push!(sig, Repr(x)); return sig)
-handle_sig!(sig::Vector{Any}, ::StateAtPC, x::String) = (push!(sig, Repr(x)); return sig)
+handle_sig!(sig::Vector{Any}, ::StateAtPC, x::Symbol) = (push!(sig, Repr(x)); return sig, nothing)
+handle_sig!(sig::Vector{Any}, ::StateAtPC, x::String) = (push!(sig, Repr(x)); return sig, nothing)
 
 # fallback: GlobalRef, literals...
-handle_sig!(sig::Vector{Any}, ::StateAtPC, @nospecialize(x)) = (push!(sig, x); return sig)
+handle_sig!(sig::Vector{Any}, ::StateAtPC, @nospecialize(x)) = (push!(sig, x); return sig, nothing)
+
+function typeof_arg(s::State, @nospecialize(f); callable::Bool=false)
+    isa(f, GlobalRef) && return isdefined(f.mod, f.name) ? Core.Typeof(getglobal(f.mod, f.name)) : Any
+    isa(f, SSAValue) && return safewidenconst(get_ssavaluetype((s, f.id)))
+    isa(f, Function) && return Core.Typeof(f)
+    isa(f, Type) && return Type{f}
+    isa(f, QuoteNode) && return Core.Typeof(f.value)
+    isexpr(f, :static_parameter) && return Core.Typeof(s.sptypes[first(f.args)::Int])
+    callable && error("f ", string(f)::String, " with type ", string(typeof(f)), " not supported")   # FIXME self check runtime dispatch
+    return typeof(f)
+end
+function typeof_arg(s::StateAtPC, @nospecialize(f); kwargs...)
+    if isa(f, SlotNumber)
+        ret = safewidenconst(get_slottype(s, f))
+        ret === Union{} || return ret
+        # "broken" calls end up here, e.g., one where an argument (not necessarily this one) is undefined and inference doesn't bother assigning types
+        # for the other args
+        return TypeUnassigned  # One can't create Tuple{typeof(f), Union{}} so we use a placeholder
+    end
+    isa(f, Core.Argument) && return safewidenconst(get_slottype(s, f))
+    return typeof_arg(first(s), f; kwargs...)
+end
 
 # new report
 # ----------
@@ -543,6 +579,16 @@ end
 
 # utility
 # -------
+
+"""
+    reportkey(report::InferenceErrorReport)
+
+Returns an identifier for the runtime-dispatched call site of `report`.
+
+If you have a long list of reports to analyze, `urpts = unique(reportkey, rpts)` may remove "duplicates"
+that arrive at the same runtime dispatch from different entry points.
+"""
+reportkey(report::InferenceErrorReport) = (report.sig.tt, report.vst[end].linfo)
 
 # TODO parametric definition?
 

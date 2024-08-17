@@ -27,7 +27,7 @@ JET implements such an analyzer that investigates the optimized representation o
 anywhere the compiler failed in optimization. Especially, it can find where Julia creates captured variables, where
 runtime dispatch will happen, and where Julia gives up the optimization work due to unresolvable recursive function call.
 
-[SnoopCompile also detects inference failures](https://timholy.github.io/SnoopCompile.jl/stable/snoopi_deep_analysis/), but JET and SnoopCompile use different mechanisms: JET performs *static* analysis of a particular call, while SnoopCompile performs *dynamic* analysis of new inference. As a consequence, JET's detection of inference failures is reproducible (you can run the same analysis repeatedly and get the same result) but terminates at any non-inferable node of the call graph: you will miss runtime dispatch in any non-inferable callees. Conversely, SnoopCompile's detection of inference failures can explore the entire callgraph, but only for those portions that have not been previously inferred, and the analysis cannot be repeated in the same session.
+[SnoopCompile also detects inference failures](https://timholy.github.io/SnoopCompile.jl/stable/tutorials/snoop_inference_analysis/), but JET and SnoopCompile use different mechanisms: JET performs *static* analysis of a particular call, while SnoopCompile performs *dynamic* analysis of new inference. As a consequence, JET's detection of inference failures is reproducible (you can run the same analysis repeatedly and get the same result) but terminates at any non-inferable node of the call graph: you will miss runtime dispatch in any non-inferable callees. Conversely, SnoopCompile's detection of inference failures can explore the entire callgraph, but only for those portions that have not been previously inferred, and the analysis cannot be repeated in the same session.
 
 ## [Quick Start](@id optanalysis-quick-start)
 
@@ -164,6 +164,59 @@ using Test
 end
 ```
 
+## [Integration with Cthulhu](@id cthulhu-integration)
+
+If you identify inference problems, you may want to fix them. Cthulhu can be a useful tool for gaining more insight, and JET integrates nicely with Cthulhu.
+
+To exploit Cthulhu, you first need to split the overall report into individual inference failures:
+
+```@repl quickstart
+report = @report_opt sumup(sin);
+rpts = JET.get_reports(report)
+```
+
+!!! tip
+    If `rpts` is a long list, consider using `urpts = unique(reportkey, rpts)` to trim it.
+    See [`reportkey`](@ref).
+
+Now you can `ascend` individual reports:
+
+```
+julia> using Cthulhu
+
+julia> ascend(rpts[1])
+Choose a call for analysis (q to quit):
+     runtime dispatch to make_vals(%1::Any)::Any
+ >     sumup(::typeof(sin))
+
+Open an editor at a possible caller of
+  Tuple{typeof(make_vals), Any}
+or browse typed code:
+ > "REPL[7]", sumup: lines [4]
+   Browse typed code
+```
+
+`ascend` will show the full call-chain to reach a particular runtime dispatch; in this case, it was our entry point, but in other cases it may be deeper in the call graph. In this case, we've interactively moved the selector `>` down to the `sumup` call (you cannot descend into the `"runtime dispatch to..."` as there is no known code associated with it) and hit `<Enter>`, at which point Cthulhu showed us that the call to `make_vals(::Any)` occured only on line 4 of the definition of `sumup` (which we entered at the REPL). Cthulhu is now prompting us to either open the code in an editor (which will fail in this case, since there is no associated file!) or view the type-annoted code. If we select the "Browse typed code" option we see
+
+```
+sumup(f) @ Main REPL[7]:1
+ 1 function sumup(f::Core.Const(sin))::Any
+ 2     # this function uses the non-constant global variable `n` here
+ 3     # and it makes every succeeding operations type-unstable
+ 4     vals::Any = make_vals(n::Any)::Any
+ 5     s::Any = zero(eltype(vals::Any)::Any)::Any
+ 6     for v::Any in vals::Any::Any
+ 7         (s::Any += f::Core.Const(sin)(v::Any)::Any)::Any
+ 8     end
+ 9     return s::Any
+10 end
+Select a call to descend into or ↩ to ascend. [q]uit. [b]ookmark.
+⋮
+```
+
+with red highlighting to indicate the non-inferable arguments.
+
+For more information, you're encouraged to read Cthulhu's documentation, which includes a video tutorial better-suited to this interactive tool.
 
 ## [Entry Points](@id optanalysis-entry)
 

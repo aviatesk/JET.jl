@@ -6,7 +6,7 @@ module JET
 export
     # jetanalyzer
     @report_call, report_call, @test_call, test_call,
-    report_file, test_file, report_package, test_package, report_text, test_text,
+    report_file, test_file, report_package, test_package, report_text, reportkey, test_text,
     watch_file,
     # optanalyzer
     @report_opt, report_opt, @test_opt, test_opt,
@@ -293,6 +293,8 @@ get_linfo(linfo::MethodInstance) = linfo
 
 is_constant_propagated(frame::InferenceState) = is_constant_propagated(frame.result)
 is_constant_propagated(result::InferenceResult) = CC.any(result.overridden_by_const)
+
+struct TypeUnassigned end    # for when inference doesn't bother assigning a type to a slot (e.g. dead code)
 
 # lattice
 

@@ -476,13 +476,15 @@ function UncaughtExceptionReport(sv::InferenceState, throw_calls::Vector{Tuple{I
     vf = get_virtual_frame(sv.linfo)
     vst = VirtualFrame[vf]
     sigs = Any[]
+    tt = Union{}
     ncalls = length(throw_calls)
     for (i, (pc, call)) in enumerate(throw_calls)
-        call_sig = get_sig_nowrap((sv, pc), call)
+        call_sig, call_tt = get_sig_nowrap((sv, pc), call)
         append!(sigs, call_sig)
+        tt = Union{tt, call_tt}
         i ≠ ncalls && push!(sigs, ", ")
     end
-    sig = Signature(sigs)
+    sig = Signature(sigs, tt)
     single_error = ncalls == 1
     return UncaughtExceptionReport(vst, sig, single_error)
 end
@@ -626,7 +628,7 @@ end
 
 const REDUCE_EMPTY_REPORT_SIG = let
     sig = Any["MethodError: reducing over an empty collection is not allowed; consider supplying `init` to the reducer"]
-    Signature(sig)
+    Signature(sig, nothing)
 end
 
 # special case `reduce_empty` and `mapreduce_empty`:
