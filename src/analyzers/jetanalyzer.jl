@@ -479,8 +479,9 @@ function UncaughtExceptionReport(sv::InferenceState, throw_calls::Vector{Tuple{I
     tt = Union{}
     ncalls = length(throw_calls)
     for (i, (pc, call)) in enumerate(throw_calls)
-        call_sig, tt = get_sig_nowrap((sv, pc), call)
+        call_sig, call_tt = get_sig_nowrap((sv, pc), call)
         append!(sigs, call_sig)
+        tt = Union{tt, call_tt}
         i ≠ ncalls && push!(sigs, ", ")
     end
     sig = Signature(sigs, tt)

@@ -294,6 +294,8 @@ get_linfo(linfo::MethodInstance) = linfo
 is_constant_propagated(frame::InferenceState) = is_constant_propagated(frame.result)
 is_constant_propagated(result::InferenceResult) = CC.any(result.overridden_by_const)
 
+struct TypeUnassigned end    # for when inference doesn't bother assigning a type to a slot (e.g. dead code)
+
 # lattice
 
 ignorenotfound(@nospecialize(t)) = t === NOT_FOUND ? Bottom : t

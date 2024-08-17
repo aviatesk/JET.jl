@@ -101,11 +101,8 @@ get_sig(sv::InferenceState) = get_sig((sv, get_currpc(sv)))
 get_sig(mi::MethodInstance) = Signature(Any[mi], mi.specTypes::DataType)
 get_sig(caller::InferenceResult) = get_sig(get_linfo(caller))
 
-function get_sig_nowrap(s::StateAtPC, @nospecialize(stmt))
-    sig = Any[]
-    _, tt = handle_sig!(sig, s, stmt)::Tuple{Vector{Any}, Union{Type,Nothing}}
-    return sig, tt
-end
+const HandleSigRT = Tuple{Vector{Any}, Union{Type,Nothing}}   # the return type of `handle_sig!`
+get_sig_nowrap(s::StateAtPC, @nospecialize(stmt)) = handle_sig!([], s, stmt)::HandleSigRT
 
 function handle_sig!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
     head = expr.head
@@ -310,8 +307,7 @@ function handle_sig_assignment!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
             end
         end
     end
-    handle_sig!(sig, s, last(expr.args))
-    return sig, nothing
+    return handle_sig!(sig, s, last(expr.args))::HandleSigRT
 end
 
 function handle_sig_static_parameter!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
@@ -343,7 +339,7 @@ function handle_sig!(sig::Vector{Any}, (sv, _)::StateAtPC, ssa::SSAValue)
         # XXX the same problem may happen for `InferenceState` too ?
         handle_sig!(sig, newstate, get_stmt(newstate))
     end
-    return sig, Union{}
+    return sig, nothing
 end
 
 function handle_sig!(sig::Vector{Any}, s::StateAtPC, slot::SlotNumber)
@@ -352,7 +348,7 @@ function handle_sig!(sig::Vector{Any}, s::StateAtPC, slot::SlotNumber)
     if istoplevel(sv)
         # this is a abstract global variable, form the global reference
         handle_sig!(sig, s, GlobalRef(sv.linfo.def::Module, name))
-        return sig, Union{}
+        return sig, nothing
     end
     if name === Symbol("")
         repr = slot # fallback if no explicit slotname
@@ -363,7 +359,7 @@ function handle_sig!(sig::Vector{Any}, s::StateAtPC, slot::SlotNumber)
     typ = safewidenconst((sv isa InferenceState && CC.is_inferred(sv)) ?
         get_slottype(sv, slot) : get_slottype(s, slot))
     push!(sig, repr, typ)
-    return sig, Union{}
+    return sig, nothing
 end
 
 # NOTE `Argument` is introduced by optimization, and so we don't need to handle abstract global variable here
@@ -376,13 +372,13 @@ function handle_sig!(sig::Vector{Any}, (sv, _)::StateAtPC, arg::Argument)
     end
     typ = safewidenconst(get_slottype(sv, arg)) # after optimization we shouldn't use `get_slottype(::StateAtPC, ::Any)`
     push!(sig, repr, typ)
-    return sig, Union{}
+    return sig, nothing
 end
 
 function handle_sig!(sig::Vector{Any}, s::StateAtPC, gotoifnot::GotoIfNot)
     push!(sig, "goto ", SSAValue(gotoifnot.dest), " if not ")
     handle_sig!(sig, s, gotoifnot.cond)
-    return sig, Union{}
+    return sig, nothing
 end
 
 function handle_sig!(sig::Vector{Any}, s::StateAtPC, rn::ReturnNode)
@@ -392,7 +388,7 @@ function handle_sig!(sig::Vector{Any}, s::StateAtPC, rn::ReturnNode)
         push!(sig, "return ")
         handle_sig!(sig, s, rn.val)
     end
-    return sig, Union{}
+    return sig, nothing
 end
 is_unreachable(@nospecialize(x)) = isa(x, ReturnNode) && !isdefined(x, :val)
 
@@ -400,19 +396,19 @@ function handle_sig!(sig::Vector{Any}, ::StateAtPC, qn::QuoteNode)
     v = qn.value
     if isa(v, Symbol)
         push!(sig, Repr(v))
-        return sig, Union{}
+        return sig, nothing
     end
     typ = typeof(v)
     push!(sig, qn, typ)
-    return sig, Union{}
+    return sig, nothing
 end
 
 # reprs
-handle_sig!(sig::Vector{Any}, ::StateAtPC, x::Symbol) = (push!(sig, Repr(x)); return sig, Union{})
-handle_sig!(sig::Vector{Any}, ::StateAtPC, x::String) = (push!(sig, Repr(x)); return sig, Union{})
+handle_sig!(sig::Vector{Any}, ::StateAtPC, x::Symbol) = (push!(sig, Repr(x)); return sig, nothing)
+handle_sig!(sig::Vector{Any}, ::StateAtPC, x::String) = (push!(sig, Repr(x)); return sig, nothing)
 
 # fallback: GlobalRef, literals...
-handle_sig!(sig::Vector{Any}, ::StateAtPC, @nospecialize(x)) = (push!(sig, x); return sig, Union{})
+handle_sig!(sig::Vector{Any}, ::StateAtPC, @nospecialize(x)) = (push!(sig, x); return sig, nothing)
 
 function typeof_arg(s::State, @nospecialize(f); callable::Bool=false)
     isa(f, GlobalRef) && return isdefined(f.mod, f.name) ? Core.Typeof(getglobal(f.mod, f.name)) : Any
@@ -421,23 +417,16 @@ function typeof_arg(s::State, @nospecialize(f); callable::Bool=false)
     isa(f, Type) && return Type{f}
     isa(f, QuoteNode) && return Core.Typeof(f.value)
     isexpr(f, :static_parameter) && return Core.Typeof(s.sptypes[first(f.args)::Int])
-    callable && error("f ", f, " with type ", typeof(f), " not supported")   # FIXME self check runtime dispatch
+    callable && error("f ", string(f)::String, " with type ", string(typeof(f)), " not supported")   # FIXME self check runtime dispatch
     return typeof(f)
 end
 function typeof_arg(s::StateAtPC, @nospecialize(f); kwargs...)
     if isa(f, SlotNumber)
         ret = safewidenconst(get_slottype(s, f))
         ret === Union{} || return ret
-        # We have to look at earlier lines and see where this slot is assigned
-        # FIXME: control-flow?
-        state, pc = s
-        for i = pc-1:-1:1
-            stmt = get_stmt((state, i))
-            if isexpr(stmt, :(=)) && stmt.args[1] === f
-                return safewidenconst(get_ssavaluetype((state, i)))
-            end
-        end
-        error("unhandled slot ", f)
+        # "broken" calls end up here, e.g., one where an argument (not necessarily this one) is undefined and inference doesn't bother assigning types
+        # for the other args
+        return TypeUnassigned  # One can't create Tuple{typeof(f), Union{}} so we use a placeholder
     end
     isa(f, Core.Argument) && return safewidenconst(get_slottype(s, f))
     return typeof_arg(first(s), f; kwargs...)
