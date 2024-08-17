@@ -182,12 +182,37 @@ julia> using Cthulhu
 
 julia> ascend(rpts[1])
 Choose a call for analysis (q to quit):
- >   sumup(::typeof(sin))
+     runtime dispatch to make_vals(%1::Any)::Any
+ >     sumup(::typeof(sin))
+
+Open an editor at a possible caller of
+  Tuple{typeof(make_vals), Any}
+or browse typed code:
+ > "REPL[7]", sumup: lines [4]
+   Browse typed code
 ```
 
-`ascend` will show the full call-chain to reach a particlar runtime dispatch; in this case, it was our entry point, but in other cases it may be deeper in the call graph.
+`ascend` will show the full call-chain to reach a particular runtime dispatch; in this case, it was our entry point, but in other cases it may be deeper in the call graph. In this case, we've interactively moved the selector `>` down to the `sumup` call (you cannot descend into the `"runtime dispatch to..."` as there is no known code associated with it) and hit `<Enter>`, at which point Cthulhu showed us that the call to `make_vals(::Any)` occured only on line 4 of the definition of `sumup` (which we entered at the REPL). Cthulhu is now prompting us to either open the code in an editor (which will fail in this case, since there is no associated file!) or view the type-annoted code. If we select the "Browse typed code" option we see
 
-Because Cthulhu is an interactive terminal program, we can't demonstrate it in this page, but you're encouraged to see Cthulhu's documentation which includes a video tutorial.
+```
+sumup(f) @ Main REPL[7]:1
+ 1 function sumup(f::Core.Const(sin))::Any
+ 2     # this function uses the non-constant global variable `n` here
+ 3     # and it makes every succeeding operations type-unstable
+ 4     vals::Any = make_vals(n::Any)::Any
+ 5     s::Any = zero(eltype(vals::Any)::Any)::Any
+ 6     for v::Any in vals::Any::Any
+ 7         (s::Any += f::Core.Const(sin)(v::Any)::Any)::Any
+ 8     end
+ 9     return s::Any
+10 end
+Select a call to descend into or ↩ to ascend. [q]uit. [b]ookmark.
+⋮
+```
+
+with red highlighting to indicate the non-inferable arguments.
+
+For more information, you're encouraged to read Cthulhu's documentation, which includes a video tutorial better-suited to this interactive tool.
 
 ## [Entry Points](@id optanalysis-entry)
 
