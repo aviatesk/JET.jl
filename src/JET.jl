@@ -6,7 +6,7 @@ module JET
 export
     # jetanalyzer
     @report_call, report_call, @test_call, test_call,
-    report_file, test_file, report_package, test_package, report_text, test_text,
+    report_file, test_file, report_package, test_package, report_text, reportkey, test_text,
     watch_file,
     # optanalyzer
     @report_opt, report_opt, @test_opt, test_opt,

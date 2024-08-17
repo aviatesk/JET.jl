@@ -175,6 +175,10 @@ report = @report_opt sumup(sin);
 rpts = JET.get_reports(report)
 ```
 
+!!! tip
+    If `rpts` is a long list, consider using `urpts = unique(reportkey, rpts)` to trim it.
+    See [`reportkey`](@ref).
+
 Now you can `ascend` individual reports:
 
 ```
