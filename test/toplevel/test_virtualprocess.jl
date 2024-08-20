@@ -2238,6 +2238,7 @@ using Pkg
 function test_report_package(test_func, module_ex;
                              base_setup=function ()
                                 Pkg.develop(; path=normpath(FIXTURES_DIR, "PkgAnalysisDep"), io=devnull)
+                                Pkg.precompile(; io=devnull)
                              end,
                              additional_setup=()->nothing,
                              jetconfigs...)
@@ -2255,6 +2256,7 @@ function test_report_package(test_func, module_ex;
 
             Pkg.activate(; temp=true, io=devnull)
             Pkg.develop(; path=pkgpath, io=devnull)
+            Pkg.precompile(; io=devnull)
 
             pkgfile = normpath(pkgpath, "src", "$pkgname.jl")
             write(pkgfile, string(pkgcode))
@@ -2617,6 +2619,7 @@ let old = Pkg.project().path
     try
         Pkg.activate(; temp=true, io=devnull)
         Pkg.develop(; path=normpath(FIXTURES_DIR, "JET597"), io=devnull)
+        Pkg.precompile(; io=devnull)
 
         using JET597
 
