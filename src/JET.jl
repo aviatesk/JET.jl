@@ -410,6 +410,12 @@ function get_result(result::JETCallResult)
         return result.result.result
     end
 end
+
+"""
+    rpts = JET.get_reports(result::JETCallResult)
+
+Split `result` into a vector of reports, one per issue.
+"""
 function get_reports(result::JETCallResult)
     reports = get_reports(result.analyzer, result.result)
     return configured_reports(reports; result.jetconfigs...)
