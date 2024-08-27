@@ -6,8 +6,8 @@ export
     @freshexec,
     @benchmark_freshexec
 
-import Base.Meta: isexpr
-import BenchmarkTools: @benchmarkable
+using Base.Meta: isexpr
+using BenchmarkTools: @benchmarkable
 using JET.JETInterface
 
 """

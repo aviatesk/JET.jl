@@ -2,8 +2,8 @@ module test_Test
 
 using Test, JET
 
-import Base.Meta: isexpr
-import MacroTools: @capture, postwalk
+using Base.Meta: isexpr
+using MacroTools: @capture, postwalk
 
 # runs `f()` in an isolated testset, so that it doesn't influence the currently running test suite
 function with_isolated_testset(f)

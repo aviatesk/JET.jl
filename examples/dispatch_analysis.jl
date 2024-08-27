@@ -52,7 +52,7 @@
 
 using JET.JETInterface
 const CC = Core.Compiler
-import JET: JET
+using JET: JET
 
 struct DispatchAnalyzer{T} <: AbstractAnalyzer
     state::AnalyzerState

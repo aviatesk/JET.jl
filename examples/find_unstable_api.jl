@@ -219,7 +219,7 @@ end
 
 # `UnstableAPIAnalyzer` can detect "unstable API"s even if they're imported binding or
 # nested reference (, which will be resolve to `getproperty`)
-import Base: hasgenerator
+using Base: hasgenerator
 report_unstable_api((Any,)) do mi
     ## NOTE every function call appearing here is unstable
     ci = hasgenerator(mi) ? Core.Compiler.get_staged(mi) : Base.uncompressed_ast(mi)

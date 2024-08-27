@@ -1,7 +1,7 @@
 module test_JETInterface
 
 using JET.JETInterface, JET, Test, InteractiveUtils
-import JET: get_reports, BasicPass, UndefVarErrorReport
+using JET: get_reports, BasicPass, UndefVarErrorReport
 
 # customized report pass
 # ======================
