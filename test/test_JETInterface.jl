@@ -7,13 +7,13 @@ using JET: get_reports, BasicPass, UndefVarErrorReport
 # ======================
 
 struct IgnoreAllPass <: ReportPass end
-(::IgnoreAllPass)(::Type{<:InferenceErrorReport}, @nospecialize(_...)) = return
+(::IgnoreAllPass)(::Type{<:InferenceErrorReport}, @nospecialize(_...)) = false
 let result = @report_call report_pass=IgnoreAllPass() sum("julia")
     @test isempty(get_reports(result))
 end
 
 struct IgnoreAllExceptGlobalUndefVarPass <: ReportPass end
-(::IgnoreAllExceptGlobalUndefVarPass)(::Type{<:InferenceErrorReport}, @nospecialize(_...)) = return
+(::IgnoreAllExceptGlobalUndefVarPass)(::Type{<:InferenceErrorReport}, @nospecialize(_...)) = false
 (::IgnoreAllExceptGlobalUndefVarPass)(::Type{UndefVarErrorReport}, @nospecialize(args...)) = BasicPass()(UndefVarErrorReport, args...)
 let result = report_call(; report_pass=IgnoreAllExceptGlobalUndefVarPass()) do
         sum("julia") # should be ignored
