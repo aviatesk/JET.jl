@@ -237,14 +237,6 @@ JET.@test_opt
 JET.test_opt
 ```
 
-### [Splitting and filtering reports](@id optanalysis-splitting)
-
-The output of `JET.@report_opt` can be split into individual failures for integration with tools like Cthulhu:
-```@docs
-JET.get_reports
-JET.reportkey
-```
-
 ### [Top-level Entry Points](@id optanalysis-toplevel-entry)
 
 By default, JET doesn't offer top-level entry points for the optimization analysis, because it's usually used for only a
