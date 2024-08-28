@@ -251,7 +251,7 @@ given that the number of matching methods are limited beforehand.
 """
 CC.bail_out_call(::JETAnalyzer, ::CC.InferenceLoopState, ::InferenceState) = false
 
-struct __DummyConcrete__ end
+struct __DummyRettype__ end
 
 """
     Core.Compiler.add_call_backedges!(analyzer::JETAnalyzer, ...)
@@ -265,8 +265,8 @@ function CC.add_call_backedges!(
     edges::Vector{MethodInstance}, matches::Union{MethodMatches,UnionSplitMethodMatches}, @nospecialize(atype),
     sv::InferenceState)
     return @invoke CC.add_call_backedges!(
-        # NOTE this `__DummyConcrete__` hack forces `add_call_backedges!(::AbstractInterpreter,...)` to add backedges
-        analyzer::AbstractInterpreter, __DummyConcrete__::Any, effects::CC.Effects,
+        # NOTE this `__DummyRettype__()` hack forces `add_call_backedges!(::AbstractInterpreter,...)` to add backedges
+        analyzer::AbstractInterpreter, __DummyRettype__()::Any, effects::CC.Effects,
         edges::Vector{MethodInstance}, matches::Union{MethodMatches,UnionSplitMethodMatches}, atype::Any,
         sv::InferenceState)
 end
