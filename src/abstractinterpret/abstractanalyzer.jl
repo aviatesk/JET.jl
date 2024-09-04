@@ -554,10 +554,7 @@ CC.may_compress(::AbstractAnalyzer) = generating_output()
 CC.may_discard_trees(::AbstractAnalyzer) = false
 
 let # overload `inlining_policy`
-    @static if isdefined(CC, :InliningInfo)
-        sigs_ex = :(analyzer::AbstractAnalyzer, @nospecialize(src), iinfo::CC.InliningInfo)
-        args_ex = :(analyzer::AbstractInterpreter, src::Any, iinfo::CC.InliningInfo)
-    elseif VERSION ≥ v"1.11.0-DEV.879"
+    @static if VERSION ≥ v"1.11.0-DEV.879"
         sigs_ex = :(analyzer::AbstractAnalyzer, @nospecialize(src), @nospecialize(info::CC.CallInfo), stmt_flag::UInt32)
         args_ex = :(analyzer::AbstractInterpreter, src::Any, info::CC.CallInfo, stmt_flag::UInt32)
     elseif VERSION ≥ v"1.11.0-DEV.377"
