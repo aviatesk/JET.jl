@@ -36,14 +36,15 @@ using Core: Builtin, IntrinsicFunction, Intrinsics, SimpleVector, svec
 using Core.IR
 
 using .CC: @nospecs, ⊑,
-    AbstractInterpreter, AbstractLattice, ArgInfo, Bottom, CFG, CachedMethodTable, CallMeta,
-    ConstCallInfo, InferenceParams, InferenceResult, InferenceState, InternalMethodTable,
-    InvokeCallInfo, MethodCallResult, MethodMatchInfo, MethodMatches, NOT_FOUND,
-    OptimizationState, OptimizationParams, OverlayMethodTable, StmtInfo, UnionSplitInfo,
-    UnionSplitMethodMatches, VarState, VarTable, WorldRange, WorldView,
-    argextype, argtype_by_index, argtypes_to_type, hasintersect, ignorelimited,
-    instanceof_tfunc, istopfunction, singleton_type, slot_id, specialize_method,
-    tmeet, tmerge, typeinf_lattice, widenconst, widenlattice
+    AbstractInterpreter, AbstractLattice, ArgInfo, BasicBlock, Bottom, CFG, CachedMethodTable,
+    CallMeta, ConstCallInfo, InferenceParams, InferenceResult, InferenceState,
+    InternalMethodTable, InvokeCallInfo, MethodCallResult, MethodMatchInfo, MethodMatches,
+    NOT_FOUND, OptimizationState, OptimizationParams, OverlayMethodTable, StmtInfo,
+    UnionSplitInfo, UnionSplitMethodMatches, VarState, VarTable, WorldRange, WorldView,
+    argextype, argtype_by_index, argtypes_to_type, compute_basic_blocks, construct_domtree,
+    construct_postdomtree, hasintersect, ignorelimited, instanceof_tfunc, istopfunction,
+    nearest_common_dominator, singleton_type, slot_id, specialize_method, tmeet, tmerge,
+    typeinf_lattice, widenconst, widenlattice
 
 using Base: IdSet, get_world_counter
 
