@@ -4,6 +4,7 @@ authors = ["Shuhei Kadowaki <aviatesk@gmail.com>"]
 version = "0.9.8"
 
 [deps]
+CassetteBase = "6dd3e646-b1c5-42c7-94be-00277fa12e22"
 CodeTracking = "da1fd8a2-8d9e-5ec2-8556-3022fb5608a2"
 InteractiveUtils = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
 JuliaInterpreter = "aa1ae85d-cabe-5617-a682-6adf51b2e16a"

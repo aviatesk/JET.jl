@@ -32,7 +32,9 @@ using Test, JET
         @testset "OptAnalyzer" include("analyzers/test_optanalyzer.jl")
     end
 
-    @testset "performance" include("performance.jl")
+    @testset "runtime" include("runtime.jl")
+
+    @testset "performance" include("test_performance.jl")
 
     @testset "sanity check" include("sanity_check.jl")
 
