@@ -231,7 +231,8 @@ struct JETCallback
     analysis_cache::AnalysisCache
 end
 
-@static if VERSION ≥ v"1.11.0-DEV.798"
+@static if VERSION ≥ v"1.11.0-DEV.1552" # nothing to do
+elseif VERSION ≥ v"1.11.0-DEV.798"
 function add_jet_callback!(mi::MethodInstance, analysis_cache::AnalysisCache)
     callback = JETCallback(analysis_cache)
     CC.add_invalidation_callback!(callback, mi)
