@@ -1213,7 +1213,7 @@ end
 # a more careful implementation is required for this aspect.
 #
 # [Wei84]: M. Weiser, "Program Slicing," IEEE Transactions on Software Engineering, 10, pages 352-357, July 1984.
-function add_control_flow!(concretize::BitVector, src::CodeInfo, cfg::CFG, domtree, postdomtree)
+function add_control_flow!(concretize::BitVector, src::CodeInfo, cfg::CFG, postdomtree)
     local changed::Bool = false
     function mark_concretize!(idx::Int)
         if !concretize[idx]
@@ -1262,8 +1262,8 @@ end
 function visit_𝑰𝑵𝑭𝑳_blocks(func, bb::BasicBlock, cfg::CFG, postdomtree)
     succ1, succ2 = bb.succs
     postdominator = nearest_common_dominator(postdomtree, succ1, succ2)
-    inflblks = reachable_blocks(cfg, succ1, postdominator) ∪ reachable_blocks(cfg, succ2, postdominator)
-    return func(postdominator, inflblks)
+    𝑰𝑵𝑭𝑳 = reachable_blocks(cfg, succ1, postdominator) ∪ reachable_blocks(cfg, succ2, postdominator)
+    return func(postdominator, 𝑰𝑵𝑭𝑳)
 end
 
 function reachable_blocks(cfg::CFG, from_bb::Int, to_bb::Int)
@@ -1325,7 +1325,6 @@ end
 function select_dependencies!(concretize::BitVector, src::CodeInfo, edges, cl)
     typedefs = LoweredCodeUtils.find_typedefs(src)
     cfg = compute_basic_blocks(src.code)
-    domtree = construct_domtree(cfg.blocks)
     postdomtree = construct_postdomtree(cfg.blocks)
 
     while true
@@ -1350,7 +1349,7 @@ function select_dependencies!(concretize::BitVector, src::CodeInfo, edges, cl)
         changed |= add_ssa_preds!(concretize, src, edges, ())
 
         # Mark necessary control flows.
-        changed |= add_control_flow!(concretize, src, cfg, domtree, postdomtree)
+        changed |= add_control_flow!(concretize, src, cfg, postdomtree)
         changed |= add_ssa_preds!(concretize, src, edges, ())
 
         changed || break
@@ -1390,17 +1389,17 @@ function compute_dead_blocks(concretize::BitVector, src::CodeInfo, cfg::CFG, pos
             termidx = bb.stmts[end]
             @assert is_conditional_terminator(src.code[termidx]) "invalid IR"
             visit_𝑰𝑵𝑭𝑳_blocks(bb, cfg, postdomtree) do postdominator::Int, 𝑰𝑵𝑭𝑳::BitSet
-                is_active_inflblks = false
+                is_𝑰𝑵𝑭𝑳_active = false
                 for blk in 𝑰𝑵𝑭𝑳
                     if blk == postdominator
                         continue # skip the post-dominator block and continue to a next infl block
                     end
                     if any(@view concretize[cfg.blocks[blk].stmts])
-                        is_active_inflblks |= true
+                        is_𝑰𝑵𝑭𝑳_active |= true
                         break
                     end
                 end
-                if !is_active_inflblks
+                if !is_𝑰𝑵𝑭𝑳_active
                     union!(dead_blocks, delete!(𝑰𝑵𝑭𝑳, postdominator))
                 end
             end
