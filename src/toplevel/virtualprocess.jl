@@ -1418,7 +1418,7 @@ function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, 
         return frame.pc += 1
     end
 
-    res = @invoke JuliaInterpreter.step_expr!(interp::Any, frame::Any, node::Any, true::Bool)
+    res = @invoke JuliaInterpreter.step_expr!(interp::Any, frame::Frame, node::Any, istoplevel::Bool)
 
     should_analyze_from_definitions(interp.config) && collect_toplevel_signature!(interp, frame, node)
 
@@ -1585,7 +1585,7 @@ const JULIAINTERPRETER_BUILTINS_FILE = let
 end
 
 # handle errors from toplevel user code
-function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame, err)
+function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame::Frame, @nospecialize(err))
     # catch stack trace
     bt = catch_backtrace()
     st = stacktrace(bt)
