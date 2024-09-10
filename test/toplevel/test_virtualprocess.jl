@@ -1713,17 +1713,17 @@ end
     # this particular example is adapted from https://en.wikipedia.org/wiki/Program_slicing
     let src = @src let
             N = 10
-            sum = 0
+            s = 0
             product = 1 # should NOT be selected
             w = 7
             for i in 1:N
-                sum += i + w
+                s += i + w
                 product *= i # should NOT be selected
             end
-            @eval global getsum() = $sum # concretization is forced
             write(product) # should NOT be selected
         end
-        slice = JET.select_statements(@__MODULE__, src)
+        slotid = findfirst(n::Symbol->n===:s, src.slotnames)::Int
+        slice = JET.select_statements(@__MODULE__, src, Core.SlotNumber(slotid))
 
         found_N = found_sum = found_product = found_w = found_write = false
         for (i, stmt) in enumerate(src.code)
@@ -1733,7 +1733,7 @@ end
                     if src.slotnames[lhs.id] === :w
                         found_w = true
                         @test slice[i]
-                    elseif src.slotnames[lhs.id] === :sum
+                    elseif src.slotnames[lhs.id] === :s
                         found_sum = true
                         @test slice[i]
                     elseif src.slotnames[lhs.id] === :N
@@ -1748,7 +1748,7 @@ end
                 found_write = true
                 @test !slice[i]
             elseif (JET.isexpr(stmt, :call) && (arg1 = stmt.args[1]; arg1 isa Core.SSAValue) &&
-                src.code[arg1.id] === :write)
+                    src.code[arg1.id] === :write)
                 found_write = true
                 @test !slice[i]
             end
@@ -1759,14 +1759,14 @@ end
             redirect_stdout(io) do
                 vmod, res = @analyze_toplevel2 let
                     N = 10
-                    sum = 0
+                    s = 0
                     product = 1 # should NOT be selected
                     w = 7
                     for i in 1:N
-                        sum += i + w
+                        s += i + w
                         product *= i # should NOT be selected
                     end
-                    @eval global getsum() = $sum # concretization is forced
+                    @eval global getsum() = $s # concretization is forced
                     println("This should not be printed: ", product) # should NOT be selected
                 end
                 @test isempty(res.res.toplevel_error_reports)
@@ -1776,6 +1776,108 @@ end
             read(path, String)
         end
         @test isempty(s)
+    end
+
+    # A more complex test case (xref: https://github.com/JuliaDebug/LoweredCodeUtils.jl/pull/99#issuecomment-2236373067)
+    # This test case might seem simple at first glance, but note that `x2` and `a2` are
+    # defined at the top level (because of the `begin` at the top).
+    # Since global variable type declarations have been allowed since v1.
+    # 10, a conditional branch that includes `Core.get_binding_type` is generated for
+    # these simple global variable assignments.
+    # Specifically, the code is lowered into something like this:
+    #     1      1: conditional branching based on `x2`'s binding type
+    #     │╲
+    #     │ ╲
+    #     │  ╲   2: goto block for the case when no conversion is required for the value of `x2`
+    #     2   3  3: fall-through block for the case when a conversion is required for the value of `x2`
+    #     │  ╱
+    #     │ ╱
+    #     │╱
+    #     4      4: assignment to `x2`, **and**
+    #     │╲        conditional branching based on `a2`'s binding type
+    #     │ ╲
+    #     │  ╲   5: goto block for the case when no conversion is required for the value of `a2`
+    #     5   6  6: fall-through block for the case when a conversion is required for the value of `a2`
+    #     │  ╱
+    #     │ ╱
+    #     │╱
+    #     7      7: assignment to `a2`
+    # What's important to note here is that since there's an assignment to `a2`,
+    # concretization of the blocks 4-6 is necessary. However, at the same time we also want
+    # to skip concretizing the blocks 1-3.
+    let src = @src begin
+            x2 = 5
+            a2 = 1
+        end
+        slice = JET.select_statements(@__MODULE__, src, :a2)
+
+        found_a2 = found_a2_get_binding_type = found_x2 = found_x2_get_binding_type = false
+        for (i, stmt) in enumerate(src.code)
+            if JET.isexpr(stmt, :(=))
+                lhs, rhs = stmt.args
+                if lhs isa GlobalRef
+                    lhs = lhs.name
+                end
+                if lhs === :a2
+                    found_a2 = true
+                    @test slice[i]
+                elseif lhs === :x2
+                    found_x2 = true
+                    @test !slice[i] # this is easy to meet
+                end
+            elseif JET.@capture(stmt, $(GlobalRef(Core, :get_binding_type))(_, :a2))
+                found_a2_get_binding_type = true
+                @test slice[i]
+            elseif JET.@capture(stmt, $(GlobalRef(Core, :get_binding_type))(_, :x2))
+                found_x2_get_binding_type = true
+                @test !slice[i] # this is difficult to meet
+            end
+        end
+        @test found_a2; @test found_a2_get_binding_type; @test found_x2; @test found_x2_get_binding_type
+    end
+    let src = @src begin
+            cond = true
+            if cond
+                x = 1
+                y = 1
+            else
+                x = 2
+                y = 2
+            end
+        end
+        slice = JET.select_statements(@__MODULE__, src, :x)
+
+        found_cond = found_cond_get_binding_type = false
+        found_x = found_x_get_binding_type = found_y = found_y_get_binding_type = 0
+        for (i, stmt) in enumerate(src.code)
+            if JET.isexpr(stmt, :(=))
+                lhs, rhs = stmt.args
+                if lhs isa GlobalRef
+                    lhs = lhs.name
+                end
+                if lhs === :cond
+                    found_cond = true
+                    @test slice[i]
+                elseif lhs === :x
+                    found_x += 1
+                    @test slice[i]
+                elseif lhs === :y
+                    found_y += 1
+                    @test !slice[i]
+                end
+            elseif JET.@capture(stmt, $(GlobalRef(Core, :get_binding_type))(_, :cond))
+                found_cond_get_binding_type = true
+                @test slice[i]
+            elseif JET.@capture(stmt, $(GlobalRef(Core, :get_binding_type))(_, :x))
+                found_x_get_binding_type += 1
+                @test slice[i]
+            elseif JET.@capture(stmt, $(GlobalRef(Core, :get_binding_type))(_, :y))
+                found_y_get_binding_type += 1
+                @test !slice[i]
+            end
+        end
+        @test found_cond; @test found_cond_get_binding_type
+        @test found_x == found_x_get_binding_type == found_y == found_y_get_binding_type == 2
     end
 
     @testset "captured variables" begin
