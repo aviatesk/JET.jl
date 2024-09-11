@@ -1781,8 +1781,8 @@ end
     # A more complex test case (xref: https://github.com/JuliaDebug/LoweredCodeUtils.jl/pull/99#issuecomment-2236373067)
     # This test case might seem simple at first glance, but note that `x2` and `a2` are
     # defined at the top level (because of the `begin` at the top).
-    # Since global variable type declarations have been allowed since v1.
-    # 10, a conditional branch that includes `Core.get_binding_type` is generated for
+    # Since global variable type declarations have been allowed since v1.10,
+    # a conditional branch that includes `Core.get_binding_type` is generated for
     # these simple global variable assignments.
     # Specifically, the code is lowered into something like this:
     #     1      1: conditional branching based on `x2`'s binding type
