@@ -40,6 +40,7 @@ Preferences = "1.4"
 Random = "1.10"
 Revise = "3.3"
 StaticArrays = "1.7.0"
+TOML = "1.0.3"
 Test = "1.10"
 julia = "1.10"
 
@@ -53,7 +54,8 @@ Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Aqua", "BenchmarkTools", "Cthulhu", "Example", "Libdl", "Logging", "Random", "Revise", "StaticArrays", "Test"]
+test = ["Aqua", "BenchmarkTools", "Cthulhu", "Example", "Libdl", "Logging", "Random", "Revise", "StaticArrays", "TOML", "Test"]

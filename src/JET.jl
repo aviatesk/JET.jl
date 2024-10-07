@@ -618,6 +618,9 @@ General users should use high-level entry points like [`report_call`](@ref) and 
 """
 function analyze_and_report_call!(analyzer::AbstractAnalyzer, @nospecialize(f), @nospecialize(types = Base.default_tt(f));
                                   jetconfigs...)
+    if f isa Core.OpaqueClosure
+        return analyze_and_report_opaque_closure!(analyzer, f, types; jetconfigs...)
+    end
     tt = Base.signature_type(f, types)
     return analyze_and_report_call!(analyzer, tt::Type{<:Tuple}; jetconfigs...)
 end
@@ -673,6 +676,19 @@ end
 function analyze_method_signature!(analyzer::AbstractAnalyzer, m::Method, @nospecialize(atype), sparams::SimpleVector)
     mi = specialize_method(m, atype, sparams)::MethodInstance
     return analyze_method_instance!(analyzer, mi)
+end
+
+function analyze_and_report_opaque_closure!(analyzer::AbstractAnalyzer, oc::Core.OpaqueClosure, @nospecialize(types);
+                                            jetconfigs...)
+    validate_configs(analyzer, jetconfigs)
+    env = Base.to_tuple_type(Any[Core.Typeof(x) for x in oc.captures])
+    tt = Tuple{env, #=sig=#(Base.to_tuple_type(types)::DataType).parameters...}
+    mi = specialize_method(oc.source::Method, tt, svec())
+    analyzer, result = analyze_method_instance!(analyzer, mi)
+    analyzername = nameof(typeof(analyzer))
+    sig = LazyPrinter(io->Base.show_tuple_as_call(io, Symbol(""), tt))
+    source = lazy"$analyzername: $sig"
+    return JETCallResult(result, analyzer, source; jetconfigs...)
 end
 
 function analyze_method_instance!(analyzer::AbstractAnalyzer, mi::MethodInstance)
