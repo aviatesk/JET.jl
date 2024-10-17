@@ -98,7 +98,7 @@ end
 @inline get_sig(s::StateAtPC, @nospecialize(x=get_stmt(s))) = Signature(get_sig_nowrap(s, x)...)
 get_sig(sv::InferenceState) = get_sig((sv, get_currpc(sv)))
 
-get_sig(mi::MethodInstance) = Signature(Any[mi], mi.specTypes::DataType)
+get_sig(mi::MethodInstance) = Signature(Any[mi], mi.specTypes::Type)
 get_sig(caller::InferenceResult) = get_sig(get_linfo(caller))
 
 const HandleSigRT = Tuple{Vector{Any}, Union{Type,Nothing}}   # the return type of `handle_sig!`
