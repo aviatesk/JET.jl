@@ -103,5 +103,24 @@ sparams22(::Type{A}, ::Type{B}) where B where A = zero(A), zero(B)
     end
 end
 
+@testset "broadcasting over custom types" begin
+    struct Point{dim,T}
+        coord::NTuple{dim,T}
+    end
+    getcoordinate(n) = n.coord
+
+    pts = Point.(rand(NTuple{2,Float64}, 10))
+
+    fun(p) = getcoordinate.(p)
+    coords = fun(pts)
+    @report_opt fun(pts)    # No errors detected
+    @report_call fun(pts)   # No errors detected
+
+    fun2(p) = map(getcoordinate, p)
+    coords = fun2(pts)
+    @report_opt fun2(pts)    # No errors detected
+    @report_call fun2(pts)   # No errors detected
+end
+
 # TODO set up a dedicated module context for this testset
 # end # module test_inferenceerrorreport

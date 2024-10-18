@@ -1150,4 +1150,23 @@ test_call(; broken=true) do
     func40399()
 end
 
+@testset "broadcasting over custom types" begin
+    struct Point{dim,T}
+        coord::NTuple{dim,T}
+    end
+    getcoordinate(n) = n.coord
+
+    pts = Point.(rand(NTuple{2,Float64}, 10))
+
+    fun(p) = getcoordinate.(p)
+    coords = fun(pts)
+    @report_opt fun(pts)    # No errors detected
+    @report_call fun(pts)   # No errors detected
+
+    fun2(p) = map(getcoordinate, p)
+    coords = fun2(pts)
+    @report_opt fun2(pts)    # No errors detected
+    @report_call fun2(pts)   # No errors detected
+end
+
 end # module test_jetanalyzer
