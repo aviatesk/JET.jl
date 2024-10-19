@@ -1135,6 +1135,17 @@ end |> only === Val{1}
 end |> only === Val{3}
 @test_call sort([1,2,3])
 @test_call sort!([1,2,3])
+# aviatesk/JET.jl#669
+@static if VERSION ≥ v"1.11-"
+struct Point669{dim,T}
+    coord::NTuple{dim,T}
+end
+getcoordinate669(n) = n.coord
+f669(p) = getcoordinate669.(p)
+let pts = Point669.(rand(NTuple{2,Float64}, 10))
+    @test_call f669(pts)
+end
+end # @static if VERSION ≥ v"1.11-"
 
 @test isconcretetype(only(Base.return_types(pairs, (@NamedTuple{kw1::Int,kw2::String},); interp=JET.JETAnalyzer())))
 
