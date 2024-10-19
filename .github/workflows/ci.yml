@@ -20,9 +20,9 @@ jobs:
           - version: '1.10.0' # lowerest version supported
             os: ubuntu-latest
             arch: x64
-          - version: '1.11-nightly' # next release
-            os: ubuntu-latest
-            arch: x64
+          # - version: '1.11-nightly' # next release
+          #   os: ubuntu-latest
+          #   arch: x64
           - version: 'nightly' # dev
             os: ubuntu-latest
             arch: x64
