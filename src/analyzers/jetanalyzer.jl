@@ -291,7 +291,8 @@ function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
         if res === :concrete_eval
             return :concrete_eval
         end
-    elseif istopfunction(f, :fieldindex)
+    elseif (istopfunction(f, :fieldindex) || istopfunction(f, :typejoin) ||
+            istopfunction(f, :typejoin_union_tuple))
         if concrete_eval_eligible_ignoring_overlay(result, arginfo)
             return :concrete_eval
         end
