@@ -935,6 +935,18 @@ function analyze_and_report_text!(analyzer::AbstractAnalyzer, text::AbstractStri
     return JETToplevelResult(analyzer, res, source; jetconfigs...)
 end
 
+function analyze_and_report_expr!(analyzer::AbstractAnalyzer, expr::Expr,
+                                  filename::AbstractString = "top-level",
+                                  pkgid::Union{Nothing,Base.PkgId} = nothing;
+                                  jetconfigs...)
+    validate_configs(analyzer, jetconfigs)
+    config = ToplevelConfig(pkgid; jetconfigs...)
+    res = virtual_process(expr, filename, analyzer, config)
+    analyzername = nameof(typeof(analyzer))
+    source = lazy"$analyzername: \"$filename\""
+    return JETToplevelResult(analyzer, res, source; jetconfigs...)
+end
+
 """
 Configurations for "watch" mode.
 The configurations will only be active when used with [`watch_file`](@ref).

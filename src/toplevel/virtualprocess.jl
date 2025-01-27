@@ -576,9 +576,6 @@ function _virtual_process!(res::VirtualProcessResult,
         println(io, "entered into $filename")
     end
 
-    push!(res.included_files, filename)
-    push!(res.files_stack, filename)
-
     s = String(s)::String
     toplevelex = Base.parse_input_line(s; filename)
 
@@ -591,7 +588,6 @@ function _virtual_process!(res::VirtualProcessResult,
         @assert isexpr(toplevelex, :toplevel)
         _virtual_process!(res, toplevelex, filename, analyzer, config, context, pkg_mod_depth)
     end
-    pop!(res.files_stack)
 
     with_toplevel_logger(config) do @nospecialize(io)
         sec = round(time() - start; digits = 3)
@@ -609,6 +605,9 @@ function _virtual_process!(res::VirtualProcessResult,
                            context::Module,
                            pkg_mod_depth::Int,
                            force_concretize::Bool = false)
+    push!(res.included_files, filename)
+    push!(res.files_stack, filename)
+
     local lnnref = Ref(LineNumberNode(0, filename))
 
     function err_handler(@nospecialize(err), st)
@@ -841,6 +840,8 @@ function _virtual_process!(res::VirtualProcessResult,
 
         append!(res.inference_error_reports, get_reports(analyzer, result)) # collect error reports
     end
+
+    pop!(res.files_stack)
 
     return res
 end
