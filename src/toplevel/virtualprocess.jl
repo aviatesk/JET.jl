@@ -287,6 +287,7 @@ struct ToplevelConfig
     concretization_patterns::Vector{Any}
     virtualize::Bool
     toplevel_logger # ::Union{Nothing,IO}
+    include_callback # ::Union{Nothing,Base.Callable}
     function ToplevelConfig(
         pkgid::Union{Nothing,Base.PkgId} = nothing;
         context::Module = Main,
@@ -294,6 +295,7 @@ struct ToplevelConfig
         concretization_patterns = Any[],
         virtualize::Bool = true,
         toplevel_logger::Union{Nothing,IO} = nothing,
+        include_callback::Union{Nothing,Base.Callable} = nothing,
         __jetconfigs...)
         concretization_patterns = Any[striplines(normalise(x)) for x in concretization_patterns]
         for pat in default_concretization_patterns()
@@ -308,7 +310,8 @@ struct ToplevelConfig
             analyze_from_definitions,
             concretization_patterns,
             virtualize,
-            toplevel_logger)
+            toplevel_logger,
+            include_callback)
     end
 end
 
@@ -822,7 +825,8 @@ function _virtual_process!(res::VirtualProcessResult,
         fix_self_references!(res.actual2virtual, src)
 
         interp = ConcreteInterpreter(filename, lnnref[], usemodule_with_err_handling,
-                                     context, analyzer, config, res, pkg_mod_depth)
+                                     context, analyzer, config, res, pkg_mod_depth,
+                                     config.include_callback)
         if force_concretize
             JuliaInterpreter.finish!(interp, Frame(context, src), true)
             continue
@@ -1059,6 +1063,7 @@ struct ConcreteInterpreter{F,Analyzer<:AbstractAnalyzer}
     config::ToplevelConfig
     res::VirtualProcessResult
     pkg_mod_depth::Int
+    include_callback # ::Union{Nothing,Base.Callable}
 end
 
 """
@@ -1435,7 +1440,10 @@ function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func)
     end
     # `scrub_offset = 3` corresponds to `with_err_handling` -> `f`
     include_text = with_err_handling(read_err_handler, #=scrub_offset=#2) do
-        read(include_file, String)
+        if interp.include_callback === nothing # fallbacks to the default `read` function
+            return read(include_file, String)
+        end
+        return interp.include_callback(include_file)
     end
     isnothing(include_text) && return nothing # typically no file error
 
