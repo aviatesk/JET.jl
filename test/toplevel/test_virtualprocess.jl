@@ -501,7 +501,7 @@ end
         end
 
         @test !isempty(res.res.toplevel_error_reports)
-        @test only(res.res.toplevel_error_reports) isa SyntaxErrorReport
+        @test only(res.res.toplevel_error_reports) isa LoweringErrorReport
     end
 end
 

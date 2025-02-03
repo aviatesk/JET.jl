@@ -21,11 +21,7 @@ end
         let s = String(take!(io))
             @test occursin("1 toplevel error found", s)
             @test occursin(Regex("@ $(@__FILE__):\\d"), s)
-            @static if JET.JULIA_SYNTAX_ENABLED
-                @test occursin("invalid identifier", s) || occursin("Expected `end`", s)
-            else
-                @test occursin("syntax: unexpected \"end\"", s)
-            end
+            @test occursin("invalid identifier", s)
         end
 
         res = report_text(src, "foo")
@@ -33,11 +29,7 @@ end
         let s = String(take!(io))
             @test occursin("1 toplevel error found", s)
             @test occursin(r"@ foo:\d", s)
-            @static if JET.JULIA_SYNTAX_ENABLED
-                @test occursin("invalid identifier", s) || occursin("Expected `end`", s)
-            else
-                @test occursin("syntax: unexpected \"end\"", s)
-            end
+            @test occursin("invalid identifier", s)
         end
     end
 end

@@ -22,16 +22,26 @@ function Base.getproperty(er::ToplevelErrorReport, sym::Symbol)
 end
 
 struct SyntaxErrorReport <: ToplevelErrorReport
-    err::Exception
+    err::JuliaSyntax.ParseError
     file::String
     line::Int
-    function SyntaxErrorReport(@nospecialize(err), file, line)
-        isa(err, Exception) || (err = ErrorException(err))
-        return new(err, file, line)
+    function SyntaxErrorReport(err::JuliaSyntax.ParseError)
+        lnn = JuliaSyntax.source_location(LineNumberNode, err.source,
+            JuliaSyntax.first_byte(first(err.diagnostics)))
+        return new(err, String(lnn.file::Symbol), lnn.line)
     end
 end
 # don't show stacktrace for syntax errors
 print_report(io::IO, report::SyntaxErrorReport) = showerror(io, report.err)
+
+# TODO Use JuliaLowering.jl here
+struct LoweringErrorReport <: ToplevelErrorReport
+    msg::String
+    file::String
+    line::Int
+end
+# don't show stacktrace for lowering errors
+print_report(io::IO, report::LoweringErrorReport) = showerror(io, ErrorException(lazy"syntax: $(report.msg)"))
 
 # wraps general errors from actual execution
 struct ActualErrorWrapped <: ToplevelErrorReport
@@ -40,10 +50,6 @@ struct ActualErrorWrapped <: ToplevelErrorReport
     file::String
     line::Int
     function ActualErrorWrapped(@nospecialize(err), st, file, line)
-        if isa(err, ErrorException) && startswith(err.msg, "syntax: ")
-            # forward syntax error
-            return SyntaxErrorReport(err.msg, file, line)
-        end
         return new(err, st, file, line)
     end
 end
@@ -580,16 +586,19 @@ function _virtual_process!(res::VirtualProcessResult,
     end
 
     s = String(s)::String
-    toplevelex = Base.parse_input_line(s; filename)
+    parsed = try
+        JuliaSyntax.parseall(Expr, s; filename)
+    catch err
+        err isa JuliaSyntax.ParseError || rethrow(err)
+        err
+    end
 
-    if isexpr(toplevelex, (:error, :incomplete))
+    if parsed isa JuliaSyntax.ParseError
         # if there's any syntax error, try to identify all the syntax error location
-        report_syntax_errors!(res, s, filename)
-    elseif isnothing(toplevelex)
-        # just return if there is nothing to analyze
+        push!(res.toplevel_error_reports, SyntaxErrorReport(parsed))
     else
-        @assert isexpr(toplevelex, :toplevel)
-        _virtual_process!(res, toplevelex, filename, analyzer, config, context, pkg_mod_depth)
+        @assert isexpr(parsed, :toplevel)
+        _virtual_process!(res, parsed, filename, analyzer, config, context, pkg_mod_depth)
     end
 
     with_toplevel_logger(config) do @nospecialize(io)
@@ -642,8 +651,8 @@ function _virtual_process!(res::VirtualProcessResult,
             lwr = lower(mod, x)
             # here we should capture syntax errors found during lowering
             if isexpr(lwr, :error)
-                msg = first(lwr.args)
-                push!(res.toplevel_error_reports, SyntaxErrorReport(lazy"syntax: $msg", filename, lnnref[].line))
+                msg = first(lwr.args)::String
+                push!(res.toplevel_error_reports, LoweringErrorReport(msg, filename, lnnref[].line))
                 return nothing
             end
             return lwr
@@ -1527,35 +1536,6 @@ let s = string(nameof(AbstractGlobal))
         io = IOBuffer()
         showerror(io, err)
         occursin(s, String(take!(io)))
-    end
-end
-
-function report_syntax_errors!(res, s, filename)
-    index = line = 1
-    while begin
-            ex, nextindex = Base.Meta._parse_string(s, filename, line, index, :statement)
-            !isnothing(ex)
-        end
-        line += count(==('\n'), s[index:nextindex-1])
-        if isexpr(ex, :error)
-            err = only(ex.args)
-            if (@static JULIA_SYNTAX_ENABLED && true) && isa(err, ParseError)
-                report = SyntaxErrorReport(err, filename, line)
-            else
-                report = SyntaxErrorReport(lazy"syntax: $err", filename, line)
-            end
-        elseif isexpr(ex, :incomplete)
-            err = only(ex.args)
-            if (@static JULIA_SYNTAX_ENABLED && true) && isa(err, ParseError)
-                report = SyntaxErrorReport(err, filename, line)
-            else
-                report = SyntaxErrorReport(lazy"syntax: $err", filename, line)
-            end
-        else
-            report = nothing
-        end
-        isnothing(report) || push!(res.toplevel_error_reports, report)
-        index = nextindex
     end
 end
 

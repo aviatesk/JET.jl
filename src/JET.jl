@@ -52,6 +52,8 @@ using Base.Meta: ParseError, isexpr, lower
 
 using Base.Experimental: @MethodTable, @overlay
 
+using JuliaSyntax: JuliaSyntax
+
 using CodeTracking: CodeTracking
 
 using LoweredCodeUtils: LoweredCodeUtils, add_ssa_preds!, callee_matches
@@ -333,8 +335,6 @@ include("abstractinterpret/abstractanalyzer.jl")
 include("abstractinterpret/typeinfer.jl")
 
 function print_report end
-
-const JULIA_SYNTAX_ENABLED = !(Base.get_bool_env("JULIA_USE_FLISP_PARSER", false))
 
 include("toplevel/virtualprocess.jl")
 
