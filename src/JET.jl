@@ -9,15 +9,20 @@ const JET_LOADABLE = JET_DEV_MODE || (get(VERSION.prerelease, 1, "") != "DEV")
 # exports
 # =======
 
-export
+const exports = Set{Symbol}((
     # jetanalyzer
-    @report_call, report_call, @test_call, test_call,
-    report_file, test_file, report_package, test_package, report_text, reportkey, test_text,
-    watch_file,
+    Symbol("@report_call"), :report_call, Symbol("@test_call"), :test_call,
+    :report_file, :test_file, :report_package, :test_package, :report_text, :reportkey, :test_text,
+    :watch_file,
     # optanalyzer
-    @report_opt, report_opt, @test_opt, test_opt,
+    Symbol("@report_opt"), :report_opt, Symbol("@test_opt"), :test_opt,
     # configurations
-    LastFrameModule, AnyFrameModule
+    :LastFrameModule, :AnyFrameModule
+))
+
+for exported_name in exports
+    Core.eval(@__MODULE__, Expr(:export, exported_name))
+end
 
 # Pre-release Julia versions are not supported, and we don't expect JET to even
 # precompile in pre-release versions. So, instead of having JET fail to precompile, we
@@ -28,12 +33,6 @@ export
 @static if JET_LOADABLE
     include("JETBase.jl")
 else
-    @warn """
-    JET.jl does not guarantee compatibility with nightly versions of Julia and,
-    it will not be loaded on nightly versions by default.
-    If you want to load JET on a nightly version, set the `JET_DEV_MODE` Preferences.jl
-    configuration to `true` and reload it.
-    """
     include("JETEmpty.jl")
 end
 
