@@ -1,16 +1,3 @@
-# exports
-# =======
-
-export
-    # jetanalyzer
-    @report_call, report_call, @test_call, test_call,
-    report_file, test_file, report_package, test_package, report_text, reportkey, test_text,
-    watch_file,
-    # optanalyzer
-    @report_opt, report_opt, @test_opt, test_opt,
-    # configurations
-    LastFrameModule, AnyFrameModule
-
 let README = normpath(dirname(@__DIR__), "README.md")
     s = read(README, String)
     s = replace(s,
