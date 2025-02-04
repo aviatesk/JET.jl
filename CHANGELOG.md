@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 <!-- links start -->
+[0.9.16]: https://github.com/aviatesk/JET.jl/compare/v0.9.15...v0.9.16
 [0.9.15]: https://github.com/aviatesk/JET.jl/compare/v0.9.14...v0.9.15
 [0.9.14]: https://github.com/aviatesk/JET.jl/compare/v0.9.13...v0.9.14
 [0.9.13]: https://github.com/aviatesk/JET.jl/compare/v0.9.12...v0.9.13
@@ -33,6 +34,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.8.1]: https://github.com/aviatesk/JET.jl/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/aviatesk/JET.jl/compare/v0.7.15...v0.8.0
 <!-- links end -->
+
+## [0.9.16]
+### Changed
+- JET is now able to show multiple syntax errors at once, e.g.,
+  > multisyntaxerrors.jl
+  ```
+  function f(W,X,Y)
+      s = 0
+      for i = 1:10
+          s += g(W[i]*f(X[end-1] + Y[end÷2+]),
+                 W[i+1]*f(X[end-2] + Y[end÷2]) +,
+                 W[i+2]*f(X[end-3] + Y[end÷2-3]))
+      end
+      return s
+  end
+  ```
+  ```julia
+  julia> report_file("multisyntaxerrors.jl")
+  [...]
+  ═════ 2 toplevel errors found ═════
+  ┌ @ multisyntaxerrors.jl:4
+  │ # Error @ multisyntaxerrors.jl:4:42
+  │     for i = 1:10
+  │         s += g(W[i]*f(X[end-1] + Y[end÷2+]),
+  │ #                                        ╙ ── unexpected `]`
+  └──────────────────────
+  ┌ @ multisyntaxerrors.jl:5
+  │ # Error @ multisyntaxerrors.jl:5:47
+  │         s += g(W[i]*f(X[end-1] + Y[end÷2+]),
+  │                W[i+1]*f(X[end-2] + Y[end÷2]) +,
+  │ #                                             ╙ ── unexpected `,`
+  └──────────────────────
+  ```
+  (aviatesk/JET.jl#687)
 
 ## [0.9.15]
 ### Changed
