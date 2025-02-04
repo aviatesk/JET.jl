@@ -39,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - JET is now able to show multiple syntax errors at once, e.g.,
   > multisyntaxerrors.jl
-  ```
+  ```julia
   function f(W,X,Y)
       s = 0
       for i = 1:10
