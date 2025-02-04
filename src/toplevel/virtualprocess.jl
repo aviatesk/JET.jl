@@ -594,6 +594,7 @@ function _virtual_process!(res::VirtualProcessResult,
         @assert isexpr(parsed, :toplevel)
         _virtual_process!(res, parsed, filename, analyzer, config, context, pkg_mod_depth)
     else
+        push!(res.included_files, filename)
         source = JuliaSyntax.SourceFile(stream; filename)
         for diagnostic in stream.diagnostics
             push!(res.toplevel_error_reports, ParseErrorReport(diagnostic, source))
