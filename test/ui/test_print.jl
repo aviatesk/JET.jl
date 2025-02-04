@@ -19,17 +19,19 @@ end
         res = report_text(src, @__FILE__)
         print_reports(io, res.res.toplevel_error_reports)
         let s = String(take!(io))
-            @test occursin("1 toplevel error found", s)
+            @test occursin("2 toplevel errors found", s)
             @test occursin(Regex("@ $(@__FILE__):\\d"), s)
             @test occursin("invalid identifier", s)
+            @test occursin("Expected `end`", s)
         end
 
         res = report_text(src, "foo")
         print_reports(io, res.res.toplevel_error_reports)
         let s = String(take!(io))
-            @test occursin("1 toplevel error found", s)
+            @test occursin("2 toplevel errors found", s)
             @test occursin(r"@ foo:\d", s)
             @test occursin("invalid identifier", s)
+            @test occursin("Expected `end`", s)
         end
     end
 end

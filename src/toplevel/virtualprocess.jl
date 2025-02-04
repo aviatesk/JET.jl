@@ -21,18 +21,19 @@ function Base.getproperty(er::ToplevelErrorReport, sym::Symbol)
     end
 end
 
-struct SyntaxErrorReport <: ToplevelErrorReport
-    err::JuliaSyntax.ParseError
+struct ParseErrorReport <: ToplevelErrorReport
+    diagnostic::JuliaSyntax.Diagnostic
+    source::JuliaSyntax.SourceFile
     file::String
     line::Int
-    function SyntaxErrorReport(err::JuliaSyntax.ParseError)
-        lnn = JuliaSyntax.source_location(LineNumberNode, err.source,
-            JuliaSyntax.first_byte(first(err.diagnostics)))
-        return new(err, String(lnn.file::Symbol), lnn.line)
+    function ParseErrorReport(diagnostic::JuliaSyntax.Diagnostic, source::JuliaSyntax.SourceFile)
+        line = JuliaSyntax.source_line(source, JuliaSyntax.first_byte(diagnostic))
+        return new(diagnostic, source, source.filename::String, line)
     end
 end
 # don't show stacktrace for syntax errors
-print_report(io::IO, report::SyntaxErrorReport) = showerror(io, report.err)
+print_report(io::IO, report::ParseErrorReport) =
+    JuliaSyntax.show_diagnostic(io, report.diagnostic, report.source)
 
 # TODO Use JuliaLowering.jl here
 struct LoweringErrorReport <: ToplevelErrorReport
@@ -586,19 +587,17 @@ function _virtual_process!(res::VirtualProcessResult,
     end
 
     s = String(s)::String
-    parsed = try
-        JuliaSyntax.parseall(Expr, s; filename)
-    catch err
-        err isa JuliaSyntax.ParseError || rethrow(err)
-        err
-    end
-
-    if parsed isa JuliaSyntax.ParseError
-        # if there's any syntax error, try to identify all the syntax error location
-        push!(res.toplevel_error_reports, SyntaxErrorReport(parsed))
-    else
+    stream = JuliaSyntax.ParseStream(s)
+    JuliaSyntax.parse!(stream; rule=:all)
+    if isempty(stream.diagnostics)
+        parsed = JuliaSyntax.build_tree(Expr, stream; filename)
         @assert isexpr(parsed, :toplevel)
         _virtual_process!(res, parsed, filename, analyzer, config, context, pkg_mod_depth)
+    else
+        source = JuliaSyntax.SourceFile(stream; filename)
+        for diagnostic in stream.diagnostics
+            push!(res.toplevel_error_reports, ParseErrorReport(diagnostic, source))
+        end
     end
 
     with_toplevel_logger(config) do @nospecialize(io)
