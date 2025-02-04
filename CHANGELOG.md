@@ -7,7 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- links start -->
 [0.9.15]: https://github.com/aviatesk/JET.jl/compare/v0.9.14...v0.9.15
+[0.9.14]: https://github.com/aviatesk/JET.jl/compare/v0.9.13...v0.9.14
+[0.9.13]: https://github.com/aviatesk/JET.jl/compare/v0.9.12...v0.9.13
+[0.9.12]: https://github.com/aviatesk/JET.jl/compare/v0.9.11...v0.9.12
+[0.9.11]: https://github.com/aviatesk/JET.jl/compare/v0.9.10...v0.9.11
+[0.9.10]: https://github.com/aviatesk/JET.jl/compare/v0.9.9...v0.9.10
+[0.9.9]: https://github.com/aviatesk/JET.jl/compare/v0.9.8...v0.9.9
 [0.9.8]: https://github.com/aviatesk/JET.jl/compare/v0.9.7...v0.9.8
+[0.9.7]: https://github.com/aviatesk/JET.jl/compare/v0.9.6...v0.9.7
 [0.9.6]: https://github.com/aviatesk/JET.jl/compare/v0.9.5...v0.9.6
 [0.9.5]: https://github.com/aviatesk/JET.jl/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/aviatesk/JET.jl/compare/v0.9.3...v0.9.4
@@ -35,10 +42,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Preferences.jl to `true` and load it as usual (aviatesk/JET.jl#684, aviatesk/JET.jl#686).
 - JET now fully uses [JuliaSyntax.jl](https://github.com/JuliaLang/JuliaSyntax.jl) for reporting syntax errors (aviatesk/JET.jl#685).
 
+## [0.9.14]
+### Added
+- Added `include_callback` to the virtual process, allowing custom callback logic during code inclusion (aviatesk/JET.jl#683).
+
+## [0.9.13]
+- Includes internal updates.
+
+## [0.9.12]
+### Fixed
+- Fixed a broadcasting-related issue in `@report_call` (which caused false error reports) by
+  allowing concrete evaluation for `typejoin` (aviatesk/JET.jl#669, aviatesk/JET.jl#670).
+
+## [0.9.11]
+### Fixed
+- Fixed an exception thrown by `report_package` on Julia 1.11.1 (aviatesk/JET.jl#668).
+
+## [0.9.10]
+### Changed
+- The improved statement selection logic implemented in v0.9.9 is now ported to
+  LoweredCodeUtils.jl@3.0.2, so that it can shared by JET.jl and Revise.jl.
+
+## [0.9.9]
+### Added
+- Added [reference documentation](https://aviatesk.github.io/JET.jl/dev/internals/#optanalysis-splitting)
+  on JET’s analysis report-splitting feature (aviatesk/JET.jl#652).
+### Changed
+- Implemented an improved control-flow graph analysis and statement selection logic,
+  enhancing JET’s top-level analysis accuracy (aviatesk/JET.jl#654).
+
 ## [0.9.8]
 ### Added
 - An extension that integrates `@report_opt` with Cthulhu (aviatesk/JET.jl#648)
 - `reportkey` for trimming multiple reports that resolve to the same runtime-dispatch caller/callee pair (aviatesk/JET.jl#648)
+
+## [0.9.7]
+- Updated dependencies, made minor refactorings.
 
 ## [0.9.6]
 ### Fixed
