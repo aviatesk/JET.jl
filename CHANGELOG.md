@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 <!-- links start -->
+[0.9.15]: https://github.com/aviatesk/JET.jl/compare/v0.9.14...v0.9.15
 [0.9.8]: https://github.com/aviatesk/JET.jl/compare/v0.9.7...v0.9.8
 [0.9.6]: https://github.com/aviatesk/JET.jl/compare/v0.9.5...v0.9.6
 [0.9.5]: https://github.com/aviatesk/JET.jl/compare/v0.9.4...v0.9.5
@@ -25,6 +26,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.8.1]: https://github.com/aviatesk/JET.jl/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/aviatesk/JET.jl/compare/v0.7.15...v0.8.0
 <!-- links end -->
+
+## [0.9.15]
+### Changed
+- JET.jl now will not be loaded on nightly version by default. This ensures that JETremains
+  at least loadable on nightly builds, where JET's compatibility is not guaranteed.
+  If you want to load JET on a nightly version, set the `JET_DEV_MODE` configuration of
+  Preferences.jl to `true` and load it as usual (aviatesk/JET.jl#684, aviatesk/JET.jl#686).
+- JET now fully uses [JuliaSyntax.jl](https://github.com/JuliaLang/JuliaSyntax.jl) for reporting syntax errors (aviatesk/JET.jl#685).
 
 ## [0.9.8]
 ### Added
