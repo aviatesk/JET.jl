@@ -1,5 +1,3 @@
-module ReviseExt
-
 using Revise: Revise
 using JET: JET, WatchConfig
 import JET: _watch_file_with_func
@@ -69,5 +67,3 @@ function JET._watch_file_with_func(func, args...; jetconfigs...)
         end
     end
 end
-
-end # module ReviseExt
