@@ -1,0 +1,21 @@
+name: CI – Loading test on nightly
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v1
+        with:
+          version: 'nightly'
+          arch: x64
+      - uses: julia-actions/julia-buildpkg@latest
+      - name: Loading test
+        run: |
+          julia --startup-file=no --project=@. -e 'using JET'
