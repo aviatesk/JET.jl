@@ -13,8 +13,26 @@ include("../setup.jl")
 
         res = report_text(s)
         report = only(res.res.toplevel_error_reports)
-        @test report isa SyntaxErrorReport
+        @test report isa ParseErrorReport
         @test report.line == 5
+    end
+
+    # report multiple syntax errors if exist
+    let s = """
+        function f(W,X,Y)
+            s = 0
+            for i = 1:10
+                s += g(W[i]*f(X[end-1] + Y[end÷2+]),
+                    W[i+1]*f(X[end-2] + Y[end÷2]) +,
+                    W[i+2]*f(X[end-3] + Y[end÷2-3]))
+            end
+            return s
+        end
+        """ |> strip
+
+        res = report_text(s)
+        @test length(res.res.toplevel_error_reports) == 2
+        @test all(r -> r isa ParseErrorReport, res.res.toplevel_error_reports)
     end
 end
 
