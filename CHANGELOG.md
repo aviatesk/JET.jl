@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 <!-- links start -->
+[0.9.18]: https://github.com/aviatesk/JET.jl/compare/v0.9.17...v0.9.18
 [0.9.17]: https://github.com/aviatesk/JET.jl/compare/v0.9.16...v0.9.17
 [0.9.16]: https://github.com/aviatesk/JET.jl/compare/v0.9.15...v0.9.16
 [0.9.15]: https://github.com/aviatesk/JET.jl/compare/v0.9.14...v0.9.15
@@ -35,6 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.8.1]: https://github.com/aviatesk/JET.jl/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/aviatesk/JET.jl/compare/v0.7.15...v0.8.0
 <!-- links end -->
+
+## [0.9.18]
+### Change
+- Allowed [the PkgEval infrastructure](https://github.com/JuliaCI/PkgEval.jl) to try to load
+  JET always (aviatesk/JET.jl#690)
 
 ## [0.9.17]
 ### Changed
