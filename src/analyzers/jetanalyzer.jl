@@ -1049,7 +1049,7 @@ function report_serious_exception!(analyzer::JETAnalyzer, sv::InferenceState, ar
                     return true
                 end
             end
-        elseif widenconst(a) <: ArgumentError
+        elseif widenconst(CC.unwrapva(a)) <: ArgumentError
             # promote `ArgumentError` thrown by `to_index` method
             # so that we get reports from dangerous indexing (aviatesk/JET.jl#581)
             def = sv.linfo.def
