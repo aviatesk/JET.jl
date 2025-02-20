@@ -22,7 +22,6 @@ passing `AbstractAnalyzer` to the subsequent (maybe overloaded) callees.
 JET.AnalysisResult
 JET.CachedAnalysisResult
 JET.AnalysisCache
-Core.Compiler.inlining_policy
 ```
 
 ## [Top-level Analysis](@id toplevel)

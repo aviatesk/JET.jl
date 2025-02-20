@@ -89,23 +89,9 @@ __init__() = foreach(@nospecialize(f)->f(), INIT_HOOKS)
 # compat
 # ------
 
-@static if VERSION ≥ v"1.11.0-DEV.439"
-    using Base: generating_output
-else
-    function generating_output(incremental::Union{Bool,Nothing}=nothing)
-        ccall(:jl_generating_output, Cint, ()) == 0 && return false
-        if incremental !== nothing
-            Base.JLOptions().incremental == incremental || return false
-        end
-        return true
-    end
-end
+using Base: generating_output
 
-@static if VERSION ≥ v"1.11.0-DEV.1498"
-    import .CC: get_inference_world
-else
-    import .CC: get_world_counter as get_inference_world
-end
+import .CC: get_inference_world
 
 # macros
 # ------
@@ -682,16 +668,9 @@ function analyze_method_instance!(analyzer::AbstractAnalyzer, mi::MethodInstance
     return analyze_frame!(analyzer, frame)
 end
 
-@static if VERSION ≥ v"1.11.0-DEV.843"
 function InferenceState(result::InferenceResult, cache_mode::UInt8,  analyzer::AbstractAnalyzer)
     init_result!(analyzer, result)
     return @invoke InferenceState(result::InferenceResult, cache_mode::UInt8, analyzer::AbstractInterpreter)
-end
-else
-function InferenceState(result::InferenceResult, cache_mode::Symbol, analyzer::AbstractAnalyzer)
-    init_result!(analyzer, result)
-    return @invoke InferenceState(result::InferenceResult, cache_mode::Symbol, analyzer::AbstractInterpreter)
-end
 end
 
 function analyze_frame!(analyzer::AbstractAnalyzer, frame::InferenceState)
@@ -1201,7 +1180,7 @@ include("analyzers/jetanalyzer.jl")
 include("analyzers/optanalyzer.jl")
 
 using PrecompileTools
-@static v"1.11.0-DEV.1552" > VERSION && @setup_workload let
+false && @setup_workload let
     @compile_workload let
         result = @report_call sum("julia")
         show(IOContext(devnull, :color=>true), result)
@@ -1212,30 +1191,21 @@ using PrecompileTools
         result = @report_opt rand(String)
         show(IOContext(devnull, :color=>true), result)
     end
-    @static VERSION ≥ v"1.11.0-DEV.1255" && let
-        # register an initialization callback that fixes up `max_world` which is overridden
-        # to `one(UInt) == WORLD_AGE_REVALIDATION_SENTINEL` by staticdata.c
-        # otherwise using cached analysis results would result in world age assertion error
-        function override_precompiled_cache()
-            for precache in (JET_ANALYZER_CACHE, OPT_ANALYZER_CACHE),
-                (_, cache) in precache
-                for (_, codeinst) in cache.cache
-                    @static if VERSION ≥ v"1.11.0-DEV.1390"
-                    if ((@atomic :monotonic codeinst.min_world) > zero(UInt) &&
-                        (@atomic :monotonic codeinst.max_world) == one(UInt)) # == WORLD_AGE_REVALIDATION_SENTINEL
-                        @atomic :monotonic codeinst.max_world = typemax(UInt)
-                    end
-                    else
-                    if (codeinst.min_world > zero(UInt) &&
-                        codeinst.max_world == one(UInt)) # == WORLD_AGE_REVALIDATION_SENTINEL
-                        codeinst.max_world = typemax(UInt)
-                    end
-                    end
+    # register an initialization callback that fixes up `max_world` which is overridden
+    # to `one(UInt) == WORLD_AGE_REVALIDATION_SENTINEL` by staticdata.c
+    # otherwise using cached analysis results would result in world age assertion error
+    function override_precompiled_cache()
+        for precache in (JET_ANALYZER_CACHE, OPT_ANALYZER_CACHE),
+            (_, cache) in precache
+            for (_, codeinst) in cache.cache
+                if ((@atomic :monotonic codeinst.min_world) > zero(UInt) &&
+                    (@atomic :monotonic codeinst.max_world) == one(UInt)) # == WORLD_AGE_REVALIDATION_SENTINEL
+                    @atomic :monotonic codeinst.max_world = typemax(UInt)
                 end
-                Base.rehash!(cache.cache) # HACK to avoid JuliaLang/julia#52915
             end
+            Base.rehash!(cache.cache) # HACK to avoid JuliaLang/julia#52915
         end
-        override_precompiled_cache() # to precompile this callback itself
-        push_inithook!(override_precompiled_cache)
     end
+    override_precompiled_cache() # to precompile this callback itself
+    push_inithook!(override_precompiled_cache)
 end
