@@ -64,18 +64,8 @@ struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
     end
     function JETAnalyzer(state::AnalyzerState, report_pass::ReportPass,
                          config::JETAnalyzerConfig)
-        if ((@static VERSION < v"1.11.0-DEV.1255" && true) && generating_output())
-            # XXX Avoid storing analysis results into a cache that persists across the
-            #     precompilation, as pkgimage currently doesn't support serializing
-            #     externally created `CodeInstance`. Otherwise, `CodeInstance`s created by
-            #     JET, containing JET-specific data structures, will leak into the native
-            #     code cache, likely causing segfaults or undefined behavior.
-            #     (see https://github.com/JuliaLang/julia/issues/48453).
-            analysis_cache = AnalysisCache()
-        else
-            cache_key = compute_hash(state.inf_params, report_pass, config)
-            analysis_cache = get!(AnalysisCache, JET_ANALYZER_CACHE, cache_key)
-        end
+        cache_key = compute_hash(state.inf_params, report_pass, config)
+        analysis_cache = get!(AnalysisCache, JET_ANALYZER_CACHE, cache_key)
         return JETAnalyzer(state, analysis_cache, report_pass, config)
     end
 end
@@ -179,22 +169,12 @@ a package, or improve the accuracy of base abstract interpretation analysis.
 # overloads
 # =========
 
-@static if VERSION ≥ v"1.11.0-DEV.843"
 function CC.InferenceState(result::InferenceResult, cache_mode::UInt8, analyzer::JETAnalyzer)
     frame = @invoke CC.InferenceState(result::InferenceResult, cache_mode::UInt8, analyzer::AbstractAnalyzer)
     if isnothing(frame) # indicates something bad happened within `retrieve_code_info`
         ReportPass(analyzer)(GeneratorErrorReport, analyzer, result)
     end
     return frame
-end
-else
-function CC.InferenceState(result::InferenceResult, cache_mode::Symbol, analyzer::JETAnalyzer)
-    frame = @invoke CC.InferenceState(result::InferenceResult, cache_mode::Symbol, analyzer::AbstractAnalyzer)
-    if isnothing(frame) # indicates something bad happened within `retrieve_code_info`
-        ReportPass(analyzer)(GeneratorErrorReport, analyzer, result)
-    end
-    return frame
-end
 end
 
 function CC.finish!(analyzer::JETAnalyzer, caller::InferenceState)
@@ -277,15 +257,9 @@ end
 function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
     @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
     if CC.is_nothrow(result.effects)
-        neweffects = CC.Effects(result.effects;
-            nonoverlayed=@static VERSION ≥ v"1.11.0-beta2.49" ? CC.ALWAYS_TRUE : true)
-        @static if VERSION ≥ v"1.11.0-DEV.945"
+        neweffects = CC.Effects(result.effects; nonoverlayed=CC.ALWAYS_TRUE)
         newresult = MethodCallResult(result.rt, result.exct, result.edgecycle, result.edgelimited,
                                      result.edge, neweffects)
-        else
-        newresult = MethodCallResult(result.rt, result.edgecycle, result.edgelimited,
-                                     result.edge, neweffects)
-        end
         res = @invoke CC.concrete_eval_eligible(analyzer::AbstractAnalyzer,
             f::Any, newresult::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
         if res === :concrete_eval
@@ -319,22 +293,12 @@ function CC.abstract_invoke(analyzer::JETAnalyzer, arginfo::ArgInfo, si::StmtInf
 end
 
 # report pass for undefined static parameter
-@static if VERSION ≥ v"1.11.0-DEV.888"
 function CC.abstract_eval_statement_expr(analyzer::JETAnalyzer, e::Expr, vtypes::VarTable, sv::InferenceState)
     ret = @invoke CC.abstract_eval_statement_expr(analyzer::AbstractAnalyzer, e::Expr, vtypes::VarTable, sv::InferenceState)
     if e.head === :static_parameter
         ReportPass(analyzer)(UndefVarErrorReport, analyzer, sv, e.args[1]::Int)
     end
     return ret
-end
-else
-function CC.abstract_eval_value_expr(analyzer::JETAnalyzer, e::Expr, vtypes::VarTable, sv::InferenceState)
-    ret = @invoke CC.abstract_eval_value_expr(analyzer::AbstractAnalyzer, e::Expr, vtypes::VarTable, sv::InferenceState)
-    if e.head === :static_parameter
-        ReportPass(analyzer)(UndefVarErrorReport, analyzer, sv, e.args[1]::Int)
-    end
-    return ret
-end
 end
 
 function CC.abstract_eval_special_value(analyzer::JETAnalyzer,
@@ -361,9 +325,8 @@ end
     ret = @invoke CC.abstract_eval_basic_statement(analyzer::AbstractAnalyzer,
         stmt::Any, pc_vartable::VarTable, frame::InferenceState)
     if isexpr(stmt, :(=)) && (lhs = stmt.args[1]; isa(lhs, GlobalRef))
-        rt = @static VERSION ≥ v"1.11.0-DEV.945" ? ret.rt : ret.type
         ReportPass(analyzer)(InvalidGlobalAssignmentError, analyzer,
-            frame, lhs.mod, lhs.name, rt)
+            frame, lhs.mod, lhs.name, ret.rt)
     end
     return ret
 end
@@ -383,13 +346,11 @@ function CC.abstract_eval_value(analyzer::JETAnalyzer, @nospecialize(e), vtypes:
     return ret
 end
 
-@static if VERSION ≥ v"1.11.0-DEV.1080"
 function CC.abstract_throw(analyzer::JETAnalyzer, argtypes::Vector{Any}, sv::InferenceState)
     ft = popfirst!(argtypes)
     ReportPass(analyzer)(SeriousExceptionReport, analyzer, sv, argtypes)
     pushfirst!(argtypes, ft)
     return @invoke CC.abstract_throw(analyzer::AbstractAnalyzer, argtypes::Vector{Any}, sv::InferenceState)
-end
 end
 
 function CC.builtin_tfunction(analyzer::JETAnalyzer,
@@ -448,11 +409,7 @@ function (::SoundBasicPass)(::Type{GeneratorErrorReport}, analyzer::JETAnalyzer,
         CC.may_invoke_generator(mi) || return false
         world = get_inference_world(analyzer)
         try
-            @static if VERSION ≥ v"1.11-"
             @ccall jl_code_for_staged(mi::Any, world::UInt)::Any
-            else
-            @ccall jl_code_for_staged(mi::Any)::Any
-            end
         catch err
             # if user code throws error, wrap and report it
             report = add_new_report!(analyzer, result, GeneratorErrorReport(mi, err))
@@ -545,11 +502,7 @@ function report_uncaught_exceptions!(analyzer::JETAnalyzer, frame::InferenceStat
     throw_calls = nothing
     for (pc, stmt) in enumerate(stmts)
         isa(stmt, Expr) || continue
-        @static if VERSION ≥ v"1.11.0-DEV.888"
-            CC.is_throw_call(stmt, stmts) || continue
-        else
-            CC.is_throw_call(stmt) || continue
-        end
+        CC.is_throw_call(stmt, stmts) || continue
         # if this `throw` is already reported, don't duplicate
         if !isnothing(reported_locs) && linetable[codelocs[pc]]::LineInfoNode in reported_locs
             continue

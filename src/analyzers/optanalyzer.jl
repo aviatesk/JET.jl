@@ -181,20 +181,10 @@ struct OptAnalyzer{RP<:ReportPass,FF} <: AbstractAnalyzer
                          function_filter::FF,
                          skip_noncompileable_calls::Bool,
                          skip_unoptimized_throw_blocks::Bool) where {RP<:ReportPass,FF}
-        if ((@static VERSION < v"1.11.0-DEV.1255" && true) && generating_output())
-            # XXX Avoid storing analysis results into a cache that persists across the
-            #     precompilation, as pkgimage currently doesn't support serializing
-            #     externally created `CodeInstance`. Otherwise, `CodeInstance`s created by
-            #     JET, containing JET-specific data structures, will leak into the native
-            #     code cache, likely causing segfaults or undefined behavior.
-            #     (see https://github.com/JuliaLang/julia/issues/48453).
-            analysis_cache = AnalysisCache()
-        else
-            cache_key = compute_hash(state.inf_params, state.opt_params, report_pass,
-                                     skip_noncompileable_calls, skip_unoptimized_throw_blocks)
-            cache_key = @invoke hash(function_filter::Any, cache_key::UInt) # HACK avoid dynamic dispatch
-            analysis_cache = get!(AnalysisCache, OPT_ANALYZER_CACHE, cache_key)
-        end
+        cache_key = compute_hash(state.inf_params, state.opt_params, report_pass,
+                                    skip_noncompileable_calls, skip_unoptimized_throw_blocks)
+        cache_key = @invoke hash(function_filter::Any, cache_key::UInt) # HACK avoid dynamic dispatch
+        analysis_cache = get!(AnalysisCache, OPT_ANALYZER_CACHE, cache_key)
         return new{RP,FF}(state,
                           analysis_cache,
                           report_pass,
@@ -279,13 +269,11 @@ function CC.finish(frame::InferenceState, analyzer::OptAnalyzer)
             analyze = false
         end
     end
-    @static if VERSION ≥ v"1.11.0-DEV.404"
     if analyze && CC.is_result_constabi_eligible(frame.result)
         analyze = false
         # turn off optimization for this frame in order to achieve a minor perf gain,
         # similar to the effect of setting `may_discard_trees(::OptAnalyzer) = true`
         frame.result.src = nothing
-    end
     end
 
     push!(analyzer.__analyze_frame, analyze)

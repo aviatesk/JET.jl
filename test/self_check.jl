@@ -23,7 +23,7 @@ let target_modules = (JET,)
     # optimization analysis
     # =====================
 
-    @static VERSION ≥ v"1.11-" && return # FIXME v1.11
+    return # FIXME on v1.11 and higher
 
     # ignore some dynamically-designed functions
     # TODO implement `signature_filter` and limit the ignorance scope

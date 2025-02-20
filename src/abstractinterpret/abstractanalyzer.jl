@@ -553,35 +553,19 @@ CC.may_compress(::AbstractAnalyzer) = generating_output()
 # this overload is necessary to avoid caching with the const ABI
 CC.may_discard_trees(::AbstractAnalyzer) = false
 
-let # overload `inlining_policy`
-    @static if VERSION ≥ v"1.11.0-DEV.879"
-        sigs_ex = :(analyzer::AbstractAnalyzer, @nospecialize(src), @nospecialize(info::CC.CallInfo), stmt_flag::UInt32)
-        args_ex = :(analyzer::AbstractInterpreter, src::Any, info::CC.CallInfo, stmt_flag::UInt32)
-    elseif VERSION ≥ v"1.11.0-DEV.377"
-        sigs_ex = :(analyzer::AbstractAnalyzer,
-            @nospecialize(src), @nospecialize(info::CC.CallInfo), stmt_flag::UInt32, mi::MethodInstance, argtypes::Argtypes)
-        args_ex = :(analyzer::AbstractInterpreter,
-            src::Any, info::CC.CallInfo, stmt_flag::UInt32, mi::MethodInstance, argtypes::Argtypes)
-    else
-        sigs_ex = :(analyzer::AbstractAnalyzer,
-            @nospecialize(src), @nospecialize(info::CC.CallInfo), stmt_flag::UInt8, mi::MethodInstance, argtypes::Argtypes)
-        args_ex = :(analyzer::AbstractInterpreter,
-            src::Any, info::CC.CallInfo, stmt_flag::UInt8, mi::MethodInstance, argtypes::Argtypes)
-    end
-    @eval begin
-        @doc """
-            inlining_policy(analyzer::AbstractAnalyzer, @nospecialize(src), ...) -> source::Any
+@doc """
+    inlining_policy(analyzer::AbstractAnalyzer, src, info::CC.CallInfo, stmt_flag::UInt32)
 
-        Implements inlining policy for `AbstractAnalyzer`.
-        Since `AbstractAnalyzer` works on `InferenceResult` whose `src` field keeps
-        [`AnalysisResult`](@ref) or [`CachedAnalysisResult`](@ref), this implementation needs to forward
-        their wrapped source to `inlining_policy(::AbstractInterpreter, ::Any, ::UInt8)`.
-        """
-        function CC.inlining_policy($(sigs_ex.args...))
-            if isa(src, CachedAnalysisResult)
-                src = src.src
-            end
-            return @invoke CC.inlining_policy($(args_ex.args...))
-        end
+Implements inlining policy for `AbstractAnalyzer`.
+Since `AbstractAnalyzer` works on `InferenceResult` whose `src` field keeps
+[`AnalysisResult`](@ref) or [`CachedAnalysisResult`](@ref), this implementation needs to forward
+their wrapped source to `inlining_policy(::AbstractInterpreter, ::Any, ::UInt8)`.
+"""
+function CC.inlining_policy(analyzer::AbstractAnalyzer, @nospecialize(src), @nospecialize(info::CC.CallInfo), stmt_flag::UInt32)
+    if isa(src, CachedAnalysisResult)
+        src = src.src
     end
+    return @invoke CC.inlining_policy(analyzer::AbstractInterpreter, src::Any, info::CC.CallInfo, stmt_flag::UInt32)
 end
+
+# TODO overload `retrieve_ir_for_inlining`

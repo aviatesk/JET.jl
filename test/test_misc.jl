@@ -50,11 +50,7 @@ end
 end
 
 using JET: process_config_dict
-@static if VERSION ≥ v"1.11-"
-    using TOML: TOML
-else
-    using Base.TOML: TOML
-end
+using TOML: TOML
 macro toml_str(s); TOML.parse(TOML.Parser(s)); end
 
 @testset "`process_config_dict`" begin

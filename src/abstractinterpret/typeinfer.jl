@@ -164,9 +164,7 @@ end
 # global
 # ------
 
-@static if VERSION ≥ v"1.11.0-DEV.1552"
 CC.cache_owner(analyzer::AbstractAnalyzer) = AnalysisCache(analyzer)
-end
 
 function CC.code_cache(analyzer::AbstractAnalyzer)
     view = AbstractAnalyzerView(analyzer)
@@ -221,52 +219,7 @@ end
 
 function CC.setindex!(wvc::WorldView{<:AbstractAnalyzerView}, codeinst::CodeInstance, mi::MethodInstance)
     analysis_cache = AnalysisCache(wvc)
-    @static if VERSION < v"1.11.0-DEV.1552"
-    add_jet_callback!(mi, analysis_cache)
-    end
     return analysis_cache[mi] = codeinst
-end
-
-struct JETCallback
-    analysis_cache::AnalysisCache
-end
-
-@static if VERSION ≥ v"1.11.0-DEV.1552" # nothing to do
-elseif VERSION ≥ v"1.11.0-DEV.798"
-function add_jet_callback!(mi::MethodInstance, analysis_cache::AnalysisCache)
-    callback = JETCallback(analysis_cache)
-    CC.add_invalidation_callback!(callback, mi)
-end
-function (callback::JETCallback)(replaced::MethodInstance, max_world::UInt32)
-    delete!(callback.analysis_cache, replaced)
-end
-else
-function add_jet_callback!(mi::MethodInstance, analysis_cache::AnalysisCache)
-    callback = JETCallback(analysis_cache)
-    if !isdefined(mi, :callbacks)
-        mi.callbacks = Any[callback]
-    else
-        callbacks = mi.callbacks::Vector{Any}
-        if !any(@nospecialize(cb)->cb===callback, callbacks)
-            push!(callbacks, callback)
-        end
-    end
-    return nothing
-end
-function (callback::JETCallback)(replaced::MethodInstance, max_world::UInt32,
-                                 seen::IdSet{MethodInstance} = IdSet{MethodInstance}())
-    push!(seen, replaced)
-    delete!(callback.analysis_cache, replaced)
-    if isdefined(replaced, :backedges)
-        for item in replaced.backedges
-            item isa MethodInstance || continue # might be `Type` object representing an `invoke` signature
-            mi = item
-            mi in seen && continue # otherwise fail into an infinite loop
-            callback(mi, max_world, seen)
-        end
-    end
-    return nothing
-end
 end
 
 # local
@@ -426,8 +379,6 @@ function cache_reports_locally!(analyzer::AbstractAnalyzer, caller::InferenceRes
     set_cached_result!(analyzer, caller, cache)
 end
 
-@static if VERSION ≥ v"1.11.0-DEV.737"
-
 function CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
     ret = @invoke CC.finish!(analyzer::AbstractInterpreter, frame::InferenceState)
     finish_frame!(analyzer, frame)
@@ -467,63 +418,6 @@ function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
     end
     empty!(frames)
     return true
-end
-
-else
-
-# in this overload we can work on `frame.src::CodeInfo` (and also `frame::InferenceState`)
-# where type inference (and also optimization if applied) already ran on
-function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
-    CC.typeinf_nocycle(analyzer, frame) || return false # frame is now part of a higher cycle
-    # with no active ip's, frame is done
-    frames = frame.callers_in_cycle
-    isempty(frames) && push!(frames, frame)
-    valid_worlds = WorldRange()
-    for caller in frames
-        @assert !(caller.dont_work_on_me)
-        caller.dont_work_on_me = true
-        # might might not fully intersect these earlier, so do that now
-        valid_worlds = CC.intersect(caller.valid_worlds, valid_worlds)
-    end
-    for caller in frames
-        caller.valid_worlds = valid_worlds
-        CC.finish(caller, analyzer)
-    end
-    for frame in frames
-        caller = frame.result
-        opt = caller.src
-        if opt isa OptimizationState{typeof(analyzer)}
-            CC.optimize(analyzer, opt, caller)
-        end
-    end
-    for frame in frames
-        caller = frame.result
-        edges = frame.stmt_edges[1]::Vector{Any}
-        valid_worlds = caller.valid_worlds
-        if CC.last(valid_worlds) >= get_world_counter()
-            # if we aren't cached, we don't need this edge
-            # but our caller might, so let's just make it anyways
-            CC.store_backedges(caller, edges)
-        end
-        CC.finish!(analyzer, frame)
-        # global cache management
-        if frame.cached && !istoplevel(frame)
-            CC.cache_result!(analyzer, caller)
-        end
-    end
-    empty!(frames)
-    return true
-end
-
-# by default, this overload just is forwarded to the AbstractInterpreter's implementation
-# but the only reason we have this overload is that some analyzers (like `JETAnalyzer`)
-# can further overload this to generate `InferenceErrorReport` with an access to `frame`
-function CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
-    ret = CC.finish!(analyzer, frame.result)
-    finish_frame!(analyzer, frame)
-    return ret
-end
-
 end
 
 function CC.cache_result!(analyzer::AbstractAnalyzer, caller::InferenceResult)
@@ -605,13 +499,7 @@ function CC.abstract_eval_special_value(analyzer::AbstractAnalyzer, @nospecializ
                 # in this call graph, but it's highly possible this is a toplevel callsite
                 # and we take a risk here since we can't enter the analysis otherwise
                 val = getglobal(mod, name)
-                @static if VERSION ≥ v"1.11.0-DEV.945"
                 ret = CC.RTEffects(isa(val, AbstractGlobal) ? val.t : Const(val), ret.exct, ret.effects)
-                elseif VERSION ≥ v"1.11.0-DEV.797"
-                ret = CC.RTEffects(isa(val, AbstractGlobal) ? val.t : Const(val), ret.effects)
-                else
-                ret = isa(val, AbstractGlobal) ? val.t : Const(val)
-                end
             end
         end
     end
@@ -641,11 +529,7 @@ is_inactive_exception(@nospecialize rt) = isa(rt, Const) && rt.val === _INACTIVE
 function CC.abstract_eval_statement(analyzer::AbstractAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
     if istoplevel(sv)
         if get_concretized(analyzer)[get_currpc(sv)]
-            @static if VERSION ≥ v"1.11.0-DEV.945"
             return CC.RTEffects(Any, Any, CC.Effects()) # bail out if it has been interpreted by `ConcreteInterpreter`
-            else
-            return Any # bail out if it has been interpreted by `ConcreteInterpreter`
-            end
         end
     end
 
