@@ -201,8 +201,11 @@ function CC.get(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance, defa
         if context === :typeinf_edge
             if isa(codeinst, CodeInstance)
                 # cache hit, now we need to append cached reports associated with this `MethodInstance`
-                inferred = (@atomic :monotonic codeinst.inferred)::CachedAnalysisResult
-                collect_cached_callee_reports!(analyzer, inferred.reports, caller, mi)
+                cached_reports = CC.traverse_analysis_results(codeinst) do @nospecialize analysis_result
+                    analysis_result isa CachedAnalysisResult ? analysis_result.reports : nothing
+                end
+                cached_reports !== nothing &&
+                    collect_cached_callee_reports!(analyzer, cached_reports, caller, mi)
             end
         end
         set_cache_target!(analyzer, nothing)
@@ -218,8 +221,7 @@ function CC.getindex(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance)
 end
 
 function CC.setindex!(wvc::WorldView{<:AbstractAnalyzerView}, codeinst::CodeInstance, mi::MethodInstance)
-    analysis_cache = AnalysisCache(wvc)
-    return analysis_cache[mi] = codeinst
+    return AnalysisCache(wvc)[mi] = codeinst
 end
 
 # local
@@ -254,7 +256,11 @@ function CC.cache_lookup(𝕃ᵢ::CC.AbstractLattice, mi::MethodInstance, given_
         # (see the `CC.typeinf(::AbstractAnalyzer, ::InferenceState)` overload)
         filter_lineages!(analyzer, caller.result, mi)
 
-        collect_cached_callee_reports!(analyzer, get_cached_reports(analyzer, inf_result), caller, mi)
+        cached_reports = CC.traverse_analysis_results(inf_result) do @nospecialize analysis_result
+            analysis_result isa CachedAnalysisResult ? analysis_result.reports : nothing
+        end
+        cached_reports !== nothing &&
+            collect_cached_callee_reports!(analyzer, cached_reports, caller, mi)
     end
     return inf_result
 end
@@ -363,20 +369,24 @@ function finish_frame!(analyzer::AbstractAnalyzer, frame::InferenceState)
     if frame.parent !== nothing
         # inter-procedural handling: get back to the caller what we got from these results
         stash_report!(analyzer, reports)
-
-        # local cache management
-        # TODO there are duplicated work here and `transform_result_for_cache`
-        cache_reports_locally!(analyzer, caller, reports)
     end
+
+    # cache management
+    cache_reports_locally!(analyzer, caller, reports)
 end
 
 function cache_reports_locally!(analyzer::AbstractAnalyzer, caller::InferenceResult,
                                 reports::Vector{InferenceErrorReport})
-    cache = InferenceErrorReport[]
+    cached_reports = InferenceErrorReport[]
+    mi = caller.linfo
     for report in reports
-        cache_report!(cache, report)
+        @static if JET_DEV_MODE
+            actual, expected = first(report.vst).linfo, mi
+            @assert actual === expected "invalid global caching detected, expected $expected but got $actual"
+        end
+        cache_report!(cached_reports, report)
     end
-    set_cached_result!(analyzer, caller, cache)
+    CC.stack_analysis_result!(caller, CachedAnalysisResult(cached_reports))
 end
 
 function CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
@@ -385,59 +395,9 @@ function CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
     return ret
 end
 
-# N.B. this overload essentially reverts JuliaLang/julia#50469 for type stability,
-# but this is safe since `AbstractAnalyzer` doesn't currently support any compositions
-# with other abstract interpreters
-function CC._typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
-    CC.typeinf_nocycle(analyzer, frame) || return false # frame is now part of a higher cycle
-    # with no active ip's, frame is done
-    frames = frame.callers_in_cycle
-    isempty(frames) && push!(frames, frame)
-    valid_worlds = WorldRange()
-    for caller in frames
-        @assert !(caller.dont_work_on_me)
-        caller.dont_work_on_me = true
-        # might might not fully intersect these earlier, so do that now
-        valid_worlds = CC.intersect(caller.valid_worlds, valid_worlds)
-    end
-    for caller in frames
-        caller.valid_worlds = valid_worlds
-        CC.finish(caller, #=CHANGED caller.interp=#analyzer)
-    end
-    for caller in frames
-        opt = caller.result.src
-        if opt isa OptimizationState{typeof(analyzer)} # CHANGED: added {typeof(analyzer)}
-            CC.optimize(#=CHANGED caller.interp=#analyzer, opt, caller.result)
-        end
-    end
-    for caller in frames
-        CC.finish!(#=CHANGED caller.interp=#analyzer, caller)
-        if CC.is_cached(caller)
-            CC.cache_result!(#=CHANGED caller.interp=#analyzer, caller.result)
-        end
-    end
-    empty!(frames)
-    return true
-end
-
 function CC.cache_result!(analyzer::AbstractAnalyzer, caller::InferenceResult)
     istoplevel(caller.linfo) && return nothing # don't need to cache toplevel frame
     @invoke CC.cache_result!(analyzer::AbstractInterpreter, caller::InferenceResult)
-end
-
-function CC.transform_result_for_cache(analyzer::AbstractAnalyzer,
-    linfo::MethodInstance, valid_worlds::WorldRange, result::InferenceResult)
-    cache = InferenceErrorReport[]
-    for report in get_any_reports(analyzer, result)
-        @static if JET_DEV_MODE
-            actual, expected = first(report.vst).linfo, linfo
-            @assert actual === expected "invalid global caching detected, expected $expected but got $actual"
-        end
-        cache_report!(cache, report)
-    end
-    inferred_result = @invoke CC.transform_result_for_cache(analyzer::AbstractInterpreter,
-        linfo::MethodInstance, valid_worlds::WorldRange, result::InferenceResult)
-    return CachedAnalysisResult(inferred_result, cache)
 end
 
 # top-level bridge

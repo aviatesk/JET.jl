@@ -76,12 +76,8 @@ a global cache maintained by `AbstractAnalyzer`. That means,
 is expected to have its field `codeinf.inferred::CachedAnalysisResult`.
 """
 struct CachedAnalysisResult
-    src
     reports::Vector{InferenceErrorReport}
-    CachedAnalysisResult(@nospecialize(src), reports::Vector{InferenceErrorReport}) = new(src, reports)
 end
-
-const AnyAnalysisResult = Union{AnalysisResult,CachedAnalysisResult}
 
 """
     mutable struct AnalyzerState
@@ -119,7 +115,7 @@ mutable struct AnalyzerState
 
     ## AbstractAnalyzer ##
 
-    results::IdDict{InferenceResult,AnyAnalysisResult}
+    results::IdDict{InferenceResult,AnalysisResult}
 
     # the temporal stash to keep reports that are collected within the currently-analyzed frame:
     # they will be appended to the caller when returning back to the caller inference/optimization
@@ -158,7 +154,7 @@ for fld in fieldnames(AnalyzerState)
 end
 
 function AnalyzerState(world::UInt  = get_world_counter();
-    results::IdDict{InferenceResult,AnyAnalysisResult} = IdDict{InferenceResult,AnyAnalysisResult}(),
+    results::IdDict{InferenceResult,AnalysisResult} = IdDict{InferenceResult,AnalysisResult}(),
     inf_params::Union{Nothing,InferenceParams} = nothing,
     opt_params::Union{Nothing,OptimizationParams} = nothing,
     concretized::BitVector = _CONCRETIZED,
@@ -174,7 +170,7 @@ function AnalyzerState(world::UInt  = get_world_counter();
                          #=inf_cache::Vector{InferenceResult}=# inf_cache,
                          #=inf_params::InferenceParams=# inf_params,
                          #=opt_params::OptimizationParams=# opt_params,
-                         #=results::IdDict{InferenceResult,AnyAnalysisResult}=# results,
+                         #=results::IdDict{InferenceResult,AnalysisResult}=# results,
                          #=report_stash::Vector{InferenceErrorReport}=# report_stash,
                          #=cache_target::Union{Nothing,Pair{Symbol,InferenceState}}=# nothing,
                          #=concretized::BitVector=# concretized,
@@ -504,21 +500,14 @@ end
 # define how AbstractAnalyzer manages `InferenceResult`
 
 Base.getindex(analyzer::AbstractAnalyzer, result::InferenceResult) = get_results(analyzer)[result]
-Base.setindex!(analyzer::AbstractAnalyzer, analysis_result::AnyAnalysisResult, result::InferenceResult) =
-    get_results(analyzer)[result] = analysis_result
+Base.setindex!(analyzer::AbstractAnalyzer, analysis_result::AnalysisResult, result::InferenceResult) = get_results(analyzer)[result] = analysis_result
 
 function init_result!(analyzer::AbstractAnalyzer, result::InferenceResult)
     analyzer[result] = AnalysisResult(InferenceErrorReport[])
     return nothing
 end
-function set_cached_result!(analyzer::AbstractAnalyzer, result::InferenceResult, cache::Vector{InferenceErrorReport})
-    analyzer[result] = CachedAnalysisResult(result.src, cache)
-    return nothing
-end
 
 get_reports(analyzer::AbstractAnalyzer, result::InferenceResult) = (analyzer[result]::AnalysisResult).reports
-get_cached_reports(analyzer::AbstractAnalyzer, result::InferenceResult) = (analyzer[result]::CachedAnalysisResult).reports
-get_any_reports(analyzer::AbstractAnalyzer, result::InferenceResult) = (analyzer[result]::AnyAnalysisResult).reports
 
 """
     add_new_report!(analyzer::AbstractAnalyzer, result::InferenceResult, report::InferenceErrorReport)
@@ -552,20 +541,3 @@ CC.may_compress(::AbstractAnalyzer) = generating_output()
 
 # this overload is necessary to avoid caching with the const ABI
 CC.may_discard_trees(::AbstractAnalyzer) = false
-
-@doc """
-    inlining_policy(analyzer::AbstractAnalyzer, src, info::CC.CallInfo, stmt_flag::UInt32)
-
-Implements inlining policy for `AbstractAnalyzer`.
-Since `AbstractAnalyzer` works on `InferenceResult` whose `src` field keeps
-[`AnalysisResult`](@ref) or [`CachedAnalysisResult`](@ref), this implementation needs to forward
-their wrapped source to `inlining_policy(::AbstractInterpreter, ::Any, ::UInt8)`.
-"""
-function CC.inlining_policy(analyzer::AbstractAnalyzer, @nospecialize(src), @nospecialize(info::CC.CallInfo), stmt_flag::UInt32)
-    if isa(src, CachedAnalysisResult)
-        src = src.src
-    end
-    return @invoke CC.inlining_policy(analyzer::AbstractInterpreter, src::Any, info::CC.CallInfo, stmt_flag::UInt32)
-end
-
-# TODO overload `retrieve_ir_for_inlining`
