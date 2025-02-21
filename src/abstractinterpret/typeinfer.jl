@@ -33,17 +33,26 @@ function CC.abstract_call_method(analyzer::AbstractAnalyzer,
     ret = @invoke CC.abstract_call_method(analyzer::AbstractInterpreter,
         method::Method, sig::Any, sparams::SimpleVector,
         hardlimit::Bool, si::StmtInfo, sv::InferenceState)
-    collect_callee_reports!(analyzer, sv)
+    function after_call_method(analyzer′, sv′)
+        ret′ = ret[]
+        collect_callee_reports!(analyzer′, sv′)
+        return true
+    end
+    if isready(ret)
+        after_call_method(analyzer, sv)
+    else
+        push!(sv.tasks, after_call_method)
+    end
     return ret
 end
 
 function CC.const_prop_call(analyzer::AbstractAnalyzer,
     mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
-    concrete_eval_result::Union{Nothing,CC.ConstCallResults})
+    concrete_eval_result::Union{Nothing,ConstCallResult})
     set_cache_target!(analyzer, :const_prop_call => sv)
     const_result = @invoke CC.const_prop_call(analyzer::AbstractInterpreter,
         mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
-        concrete_eval_result::Union{Nothing,CC.ConstCallResults})
+        concrete_eval_result::Union{Nothing,ConstCallResult})
     @assert get_cache_target(analyzer) === nothing "invalid JET analysis state"
     if const_result !== nothing
         # successful constant prop', we need to update reports
@@ -58,10 +67,10 @@ function CC.concrete_eval_call(analyzer::AbstractAnalyzer,
     ret = @invoke CC.concrete_eval_call(analyzer::AbstractInterpreter,
         f::Any, result::MethodCallResult, arginfo::ArgInfo,
         sv::InferenceState, invokecall::Union{Nothing,CC.InvokeCall})
-    if ret isa CC.ConstCallResults
+    if ret isa ConstCallResult
         # this frame has been concretized, now we throw away reports collected
         # during the previous non-constant, abstract-interpretation
-        filter_lineages!(analyzer, sv.result, result.edge::MethodInstance)
+        filter_lineages!(analyzer, sv.result, result.edge.def)
     end
     return ret
 end
@@ -70,7 +79,16 @@ function CC.abstract_call_known(analyzer::AbstractAnalyzer,
     @nospecialize(f), arginfo::ArgInfo, si::StmtInfo, sv::InferenceState, max_methods::Int)
     ret = @invoke CC.abstract_call_known(analyzer::AbstractInterpreter,
         f::Any, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState, max_methods::Int)
-    analyze_task_parallel_code!(analyzer, f, arginfo, sv)
+    function after_call_known(analyzer′, sv′)
+        ret′ = ret[]
+        analyze_task_parallel_code!(analyzer′, f, arginfo, sv′)
+        return true
+    end
+    if isready(ret)
+        after_call_known(analyzer, sv)
+    else
+        push!(sv.tasks, after_call_known)
+    end
     return ret
 end
 
@@ -151,6 +169,11 @@ function CC.return_type_tfunc(analyzer::AbstractAnalyzer, argtypes::Argtypes, si
     return ret
 end
 
+# types
+# =====
+
+const AbsIntState = Union{InferenceState,Nothing}
+
 # cache
 # =====
 
@@ -176,9 +199,11 @@ AnalysisCache(wvc::WorldView{<:AbstractAnalyzerView}) = AnalysisCache(wvc.cache.
 
 CC.haskey(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance) = haskey(AnalysisCache(wvc), mi)
 
-function CC.typeinf_edge(analyzer::AbstractAnalyzer, method::Method, @nospecialize(atype), sparams::SimpleVector, caller::InferenceState)
+function CC.typeinf_edge(analyzer::AbstractAnalyzer, method::Method, @nospecialize(atype), sparams::SimpleVector, caller::InferenceState,
+                         edgecycle::Bool, edgelimited::Bool)
     set_cache_target!(analyzer, :typeinf_edge => caller)
-    ret = @invoke CC.typeinf_edge(analyzer::AbstractInterpreter, method::Method, atype::Any, sparams::SimpleVector, caller::InferenceState)
+    ret = @invoke CC.typeinf_edge(analyzer::AbstractInterpreter, method::Method, atype::Any, sparams::SimpleVector, caller::InferenceState,
+                                  edgecycle::Bool, edgelimited::Bool)
     @assert get_cache_target(analyzer) === nothing "invalid JET analysis state"
     return ret
 end
@@ -272,43 +297,18 @@ CC.push!(view::AbstractAnalyzerView, inf_result::InferenceResult) = CC.push!(get
 
 # in this overload we will work on some meta/debug information management per inference frame
 function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
-    (; linfo, parent, result) = frame
-    isentry = isnothing(parent)
+    parent = CC.frame_parent(frame)
 
-    # io = stdout
-    # sec = time()
-    # depth = get_depth(analyzer)
-    # print_rails(io, depth)
-    # printstyled(io, "┌ @ "; color = RAIL_COLORS[(depth+1)%N_RAILS+1])
-    # print(io, linfo)
-    # file, line = get_file_line(linfo)
-    # print(io, ' ', file, ':', line)
-    # println(io)
-    # set_depth!(analyzer, get_depth(analyzer) + 1) # manipulate this only in debug mode
-
-    if is_constant_propagated(frame) && !isentry
+    if is_constant_propagated(frame) && parent !== nothing
+        parent::InferenceState
         # JET is going to perform the abstract-interpretation with the extended lattice elements:
         # throw-away the error reports that are collected during the previous non-constant abstract-interpretation
         # NOTE that the `linfo` here is the exactly same object as the method instance used
         # for the previous non-constant abstract-interpretation
-        filter_lineages!(analyzer, (parent::InferenceState).result, linfo)
+        filter_lineages!(analyzer, parent.result, CC.frame_instance(frame))
     end
 
     ret = @invoke CC.typeinf(analyzer::AbstractInterpreter, frame::InferenceState)
-
-    # elapsed = round(time() - sec; digits = 3)
-    # print_rails(io, depth)
-    # printstyled(io, "└─→ "; color = RAIL_COLORS[(depth+1)%N_RAILS+1])
-    # printstyled(io, frame.bestguess; color = TYPE_ANNOTATION_COLOR)
-    # println(io, " (", join(filter(!isnothing, (
-    #                  linfo,
-    #                  ret ? nothing : "in cycle",
-    #                  is_constant_propagated(frame) ? "[const-prop]" : nothing,
-    #                  string(length(get_any_reports(analyzer, result)), " reports"),
-    #                  string(elapsed, " sec"),
-    #                  )), ", "),
-    #              ')')
-    # set_depth!(analyzer, get_depth(analyzer) - 1) # manipulate this only in debug mode
 
     return ret
 end
@@ -366,17 +366,16 @@ function finish_frame!(analyzer::AbstractAnalyzer, frame::InferenceState)
     # https://github.com/aviatesk/JET.jl/issues/75
     unique!(aggregation_policy(analyzer), reports)
 
-    if frame.parent !== nothing
+    if CC.frame_parent(frame) !== nothing
         # inter-procedural handling: get back to the caller what we got from these results
-        stash_report!(analyzer, reports)
+        stash_reports!(analyzer, reports)
     end
 
-    # cache management
-    cache_reports_locally!(analyzer, caller, reports)
+    cache_reports!(analyzer, caller, reports)
 end
 
-function cache_reports_locally!(analyzer::AbstractAnalyzer, caller::InferenceResult,
-                                reports::Vector{InferenceErrorReport})
+function cache_reports!(analyzer::AbstractAnalyzer, caller::InferenceResult,
+                        reports::Vector{InferenceErrorReport})
     cached_reports = InferenceErrorReport[]
     mi = caller.linfo
     for report in reports
@@ -389,16 +388,16 @@ function cache_reports_locally!(analyzer::AbstractAnalyzer, caller::InferenceRes
     CC.stack_analysis_result!(caller, CachedAnalysisResult(cached_reports))
 end
 
-function CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
-    ret = @invoke CC.finish!(analyzer::AbstractInterpreter, frame::InferenceState)
+function CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState, validation_world::UInt)
     finish_frame!(analyzer, frame)
-    return ret
+    return @invoke CC.finish!(analyzer::AbstractInterpreter, frame::InferenceState, validation_world::UInt)
 end
 
-function CC.cache_result!(analyzer::AbstractAnalyzer, caller::InferenceResult)
-    istoplevel(caller.linfo) && return nothing # don't need to cache toplevel frame
-    @invoke CC.cache_result!(analyzer::AbstractInterpreter, caller::InferenceResult)
-end
+# TODO update or delete
+# function CC.cache_result!(analyzer::AbstractAnalyzer, caller::InferenceResult)
+#     istoplevel(caller.linfo) && return nothing # don't need to cache toplevel frame
+#     @invoke CC.cache_result!(analyzer::AbstractInterpreter, caller::InferenceResult)
+# end
 
 # top-level bridge
 # ================
@@ -433,7 +432,7 @@ non-concrete call sites in a toplevel frame created by [`virtual_process`](@ref)
 CC.bail_out_toplevel_call(::AbstractAnalyzer, ::CC.InferenceLoopState, ::InferenceState) = false
 
 function CC.abstract_eval_special_value(analyzer::AbstractAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    istoplevel = JET.istoplevel(sv)
+    istoplevel = istoplevel(sv)
 
     if istoplevel
         if isa(e, SlotNumber) && is_global_slot(analyzer, e)
@@ -486,15 +485,16 @@ end
 
 is_inactive_exception(@nospecialize rt) = isa(rt, Const) && rt.val === _INACTIVE_EXCEPTION()
 
-function CC.abstract_eval_statement(analyzer::AbstractAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    if istoplevel(sv)
-        if get_concretized(analyzer)[get_currpc(sv)]
-            return CC.RTEffects(Any, Any, CC.Effects()) # bail out if it has been interpreted by `ConcreteInterpreter`
-        end
-    end
-
-    return @invoke CC.abstract_eval_statement(analyzer::AbstractInterpreter, e::Any, vtypes::VarTable, sv::InferenceState)
-end
+# NOTE `abstract_eval_statement` has been inlined into `typeinf_local`,
+# and currently we don't have any way to inject custom behavior into it
+# function CC.abstract_eval_statement(analyzer::AbstractAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
+#     if istoplevel(sv)
+#         if get_concretized(analyzer)[get_currpc(sv)]
+#             return CC.RTEffects(Any, Any, CC.Effects()) # bail out if it has been interpreted by `ConcreteInterpreter`
+#         end
+#     end
+#     return @invoke CC.abstract_eval_statement(analyzer::AbstractInterpreter, e::Any, vtypes::VarTable, sv::InferenceState)
+# end
 
 function CC.builtin_tfunction(analyzer::AbstractAnalyzer,
     @nospecialize(f), argtypes::Vector{Any}, sv::InferenceState) # `AbstractAnalyzer` isn't overloaded on `return_type`
@@ -521,7 +521,7 @@ function istoplevel_getproperty(sv::InferenceState)
     isa(def, Method) || return false
     def.name === :getproperty || return false
     def.sig === Tuple{typeof(getproperty), Module, Symbol} || return false
-    parent = sv.parent
+    parent = CC.frame_parent(sv)
     parent === nothing && return false
     return istoplevel(parent::InferenceState)
 end

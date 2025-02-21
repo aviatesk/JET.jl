@@ -199,8 +199,17 @@ function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer,
     max_methods::Int)
     ret = @invoke CC.abstract_call_gf_by_type(analyzer::AbstractAnalyzer,
         f::Any, arginfo::ArgInfo, si::StmtInfo, atype::Any, sv::InferenceState, max_methods::Int)
-    ReportPass(analyzer)(MethodErrorReport, analyzer, sv, ret, arginfo.argtypes, atype)
-    ReportPass(analyzer)(UnanalyzedCallReport, analyzer, sv, ret, atype)
+    function after_abstract_call_gf_by_type(analyzer′, sv′)
+        ret′ = ret[]
+        ReportPass(analyzer)(MethodErrorReport, analyzer, sv, ret′, arginfo.argtypes, atype)
+        ReportPass(analyzer)(UnanalyzedCallReport, analyzer, sv, ret′, atype)
+        return true
+    end
+    if isready(ret)
+        after_abstract_call_gf_by_type(analyzer, sv)
+    else
+        push!(sv.tasks, after_abstract_call_gf_by_type)
+    end
     return ret
 end
 
@@ -231,26 +240,6 @@ given that the number of matching methods are limited beforehand.
 """
 CC.bail_out_call(::JETAnalyzer, ::CC.InferenceLoopState, ::InferenceState) = false
 
-struct __DummyRettype__ end
-
-"""
-    Core.Compiler.add_call_backedges!(analyzer::JETAnalyzer, ...)
-
-An overload for `abstract_call_gf_by_type(analyzer::JETAnalyzer, ...)`, which always add
-backedges (even if a new method can't refine the return type grew up to `Any`).
-This is because a new method definition always has a potential to change `JETAnalyzer`'s analysis result.
-"""
-function CC.add_call_backedges!(
-    analyzer::JETAnalyzer, @nospecialize(rettype), effects::CC.Effects,
-    edges::Vector{MethodInstance}, matches::Union{MethodMatches,UnionSplitMethodMatches}, @nospecialize(atype),
-    sv::InferenceState)
-    return @invoke CC.add_call_backedges!(
-        # NOTE this `__DummyRettype__()` hack forces `add_call_backedges!(::AbstractInterpreter,...)` to add backedges
-        analyzer::AbstractInterpreter, __DummyRettype__()::Any, effects::CC.Effects,
-        edges::Vector{MethodInstance}, matches::Union{MethodMatches,UnionSplitMethodMatches}, atype::Any,
-        sv::InferenceState)
-end
-
 # TODO Reasons about error found by [semi-]concrete evaluation:
 # For now JETAnalyzer allows the regular constant-prop' only,
 # unless the analyzed effects are proven to be `:nothrow`.
@@ -258,17 +247,26 @@ function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
     @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
     if CC.is_nothrow(result.effects)
         neweffects = CC.Effects(result.effects; nonoverlayed=CC.ALWAYS_TRUE)
-        newresult = MethodCallResult(result.rt, result.exct, result.edgecycle, result.edgelimited,
-                                     result.edge, neweffects)
+        newresult = MethodCallResult(result.rt, result.exct, neweffects, result.edge,
+                                     result.edgecycle, result.edgelimited,
+                                     result.volatile_inf_result)
         res = @invoke CC.concrete_eval_eligible(analyzer::AbstractAnalyzer,
             f::Any, newresult::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
         if res === :concrete_eval
             return :concrete_eval
         end
-    elseif (istopfunction(f, :fieldindex) || istopfunction(f, :typejoin) ||
-            istopfunction(f, :typejoin_union_tuple))
-        if concrete_eval_eligible_ignoring_overlay(result, arginfo)
-            return :concrete_eval
+    else
+        @static if VERSION ≥ v"1.12-"
+            should_concrete_eval = f === Base.fieldindex ||
+                f === Base.typejoin || f === Base.typejoin_union_tuple
+        else
+            should_concrete_eval = istopfunction(f, :fieldindex) ||
+                istopfunction(f, :typejoin) || istopfunction(f, :typejoin_union_tuple)
+        end
+        if should_concrete_eval
+            if concrete_eval_eligible_ignoring_overlay(result, arginfo)
+                return :concrete_eval
+            end
         end
     end
     # disables both concrete evaluation and semi-concrete interpretation
@@ -288,7 +286,16 @@ end
 
 function CC.abstract_invoke(analyzer::JETAnalyzer, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState)
     ret = @invoke CC.abstract_invoke(analyzer::AbstractAnalyzer, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState)
-    ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret, arginfo.argtypes)
+    function after_abstract_invoke(analyzer′, sv′)
+        ret′ = ret[]
+        ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret′, arginfo.argtypes)
+        return true
+    end
+    if isready(ret)
+        after_abstract_invoke(analyzer, sv)
+    else
+        push!(sv.tasks, after_abstract_invoke)
+    end
     return ret
 end
 
@@ -296,7 +303,16 @@ end
 function CC.abstract_eval_statement_expr(analyzer::JETAnalyzer, e::Expr, vtypes::VarTable, sv::InferenceState)
     ret = @invoke CC.abstract_eval_statement_expr(analyzer::AbstractAnalyzer, e::Expr, vtypes::VarTable, sv::InferenceState)
     if e.head === :static_parameter
-        ReportPass(analyzer)(UndefVarErrorReport, analyzer, sv, e.args[1]::Int)
+        function after_abstract_eval_statement_expr(analyzer′, sv′)
+            ret′ = ret[]
+            ReportPass(analyzer)(UndefVarErrorReport, analyzer, sv, e.args[1]::Int)
+            return true
+        end
+        if isready(ret)
+            after_abstract_eval_statement_expr(analyzer, sv)
+        else
+            push!(sv.tasks, after_abstract_eval_statement_expr)
+        end
     end
     return ret
 end
@@ -318,18 +334,18 @@ function CC.abstract_eval_special_value(analyzer::JETAnalyzer,
     return ret
 end
 
-# N.B. this report pass won't be necessary as the frontend will generate code
-# that `typeassert`s the value type as the binding type beforehand
-@inline function CC.abstract_eval_basic_statement(analyzer::JETAnalyzer,
-    @nospecialize(stmt), pc_vartable::VarTable, frame::InferenceState)
-    ret = @invoke CC.abstract_eval_basic_statement(analyzer::AbstractAnalyzer,
-        stmt::Any, pc_vartable::VarTable, frame::InferenceState)
-    if isexpr(stmt, :(=)) && (lhs = stmt.args[1]; isa(lhs, GlobalRef))
-        ReportPass(analyzer)(InvalidGlobalAssignmentError, analyzer,
-            frame, lhs.mod, lhs.name, ret.rt)
-    end
-    return ret
-end
+# # N.B. this report pass won't be necessary as the frontend will generate code
+# # that `typeassert`s the value type as the binding type beforehand
+# @inline function CC.abstract_eval_basic_statement(analyzer::JETAnalyzer,
+#     @nospecialize(stmt), pc_vartable::VarTable, frame::InferenceState)
+#     ret = @invoke CC.abstract_eval_basic_statement(analyzer::AbstractAnalyzer,
+#         stmt::Any, pc_vartable::VarTable, frame::InferenceState)
+#     if isexpr(stmt, :(=)) && (lhs = stmt.args[1]; isa(lhs, GlobalRef))
+#         ReportPass(analyzer)(InvalidGlobalAssignmentError, analyzer,
+#             frame, lhs.mod, lhs.name, ret.rt)
+#     end
+#     return ret
+# end
 
 function CC.abstract_eval_value(analyzer::JETAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
     ret = @invoke CC.abstract_eval_value(analyzer::AbstractAnalyzer, e::Any, vtypes::VarTable, sv::InferenceState)

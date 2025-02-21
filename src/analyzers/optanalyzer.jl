@@ -217,10 +217,10 @@ optanalyzer_function_filter(@nospecialize f) = true
 
 function CC.const_prop_call(analyzer::OptAnalyzer,
     mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
-    concrete_eval_result::Union{Nothing,CC.ConstCallResults})
+    concrete_eval_result::Union{Nothing,ConstCallResult})
     ret = @invoke CC.const_prop_call(analyzer::AbstractAnalyzer,
         mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
-        concrete_eval_result::Union{Nothing,CC.ConstCallResults})
+        concrete_eval_result::Union{Nothing,ConstCallResult})
     if concrete_eval_result !== nothing
         # HACK disable the whole `OptAnalyzer` analysis as far as the frame has been concretized
         # (otherwise we may end up with useless reports from recursive calls)
@@ -230,7 +230,7 @@ function CC.const_prop_call(analyzer::OptAnalyzer,
 end
 function CC.const_prop_call(analyzer::OptAnalyzer,
     mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::CC.IRInterpretationState,
-    concrete_eval_result::Union{Nothing,CC.ConstCallResults})
+    concrete_eval_result::Union{Nothing,ConstCallResult})
     if concrete_eval_result !== nothing
         # HACK disable the whole `OptAnalyzer` analysis as far as the frame has been concretized
         # (otherwise we may end up with useless reports from recursive calls)
