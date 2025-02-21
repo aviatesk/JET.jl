@@ -24,11 +24,11 @@ const empty_stub_message = strip("""
     even with `JET_DEV_MODE` enabled.
     """)
 
-for exported_func in filter(name::Symbol->!startswith(String(name), "@"), exports)
-    @eval $exported_func(args...; kws...) = error($(GlobalRef(@__MODULE__, :empty_stub_message)))
-end
-
-for exported_macro in filter(name::Symbol->startswith(String(name), "@"), exports)
-    exported_macro_name = Symbol(lstrip(String(exported_macro), '@'))
-    @eval macro $exported_macro_name(exs...); :(error($(GlobalRef(@__MODULE__, :empty_stub_message)))); end
+for exported_func in exports
+    if startswith(String(exported_func), "@")
+        exported_macro_name = Symbol(lstrip(String(exported_macro), '@'))
+        @eval macro $exported_macro_name(exs...); :(error($(GlobalRef(@__MODULE__, :empty_stub_message)))); end
+    else
+        @eval $exported_func(args...; kws...) = error($(GlobalRef(@__MODULE__, :empty_stub_message)))
+    end
 end

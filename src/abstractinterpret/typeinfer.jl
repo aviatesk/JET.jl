@@ -168,7 +168,7 @@ CC.cache_owner(analyzer::AbstractAnalyzer) = AnalysisCache(analyzer)
 
 function CC.code_cache(analyzer::AbstractAnalyzer)
     view = AbstractAnalyzerView(analyzer)
-    worlds = WorldRange(get_inference_world(analyzer))
+    worlds = WorldRange(CC.get_inference_world(analyzer))
     return WorldView(view, worlds)
 end
 

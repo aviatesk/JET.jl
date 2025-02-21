@@ -31,7 +31,7 @@ using .CC: @nospecs, ⊑,
     nearest_common_dominator, singleton_type, slot_id, specialize_method, tmeet, tmerge,
     typeinf_lattice, widenconst, widenlattice
 
-using Base: IdSet, get_world_counter
+using Base: IdSet, get_world_counter, generating_output
 
 using Base.Meta: ParseError, isexpr, lower
 
@@ -88,10 +88,6 @@ __init__() = foreach(@nospecialize(f)->f(), INIT_HOOKS)
 
 # compat
 # ------
-
-using Base: generating_output
-
-import .CC: get_inference_world
 
 # macros
 # ------
@@ -617,7 +613,7 @@ function analyze_gf_by_type!(analyzer::AbstractAnalyzer, @nospecialize(tt::Type{
 end
 
 function find_single_match(@nospecialize(tt), analyzer::AbstractAnalyzer)
-    match = Base._which(tt; method_table=CC.method_table(analyzer), world=get_inference_world(analyzer), raise=false)
+    match = Base._which(tt; method_table=CC.method_table(analyzer), world=CC.get_inference_world(analyzer), raise=false)
     match === nothing && single_match_error(tt)
     return match
 end
