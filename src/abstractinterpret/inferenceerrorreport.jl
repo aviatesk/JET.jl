@@ -128,6 +128,9 @@ function handle_sig_call!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
     end
 
     f = first(expr.args)
+    if f isa SSAValue
+        f = get_stmt((s[1], f.id))
+    end
     args = expr.args[2:end]
     splat = false
     if isa(f, GlobalRef)

@@ -177,7 +177,7 @@ function CC.InferenceState(result::InferenceResult, cache_mode::UInt8, analyzer:
     return frame
 end
 
-function CC.finish!(analyzer::JETAnalyzer, caller::InferenceState)
+function CC.finish!(analyzer::JETAnalyzer, caller::InferenceState, validation_world::UInt)
     src = caller.result.src
 
     if isnothing(src)
@@ -191,7 +191,7 @@ function CC.finish!(analyzer::JETAnalyzer, caller::InferenceState)
         throw("unexpected state happened, inspect `$(@__MODULE__).src`")
     end
 
-    return @invoke CC.finish!(analyzer::AbstractAnalyzer, caller::InferenceState)
+    return @invoke CC.finish!(analyzer::AbstractAnalyzer, caller::InferenceState, validation_world::UInt)
 end
 
 function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer,
@@ -504,8 +504,6 @@ function report_uncaught_exceptions!(analyzer::JETAnalyzer, frame::InferenceStat
     # critical errors still make the return type `Bottom`
     # NOTE to reduce the false positive cases described above, we count `throw` calls
     # after optimization, since it may have eliminated "unreachable" `throw` calls
-    codelocs = frame.src.codelocs
-    linetable = frame.src.linetable::LineTable
     reported_locs = nothing
     for report in get_reports(analyzer, frame.result)
         if isa(report, SeriousExceptionReport)
@@ -518,9 +516,13 @@ function report_uncaught_exceptions!(analyzer::JETAnalyzer, frame::InferenceStat
     throw_calls = nothing
     for (pc, stmt) in enumerate(stmts)
         isa(stmt, Expr) || continue
-        CC.is_throw_call(stmt, stmts) || continue
+        f = stmt.args[1]
+        if f isa SSAValue
+            f = stmts[f.id]
+        end
+        (f isa GlobalRef && f.name === :throw) || continue
         # if this `throw` is already reported, don't duplicate
-        if !isnothing(reported_locs) && linetable[codelocs[pc]]::LineInfoNode in reported_locs
+        if !isnothing(reported_locs) && get_lin((sv, pc)) in reported_locs
             continue
         end
         if isnothing(throw_calls)
