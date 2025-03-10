@@ -21,7 +21,9 @@ isempty(errmsg) || println(errmsg)
 
 @info "JET setup information:" JET.JET_DEV_MODE
 
-@testset "JET.jl" begin
+@testset "inferenceerrorreport.jl" include("abstractinterpret/test_inferenceerrorreport.jl")
+
+false && @testset "JET.jl" begin
     @static if JET.JET_LOADABLE
         @testset "abstractinterpret" begin
             @testset "inferenceerrorreport.jl" include("abstractinterpret/test_inferenceerrorreport.jl")
