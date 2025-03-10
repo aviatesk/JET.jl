@@ -390,7 +390,7 @@ end
 # otherwise, it means malformed report pass call, and we should inform users of it
 function (rp::ReportPass)(T#=::Type{<:InferenceErrorReport}=#, @nospecialize(args...))
     if !(T === InvalidConstantRedefinition || T === InvalidConstantDeclaration)
-        throw(MethodError(rp, (T, args...)))
+        throw(MethodError(rp, (T, args..., Base.get_world_counter())))
     end
     return false
 end
@@ -525,7 +525,7 @@ function add_cached_report!(analyzer::AbstractAnalyzer, caller::InferenceResult,
 end
 
 stash_report!(analyzer::AbstractAnalyzer, @nospecialize(report::InferenceErrorReport)) = push!(get_report_stash(analyzer), report)
-stash_report!(analyzer::AbstractAnalyzer, reports::Vector{InferenceErrorReport}) = append!(get_report_stash(analyzer), reports)
+stash_reports!(analyzer::AbstractAnalyzer, reports::Vector{InferenceErrorReport}) = append!(get_report_stash(analyzer), reports)
 
 # AbstractInterpreter
 # ===================
