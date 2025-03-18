@@ -127,7 +127,7 @@ badgetpropertycall() = _badgetpropertycall(nothing)
 
 @testset "cache separation from native execution" begin
     # the native execution will generated the cache for `_badgetpropertycall(::Nothing)`
-    @test_throws ErrorException("type Nothing has no field field") badgetpropertycall()
+    @test_throws FieldError(Nothing, :field) badgetpropertycall()
 
     # but we shouldn't use the global code cache for the native execution,
     # and we should still be able to get a report below

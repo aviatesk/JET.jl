@@ -644,7 +644,7 @@ function report_method_error_for_union_split!(analyzer::JETAnalyzer,
     # check each match for union-split signature
     split_argtypes = empty_matches = uncovered_matches = nothing
     reported = false
-    for (i, matchinfo) in enumerate(info.matches)
+    for (i, matchinfo) in enumerate(info.split)
         if is_empty_match(matchinfo)
             if isnothing(split_argtypes)
                 split_argtypes = CC.switchtupleunion(typeinf_lattice(analyzer), argtypes)
@@ -655,7 +655,7 @@ function report_method_error_for_union_split!(analyzer::JETAnalyzer,
                 continue
             end
             if empty_matches === nothing
-                empty_matches = (Any[], length(info.matches))
+                empty_matches = (Any[], length(info.split))
             end
             sig_n = argtypes_to_type(argtypes′)
             push!(empty_matches[1], sig_n)
@@ -665,7 +665,7 @@ function report_method_error_for_union_split!(analyzer::JETAnalyzer,
             end
             argtypes′ = split_argtypes[i]::Vector{Any}
             if uncovered_matches === nothing
-                uncovered_matches = (Any[], length(info.matches))
+                uncovered_matches = (Any[], length(info.split))
             end
             sig_n = argtypes_to_type(argtypes′)
             push!(uncovered_matches[1], sig_n)

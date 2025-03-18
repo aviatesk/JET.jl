@@ -126,45 +126,6 @@ that are specific to the optimization analysis.
   julia> @test_opt function_filter=function_filter f(args...)
   ...
   ```
-
----
-- `skip_unoptimized_throw_blocks::Bool = true`:\\
-  By default, Julia's native compilation pipeline intentionally disables inference (and so
-  succeeding optimizations too) on "throw blocks", which are code blocks that will eventually
-  lead to `throw` calls, in order to ease [the compilation latency problem, a.k.a. "first-time-to-plot"](https://julialang.org/blog/2020/08/invalidations/).
-  Accordingly, the optimization analyzer also ignores any performance pitfalls detected
-  within those blocks since we _usually_ don't mind if code involved with error handling
-  isn't optimized.
-  If `skip_unoptimized_throw_blocks` is set to `false`, it doesn't ignore them and will
-  report type instabilities detected within "throw blocks".
-
-  See also <https://github.com/JuliaLang/julia/pull/35982>.
-
-  ```julia-repl
-  # by default, unoptimized "throw blocks" are not analyzed
-  julia> @test_opt sin(10)
-  Test Passed
-    Expression: #= none:1 =# JET.@test_opt sin(10)
-
-  # we can turn on the analysis on unoptimized "throw blocks" with `skip_unoptimized_throw_blocks=false`
-  julia> @test_opt skip_unoptimized_throw_blocks=false sin(10)
-  JET-test failed at none:1
-    Expression: #= REPL[6]:1 =# JET.@test_call analyzer = JET.OptAnalyzer skip_unoptimized_throw_blocks = false sin(10)
-    ═════ 1 possible error found ═════
-    ┌ @ math.jl:1221 Base.Math.sin(xf)
-    │┌ @ special/trig.jl:39 Base.Math.sin_domain_error(x)
-    ││┌ @ special/trig.jl:28 Base.Math.DomainError(x, "sin(x) is only defined for finite x.")
-    │││ runtime dispatch detected: Base.Math.DomainError(x::Float64, "sin(x) is only defined for finite x.")::Any
-    ││└──────────────────────
-
-  ERROR: There was an error during testing
-
-  # we can also turns off the heuristic itself
-  julia> @test_opt unoptimize_throw_blocks=false skip_unoptimized_throw_blocks=false sin(10)
-  Test Passed
-    Expression: #= REPL[7]:1 =# JET.@test_call analyzer = JET.OptAnalyzer unoptimize_throw_blocks = false skip_unoptimized_throw_blocks = false sin(10)
-  ```
-
 ---
 """
 struct OptAnalyzer{RP<:ReportPass,FF} <: AbstractAnalyzer
@@ -173,16 +134,14 @@ struct OptAnalyzer{RP<:ReportPass,FF} <: AbstractAnalyzer
     report_pass::RP
     function_filter::FF
     skip_noncompileable_calls::Bool
-    skip_unoptimized_throw_blocks::Bool
     __analyze_frame::BitVector # temporary stash to keep per-frame analysis-skip configuration
 
     function OptAnalyzer(state::AnalyzerState,
                          report_pass::RP,
                          function_filter::FF,
-                         skip_noncompileable_calls::Bool,
-                         skip_unoptimized_throw_blocks::Bool) where {RP<:ReportPass,FF}
+                         skip_noncompileable_calls::Bool) where {RP<:ReportPass,FF}
         cache_key = compute_hash(state.inf_params, state.opt_params, report_pass,
-                                    skip_noncompileable_calls, skip_unoptimized_throw_blocks)
+                                 skip_noncompileable_calls)
         cache_key = @invoke hash(function_filter::Any, cache_key::UInt) # HACK avoid dynamic dispatch
         analysis_cache = get!(AnalysisCache, OPT_ANALYZER_CACHE, cache_key)
         return new{RP,FF}(state,
@@ -190,7 +149,6 @@ struct OptAnalyzer{RP<:ReportPass,FF} <: AbstractAnalyzer
                           report_pass,
                           function_filter,
                           skip_noncompileable_calls,
-                          skip_unoptimized_throw_blocks,
                           #=__analyze_frame=# BitVector())
     end
 end
@@ -202,8 +160,7 @@ function JETInterface.AbstractAnalyzer(analyzer::OptAnalyzer, state::AnalyzerSta
         state,
         analyzer.report_pass,
         analyzer.function_filter,
-        analyzer.skip_noncompileable_calls,
-        analyzer.skip_unoptimized_throw_blocks,)
+        analyzer.skip_noncompileable_calls)
 end
 JETInterface.ReportPass(analyzer::OptAnalyzer) = analyzer.report_pass
 JETInterface.AnalysisCache(analyzer::OptAnalyzer) = analyzer.analysis_cache
@@ -239,23 +196,6 @@ function CC.const_prop_call(analyzer::OptAnalyzer,
     return @invoke CC.const_prop_call(analyzer::AbstractInterpreter,
         mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::CC.IRInterpretationState,
         nothing::Nothing)
-end
-
-function collect_callee_reports!(analyzer::OptAnalyzer, sv::InferenceState)
-    if analyzer.skip_unoptimized_throw_blocks && CC.is_stmt_throw_block(CC.get_curr_ssaflag(sv))
-        empty!(get_report_stash(analyzer))
-        return nothing
-    end
-    @invoke collect_callee_reports!(analyzer::AbstractAnalyzer, sv::InferenceState)
-    return nothing
-end
-function collect_cached_callee_reports!(analyzer::OptAnalyzer, reports::Vector{InferenceErrorReport},
-                                        caller::InferenceState, origin_mi::MethodInstance)
-    if !(analyzer.skip_unoptimized_throw_blocks && CC.is_stmt_throw_block(CC.get_curr_ssaflag(caller)))
-        @invoke collect_cached_callee_reports!(analyzer::AbstractAnalyzer, reports::Vector{InferenceErrorReport},
-                                               caller::InferenceState, origin_mi::MethodInstance)
-    end
-    return nothing
 end
 
 # TODO better to work only `CC.finish!`
@@ -383,9 +323,6 @@ function (::OptAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::OptAnalyze
             # that callee should already have been reported
             continue
         end
-        if analyzer.skip_unoptimized_throw_blocks
-            CC.is_stmt_throw_block(src.ssaflags[pc]) && continue
-        end
         if isexpr(x, :call)
             ft = argextype(first(x.args), src, sptypes, slottypes)
             f = singleton_type(ft)
@@ -408,19 +345,17 @@ function OptAnalyzer(world::UInt = Base.get_world_counter();
     report_pass::ReportPass = OptAnalysisPass(),
     function_filter = optanalyzer_function_filter,
     skip_noncompileable_calls::Bool = true,
-    skip_unoptimized_throw_blocks::Bool = true,
     jetconfigs...)
     state = AnalyzerState(world; jetconfigs...)
     return OptAnalyzer(
         state,
         report_pass,
         function_filter,
-        skip_noncompileable_calls,
-        skip_unoptimized_throw_blocks)
+        skip_noncompileable_calls)
 end
 
 const OPT_ANALYZER_CONFIGURATIONS = Set{Symbol}((
-    :report_pass, :function_filter, :skip_noncompileable_calls, :skip_unoptimized_throw_blocks))
+    :report_pass, :function_filter, :skip_noncompileable_calls))
 
 let valid_keys = GENERAL_CONFIGURATIONS ∪ OPT_ANALYZER_CONFIGURATIONS
     @eval JETInterface.valid_configurations(::OptAnalyzer) = $valid_keys

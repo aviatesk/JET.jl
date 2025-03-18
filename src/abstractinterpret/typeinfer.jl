@@ -164,8 +164,18 @@ function CC.return_type_tfunc(analyzer::AbstractAnalyzer, argtypes::Argtypes, si
     oldresult = analyzer[result]
     init_result!(analyzer, result)
     newanalyzer = AbstractAnalyzer(analyzer)
+    sv.interp = newanalyzer
     ret = @invoke CC.return_type_tfunc(newanalyzer::AbstractInterpreter, argtypes::Argtypes, si::StmtInfo, sv::InferenceState)
-    analyzer[result] = oldresult
+    function after_return_type_tfunc(analyzer′, sv′)
+        analyzer[result] = oldresult
+        sv.interp = analyzer
+        return true
+    end
+    if isready(ret)
+        after_return_type_tfunc(analyzer, sv)
+    else
+        push!(sv.tasks, after_return_type_tfunc)
+    end
     return ret
 end
 
@@ -562,8 +572,8 @@ function constant_globalref(argtypes::Vector{Any})
     return GlobalRef(mod, sym)
 end
 
-function CC.finish(me::InferenceState, analyzer::AbstractAnalyzer)
-    ret = @invoke CC.finish(me::InferenceState, analyzer::AbstractInterpreter)
+function CC.finishinfer!(me::InferenceState, analyzer::AbstractAnalyzer, cycleid::Int)
+    ret = @invoke CC.finishinfer!(me::InferenceState, analyzer::AbstractInterpreter, cycleid::Int)
 
     istoplevel(me) || return ret
 

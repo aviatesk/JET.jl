@@ -21,7 +21,8 @@ isempty(errmsg) || println(errmsg)
 
 @info "JET setup information:" JET.JET_DEV_MODE
 
-@testset "inferenceerrorreport.jl" include("abstractinterpret/test_inferenceerrorreport.jl")
+# @static Sys.iswindows() || @testset "print.jl" include("ui/test_print.jl")
+@testset "misc" include("test_misc.jl")
 
 false && @testset "JET.jl" begin
     @static if JET.JET_LOADABLE
