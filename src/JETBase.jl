@@ -11,12 +11,7 @@ end
 
 Base.Experimental.@optlevel 1
 
-@static if VERSION ≥ v"1.12.0-DEV.1581"
-    # allow using Compiler.jl stdlib optionally
-    const CC = Base.Compiler
-else
-    const CC = Core.Compiler
-end
+const CC = Base.Compiler
 
 # usings
 # ======
@@ -94,16 +89,11 @@ __init__() = foreach(@nospecialize(f)->f(), INIT_HOOKS)
 # compat
 # ------
 
-@static if VERSION ≥ v"1.12-"
-    using Base.IRShow: LineInfoNode
-    using .CC: ConstCallResult
-    # push_inithook!() do # FIXME with TODO use Compiler.jl stdlib
-    #     @eval InteractiveUtils.@activate Compiler
-    # end
-else
-    using .CC: ConstCallResults as ConstCallResult
-    using .CC: istopfunction
-end
+using Base.IRShow: LineInfoNode
+using .CC: ConstCallResult
+# push_inithook!() do # FIXME with TODO use Compiler.jl stdlib
+#     @eval InteractiveUtils.@activate Compiler
+# end
 
 # macros
 # ------
@@ -219,28 +209,8 @@ const LineTable = Union{Vector{Any},Vector{LineInfoNode}}
 
 get_stmt((sv, pc)::StateAtPC) = sv.src.code[pc]
 get_lin((sv, pc)::StateAtPC) = _get_lin(sv, pc)
-@static if VERSION ≥ v"1.12-"
 # TODO optimize the allocation here for un-optimized debuginfo
 _get_lin(sv, pc) = first(CC.IRShow.buildLineInfoNode(sv.src.debuginfo, sv.linfo, pc))
-else
-function _get_lin(sv, pc)
-    codeloc = sv.src.codelocs[pc]
-    linetable = sv.src.linetable::LineTable
-    if 1 <= codeloc <= length(linetable)
-        return linetable[codeloc]::LineInfoNode
-    elseif isa(sv, OptimizationState) && codeloc == 0
-        return nothing
-    elseif length(linetable) == 1
-        # XXX `codelocs` seems to be broken for some reason,
-        # but we've got to use linetable /w single line info node if that's what's available
-        return only(linetable)::LineInfoNode
-    else
-        # Packages might dynamically generate code, which does not reference
-        # a source, see https://github.com/aviatesk/JET.jl/issues/273
-        return LineInfoNode(sv.mod, :unknown, :unknown, Int32(0), Int32(0))
-    end
-end
-end
 get_ssavaluetype((sv, pc)::StateAtPC) = (sv.src.ssavaluetypes::Vector{Any})[pc]
 
 get_slottype(s::Union{StateAtPC,State}, slot) = get_slottype(s, slot_id(slot))

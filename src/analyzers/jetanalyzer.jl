@@ -256,14 +256,9 @@ function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
             return :concrete_eval
         end
     else
-        @static if VERSION ≥ v"1.12-"
-            should_concrete_eval = f === Base.fieldindex ||
-                f === Base.typejoin || f === Base.typejoin_union_tuple
-        else
-            should_concrete_eval = istopfunction(f, :fieldindex) ||
-                istopfunction(f, :typejoin) || istopfunction(f, :typejoin_union_tuple)
-        end
-        if should_concrete_eval
+        if (f === Base.fieldindex ||
+            f === Base.typejoin ||
+            f === Base.typejoin_union_tuple)
             if concrete_eval_eligible_ignoring_overlay(result, arginfo)
                 return :concrete_eval
             end

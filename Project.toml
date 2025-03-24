@@ -44,7 +44,7 @@ Revise = "3.3"
 StaticArrays = "1.7.0"
 TOML = "1.0.3"
 Test = "1.10"
-julia = "1.11"
+julia = "1.12"
 
 [extras]
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
