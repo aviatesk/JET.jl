@@ -295,8 +295,8 @@ function CC.abstract_invoke(analyzer::JETAnalyzer, arginfo::ArgInfo, si::StmtInf
 end
 
 # report pass for undefined static parameter
-function CC.abstract_eval_statement_expr(analyzer::JETAnalyzer, e::Expr, vtypes::VarTable, sv::InferenceState)
-    ret = @invoke CC.abstract_eval_statement_expr(analyzer::AbstractAnalyzer, e::Expr, vtypes::VarTable, sv::InferenceState)
+function CC.abstract_eval_statement_expr(analyzer::JETAnalyzer, e::Expr, sstate::StatementState, sv::InferenceState)
+    ret = @invoke CC.abstract_eval_statement_expr(analyzer::AbstractAnalyzer, e::Expr, sstate::StatementState, sv::InferenceState)
     if e.head === :static_parameter
         function after_abstract_eval_statement_expr(analyzer′, sv′)
             ret′ = ret[]
@@ -331,8 +331,8 @@ end
 #     return ret
 # end
 
-function CC.abstract_eval_value(analyzer::JETAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    ret = @invoke CC.abstract_eval_value(analyzer::AbstractAnalyzer, e::Any, vtypes::VarTable, sv::InferenceState)
+function CC.abstract_eval_value(analyzer::JETAnalyzer, @nospecialize(e), sstate::StatementState, sv::InferenceState)
+    ret = @invoke CC.abstract_eval_value(analyzer::AbstractAnalyzer, e::Any, sstate::StatementState, sv::InferenceState)
 
     # report non-boolean condition error
     stmt = get_stmt((sv, get_currpc(sv)))
@@ -669,7 +669,7 @@ function report_method_error_for_union_split!(analyzer::JETAnalyzer,
 end
 
 is_empty_match(info::MethodMatchInfo) = CC.isempty(info.results)
-is_fully_covered(info::MethodMatchInfo) = CC._all(m->m.fully_covers, info.results)
+is_fully_covered(info::MethodMatchInfo) = CC.all(m->m.fully_covers, info.results)
 
 @jetreport struct UnanalyzedCallReport <: InferenceErrorReport
     @nospecialize type

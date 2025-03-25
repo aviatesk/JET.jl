@@ -150,7 +150,7 @@ function analyze_additional_pass_by_type!(analyzer::AbstractAnalyzer, @nospecial
     # confuse the abstract interpretation, which is supposed to terminate on any kind of code
     match = find_single_match(tt, newanalyzer)
     CC.abstract_call_method(newanalyzer, match.method, match.spec_types, match.sparams,
-        #=hardlimit=#false, #=si=#StmtInfo(false), sv)
+        #=hardlimit=#false, #=si=#StmtInfo(false, false), sv)
 
     return nothing
 end
@@ -166,16 +166,8 @@ function CC.return_type_tfunc(analyzer::AbstractAnalyzer, argtypes::Argtypes, si
     newanalyzer = AbstractAnalyzer(analyzer)
     sv.interp = newanalyzer
     ret = @invoke CC.return_type_tfunc(newanalyzer::AbstractInterpreter, argtypes::Argtypes, si::StmtInfo, sv::InferenceState)
-    function after_return_type_tfunc(analyzer′, sv′)
-        analyzer[result] = oldresult
-        sv.interp = analyzer
-        return true
-    end
-    if isready(ret)
-        after_return_type_tfunc(analyzer, sv)
-    else
-        push!(sv.tasks, after_return_type_tfunc)
-    end
+    sv.interp = analyzer
+    analyzer[result] = oldresult
     return ret
 end
 
