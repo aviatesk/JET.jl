@@ -398,9 +398,9 @@ function cache_reports!(analyzer::AbstractAnalyzer, caller::InferenceResult,
     CC.stack_analysis_result!(caller, CachedAnalysisResult(cached_reports))
 end
 
-function CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState, validation_world::UInt)
+function CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState, validation_world::UInt, time_before::UInt64)
     finish_frame!(analyzer, frame)
-    return @invoke CC.finish!(analyzer::AbstractInterpreter, frame::InferenceState, validation_world::UInt)
+    return @invoke CC.finish!(analyzer::AbstractInterpreter, frame::InferenceState, validation_world::UInt, time_before::UInt64)
 end
 
 # TODO update or delete

@@ -195,10 +195,10 @@ function CC.finish!(analyzer::JETAnalyzer, caller::InferenceState, validation_wo
 end
 
 function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer,
-    @nospecialize(f), arginfo::ArgInfo, si::StmtInfo, @nospecialize(atype), sv::InferenceState,
+    @nospecialize(func), arginfo::ArgInfo, si::StmtInfo, @nospecialize(atype), sv::InferenceState,
     max_methods::Int)
     ret = @invoke CC.abstract_call_gf_by_type(analyzer::AbstractAnalyzer,
-        f::Any, arginfo::ArgInfo, si::StmtInfo, atype::Any, sv::InferenceState, max_methods::Int)
+        func::Any, arginfo::ArgInfo, si::StmtInfo, atype::Any, sv::InferenceState, max_methods::Int)
     function after_abstract_call_gf_by_type(analyzer′, sv′)
         ret′ = ret[]
         ReportPass(analyzer)(MethodErrorReport, analyzer, sv, ret′, arginfo.argtypes, atype)
@@ -312,20 +312,9 @@ function CC.abstract_eval_statement_expr(analyzer::JETAnalyzer, e::Expr, vtypes:
     return ret
 end
 
-function CC.abstract_eval_special_value(analyzer::JETAnalyzer,
-    @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    ret = @invoke CC.abstract_eval_special_value(analyzer::AbstractAnalyzer,
-        e::Any, vtypes::VarTable, sv::InferenceState)
-
-    if isa(e, GlobalRef)
-        # report pass for undefined global reference
-        ReportPass(analyzer)(UndefVarErrorReport, analyzer, sv, e)
-    # elseif isa(e, SlotNumber)
-    #     # TODO enable this (aviatesk/JET.jl#596)
-    #     # report pass for (local) undef var error
-    #     ReportPass(analyzer)(UndefVarErrorReport, analyzer, sv, e, vtypes, ret)
-    end
-
+function CC.abstract_eval_globalref(interp::JETAnalyzer, g::GlobalRef, saw_latestworld::Bool, sv::InferenceState)
+    ret = @invoke CC.abstract_eval_globalref(interp::AbstractInterpreter, g::GlobalRef, saw_latestworld::Bool, sv::InferenceState)
+    ReportPass(interp)(UndefVarErrorReport, interp, sv, g)
     return ret
 end
 
@@ -785,6 +774,8 @@ end
 
 # undefined global variable report passes
 
+# TODO InferenceParams(::JETAnalyzer).assume_bindings_static = true
+
 (::SoundPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, gr::GlobalRef) =
     report_undef_global_var!(analyzer, sv, gr, #=sound=#true)
 (::BasicPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, gr::GlobalRef) =
@@ -793,26 +784,13 @@ end
     report_undef_global_var!(analyzer, sv, gr, #=sound=#false)
 function report_undef_global_var!(analyzer::JETAnalyzer, sv::InferenceState, gr::GlobalRef, sound::Bool)
     isdefined(gr.mod, gr.name) && return false
-    sound && @goto report
-    is_corecompiler_undefglobal(gr) && return false
-    # if this global var is explicitly type-declared, it will be likely get assigned somewhere
-    # TODO give this permission only to top-level analysis
-    ccall(:jl_get_binding_type, Any, (Any, Any), gr.mod, gr.name) !== nothing && return false
-    begin @label report
-        add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, gr))
-        return true
+    if !sound
+        # if this global var is explicitly type-declared, it will likely get assigned somewhere
+        # TODO give this permission only to top-level analysis
+        ccall(:jl_get_binding_type, Any, (Any, Any), gr.mod, gr.name) !== nothing && return false
     end
-end
-
-# Returns `true` if this global reference is undefined inside `Core.Compiler`, but the
-# corresponding name exists in the `Base` module.
-# `Core.Compiler` reuses the minimum amount of `Base` code and there're some of missing
-# definitions, and `BasicPass` will exclude reports on those undefined names since they
-# usually don't matter and `Core.Compiler`'s basic functionality is battle-tested and
-# validated exhausively by its test suite and real-world usages.
-function is_corecompiler_undefglobal(gr::GlobalRef)
-    gr.mod === CC && return isdefined(Base, gr.name)
-    return false
+    add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, gr))
+    return true
 end
 
 # undefined static parameter report passes
@@ -1369,7 +1347,7 @@ function JETAnalyzer(world::UInt = Base.get_world_counter();
     # cache inconsistency until JuliaLang/julia#40399 is merged. But the analysis cache of
     # JETAnalyzer has the same problem already anyway, so enabling this option does not
     # make the situation worse.
-    set_if_missing!(jetconfigs, :assume_bindings_static, true)
+    jetconfigs[:assume_bindings_static] = true
     state = AnalyzerState(world; jetconfigs...)
     config = JETAnalyzerConfig(; jetconfigs...)
     return JETAnalyzer(state, report_pass, config)
