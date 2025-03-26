@@ -370,7 +370,7 @@ let result = report_call((Nothing,)) do x
         setglobal!(@__MODULE__, :__int_globalvar__, x)
     end
     report = only(get_reports_with_test(result))
-    @test report isa InvalidGlobalAssignmentError
+    @test report isa IncompatibleGlobalAssignmentError
     @test report.mod === @__MODULE__
     @test report.name === :__int_globalvar__
 end
