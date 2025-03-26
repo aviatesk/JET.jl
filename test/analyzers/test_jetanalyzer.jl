@@ -72,21 +72,24 @@ include("../setup.jl")
     end
 end
 
+func_method_error1(a::Integer) = :Integer
+func_method_error2(a::Integer) = :Integer
+func_method_error2(a::AbstractString) = "AbstractString"
+func_onlyint(::Int) = :ok
+func_integer_or_nothing(::Integer) = :ok1
+func_integer_or_nothing(::Nothing) = :ok2
+
 @testset "MethodErrorReport" begin
     # report no match case
     # --------------------
 
     # if there is no method matching case, it should be reported
-    let m = Module()
-        result = Core.eval(m, quote
-            foo(a::Integer) = :Integer
-            $report_call((AbstractString,)) do a
-                foo(a)
-            end
-        end)
+    let result = report_call((AbstractString,)) do a
+            func_method_error1(a)
+        end
         report = only(get_reports_with_test(result))
         @test report isa MethodErrorReport
-        @test report.t === Tuple{typeof(m.foo), AbstractString}
+        @test report.t === Tuple{typeof(func_method_error1), AbstractString}
     end
 
     let result = report_call(()->sum([]))
@@ -97,31 +100,21 @@ end
     end
 
     # if there is no method matching case in union-split, it should be reported
-    let m = Module()
-        result = Core.eval(m, quote
-            foo(a::Integer) = :Integer
-            foo(a::AbstractString) = "AbstractString"
-            $report_call(a->foo(a), (Union{Nothing,Int},))
-        end)
-
+    let result = report_call(a->func_method_error2(a), (Union{Nothing,Int},))
         report = only(get_reports_with_test(result))
         @test report isa MethodErrorReport
-        @test report.t == Any[Tuple{typeof(m.foo), Nothing}]
+        @test report.t == Any[Tuple{typeof(func_method_error2), Nothing}]
     end
 
     # report uncovered match
     # ----------------------
 
     # only in :sound mode
-    let (basic, sound) = @eval Module() begin
-            onlyint(::Int) = :ok
-            basic = $report_call((Any,)) do x
-                onlyint(x)
-            end
-            sound = $report_call((Any,); mode=:sound) do x
-                onlyint(x)
-            end
-            basic, sound
+    let basic = report_call((Any,)) do x
+            func_onlyint(x)
+        end,
+        sound = report_call((Any,); mode=:sound) do x
+            func_onlyint(x)
         end
         @test isempty(get_reports_with_test(basic))
         report = only(get_reports_with_test(sound))
@@ -130,16 +123,11 @@ end
         @test report.sig[end] === Symbol
     end
 
-    let (basic, sound) = @eval Module() begin
-            integer_or_nothing(::Integer) = :ok1
-            integer_or_nothing(::Nothing) = :ok2
-            basic = $report_call((Union{Number,Nothing},)) do x
-                integer_or_nothing(x)
-            end
-            sound = $report_call((Union{Number,Nothing},); mode=:sound) do x
-                integer_or_nothing(x)
-            end
-            basic, sound
+    let basic = report_call((Union{Number,Nothing},)) do x
+            func_integer_or_nothing(x)
+        end,
+        sound = report_call((Union{Number,Nothing},); mode=:sound) do x
+            func_integer_or_nothing(x)
         end
         @test isempty(get_reports_with_test(basic))
         report = only(get_reports_with_test(sound))
@@ -149,21 +137,18 @@ end
     end
 
     # report both no match error and uncovered match error
-    let result = @eval Module() begin
-            onlyint(::Int) = :ok
-            $report_call((Union{Integer,Nothing},); mode=:sound) do x
-                onlyint(x)
-            end
+    let result = report_call((Union{Integer,Nothing},); mode=:sound) do x
+            func_onlyint(x)
         end
         @test length(get_reports_with_test(result)) == 2
         @test any(get_reports_with_test(result)) do report
-            # no match for `onlyint(::Nothing)`
+            # no match for `func_onlyint(::Nothing)`
             report isa MethodErrorReport &&
             !report.uncovered &&
             report.sig[end] === Union{}
         end
         @test any(get_reports_with_test(result)) do report
-            # uncovered match for `onlyint(::Integer)`
+            # uncovered match for `func_onlyint(::Integer)`
             report isa MethodErrorReport &&
             report.uncovered &&
             report.sig[end] === Symbol
@@ -180,12 +165,14 @@ end
         end
         report = only(get_reports_with_test(result))
         @test report isa UnanalyzedCallReport
-        report.type === Tuple{typeof(+),Any,Any}
+        @test report.type === Tuple{typeof(+),Any,Any}
     end
 end
 
 issue285(x, y::Vararg{T}) where {T} = T
 issue586(t::Vararg{Type{<:T}}) where {T} = T
+_func_undefvar(bar) = bar + baz
+func_undefvar(a) = _func_undefvar(a)
 
 @testset "UndefVarErrorReport" begin
     @testset "global" begin
@@ -195,37 +182,29 @@ issue586(t::Vararg{Type{<:T}}) where {T} = T
         end
 
         # deeper level
-        let m = @fixturedef begin
-                foo(bar) = bar + baz
-                qux(a) = foo(a)
-            end
-
-            result = Core.eval(m, :($report_call(qux, (Int,))))
+        let result = report_call(func_undefvar, (Int,))
             r = only(get_reports_with_test(result))
             @test is_global_undef_var(r, :baz)
 
             # works when cached
-            result = Core.eval(m, :($report_call(qux, (Int,))))
+            result = report_call(func_undefvar, (Int,))
             r = only(get_reports_with_test(result))
             @test is_global_undef_var(r, :baz)
         end
 
-        let result = @eval Module() begin
-                $report_call() do
-                    getfield(@__MODULE__, :undefvar)
-                end
+        let sym = gensym()
+            result = @eval report_call() do
+                getfield(@__MODULE__, $(QuoteNode(sym)))
             end
             r = only(get_reports_with_test(result))
-            @test is_global_undef_var(r, :undefvar)
+            @test is_global_undef_var(r, sym)
         end
-
-        let result = @eval Module() begin
-                $report_call() do
-                    getglobal(@__MODULE__, :undefvar)
-                end
+        let sym = gensym()
+            result = @eval report_call() do
+                getglobal(@__MODULE__, $(QuoteNode(sym)))
             end
             r = only(get_reports_with_test(result))
-            @test is_global_undef_var(r, :undefvar)
+            @test is_global_undef_var(r, sym)
         end
 
         # if a global variable is type-declared, it will likely get assigned somewhere
