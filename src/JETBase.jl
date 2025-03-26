@@ -210,7 +210,13 @@ const LineTable = Union{Vector{Any},Vector{LineInfoNode}}
 get_stmt((sv, pc)::StateAtPC) = sv.src.code[pc]
 get_lin((sv, pc)::StateAtPC) = _get_lin(sv, pc)
 # TODO optimize the allocation here for un-optimized debuginfo
-_get_lin(sv, pc) = first(CC.IRShow.buildLineInfoNode(sv.src.debuginfo, sv.linfo, pc))
+function _get_lin(sv, pc)
+    lins = CC.IRShow.buildLineInfoNode(sv.src.debuginfo, sv.linfo, pc)
+    if isempty(lins)
+        return LineInfoNode(sv.linfo, sv.src.debuginfo.def::Symbol, sv.linfo.def.line)
+    end
+    return first(lins)
+end
 get_ssavaluetype((sv, pc)::StateAtPC) = (sv.src.ssavaluetypes::Vector{Any})[pc]
 
 get_slottype(s::Union{StateAtPC,State}, slot) = get_slottype(s, slot_id(slot))

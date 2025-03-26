@@ -177,7 +177,7 @@ function CC.InferenceState(result::InferenceResult, cache_mode::UInt8, analyzer:
     return frame
 end
 
-function CC.finish!(analyzer::JETAnalyzer, caller::InferenceState, validation_world::UInt)
+function CC.finish!(analyzer::JETAnalyzer, caller::InferenceState, validation_world::UInt, time_before::UInt64)
     src = caller.result.src
 
     if isnothing(src)
@@ -191,7 +191,7 @@ function CC.finish!(analyzer::JETAnalyzer, caller::InferenceState, validation_wo
         throw("unexpected state happened, inspect `$(@__MODULE__).src`")
     end
 
-    return @invoke CC.finish!(analyzer::AbstractAnalyzer, caller::InferenceState, validation_world::UInt)
+    return @invoke CC.finish!(analyzer::AbstractAnalyzer, caller::InferenceState, validation_world::UInt, time_before::UInt64)
 end
 
 function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer,
@@ -271,12 +271,6 @@ end
 function concrete_eval_eligible_ignoring_overlay(result::MethodCallResult, arginfo::ArgInfo)
     result.edge !== nothing || return false
     return CC.is_foldable(result.effects) && CC.is_all_const_arg(arginfo, #=start=#2)
-end
-
-function CC.return_type_tfunc(analyzer::JETAnalyzer, argtypes::Argtypes, si::StmtInfo, sv::InferenceState)
-    # report pass for invalid `Core.Compiler.return_type` call
-    ReportPass(analyzer)(InvalidReturnTypeCall, analyzer, sv, argtypes)
-    return @invoke CC.return_type_tfunc(analyzer::AbstractAnalyzer, argtypes::Argtypes, si::StmtInfo, sv::InferenceState)
 end
 
 function CC.abstract_invoke(analyzer::JETAnalyzer, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState)
@@ -367,15 +361,7 @@ function CC.builtin_tfunction(analyzer::JETAnalyzer,
         end
     end
 
-    if f === throw
-        # here we only report a selection of "serious" exceptions, i.e. those that should be
-        # reported even if they may be caught in actual execution;
-        ReportPass(analyzer)(SeriousExceptionReport, analyzer, sv, argtypes)
-
-        # other general `throw` calls will be handled within `_typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)`
-    else
-        ReportPass(analyzer)(AbstractBuiltinErrorReport, analyzer, sv, f, argtypes, ret)
-    end
+    ReportPass(analyzer)(AbstractBuiltinErrorReport, analyzer, sv, f, argtypes, ret)
 
     # `IntrinsicError` is a special marker object that JET uses to indicate an erroneous
     # intrinsic function call, so fix it up here to `Bottom`
@@ -683,24 +669,6 @@ function (::SoundPass)(::Type{UnanalyzedCallReport}, analyzer::JETAnalyzer,
         report = UnanalyzedCallReport(sv, atype)
         add_new_report!(analyzer, sv.result, report)
         report.sig[end] = Any
-        return true
-    end
-    return false
-end
-
-@jetreport struct InvalidReturnTypeCall <: InferenceErrorReport end
-function JETInterface.print_report_message(io::IO, ::InvalidReturnTypeCall)
-    print(io, "invalid `Core.Compiler.return_type` call")
-end
-
-function (::SoundBasicPass)(::Type{InvalidReturnTypeCall}, analyzer::AbstractAnalyzer, sv::InferenceState, argtypes::Argtypes)
-    # here we make a very simple analysis to check if the call of `return_type` is clearly
-    # invalid or not by just checking the # of call arguments
-    # we don't take a (very unexpected) possibility of its overload into account here,
-    # `Core.Compiler.NativeInterpreter` doesn't also (it hard-codes the return type as `Type`)
-    if length(argtypes) ≠ 3
-        # invalid argument #, let's report and return error result (i.e. `Bottom`)
-        add_new_report!(analyzer, sv.result, InvalidReturnTypeCall(sv))
         return true
     end
     return false
@@ -1116,7 +1084,6 @@ end
 @nospecs CC.chk_tfunc(𝕃::IntrinsicErrorCheckLattice, a, b) = with_intrinsic_errorcheck(Tuple{widenconst(a),Bool}, a, b, #=shift=#true)
 
 function (::BasicPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(ret))
-    @assert !(f === throw) "`throw` calls should be handled either by the report pass of `SeriousExceptionReport` or `UncaughtExceptionReport`"
     if f === getfield
         report_getfield!(analyzer, sv, argtypes, ret) && return true
     elseif f === setfield!
@@ -1125,8 +1092,6 @@ function (::BasicPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer
         report_fieldtype!(analyzer, sv, argtypes, ret) && return true
     elseif f === getglobal
         report_getglobal!(analyzer, sv, argtypes, ret) && return true
-    elseif f === setglobal!
-        report_setglobal!!(analyzer, sv, argtypes) && return true
     elseif length(argtypes) == 2 && is_division_func(f)
         report_divide_error!(analyzer, sv, f, argtypes) && return true
     end
@@ -1183,14 +1148,6 @@ function report_fieldtype!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::
     return false
 end
 
-function report_setglobal!!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes)
-    3 ≤ length(argtypes) ≤ 4 || return false
-    gr = constant_globalref(argtypes)
-    gr === nothing && return false
-    # forward to the report pass for invalid global assignment
-    return ReportPass(analyzer)(IncompatibleGlobalAssignmentError, analyzer, sv, gr.mod, gr.name, argtypes[3])
-end
-
 using Core.Compiler: _getfield_fieldindex, _mutability_errorcheck
 
 const MODULE_SETFIELD_MSG = "cannot assign variables in other modules"
@@ -1198,11 +1155,12 @@ const DIVIDE_ERROR_MSG = sprint(showerror, DivideError())
 @nospecs type_error_msg(f, expected, actual) =
     lazy"TypeError: in $f, expected $expected, got a value of type $actual"
 function field_error_msg(@nospecialize(typ), name::Symbol)
+    flds = join(map(n->"`$n`", fieldnames(typ)), ", ")
     if typ <: Tuple
         typ = Tuple # reproduce base error message
     end
     tname = nameof(typ::Union{DataType,UnionAll})
-    return lazy"type $tname has no field $name"
+    return lazy"FieldError: type $tname has no field `$name`, available fields: $flds"
 end
 function bounds_error_msg(@nospecialize(typ), name::Int)
     return lazy"BoundsError: attempt to access $typ at index [$name]"
@@ -1315,7 +1273,6 @@ end
 JETInterface.print_report_message(io::IO, r::UnsoundBuiltinErrorReport) = print(io, r.msg)
 
 function (::SoundPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(rt))
-    @assert !(f === throw) "`throw` calls should be handled either by the report pass of `SeriousExceptionReport` or `UncaughtExceptionReport`"
     if isa(f, IntrinsicFunction)
         nothrow = Core.Compiler.intrinsic_nothrow(f, argtypes)
     else

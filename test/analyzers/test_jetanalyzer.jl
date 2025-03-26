@@ -475,55 +475,47 @@ end
     end
 end
 
+func_throw_call_foo(a) = sum(a)
+func_throw_call_bar(a) = throw(a)
+
 @testset "report `throw` calls" begin
     # simplest case
-    let
-        result = report_call(()->throw("foo"))
+    let result = report_call(()->throw("foo"))
         @test !isempty(get_reports_with_test(result))
         @test first(get_reports_with_test(result)) isa UncaughtExceptionReport
     end
 
     # throws in deep level
-    let
-        foo(a) = throw(a)
+    let foo(a) = throw(a)
         result = report_call(()->foo("foo"))
         @test !isempty(get_reports_with_test(result))
         @test first(get_reports_with_test(result)) isa UncaughtExceptionReport
     end
 
     # don't report possibly false negative `throw`s
-    let
-        foo(a) = a ≤ 0 ? throw("a is $(a)") : a
+    let foo(a) = a ≤ 0 ? throw("a is $(a)") : a
         result = report_call(foo, (Int,))
         @test isempty(get_reports_with_test(result))
     end
 
     # constant prop sometimes helps exclude false negatives
-    let
-        foo(a) = a ≤ 0 ? throw("a is $(a)") : a
+    let foo(a) = a ≤ 0 ? throw("a is $(a)") : a
         result = report_call(()->foo(0))
         @test !isempty(get_reports_with_test(result))
         @test first(get_reports_with_test(result)) isa UncaughtExceptionReport
     end
 
     # report even if there're other "critical" error exist
-    let
-        m = gen_virtual_module()
-        result = Core.eval(m, quote
-            foo(a) = sum(a) # should be reported
-            bar(a) = throw(a) # shouldn't be reported first
-            $report_call((Bool, String)) do b, s
-                b && foo(s)
-                bar(s)
-            end
-        end)
+    let result = report_call((Bool,String)) do b, s
+            b && func_throw_call_foo(s)
+            func_throw_call_bar(s)
+        end
         @test length(get_reports_with_test(result)) === 3
         test_sum_over_string(get_reports_with_test(result))
     end
 
     # end to end
-    let
-        # this should report `throw(ArgumentError("Sampler for this object is not defined")`
+    let # this should report `throw(ArgumentError("Sampler for this object is not defined")`
         result = report_call(rand, (Char,))
         @test !isempty(get_reports_with_test(result))
         @test first(get_reports_with_test(result)) isa UncaughtExceptionReport
@@ -539,13 +531,10 @@ end
     end
 end
 
-@testset "keyword argument methods" begin
-    result = Core.eval(gen_virtual_module(), quote
-        f(a; b = nothing, c = nothing) = return
-        $report_call((Any,)) do b
-            f(1; b)
-        end
-    end)
+func_keyword_argument(a; b = nothing, c = nothing) = nothing
+let result = report_call((Any,)) do b
+        func_keyword_argument(1; b)
+    end
     @test isempty(get_reports_with_test(result))
 end
 
@@ -852,28 +841,6 @@ end
     end
 end
 
-@testset "special case `return_type`" begin
-    # don't report invalid method calls simulated in `return_type_tfunc`
-    let
-        result = report_call(()->CC.return_type(sum, Tuple{String}))
-        @test isempty(get_reports_with_test(result))
-    end
-
-    # report invalid call of `return_type` itself
-    let
-        result = report_call(()->CC.return_type(sum))
-        @test length(get_reports_with_test(result)) == 1
-        @test isa(first(get_reports_with_test(result)), InvalidReturnTypeCall)
-    end
-
-    # end to end
-    let # this shouldn't report "no matching method found for call signature: Base.iterate(itr::DataType)",
-        # which otherwise will be caught in `abstract_call` in `return_type_tfunc`
-        result = report_call(() -> Dict('a' => 1, :b => 2))
-        @test isempty(get_reports_with_test(result))
-    end
-end
-
 @testset "configured_reports" begin
     M = Module()
     @eval M begin
@@ -911,6 +878,7 @@ end
 end
 
 issue363(f, args...) = f(args...)
+func_report_entry(a::Int) = "hello"
 
 @testset "BasicPass" begin
     @testset "basic_filter" begin
@@ -932,11 +900,8 @@ issue363(f, args...) = f(args...)
         end
 
         # should still report anything within entry frame
-        let res = @eval Module() begin
-                foo(a::Int) = "hello"
-                $report_call((AbstractString,)) do a # this abstract call isn't concrete dispatch
-                    foo(a)
-                end
+        let res = report_call((AbstractString,)) do a # this abstract call isn't concrete dispatch
+                func_report_entry(a)
             end
             @test !isempty(get_reports_with_test(res))
             @test any(r->isa(r,MethodErrorReport), get_reports_with_test(res))
