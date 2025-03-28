@@ -217,6 +217,9 @@ function _get_lin(sv, pc)
     end
     return first(lins)
 end
+function get_lins((sv, pc)::StateAtPC)
+    return CC.IRShow.buildLineInfoNode(sv.src.debuginfo, sv.linfo, pc)
+end
 get_ssavaluetype((sv, pc)::StateAtPC) = (sv.src.ssavaluetypes::Vector{Any})[pc]
 
 get_slottype(s::Union{StateAtPC,State}, slot) = get_slottype(s, slot_id(slot))

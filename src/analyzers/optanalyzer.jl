@@ -181,7 +181,7 @@ function CC.const_prop_call(analyzer::OptAnalyzer,
     if concrete_eval_result !== nothing
         # HACK disable the whole `OptAnalyzer` analysis as far as the frame has been concretized
         # (otherwise we may end up with useless reports from recursive calls)
-        filter_lineages!(analyzer, sv.result, result.edge::MethodInstance)
+        filter_lineages!(analyzer, sv.result, result.edge.def)
     end
     return ret
 end
@@ -199,8 +199,8 @@ function CC.const_prop_call(analyzer::OptAnalyzer,
 end
 
 # TODO better to work only `CC.finish!`
-function CC.finish(frame::InferenceState, analyzer::OptAnalyzer)
-    ret = @invoke CC.finish(frame::InferenceState, analyzer::AbstractAnalyzer)
+function CC.finishinfer!(frame::InferenceState, analyzer::OptAnalyzer, cycleid::Int)
+    ret = @invoke CC.finishinfer!(frame::InferenceState, analyzer::AbstractAnalyzer, cycleid::Int)
 
     analyze = true
     if analyzer.skip_noncompileable_calls
@@ -240,13 +240,12 @@ function (::OptAnalysisPass)(::Type{CapturedVariableReport}, analyzer::OptAnalyz
     local reported = false
     code = frame.src.code
     for pc = 1:length(code)
-        typ = (frame.src.ssavaluetypes::Vector{Any})[pc]
-        if typ === Core.Box
+        if widenconst(frame.src.ssavaluetypes[pc]) === Core.Box
             stmt = code[pc]
             if isexpr(stmt, :(=))
-                lhs = first(stmt.args)
-                if isa(lhs, SlotNumber)
-                    name = frame.src.slotnames[slot_id(lhs)]
+                var = stmt.args[1]
+                if isa(var, SlotNumber)
+                    name = frame.src.slotnames[slot_id(var)]
                 else
                     name = nothing
                 end
@@ -258,15 +257,16 @@ function (::OptAnalysisPass)(::Type{CapturedVariableReport}, analyzer::OptAnalyz
     return reported
 end
 
-function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState)
+function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState, validation_world::UInt, time_before::UInt64)
     caller = frame.result
 
     # get the source before running `finish!` to keep the reference to `OptimizationState`
     analyze = popfirst!(analyzer.__analyze_frame)
     src = caller.src
-    if src isa OptimizationState{typeof(analyzer)}
+    if src isa OptimizationState
         # allow the following analysis passes to see the optimized `CodeInfo`
         caller.src = CC.ir_to_codeinf!(src)
+        frame.edges = collect(Any, caller.src.edges)
 
         if !analyze
             # if this inferred source is not "compileable" but still is going to be inlined,
@@ -278,7 +278,7 @@ function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState)
     if analyze
         ReportPass(analyzer)(OptimizationFailureReport, analyzer, caller)
 
-        if src isa OptimizationState{typeof(analyzer)}
+        if src isa OptimizationState
             ReportPass(analyzer)(RuntimeDispatchReport, analyzer, caller, src)
         elseif (@static JET_DEV_MODE ? true : false)
             if src === nothing # the optimization didn't happen
@@ -290,7 +290,7 @@ function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState)
         end
     end
 
-    return @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
+    return @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState, validation_world::UInt, time_before::UInt64)
 end
 
 # report optimization failure due to recursive calls, etc.
@@ -316,19 +316,19 @@ function (::OptAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::OptAnalyze
     # TODO better to work on `opt.ir::IRCode` (with some updates on `handle_sig!`)
     local reported = false
     for (pc, x) in enumerate(src.code)
-        lin = get_lin((opt, pc))
-        lin === nothing && continue # dead statement, just ignore it
-        if lin.inlined_at ≠ 0
-            # this statement has been inlined, so ignore it as any problems within
-            # that callee should already have been reported
-            continue
-        end
         if isexpr(x, :call)
             ft = argextype(first(x.args), src, sptypes, slottypes)
             f = singleton_type(ft)
             if f !== nothing
                 f isa Builtin && continue # ignore `:call`s of language intrinsics
                 analyzer.function_filter(f) || continue # ignore user-specified functions
+            end
+            lins = get_lins((opt, pc))
+            isempty(lins) && continue # dead statement, just ignore it
+            if length(lins) > 1
+                # this statement has been inlined, so ignore it as any problems within
+                # that callee should already have been reported
+                continue
             end
             add_new_report!(analyzer, caller, RuntimeDispatchReport((opt, pc)))
             reported |= true

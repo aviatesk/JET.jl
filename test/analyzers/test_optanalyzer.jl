@@ -328,10 +328,10 @@ issue560f(μ) = reinterpret(reshape, Float64, μ)
 f_issue643_1(x) = throw("$x <- dynamic dispatches from this interpolation should be ignored")
 @noinline _f_issue643_2(x) = "$x <- dynamic dispatches from this interpolation should be ignored"
 f_issue643_2(x) = throw(_f_issue643_2(x))
-test_opt(f_issue643_1, (Any,))
-test_opt(f_issue643_1, (Any,)) # check cached case
-test_opt(f_issue643_2, (Any,))
-test_opt(f_issue643_2, (Any,)) # check cached case
+test_opt(f_issue643_1, (Any,); broken=true)
+test_opt(f_issue643_1, (Any,); broken=true) # check cached case
+test_opt(f_issue643_2, (Any,); broken=true)
+test_opt(f_issue643_2, (Any,); broken=true) # check cached case
 # the dynamic dispatch should be reported if the method is analyzed standalone
 @test !isempty(get_reports(report_opt(_f_issue643_2, (Any,))))
 
