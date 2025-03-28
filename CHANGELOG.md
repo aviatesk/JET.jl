@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 <!-- links start -->
+[0.10.0]: https://github.com/aviatesk/JET.jl/compare/v0.9.18...v0.10.0
 [0.9.18]: https://github.com/aviatesk/JET.jl/compare/v0.9.17...v0.9.18
 [0.9.17]: https://github.com/aviatesk/JET.jl/compare/v0.9.16...v0.9.17
 [0.9.16]: https://github.com/aviatesk/JET.jl/compare/v0.9.15...v0.9.16
@@ -36,6 +37,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.8.1]: https://github.com/aviatesk/JET.jl/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/aviatesk/JET.jl/compare/v0.7.15...v0.8.0
 <!-- links end -->
+
+## [0.10.0]
+
+> [!WARNING]
+> **v0.10.0 is a transitional release with limited functionality**:
+> - **Compatibility**: JET v0.10.0 supports Julia v1.12 but is incompatible with v1.11.
+>   Users on v1.11 should continue using JET v0.9, which will only receive bug fixes.
+> - **Functionality**: This version provides basic local analysis features but lacks
+>   fully functional top-level analysis capabilities. These will be addressed in future updates.
+> - **Future Plans**: Development will focus on stabilizing v0.10 and refactoring JET
+>   for integration with the new language server project. For stable use, stick with v0.9.
+
+JET v0.10.0 introduces compatibility with Julia v1.12, addressing significant changes in
+the runtime and compiler systems. However, maintaining compatibility with Julia v1.11 was
+deemed infeasible, leading to the decision to drop support for it in this release.
+Users on Julia v1.11 should remain on JET v0.9, which will continue to receive bug fixes
+but no new features.
+
+This release is a stepping stone toward full compatibility with Julia v1.12.
+Due to the urgency of supporting Julia v1.12 for the [PkgEval](https://github.com/JuliaCI/PkgEval.jl)
+process, JET v0.10.0 was released despite its limitations:
+- **Working Features**: Basic local analysis features, such as `[@]report_call` and
+  `[@]report_opt`, are expected to be functional.
+- **Non-Functional Features**: Top-level analysis features, such as `report_package` and
+  `report_file`, are not yet verified and will be updated in future patch releases.
+
+### Future Development:
+- Updates to the v0.10 series will focus on improving stability and functionality.
+- Extensive refactoring is planned to support JET's integration into the [JETLS](https://github.com/aviatesk/JETLS.jl) project.
+- Stability on Julia v1.12 may remain uncertain until these updates are complete.
+  Users requiring stable functionality should continue using the v0.9 series.
+
+### Changed
+- Dropped support for Julia v1.11.
 
 ## [0.9.18]
 ### Change
