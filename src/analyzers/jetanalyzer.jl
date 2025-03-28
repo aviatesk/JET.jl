@@ -487,7 +487,7 @@ function report_uncaught_exceptions!(analyzer::JETAnalyzer, frame::InferenceStat
         end
         (f isa GlobalRef && f.name === :throw) || continue
         # if this `throw` is already reported, don't duplicate
-        if !isnothing(reported_locs) && get_lin((sv, pc)) in reported_locs
+        if !isnothing(reported_locs) && get_lin((frame, pc)) in reported_locs
             continue
         end
         if isnothing(throw_calls)
