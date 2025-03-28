@@ -10,16 +10,18 @@ using JET, Test
     test_call(getproperty, (Any,Symbol))
 end
 
-f_method_instance(s::AbstractString) = sum(s)
-try
-    f_method_instance("throws")
-catch
-end
+f_method_instance1(s::AbstractString) = sum(s)
+f_method_instance2(s::Some) = sum(s.value)
+try; f_method_instance1("throws"); catch end
+try; f_method_instance2(Some{AbstractString}("throws")); catch end
 
 @testset "from MethodInstance" begin
-    mi = first(Base.specializations(only(methods(f_method_instance))))
-    @test !isempty(JET.get_reports(report_call(mi)))
-    @test !isempty(JET.get_reports(report_opt(mi)))
+    let mi = only(Base.specializations(only(methods(f_method_instance1))))
+        @test !isempty(JET.get_reports(report_call(mi)))
+    end
+    let mi = only(Base.specializations(only(methods(f_method_instance2))))
+        @test !isempty(JET.get_reports(report_opt(mi)))
+    end
 end
 
 @testset "`find_pkg`" begin
