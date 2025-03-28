@@ -7,7 +7,7 @@
 JET employs Julia's type inference system to detect potential bugs and type instabilities.
 
 > [!NOTE]
-> Current development is based on the `release-0.10` branch.
+> Current development is based on the [`release-0.10`](https://github.com/aviatesk/JET.jl/tree/release-0.10) branch.
 > This branch focuses on stabilizing JET v0.10 for Julia v1.12, and preparing for its
 > integration with [the new language server project](https://github.com/aviatesk/JETLS.jl).
 
