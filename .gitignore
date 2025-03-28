@@ -3,10 +3,11 @@
 !/benchmark/tune.json
 /docs/build/
 !/docs/Manifest.toml
+!/docs/LocalPreferences.toml
 /docs/src/index.md
 /docs/src/generated-*.md
 /docs/src/generated-*/
 !/examples/Manifest.toml
-LocalPreferences.toml
-Manifest.toml
-Manifest-*.toml
+./LocalPreferences.toml
+./Manifest.toml
+./Manifest-*.toml

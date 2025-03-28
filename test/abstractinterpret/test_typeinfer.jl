@@ -127,7 +127,7 @@ badgetpropertycall() = _badgetpropertycall(nothing)
 
 @testset "cache separation from native execution" begin
     # the native execution will generated the cache for `_badgetpropertycall(::Nothing)`
-    @test_throws ErrorException("type Nothing has no field field") badgetpropertycall()
+    @test_throws FieldError(Nothing, :field) badgetpropertycall()
 
     # but we shouldn't use the global code cache for the native execution,
     # and we should still be able to get a report below
@@ -289,7 +289,7 @@ end
         @test !isempty(get_reports_with_test(result))
         @test !isempty(get_cache(result.analyzer))
         @test any(get_cache(result.analyzer)) do analysis_result
-            analysis_result.argtypes==Any[CC.Const(getproperty),m.Foo{Int},CC.Const(:baz)]
+            analysis_result.argtypes==Any[Const(getproperty),m.Foo{Int},Const(:baz)]
         end
     end
 
@@ -308,10 +308,10 @@ end
         # there should be local cache for each erroneous constant analysis
         @test !isempty(get_reports_with_test(result))
         @test any(get_cache(result.analyzer)) do analysis_result
-            analysis_result.argtypes==Any[CC.Const(m.getter),m.Foo{Int},CC.Const(:baz)]
+            analysis_result.argtypes==Any[Const(m.getter),m.Foo{Int},Const(:baz)]
         end
         @test any(get_cache(result.analyzer)) do analysis_result
-            analysis_result.argtypes==Any[CC.Const(m.getter),m.Foo{Int},CC.Const(:qux)]
+            analysis_result.argtypes==Any[Const(m.getter),m.Foo{Int},Const(:qux)]
         end
     end
 end
@@ -462,8 +462,7 @@ end
 
         # we should throw-away reports collected from frames that are revealed as "unreachable"
         # by constant prop'
-        let
-            m = @fixturedef begin
+        let m = @fixturedef begin
                 foo(a) = bar(a)
                 function bar(a)
                     return if a < 1

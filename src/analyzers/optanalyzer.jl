@@ -126,45 +126,6 @@ that are specific to the optimization analysis.
   julia> @test_opt function_filter=function_filter f(args...)
   ...
   ```
-
----
-- `skip_unoptimized_throw_blocks::Bool = true`:\\
-  By default, Julia's native compilation pipeline intentionally disables inference (and so
-  succeeding optimizations too) on "throw blocks", which are code blocks that will eventually
-  lead to `throw` calls, in order to ease [the compilation latency problem, a.k.a. "first-time-to-plot"](https://julialang.org/blog/2020/08/invalidations/).
-  Accordingly, the optimization analyzer also ignores any performance pitfalls detected
-  within those blocks since we _usually_ don't mind if code involved with error handling
-  isn't optimized.
-  If `skip_unoptimized_throw_blocks` is set to `false`, it doesn't ignore them and will
-  report type instabilities detected within "throw blocks".
-
-  See also <https://github.com/JuliaLang/julia/pull/35982>.
-
-  ```julia-repl
-  # by default, unoptimized "throw blocks" are not analyzed
-  julia> @test_opt sin(10)
-  Test Passed
-    Expression: #= none:1 =# JET.@test_opt sin(10)
-
-  # we can turn on the analysis on unoptimized "throw blocks" with `skip_unoptimized_throw_blocks=false`
-  julia> @test_opt skip_unoptimized_throw_blocks=false sin(10)
-  JET-test failed at none:1
-    Expression: #= REPL[6]:1 =# JET.@test_call analyzer = JET.OptAnalyzer skip_unoptimized_throw_blocks = false sin(10)
-    ═════ 1 possible error found ═════
-    ┌ @ math.jl:1221 Base.Math.sin(xf)
-    │┌ @ special/trig.jl:39 Base.Math.sin_domain_error(x)
-    ││┌ @ special/trig.jl:28 Base.Math.DomainError(x, "sin(x) is only defined for finite x.")
-    │││ runtime dispatch detected: Base.Math.DomainError(x::Float64, "sin(x) is only defined for finite x.")::Any
-    ││└──────────────────────
-
-  ERROR: There was an error during testing
-
-  # we can also turns off the heuristic itself
-  julia> @test_opt unoptimize_throw_blocks=false skip_unoptimized_throw_blocks=false sin(10)
-  Test Passed
-    Expression: #= REPL[7]:1 =# JET.@test_call analyzer = JET.OptAnalyzer unoptimize_throw_blocks = false skip_unoptimized_throw_blocks = false sin(10)
-  ```
-
 ---
 """
 struct OptAnalyzer{RP<:ReportPass,FF} <: AbstractAnalyzer
@@ -173,16 +134,14 @@ struct OptAnalyzer{RP<:ReportPass,FF} <: AbstractAnalyzer
     report_pass::RP
     function_filter::FF
     skip_noncompileable_calls::Bool
-    skip_unoptimized_throw_blocks::Bool
     __analyze_frame::BitVector # temporary stash to keep per-frame analysis-skip configuration
 
     function OptAnalyzer(state::AnalyzerState,
                          report_pass::RP,
                          function_filter::FF,
-                         skip_noncompileable_calls::Bool,
-                         skip_unoptimized_throw_blocks::Bool) where {RP<:ReportPass,FF}
+                         skip_noncompileable_calls::Bool) where {RP<:ReportPass,FF}
         cache_key = compute_hash(state.inf_params, state.opt_params, report_pass,
-                                    skip_noncompileable_calls, skip_unoptimized_throw_blocks)
+                                 skip_noncompileable_calls)
         cache_key = @invoke hash(function_filter::Any, cache_key::UInt) # HACK avoid dynamic dispatch
         analysis_cache = get!(AnalysisCache, OPT_ANALYZER_CACHE, cache_key)
         return new{RP,FF}(state,
@@ -190,7 +149,6 @@ struct OptAnalyzer{RP<:ReportPass,FF} <: AbstractAnalyzer
                           report_pass,
                           function_filter,
                           skip_noncompileable_calls,
-                          skip_unoptimized_throw_blocks,
                           #=__analyze_frame=# BitVector())
     end
 end
@@ -202,8 +160,7 @@ function JETInterface.AbstractAnalyzer(analyzer::OptAnalyzer, state::AnalyzerSta
         state,
         analyzer.report_pass,
         analyzer.function_filter,
-        analyzer.skip_noncompileable_calls,
-        analyzer.skip_unoptimized_throw_blocks,)
+        analyzer.skip_noncompileable_calls)
 end
 JETInterface.ReportPass(analyzer::OptAnalyzer) = analyzer.report_pass
 JETInterface.AnalysisCache(analyzer::OptAnalyzer) = analyzer.analysis_cache
@@ -217,20 +174,20 @@ optanalyzer_function_filter(@nospecialize f) = true
 
 function CC.const_prop_call(analyzer::OptAnalyzer,
     mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
-    concrete_eval_result::Union{Nothing,CC.ConstCallResults})
+    concrete_eval_result::Union{Nothing,ConstCallResult})
     ret = @invoke CC.const_prop_call(analyzer::AbstractAnalyzer,
         mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
-        concrete_eval_result::Union{Nothing,CC.ConstCallResults})
+        concrete_eval_result::Union{Nothing,ConstCallResult})
     if concrete_eval_result !== nothing
         # HACK disable the whole `OptAnalyzer` analysis as far as the frame has been concretized
         # (otherwise we may end up with useless reports from recursive calls)
-        filter_lineages!(analyzer, sv.result, result.edge::MethodInstance)
+        filter_lineages!(analyzer, sv.result, result.edge.def)
     end
     return ret
 end
 function CC.const_prop_call(analyzer::OptAnalyzer,
     mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::CC.IRInterpretationState,
-    concrete_eval_result::Union{Nothing,CC.ConstCallResults})
+    concrete_eval_result::Union{Nothing,ConstCallResult})
     if concrete_eval_result !== nothing
         # HACK disable the whole `OptAnalyzer` analysis as far as the frame has been concretized
         # (otherwise we may end up with useless reports from recursive calls)
@@ -241,26 +198,9 @@ function CC.const_prop_call(analyzer::OptAnalyzer,
         nothing::Nothing)
 end
 
-function collect_callee_reports!(analyzer::OptAnalyzer, sv::InferenceState)
-    if analyzer.skip_unoptimized_throw_blocks && CC.is_stmt_throw_block(CC.get_curr_ssaflag(sv))
-        empty!(get_report_stash(analyzer))
-        return nothing
-    end
-    @invoke collect_callee_reports!(analyzer::AbstractAnalyzer, sv::InferenceState)
-    return nothing
-end
-function collect_cached_callee_reports!(analyzer::OptAnalyzer, reports::Vector{InferenceErrorReport},
-                                        caller::InferenceState, origin_mi::MethodInstance)
-    if !(analyzer.skip_unoptimized_throw_blocks && CC.is_stmt_throw_block(CC.get_curr_ssaflag(caller)))
-        @invoke collect_cached_callee_reports!(analyzer::AbstractAnalyzer, reports::Vector{InferenceErrorReport},
-                                               caller::InferenceState, origin_mi::MethodInstance)
-    end
-    return nothing
-end
-
 # TODO better to work only `CC.finish!`
-function CC.finish(frame::InferenceState, analyzer::OptAnalyzer)
-    ret = @invoke CC.finish(frame::InferenceState, analyzer::AbstractAnalyzer)
+function CC.finishinfer!(frame::InferenceState, analyzer::OptAnalyzer, cycleid::Int)
+    ret = @invoke CC.finishinfer!(frame::InferenceState, analyzer::AbstractAnalyzer, cycleid::Int)
 
     analyze = true
     if analyzer.skip_noncompileable_calls
@@ -300,13 +240,12 @@ function (::OptAnalysisPass)(::Type{CapturedVariableReport}, analyzer::OptAnalyz
     local reported = false
     code = frame.src.code
     for pc = 1:length(code)
-        typ = (frame.src.ssavaluetypes::Vector{Any})[pc]
-        if typ === Core.Box
+        if widenconst(frame.src.ssavaluetypes[pc]) === Core.Box
             stmt = code[pc]
             if isexpr(stmt, :(=))
-                lhs = first(stmt.args)
-                if isa(lhs, SlotNumber)
-                    name = frame.src.slotnames[slot_id(lhs)]
+                var = stmt.args[1]
+                if isa(var, SlotNumber)
+                    name = frame.src.slotnames[slot_id(var)]
                 else
                     name = nothing
                 end
@@ -318,15 +257,16 @@ function (::OptAnalysisPass)(::Type{CapturedVariableReport}, analyzer::OptAnalyz
     return reported
 end
 
-function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState)
+function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState, validation_world::UInt, time_before::UInt64)
     caller = frame.result
 
     # get the source before running `finish!` to keep the reference to `OptimizationState`
     analyze = popfirst!(analyzer.__analyze_frame)
     src = caller.src
-    if src isa OptimizationState{typeof(analyzer)}
+    if src isa OptimizationState
         # allow the following analysis passes to see the optimized `CodeInfo`
         caller.src = CC.ir_to_codeinf!(src)
+        frame.edges = collect(Any, caller.src.edges)
 
         if !analyze
             # if this inferred source is not "compileable" but still is going to be inlined,
@@ -338,7 +278,7 @@ function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState)
     if analyze
         ReportPass(analyzer)(OptimizationFailureReport, analyzer, caller)
 
-        if src isa OptimizationState{typeof(analyzer)}
+        if src isa OptimizationState
             ReportPass(analyzer)(RuntimeDispatchReport, analyzer, caller, src)
         elseif (@static JET_DEV_MODE ? true : false)
             if src === nothing # the optimization didn't happen
@@ -350,7 +290,7 @@ function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState)
         end
     end
 
-    return @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState)
+    return @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState, validation_world::UInt, time_before::UInt64)
 end
 
 # report optimization failure due to recursive calls, etc.
@@ -376,22 +316,19 @@ function (::OptAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::OptAnalyze
     # TODO better to work on `opt.ir::IRCode` (with some updates on `handle_sig!`)
     local reported = false
     for (pc, x) in enumerate(src.code)
-        lin = get_lin((opt, pc))
-        lin === nothing && continue # dead statement, just ignore it
-        if lin.inlined_at ≠ 0
-            # this statement has been inlined, so ignore it as any problems within
-            # that callee should already have been reported
-            continue
-        end
-        if analyzer.skip_unoptimized_throw_blocks
-            CC.is_stmt_throw_block(src.ssaflags[pc]) && continue
-        end
         if isexpr(x, :call)
             ft = argextype(first(x.args), src, sptypes, slottypes)
             f = singleton_type(ft)
             if f !== nothing
                 f isa Builtin && continue # ignore `:call`s of language intrinsics
                 analyzer.function_filter(f) || continue # ignore user-specified functions
+            end
+            lins = get_lins((opt, pc))
+            isempty(lins) && continue # dead statement, just ignore it
+            if length(lins) > 1
+                # this statement has been inlined, so ignore it as any problems within
+                # that callee should already have been reported
+                continue
             end
             add_new_report!(analyzer, caller, RuntimeDispatchReport((opt, pc)))
             reported |= true
@@ -408,19 +345,17 @@ function OptAnalyzer(world::UInt = Base.get_world_counter();
     report_pass::ReportPass = OptAnalysisPass(),
     function_filter = optanalyzer_function_filter,
     skip_noncompileable_calls::Bool = true,
-    skip_unoptimized_throw_blocks::Bool = true,
     jetconfigs...)
     state = AnalyzerState(world; jetconfigs...)
     return OptAnalyzer(
         state,
         report_pass,
         function_filter,
-        skip_noncompileable_calls,
-        skip_unoptimized_throw_blocks)
+        skip_noncompileable_calls)
 end
 
 const OPT_ANALYZER_CONFIGURATIONS = Set{Symbol}((
-    :report_pass, :function_filter, :skip_noncompileable_calls, :skip_unoptimized_throw_blocks))
+    :report_pass, :function_filter, :skip_noncompileable_calls))
 
 let valid_keys = GENERAL_CONFIGURATIONS ∪ OPT_ANALYZER_CONFIGURATIONS
     @eval JETInterface.valid_configurations(::OptAnalyzer) = $valid_keys

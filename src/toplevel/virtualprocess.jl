@@ -1541,14 +1541,13 @@ end
 
 # a bridge to abstract interpretation
 function analyze_toplevel!(analyzer::AbstractAnalyzer, src::CodeInfo)
-    # construct toplevel `MethodInstance`
-    mi = ccall(:jl_new_method_instance_uninit, Ref{Core.MethodInstance}, ());
-    mi.specTypes = Tuple{}
-
-    mi.def = mod = get_toplevelmod(analyzer)
+    context_module = get_toplevelmod(analyzer)
     transform_abstract_global_symbols!(src, analyzer)
-    resolve_toplevel_symbols!(src, mod)
-    @atomic mi.uninferred = src
+    resolve_toplevel_symbols!(src, context_module)
+
+    # construct toplevel `MethodInstance`
+    mi = @ccall jl_method_instance_for_thunk(
+        src::Any, context_module::Any)::Ref{Core.MethodInstance}
 
     result = InferenceResult(mi);
     init_result!(analyzer, result)
@@ -1610,10 +1609,11 @@ end
 # so that it is eligible for abstractintepret and optimization
 # TODO `jl_resolve_globals_in_ir` may throw, and we should redirect the error to `ToplevelErrorReport`
 function resolve_toplevel_symbols!(src::CodeInfo, mod::Module)
-    @ccall jl_resolve_globals_in_ir(
+    @ccall jl_resolve_definition_effects_in_ir(
         #=jl_array_t *stmts=# src.code::Any,
         #=jl_module_t *m=# mod::Any,
         #=jl_svec_t *sparam_vals=# svec()::Any,
+        #=jl_value_t *binding_edge=# C_NULL::Ptr{Cvoid},
         #=int binding_effects=# 0::Int)::Cvoid
     return src
 end

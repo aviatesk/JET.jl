@@ -122,22 +122,25 @@ function handle_sig!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
 end
 
 function handle_sig_call!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
-    function splitlast!(list)
+    function splitlast!(list::Vector{Any})
         last = pop!(list)
         return list, last
     end
 
-    f = first(expr.args)
+    f_ssa = f = first(expr.args)
+    if f isa SSAValue
+        f_ssa = get_stmt((s[1], f.id))
+    end
     args = expr.args[2:end]
     splat = false
-    if isa(f, GlobalRef)
-        handle_sig_binop!(sig, s, f, args) && return splitlast!(sig)
-        handle_sig_getproperty!(sig, s, f, args) && return splitlast!(sig)
-        handle_sig_setproperty!!(sig, s, f, args) && return splitlast!(sig)
-        handle_sig_getindex!(sig, s, f, args) && return splitlast!(sig)
-        handle_sig_setindex!!(sig, s, f, args) && return splitlast!(sig)
-        handle_sig_const_apply_type!(sig, s, f, args) && return splitlast!(sig)
-        if issplat(f, args)
+    if isa(f_ssa, GlobalRef)
+        handle_sig_binop!(sig, s, f_ssa, args) && return splitlast!(sig)
+        handle_sig_getproperty!(sig, s, f_ssa, args) && return splitlast!(sig)
+        handle_sig_setproperty!!(sig, s, f_ssa, args) && return splitlast!(sig)
+        handle_sig_getindex!(sig, s, f_ssa, args) && return splitlast!(sig)
+        handle_sig_setindex!!(sig, s, f_ssa, args) && return splitlast!(sig)
+        handle_sig_const_apply_type!(sig, s, f_ssa, args) && return splitlast!(sig)
+        if issplat(f_ssa, args)
             f = args[2]
             args = args[3:end]
             splat = true

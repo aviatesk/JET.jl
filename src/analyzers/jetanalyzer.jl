@@ -177,7 +177,7 @@ function CC.InferenceState(result::InferenceResult, cache_mode::UInt8, analyzer:
     return frame
 end
 
-function CC.finish!(analyzer::JETAnalyzer, caller::InferenceState)
+function CC.finish!(analyzer::JETAnalyzer, caller::InferenceState, validation_world::UInt, time_before::UInt64)
     src = caller.result.src
 
     if isnothing(src)
@@ -191,16 +191,25 @@ function CC.finish!(analyzer::JETAnalyzer, caller::InferenceState)
         throw("unexpected state happened, inspect `$(@__MODULE__).src`")
     end
 
-    return @invoke CC.finish!(analyzer::AbstractAnalyzer, caller::InferenceState)
+    return @invoke CC.finish!(analyzer::AbstractAnalyzer, caller::InferenceState, validation_world::UInt, time_before::UInt64)
 end
 
 function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer,
-    @nospecialize(f), arginfo::ArgInfo, si::StmtInfo, @nospecialize(atype), sv::InferenceState,
+    @nospecialize(func), arginfo::ArgInfo, si::StmtInfo, @nospecialize(atype), sv::InferenceState,
     max_methods::Int)
     ret = @invoke CC.abstract_call_gf_by_type(analyzer::AbstractAnalyzer,
-        f::Any, arginfo::ArgInfo, si::StmtInfo, atype::Any, sv::InferenceState, max_methods::Int)
-    ReportPass(analyzer)(MethodErrorReport, analyzer, sv, ret, arginfo.argtypes, atype)
-    ReportPass(analyzer)(UnanalyzedCallReport, analyzer, sv, ret, atype)
+        func::Any, arginfo::ArgInfo, si::StmtInfo, atype::Any, sv::InferenceState, max_methods::Int)
+    function after_abstract_call_gf_by_type(analyzer′, sv′)
+        ret′ = ret[]
+        ReportPass(analyzer)(MethodErrorReport, analyzer, sv, ret′, arginfo.argtypes, atype)
+        ReportPass(analyzer)(UnanalyzedCallReport, analyzer, sv, ret′, atype)
+        return true
+    end
+    if isready(ret)
+        after_abstract_call_gf_by_type(analyzer, sv)
+    else
+        push!(sv.tasks, after_abstract_call_gf_by_type)
+    end
     return ret
 end
 
@@ -231,26 +240,6 @@ given that the number of matching methods are limited beforehand.
 """
 CC.bail_out_call(::JETAnalyzer, ::CC.InferenceLoopState, ::InferenceState) = false
 
-struct __DummyRettype__ end
-
-"""
-    Core.Compiler.add_call_backedges!(analyzer::JETAnalyzer, ...)
-
-An overload for `abstract_call_gf_by_type(analyzer::JETAnalyzer, ...)`, which always add
-backedges (even if a new method can't refine the return type grew up to `Any`).
-This is because a new method definition always has a potential to change `JETAnalyzer`'s analysis result.
-"""
-function CC.add_call_backedges!(
-    analyzer::JETAnalyzer, @nospecialize(rettype), effects::CC.Effects,
-    edges::Vector{MethodInstance}, matches::Union{MethodMatches,UnionSplitMethodMatches}, @nospecialize(atype),
-    sv::InferenceState)
-    return @invoke CC.add_call_backedges!(
-        # NOTE this `__DummyRettype__()` hack forces `add_call_backedges!(::AbstractInterpreter,...)` to add backedges
-        analyzer::AbstractInterpreter, __DummyRettype__()::Any, effects::CC.Effects,
-        edges::Vector{MethodInstance}, matches::Union{MethodMatches,UnionSplitMethodMatches}, atype::Any,
-        sv::InferenceState)
-end
-
 # TODO Reasons about error found by [semi-]concrete evaluation:
 # For now JETAnalyzer allows the regular constant-prop' only,
 # unless the analyzed effects are proven to be `:nothrow`.
@@ -258,17 +247,21 @@ function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
     @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
     if CC.is_nothrow(result.effects)
         neweffects = CC.Effects(result.effects; nonoverlayed=CC.ALWAYS_TRUE)
-        newresult = MethodCallResult(result.rt, result.exct, result.edgecycle, result.edgelimited,
-                                     result.edge, neweffects)
+        newresult = MethodCallResult(result.rt, result.exct, neweffects, result.edge,
+                                     result.edgecycle, result.edgelimited,
+                                     result.volatile_inf_result)
         res = @invoke CC.concrete_eval_eligible(analyzer::AbstractAnalyzer,
             f::Any, newresult::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
         if res === :concrete_eval
             return :concrete_eval
         end
-    elseif (istopfunction(f, :fieldindex) || istopfunction(f, :typejoin) ||
-            istopfunction(f, :typejoin_union_tuple))
-        if concrete_eval_eligible_ignoring_overlay(result, arginfo)
-            return :concrete_eval
+    else
+        if (f === Base.fieldindex ||
+            f === Base.typejoin ||
+            f === Base.typejoin_union_tuple)
+            if concrete_eval_eligible_ignoring_overlay(result, arginfo)
+                return :concrete_eval
+            end
         end
     end
     # disables both concrete evaluation and semi-concrete interpretation
@@ -280,59 +273,55 @@ function concrete_eval_eligible_ignoring_overlay(result::MethodCallResult, argin
     return CC.is_foldable(result.effects) && CC.is_all_const_arg(arginfo, #=start=#2)
 end
 
-function CC.return_type_tfunc(analyzer::JETAnalyzer, argtypes::Argtypes, si::StmtInfo, sv::InferenceState)
-    # report pass for invalid `Core.Compiler.return_type` call
-    ReportPass(analyzer)(InvalidReturnTypeCall, analyzer, sv, argtypes)
-    return @invoke CC.return_type_tfunc(analyzer::AbstractAnalyzer, argtypes::Argtypes, si::StmtInfo, sv::InferenceState)
-end
-
 function CC.abstract_invoke(analyzer::JETAnalyzer, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState)
     ret = @invoke CC.abstract_invoke(analyzer::AbstractAnalyzer, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState)
-    ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret, arginfo.argtypes)
+    function after_abstract_invoke(analyzer′, sv′)
+        ret′ = ret[]
+        ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret′, arginfo.argtypes)
+        return true
+    end
+    if isready(ret)
+        after_abstract_invoke(analyzer, sv)
+    else
+        push!(sv.tasks, after_abstract_invoke)
+    end
     return ret
 end
 
 # report pass for undefined static parameter
-function CC.abstract_eval_statement_expr(analyzer::JETAnalyzer, e::Expr, vtypes::VarTable, sv::InferenceState)
-    ret = @invoke CC.abstract_eval_statement_expr(analyzer::AbstractAnalyzer, e::Expr, vtypes::VarTable, sv::InferenceState)
+function CC.abstract_eval_statement_expr(analyzer::JETAnalyzer, e::Expr, sstate::StatementState, sv::InferenceState)
+    ret = @invoke CC.abstract_eval_statement_expr(analyzer::AbstractAnalyzer, e::Expr, sstate::StatementState, sv::InferenceState)
     if e.head === :static_parameter
-        ReportPass(analyzer)(UndefVarErrorReport, analyzer, sv, e.args[1]::Int)
+        function after_abstract_eval_statement_expr(analyzer′, sv′)
+            ret′ = ret[]
+            ReportPass(analyzer)(UndefVarErrorReport, analyzer, sv, e.args[1]::Int)
+            return true
+        end
+        if isready(ret)
+            after_abstract_eval_statement_expr(analyzer, sv)
+        else
+            push!(sv.tasks, after_abstract_eval_statement_expr)
+        end
     end
     return ret
 end
 
-function CC.abstract_eval_special_value(analyzer::JETAnalyzer,
-    @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    ret = @invoke CC.abstract_eval_special_value(analyzer::AbstractAnalyzer,
-        e::Any, vtypes::VarTable, sv::InferenceState)
-
-    if isa(e, GlobalRef)
-        # report pass for undefined global reference
-        ReportPass(analyzer)(UndefVarErrorReport, analyzer, sv, e)
-    # elseif isa(e, SlotNumber)
-    #     # TODO enable this (aviatesk/JET.jl#596)
-    #     # report pass for (local) undef var error
-    #     ReportPass(analyzer)(UndefVarErrorReport, analyzer, sv, e, vtypes, ret)
-    end
-
+function CC.abstract_eval_globalref(analyzer::JETAnalyzer, g::GlobalRef, saw_latestworld::Bool, sv::InferenceState)
+    ret = @invoke CC.abstract_eval_globalref(analyzer::AbstractInterpreter, g::GlobalRef, saw_latestworld::Bool, sv::InferenceState)
+    ReportPass(analyzer)(UndefVarErrorReport, analyzer, sv, g)
     return ret
 end
 
-# N.B. this report pass won't be necessary as the frontend will generate code
-# that `typeassert`s the value type as the binding type beforehand
-@inline function CC.abstract_eval_basic_statement(analyzer::JETAnalyzer,
-    @nospecialize(stmt), pc_vartable::VarTable, frame::InferenceState)
-    ret = @invoke CC.abstract_eval_basic_statement(analyzer::AbstractAnalyzer,
-        stmt::Any, pc_vartable::VarTable, frame::InferenceState)
-    if isexpr(stmt, :(=)) && (lhs = stmt.args[1]; isa(lhs, GlobalRef))
-        ReportPass(analyzer)(InvalidGlobalAssignmentError, analyzer,
-            frame, lhs.mod, lhs.name, ret.rt)
-    end
+function CC.abstract_eval_setglobal!(analyzer::JETAnalyzer, sv::InferenceState, saw_latestworld::Bool,
+                                     @nospecialize(M), @nospecialize(s), @nospecialize(v))
+    ret = @invoke CC.abstract_eval_setglobal!(analyzer::AbstractInterpreter, sv::InferenceState, saw_latestworld::Bool,
+                                              M::Any, s::Any, v::Any)
+    ReportPass(analyzer)(IncompatibleGlobalAssignmentError, analyzer, sv, ret, M, s, v)
     return ret
 end
 
-function CC.abstract_eval_value(analyzer::JETAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    ret = @invoke CC.abstract_eval_value(analyzer::AbstractAnalyzer, e::Any, vtypes::VarTable, sv::InferenceState)
+function CC.abstract_eval_value(analyzer::JETAnalyzer, @nospecialize(e), sstate::StatementState, sv::InferenceState)
+    ret = @invoke CC.abstract_eval_value(analyzer::AbstractAnalyzer, e::Any, sstate::StatementState, sv::InferenceState)
 
     # report non-boolean condition error
     stmt = get_stmt((sv, get_currpc(sv)))
@@ -372,15 +361,7 @@ function CC.builtin_tfunction(analyzer::JETAnalyzer,
         end
     end
 
-    if f === throw
-        # here we only report a selection of "serious" exceptions, i.e. those that should be
-        # reported even if they may be caught in actual execution;
-        ReportPass(analyzer)(SeriousExceptionReport, analyzer, sv, argtypes)
-
-        # other general `throw` calls will be handled within `_typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)`
-    else
-        ReportPass(analyzer)(AbstractBuiltinErrorReport, analyzer, sv, f, argtypes, ret)
-    end
+    ReportPass(analyzer)(AbstractBuiltinErrorReport, analyzer, sv, f, argtypes, ret)
 
     # `IntrinsicError` is a special marker object that JET uses to indicate an erroneous
     # intrinsic function call, so fix it up here to `Bottom`
@@ -488,8 +469,6 @@ function report_uncaught_exceptions!(analyzer::JETAnalyzer, frame::InferenceStat
     # critical errors still make the return type `Bottom`
     # NOTE to reduce the false positive cases described above, we count `throw` calls
     # after optimization, since it may have eliminated "unreachable" `throw` calls
-    codelocs = frame.src.codelocs
-    linetable = frame.src.linetable::LineTable
     reported_locs = nothing
     for report in get_reports(analyzer, frame.result)
         if isa(report, SeriousExceptionReport)
@@ -502,9 +481,13 @@ function report_uncaught_exceptions!(analyzer::JETAnalyzer, frame::InferenceStat
     throw_calls = nothing
     for (pc, stmt) in enumerate(stmts)
         isa(stmt, Expr) || continue
-        CC.is_throw_call(stmt, stmts) || continue
+        f = stmt.args[1]
+        if f isa SSAValue
+            f = stmts[f.id]
+        end
+        (f isa GlobalRef && f.name === :throw) || continue
         # if this `throw` is already reported, don't duplicate
-        if !isnothing(reported_locs) && linetable[codelocs[pc]]::LineInfoNode in reported_locs
+        if !isnothing(reported_locs) && get_lin((frame, pc)) in reported_locs
             continue
         end
         if isnothing(throw_calls)
@@ -626,7 +609,7 @@ function report_method_error_for_union_split!(analyzer::JETAnalyzer,
     # check each match for union-split signature
     split_argtypes = empty_matches = uncovered_matches = nothing
     reported = false
-    for (i, matchinfo) in enumerate(info.matches)
+    for (i, matchinfo) in enumerate(info.split)
         if is_empty_match(matchinfo)
             if isnothing(split_argtypes)
                 split_argtypes = CC.switchtupleunion(typeinf_lattice(analyzer), argtypes)
@@ -637,7 +620,7 @@ function report_method_error_for_union_split!(analyzer::JETAnalyzer,
                 continue
             end
             if empty_matches === nothing
-                empty_matches = (Any[], length(info.matches))
+                empty_matches = (Any[], length(info.split))
             end
             sig_n = argtypes_to_type(argtypes′)
             push!(empty_matches[1], sig_n)
@@ -647,7 +630,7 @@ function report_method_error_for_union_split!(analyzer::JETAnalyzer,
             end
             argtypes′ = split_argtypes[i]::Vector{Any}
             if uncovered_matches === nothing
-                uncovered_matches = (Any[], length(info.matches))
+                uncovered_matches = (Any[], length(info.split))
             end
             sig_n = argtypes_to_type(argtypes′)
             push!(uncovered_matches[1], sig_n)
@@ -667,7 +650,7 @@ function report_method_error_for_union_split!(analyzer::JETAnalyzer,
 end
 
 is_empty_match(info::MethodMatchInfo) = CC.isempty(info.results)
-is_fully_covered(info::MethodMatchInfo) = CC._all(m->m.fully_covers, info.results)
+is_fully_covered(info::MethodMatchInfo) = CC.all(m->m.fully_covers, info.results)
 
 @jetreport struct UnanalyzedCallReport <: InferenceErrorReport
     @nospecialize type
@@ -686,24 +669,6 @@ function (::SoundPass)(::Type{UnanalyzedCallReport}, analyzer::JETAnalyzer,
         report = UnanalyzedCallReport(sv, atype)
         add_new_report!(analyzer, sv.result, report)
         report.sig[end] = Any
-        return true
-    end
-    return false
-end
-
-@jetreport struct InvalidReturnTypeCall <: InferenceErrorReport end
-function JETInterface.print_report_message(io::IO, ::InvalidReturnTypeCall)
-    print(io, "invalid `Core.Compiler.return_type` call")
-end
-
-function (::SoundBasicPass)(::Type{InvalidReturnTypeCall}, analyzer::AbstractAnalyzer, sv::InferenceState, argtypes::Argtypes)
-    # here we make a very simple analysis to check if the call of `return_type` is clearly
-    # invalid or not by just checking the # of call arguments
-    # we don't take a (very unexpected) possibility of its overload into account here,
-    # `Core.Compiler.NativeInterpreter` doesn't also (it hard-codes the return type as `Type`)
-    if length(argtypes) ≠ 3
-        # invalid argument #, let's report and return error result (i.e. `Bottom`)
-        add_new_report!(analyzer, sv.result, InvalidReturnTypeCall(sv))
         return true
     end
     return false
@@ -772,6 +737,8 @@ end
 
 # undefined global variable report passes
 
+# TODO InferenceParams(::JETAnalyzer).assume_bindings_static = true
+
 (::SoundPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, gr::GlobalRef) =
     report_undef_global_var!(analyzer, sv, gr, #=sound=#true)
 (::BasicPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, gr::GlobalRef) =
@@ -780,26 +747,13 @@ end
     report_undef_global_var!(analyzer, sv, gr, #=sound=#false)
 function report_undef_global_var!(analyzer::JETAnalyzer, sv::InferenceState, gr::GlobalRef, sound::Bool)
     isdefined(gr.mod, gr.name) && return false
-    sound && @goto report
-    is_corecompiler_undefglobal(gr) && return false
-    # if this global var is explicitly type-declared, it will be likely get assigned somewhere
-    # TODO give this permission only to top-level analysis
-    ccall(:jl_get_binding_type, Any, (Any, Any), gr.mod, gr.name) !== nothing && return false
-    begin @label report
-        add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, gr))
-        return true
+    if !sound
+        # if this global var is explicitly type-declared, it will likely get assigned somewhere
+        # TODO give this permission only to top-level analysis
+        ccall(:jl_get_binding_type, Any, (Any, Any), gr.mod, gr.name) !== nothing && return false
     end
-end
-
-# Returns `true` if this global reference is undefined inside `Core.Compiler`, but the
-# corresponding name exists in the `Base` module.
-# `Core.Compiler` reuses the minimum amount of `Base` code and there're some of missing
-# definitions, and `BasicPass` will exclude reports on those undefined names since they
-# usually don't matter and `Core.Compiler`'s basic functionality is battle-tested and
-# validated exhausively by its test suite and real-world usages.
-function is_corecompiler_undefglobal(gr::GlobalRef)
-    gr.mod === CC && return isdefined(Base, gr.name)
-    return false
+    add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, gr))
+    return true
 end
 
 # undefined static parameter report passes
@@ -850,42 +804,56 @@ function (::BasicPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::I
     return true
 end
 
-@jetreport struct InvalidGlobalAssignmentError <: InferenceErrorReport
-    @nospecialize vtyp
-    @nospecialize btyp
+@jetreport struct IncompatibleGlobalAssignmentError <: InferenceErrorReport
     mod::Module
     name::Symbol
 end
-function JETInterface.print_report_message(io::IO, report::InvalidGlobalAssignmentError)
-    print(io, "found invalid assignment of an incompatible value")
-    print(io, " (`", report.vtyp, "`)")
-    print(io, " to the value global")
-    print(io, " `", GlobalRef(report.mod, report.name), "`")
-    print(io, " (`", report.btyp, "`)")
-end
+JETInterface.print_report_message(io::IO, report::IncompatibleGlobalAssignmentError) =
+    print(io, "cannot assign an incompatible value to the global ", report.mod, '.', report.name, '.')
 
-(::SoundPass)(::Type{InvalidGlobalAssignmentError}, analyzer::JETAnalyzer,
-    sv::InferenceState, mod::Module, name::Symbol, @nospecialize(vtyp)) =
-    report_global_assignment!(analyzer, sv, mod, name, vtyp,#=sound=#true)
-(::BasicPass)(::Type{InvalidGlobalAssignmentError}, analyzer::JETAnalyzer,
-    sv::InferenceState, mod::Module, name::Symbol, @nospecialize(vtyp)) =
-    report_global_assignment!(analyzer, sv, mod, name, vtyp,#=sound=#false)
-(::TypoPass)(::Type{InvalidGlobalAssignmentError}, analyzer::JETAnalyzer,
-    sv::InferenceState, mod::Module, name::Symbol, @nospecialize(vtyp)) =
-    report_global_assignment!(analyzer, sv, mod, name, vtyp, #=sound=#false)
-function report_global_assignment!(analyzer::JETAnalyzer,
-    sv::InferenceState, mod::Module, name::Symbol, @nospecialize(vtyp), sound::Bool)
-    btyp = ccall(:jl_get_binding_type, Any, (Any, Any), mod, name)
-    if btyp !== nothing
-        vtyp = widenconst(ignorelimited(vtyp))
-        if !(sound ? vtyp ⊑ btyp : hasintersect(vtyp, btyp))
-            add_new_report!(analyzer, sv.result, InvalidGlobalAssignmentError(sv, vtyp, btyp, mod, name))
+function (::SoundPass)(::Type{IncompatibleGlobalAssignmentError}, analyzer::JETAnalyzer, sv::InferenceState,
+                       ret::CallMeta, M, s, v)
+    @nospecialize M s v
+    report_global_assignment!(analyzer, sv, ret, M, s, v, #=sound=#true)
+end
+function (::BasicPass)(::Type{IncompatibleGlobalAssignmentError}, analyzer::JETAnalyzer, sv::InferenceState,
+                       ret::CallMeta, M, s, v)
+    @nospecialize M s v
+    report_global_assignment!(analyzer, sv, ret, M, s, v, #=sound=#false)
+end
+function (::TypoPass)(::Type{IncompatibleGlobalAssignmentError}, analyzer::JETAnalyzer, sv::InferenceState,
+                      ret::CallMeta, M, s, v)
+    @nospecialize M s v
+    report_global_assignment!(analyzer, sv, ret, M, s, v, #=sound=#false)
+end
+function report_global_assignment!(analyzer::JETAnalyzer, sv::InferenceState,
+                                   ret::CallMeta, M, s, v,
+                                   sound::Bool)
+    if sound
+        if ret.rt !== ErrorException
+            @goto report
+        end
+    else
+        if ret.rt === Bottom && ret.exct === ErrorException
+            @label report
+            mod = name = nothing
+            if M isa Const
+                mod′ = M.val
+                if mod′ isa Module
+                    mod = mod′
+                end
+            end
+            if s isa Const
+                name′ = s.val
+                if name′ isa Symbol
+                    name = name′
+                end
+            end
+            add_new_report!(analyzer, sv.result, IncompatibleGlobalAssignmentError(sv, @something(mod, Module(:Unknown)), @something(name, :unknown)))
             return true
         end
-        return false
-    else # the binding type hasn't been declared yet
-        return false
     end
+    return false
 end
 
 @jetreport struct NonBooleanCondErrorReport <: InferenceErrorReport
@@ -1116,7 +1084,6 @@ end
 @nospecs CC.chk_tfunc(𝕃::IntrinsicErrorCheckLattice, a, b) = with_intrinsic_errorcheck(Tuple{widenconst(a),Bool}, a, b, #=shift=#true)
 
 function (::BasicPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(ret))
-    @assert !(f === throw) "`throw` calls should be handled either by the report pass of `SeriousExceptionReport` or `UncaughtExceptionReport`"
     if f === getfield
         report_getfield!(analyzer, sv, argtypes, ret) && return true
     elseif f === setfield!
@@ -1125,8 +1092,6 @@ function (::BasicPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer
         report_fieldtype!(analyzer, sv, argtypes, ret) && return true
     elseif f === getglobal
         report_getglobal!(analyzer, sv, argtypes, ret) && return true
-    elseif f === setglobal!
-        report_setglobal!!(analyzer, sv, argtypes) && return true
     elseif length(argtypes) == 2 && is_division_func(f)
         report_divide_error!(analyzer, sv, f, argtypes) && return true
     end
@@ -1183,14 +1148,6 @@ function report_fieldtype!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::
     return false
 end
 
-function report_setglobal!!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes)
-    3 ≤ length(argtypes) ≤ 4 || return false
-    gr = constant_globalref(argtypes)
-    gr === nothing && return false
-    # forward to the report pass for invalid global assignment
-    return ReportPass(analyzer)(InvalidGlobalAssignmentError, analyzer, sv, gr.mod, gr.name, argtypes[3])
-end
-
 using Core.Compiler: _getfield_fieldindex, _mutability_errorcheck
 
 const MODULE_SETFIELD_MSG = "cannot assign variables in other modules"
@@ -1198,11 +1155,12 @@ const DIVIDE_ERROR_MSG = sprint(showerror, DivideError())
 @nospecs type_error_msg(f, expected, actual) =
     lazy"TypeError: in $f, expected $expected, got a value of type $actual"
 function field_error_msg(@nospecialize(typ), name::Symbol)
+    flds = join(map(n->"`$n`", fieldnames(typ)), ", ")
     if typ <: Tuple
         typ = Tuple # reproduce base error message
     end
     tname = nameof(typ::Union{DataType,UnionAll})
-    return lazy"type $tname has no field $name"
+    return lazy"FieldError: type $tname has no field `$name`, available fields: $flds"
 end
 function bounds_error_msg(@nospecialize(typ), name::Int)
     return lazy"BoundsError: attempt to access $typ at index [$name]"
@@ -1315,7 +1273,6 @@ end
 JETInterface.print_report_message(io::IO, r::UnsoundBuiltinErrorReport) = print(io, r.msg)
 
 function (::SoundPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(rt))
-    @assert !(f === throw) "`throw` calls should be handled either by the report pass of `SeriousExceptionReport` or `UncaughtExceptionReport`"
     if isa(f, IntrinsicFunction)
         nothrow = Core.Compiler.intrinsic_nothrow(f, argtypes)
     else
@@ -1356,7 +1313,7 @@ function JETAnalyzer(world::UInt = Base.get_world_counter();
     # cache inconsistency until JuliaLang/julia#40399 is merged. But the analysis cache of
     # JETAnalyzer has the same problem already anyway, so enabling this option does not
     # make the situation worse.
-    set_if_missing!(jetconfigs, :assume_bindings_static, true)
+    jetconfigs[:assume_bindings_static] = true
     state = AnalyzerState(world; jetconfigs...)
     config = JETAnalyzerConfig(; jetconfigs...)
     return JETAnalyzer(state, report_pass, config)
