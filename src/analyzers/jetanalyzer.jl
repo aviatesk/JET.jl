@@ -251,6 +251,8 @@ function CC.add_call_backedges!(
         sv::InferenceState)
 end
 
+const EFFECTS_FOLDABLE = CC.Effects(CC.EFFECTS_TOTAL; nothrow=false)
+
 # TODO Reasons about error found by [semi-]concrete evaluation:
 # For now JETAnalyzer allows the regular constant-prop' only,
 # unless the analyzed effects are proven to be `:nothrow`.
@@ -258,6 +260,15 @@ function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
     @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
     if CC.is_nothrow(result.effects)
         neweffects = CC.Effects(result.effects; nonoverlayed=CC.ALWAYS_TRUE)
+        newresult = MethodCallResult(result.rt, result.exct, result.edgecycle, result.edgelimited,
+                                     result.edge, neweffects)
+        res = @invoke CC.concrete_eval_eligible(analyzer::AbstractAnalyzer,
+            f::Any, newresult::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
+        if res === :concrete_eval
+            return :concrete_eval
+        end
+    elseif istopfunction(f, :isvatuple)
+        neweffects = CC.Effects(EFFECTS_FOLDABLE; nonoverlayed=CC.ALWAYS_TRUE)
         newresult = MethodCallResult(result.rt, result.exct, result.edgecycle, result.edgelimited,
                                      result.edge, neweffects)
         res = @invoke CC.concrete_eval_eligible(analyzer::AbstractAnalyzer,
