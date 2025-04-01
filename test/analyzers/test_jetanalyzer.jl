@@ -1149,4 +1149,13 @@ test_call(; broken=true) do
     func40399()
 end
 
+# aviatesk/JET.jl#695
+test_call((Vector{Int},String)) do a, b
+    if Base.isvatuple(Tuple{Int,Int})
+        sum(b)
+    else
+        sum(a)
+    end
+end
+
 end # module test_jetanalyzer
