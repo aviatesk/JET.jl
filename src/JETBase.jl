@@ -11,7 +11,7 @@ end
 
 Base.Experimental.@optlevel 1
 
-const CC = Core.Compiler
+const CC = Base.Compiler
 
 # usings
 # ======
@@ -24,10 +24,10 @@ using .CC: @nospecs, ⊑,
     AbstractInterpreter, AbstractLattice, ArgInfo, Bottom, CFG, CachedMethodTable, CallMeta,
     ConstCallInfo, InferenceParams, InferenceResult, InferenceState, InternalMethodTable,
     InvokeCallInfo, MethodCallResult, MethodMatchInfo, MethodMatches, NOT_FOUND,
-    OptimizationState, OptimizationParams, OverlayMethodTable, StmtInfo, UnionSplitInfo,
-    UnionSplitMethodMatches, VarState, VarTable, WorldRange, WorldView,
+    OptimizationState, OptimizationParams, OverlayMethodTable, StatementState, StmtInfo,
+    UnionSplitInfo, UnionSplitMethodMatches, VarState, VarTable, WorldRange, WorldView,
     argextype, argtype_by_index, argtypes_to_type, compute_basic_blocks,
-    construct_postdomtree, hasintersect, ignorelimited, instanceof_tfunc, istopfunction,
+    construct_postdomtree, hasintersect, ignorelimited, instanceof_tfunc,
     nearest_common_dominator, singleton_type, slot_id, specialize_method, tmeet, tmerge,
     typeinf_lattice, widenconst, widenlattice
 
@@ -47,7 +47,7 @@ using JuliaInterpreter: _INACTIVE_EXCEPTION, Frame, JuliaInterpreter, is_quoteno
 
 using MacroTools: @capture, normalise, striplines
 
-using InteractiveUtils: gen_call_with_extracted_types_and_kwargs
+using InteractiveUtils: InteractiveUtils, gen_call_with_extracted_types_and_kwargs
 
 using Pkg: Pkg, TOML
 
@@ -88,6 +88,12 @@ __init__() = foreach(@nospecialize(f)->f(), INIT_HOOKS)
 
 # compat
 # ------
+
+using Base.IRShow: LineInfoNode
+using .CC: ConstCallResult
+# push_inithook!() do # FIXME with TODO use Compiler.jl stdlib
+#     @eval InteractiveUtils.@activate Compiler
+# end
 
 # macros
 # ------
@@ -202,22 +208,17 @@ const StateAtPC = Tuple{State,Int}
 const LineTable = Union{Vector{Any},Vector{LineInfoNode}}
 
 get_stmt((sv, pc)::StateAtPC) = sv.src.code[pc]
-get_lin((sv, pc)::StateAtPC) = begin
-    codeloc = sv.src.codelocs[pc]
-    linetable = sv.src.linetable::LineTable
-    if 1 <= codeloc <= length(linetable)
-        return linetable[codeloc]::LineInfoNode
-    elseif isa(sv, OptimizationState) && codeloc == 0
-        return nothing
-    elseif length(linetable) == 1
-        # XXX `codelocs` seems to be broken for some reason,
-        # but we've got to use linetable /w single line info node if that's what's available
-        return only(linetable)::LineInfoNode
-    else
-        # Packages might dynamically generate code, which does not reference
-        # a source, see https://github.com/aviatesk/JET.jl/issues/273
-        return LineInfoNode(sv.mod, :unknown, :unknown, Int32(0), Int32(0))
+get_lin((sv, pc)::StateAtPC) = _get_lin(sv, pc)
+# TODO optimize the allocation here for un-optimized debuginfo
+function _get_lin(sv, pc)
+    lins = CC.IRShow.buildLineInfoNode(sv.src.debuginfo, sv.linfo, pc)
+    if isempty(lins)
+        return LineInfoNode(sv.linfo, sv.src.debuginfo.def::Symbol, sv.linfo.def.line)
     end
+    return first(lins)
+end
+function get_lins((sv, pc)::StateAtPC)
+    return CC.IRShow.buildLineInfoNode(sv.src.debuginfo, sv.linfo, pc)
 end
 get_ssavaluetype((sv, pc)::StateAtPC) = (sv.src.ssavaluetypes::Vector{Any})[pc]
 
@@ -230,7 +231,7 @@ get_slotname((sv, pc)::StateAtPC, slot::Int) = sv.src.slotnames[slot]
 get_slotname(sv::State, slot::Int) = sv.src.slotnames[slot]
 
 # check if we're in a toplevel module
-istoplevel(sv::State) = istoplevel(sv.linfo)
+istoplevel(sv::State) = istoplevel(CC.frame_instance(sv))
 istoplevel(mi::MethodInstance) = isa(mi.def, Module)
 
 # we can retrieve program-counter-level slottype during inference
@@ -258,7 +259,7 @@ get_linfo(result::InferenceResult) = result.linfo
 get_linfo(linfo::MethodInstance) = linfo
 
 is_constant_propagated(frame::InferenceState) = is_constant_propagated(frame.result)
-is_constant_propagated(result::InferenceResult) = CC.any(result.overridden_by_const)
+is_constant_propagated(result::InferenceResult) = result.overridden_by_const !== nothing
 
 struct TypeUnassigned end    # for when inference doesn't bother assigning a type to a slot (e.g. dead code)
 
@@ -664,7 +665,7 @@ function analyze_method_instance!(analyzer::AbstractAnalyzer, mi::MethodInstance
     return analyze_frame!(analyzer, frame)
 end
 
-function InferenceState(result::InferenceResult, cache_mode::UInt8,  analyzer::AbstractAnalyzer)
+function CC.InferenceState(result::InferenceResult, cache_mode::UInt8,  analyzer::AbstractAnalyzer)
     init_result!(analyzer, result)
     return @invoke InferenceState(result::InferenceResult, cache_mode::UInt8, analyzer::AbstractInterpreter)
 end

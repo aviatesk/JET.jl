@@ -72,21 +72,24 @@ include("../setup.jl")
     end
 end
 
+func_method_error1(a::Integer) = :Integer
+func_method_error2(a::Integer) = :Integer
+func_method_error2(a::AbstractString) = "AbstractString"
+func_onlyint(::Int) = :ok
+func_integer_or_nothing(::Integer) = :ok1
+func_integer_or_nothing(::Nothing) = :ok2
+
 @testset "MethodErrorReport" begin
     # report no match case
     # --------------------
 
     # if there is no method matching case, it should be reported
-    let m = Module()
-        result = Core.eval(m, quote
-            foo(a::Integer) = :Integer
-            $report_call((AbstractString,)) do a
-                foo(a)
-            end
-        end)
+    let result = report_call((AbstractString,)) do a
+            func_method_error1(a)
+        end
         report = only(get_reports_with_test(result))
         @test report isa MethodErrorReport
-        @test report.t === Tuple{typeof(m.foo), AbstractString}
+        @test report.t === Tuple{typeof(func_method_error1), AbstractString}
     end
 
     let result = report_call(()->sum([]))
@@ -97,31 +100,21 @@ end
     end
 
     # if there is no method matching case in union-split, it should be reported
-    let m = Module()
-        result = Core.eval(m, quote
-            foo(a::Integer) = :Integer
-            foo(a::AbstractString) = "AbstractString"
-            $report_call(a->foo(a), (Union{Nothing,Int},))
-        end)
-
+    let result = report_call(a->func_method_error2(a), (Union{Nothing,Int},))
         report = only(get_reports_with_test(result))
         @test report isa MethodErrorReport
-        @test report.t == Any[Tuple{typeof(m.foo), Nothing}]
+        @test report.t == Any[Tuple{typeof(func_method_error2), Nothing}]
     end
 
     # report uncovered match
     # ----------------------
 
     # only in :sound mode
-    let (basic, sound) = @eval Module() begin
-            onlyint(::Int) = :ok
-            basic = $report_call((Any,)) do x
-                onlyint(x)
-            end
-            sound = $report_call((Any,); mode=:sound) do x
-                onlyint(x)
-            end
-            basic, sound
+    let basic = report_call((Any,)) do x
+            func_onlyint(x)
+        end,
+        sound = report_call((Any,); mode=:sound) do x
+            func_onlyint(x)
         end
         @test isempty(get_reports_with_test(basic))
         report = only(get_reports_with_test(sound))
@@ -130,16 +123,11 @@ end
         @test report.sig[end] === Symbol
     end
 
-    let (basic, sound) = @eval Module() begin
-            integer_or_nothing(::Integer) = :ok1
-            integer_or_nothing(::Nothing) = :ok2
-            basic = $report_call((Union{Number,Nothing},)) do x
-                integer_or_nothing(x)
-            end
-            sound = $report_call((Union{Number,Nothing},); mode=:sound) do x
-                integer_or_nothing(x)
-            end
-            basic, sound
+    let basic = report_call((Union{Number,Nothing},)) do x
+            func_integer_or_nothing(x)
+        end,
+        sound = report_call((Union{Number,Nothing},); mode=:sound) do x
+            func_integer_or_nothing(x)
         end
         @test isempty(get_reports_with_test(basic))
         report = only(get_reports_with_test(sound))
@@ -149,21 +137,18 @@ end
     end
 
     # report both no match error and uncovered match error
-    let result = @eval Module() begin
-            onlyint(::Int) = :ok
-            $report_call((Union{Integer,Nothing},); mode=:sound) do x
-                onlyint(x)
-            end
+    let result = report_call((Union{Integer,Nothing},); mode=:sound) do x
+            func_onlyint(x)
         end
         @test length(get_reports_with_test(result)) == 2
         @test any(get_reports_with_test(result)) do report
-            # no match for `onlyint(::Nothing)`
+            # no match for `func_onlyint(::Nothing)`
             report isa MethodErrorReport &&
             !report.uncovered &&
             report.sig[end] === Union{}
         end
         @test any(get_reports_with_test(result)) do report
-            # uncovered match for `onlyint(::Integer)`
+            # uncovered match for `func_onlyint(::Integer)`
             report isa MethodErrorReport &&
             report.uncovered &&
             report.sig[end] === Symbol
@@ -180,12 +165,14 @@ end
         end
         report = only(get_reports_with_test(result))
         @test report isa UnanalyzedCallReport
-        report.type === Tuple{typeof(+),Any,Any}
+        @test report.type === Tuple{typeof(+),Any,Any}
     end
 end
 
 issue285(x, y::Vararg{T}) where {T} = T
 issue586(t::Vararg{Type{<:T}}) where {T} = T
+_func_undefvar(bar) = bar + baz
+func_undefvar(a) = _func_undefvar(a)
 
 @testset "UndefVarErrorReport" begin
     @testset "global" begin
@@ -195,37 +182,29 @@ issue586(t::Vararg{Type{<:T}}) where {T} = T
         end
 
         # deeper level
-        let m = @fixturedef begin
-                foo(bar) = bar + baz
-                qux(a) = foo(a)
-            end
-
-            result = Core.eval(m, :($report_call(qux, (Int,))))
+        let result = report_call(func_undefvar, (Int,))
             r = only(get_reports_with_test(result))
             @test is_global_undef_var(r, :baz)
 
             # works when cached
-            result = Core.eval(m, :($report_call(qux, (Int,))))
+            result = report_call(func_undefvar, (Int,))
             r = only(get_reports_with_test(result))
             @test is_global_undef_var(r, :baz)
         end
 
-        let result = @eval Module() begin
-                $report_call() do
-                    getfield(@__MODULE__, :undefvar)
-                end
+        let sym = gensym()
+            result = @eval report_call() do
+                getfield(@__MODULE__, $(QuoteNode(sym)))
             end
             r = only(get_reports_with_test(result))
-            @test is_global_undef_var(r, :undefvar)
+            @test is_global_undef_var(r, sym)
         end
-
-        let result = @eval Module() begin
-                $report_call() do
-                    getglobal(@__MODULE__, :undefvar)
-                end
+        let sym = gensym()
+            result = @eval report_call() do
+                getglobal(@__MODULE__, $(QuoteNode(sym)))
             end
             r = only(get_reports_with_test(result))
-            @test is_global_undef_var(r, :undefvar)
+            @test is_global_undef_var(r, sym)
         end
 
         # if a global variable is type-declared, it will likely get assigned somewhere
@@ -391,7 +370,7 @@ let result = report_call((Nothing,)) do x
         setglobal!(@__MODULE__, :__int_globalvar__, x)
     end
     report = only(get_reports_with_test(result))
-    @test report isa InvalidGlobalAssignmentError
+    @test report isa IncompatibleGlobalAssignmentError
     @test report.mod === @__MODULE__
     @test report.name === :__int_globalvar__
 end
@@ -496,55 +475,47 @@ end
     end
 end
 
+func_throw_call_foo(a) = sum(a)
+func_throw_call_bar(a) = throw(a)
+
 @testset "report `throw` calls" begin
     # simplest case
-    let
-        result = report_call(()->throw("foo"))
+    let result = report_call(()->throw("foo"))
         @test !isempty(get_reports_with_test(result))
         @test first(get_reports_with_test(result)) isa UncaughtExceptionReport
     end
 
     # throws in deep level
-    let
-        foo(a) = throw(a)
+    let foo(a) = throw(a)
         result = report_call(()->foo("foo"))
         @test !isempty(get_reports_with_test(result))
         @test first(get_reports_with_test(result)) isa UncaughtExceptionReport
     end
 
     # don't report possibly false negative `throw`s
-    let
-        foo(a) = a ≤ 0 ? throw("a is $(a)") : a
+    let foo(a) = a ≤ 0 ? throw("a is $(a)") : a
         result = report_call(foo, (Int,))
         @test isempty(get_reports_with_test(result))
     end
 
     # constant prop sometimes helps exclude false negatives
-    let
-        foo(a) = a ≤ 0 ? throw("a is $(a)") : a
+    let foo(a) = a ≤ 0 ? throw("a is $(a)") : a
         result = report_call(()->foo(0))
         @test !isempty(get_reports_with_test(result))
         @test first(get_reports_with_test(result)) isa UncaughtExceptionReport
     end
 
     # report even if there're other "critical" error exist
-    let
-        m = gen_virtual_module()
-        result = Core.eval(m, quote
-            foo(a) = sum(a) # should be reported
-            bar(a) = throw(a) # shouldn't be reported first
-            $report_call((Bool, String)) do b, s
-                b && foo(s)
-                bar(s)
-            end
-        end)
+    let result = report_call((Bool,String)) do b, s
+            b && func_throw_call_foo(s)
+            func_throw_call_bar(s)
+        end
         @test length(get_reports_with_test(result)) === 3
         test_sum_over_string(get_reports_with_test(result))
     end
 
     # end to end
-    let
-        # this should report `throw(ArgumentError("Sampler for this object is not defined")`
+    let # this should report `throw(ArgumentError("Sampler for this object is not defined")`
         result = report_call(rand, (Char,))
         @test !isempty(get_reports_with_test(result))
         @test first(get_reports_with_test(result)) isa UncaughtExceptionReport
@@ -560,13 +531,10 @@ end
     end
 end
 
-@testset "keyword argument methods" begin
-    result = Core.eval(gen_virtual_module(), quote
-        f(a; b = nothing, c = nothing) = return
-        $report_call((Any,)) do b
-            f(1; b)
-        end
-    end)
+func_keyword_argument(a; b = nothing, c = nothing) = nothing
+let result = report_call((Any,)) do b
+        func_keyword_argument(1; b)
+    end
     @test isempty(get_reports_with_test(result))
 end
 
@@ -873,28 +841,6 @@ end
     end
 end
 
-@testset "special case `return_type`" begin
-    # don't report invalid method calls simulated in `return_type_tfunc`
-    let
-        result = report_call(()->CC.return_type(sum, Tuple{String}))
-        @test isempty(get_reports_with_test(result))
-    end
-
-    # report invalid call of `return_type` itself
-    let
-        result = report_call(()->CC.return_type(sum))
-        @test length(get_reports_with_test(result)) == 1
-        @test isa(first(get_reports_with_test(result)), InvalidReturnTypeCall)
-    end
-
-    # end to end
-    let # this shouldn't report "no matching method found for call signature: Base.iterate(itr::DataType)",
-        # which otherwise will be caught in `abstract_call` in `return_type_tfunc`
-        result = report_call(() -> Dict('a' => 1, :b => 2))
-        @test isempty(get_reports_with_test(result))
-    end
-end
-
 @testset "configured_reports" begin
     M = Module()
     @eval M begin
@@ -932,6 +878,7 @@ end
 end
 
 issue363(f, args...) = f(args...)
+func_report_entry(a::Int) = "hello"
 
 @testset "BasicPass" begin
     @testset "basic_filter" begin
@@ -953,11 +900,8 @@ issue363(f, args...) = f(args...)
         end
 
         # should still report anything within entry frame
-        let res = @eval Module() begin
-                foo(a::Int) = "hello"
-                $report_call((AbstractString,)) do a # this abstract call isn't concrete dispatch
-                    foo(a)
-                end
+        let res = report_call((AbstractString,)) do a # this abstract call isn't concrete dispatch
+                func_report_entry(a)
             end
             @test !isempty(get_reports_with_test(res))
             @test any(r->isa(r,MethodErrorReport), get_reports_with_test(res))

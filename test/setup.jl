@@ -1,6 +1,8 @@
 # this file defines stuff used across JET's test suite
 using Test
 
+using Core.IR
+
 # test utilities are extracted into a separate file for easier interactive testing from REPL
 # i.e. julia -i test/interactive_utils.jl
 include("interactive_utils.jl")

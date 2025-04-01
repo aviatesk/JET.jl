@@ -72,14 +72,15 @@ struct DispatchAnalysisPass <: ReportPass end
 ## ignore all reports defined by JET, since we'll just define our own reports
 (::DispatchAnalysisPass)(T::Type{<:InferenceErrorReport}, @nospecialize(_...)) = return
 
-function CC.finish!(analyzer::DispatchAnalyzer, frame::CC.InferenceState)
+function CC.finish!(analyzer::DispatchAnalyzer, frame::CC.InferenceState, validation_world::UInt, time_before::UInt64)
     caller = frame.result
 
     ## get the source before running `finish!` to keep the reference to `OptimizationState`
     src = caller.src
-    if src isa CC.OptimizationState{typeof(analyzer)}
+    if src isa CC.OptimizationState
         ## allow the following analysis passes to see the optimized `CodeInfo`
         caller.src = CC.ir_to_codeinf!(src)
+        frame.edges = collect(Any, caller.src.edges)
     end
 
     if analyzer.frame_filter(frame.linfo)
@@ -94,7 +95,7 @@ function CC.finish!(analyzer::DispatchAnalyzer, frame::CC.InferenceState)
         end
     end
 
-    return @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::CC.InferenceState)
+    return @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::CC.InferenceState, validation_world::UInt, time_before::UInt64)
 end
 
 @jetreport struct OptimizationFailureReport <: InferenceErrorReport end
