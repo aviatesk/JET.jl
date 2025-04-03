@@ -131,18 +131,10 @@ mutable struct AnalyzerState
     concretized::BitVector
 
     # virtual toplevel module
-    toplevelmod::Module
-
-    # slots to represent toplevel global variables
-    global_slots::Dict{Int,Symbol}
+    toplevelmod::Module # TODO revisit
 
     # some `AbstractAnalyzer` may want to use this inforamion
     entry::Union{Nothing,MethodInstance}
-
-    ## debug ##
-
-    # records depth of call stack
-    depth::Int
 end
 
 # define shortcut getter/setter methods for `AbstractAnalyzer`s
@@ -159,8 +151,6 @@ function AnalyzerState(world::UInt  = get_world_counter();
     opt_params::Union{Nothing,OptimizationParams} = nothing,
     concretized::BitVector = _CONCRETIZED,
     toplevelmod::Module = _TOPLEVELMOD,
-    global_slots::Dict{Int,Symbol} = _GLOBAL_SLOTS,
-    depth::Int = 0,
     jetconfigs...)
     isnothing(inf_params) && (inf_params = JETInferenceParams(; jetconfigs...))
     isnothing(opt_params) && (opt_params = JETOptimizationParams(; jetconfigs...))
@@ -175,16 +165,13 @@ function AnalyzerState(world::UInt  = get_world_counter();
                          #=cache_target::Union{Nothing,Pair{Symbol,InferenceState}}=# nothing,
                          #=concretized::BitVector=# concretized,
                          #=toplevelmod::Module=# toplevelmod,
-                         #=global_slots::Dict{Int,Symbol}=# global_slots,
-                         #=entry::Union{Nothing,MethodInstance}=# nothing,
-                         #=depth::Int=# depth)
+                         #=entry::Union{Nothing,MethodInstance}=# nothing)
 end
 
 # dummies for non-toplevel analysis
 module __toplevelmod__ end
 const _CONCRETIZED  = BitVector()
 const _TOPLEVELMOD  = __toplevelmod__
-const _GLOBAL_SLOTS = Dict{Int,Symbol}()
 
 """
 Configurations for abstract interpretation performed by JET.
@@ -303,8 +290,7 @@ function AbstractAnalyzer(analyzer::T) where {T<:AbstractAnalyzer}
     newstate = AnalyzerState(CC.get_inference_world(analyzer);
                              results    = get_results(analyzer),
                              inf_params = InferenceParams(analyzer),
-                             opt_params = OptimizationParams(analyzer),
-                             depth      = get_depth(analyzer))
+                             opt_params = OptimizationParams(analyzer))
     return AbstractAnalyzer(analyzer, newstate)
 end
 
