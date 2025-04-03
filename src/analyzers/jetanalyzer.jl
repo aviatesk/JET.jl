@@ -746,7 +746,9 @@ end
 (::TypoPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, gr::GlobalRef) =
     report_undef_global_var!(analyzer, sv, gr, #=sound=#false)
 function report_undef_global_var!(analyzer::JETAnalyzer, sv::InferenceState, gr::GlobalRef, sound::Bool)
-    isdefined(gr.mod, gr.name) && return false
+    if @invokelatest isdefinedglobal(gr.mod, gr.name)
+        return false
+    end
     if !sound
         # if this global var is explicitly type-declared, it will likely get assigned somewhere
         # TODO give this permission only to top-level analysis
@@ -1123,6 +1125,19 @@ function report_getglobal!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::
     gr === nothing && return false
     # forward to the report pass for undefined global reference
     return ReportPass(analyzer)(UndefVarErrorReport, analyzer, sv, gr)
+end
+
+function constant_globalref(argtypes::Vector{Any})
+    length(argtypes) ≥ 2 || return nothing
+    mod = argtypes[1]
+    isa(mod, Const) || return nothing
+    mod = mod.val
+    isa(mod, Module) || return nothing
+    sym = argtypes[2]
+    isa(sym, Const) || return nothing
+    sym = sym.val
+    isa(sym, Symbol) || return nothing
+    return GlobalRef(mod, sym)
 end
 
 function report_setfield!!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes, @nospecialize(ret))
