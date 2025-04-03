@@ -5,7 +5,7 @@ const CC = JET.CC
 using .CC: Bottom, widenconst, ⊑
 
 using JET:
-    AbstractAnalyzer, AbstractGlobal, InferenceErrorReport, JETAnalyzer, ToplevelConfig,
+    AbstractAnalyzer, InferenceErrorReport, JETAnalyzer, ToplevelConfig,
     ToplevelErrorReport, gen_virtual_module, get_reports, get_result, print_reports,
     virtual_process, virtualize_module_context
 
@@ -134,3 +134,7 @@ function is_local_undef_var(@nospecialize(r::InferenceErrorReport), name::Symbol
     var = r.var
     return var === name
 end
+
+# for inspection
+macro lwr(ex) QuoteNode(Meta.lower(__module__, ex)) end
+macro src(ex) QuoteNode(only(Meta.lower(__module__, ex).args)) end

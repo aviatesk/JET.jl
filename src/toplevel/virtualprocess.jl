@@ -810,7 +810,7 @@ function _virtual_process!(res::VirtualProcessResult,
         isnothing(lwr) && continue # error happened during lowering
         isexpr(lwr, :thunk) || continue # literal
 
-        src = first((lwr::Expr).args)::CodeInfo
+        src = first(lwr.args)::CodeInfo
 
         fix_self_references!(res.actual2virtual, src)
 
@@ -830,7 +830,7 @@ function _virtual_process!(res::VirtualProcessResult,
 
         analyzer = AbstractAnalyzer(analyzer, concretized, context)
 
-        _, result = analyze_toplevel!(analyzer, src)
+        (_, result), _ = analyze_toplevel!(analyzer, src, context)
 
         append!(res.inference_error_reports, get_reports(analyzer, result)) # collect error reports
     end
@@ -1511,8 +1511,7 @@ function with_err_handling(f, err_handler, scrub_offset::Int)
 end
 
 # a bridge to abstract interpretation
-function analyze_toplevel!(analyzer::AbstractAnalyzer, src::CodeInfo)
-    context_module = get_toplevelmod(analyzer)
+function analyze_toplevel!(analyzer::AbstractAnalyzer, src::CodeInfo, context_module::Module)
     resolve_toplevel_symbols!(src, context_module)
 
     # construct toplevel `MethodInstance`
@@ -1526,7 +1525,7 @@ function analyze_toplevel!(analyzer::AbstractAnalyzer, src::CodeInfo)
     # `typeinf_edge` won't add "toplevel-to-callee" edges
     frame = InferenceState(result, src, #=cache_mode=#:global, analyzer)::InferenceState
 
-    return analyze_frame!(analyzer, frame)
+    return analyze_frame!(analyzer, frame), frame
 end
 
 # resolve toplevel symbols (and other expressions like `:foreigncall`) within `src`
