@@ -76,23 +76,6 @@ function print_report(io::IO, report::DependencyError)
     - Otherwise you may need to report an issue with $pkg""")
 end
 
-# wraps an error that might happen because of inappropriate top-level code abstraction
-struct MissingConcretization <: ToplevelErrorReport
-    err
-    st::Base.StackTraces.StackTrace
-    file::String
-    line::Int
-end
-function print_report(io::IO, report::MissingConcretization)
-    printstyled(io, "HINT: "; bold = true, color = HINT_COLOR)
-    printlnstyled(io, """
-    the following error happened mostly because of the missing concretization of global variables,
-    and this could be fixed with the `concretization_patterns` configuration.
-    Check https://aviatesk.github.io/JET.jl/dev/config/#JET.ToplevelConfig for the details.
-    ---"""; color = HINT_COLOR)
-    showerror(io, report.err, report.st)
-end
-
 struct RecursiveIncludeErrorReport <: ToplevelErrorReport
     duplicated_file::String
     files::Vector{String}
@@ -623,9 +606,7 @@ function _virtual_process!(res::VirtualProcessResult,
     local lnnref = Ref(LineNumberNode(0, filename))
 
     function err_handler(@nospecialize(err), st)
-        local report = is_missing_concretization(err) ?
-                       MissingConcretization(err, st, filename, lnnref[].line) :
-                       ActualErrorWrapped(err, st, filename, lnnref[].line)
+        local report = ActualErrorWrapped(err, st, filename, lnnref[].line)
         push!(res.toplevel_error_reports, report)
         return nothing
     end
@@ -1504,9 +1485,7 @@ function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame::Frame, 
     end
     st = st[1:i]
 
-    report = is_missing_concretization(err) ?
-             MissingConcretization(err, st, interp.filename, interp.lnn.line) :
-             ActualErrorWrapped(err, st, interp.filename, interp.lnn.line)
+    report = ActualErrorWrapped(err, st, interp.filename, interp.lnn.line)
     push!(interp.res.toplevel_error_reports, report)
 
     return nothing # stop further interpretation
@@ -1531,18 +1510,9 @@ function with_err_handling(f, err_handler, scrub_offset::Int)
     end
 end
 
-let s = string(nameof(AbstractGlobal))
-    global function is_missing_concretization(@nospecialize(err))
-        io = IOBuffer()
-        showerror(io, err)
-        occursin(s, String(take!(io)))
-    end
-end
-
 # a bridge to abstract interpretation
 function analyze_toplevel!(analyzer::AbstractAnalyzer, src::CodeInfo)
     context_module = get_toplevelmod(analyzer)
-    transform_abstract_global_symbols!(src, analyzer)
     resolve_toplevel_symbols!(src, context_module)
 
     # construct toplevel `MethodInstance`
@@ -1557,52 +1527,6 @@ function analyze_toplevel!(analyzer::AbstractAnalyzer, src::CodeInfo)
     frame = InferenceState(result, src, #=cache_mode=#:global, analyzer)::InferenceState
 
     return analyze_frame!(analyzer, frame)
-end
-
-# This is very naive HACK to re-use `AbstractInterpreter`'s slot type approximation for
-# assignments of abstract global variables, which are represented as toplevel symbols at this point;
-# the idea is just to transform them into slot from symbol and use their approximated type
-# on their assignment (see `finish(::InferenceState, ::AbstractAnalyzer)`).
-# NOTE that `transform_abstract_global_symbols!` will produce really invalid code for
-# actual interpretation or execution, but all the statements won't be interpreted anymore
-# by `ConcreteInterpreter` nor executed by the native compilation pipeline anyway
-function transform_abstract_global_symbols!(src::CodeInfo, analyzer::AbstractAnalyzer)
-    nslots = length(src.slotnames)
-    abstract_global_variables = Dict{Symbol,Int}()
-    concretized = get_concretized(analyzer)
-
-    # linear scan, and find assignments of abstract global variables
-    for (i, stmt) in enumerate(src.code::Vector{Any})
-        if !(concretized[i])
-            if isexpr(stmt, :(=))
-                lhs = first(stmt.args)
-                if isa(lhs, Symbol)
-                    if !haskey(abstract_global_variables, lhs)
-                        nslots += 1
-                        push!(abstract_global_variables, lhs => nslots)
-                    end
-                end
-            end
-        end
-    end
-
-    prewalk_and_transform!(src) do @nospecialize(x), scope::Vector{Symbol}
-        if isa(x, Symbol)
-            slot = get(abstract_global_variables, x, nothing)
-            isnothing(slot) || return SlotNumber(slot)
-        end
-        return x
-    end
-
-    resize!(src.slotnames, nslots)
-    resize!(src.slotflags, nslots)
-    for (slotname, idx) in abstract_global_variables
-        src.slotnames[idx] = slotname
-    end
-
-    set_global_slots!(analyzer, Dict(idx => slotname for (slotname, idx) in abstract_global_variables))
-
-    return src
 end
 
 # resolve toplevel symbols (and other expressions like `:foreigncall`) within `src`
