@@ -1234,8 +1234,9 @@ end
 # Julia's intermediate code representation.
 function select_dependencies!(concretize::BitVector, src::CodeInfo, edges, cl)
     typedefs = LoweredCodeUtils.find_typedefs(src)
-    cfg = compute_basic_blocks(src.code)
-    postdomtree = construct_postdomtree(cfg.blocks)
+    # TODO Update LoweredCodeUtils to use `Compiler` instead of `Core.Compiler`
+    cfg = Core.Compiler.compute_basic_blocks(src.code)
+    postdomtree = Core.Compiler.construct_postdomtree(cfg.blocks)
 
     while true
         changed = false
