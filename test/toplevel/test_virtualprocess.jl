@@ -44,11 +44,13 @@ end
             const Y = nothing
             Z() = return
         end)
+        Core.@latestworld
 
         virtual = virtualize_module_context(actual)
-        @test isdefined(virtual, :X)
-        @test isdefined(virtual, :Y)
-        @test isdefined(virtual, :Z)
+        Core.@latestworld
+        @test isdefinedglobal(virtual, :X)
+        @test isdefinedglobal(virtual, :Y)
+        @test isdefinedglobal(virtual, :Z)
     end
 
     # in the virtualized context, we can define a name that is already defined in the original module
@@ -58,8 +60,10 @@ end
             const Y = nothing
             Z() = return
         end)
+        Core.@latestworld
 
         virtual = virtualize_module_context(actual)
+        Core.@latestworld
         @test (Core.eval(virtual, quote
             struct X end
             const Y = nothing
@@ -75,6 +79,7 @@ end
             export bar
             end
         end).args...))
+        Core.@latestworld
 
         res = @analyze_toplevel context = orig begin
             module Foo
@@ -90,6 +95,7 @@ end
     # don't error if there is undefined export
     let actual = gen_virtual_module(@__MODULE__)
         Core.eval(actual, :(export undefined))
+        Core.@latestworld
 
         @test (virtualize_module_context(actual); true)
 
