@@ -828,7 +828,7 @@ function _virtual_process!(res::VirtualProcessResult,
             continue
         end
 
-        analyzer = AbstractAnalyzer(analyzer, concretized, context)
+        analyzer = AbstractAnalyzer(analyzer, concretized)
 
         (_, result), _ = analyze_toplevel!(analyzer, src, context)
 

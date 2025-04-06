@@ -130,10 +130,7 @@ mutable struct AnalyzerState
     # will be used in toplevel analysis (skip inference on actually interpreted statements)
     concretized::BitVector
 
-    # virtual toplevel module
-    toplevelmod::Module # TODO revisit
-
-    # some `AbstractAnalyzer` may want to use this inforamion
+    # some `AbstractAnalyzer` may want to use this
     entry::Union{Nothing,MethodInstance}
 end
 
@@ -150,7 +147,6 @@ function AnalyzerState(world::UInt  = get_world_counter();
     inf_params::Union{Nothing,InferenceParams} = nothing,
     opt_params::Union{Nothing,OptimizationParams} = nothing,
     concretized::BitVector = _CONCRETIZED,
-    toplevelmod::Module = _TOPLEVELMOD,
     jetconfigs...)
     isnothing(inf_params) && (inf_params = JETInferenceParams(; jetconfigs...))
     isnothing(opt_params) && (opt_params = JETOptimizationParams(; jetconfigs...))
@@ -164,14 +160,11 @@ function AnalyzerState(world::UInt  = get_world_counter();
                          #=report_stash::Vector{InferenceErrorReport}=# report_stash,
                          #=cache_target::Union{Nothing,Pair{Symbol,InferenceState}}=# nothing,
                          #=concretized::BitVector=# concretized,
-                         #=toplevelmod::Module=# toplevelmod,
                          #=entry::Union{Nothing,MethodInstance}=# nothing)
 end
 
 # dummies for non-toplevel analysis
-module __toplevelmod__ end
 const _CONCRETIZED  = BitVector()
-const _TOPLEVELMOD  = __toplevelmod__
 
 """
 Configurations for abstract interpretation performed by JET.
@@ -295,16 +288,14 @@ function AbstractAnalyzer(analyzer::T) where {T<:AbstractAnalyzer}
 end
 
 # constructor for sequential toplevel JET analysis
-function AbstractAnalyzer(analyzer::T, concretized::BitVector, toplevelmod::Module;
+function AbstractAnalyzer(analyzer::T, concretized::BitVector;
     # update world age to take in newly added methods defined by `ConcreteInterpreter`
     world::UInt = get_world_counter()
     ) where {T<:AbstractAnalyzer}
     newstate = AnalyzerState(world;
                              inf_params = InferenceParams(analyzer),
                              opt_params = OptimizationParams(analyzer),
-                             concretized, # or construct partial `CodeInfo` from remaining abstract statements ?
-                             toplevelmod,
-                             )
+                             concretized)
     return AbstractAnalyzer(analyzer, newstate)
 end
 

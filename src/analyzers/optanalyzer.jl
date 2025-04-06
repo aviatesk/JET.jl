@@ -198,7 +198,7 @@ function CC.const_prop_call(analyzer::OptAnalyzer,
         nothing::Nothing)
 end
 
-# TODO better to work only `CC.finish!`
+# TODO better to work only with `CC.finish!`
 function CC.finishinfer!(frame::InferenceState, analyzer::OptAnalyzer, cycleid::Int)
     ret = @invoke CC.finishinfer!(frame::InferenceState, analyzer::AbstractAnalyzer, cycleid::Int)
 
