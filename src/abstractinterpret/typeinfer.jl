@@ -393,6 +393,117 @@ end
 # top-level bridge
 # ================
 
+function CC.abstract_eval_basic_statement(analyzer::AbstractAnalyzer, @nospecialize(stmt),
+    sstate::StatementState, frame::InferenceState, result::Union{Nothing,Future{RTEffects}})
+    if istoplevelframe(frame)
+        if get_concretized(analyzer)[frame.currpc]
+            return CC.AbstractEvalBasicStatementResult(nothing, Bottom, nothing, nothing, nothing, false) # bail out if it has been interpreted by `ConcreteInterpreter`
+        end
+    end
+    return @invoke CC.abstract_eval_basic_statement(analyzer::AbstractInterpreter, stmt::Any,
+        sstate::StatementState, frame::InferenceState, result::Union{Nothing,Future{RTEffects}})
+end
+
+function CC.global_assignment_rt_exct(analyzer::AbstractAnalyzer, sv::AbsIntState, saw_latestworld::Bool, g::GlobalRef, @nospecialize(newty))
+    if saw_latestworld
+        return Pair{Any,Any}(newty, ErrorException)
+    end
+    istoplevel = istoplevelframe(sv)
+    ⊔ = CC.join(typeinf_lattice(analyzer))
+    (valid_worlds, ret) = CC.scan_partitions(analyzer, g, sv.world) do analyzer::AbstractAnalyzer, binding::Core.Binding, partition::Core.BindingPartition
+        rte = CC.global_assignment_binding_rt_exct(analyzer, partition, newty)
+        if istoplevel
+            # XXX `binding_states` tracks the binding types that are known at top-level only,
+            #     so using the type information may result in incorrect results,
+            #     while just Deriving defined-ness information would probably be fine
+            # TODO need to represent conditional case
+            binding_states[partition] = BindingState(false)
+        end
+        return rte
+    end
+    CC.update_valid_age!(sv, valid_worlds)
+    return ret
+end
+
+function CC.abstract_eval_statement_expr(analyzer::AbstractAnalyzer, e::Expr, sstate::StatementState,
+                                         sv::AbsIntState)::Future{RTEffects}
+    if isexpr(e, :const)
+        return abstract_eval_const_stmt(analyzer, e, sstate, sv)
+    end
+    return @invoke CC.abstract_eval_statement_expr(analyzer::AbstractInterpreter, e::Expr, sstate::StatementState, sv::AbsIntState)
+end
+
+# XXX Do we need to port this back to Julia base?
+function abstract_eval_const_stmt(analyzer::AbstractAnalyzer, stmt::Expr, sstate::StatementState, sv::AbsIntState)
+    na = length(stmt.args)
+    if na == 0 # currently noub
+        return RTEffects(Union{}, ErrorException, EFFECTS_THROWS)
+    elseif !istoplevelframe(sv) # shouldn't be hit since blocked by the frontend
+        return RTEffects(Union{}, ErrorException, EFFECTS_THROWS)
+    end
+    lastargtype = CC.abstract_eval_value(analyzer, stmt.args[end], sstate, sv)
+    if !CC.isvarargtype(lastargtype)
+        if na == 1 || na == 2
+            val = stmt.args[1]
+            if val isa Symbol
+                val = GlobalRef(CC.frame_module(sv), val)
+            end
+            val isa GlobalRef || return RTEffects(Nothing, ErrorException, EFFECTS_THROWS)
+            rt, exct = const_assignment_rt_exct(analyzer, sv, sstate.saw_latestworld, val, na == 2 ? lastargtype : nothing)
+            return RTEffects(rt, exct, CC.Effects(EFFECTS_THROWS; nothrow=exct===Union{}))
+        else
+            return RTEffects(Union{}, ErrorException, EFFECTS_THROWS)
+        end
+    else
+        return RTEffects(Nothing, ErrorException, EFFECTS_THROWS)
+    end
+end
+
+function const_assignment_rt_exct(analyzer::AbstractAnalyzer, sv::AbsIntState, saw_latestworld::Bool, gr::GlobalRef,
+                                  @nospecialize(new_binding_typ))
+    if saw_latestworld
+        return Pair{Any,Any}(Nothing, ErrorException)
+    end
+    ⊔ = CC.join(CC.typeinf_lattice(analyzer))
+    (valid_worlds, ret) = CC.scan_partitions(analyzer, gr, sv.world) do analyzer::AbstractAnalyzer, binding::Core.Binding, partition::Core.BindingPartition
+        rte = const_assignment_binding_rt_exct(analyzer, partition)
+        rt, exct = rte
+        if rt !== Union{}
+            # `:const` assignment destructively overrides the binding type
+            # TODO need to represent conditional case
+            binding_states = get_binding_states(analyzer)
+            binding_states[partition] = BindingState(false, new_binding_typ)
+        end
+        return rte
+    end
+    CC.update_valid_age!(sv, valid_worlds)
+    return ret
+end
+
+function const_assignment_binding_rt_exct(interp::AbstractInterpreter, partition::Core.BindingPartition)
+    kind = CC.binding_kind(partition)
+    if CC.is_some_const_binding(kind) && !CC.is_some_implicit(kind)
+        return Pair{Any,Any}(Nothing, Union{})
+    elseif CC.is_some_explicit_imported(kind)
+        return Pair{Any,Any}(Union{}, ErrorException)
+    elseif kind == CC.PARTITION_KIND_GLOBAL
+        return Pair{Any,Any}(Union{}, ErrorException)
+    end
+    return Pair{Any,Any}(Nothing, ErrorException)
+end
+
+function CC.abstract_eval_partition_load(analyzer::AbstractAnalyzer, binding::Core.Binding, partition::Core.BindingPartition)
+    res = @invoke CC.abstract_eval_partition_load(analyzer::AbstractInterpreter, binding::Core.Binding, partition::Core.BindingPartition)
+    binding_states = get_binding_states(analyzer)
+    if haskey(binding_states, partition)
+        binding_state = binding_states[partition]
+        if isdefined(binding_state, :typ)
+            res = RTEffects(binding_state.typ, res.exct, res.effects)
+        end
+    end
+    return res
+end
+
 """
     bail_out_toplevel_call(analyzer::AbstractAnalyzer, ...)
 
@@ -419,17 +530,6 @@ function CC.abstract_eval_value(analyzer::AbstractAnalyzer, @nospecialize(e), vt
 end
 
 is_inactive_exception(@nospecialize rt) = isa(rt, Const) && rt.val === _INACTIVE_EXCEPTION()
-
-# NOTE `abstract_eval_statement` has been inlined into `typeinf_local`,
-# and currently we don't have any way to inject custom behavior into it
-# function CC.abstract_eval_statement(analyzer::AbstractAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-#     if istoplevel(sv)
-#         if get_concretized(analyzer)[get_currpc(sv)]
-#             return CC.RTEffects(Any, Any, CC.Effects()) # bail out if it has been interpreted by `ConcreteInterpreter`
-#         end
-#     end
-#     return @invoke CC.abstract_eval_statement(analyzer::AbstractInterpreter, e::Any, vtypes::VarTable, sv::InferenceState)
-# end
 
 function CC.cache_result!(analyzer::AbstractAnalyzer, caller::InferenceResult, ci::CodeInstance)
     istoplevelframe(caller.linfo) && return nothing # don't need to cache toplevel frame

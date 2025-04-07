@@ -307,8 +307,19 @@ function CC.abstract_eval_statement_expr(analyzer::JETAnalyzer, e::Expr, sstate:
 end
 
 function CC.abstract_eval_globalref(analyzer::JETAnalyzer, g::GlobalRef, saw_latestworld::Bool, sv::InferenceState)
-    ret = @invoke CC.abstract_eval_globalref(analyzer::AbstractInterpreter, g::GlobalRef, saw_latestworld::Bool, sv::InferenceState)
-    ReportPass(analyzer)(UndefVarErrorReport, analyzer, sv, g)
+    if saw_latestworld
+        return CC.RTEffects(Any, Any, CC.generic_getglobal_effects)
+    end
+    # For inference purposes, we don't particularly care which global binding we end up loading, we only
+    # care about its type. However, we would still like to terminate the world range for the particular
+    # binding we end up reaching such that codegen can emit a simpler pointer load.
+    (valid_worlds, ret) = CC.scan_leaf_partitions(analyzer, g, sv.world) do analyzer::AbstractAnalyzer, binding::Core.Binding, partition::Core.BindingPartition
+        if partition.min_world ≤ sv.world.this ≤ partition.max_world # XXX This should probably be fixed on the Julia side
+            ReportPass(analyzer)(UndefVarErrorReport, analyzer, sv, binding, partition)
+        end
+        CC.abstract_eval_partition_load(analyzer, binding, partition)
+    end
+    CC.update_valid_age!(sv, valid_worlds)
     return ret
 end
 
@@ -739,20 +750,19 @@ end
 
 # TODO InferenceParams(::JETAnalyzer).assume_bindings_static = true
 
-(::SoundPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, gr::GlobalRef) =
-    report_undef_global_var!(analyzer, sv, gr, #=sound=#true)
-(::BasicPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, gr::GlobalRef) =
-    report_undef_global_var!(analyzer, sv, gr, #=sound=#false)
-(::TypoPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, gr::GlobalRef) =
-    report_undef_global_var!(analyzer, sv, gr, #=sound=#false)
-function report_undef_global_var!(analyzer::JETAnalyzer, sv::InferenceState, gr::GlobalRef, sound::Bool)
+(::SoundPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, binding::Core.Binding, partition::Core.BindingPartition) =
+    report_undef_global_var!(analyzer, sv, binding, partition, #=sound=#true)
+(::BasicPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, binding::Core.Binding, partition::Core.BindingPartition) =
+    report_undef_global_var!(analyzer, sv, binding, partition, #=sound=#false)
+(::TypoPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, binding::Core.Binding, partition::Core.BindingPartition) =
+    report_undef_global_var!(analyzer, sv, binding, partition, #=sound=#false)
+function report_undef_global_var!(analyzer::JETAnalyzer, sv::InferenceState, binding::Core.Binding, partition::Core.BindingPartition, sound::Bool)
+    gr = binding.globalref
+    # TODO use `abstract_eval_isdefinedglobal` for respecting world age
     if @invokelatest isdefinedglobal(gr.mod, gr.name)
         return false
-    end
-    if !sound
-        # if this global var is explicitly type-declared, it will likely get assigned somewhere
-        # TODO give this permission only to top-level analysis
-        ccall(:jl_get_binding_type, Any, (Any, Any), gr.mod, gr.name) !== nothing && return false
+    elseif haskey(get_binding_states(analyzer), partition)
+        return false
     end
     add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, gr))
     return true

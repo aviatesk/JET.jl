@@ -798,8 +798,8 @@ function _virtual_process!(res::VirtualProcessResult,
             continue
         end
 
-        # can't wrap `:global` declaration into a block
-        if isexpr(x, :global)
+        # avoid wrapping 1-arg `:global` declaration into a block
+        if isexpr(x, :global) && length(x.args) == 1 && only(x.args) isa Symbol
             eval_with_err_handling(context, x)
             continue
         end
@@ -1132,7 +1132,9 @@ function select_direct_requirement!(concretize, stmts, edges)
     for (idx, stmt) in enumerate(stmts)
         if (LoweredCodeUtils.ismethod(stmt) ||    # don't abstract away method definitions
             LoweredCodeUtils.istypedef(stmt) ||   # don't abstract away type definitions
-            ismoduleusage(stmt)) # module usages are handled by `ConcreteInterpreter`
+            ismoduleusage(stmt) || # module usages are handled by `ConcreteInterpreter`
+            isexpr(stmt, :globaldecl) ||
+            isexpr(stmt, :latestworld))
             concretize[idx] = true
             continue
         end

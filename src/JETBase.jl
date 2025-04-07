@@ -21,10 +21,11 @@ using Core: Builtin, IntrinsicFunction, Intrinsics, SimpleVector, svec
 using Core.IR
 
 using .CC: @nospecs, ⊑,
-    AbstractInterpreter, AbstractLattice, ArgInfo, Bottom, CFG, CachedMethodTable, CallMeta,
-    ConstCallInfo, InferenceParams, InferenceResult, InferenceState, InternalMethodTable,
-    InvokeCallInfo, MethodCallResult, MethodMatchInfo, MethodMatches, NOT_FOUND,
-    OptimizationState, OptimizationParams, OverlayMethodTable, StatementState, StmtInfo,
+    AbsIntState, AbstractInterpreter, AbstractLattice, ArgInfo, Bottom, CFG,
+    CachedMethodTable, CallMeta, ConstCallInfo, Effects, EFFECTS_THROWS, Future,
+    InferenceParams, InferenceResult, InferenceState, InternalMethodTable, InvokeCallInfo,
+    MethodCallResult, MethodMatchInfo, MethodMatches, NOT_FOUND, OptimizationState,
+    OptimizationParams, OverlayMethodTable, RTEffects, StatementState, StmtInfo,
     UnionSplitInfo, UnionSplitMethodMatches, VarState, VarTable, WorldRange, WorldView,
     argextype, argtype_by_index, argtypes_to_type, compute_basic_blocks,
     construct_postdomtree, hasintersect, ignorelimited, instanceof_tfunc,

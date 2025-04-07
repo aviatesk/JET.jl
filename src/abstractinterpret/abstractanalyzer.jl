@@ -76,6 +76,14 @@ struct CachedAnalysisResult
     reports::Vector{InferenceErrorReport}
 end
 
+struct BindingState
+    undef::Bool
+    typ
+    BindingState(undef::Bool, @nospecialize typ) = new(undef, typ)
+    BindingState(undef::Bool) = new(undef)
+end
+const AbstractBindingState = IdDict{Core.BindingPartition,BindingState}
+
 """
     mutable struct AnalyzerState
         ...
@@ -127,6 +135,8 @@ mutable struct AnalyzerState
     # will be used in toplevel analysis (skip inference on actually interpreted statements)
     concretized::BitVector
 
+    binding_states::AbstractBindingState # TODO Make this globally maintained?
+
     # some `AbstractAnalyzer` may want to use this
     entry::Union{Nothing,MethodInstance}
 end
@@ -144,6 +154,7 @@ function AnalyzerState(world::UInt  = get_world_counter();
     inf_params::Union{Nothing,InferenceParams} = nothing,
     opt_params::Union{Nothing,OptimizationParams} = nothing,
     concretized::BitVector = _CONCRETIZED,
+    binding_states::AbstractBindingState = AbstractBindingState(),
     jetconfigs...)
     isnothing(inf_params) && (inf_params = JETInferenceParams(; jetconfigs...))
     isnothing(opt_params) && (opt_params = JETOptimizationParams(; jetconfigs...))
@@ -157,6 +168,7 @@ function AnalyzerState(world::UInt  = get_world_counter();
                          #=report_stash::Vector{InferenceErrorReport}=# report_stash,
                          #=cache_target::Union{Nothing,Pair{Symbol,InferenceState}}=# nothing,
                          #=concretized::BitVector=# concretized,
+                         #=binding_states::AbstractBindingState=# binding_states,
                          #=entry::Union{Nothing,MethodInstance}=# nothing)
 end
 
@@ -292,7 +304,8 @@ function AbstractAnalyzer(analyzer::T, concretized::BitVector;
     newstate = AnalyzerState(world;
                              inf_params = InferenceParams(analyzer),
                              opt_params = OptimizationParams(analyzer),
-                             concretized)
+                             concretized,
+                             binding_states = get_binding_states(analyzer))
     return AbstractAnalyzer(analyzer, newstate)
 end
 
