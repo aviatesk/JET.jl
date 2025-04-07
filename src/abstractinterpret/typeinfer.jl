@@ -171,11 +171,6 @@ function CC.return_type_tfunc(analyzer::AbstractAnalyzer, argtypes::Argtypes, si
     return ret
 end
 
-# types
-# =====
-
-const AbsIntState = Union{InferenceState,Nothing}
-
 # cache
 # =====
 
@@ -437,6 +432,6 @@ is_inactive_exception(@nospecialize rt) = isa(rt, Const) && rt.val === _INACTIVE
 # end
 
 function CC.cache_result!(analyzer::AbstractAnalyzer, caller::InferenceResult, ci::CodeInstance)
-    istoplevel(caller.linfo) && return nothing # don't need to cache toplevel frame
+    istoplevelframe(caller.linfo) && return nothing # don't need to cache toplevel frame
     @invoke CC.cache_result!(analyzer::AbstractInterpreter, caller::InferenceResult, ci::CodeInstance)
 end

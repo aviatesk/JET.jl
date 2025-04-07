@@ -810,7 +810,7 @@ function _virtual_process!(res::VirtualProcessResult,
         isnothing(lwr) && continue # error happened during lowering
         isexpr(lwr, :thunk) || continue # literal
 
-        src = first(lwr.args)::CodeInfo
+        src = only(lwr.args)::CodeInfo
 
         fix_self_references!(res.actual2virtual, src)
 

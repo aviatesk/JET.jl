@@ -348,7 +348,7 @@ end
 function handle_sig!(sig::Vector{Any}, s::StateAtPC, slot::SlotNumber)
     sv = first(s)
     name = get_slotname(sv, slot)
-    if istoplevel(sv)
+    if istoplevelframe(sv)
         # this is a abstract global variable, form the global reference
         handle_sig!(sig, s, GlobalRef(sv.linfo.def::Module, name))
         return sig, nothing
