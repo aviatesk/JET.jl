@@ -850,8 +850,9 @@ end
 function report_global_assignment!(analyzer::JETAnalyzer, sv::InferenceState,
                                    ret::CallMeta, M, s, v,
                                    sound::Bool)
+    @nospecialize M s v
     if sound
-        if ret.rt !== ErrorException
+        if ret.exct !== Union{}
             @goto report
         end
     else

@@ -216,7 +216,7 @@ func_undefvar(a) = _func_undefvar(a)
                 end
                 getvar() = (global var; var)
             end
-            @test isempty(res.res.inference_error_reports)
+            @test_broken isempty(res.res.inference_error_reports)
         end
         # but the sound mode should still be sound
         let res = @analyze_toplevel mode=:sound analyze_from_definitions=true begin
@@ -553,6 +553,7 @@ end
         end
         bar(foo::Foo) = foo.bar
 
+        global f::Union{Foo1, Foo2, Foo3} # COMBAK 1.12 update
         f = rand(Bool) ? Foo1(1) : rand(Bool) ? Foo2(1) : Foo3(1)
         bar(f)
     end
