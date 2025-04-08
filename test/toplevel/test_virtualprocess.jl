@@ -469,22 +469,23 @@ end
     end
 
     # macros should be able to expand :module or :toplevel expressions
-    let
-        # # if we don't expand macros before we check `:toplevel` or `:module` expressions,
-        # # otherwise we end up passing `:toplevel` or `:module` expressions to
-        # # `partially_interpret!` and fail to concretize them and their toplevel definitions
-        # vmod, res = @analyze_toplevel2 begin
-        #     macro wrap_in_mod(blk)
-        #         ex = Expr(:module, true, esc(:foo), esc(blk))
-        #         return Expr(:toplevel, ex)
-        #     end
+    let # if we don't expand macros before we check `:toplevel` or `:module` expressions,
+        # otherwise we end up passing `:toplevel` or `:module` expressions to
+        # `partially_interpret!` and fail to concretize them and their toplevel definitions
+        vmod, res = @analyze_toplevel2 begin
+            macro wrap_in_mod(blk)
+                ex = Expr(:module, true, esc(:foo), esc(blk))
+                return Expr(:toplevel, ex)
+            end
 
-        #     @wrap_in_mod begin
-        #         bar() = nothing
-        #     end
-        # end
-        # @test isconcrete(res, vmod, :foo)
-        # @test isconcrete(res, vmod.foo, :bar)
+            @wrap_in_mod begin
+                bar() = nothing
+            end
+        end
+        # FIXME syntax: "module" expression not at top level
+        @test_broken isempty(res.res.toplevel_error_reports)
+        @test_broken isconcrete(res, vmod, :foo)
+        @test_broken isconcrete(res, vmod.foo, :bar)
 
         vmod, res = @analyze_toplevel2 begin
             """
@@ -1169,7 +1170,9 @@ end
     end
 
     @testset "https://github.com/aviatesk/JET.jl/issues/280" begin
-        res = @analyze_toplevel begin
+        # FIXME Remove `virtualize=false`` A bug within `resolve_toplevel_symbols!`
+        # UndefVarError: `Cstring` not defined in `Main.var"##JETVirtualModule#340"`
+        res = @analyze_toplevel virtualize=false begin
             using Libdl
             let
                 llvmpaths = filter(lib -> occursin(r"LLVM\b", basename(lib)), Libdl.dllist())

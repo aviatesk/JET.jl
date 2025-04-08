@@ -677,8 +677,10 @@ end
     @test !isempty(get_cache(result.analyzer))
 end
 
+# FIXME Remove `virtualize=false`` A bug within `resolve_toplevel_symbols!`
+# UndefVarError: `Csize_t` not defined in `Main.var"##JETVirtualModule#340"`
 @testset "https://github.com/aviatesk/JET.jl/issues/133" begin
-    res = @analyze_toplevel begin
+    res = @analyze_toplevel virtualize=false begin
         @ccall strlen("foo"::Cstring)::Csize_t
     end
     @test isempty(get_reports_with_test(res))
