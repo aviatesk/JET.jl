@@ -76,13 +76,13 @@ struct CachedAnalysisResult
     reports::Vector{InferenceErrorReport}
 end
 
-struct BindingState
+struct AbstractBindingState
     undef::Bool
     typ
-    BindingState(undef::Bool, @nospecialize typ) = new(undef, typ)
-    BindingState(undef::Bool) = new(undef)
+    AbstractBindingState(undef::Bool, @nospecialize typ) = new(undef, typ)
+    AbstractBindingState(undef::Bool) = new(undef)
 end
-const AbstractBindingState = IdDict{Core.BindingPartition,BindingState}
+const AbstractAbstractBindings = IdDict{Core.BindingPartition,AbstractBindingState}
 
 """
     mutable struct AnalyzerState
@@ -135,7 +135,7 @@ mutable struct AnalyzerState
     # will be used in toplevel analysis (skip inference on actually interpreted statements)
     concretized::BitVector
 
-    binding_states::AbstractBindingState # TODO Make this globally maintained?
+    binding_states::AbstractAbstractBindings # TODO Make this globally maintained?
 
     # some `AbstractAnalyzer` may want to use this
     entry::Union{Nothing,MethodInstance}
@@ -154,7 +154,7 @@ function AnalyzerState(world::UInt  = get_world_counter();
     inf_params::Union{Nothing,InferenceParams} = nothing,
     opt_params::Union{Nothing,OptimizationParams} = nothing,
     concretized::BitVector = _CONCRETIZED,
-    binding_states::AbstractBindingState = AbstractBindingState(),
+    binding_states::AbstractAbstractBindings = AbstractAbstractBindings(),
     jetconfigs...)
     isnothing(inf_params) && (inf_params = JETInferenceParams(; jetconfigs...))
     isnothing(opt_params) && (opt_params = JETOptimizationParams(; jetconfigs...))
@@ -168,7 +168,7 @@ function AnalyzerState(world::UInt  = get_world_counter();
                          #=report_stash::Vector{InferenceErrorReport}=# report_stash,
                          #=cache_target::Union{Nothing,Pair{Symbol,InferenceState}}=# nothing,
                          #=concretized::BitVector=# concretized,
-                         #=binding_states::AbstractBindingState=# binding_states,
+                         #=binding_states::AbstractAbstractBindings=# binding_states,
                          #=entry::Union{Nothing,MethodInstance}=# nothing)
 end
 
