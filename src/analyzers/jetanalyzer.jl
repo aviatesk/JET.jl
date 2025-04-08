@@ -383,6 +383,14 @@ function CC.builtin_tfunction(analyzer::JETAnalyzer,
     return ret
 end
 
+"""
+    bail_out_toplevel_call(analyzer::JETAnalyzer, ...)
+
+This overload allows JET to keep inference performed by `JETAnalyzer` going on
+non-concrete call sites in a toplevel frame created by [`virtual_process`](@ref).
+"""
+CC.bail_out_toplevel_call(::JETAnalyzer, ::InferenceState) = false
+
 # analysis
 # ========
 

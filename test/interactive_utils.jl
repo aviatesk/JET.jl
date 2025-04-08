@@ -109,14 +109,20 @@ report_file2(args...; kwargs...) = report_file(args...; toplevel_logger = nothin
 is_concrete(mod::Module, sym::Symbol) = isdefined(mod, sym) && !isa(JET.getglobal(mod, sym), AbstractGlobal)
 isa_concrete(mod::Module, sym::Symbol, @nospecialize(typ)) = is_concrete(mod, sym) && isa(JET.getglobal(mod, sym), typ)
 
-is_abstract(mod::Module, sym::Symbol) = isdefined(mod, sym) && isa(JET.getglobal(mod, sym), AbstractGlobal)
-isa_abstract(mod::Module, sym::Symbol, @nospecialize(typ)) = is_abstract(mod, sym) && (JET.getglobal(mod, sym)::AbstractGlobal).t ⊑ typ
+isconcrete(res::JET.JETToplevelResult, mod::Module, sym::Symbol) = isconcrete(res.analyzer, mod, sym)
+isconcrete(analyzer::JET.AbstractAnalyzer, mod::Module, sym::Symbol) =
+    @invokelatest(isdefinedglobal(mod, sym)) && !isabstract(analyzer, mod, sym)
+
+isabstract(res::JET.JETToplevelResult, mod::Module, sym::Symbol) = isabstract(res.analyzer, mod, sym)
+function isabstract(analyzer::JET.AbstractAnalyzer, mod::Module, sym::Symbol)
+    binding = convert(Core.Binding, GlobalRef(mod, sym))
+    return haskey(JET.get_binding_states(analyzer), binding.partitions)
+end
 
 # JET will try to concretize global variable when its type is a constant at analysis time,
 # but the starategy is a bit complicated right now and may change in the future
 # these utilities allow robust testing to check if a object is successfully analyzed by JET whichever it's concretized or abstracted
-is_analyzed(mod::Module, sym::Symbol) = isdefined(mod, sym) # essentially, `is_concrete(mod, sym) || is_abstract(mod, sym)`
-isa_analyzed(mod::Module, sym::Symbol, @nospecialize(typ)) = isa_abstract(mod, sym, typ) || isa_concrete(mod, sym, typ)
+isanalyzed(args...) = isconcrete(args...) || isabstract(args...)
 
 function is_global_undef_var(@nospecialize(r::InferenceErrorReport), mod::Module, name::Symbol)
     r isa UndefVarErrorReport || return false

@@ -504,14 +504,6 @@ function CC.abstract_eval_partition_load(analyzer::AbstractAnalyzer, binding::Co
     return res
 end
 
-"""
-    bail_out_toplevel_call(analyzer::AbstractAnalyzer, ...)
-
-This overload allows JET to keep inference performed by `AbstractAnalyzer` going on
-non-concrete call sites in a toplevel frame created by [`virtual_process`](@ref).
-"""
-CC.bail_out_toplevel_call(::AbstractAnalyzer, ::CC.InferenceLoopState, ::InferenceState) = false
-
 function CC.abstract_eval_value(analyzer::AbstractAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
     ret = @invoke CC.abstract_eval_value(analyzer::AbstractInterpreter, e::Any, vtypes::VarTable, sv::InferenceState)
 
