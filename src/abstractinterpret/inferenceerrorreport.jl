@@ -88,8 +88,10 @@ function get_file_line(linfo::MethodInstance)
     def = linfo.def
     isa(def, Method) && return def.file, Int(def.line)
     # top-level
-    src = linfo.uninferred::CodeInfo
-    return get_file_line(first(src.linetable::LineTable)::LineInfoNode)
+    # XXX this is very hacky, remove me
+    src = linfo.cache.inferred::CodeInfo
+    lin = _get_lin(linfo, src, 1)
+    return lin.file, Int(lin.line)
 end
 
 # signature

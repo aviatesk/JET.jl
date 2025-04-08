@@ -311,7 +311,7 @@ default_concretization_patterns() = (
     # concretize type aliases
     # https://github.com/aviatesk/JET.jl/issues/237
     :(const T_ = U_{P__}), :(T_ = U_{P__}),
-    )
+    :(const x_ = y_)) # TODO Remove me 0.10
 
 @nospecialize
 with_toplevel_logger(f, config::ToplevelConfig; kwargs...) =
@@ -485,9 +485,8 @@ function virtualize_module_context(actual::Module)
     unames = uex.args
     enames = exprt.args
     for n in names(actual; all = true, imported = true)
-        isdefined(sandbox, n) && continue
-        isdefined(actual, n) && push!(unames, Expr(:., n)) # an exported name can be undefined, and `using` of it will throw otherwise
-
+        @invokelatest(isdefinedglobal(sandbox, n)) && continue
+        @invokelatest(isdefinedglobal(actual, n)) && push!(unames, Expr(:., n)) # an exported name can be undefined, and `using` of it will throw otherwise
         push!(enames, n)
     end
     Core.eval(sandbox, usage)
@@ -1382,7 +1381,7 @@ function JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, fr
     return @invokelatest f(args...)
 end
 
-isinclude(@nospecialize f) = isa(f, Function) && nameof(f) === :include
+isinclude(@nospecialize f) = f isa Base.IncludeInto || (isa(f, Function) && nameof(f) === :include)
 
 function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func), args::Vector{Any})
     filename = interp.filename

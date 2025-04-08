@@ -491,7 +491,8 @@ function report_uncaught_exceptions!(analyzer::JETAnalyzer, frame::InferenceStat
     end
     throw_calls = nothing
     for (pc, stmt) in enumerate(stmts)
-        isa(stmt, Expr) || continue
+        isexpr(stmt, :call) || continue
+        isempty(stmt.args) && continue
         f = stmt.args[1]
         if f isa SSAValue
             f = stmts[f.id]
@@ -1164,7 +1165,7 @@ function report_fieldtype!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::
     return false
 end
 
-using Core.Compiler: _getfield_fieldindex, _mutability_errorcheck
+using .CC: _getfield_fieldindex, _mutability_errorcheck
 
 const MODULE_SETFIELD_MSG = "cannot assign variables in other modules"
 const DIVIDE_ERROR_MSG = sprint(showerror, DivideError())
@@ -1290,9 +1291,9 @@ JETInterface.print_report_message(io::IO, r::UnsoundBuiltinErrorReport) = print(
 
 function (::SoundPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(rt))
     if isa(f, IntrinsicFunction)
-        nothrow = Core.Compiler.intrinsic_nothrow(f, argtypes)
+        nothrow = CC.intrinsic_nothrow(f, argtypes)
     else
-        nothrow = Core.Compiler.builtin_nothrow(CC.typeinf_lattice(analyzer), f, argtypes, rt)
+        nothrow = CC.builtin_nothrow(CC.typeinf_lattice(analyzer), f, argtypes, rt)
     end
     nothrow && return false
     add_new_report!(analyzer, sv.result, UnsoundBuiltinErrorReport(sv, f, argtypes))

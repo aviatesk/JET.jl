@@ -417,7 +417,7 @@ function CC.global_assignment_rt_exct(analyzer::AbstractAnalyzer, sv::AbsIntStat
             #     so using the type information may result in incorrect results,
             #     while just Deriving defined-ness information would probably be fine
             # TODO need to represent conditional case
-            binding_states[partition] = BindingState(false)
+            get_binding_states(analyzer)[partition] = BindingState(false)
         end
         return rte
     end
