@@ -1118,7 +1118,7 @@ end
             m, res = @analyze_toplevel2 begin
                 const a = 0
             end
-            @test isconcrete(res, m, :a) && @invokelatest(@invokelatest(m.a)) == 0
+            @test isconcrete(res, m, :a) && @invokelatest(m.a) == 0
         end
 
         # try to concretize even if it's not declared as constant
@@ -2026,7 +2026,7 @@ end
             # report top-level errors and can concretize `geterr` even if the actual `err`
             # is not thrown and thus these first two test cases will pass
             @test isempty(res.res.toplevel_error_reports)
-            @test isa_concrete(vmod, :geterr, Function) && length(methods(vmod.geterr)) == 1
+            @test isconcrete(res, vmod, :geterr) && length(methods(vmod.geterr)) == 1
             # yet we still need to make `geterr` over-approximate an actual execution soundly;
             # currently JET's abstract interpretation special-cases `_INACTIVE_EXCEPTION`
             # and fix it to `Any`, and we test it here in the last test case

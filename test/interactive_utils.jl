@@ -106,9 +106,6 @@ end
 # `report_file` with silent top-level logger
 report_file2(args...; kwargs...) = report_file(args...; toplevel_logger = nothing, kwargs...)
 
-is_concrete(mod::Module, sym::Symbol) = isdefined(mod, sym) && !isa(JET.getglobal(mod, sym), AbstractGlobal)
-isa_concrete(mod::Module, sym::Symbol, @nospecialize(typ)) = is_concrete(mod, sym) && isa(JET.getglobal(mod, sym), typ)
-
 isconcrete(res::JET.JETToplevelResult, mod::Module, sym::Symbol) = isconcrete(res.analyzer, mod, sym)
 isconcrete(analyzer::JET.AbstractAnalyzer, mod::Module, sym::Symbol) =
     @invokelatest(isdefinedglobal(mod, sym)) && !isabstract(analyzer, mod, sym)
