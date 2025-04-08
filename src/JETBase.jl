@@ -210,11 +210,12 @@ const LineTable = Union{Vector{Any},Vector{LineInfoNode}}
 
 get_stmt((sv, pc)::StateAtPC) = sv.src.code[pc]
 get_lin((sv, pc)::StateAtPC) = _get_lin(sv, pc)
-# TODO optimize the allocation here for un-optimized debuginfo
-function _get_lin(sv, pc)
-    lins = CC.IRShow.buildLineInfoNode(sv.src.debuginfo, sv.linfo, pc)
+_get_lin(sv, pc) = _get_lin(sv.linfo, sv.src, pc)
+function _get_lin(mi::MethodInstance, src::CodeInfo, pc::Int)
+    # TODO optimize the allocation here for un-optimized debuginfo
+    lins = CC.IRShow.buildLineInfoNode(src.debuginfo, mi, pc)
     if isempty(lins)
-        return LineInfoNode(sv.linfo, sv.src.debuginfo.def::Symbol, sv.linfo.def.line)
+        return LineInfoNode(mi, src.debuginfo.def::Symbol, mi.def.line)
     end
     return first(lins)
 end
