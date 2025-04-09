@@ -1096,13 +1096,20 @@ end
 
 # just for testing, and debugging
 function select_statements(mod::Module, src::CodeInfo, names::Symbol...)
-    cl = LoweredCodeUtils.CodeLinks(mod, src) # make `CodeEdges` hold `CodeLinks`?
-    edges = LoweredCodeUtils.CodeEdges(src, cl)
-    concretize = falses(length(src.code))
-    objs = Set{GlobalRef}(GlobalRef(mod, name) for name in names)
-    LoweredCodeUtils.add_requests!(concretize, objs, edges, ())
-    select_dependencies!(concretize, src, edges, cl)
-    return concretize
+    idxs = findall(src.code) do @nospecialize stmt
+        return any(names) do name
+            isexpr(stmt, :call) || return false
+            f = stmt.args[1]
+            (f isa GlobalRef && f.name === :setglobal!) || return false
+            length(stmt.args) == 4 || return false
+            arg3 = stmt.args[3]
+            if arg3 isa QuoteNode
+                arg3 = arg3.value
+            end
+            return arg3 === name
+        end
+    end
+    return select_statements(mod, src, idxs...)
 end
 function select_statements(mod::Module, src::CodeInfo, slots::SlotNumber...)
     cl = LoweredCodeUtils.CodeLinks(mod, src) # make `CodeEdges` hold `CodeLinks`?

@@ -15,7 +15,7 @@ function get_reports_with_test(res::JET.AnyJETResult)
     return reports
 end
 
-const FIXTURES_DIR = normpath(@__DIR__, "fixtures")
+const FIXTURES_DIR = normpath(pkgdir(JET), "test", "fixtures")
 
 const ERROR_REPORTS_FROM_SUM_OVER_STRING = let
     result = report_call(sum, (String,))

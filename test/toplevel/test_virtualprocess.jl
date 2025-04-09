@@ -1838,18 +1838,12 @@ end
 
         found_a2 = found_a2_get_binding_type = found_x2 = found_x2_get_binding_type = false
         for (i, stmt) in enumerate(src.code)
-            if JET.isexpr(stmt, :(=))
-                lhs, rhs = stmt.args
-                if lhs isa GlobalRef
-                    lhs = lhs.name
-                end
-                if lhs === :a2
-                    found_a2 = true
-                    @test slice[i]
-                elseif lhs === :x2
-                    found_x2 = true
-                    @test !slice[i] # this is easy to meet
-                end
+            if JET.@capture(stmt, $(GlobalRef(Base, :setglobal!))(_, :a2, _))
+                found_a2 = true
+                @test slice[i]
+            elseif JET.@capture(stmt, $(GlobalRef(Base, :setglobal!))(_, :x2, _))
+                found_x2 = true
+                @test !slice[i] # this is easy to meet
             elseif JET.@capture(stmt, $(GlobalRef(Core, :get_binding_type))(_, :a2))
                 found_a2_get_binding_type = true
                 @test slice[i]
@@ -1875,21 +1869,15 @@ end
         found_cond = found_cond_get_binding_type = false
         found_x = found_x_get_binding_type = found_y = found_y_get_binding_type = 0
         for (i, stmt) in enumerate(src.code)
-            if JET.isexpr(stmt, :(=))
-                lhs, rhs = stmt.args
-                if lhs isa GlobalRef
-                    lhs = lhs.name
-                end
-                if lhs === :cond
-                    found_cond = true
-                    @test slice[i]
-                elseif lhs === :x
-                    found_x += 1
-                    @test slice[i]
-                elseif lhs === :y
-                    found_y += 1
-                    @test !slice[i]
-                end
+            if JET.@capture(stmt, $(GlobalRef(Base, :setglobal!))(_, :cond, _))
+                found_cond = true
+                @test slice[i]
+            elseif JET.@capture(stmt, $(GlobalRef(Base, :setglobal!))(_, :x, _))
+                found_x += 1
+                @test slice[i]
+            elseif JET.@capture(stmt, $(GlobalRef(Base, :setglobal!))(_, :y, _))
+                found_y += 1
+                @test !slice[i]
             elseif JET.@capture(stmt, $(GlobalRef(Core, :get_binding_type))(_, :cond))
                 found_cond_get_binding_type = true
                 @test slice[i]
@@ -2022,11 +2010,11 @@ end
             # report top-level errors and can concretize `geterr` even if the actual `err`
             # is not thrown and thus these first two test cases will pass
             @test isempty(res.res.toplevel_error_reports)
-            @test isconcrete(res, vmod, :geterr) && length(methods(vmod.geterr)) == 1
+            @test isconcrete(res, vmod, :geterr) && length(methods(@invokelatest(vmod.geterr))) == 1
             # yet we still need to make `geterr` over-approximate an actual execution soundly;
             # currently JET's abstract interpretation special-cases `_INACTIVE_EXCEPTION`
             # and fix it to `Any`, and we test it here in the last test case
-            result = report_call(vmod.geterr)
+            result = report_call(@invokelatest(vmod.geterr))
             @test MethodError ⊑ get_result(result)
         end
     end

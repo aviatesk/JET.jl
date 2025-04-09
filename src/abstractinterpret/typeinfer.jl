@@ -82,7 +82,7 @@ function CC.abstract_call_known(analyzer::AbstractAnalyzer,
     f′ = Ref{Any}(f)
     function after_call_known(analyzer′, sv′)
         ret′ = ret[]
-        analyze_task_parallel_code!(analyzer′, f′[], arginfo, sv′)
+        # analyze_task_parallel_code!(analyzer′, f′[], arginfo, sv′)
         return true
     end
     if isready(ret)
@@ -505,8 +505,8 @@ function CC.abstract_eval_partition_load(analyzer::AbstractAnalyzer, binding::Co
     return res
 end
 
-function CC.abstract_eval_value(analyzer::AbstractAnalyzer, @nospecialize(e), vtypes::VarTable, sv::InferenceState)
-    ret = @invoke CC.abstract_eval_value(analyzer::AbstractInterpreter, e::Any, vtypes::VarTable, sv::InferenceState)
+function CC.abstract_eval_value(analyzer::AbstractAnalyzer, @nospecialize(e), sstate::StatementState, sv::InferenceState)
+    ret = @invoke CC.abstract_eval_value(analyzer::AbstractInterpreter, e::Any, sstate::StatementState, sv::InferenceState)
 
     # HACK if we encounter `_INACTIVE_EXCEPTION`, it means `ConcreteInterpreter` tried to
     # concretize an exception which was not actually thrown – yet the actual error hasn't
