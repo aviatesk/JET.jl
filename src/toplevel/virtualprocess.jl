@@ -1131,6 +1131,7 @@ function select_direct_requirement!(concretize, stmts, edges)
     for (idx, stmt) in enumerate(stmts)
         if (LoweredCodeUtils.ismethod(stmt) ||    # don't abstract away method definitions
             LoweredCodeUtils.istypedef(stmt) ||   # don't abstract away type definitions
+            (isexpr(stmt, :call) && length(stmt.args) ≥ 1 && stmt.args[1] == GlobalRef(Core, :_defaultctors)) ||
             ismoduleusage(stmt) || # module usages are handled by `ConcreteInterpreter`
             isexpr(stmt, :globaldecl) ||
             isexpr(stmt, :latestworld))
@@ -1295,6 +1296,9 @@ function collect_toplevel_signature!(interp::ConcreteInterpreter, frame::Frame, 
     entrypoint = interp.config.analyze_from_definitions
     if entrypoint isa Symbol
         methname = node.args[1]
+        if methname isa GlobalRef
+            methname = methname.name
+        end
         if !(methname isa Symbol && methname === entrypoint)
             return nothing
         end
