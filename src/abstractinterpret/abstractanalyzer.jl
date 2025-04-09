@@ -225,11 +225,6 @@ Listed below are selections of those parameters that can have a potent influence
   It can lead to more accurate analysis as explained above, but also it may incur a performance cost.
   JET by default enables this configuration to get more accurate analysis result.
 ---
-- `unoptimize_throw_blocks::Bool = false` \\
-  Turn this on to skip analysis on code blocks that will eventually lead to a `throw` call.
-  This configuration improves the analysis performance, but it's better to be turned off
-  to get a "proper" analysis result, just because there may be other errors even in those "throw blocks".
----
 """
 function JETInferenceParams end
 function JETOptimizationParams end

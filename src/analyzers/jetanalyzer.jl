@@ -1334,7 +1334,6 @@ function JETAnalyzer(world::UInt = Base.get_world_counter();
     end
     jetconfigs = kwargs_dict(jetconfigs)
     set_if_missing!(jetconfigs, :aggressive_constant_propagation, true)
-    set_if_missing!(jetconfigs, :unoptimize_throw_blocks, false)
     # Enable the `assume_bindings_static` option to terminate analysis a bit earlier when
     # there are undefined bindings detected. Note that this option will cause inference
     # cache inconsistency until JuliaLang/julia#40399 is merged. But the analysis cache of
