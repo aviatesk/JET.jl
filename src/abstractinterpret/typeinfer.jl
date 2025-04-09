@@ -79,9 +79,10 @@ function CC.abstract_call_known(analyzer::AbstractAnalyzer,
     @nospecialize(f), arginfo::ArgInfo, si::StmtInfo, sv::InferenceState, max_methods::Int)
     ret = @invoke CC.abstract_call_known(analyzer::AbstractInterpreter,
         f::Any, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState, max_methods::Int)
+    f′ = Ref{Any}(f)
     function after_call_known(analyzer′, sv′)
         ret′ = ret[]
-        analyze_task_parallel_code!(analyzer′, f, arginfo, sv′)
+        analyze_task_parallel_code!(analyzer′, f′[], arginfo, sv′)
         return true
     end
     if isready(ret)

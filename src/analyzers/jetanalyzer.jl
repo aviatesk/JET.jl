@@ -199,10 +199,11 @@ function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer,
     max_methods::Int)
     ret = @invoke CC.abstract_call_gf_by_type(analyzer::AbstractAnalyzer,
         func::Any, arginfo::ArgInfo, si::StmtInfo, atype::Any, sv::InferenceState, max_methods::Int)
+    atype′ = Ref{Any}(atype)
     function after_abstract_call_gf_by_type(analyzer′, sv′)
         ret′ = ret[]
-        ReportPass(analyzer)(MethodErrorReport, analyzer, sv, ret′, arginfo.argtypes, atype)
-        ReportPass(analyzer)(UnanalyzedCallReport, analyzer, sv, ret′, atype)
+        ReportPass(analyzer)(MethodErrorReport, analyzer, sv, ret′, arginfo.argtypes, atype′[])
+        ReportPass(analyzer)(UnanalyzedCallReport, analyzer, sv, ret′, atype′[])
         return true
     end
     if isready(ret)
