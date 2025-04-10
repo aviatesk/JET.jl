@@ -240,7 +240,7 @@ function (::OptAnalysisPass)(::Type{CapturedVariableReport}, analyzer::OptAnalyz
     local reported = false
     code = frame.src.code
     for pc = 1:length(code)
-        if widenconst(frame.src.ssavaluetypes[pc]) === Core.Box
+        if CC.was_reached(frame, pc) && widenconst(ignorelimited(frame.src.ssavaluetypes[pc])) === Core.Box
             stmt = code[pc]
             if isexpr(stmt, :(=))
                 var = stmt.args[1]

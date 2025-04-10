@@ -335,4 +335,14 @@ test_opt(f_issue643_2, (Any,); broken=true) # check cached case
 # the dynamic dispatch should be reported if the method is analyzed standalone
 @test !isempty(get_reports(report_opt(_f_issue643_2, (Any,))))
 
+using JSON3
+struct PointArray
+    x::Vector{Float64}
+    y::Vector{Float64}
+    z::Vector{Float64}
+end
+let res = report_opt(JSON3.read, (String,Type{PointArray}))
+    @test true
+end
+
 end # module test_optanalyzer
