@@ -1487,7 +1487,7 @@ function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame::Frame, 
         # find an error frame that happened at `@invokelatest f(fargs...)` in the overload
         # `JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)`
         if frame.file === JET_VIRTUALPROCESS_FILE && frame.func === :evaluate_call_recurse!
-            i = j - 4 # offset: `evaluate_call_recurse` -> kwfunc (`evaluate_call_recurse`) -> `invokelatest` -> kwfunc (`invokelatest`)
+            i = j - 2 # offset: `evaluate_call_recurse` -> kwfunc (`evaluate_call_recurse`)
             break
         end
 
