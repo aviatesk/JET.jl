@@ -447,9 +447,8 @@ end
     end
 
     # macro expansions with access to global variables will fail
-    let
-        vmod, res = @analyze_toplevel2 begin
-            const arg = rand(Bool)
+    let (vmod, res) = @analyze_toplevel2 begin
+            const arg = rand((false,false,false,))
 
             macro foo(ex)
                 @assert Meta.isexpr(ex, :call)
@@ -462,9 +461,10 @@ end
 
         @test_broken isabstract(res, vmod, :arg)
         @test isconcrete(res, vmod, Symbol("@foo"))
-        # let r = only(res.res.toplevel_error_reports)
-        #     @test isa(r, MissingConcretization) # this error should be considered as missing concretization
-        # end
+        @test_broken length(res.res.toplevel_error_reports) == 1 && let
+            r = only(res.res.toplevel_error_reports)
+            @test isa(r, MissingConcretization) # this error should be considered as missing concretization
+        end
         @test isempty(res.res.inference_error_reports)
     end
 
