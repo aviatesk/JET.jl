@@ -82,7 +82,7 @@ function CC.abstract_call_known(analyzer::AbstractAnalyzer,
     f′ = Ref{Any}(f)
     function after_call_known(analyzer′, sv′)
         ret′ = ret[]
-        # analyze_task_parallel_code!(analyzer′, f′[], arginfo, sv′)
+        analyze_task_parallel_code!(analyzer′, f′[], arginfo, sv′)
         return true
     end
     if isready(ret)
