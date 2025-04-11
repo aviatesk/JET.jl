@@ -95,8 +95,8 @@ function generate_api_doc(examples_pages)
         interface_docs = let
             objs = getfield.(Ref(JET.JETInterface), JET.JETInterface.DOCUMENTED_NAMES)
             map(objs) do @nospecialize obj
-                if obj === JET.AnalysisCache
-                    return "JET.AnalysisCache(::JET.AbstractAnalyzer)"
+                if obj === JET.AnalysisToken
+                    return "JET.AnalysisToken(::JET.AbstractAnalyzer)"
                 elseif obj === JET.InferenceErrorReport
                     return "JET.InferenceErrorReport()"
                 else

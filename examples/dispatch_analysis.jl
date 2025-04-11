@@ -56,16 +56,16 @@ using JET: JET
 
 struct DispatchAnalyzer{T} <: AbstractAnalyzer
     state::AnalyzerState
-    analysis_cache::AnalysisCache
+    analysis_token::AnalysisToken
     opts::BitVector
     frame_filter::T # a predicate, which takes `CC.InfernceState` and returns whether we want to analyze the call or not
 end
 
 ## AbstractAnalyzer API requirements
 JETInterface.AnalyzerState(analyzer::DispatchAnalyzer) = analyzer.state
-JETInterface.AbstractAnalyzer(analyzer::DispatchAnalyzer, state::AnalyzerState) = DispatchAnalyzer(state, analyzer.analysis_cache, analyzer.opts, analyzer.frame_filter)
+JETInterface.AbstractAnalyzer(analyzer::DispatchAnalyzer, state::AnalyzerState) = DispatchAnalyzer(state, analyzer.analysis_token, analyzer.opts, analyzer.frame_filter)
 JETInterface.ReportPass(analyzer::DispatchAnalyzer) = DispatchAnalysisPass()
-JETInterface.AnalysisCache(analyzer::DispatchAnalyzer) = analyzer.analysis_cache
+JETInterface.AnalysisToken(analyzer::DispatchAnalyzer) = analyzer.analysis_token
 
 struct DispatchAnalysisPass <: ReportPass end
 
@@ -129,14 +129,16 @@ end
 
 using InteractiveUtils # to use `gen_call_with_extracted_types_and_kwargs`
 
+const global_analysis_token = AnalysisToken()
+
 ## the constructor for creating a new configured `DispatchAnalyzer` instance
 function DispatchAnalyzer(world::UInt = Base.get_world_counter();
+    analysis_token::AnalysisToken = global_analysis_token,
     frame_filter = x::Core.MethodInstance->true,
     jetconfigs...)
     state = AnalyzerState(world; jetconfigs...)
     ## just for the sake of simplicity, create a fresh code cache for each `DispatchAnalyzer` instance (i.e. don't globalize the cache)
-    analysis_cache = AnalysisCache()
-    return DispatchAnalyzer(state, analysis_cache, BitVector(), frame_filter)
+    return DispatchAnalyzer(state, analysis_token, BitVector(), frame_filter)
 end
 function report_dispatch(args...; jetconfigs...)
     @nospecialize args jetconfigs

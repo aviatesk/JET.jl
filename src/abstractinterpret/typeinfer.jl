@@ -185,7 +185,7 @@ end
 # global
 # ------
 
-CC.cache_owner(analyzer::AbstractAnalyzer) = AnalysisCache(analyzer)
+CC.cache_owner(analyzer::AbstractAnalyzer) = AnalysisToken(analyzer)
 
 function CC.code_cache(analyzer::AbstractAnalyzer)
     view = AbstractAnalyzerView(analyzer)
@@ -193,9 +193,10 @@ function CC.code_cache(analyzer::AbstractAnalyzer)
     return WorldView(view, worlds)
 end
 
-AnalysisCache(wvc::WorldView{<:AbstractAnalyzerView}) = AnalysisCache(wvc.cache.analyzer)
+to_internal_code_cache_view(wvc::WorldView{<:AbstractAnalyzerView}) =
+    WorldView(CC.InternalCodeCache(CC.cache_owner(wvc.cache.analyzer)), wvc.worlds)
 
-CC.haskey(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance) = haskey(AnalysisCache(wvc), mi)
+CC.haskey(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance) = haskey(to_internal_code_cache_view(wvc), mi)
 
 function CC.typeinf_edge(analyzer::AbstractAnalyzer, method::Method, @nospecialize(atype), sparams::SimpleVector, caller::InferenceState,
                          edgecycle::Bool, edgelimited::Bool)
@@ -207,7 +208,7 @@ function CC.typeinf_edge(analyzer::AbstractAnalyzer, method::Method, @nospeciali
 end
 
 function CC.get(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance, default)
-    codeinst = get(AnalysisCache(wvc), mi, default) # will ignore native code cache for a `MethodInstance` that is not analyzed by JET yet
+    codeinst = get(to_internal_code_cache_view(wvc), mi, default)
 
     analyzer = wvc.cache.analyzer
 
@@ -244,7 +245,7 @@ function CC.getindex(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance)
 end
 
 function CC.setindex!(wvc::WorldView{<:AbstractAnalyzerView}, codeinst::CodeInstance, mi::MethodInstance)
-    return AnalysisCache(wvc)[mi] = codeinst
+    return to_internal_code_cache_view(wvc)[mi] = codeinst
 end
 
 # local

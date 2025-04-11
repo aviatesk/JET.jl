@@ -52,21 +52,21 @@ that are specific to the error analysis.
 """
 struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
     state::AnalyzerState
-    analysis_cache::AnalysisCache
+    analysis_token::AnalysisToken
     report_pass::RP
     method_table::CachedMethodTable{OverlayMethodTable}
     config::JETAnalyzerConfig
 
-    function JETAnalyzer(state::AnalyzerState, analysis_cache::AnalysisCache, report_pass::RP,
+    function JETAnalyzer(state::AnalyzerState, analysis_token::AnalysisToken, report_pass::RP,
                          config::JETAnalyzerConfig) where RP<:ReportPass
         method_table = CachedMethodTable(OverlayMethodTable(state.world, JET_METHOD_TABLE))
-        return new{RP}(state, analysis_cache, report_pass, method_table, config)
+        return new{RP}(state, analysis_token, report_pass, method_table, config)
     end
     function JETAnalyzer(state::AnalyzerState, report_pass::ReportPass,
                          config::JETAnalyzerConfig)
         cache_key = compute_hash(state.inf_params, report_pass, config)
-        analysis_cache = get!(AnalysisCache, JET_ANALYZER_CACHE, cache_key)
-        return JETAnalyzer(state, analysis_cache, report_pass, config)
+        analysis_token = get!(AnalysisToken, JET_ANALYZER_CACHE, cache_key)
+        return JETAnalyzer(state, analysis_token, report_pass, config)
     end
 end
 
@@ -106,9 +106,9 @@ function JETInterface.AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerSta
     return JETAnalyzer(state, ReportPass(analyzer), JETAnalyzerConfig(analyzer))
 end
 JETInterface.ReportPass(analyzer::JETAnalyzer) = analyzer.report_pass
-JETInterface.AnalysisCache(analyzer::JETAnalyzer) = analyzer.analysis_cache
+JETInterface.AnalysisToken(analyzer::JETAnalyzer) = analyzer.analysis_token
 
-const JET_ANALYZER_CACHE = IdDict{UInt, AnalysisCache}()
+const JET_ANALYZER_CACHE = IdDict{UInt, AnalysisToken}()
 
 JETAnalyzerConfig(analyzer::JETAnalyzer) = analyzer.config
 

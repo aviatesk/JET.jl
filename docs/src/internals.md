@@ -21,7 +21,7 @@ passing `AbstractAnalyzer` to the subsequent (maybe overloaded) callees.
 ```@docs
 JET.AnalysisResult
 JET.CachedAnalysisResult
-JET.AnalysisCache
+JET.AnalysisToken
 ```
 
 ## [Top-level Analysis](@id toplevel)

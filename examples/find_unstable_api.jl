@@ -41,16 +41,16 @@ const CC = Core.Compiler # to inject a customized report pass
 
 struct UnstableAPIAnalyzer{T} <: AbstractAnalyzer
     state::AnalyzerState
-    analysis_cache::AnalysisCache
+    analysis_token::AnalysisToken
     is_target_module::T
 end
 JETInterface.AnalyzerState(analyzer::UnstableAPIAnalyzer) = analyzer.state
 JETInterface.AbstractAnalyzer(analyzer::UnstableAPIAnalyzer, state::AnalyzerState) =
     UnstableAPIAnalyzer(state, analyzer.is_target_module)
 JETInterface.ReportPass(analyzer::UnstableAPIAnalyzer) = UnstableAPIAnalysisPass()
-JETInterface.AnalysisCache(analyzer::UnstableAPIAnalyzer) = analyzer.analysis_cache
+JETInterface.AnalysisToken(analyzer::UnstableAPIAnalyzer) = analyzer.analysis_token
 
-const UNSTABLE_API_ANALYZER_CACHE = IdDict{UInt, AnalysisCache}()
+const UNSTABLE_API_ANALYZER_CACHE = IdDict{UInt, AnalysisToken}()
 
 # Next, we overload some of `Core.Compiler`'s [abstract interpretation](@ref abstractinterpret) methods,
 # and inject a customized analysis pass (here we gonna name it `UnstableAPIAnalysisPass`).
@@ -188,8 +188,8 @@ function UnstableAPIAnalyzer(world::UInt = Base.get_world_counter();
     state = AnalyzerState(world; jetconfigs...)
     ## use a globalized code cache (, which is separated by `InferenceParams` configurations)
     cache_key = JET.compute_hash(state.inf_params)
-    analysis_cache = get!(AnalysisCache, UNSTABLE_API_ANALYZER_CACHE, cache_key)
-    return UnstableAPIAnalyzer(state, analysis_cache, is_target_module)
+    analysis_token = get!(AnalysisToken, UNSTABLE_API_ANALYZER_CACHE, cache_key)
+    return UnstableAPIAnalyzer(state, analysis_token, is_target_module)
 end
 function report_unstable_api(args...; jetconfigs...)
     @nospecialize args jetconfigs
