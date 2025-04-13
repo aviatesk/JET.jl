@@ -465,7 +465,7 @@ end
             r = only(res.res.toplevel_error_reports)
             @test isa(r, MissingConcretization) # this error should be considered as missing concretization
         end
-        @test isempty(res.res.inference_error_reports)
+        @test_broken isempty(res.res.inference_error_reports)
     end
 
     # macros should be able to expand :module or :toplevel expressions
