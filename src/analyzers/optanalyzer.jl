@@ -120,8 +120,8 @@ that are specific to the optimization analysis.
   program uses a function that is intentionally designed to use runtime dispatch.
 
   ```julia-repl
-  # ignore `Core.Compiler.widenconst` calls (since it's designed to be runtime-dispatched):
-  julia> function_filter(@nospecialize f) = f !== Core.Compiler.widenconst;
+  # ignore `$CC.widenconst` calls (since it's designed to be runtime-dispatched):
+  julia> function_filter(@nospecialize f) = f !== $CC.widenconst;
 
   julia> @test_opt function_filter=function_filter f(args...)
   ...

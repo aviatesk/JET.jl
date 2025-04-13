@@ -46,13 +46,12 @@
 # to [`:invoke`](https://docs.julialang.org/en/v1/devdocs/ast/#Expr-types) expressions, that
 # represent staticall resolved generic function calls).
 #
-# We will define `DispatchAnalyzer <: AbstractAnalyzer`, and overload some of `Core.Compiler` methods with it:
-# - `Core.Compiler.finish(frame::CC.InferenceState, analyzer::DispatchAnalyzer)` to check if optimization will happen or not (the case 1.)
-# - `Core.Compiler.finish!(analyzer::DispatchAnalyzer, caller::CC.InferenceResult)` to inspect an optimized IR (the case 2.)
+# We will define `DispatchAnalyzer <: AbstractAnalyzer`, and overload some of `Base.Compiler` methods with it:
+# - `CC.finish(frame::CC.InferenceState, analyzer::DispatchAnalyzer)` to check if optimization will happen or not (the case 1.)
+# - `CC.finish!(analyzer::DispatchAnalyzer, caller::CC.InferenceResult)` to inspect an optimized IR (the case 2.)
 
 using JET.JETInterface
-const CC = Core.Compiler
-using JET: JET
+using JET: JET, CC
 
 struct DispatchAnalyzer{T} <: AbstractAnalyzer
     state::AnalyzerState

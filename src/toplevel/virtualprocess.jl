@@ -1196,7 +1196,7 @@ function is_known_getproperty(@nospecialize(stmt), func::Symbol, stmts::Vector{A
     end
     if (callee_matches(f, Base, :getproperty) ||
         callee_matches(f, Core, :getproperty) ||
-        callee_matches(f, Core.Compiler, :getproperty))
+        callee_matches(f, CC, :getproperty))
         if is_quotenode_egal(stmt.args[3], func)
             return true
         end
@@ -1243,7 +1243,7 @@ end
 # Julia's intermediate code representation.
 function select_dependencies!(concretize::BitVector, src::CodeInfo, edges, cl)
     typedefs = LoweredCodeUtils.find_typedefs(src)
-    # TODO Update LoweredCodeUtils to use `Compiler` instead of `Core.Compiler`
+    # TODO Update LoweredCodeUtils to use `Compiler` instead of `CC`
     cfg = Core.Compiler.compute_basic_blocks(src.code)
     postdomtree = Core.Compiler.construct_postdomtree(cfg.blocks)
 

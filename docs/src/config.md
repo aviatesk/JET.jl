@@ -38,8 +38,8 @@ JET.ToplevelConfig
 
 ```@docs
 JET.JETInferenceParams
-Core.Compiler.InferenceParams
-Core.Compiler.OptimizationParams
+JET.CC.InferenceParams
+JET.CC.OptimizationParams
 ```
 
 ## [Print Configurations](@id print-config)

@@ -34,7 +34,7 @@
 
 using JET
 using JET.JETInterface   # to load APIs of the pluggable analysis framework
-const CC = Core.Compiler # to inject a customized report pass
+using JET: CC            # to inject a customized report pass
 
 # First off, we define `UnstableAPIAnalyzer`, which is a new [`AbstractAnalyzer`](@ref) and will
 # implement the customized report pass
@@ -52,13 +52,13 @@ JETInterface.AnalysisToken(analyzer::UnstableAPIAnalyzer) = analyzer.analysis_to
 
 const UNSTABLE_API_ANALYZER_CACHE = IdDict{UInt, AnalysisToken}()
 
-# Next, we overload some of `Core.Compiler`'s [abstract interpretation](@ref abstractinterpret) methods,
+# Next, we overload some of `Base.Compiler`'s [abstract interpretation](@ref abstractinterpret) methods,
 # and inject a customized analysis pass (here we gonna name it `UnstableAPIAnalysisPass`).
 # In this analysis, we are interested in whether a binding that appears in a target code is
 # an "unstable API" or not, and we can simply check if each abstract element appeared during
 # abstract interpretation meets our criteria of "unstable API".
-# For that purpose, it's suffice to overload `Core.Compiler.abstract_eval_special_value`
-# and `Core.Compiler.builtin_tfunction`.
+# For that purpose, it's suffice to overload `CC.abstract_eval_special_value`
+# and `CC.builtin_tfunction`.
 # To inject a report pass, we use [`ReportPass(::AbstractAnalyzer)`](@ref) interface.
 
 struct UnstableAPIAnalysisPass <: ReportPass end
@@ -222,7 +222,7 @@ end
 using Base: hasgenerator
 report_unstable_api((Any,)) do mi
     ## NOTE every function call appearing here is unstable
-    ci = hasgenerator(mi) ? Core.Compiler.get_staged(mi) : Base.uncompressed_ast(mi)
+    ci = hasgenerator(mi) ? CC.get_staged(mi) : Base.uncompressed_ast(mi)
 end
 
 # ### Analyze a real-world package

@@ -98,7 +98,7 @@ end
 
 Adds special cased analysis pass for task parallelism.
 In Julia's task parallelism implementation, parallel code is represented as closure and it's
-wrapped in a `Task` object. `Core.Compiler.NativeInterpreter` doesn't infer nor optimize the
+wrapped in a `Task` object. `$CC.NativeInterpreter` doesn't infer nor optimize the
 bodies of those closures when compiling code that creates parallel tasks, but JET will try
 to run additional analysis pass by recurring into the closures.
 
@@ -156,7 +156,7 @@ function analyze_additional_pass_by_type!(analyzer::AbstractAnalyzer, @nospecial
     return nothing
 end
 
-# `return_type_tfunc` internally uses `abstract_call` to model `Core.Compiler.return_type`
+# `return_type_tfunc` internally uses `abstract_call` to model `$CC.return_type`
 # and here we should NOT catch error reports detected within the virtualized call
 # because it is not abstraction of actual execution
 function CC.return_type_tfunc(analyzer::AbstractAnalyzer, argtypes::Argtypes, si::StmtInfo, sv::InferenceState)

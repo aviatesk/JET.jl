@@ -232,7 +232,7 @@ function CC.from_interprocedural!(analyzer::JETAnalyzer,
 end
 
 """
-    Core.Compiler.bail_out_call(analyzer::JETAnalyzer, ...)
+    $CC.bail_out_call(analyzer::JETAnalyzer, ...)
 
 This overload makes call inference performed by `JETAnalyzer` not bail out even when
 inferred return type grows up to `Any` to collect as much error reports as possible.
@@ -1001,7 +1001,7 @@ end
     AbstractBuiltinErrorReport
 
 Represents errors caused by builtin-function calls.
-Technically they're defined as those error points that can be caught within `Core.Compiler.builtin_tfunction`.
+Technically they're defined as those error points that can be caught within `$CC.builtin_tfunction`.
 """
 abstract type AbstractBuiltinErrorReport <: InferenceErrorReport end
 

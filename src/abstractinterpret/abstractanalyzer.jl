@@ -74,7 +74,7 @@ Cached version of [`AnalysisResult`](@ref) stored in the global analyzer cache.
 
 When an [`AnalysisResult`](@ref) is cached into the global cache maintained by
 `AbstractAnalyzer`, it's transformed into this type. That is, when
-`codeinf::CodeInstance = Core.Compiler.code_cache(analyzer::AbstractAnalyzer)[mi::MethodInstance]`,
+`codeinf::CodeInstance = $CC.code_cache(analyzer::AbstractAnalyzer)[mi::MethodInstance]`,
 the `codeinf.inferred` field will contain a `CachedAnalysisResult` instance.
 """
 struct CachedAnalysisResult
@@ -184,8 +184,8 @@ const _CONCRETIZED  = BitVector()
 Configurations for abstract interpretation performed by JET.
 These configurations will be active for all the entries.
 
-You can configure any of the keyword parameters that [`Core.Compiler.InferenceParams`](@ref)
-or [`Core.Compiler.OptimizationParams`](@ref) can take, e.g. `max_methods`:
+You can configure any of the keyword parameters that [`$CC.InferenceParams`](@ref)
+or [`$CC.OptimizationParams`](@ref) can take, e.g. `max_methods`:
 ```julia
 julia> methods(==, (Any,Nothing))
 # 3 methods for generic function "==" from Base:
@@ -214,7 +214,7 @@ julia> report_call((Any,); max_methods=1) do x
 No errors detected
 ```
 
-See also [`Core.Compiler.InferenceParams`](@ref) and [`Core.Compiler.OptimizationParams`](@ref).
+See also [`$CC.InferenceParams`](@ref) and [`$CC.OptimizationParams`](@ref).
 
 Listed below are selections of those parameters that can have a potent influence on JET analysis.
 

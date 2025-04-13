@@ -5,7 +5,7 @@ using JET
 let target_modules = (JET,)
     JETAnalyzerT   = typeof(JET.JETAnalyzer())
     OptAnalyzerT   = typeof(JET.OptAnalyzer())
-    InferenceState = Core.Compiler.InferenceState
+    InferenceState = JET.CC.InferenceState
 
     # error analysis
     # ==============

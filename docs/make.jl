@@ -141,7 +141,7 @@ end
 let
     DocMeta.setdocmeta!(JET, :DocTestSetup, :(using JET); recursive=true)
     examples = generate_example_docs!()
-    makedocs(; modules = [JET, Core.Compiler],
+    makedocs(; modules = [JET, JET.CC],
                sitename = "JET.jl",
                pages = Any[
                     "README" => generate_index!(),
