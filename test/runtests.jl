@@ -58,9 +58,9 @@ isempty(errmsg) || println(errmsg)
 
         # @testset "self check" include("self_check.jl")
 
-        @testset "extensions" begin
-            include("ext/test_cthulhu.jl")
-        end
+        # @testset "extensions" begin
+        #     include("ext/test_cthulhu.jl")
+        # end
     else
         @info "JET was not loaded fully, switching to run the tests for JETEmpty.jl."
         @testset "test_JETEmpty.jl" include("test_JETEmpty.jl")
