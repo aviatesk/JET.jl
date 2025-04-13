@@ -11,8 +11,6 @@ end
 
 Base.Experimental.@optlevel 1
 
-const CC = Base.Compiler
-
 # usings
 # ======
 
@@ -90,7 +88,7 @@ __init__() = foreach(@nospecialize(f)->f(), INIT_HOOKS)
 # compat
 # ------
 
-using Base.IRShow: LineInfoNode
+using .CC.IRShow: LineInfoNode
 using .CC: ConstCallResult
 # push_inithook!() do # FIXME with TODO use Compiler.jl stdlib
 #     @eval InteractiveUtils.@activate Compiler
