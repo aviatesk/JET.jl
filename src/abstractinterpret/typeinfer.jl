@@ -412,8 +412,9 @@ function CC.global_assignment_rt_exct(analyzer::AbstractAnalyzer, sv::AbsIntStat
     end
     istoplevel = istoplevelframe(sv)
     ⊔ = CC.join(typeinf_lattice(analyzer))
+    newty′ = Ref{Any}(newty)
     (valid_worlds, ret) = CC.scan_partitions(analyzer, g, sv.world) do analyzer::AbstractAnalyzer, binding::Core.Binding, partition::Core.BindingPartition
-        rte = CC.global_assignment_binding_rt_exct(analyzer, partition, newty)
+        rte = CC.global_assignment_binding_rt_exct(analyzer, partition, newty′[])
         if istoplevel
             # XXX `binding_states` tracks the binding types that are known at top-level only,
             #     so using the type information may result in incorrect results,
@@ -467,6 +468,7 @@ function const_assignment_rt_exct(analyzer::AbstractAnalyzer, sv::AbsIntState, s
         return Pair{Any,Any}(Nothing, ErrorException)
     end
     ⊔ = CC.join(CC.typeinf_lattice(analyzer))
+    new_binding_typ′ = Ref{Any}(new_binding_typ)
     (valid_worlds, ret) = CC.scan_partitions(analyzer, gr, sv.world) do analyzer::AbstractAnalyzer, binding::Core.Binding, partition::Core.BindingPartition
         rte = const_assignment_binding_rt_exct(analyzer, partition)
         rt, exct = rte
@@ -474,7 +476,7 @@ function const_assignment_rt_exct(analyzer::AbstractAnalyzer, sv::AbsIntState, s
             # `:const` assignment destructively overrides the binding type
             # TODO need to represent conditional case
             binding_states = get_binding_states(analyzer)
-            binding_states[partition] = AbstractBindingState(false, new_binding_typ)
+            binding_states[partition] = AbstractBindingState(false, new_binding_typ′[])
         end
         return rte
     end
