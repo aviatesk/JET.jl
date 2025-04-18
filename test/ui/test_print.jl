@@ -39,7 +39,7 @@ end
 @testset "print inference errors" begin
     let #=== LINE SENSITIVITY START ===#
         res = @analyze_toplevel begin
-            s = "julia"
+            global s::String = "julia"
             sum(s)
         end
 

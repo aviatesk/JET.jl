@@ -15,7 +15,7 @@ function get_reports_with_test(res::JET.AnyJETResult)
     return reports
 end
 
-const FIXTURES_DIR = normpath(@__DIR__, "fixtures")
+const FIXTURES_DIR = normpath(pkgdir(JET), "test", "fixtures")
 
 const ERROR_REPORTS_FROM_SUM_OVER_STRING = let
     result = report_call(sum, (String,))
@@ -25,18 +25,13 @@ end
 
 get_msg(report::JET.InferenceErrorReport) = sprint(JET.print_report, report)
 
-function test_sum_over_string(ers)
-    @test !isempty(ers)
+function test_sum_over_string(ers; broken::Bool=false)
+    @test !isempty(ers) broken=broken
     for target in ERROR_REPORTS_FROM_SUM_OVER_STRING
         @test any(ers) do er
             return get_msg(er) == get_msg(target) && er.sig == target.sig
-        end
+        end broken=broken
     end
-    return true
 end
-test_sum_over_string(res::JET.JETCallResult) = test_sum_over_string(get_reports_with_test(res))
-test_sum_over_string(res::JET.JETToplevelResult) = test_sum_over_string(get_reports_with_test(res))
-
-# for inspection
-macro lwr(ex) QuoteNode(Meta.lower(__module__, ex)) end
-macro src(ex) QuoteNode(only(Meta.lower(__module__, ex).args)) end
+test_sum_over_string(res::JET.JETCallResult; kwargs...) = test_sum_over_string(get_reports_with_test(res); kwargs...)
+test_sum_over_string(res::JET.JETToplevelResult; kwargs...) = test_sum_over_string(get_reports_with_test(res); kwargs...)

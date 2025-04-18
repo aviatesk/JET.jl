@@ -7,25 +7,25 @@
 An interface type of analyzers that are built on top of [JET's analyzer framework](@ref AbstractAnalyzer-Framework).
 
 When a new type `NewAnalyzer` implements the `AbstractAnalyzer` interface, it should be declared
-as subtype of `AbstractAnalyzer`, and is expected to the following interfaces:
+as subtype of `AbstractAnalyzer`, and is expected to implement the following interfaces:
 
----
-1. `JETInterface.AnalyzerState(analyzer::NewAnalyzer) -> AnalyzerState`: \\
+## Required interfaces
+
+1. **`JETInterface.AnalyzerState(analyzer::NewAnalyzer) -> AnalyzerState`**:
    Returns the [`AnalyzerState`](@ref) for `analyzer::NewAnalyzer`.
----
-2. `JETInterface.AbstractAnalyzer(analyzer::NewAnalyzer, state::AnalyzerState) -> NewAnalyzer`: \\
-   Constructs an new `NewAnalyzer` instance in the middle of JET's [top-level analysis](@ref toplevel)
+
+2. **`JETInterface.AbstractAnalyzer(analyzer::NewAnalyzer, state::AnalyzerState) -> NewAnalyzer`**:
+   Constructs a new `NewAnalyzer` instance in the middle of JET's [top-level analysis](@ref toplevel)
    or [abstract interpretation](@ref abstractinterpret), given the previous
    `analyzer::NewAnalyzer` and [`state::AnalyzerState`](@ref AnalyzerState).
----
-3. `JETInterface.ReportPass(analyzer::NewAnalyzer) -> ReportPass`: \\
-   Returns [`ReportPass`](@ref) used for `analyzer::NewAnalyzer`.
----
-4. `JETInterface.AnalysisCache(analyzer::NewAnalyzer) -> analysis_cache::AnalysisCache`: \\
-   Returns code cache used for `analyzer::NewAnalyzer`.
----
 
-See also [`AnalyzerState`](@ref), [`ReportPass`](@ref) and [`AnalysisCache`](@ref).
+3. **`JETInterface.ReportPass(analyzer::NewAnalyzer) -> ReportPass`**:
+   Returns [`ReportPass`](@ref) used for `analyzer::NewAnalyzer`.
+
+4. **`JETInterface.AnalysisToken(analyzer::NewAnalyzer) -> AnalysisToken`**:
+   Returns a unique `AnalysisToken` object used for `analyzer::NewAnalyzer`.
+
+See also [`AnalyzerState`](@ref), [`ReportPass`](@ref) and [`AnalysisToken`](@ref).
 
 # Example
 
@@ -35,7 +35,6 @@ JET.jl defines its default error analyzer `JETAnalyzer <: AbstractAnalyzer` as t
 # the default error analyzer for JET.jl
 struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
     state::AnalyzerState
-    analysis_cache::AnalysisCache
     report_pass::RP
 end
 
@@ -43,7 +42,9 @@ end
 JETInterface.AnalyzerState(analyzer::JETAnalyzer) = analyzer.state
 JETInterface.AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerState) = JETAnalyzer(ReportPass(analyzer), state)
 JETInterface.ReportPass(analyzer::JETAnalyzer) = analyzer.report_pass
-JETInterface.AnalysisCache(analyzer::JETAnalyzer) = analyzer.analysis_cache
+let global_analysis_token = AnalysisToken()
+    JETInterface.AnalysisToken(analyzer::JETAnalyzer) = global_analysis_token
+end
 ```
 """
 abstract type AbstractAnalyzer <: AbstractInterpreter end
@@ -55,29 +56,38 @@ abstract type AbstractAnalyzer <: AbstractInterpreter end
 """
     AnalysisResult
 
-[`analyzer::AbstractAnalyzer`](@ref AbstractAnalyzer) manages [`InferenceErrorReport`](@ref)
-by associating it with `InferenceResult`.
-`InferenceErrorReport`s found within the currently-analyzed `result::InferenceResult` can be
-accessed using `get_reports(analyzer, result)`.
+Container for error reports collected during analysis of a specific `InferenceResult`.
+
+[`AbstractAnalyzer`](@ref) manages [`InferenceErrorReport`](@ref) instances by
+associating them with their corresponding `InferenceResult`. Reports found
+during the analysis of `result::InferenceResult` can be accessed via
+`get_reports(analyzer, result)`.
 """
 struct AnalysisResult
     reports::Vector{InferenceErrorReport}
 end
 
-# TODO use `(result::InferenceResult).analysis_results` to cache JET analysis result
-#      when updating to v1.11.
-
 """
     CachedAnalysisResult
 
-[`AnalysisResult`](@ref AnalysisResult) is transformed into `CachedAnalysisResult` when it is cached into
-a global cache maintained by `AbstractAnalyzer`. That means,
-`codeinf::CodeInstance = Core.Compiler.code_cache(analyzer::AbstractAnalyzer)[mi::MethodInstance])`
-is expected to have its field `codeinf.inferred::CachedAnalysisResult`.
+Cached version of [`AnalysisResult`](@ref) stored in the global analyzer cache.
+
+When an [`AnalysisResult`](@ref) is cached into the global cache maintained by
+`AbstractAnalyzer`, it's transformed into this type. That is, when
+`codeinf::CodeInstance = $CC.code_cache(analyzer::AbstractAnalyzer)[mi::MethodInstance]`,
+the `codeinf.inferred` field will contain a `CachedAnalysisResult` instance.
 """
 struct CachedAnalysisResult
     reports::Vector{InferenceErrorReport}
 end
+
+struct AbstractBindingState
+    undef::Bool
+    typ
+    AbstractBindingState(undef::Bool, @nospecialize typ) = new(undef, typ)
+    AbstractBindingState(undef::Bool) = new(undef)
+end
+const AbstractAbstractBindings = IdDict{Core.BindingPartition,AbstractBindingState}
 
 """
     mutable struct AnalyzerState
@@ -130,19 +140,10 @@ mutable struct AnalyzerState
     # will be used in toplevel analysis (skip inference on actually interpreted statements)
     concretized::BitVector
 
-    # virtual toplevel module
-    toplevelmod::Module
+    binding_states::AbstractAbstractBindings # TODO Make this globally maintained?
 
-    # slots to represent toplevel global variables
-    global_slots::Dict{Int,Symbol}
-
-    # some `AbstractAnalyzer` may want to use this inforamion
+    # some `AbstractAnalyzer` may want to use this
     entry::Union{Nothing,MethodInstance}
-
-    ## debug ##
-
-    # records depth of call stack
-    depth::Int
 end
 
 # define shortcut getter/setter methods for `AbstractAnalyzer`s
@@ -158,9 +159,7 @@ function AnalyzerState(world::UInt  = get_world_counter();
     inf_params::Union{Nothing,InferenceParams} = nothing,
     opt_params::Union{Nothing,OptimizationParams} = nothing,
     concretized::BitVector = _CONCRETIZED,
-    toplevelmod::Module = _TOPLEVELMOD,
-    global_slots::Dict{Int,Symbol} = _GLOBAL_SLOTS,
-    depth::Int = 0,
+    binding_states::AbstractAbstractBindings = AbstractAbstractBindings(),
     jetconfigs...)
     isnothing(inf_params) && (inf_params = JETInferenceParams(; jetconfigs...))
     isnothing(opt_params) && (opt_params = JETOptimizationParams(; jetconfigs...))
@@ -174,24 +173,19 @@ function AnalyzerState(world::UInt  = get_world_counter();
                          #=report_stash::Vector{InferenceErrorReport}=# report_stash,
                          #=cache_target::Union{Nothing,Pair{Symbol,InferenceState}}=# nothing,
                          #=concretized::BitVector=# concretized,
-                         #=toplevelmod::Module=# toplevelmod,
-                         #=global_slots::Dict{Int,Symbol}=# global_slots,
-                         #=entry::Union{Nothing,MethodInstance}=# nothing,
-                         #=depth::Int=# depth)
+                         #=binding_states::AbstractAbstractBindings=# binding_states,
+                         #=entry::Union{Nothing,MethodInstance}=# nothing)
 end
 
 # dummies for non-toplevel analysis
-module __toplevelmod__ end
 const _CONCRETIZED  = BitVector()
-const _TOPLEVELMOD  = __toplevelmod__
-const _GLOBAL_SLOTS = Dict{Int,Symbol}()
 
 """
 Configurations for abstract interpretation performed by JET.
 These configurations will be active for all the entries.
 
-You can configure any of the keyword parameters that [`Core.Compiler.InferenceParams`](@ref)
-or [`Core.Compiler.OptimizationParams`](@ref) can take, e.g. `max_methods`:
+You can configure any of the keyword parameters that [`$CC.InferenceParams`](@ref)
+or [`$CC.OptimizationParams`](@ref) can take, e.g. `max_methods`:
 ```julia
 julia> methods(==, (Any,Nothing))
 # 3 methods for generic function "==" from Base:
@@ -220,7 +214,7 @@ julia> report_call((Any,); max_methods=1) do x
 No errors detected
 ```
 
-See also [`Core.Compiler.InferenceParams`](@ref) and [`Core.Compiler.OptimizationParams`](@ref).
+See also [`$CC.InferenceParams`](@ref) and [`$CC.OptimizationParams`](@ref).
 
 Listed below are selections of those parameters that can have a potent influence on JET analysis.
 
@@ -235,11 +229,6 @@ Listed below are selections of those parameters that can have a potent influence
   If `true`, JET will try to do constant propagation more "aggressively".
   It can lead to more accurate analysis as explained above, but also it may incur a performance cost.
   JET by default enables this configuration to get more accurate analysis result.
----
-- `unoptimize_throw_blocks::Bool = false` \\
-  Turn this on to skip analysis on code blocks that will eventually lead to a `throw` call.
-  This configuration improves the analysis performance, but it's better to be turned off
-  to get a "proper" analysis result, just because there may be other errors even in those "throw blocks".
 ---
 """
 function JETInferenceParams end
@@ -303,22 +292,20 @@ function AbstractAnalyzer(analyzer::T) where {T<:AbstractAnalyzer}
     newstate = AnalyzerState(CC.get_inference_world(analyzer);
                              results    = get_results(analyzer),
                              inf_params = InferenceParams(analyzer),
-                             opt_params = OptimizationParams(analyzer),
-                             depth      = get_depth(analyzer))
+                             opt_params = OptimizationParams(analyzer))
     return AbstractAnalyzer(analyzer, newstate)
 end
 
 # constructor for sequential toplevel JET analysis
-function AbstractAnalyzer(analyzer::T, concretized::BitVector, toplevelmod::Module;
+function AbstractAnalyzer(analyzer::T, concretized::BitVector;
     # update world age to take in newly added methods defined by `ConcreteInterpreter`
     world::UInt = get_world_counter()
     ) where {T<:AbstractAnalyzer}
     newstate = AnalyzerState(world;
                              inf_params = InferenceParams(analyzer),
                              opt_params = OptimizationParams(analyzer),
-                             concretized, # or construct partial `CodeInfo` from remaining abstract statements ?
-                             toplevelmod,
-                             )
+                             concretized,
+                             binding_states = get_binding_states(analyzer))
     return AbstractAnalyzer(analyzer, newstate)
 end
 
@@ -397,38 +384,39 @@ end
 
 # interface 4
 # -----------
-# 4. `AnalysisCache(analyzer::NewAnalyzer) -> analysis_cache::AnalysisCache`
+# 4. `JETInterface.AnalysisToken(analyzer::NewAnalyzer) -> AnalysisToken`
 
 """
-    AnalysisCache
+    mutable struct AnalysisToken
+        AnalysisToken() = new()
+    end
 
-JET's internal representation of a global analysis cache.
+A unique token object used to identify and separate caches of analysis results.
+
+Each `AbstractAnalyzer` implementation should use a consistent token to enable
+proper caching behavior. The identity of the token determines whether cached analysis
+results can be reused between analyzer instances.
 """
-struct AnalysisCache
-    cache::IdDict{MethodInstance,CodeInstance}
+mutable struct AnalysisToken
+    AnalysisToken() = new()
 end
-AnalysisCache() = AnalysisCache(IdDict{MethodInstance,CodeInstance}())
-
-Base.haskey(analysis_cache::AnalysisCache, mi::MethodInstance) = haskey(analysis_cache.cache, mi)
-Base.get(analysis_cache::AnalysisCache, mi::MethodInstance, default) = get(analysis_cache.cache, mi, default)
-Base.getindex(analysis_cache::AnalysisCache, mi::MethodInstance) = getindex(analysis_cache.cache, mi)
-Base.setindex!(analysis_cache::AnalysisCache, ci::CodeInstance, mi::MethodInstance) = setindex!(analysis_cache.cache, ci, mi)
-Base.delete!(analysis_cache::AnalysisCache, mi::MethodInstance) = delete!(analysis_cache.cache, mi)
-Base.show(io::IO, analysis_cache::AnalysisCache) = print(io, typeof(analysis_cache), "(", length(analysis_cache.cache), " entries)")
 
 """
-    AnalysisCache(analyzer::AbstractAnalyzer) -> analysis_cache::AnalysisCache
+    JETInterface.AnalysisToken(analyzer::AbstractAnalyzer) -> AnalysisToken
 
-Returns [`AnalysisCache`](@ref) for this `analyzer::AbstractAnalyzer`.
+Returns [`AnalysisToken`](@ref) for the given `analyzer::AbstractAnalyzer`.
 `AbstractAnalyzer` instances can share the same cache if they perform the same analysis,
 otherwise their cache should be separated.
+
+If `NewAnalyzer` implements the `AbstractAnalyzer` interface, it must implement this
+function to return a consistent token for instances that should share the same cache.
 """
-@noinline function AnalysisCache(analyzer::AbstractAnalyzer)
+@noinline function AnalysisToken(analyzer::AbstractAnalyzer)
     AnalyzerType = nameof(typeof(analyzer))
     error(lazy"""
     Missing `$AbstractAnalyzer` API:
-    `$AnalyzerType` is required to implement the `$AnalysisCache(analyzer::$AnalyzerType) -> $AnalysisCache` interface.
-    See the documentation of `$AbstractAnalyzer` and `$AnalysisCache`.
+    `$AnalyzerType` is required to implement the `JETInterface.AnalysisToken(analyzer::$AnalyzerType) -> AnalysisToken` interface.
+    See the documentation of `$AbstractAnalyzer` and `JETInterface.AnalysisToken`.
     """)
 end
 
@@ -460,17 +448,24 @@ end
     JETInterface.aggregation_policy(analyzer::AbstractAnalyzer)
 
 Defines how `analyzer` aggregates [`InferenceErrorReport`](@ref)s.
+This policy determines how duplicate or similar reports are identified and grouped.
 Defaults to `default_aggregation_policy`.
 
 ---
 
     default_aggregation_policy(report::InferenceErrorReport) -> DefaultReportIdentity
 
-Returns the default identity of `report::InferenceErrorReport`, where `DefaultReportIdentity`
-aggregates reports based on "error location" of each `report`.
-`DefaultReportIdentity` aggregates `InferenceErrorReport`s aggressively in a sense that it
-ignores the identity of error point's `MethodInstance`, under the assumption that errors are
-identical as far as they're collected at the same file and line.
+Returns the default identity of `report::InferenceErrorReport` using `DefaultReportIdentity`,
+which aggregates reports based on their "error location".
+
+`DefaultReportIdentity` aggregates `InferenceErrorReport`s by creating an identity based on:
+1. The report type
+2. The signature of the method where the error was found
+3. The file and line number where the error occurred
+
+This approach ignores the specific `MethodInstance` identity, allowing errors to be
+aggregated if they occur at the same file and line, under the assumption that errors
+at the same location are likely duplicates even if in different method specializations.
 """
 aggregation_policy(::AbstractAnalyzer) = default_aggregation_policy
 const default_aggregation_policy = function (report::InferenceErrorReport)
@@ -511,7 +506,14 @@ get_reports(analyzer::AbstractAnalyzer, result::InferenceResult) = (analyzer[res
 """
     add_new_report!(analyzer::AbstractAnalyzer, result::InferenceResult, report::InferenceErrorReport)
 
-Adds new [`report::InferenceErrorReport`](@ref InferenceErrorReport) associated with `result::InferenceResult`.
+Adds a new error report to the analyzer's collection for a specific inference result.
+
+This function associates an [`InferenceErrorReport`](@ref) with its corresponding
+`result::InferenceResult` in the analyzer's internal storage. The report becomes
+part of the analysis results that can be retrieved later using `get_reports(analyzer, result)`.
+
+Reports are stored in the order they are added, which can be important for maintaining
+the logical sequence of errors discovered during analysis.
 """
 function add_new_report!(analyzer::AbstractAnalyzer, result::InferenceResult, @nospecialize(report::InferenceErrorReport))
     push!(get_reports(analyzer, result), report)

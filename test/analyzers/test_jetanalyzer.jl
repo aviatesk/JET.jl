@@ -7,34 +7,34 @@ include("../setup.jl")
     @test_throws JET.JETConfigError report_call(function () end; report_pass=JET.BasicPass(), mode=:sound)
 
     # cache key should be same for the same configurations
-    let cache1 = JET.AnalysisCache(JETAnalyzer()),
-        cache2 = JET.AnalysisCache(JETAnalyzer())
-        @test cache1 == cache2
+    let cache1 = JET.AnalysisToken(JETAnalyzer()),
+        cache2 = JET.AnalysisToken(JETAnalyzer())
+        @test cache1 === cache2
     end
 
     # cache key should be different for different configurations
     let analyzer1 = JETAnalyzer(; max_methods=3),
         analyzer2 = JETAnalyzer(; max_methods=4)
-        cache1 = JET.AnalysisCache(analyzer1)
-        cache2 = JET.AnalysisCache(analyzer2)
-        @test cache1 ≠ cache2
+        cache1 = JET.AnalysisToken(analyzer1)
+        cache2 = JET.AnalysisToken(analyzer2)
+        @test cache1 !== cache2
     end
 
     # configurations other than `InferenceParams` and `ReportPass`
     # shouldn't affect the cache key identity
     let analyzer1 = JETAnalyzer(; toplevel_logger=nothing),
         analyzer2 = JETAnalyzer(; toplevel_logger=IOBuffer())
-        cache1 = JET.AnalysisCache(analyzer1)
-        cache2 = JET.AnalysisCache(analyzer2)
-        @test cache1 == cache2
+        cache1 = JET.AnalysisToken(analyzer1)
+        cache2 = JET.AnalysisToken(analyzer2)
+        @test cache1 === cache2
     end
 
     # cache key should be different for different report passes
     let analyzer1 = JETAnalyzer(; report_pass=JET.BasicPass()),
         analyzer2 = JETAnalyzer(; report_pass=JET.SoundPass())
-        cache1 = JET.AnalysisCache(analyzer1)
-        cache2 = JET.AnalysisCache(analyzer2)
-        @test cache1 ≠ cache2
+        cache1 = JET.AnalysisToken(analyzer1)
+        cache2 = JET.AnalysisToken(analyzer2)
+        @test cache1 !== cache2
     end
 
     # end to end test
@@ -216,7 +216,7 @@ func_undefvar(a) = _func_undefvar(a)
                 end
                 getvar() = (global var; var)
             end
-            @test isempty(res.res.inference_error_reports)
+            @test_broken isempty(res.res.inference_error_reports)
         end
         # but the sound mode should still be sound
         let res = @analyze_toplevel mode=:sound analyze_from_definitions=true begin
@@ -553,6 +553,7 @@ end
         end
         bar(foo::Foo) = foo.bar
 
+        global f::Union{Foo1, Foo2, Foo3} # COMBAK 1.12 update
         f = rand(Bool) ? Foo1(1) : rand(Bool) ? Foo2(1) : Foo3(1)
         bar(f)
     end

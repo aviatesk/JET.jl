@@ -26,6 +26,8 @@ for exported_name in exports
     Core.eval(@__MODULE__, Expr(:export, exported_name))
 end
 
+using Base: Compiler as CC
+
 # Pre-release Julia versions are not supported, and we don't expect JET to even
 # precompile in pre-release versions. So, instead of having JET fail to precompile, we
 # simply make JET an empty module so that failure is delayed until the first time JET is
@@ -36,6 +38,13 @@ end
     include("JETBase.jl")
 else
     include("JETEmpty.jl")
+end
+
+if CC !== Base.Compiler
+    # XXX this shouldn't be necessary
+    push_inithook!() do
+        Base.REFLECTION_COMPILER[] = CC
+    end
 end
 
 end # module

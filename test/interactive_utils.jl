@@ -5,7 +5,7 @@ const CC = JET.CC
 using .CC: Bottom, widenconst, ⊑
 
 using JET:
-    AbstractAnalyzer, AbstractGlobal, InferenceErrorReport, JETAnalyzer, ToplevelConfig,
+    AbstractAnalyzer, InferenceErrorReport, JETAnalyzer, ToplevelConfig,
     ToplevelErrorReport, gen_virtual_module, get_reports, get_result, print_reports,
     virtual_process, virtualize_module_context
 
@@ -106,17 +106,20 @@ end
 # `report_file` with silent top-level logger
 report_file2(args...; kwargs...) = report_file(args...; toplevel_logger = nothing, kwargs...)
 
-is_concrete(mod::Module, sym::Symbol) = isdefined(mod, sym) && !isa(JET.getglobal(mod, sym), AbstractGlobal)
-isa_concrete(mod::Module, sym::Symbol, @nospecialize(typ)) = is_concrete(mod, sym) && isa(JET.getglobal(mod, sym), typ)
+isconcrete(res::JET.JETToplevelResult, mod::Module, sym::Symbol) = isconcrete(res.analyzer, mod, sym)
+isconcrete(analyzer::JET.AbstractAnalyzer, mod::Module, sym::Symbol) =
+    @invokelatest(isdefinedglobal(mod, sym)) && !isabstract(analyzer, mod, sym)
 
-is_abstract(mod::Module, sym::Symbol) = isdefined(mod, sym) && isa(JET.getglobal(mod, sym), AbstractGlobal)
-isa_abstract(mod::Module, sym::Symbol, @nospecialize(typ)) = is_abstract(mod, sym) && (JET.getglobal(mod, sym)::AbstractGlobal).t ⊑ typ
+isabstract(res::JET.JETToplevelResult, mod::Module, sym::Symbol) = isabstract(res.analyzer, mod, sym)
+function isabstract(analyzer::JET.AbstractAnalyzer, mod::Module, sym::Symbol)
+    binding = convert(Core.Binding, GlobalRef(mod, sym))
+    return haskey(JET.get_binding_states(analyzer), binding.partitions)
+end
 
 # JET will try to concretize global variable when its type is a constant at analysis time,
 # but the starategy is a bit complicated right now and may change in the future
 # these utilities allow robust testing to check if a object is successfully analyzed by JET whichever it's concretized or abstracted
-is_analyzed(mod::Module, sym::Symbol) = isdefined(mod, sym) # essentially, `is_concrete(mod, sym) || is_abstract(mod, sym)`
-isa_analyzed(mod::Module, sym::Symbol, @nospecialize(typ)) = isa_abstract(mod, sym, typ) || isa_concrete(mod, sym, typ)
+isanalyzed(args...) = isconcrete(args...) || isabstract(args...)
 
 function is_global_undef_var(@nospecialize(r::InferenceErrorReport), mod::Module, name::Symbol)
     r isa UndefVarErrorReport || return false
@@ -134,3 +137,7 @@ function is_local_undef_var(@nospecialize(r::InferenceErrorReport), name::Symbol
     var = r.var
     return var === name
 end
+
+# for inspection
+macro lwr(ex) QuoteNode(Meta.lower(__module__, ex)) end
+macro src(ex) QuoteNode(only(Meta.lower(__module__, ex).args)) end

@@ -11,8 +11,6 @@ end
 
 Base.Experimental.@optlevel 1
 
-const CC = Base.Compiler
-
 # usings
 # ======
 
@@ -21,10 +19,11 @@ using Core: Builtin, IntrinsicFunction, Intrinsics, SimpleVector, svec
 using Core.IR
 
 using .CC: @nospecs, ⊑,
-    AbstractInterpreter, AbstractLattice, ArgInfo, Bottom, CFG, CachedMethodTable, CallMeta,
-    ConstCallInfo, InferenceParams, InferenceResult, InferenceState, InternalMethodTable,
-    InvokeCallInfo, MethodCallResult, MethodMatchInfo, MethodMatches, NOT_FOUND,
-    OptimizationState, OptimizationParams, OverlayMethodTable, StatementState, StmtInfo,
+    AbsIntState, AbstractInterpreter, AbstractLattice, ArgInfo, Bottom, CFG,
+    CachedMethodTable, CallMeta, ConstCallInfo, Effects, EFFECTS_THROWS, Future,
+    InferenceParams, InferenceResult, InferenceState, InternalMethodTable, InvokeCallInfo,
+    MethodCallResult, MethodMatchInfo, MethodMatches, NOT_FOUND, OptimizationState,
+    OptimizationParams, OverlayMethodTable, RTEffects, StatementState, StmtInfo,
     UnionSplitInfo, UnionSplitMethodMatches, VarState, VarTable, WorldRange, WorldView,
     argextype, argtype_by_index, argtypes_to_type, compute_basic_blocks,
     construct_postdomtree, hasintersect, ignorelimited, instanceof_tfunc,
@@ -89,7 +88,7 @@ __init__() = foreach(@nospecialize(f)->f(), INIT_HOOKS)
 # compat
 # ------
 
-using Base.IRShow: LineInfoNode
+using .CC.IRShow: LineInfoNode
 using .CC: ConstCallResult
 # push_inithook!() do # FIXME with TODO use Compiler.jl stdlib
 #     @eval InteractiveUtils.@activate Compiler
@@ -209,11 +208,12 @@ const LineTable = Union{Vector{Any},Vector{LineInfoNode}}
 
 get_stmt((sv, pc)::StateAtPC) = sv.src.code[pc]
 get_lin((sv, pc)::StateAtPC) = _get_lin(sv, pc)
-# TODO optimize the allocation here for un-optimized debuginfo
-function _get_lin(sv, pc)
-    lins = CC.IRShow.buildLineInfoNode(sv.src.debuginfo, sv.linfo, pc)
+_get_lin(sv, pc) = _get_lin(sv.linfo, sv.src, pc)
+function _get_lin(mi::MethodInstance, src::CodeInfo, pc::Int)
+    # TODO optimize the allocation here for un-optimized debuginfo
+    lins = CC.IRShow.buildLineInfoNode(src.debuginfo, mi, pc)
     if isempty(lins)
-        return LineInfoNode(sv.linfo, sv.src.debuginfo.def::Symbol, sv.linfo.def.line)
+        return LineInfoNode(mi, src.debuginfo.def::Symbol, mi.def.line)
     end
     return first(lins)
 end
@@ -231,8 +231,8 @@ get_slotname((sv, pc)::StateAtPC, slot::Int) = sv.src.slotnames[slot]
 get_slotname(sv::State, slot::Int) = sv.src.slotnames[slot]
 
 # check if we're in a toplevel module
-istoplevel(sv::State) = istoplevel(CC.frame_instance(sv))
-istoplevel(mi::MethodInstance) = isa(mi.def, Module)
+istoplevelframe(sv::State) = istoplevelframe(CC.frame_instance(sv))
+istoplevelframe(mi::MethodInstance) = isa(mi.def, Module)
 
 # we can retrieve program-counter-level slottype during inference
 get_slottype(s::Tuple{InferenceState,Int}, slot::Int) = (get_states(s)[slot]::VarState).typ
@@ -1160,7 +1160,7 @@ end
 
 reexport_as_api!(JETInterface,
     # AbstractAnalyzer API
-    AbstractAnalyzer, AnalyzerState, ReportPass, AnalysisCache,
+    AbstractAnalyzer, AnalyzerState, ReportPass, AnalysisToken,
     valid_configurations, aggregation_policy, VSCode.vscode_diagnostics_order,
     # InferenceErrorReport API
     InferenceErrorReport, copy_report, #=print_report_message, print_signature,=# report_color,

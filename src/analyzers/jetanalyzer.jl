@@ -52,21 +52,21 @@ that are specific to the error analysis.
 """
 struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
     state::AnalyzerState
-    analysis_cache::AnalysisCache
+    analysis_token::AnalysisToken
     report_pass::RP
     method_table::CachedMethodTable{OverlayMethodTable}
     config::JETAnalyzerConfig
 
-    function JETAnalyzer(state::AnalyzerState, analysis_cache::AnalysisCache, report_pass::RP,
+    function JETAnalyzer(state::AnalyzerState, analysis_token::AnalysisToken, report_pass::RP,
                          config::JETAnalyzerConfig) where RP<:ReportPass
         method_table = CachedMethodTable(OverlayMethodTable(state.world, JET_METHOD_TABLE))
-        return new{RP}(state, analysis_cache, report_pass, method_table, config)
+        return new{RP}(state, analysis_token, report_pass, method_table, config)
     end
     function JETAnalyzer(state::AnalyzerState, report_pass::ReportPass,
                          config::JETAnalyzerConfig)
         cache_key = compute_hash(state.inf_params, report_pass, config)
-        analysis_cache = get!(AnalysisCache, JET_ANALYZER_CACHE, cache_key)
-        return JETAnalyzer(state, analysis_cache, report_pass, config)
+        analysis_token = get!(AnalysisToken, JET_ANALYZER_CACHE, cache_key)
+        return JETAnalyzer(state, analysis_token, report_pass, config)
     end
 end
 
@@ -106,9 +106,9 @@ function JETInterface.AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerSta
     return JETAnalyzer(state, ReportPass(analyzer), JETAnalyzerConfig(analyzer))
 end
 JETInterface.ReportPass(analyzer::JETAnalyzer) = analyzer.report_pass
-JETInterface.AnalysisCache(analyzer::JETAnalyzer) = analyzer.analysis_cache
+JETInterface.AnalysisToken(analyzer::JETAnalyzer) = analyzer.analysis_token
 
-const JET_ANALYZER_CACHE = IdDict{UInt, AnalysisCache}()
+const JET_ANALYZER_CACHE = IdDict{UInt, AnalysisToken}()
 
 JETAnalyzerConfig(analyzer::JETAnalyzer) = analyzer.config
 
@@ -199,10 +199,11 @@ function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer,
     max_methods::Int)
     ret = @invoke CC.abstract_call_gf_by_type(analyzer::AbstractAnalyzer,
         func::Any, arginfo::ArgInfo, si::StmtInfo, atype::Any, sv::InferenceState, max_methods::Int)
+    atype′ = Ref{Any}(atype)
     function after_abstract_call_gf_by_type(analyzer′, sv′)
         ret′ = ret[]
-        ReportPass(analyzer)(MethodErrorReport, analyzer, sv, ret′, arginfo.argtypes, atype)
-        ReportPass(analyzer)(UnanalyzedCallReport, analyzer, sv, ret′, atype)
+        ReportPass(analyzer)(MethodErrorReport, analyzer, sv, ret′, arginfo.argtypes, atype′[])
+        ReportPass(analyzer)(UnanalyzedCallReport, analyzer, sv, ret′, atype′[])
         return true
     end
     if isready(ret)
@@ -231,7 +232,7 @@ function CC.from_interprocedural!(analyzer::JETAnalyzer,
 end
 
 """
-    Core.Compiler.bail_out_call(analyzer::JETAnalyzer, ...)
+    $CC.bail_out_call(analyzer::JETAnalyzer, ...)
 
 This overload makes call inference performed by `JETAnalyzer` not bail out even when
 inferred return type grows up to `Any` to collect as much error reports as possible.
@@ -307,8 +308,19 @@ function CC.abstract_eval_statement_expr(analyzer::JETAnalyzer, e::Expr, sstate:
 end
 
 function CC.abstract_eval_globalref(analyzer::JETAnalyzer, g::GlobalRef, saw_latestworld::Bool, sv::InferenceState)
-    ret = @invoke CC.abstract_eval_globalref(analyzer::AbstractInterpreter, g::GlobalRef, saw_latestworld::Bool, sv::InferenceState)
-    ReportPass(analyzer)(UndefVarErrorReport, analyzer, sv, g)
+    if saw_latestworld
+        return CC.RTEffects(Any, Any, CC.generic_getglobal_effects)
+    end
+    # For inference purposes, we don't particularly care which global binding we end up loading, we only
+    # care about its type. However, we would still like to terminate the world range for the particular
+    # binding we end up reaching such that codegen can emit a simpler pointer load.
+    (valid_worlds, ret) = CC.scan_leaf_partitions(analyzer, g, sv.world) do analyzer::AbstractAnalyzer, binding::Core.Binding, partition::Core.BindingPartition
+        if partition.min_world ≤ sv.world.this ≤ partition.max_world # XXX This should probably be fixed on the Julia side
+            ReportPass(analyzer)(UndefVarErrorReport, analyzer, sv, binding, partition)
+        end
+        CC.abstract_eval_partition_load(analyzer, binding, partition)
+    end
+    CC.update_valid_age!(sv, valid_worlds)
     return ret
 end
 
@@ -371,6 +383,14 @@ function CC.builtin_tfunction(analyzer::JETAnalyzer,
 
     return ret
 end
+
+"""
+    bail_out_toplevel_call(analyzer::JETAnalyzer, ...)
+
+This overload allows JET to keep inference performed by `JETAnalyzer` going on
+non-concrete call sites in a toplevel frame created by [`virtual_process`](@ref).
+"""
+CC.bail_out_toplevel_call(::JETAnalyzer, ::InferenceState) = false
 
 # analysis
 # ========
@@ -480,7 +500,8 @@ function report_uncaught_exceptions!(analyzer::JETAnalyzer, frame::InferenceStat
     end
     throw_calls = nothing
     for (pc, stmt) in enumerate(stmts)
-        isa(stmt, Expr) || continue
+        isexpr(stmt, :call) || continue
+        isempty(stmt.args) && continue
         f = stmt.args[1]
         if f isa SSAValue
             f = stmts[f.id]
@@ -739,18 +760,19 @@ end
 
 # TODO InferenceParams(::JETAnalyzer).assume_bindings_static = true
 
-(::SoundPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, gr::GlobalRef) =
-    report_undef_global_var!(analyzer, sv, gr, #=sound=#true)
-(::BasicPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, gr::GlobalRef) =
-    report_undef_global_var!(analyzer, sv, gr, #=sound=#false)
-(::TypoPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, gr::GlobalRef) =
-    report_undef_global_var!(analyzer, sv, gr, #=sound=#false)
-function report_undef_global_var!(analyzer::JETAnalyzer, sv::InferenceState, gr::GlobalRef, sound::Bool)
-    isdefined(gr.mod, gr.name) && return false
-    if !sound
-        # if this global var is explicitly type-declared, it will likely get assigned somewhere
-        # TODO give this permission only to top-level analysis
-        ccall(:jl_get_binding_type, Any, (Any, Any), gr.mod, gr.name) !== nothing && return false
+(::SoundPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, binding::Core.Binding, partition::Core.BindingPartition) =
+    report_undef_global_var!(analyzer, sv, binding, partition, #=sound=#true)
+(::BasicPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, binding::Core.Binding, partition::Core.BindingPartition) =
+    report_undef_global_var!(analyzer, sv, binding, partition, #=sound=#false)
+(::TypoPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, binding::Core.Binding, partition::Core.BindingPartition) =
+    report_undef_global_var!(analyzer, sv, binding, partition, #=sound=#false)
+function report_undef_global_var!(analyzer::JETAnalyzer, sv::InferenceState, binding::Core.Binding, partition::Core.BindingPartition, sound::Bool)
+    gr = binding.globalref
+    # TODO use `abstract_eval_isdefinedglobal` for respecting world age
+    if @invokelatest isdefinedglobal(gr.mod, gr.name)
+        return false
+    elseif haskey(get_binding_states(analyzer), partition)
+        return false
     end
     add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, gr))
     return true
@@ -829,8 +851,9 @@ end
 function report_global_assignment!(analyzer::JETAnalyzer, sv::InferenceState,
                                    ret::CallMeta, M, s, v,
                                    sound::Bool)
+    @nospecialize M s v
     if sound
-        if ret.rt !== ErrorException
+        if ret.exct !== Union{}
             @goto report
         end
     else
@@ -921,15 +944,6 @@ function report_non_boolean_cond!(analyzer::JETAnalyzer, sv::InferenceState, @no
     return false
 end
 
-function (::SoundBasicPass)(::Type{InvalidConstantRedefinition}, analyzer::JETAnalyzer, sv::InferenceState, mod::Module, name::Symbol, @nospecialize(prev_t), @nospecialize(t))
-    add_new_report!(analyzer, sv.result, InvalidConstantRedefinition(sv, mod, name, prev_t, t))
-    return true
-end
-function (::SoundBasicPass)(::Type{InvalidConstantDeclaration}, analyzer::JETAnalyzer, sv::InferenceState, mod::Module, name::Symbol)
-    add_new_report!(analyzer, sv.result, InvalidConstantDeclaration(sv, mod, name))
-    return true
-end
-
 """
     SeriousExceptionReport <: InferenceErrorReport
 
@@ -987,7 +1001,7 @@ end
     AbstractBuiltinErrorReport
 
 Represents errors caused by builtin-function calls.
-Technically they're defined as those error points that can be caught within `Core.Compiler.builtin_tfunction`.
+Technically they're defined as those error points that can be caught within `$CC.builtin_tfunction`.
 """
 abstract type AbstractBuiltinErrorReport <: InferenceErrorReport end
 
@@ -1134,6 +1148,19 @@ function report_getglobal!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::
     return ReportPass(analyzer)(UndefVarErrorReport, analyzer, sv, gr)
 end
 
+function constant_globalref(argtypes::Vector{Any})
+    length(argtypes) ≥ 2 || return nothing
+    mod = argtypes[1]
+    isa(mod, Const) || return nothing
+    mod = mod.val
+    isa(mod, Module) || return nothing
+    sym = argtypes[2]
+    isa(sym, Const) || return nothing
+    sym = sym.val
+    isa(sym, Symbol) || return nothing
+    return GlobalRef(mod, sym)
+end
+
 function report_setfield!!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes, @nospecialize(ret))
     if ret === Bottom
         report_fieldaccess!(analyzer, sv, setfield!, argtypes) && return true
@@ -1148,7 +1175,7 @@ function report_fieldtype!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::
     return false
 end
 
-using Core.Compiler: _getfield_fieldindex, _mutability_errorcheck
+using .CC: _getfield_fieldindex, _mutability_errorcheck
 
 const MODULE_SETFIELD_MSG = "cannot assign variables in other modules"
 const DIVIDE_ERROR_MSG = sprint(showerror, DivideError())
@@ -1274,9 +1301,9 @@ JETInterface.print_report_message(io::IO, r::UnsoundBuiltinErrorReport) = print(
 
 function (::SoundPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(rt))
     if isa(f, IntrinsicFunction)
-        nothrow = Core.Compiler.intrinsic_nothrow(f, argtypes)
+        nothrow = CC.intrinsic_nothrow(f, argtypes)
     else
-        nothrow = Core.Compiler.builtin_nothrow(CC.typeinf_lattice(analyzer), f, argtypes, rt)
+        nothrow = CC.builtin_nothrow(CC.typeinf_lattice(analyzer), f, argtypes, rt)
     end
     nothrow && return false
     add_new_report!(analyzer, sv.result, UnsoundBuiltinErrorReport(sv, f, argtypes))
@@ -1307,7 +1334,6 @@ function JETAnalyzer(world::UInt = Base.get_world_counter();
     end
     jetconfigs = kwargs_dict(jetconfigs)
     set_if_missing!(jetconfigs, :aggressive_constant_propagation, true)
-    set_if_missing!(jetconfigs, :unoptimize_throw_blocks, false)
     # Enable the `assume_bindings_static` option to terminate analysis a bit earlier when
     # there are undefined bindings detected. Note that this option will cause inference
     # cache inconsistency until JuliaLang/julia#40399 is merged. But the analysis cache of

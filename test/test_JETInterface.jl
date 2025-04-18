@@ -31,11 +31,11 @@ end
 
 struct APIValidator <: AbstractAnalyzer
     state::AnalyzerState
-    analysis_cache::AnalysisCache
+    analysis_token::AnalysisToken
 end
 
 APIValidator(world::UInt=Base.get_world_counter(); jetconfigs...) =
-    APIValidator(AnalyzerState(world; jetconfigs...), AnalysisCache())
+    APIValidator(AnalyzerState(world; jetconfigs...), AnalysisToken())
 function report_apivalidator(args...; jetconfigs...)
     @nospecialize args jetconfigs
     analyzer = APIValidator(; jetconfigs...)
@@ -65,7 +65,7 @@ JETInterface.AnalyzerState(analyzer::APIValidator) = analyzer.state
 @test_throws ERROR_MSG @report_apivalidator compute_sins(10)
 
 # interface 2: `AbstractAnalyzer(analyzer::APIValidator, state::AnalyzerState) -> APIValidator`
-JETInterface.AbstractAnalyzer(analyzer::APIValidator, state::AnalyzerState) = APIValidator(state, analyzer.analysis_cache)
+JETInterface.AbstractAnalyzer(analyzer::APIValidator, state::AnalyzerState) = APIValidator(state, analyzer.analysis_token)
 
 @test_throws ERROR_MSG @report_apivalidator compute_sins(10)
 
@@ -74,8 +74,8 @@ JETInterface.ReportPass(analyzer::APIValidator) = IgnoreAllPass()
 
 @test_throws ERROR_MSG @report_apivalidator compute_sins(10)
 
-# interface 4: `AnalysisCache(analyzer::APIValidator) -> AnalysisCache`
-JETInterface.AnalysisCache(analyzer::APIValidator) = analyzer.analysis_cache
+# interface 4: `AnalysisToken(analyzer::APIValidator) -> AnalysisToken`
+JETInterface.AnalysisToken(analyzer::APIValidator) = analyzer.analysis_token
 
 # because `APIValidator` uses `IgnoreAllPass`, we won't get any reports
 let result = @report_apivalidator compute_sins(10)
