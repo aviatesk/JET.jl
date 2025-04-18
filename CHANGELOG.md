@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 <!-- links start -->
+[0.10.3]: https://github.com/aviatesk/JET.jl/compare/v0.10.2...v0.10.3
 [0.10.2]: https://github.com/aviatesk/JET.jl/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/aviatesk/JET.jl/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/aviatesk/JET.jl/compare/v0.9.18...v0.10.0
@@ -39,6 +40,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.8.1]: https://github.com/aviatesk/JET.jl/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/aviatesk/JET.jl/compare/v0.7.15...v0.8.0
 <!-- links end -->
+
+## [0.10.3]
+
+Reimplemented top-level analysis features like `report_package`.
+By updating to this version, you can use these features even in Julia v1.12.
+
+However, to use JET v0.10.3, you need to use Julia version `v"1.12.0-beta1.11"` or later.
+As of April 19, 2025, to use that Julia version, you need to build Julia from
+[this branch](https://github.com/JuliaLang/julia/pull/58009).
+
+Also, please be aware that some minor features haven't been fully tested yet.
+In particular, there might be issues related to https://github.com/timholy/Revise.jl/issues/903.
 
 ## [0.10.2]
 ### Changed
