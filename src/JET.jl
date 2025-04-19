@@ -35,15 +35,16 @@ using Base: Compiler as CC
 # precompile when their tests are run, instead there will be test failures when JET is
 # used (but potentially other tests can at least run).
 @static if JET_LOADABLE
-    if VERSION < v"1.12.0-beta1.11"
+    @static if VERSION ≥ v"1.12.0-beta1.11"
         include("JETBase.jl")
-    end
-    function __init__()
-        @warn """
-        The latest version of JET is incompatible with Julia versions earlier than `v"1.12.0-beta1.11"`.
-        To build a compatible Julia version, follow the instructions at
-        https://github.com/aviatesk/JET.jl/blob/master/CHANGELOG.md#0103.
-        """
+    else
+        function __init__()
+            @warn """
+    The latest version of JET is incompatible with Julia versions earlier than `v"1.12.0-beta1.11"`.
+    To build a compatible Julia version, follow the instructions at
+    https://github.com/aviatesk/JET.jl/blob/master/CHANGELOG.md#0103.
+    """
+        end
     end
 else
     include("JETEmpty.jl")
