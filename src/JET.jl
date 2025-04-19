@@ -40,10 +40,10 @@ using Base: Compiler as CC
     else
         function __init__()
             @warn """
-    The latest version of JET is incompatible with Julia versions earlier than `v"1.12.0-beta1.11"`.
-    To build a compatible Julia version, follow the instructions at
-    https://github.com/aviatesk/JET.jl/blob/master/CHANGELOG.md#0103.
-    """
+            The latest version of JET is incompatible with Julia versions earlier than `v"1.12.0-beta1.11"`.
+            To build a compatible Julia version, follow the instructions at
+            https://github.com/aviatesk/JET.jl/blob/master/CHANGELOG.md#0103.
+            """
         end
     end
 else
