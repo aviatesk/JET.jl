@@ -114,6 +114,9 @@ that are specific to the optimization analysis.
       ```
 
 ---
+- `skip_throw_blocks = true`:\\
+
+---
 - `function_filter = @nospecialize(f)->true`:\\
   A predicate which takes a function object and returns `false` to skip runtime dispatch
   analysis on calls of the function. This configuration is particularly useful when your
@@ -134,14 +137,16 @@ struct OptAnalyzer{RP<:ReportPass,FF} <: AbstractAnalyzer
     report_pass::RP
     function_filter::FF
     skip_noncompileable_calls::Bool
+    skip_throw_blocks::Bool
     __analyze_frame::BitVector # temporary stash to keep per-frame analysis-skip configuration
 
     function OptAnalyzer(state::AnalyzerState,
                          report_pass::RP,
                          function_filter::FF,
-                         skip_noncompileable_calls::Bool) where {RP<:ReportPass,FF}
+                         skip_noncompileable_calls::Bool,
+                         skip_throw_blocks::Bool) where {RP<:ReportPass,FF}
         cache_key = compute_hash(state.inf_params, state.opt_params, report_pass,
-                                 skip_noncompileable_calls)
+                                 skip_noncompileable_calls, skip_throw_blocks)
         cache_key = @invoke hash(function_filter::Any, cache_key::UInt) # HACK avoid dynamic dispatch
         analysis_token = get!(AnalysisToken, OPT_ANALYZER_CACHE, cache_key)
         return new{RP,FF}(state,
@@ -149,6 +154,7 @@ struct OptAnalyzer{RP<:ReportPass,FF} <: AbstractAnalyzer
                           report_pass,
                           function_filter,
                           skip_noncompileable_calls,
+                          skip_throw_blocks,
                           #=__analyze_frame=# BitVector())
     end
 end
@@ -160,7 +166,8 @@ function JETInterface.AbstractAnalyzer(analyzer::OptAnalyzer, state::AnalyzerSta
         state,
         analyzer.report_pass,
         analyzer.function_filter,
-        analyzer.skip_noncompileable_calls)
+        analyzer.skip_noncompileable_calls,
+        analyzer.skip_throw_blocks)
 end
 JETInterface.ReportPass(analyzer::OptAnalyzer) = analyzer.report_pass
 JETInterface.AnalysisToken(analyzer::OptAnalyzer) = analyzer.analysis_token
@@ -313,9 +320,39 @@ end
 function (::OptAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::OptAnalyzer, caller::InferenceResult, opt::OptimizationState)
     (; src, sptypes, slottypes) = opt
 
-    # TODO better to work on `opt.ir::IRCode` (with some updates on `handle_sig!`)
+    # TODO better to work on `opt.ir::IRCode` (with some updates on `handle_sig!`),
+    #      without creating duplicated `CFG`s
+    cfg = CC.compute_basic_blocks(src.code)
+
+    unreachables = nothing
+    if analyzer.skip_throw_blocks
+        for i = 1:length(src.code)
+            x = src.code[i]
+            if x isa ReturnNode && !isdefined(x, :val)
+                if unreachables === nothing
+                    unreachables = Int[]
+                end
+                push!(unreachables, CC.block_for_inst(cfg, i))
+            end
+        end
+    end
+    is_in_throw_block = nothing
+    if unreachables !== nothing
+        postdomtree = CC.construct_postdomtree(cfg)
+        is_in_throw_block = function (pc::Int)
+            bb = CC.block_for_inst(cfg, pc)
+            for unreachable = unreachables
+                if CC.postdominates(postdomtree, unreachable, bb)
+                    return true
+                end
+            end
+            return false
+        end
+    end
+
     local reported = false
-    for (pc, x) in enumerate(src.code)
+    for i = 1:length(src.code)
+        x = src.code[i]
         if isexpr(x, :call)
             ft = argextype(first(x.args), src, sptypes, slottypes)
             f = singleton_type(ft)
@@ -323,14 +360,21 @@ function (::OptAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::OptAnalyze
                 f isa Builtin && continue # ignore `:call`s of language intrinsics
                 analyzer.function_filter(f) || continue # ignore user-specified functions
             end
-            lins = get_lins((opt, pc))
+            lins = get_lins((opt, i))
             isempty(lins) && continue # dead statement, just ignore it
             if length(lins) > 1
                 # this statement has been inlined, so ignore it as any problems within
                 # that callee should already have been reported
                 continue
             end
-            add_new_report!(analyzer, caller, RuntimeDispatchReport((opt, pc)))
+            if is_in_throw_block !== nothing && is_in_throw_block(i)
+                # if this statement is in "throw block", ignore it
+                # unless this statement itself is causing the throw
+                if src.ssavaluetypes[i] !== Union{}
+                    continue
+                end
+            end
+            add_new_report!(analyzer, caller, RuntimeDispatchReport((opt, i)))
             reported |= true
         end
     end
@@ -345,17 +389,25 @@ function OptAnalyzer(world::UInt = Base.get_world_counter();
     report_pass::ReportPass = OptAnalysisPass(),
     function_filter = optanalyzer_function_filter,
     skip_noncompileable_calls::Bool = true,
+    skip_throw_blocks::Bool = true,
+    unoptimize_throw_blocks::Union{Nothing,Bool} = nothing,
     jetconfigs...)
+    if unoptimize_throw_blocks !== nothing
+        @warn "The `unoptimize_throw_blocks` configuration is deprecated, use `skip_throw_blocks` instead."
+        skip_throw_blocks = unoptimize_throw_blocks
+    end
     state = AnalyzerState(world; jetconfigs...)
     return OptAnalyzer(
         state,
         report_pass,
         function_filter,
-        skip_noncompileable_calls)
+        skip_noncompileable_calls,
+        skip_throw_blocks)
 end
 
 const OPT_ANALYZER_CONFIGURATIONS = Set{Symbol}((
-    :report_pass, :function_filter, :skip_noncompileable_calls))
+    :report_pass, :function_filter, :skip_noncompileable_calls, :skip_throw_blocks,
+    :unoptimize_throw_blocks))
 
 let valid_keys = GENERAL_CONFIGURATIONS ∪ OPT_ANALYZER_CONFIGURATIONS
     @eval JETInterface.valid_configurations(::OptAnalyzer) = $valid_keys
