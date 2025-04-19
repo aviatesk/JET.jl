@@ -16,7 +16,8 @@ JET employs Julia's type inference system to detect potential bugs and type inst
 >   Updated (v0.10.3): As of v0.10.3, most functions, including top-level analysis features
 >   like `report_package`, should now be functional.
 > - **Future Plans**: Development will focus on stabilizing v0.10 and refactoring JET
->   for integration with the new language server project. For stable use, stick with v0.9.
+>   for integration with [the new language server project](https://github.com/aviatesk/JETLS.jl).
+>   For stable use, stick with v0.9.
 
 > [!WARNING]
 > Please note that due to JET's tight integration with the Julia compiler, the results
