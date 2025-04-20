@@ -1176,33 +1176,33 @@ reexport_as_api!(JETInterface,
 include("analyzers/jetanalyzer.jl")
 include("analyzers/optanalyzer.jl")
 
-using PrecompileTools
-false && @setup_workload let
-    @compile_workload let
-        result = @report_call sum("julia")
-        show(IOContext(devnull, :color=>true), result)
-        result = @report_call rand(String)
-        show(IOContext(devnull, :color=>true), result)
-        result = @report_opt sum("julia")
-        show(IOContext(devnull, :color=>true), result)
-        result = @report_opt rand(String)
-        show(IOContext(devnull, :color=>true), result)
-    end
-    # register an initialization callback that fixes up `max_world` which is overridden
-    # to `one(UInt) == WORLD_AGE_REVALIDATION_SENTINEL` by staticdata.c
-    # otherwise using cached analysis results would result in world age assertion error
-    function override_precompiled_cache()
-        for precache in (JET_ANALYZER_CACHE, OPT_ANALYZER_CACHE),
-            (_, cache) in precache
-            for (_, codeinst) in cache.cache
-                if ((@atomic :monotonic codeinst.min_world) > zero(UInt) &&
-                    (@atomic :monotonic codeinst.max_world) == one(UInt)) # == WORLD_AGE_REVALIDATION_SENTINEL
-                    @atomic :monotonic codeinst.max_world = typemax(UInt)
-                end
-            end
-            Base.rehash!(cache.cache) # HACK to avoid JuliaLang/julia#52915
-        end
-    end
-    override_precompiled_cache() # to precompile this callback itself
-    push_inithook!(override_precompiled_cache)
-end
+# using PrecompileTools
+# @setup_workload let
+#     @compile_workload let
+#         result = @report_call sum("julia")
+#         show(IOContext(devnull, :color=>true), result)
+#         result = @report_call rand(String)
+#         show(IOContext(devnull, :color=>true), result)
+#         result = @report_opt sum("julia")
+#         show(IOContext(devnull, :color=>true), result)
+#         result = @report_opt rand(String)
+#         show(IOContext(devnull, :color=>true), result)
+#     end
+#     # register an initialization callback that fixes up `max_world` which is overridden
+#     # to `one(UInt) == WORLD_AGE_REVALIDATION_SENTINEL` by staticdata.c
+#     # otherwise using cached analysis results would result in world age assertion error
+#     function override_precompiled_cache()
+#         for precache in (JET_ANALYZER_CACHE, OPT_ANALYZER_CACHE),
+#             (_, cache) in precache
+#             for (_, codeinst) in cache.cache
+#                 if ((@atomic :monotonic codeinst.min_world) > zero(UInt) &&
+#                     (@atomic :monotonic codeinst.max_world) == one(UInt)) # == WORLD_AGE_REVALIDATION_SENTINEL
+#                     @atomic :monotonic codeinst.max_world = typemax(UInt)
+#                 end
+#             end
+#             Base.rehash!(cache.cache) # HACK to avoid JuliaLang/julia#52915
+#         end
+#     end
+#     override_precompiled_cache() # to precompile this callback itself
+#     push_inithook!(override_precompiled_cache)
+# end
