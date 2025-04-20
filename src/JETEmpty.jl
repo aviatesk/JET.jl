@@ -18,8 +18,11 @@ const empty_stub_message = strip("""
     We recommend using a stable version of Julia in order to use JET.jl.
     Or to try JET with this pre-release Julia version use Preferences.jl to enable
     `JET_DEV_MODE`, and then reload JET. For example create a file named
-    `LocalPreferences.toml` which contains the line:
+    `LocalPreferences.toml` which contains the section:
+        ```toml
+        [JET]
         JET_DEV_MODE = true
+        ```
     Note that JET.jl may not function properly with a pre-release versions of Julia
     even with `JET_DEV_MODE` enabled.
     """)
