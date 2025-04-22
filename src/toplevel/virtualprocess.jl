@@ -507,7 +507,6 @@ gen_virtual_module(parent::Module = Main; name = VIRTUAL_MODULE_NAME) =
 function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProcessResult, config::ToplevelConfig)
     succeeded = Ref(0)
     start = time()
-    n = length(res.toplevel_signatures)
     state = AnalyzerState(analyzer)
     oldworld = state.world
     new_world = get_world_counter()
@@ -518,7 +517,9 @@ function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProce
         analyzer = AbstractAnalyzer(analyzer, state)
     end
     entrypoint = config.analyze_from_definitions
-    for (i, tt) in enumerate(res.toplevel_signatures)
+    n = length(res.toplevel_signatures)
+    for i = 1:n
+        tt = res.toplevel_signatures[i]
         match = Base._which(tt;
             # NOTE use the latest world counter with `method_table(analyzer)` unwrapped,
             # otherwise it may use a world counter when this method isn't defined yet
