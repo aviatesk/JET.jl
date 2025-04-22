@@ -1310,7 +1310,7 @@ function collect_toplevel_signature!(interp::ConcreteInterpreter, frame::Frame, 
     end
     sigs = node.args[2]
     atype_params, sparams, #=linenode=#_ =
-        JuliaInterpreter.@lookup(JuliaInterpreter.moduleof(frame), frame, sigs)::SimpleVector
+        JuliaInterpreter.lookup(frame, sigs)::SimpleVector
     tt = form_method_signature(atype_params::SimpleVector, sparams::SimpleVector)
     @assert !CC.has_free_typevars(tt) "free type variable left in toplevel_signatures"
     push!(interp.res.toplevel_signatures, tt)
