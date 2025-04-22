@@ -1361,7 +1361,7 @@ function _to_simple_module_usages(x::Expr)
 end
 
 # This overload performs almost the same work as
-# `JuliaInterpreter.evaluate_call!(::JuliaInterpreter.Compiled, ...)`
+# `JuliaInterpreter.evaluate_call!(::JuliaInterpreter.NonRecursiveInterpreter, ...)`
 # but includes a few important adjustments specific to JET's virtual process:
 # - Special handling for `include` calls: recursively apply JET analysis to included files.
 # - Ignore C-side function definitions created via `Base._ccallable`. These definitions
@@ -1372,7 +1372,7 @@ function JuliaInterpreter.evaluate_call!(interp::ConcreteInterpreter, frame::Fra
     pc = frame.pc
     ret = JuliaInterpreter.bypass_builtins(interp, frame, call_expr, pc)
     isa(ret, Some{Any}) && return ret.value
-    ret = JuliaInterpreter.maybe_evaluate_builtin(frame, call_expr, false)
+    ret = JuliaInterpreter.maybe_evaluate_builtin(interp, frame, call_expr, false)
     isa(ret, Some{Any}) && return ret.value
     args = JuliaInterpreter.collect_args(interp, frame, call_expr)
     f = popfirst!(args) # now it's really just `args`
