@@ -349,17 +349,14 @@ struct VirtualProcessResult
     inference_error_reports::Vector{InferenceErrorReport}
     toplevel_signatures::Vector{Type}
     actual2virtual::Union{Actual2Virtual,Nothing}
-end
-
-function VirtualProcessResult(actual2virtual, context)
-    return VirtualProcessResult(Set{String}(),
-                                Vector{String}(),
-                                Set{Module}((context,)),
-                                ToplevelErrorReport[],
-                                InferenceErrorReport[],
-                                Type[],
-                                actual2virtual,
-                                )
+    VirtualProcessResult(actual2virtual::Union{Actual2Virtual,Nothing}, context::Module) =
+        new(Set{String}(),
+            Vector{String}(),
+            Set{Module}((context,)),
+            ToplevelErrorReport[],
+            InferenceErrorReport[],
+            Type[],
+            actual2virtual)
 end
 
 """
