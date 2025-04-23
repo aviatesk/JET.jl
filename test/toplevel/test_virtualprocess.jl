@@ -1227,7 +1227,7 @@ end
             @test er isa ActualErrorWrapped
             @test er.file == (@__FILE__) && er.line == (@__LINE__) - 5 # L2
             @test length(er.st) == 1
-            sf = first(er.st)
+            sf = only(er.st)
             @test sf.file === Symbol(@__FILE__) && sf.line == (@__LINE__) - 9 # L1
             @test sf.func === Symbol("@badmacro")
         end

@@ -360,6 +360,37 @@ struct VirtualProcessResult
 end
 
 """
+    ConcreteInterpreter
+
+The trait to inject code into JuliaInterpreter's interpretation process; JET.jl overloads:
+- `JuliaInterpreter.step_expr!` to add error report pass for module usage expressions and
+  support package analysis
+- `JuliaInterpreter.evaluate_call!` to special case `include` calls
+- `JuliaInterpreter.handle_err` to wrap an error happened during interpretation into
+  `ActualErrorWrapped`
+"""
+struct ConcreteInterpreter{F,Analyzer<:AbstractAnalyzer} <: Interpreter
+    filename::String
+    lnn::LineNumberNode
+    usemodule_with_err_handling::F
+    context::Module
+    analyzer::Analyzer
+    config::ToplevelConfig
+    res::VirtualProcessResult
+    pkg_mod_depth::Int
+    include_callback # ::Union{Nothing,Base.Callable}
+    failed::Base.RefValue{Bool}
+end
+
+add_toplevel_error_report!(res::VirtualProcessResult, @nospecialize report::ToplevelErrorReport) =
+    push!(res.toplevel_error_reports, report)
+function add_toplevel_error_report!(interp::ConcreteInterpreter, @nospecialize report::ToplevelErrorReport)
+    add_toplevel_error_report!(interp.res, report)
+    interp.failed[] = true
+    return nothing
+end
+
+"""
     virtual_process(s::AbstractString,
                     filename::AbstractString,
                     analyzer::AbstractAnalyzer,
@@ -577,7 +608,7 @@ function _virtual_process!(res::VirtualProcessResult,
         push!(res.included_files, filename)
         source = JuliaSyntax.SourceFile(stream; filename)
         for diagnostic in stream.diagnostics
-            push!(res.toplevel_error_reports, ParseErrorReport(diagnostic, source))
+            add_toplevel_error_report!(res, ParseErrorReport(diagnostic, source))
         end
     end
 
@@ -602,42 +633,43 @@ function _virtual_process!(res::VirtualProcessResult,
 
     local lnnref = Ref(LineNumberNode(0, filename))
 
-    function err_handler(@nospecialize(err), st)
+    function general_err_handler(@nospecialize(err), st, x::Union{VirtualProcessResult,ConcreteInterpreter})
         local report = ActualErrorWrapped(err, st, filename, lnnref[].line)
-        push!(res.toplevel_error_reports, report)
-        return nothing
+        add_toplevel_error_report!(x, report)
+        nothing
     end
 
     function macroexpand_with_err_handling(mod::Module, x::Expr)
-        # `scrub_offset = 4` corresponds to `with_err_handling` -> `f` -> `macroexpand` -> kwfunc (`macroexpand`)
-        return with_err_handling(err_handler, #=scrub_offset=#4) do
+        # `scrub_offset = 2`: `macroexpand` -> kwfunc (`macroexpand`)
+        with_err_handling(general_err_handler, res; scrub_offset=2) do
             # XXX we want to non-recursive, sequential partial macro expansion here, which allows
             # us to collect more fine-grained error reports within macro expansions
             # but it can lead to invalid macro hygiene escaping because of https://github.com/JuliaLang/julia/issues/20241
-            return macroexpand(mod, x; recursive = true #= but want to use `false` here =#)
+            macroexpand(mod, x; recursive = true #= but want to use `false` here =#)
         end
     end
     function eval_with_err_handling(mod::Module, x::Expr)
-        # `scrub_offset = 3` corresponds to `with_err_handling` -> `f` -> `Core.eval`
-        return with_err_handling(err_handler, #=scrub_offset=#3) do
-            return Core.eval(mod, x)
+        # `scrub_offset = 1`: `Core.eval`
+        with_err_handling(general_err_handler, res; scrub_offset=1) do
+            Core.eval(mod, x)
         end
     end
     function lower_with_err_handling(mod::Module, x::Expr)
-        # `scrub_offset = 3` corresponds to `with_err_handling` -> `f` -> `lower`
-        return with_err_handling(err_handler, #=scrub_offset=#3) do
+        # `scrub_offset = 1`: `lower`
+        with_err_handling(general_err_handler, res; scrub_offset=1) do
             lwr = lower(mod, x)
-            # here we should capture syntax errors found during lowering
             if isexpr(lwr, :error)
+                # here we should capture syntax errors found during lowering
                 msg = first(lwr.args)::String
-                push!(res.toplevel_error_reports, LoweringErrorReport(msg, filename, lnnref[].line))
+                add_toplevel_error_report!(res, LoweringErrorReport(msg, filename, lnnref[].line))
                 return nothing
             end
             return lwr
         end
     end
     local dependencies = Set{Symbol}()
-    function usemodule_with_err_handling(mod::Module, ex::Expr)
+    function usemodule_with_err_handling(interp::ConcreteInterpreter, ex::Expr)
+        mod = interp.context
         if isexpr(ex, (:export, :public))
             @goto eval_usemodule
         end
@@ -662,13 +694,14 @@ function _virtual_process!(res::VirtualProcessResult,
                         if depid === nothing
                             # IDEA better message in a case of `any(m::Module->dep===nameof(m), res.defined_modules))`?
                             local report = DependencyError(pkgid.name, depstr, filename, lnnref[].line)
-                            push!(res.toplevel_error_reports, report)
+                            add_toplevel_error_report!(interp, report)
                             return nothing
                         end
                         require_ex = :(const $dep = Base.require($depid))
                         # TODO better handling of loading errors that may happen here
-                        require_res = with_err_handling(err_handler, #=scrub_offset=#3) do
-                            return Core.eval(mod, require_ex)
+                        require_res = with_err_handling(general_err_handler, interp; scrub_offset=1) do
+                            Core.eval(mod, require_ex)
+                            true
                         end
                         isnothing(require_res) && return nothing
                         push!(dependencies, dep)
@@ -701,10 +734,11 @@ function _virtual_process!(res::VirtualProcessResult,
                 end
             end
         end
-        # `scrub_offset = 3` corresponds to `with_err_handling` -> `f` -> `Core.eval`
         @label eval_usemodule
-        return with_err_handling(err_handler, #=scrub_offset=#3) do
-            return Core.eval(mod, ex)
+        # `scrub_offset = 1`: `Core.eval`
+        with_err_handling(general_err_handler, interp; scrub_offset=1) do
+            Core.eval(mod, ex)
+            true
         end
     end
 
@@ -811,17 +845,20 @@ function _virtual_process!(res::VirtualProcessResult,
 
         fix_self_references!(res.actual2virtual, src)
 
+        failed = Ref(false)
         interp = ConcreteInterpreter(filename, lnnref[], usemodule_with_err_handling,
                                      context, analyzer, config, res, pkg_mod_depth,
-                                     config.include_callback)
+                                     config.include_callback, failed)
         if force_concretize
             JuliaInterpreter.finish!(interp, Frame(context, src), true)
             continue
         end
         concretized = partially_interpret!(interp, context, src)
 
-        # bail out if nothing to analyze (just a performance optimization)
         if bail_out_concretized(concretized, src)
+            # bail out if nothing to analyze (just a performance optimization)
+            continue
+        elseif failed[]
             continue
         end
 
@@ -1029,28 +1066,6 @@ function walk_and_transform!(@nospecialize(x), inner, outer, scope::Vector{Symbo
         end
     end
     return outer(x, scope)
-end
-
-"""
-    ConcreteInterpreter
-
-The trait to inject code into JuliaInterpreter's interpretation process; JET.jl overloads:
-- `JuliaInterpreter.step_expr!` to add error report pass for module usage expressions and
-  support package analysis
-- `JuliaInterpreter.evaluate_call!` to special case `include` calls
-- `JuliaInterpreter.handle_err` to wrap an error happened during interpretation into
-  `ActualErrorWrapped`
-"""
-struct ConcreteInterpreter{F,Analyzer<:AbstractAnalyzer} <: Interpreter
-    filename::String
-    lnn::LineNumberNode
-    usemodule_with_err_handling::F
-    context::Module
-    analyzer::Analyzer
-    config::ToplevelConfig
-    res::VirtualProcessResult
-    pkg_mod_depth::Int
-    include_callback # ::Union{Nothing,Base.Callable}
 end
 
 """
@@ -1284,7 +1299,9 @@ function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, 
 
     if ismoduleusage(node)
         for ex in to_simple_module_usages(node)
-            interp.usemodule_with_err_handling(interp.context, ex)
+            if interp.usemodule_with_err_handling(interp, ex) === nothing
+                break
+            end
         end
         return frame.pc += 1
     end
@@ -1397,10 +1414,10 @@ function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func)
     lnn = interp.lnn
     context = interp.context
 
-    function handle_actual_method_error!(args::Vector{Any})
+    function add_actual_method_error_report!(args::Vector{Any})
         err = MethodError(include_func, args)
         local report = ActualErrorWrapped(err, [], filename, lnn.line)
-        push!(res.toplevel_error_reports, report)
+        add_toplevel_error_report!(interp, report)
     end
 
     nargs = length(args)
@@ -1413,15 +1430,15 @@ function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func)
         elseif isa(x, Function)
             @warn "JET is unable to analyze `include(mapexpr::Function, filename::String)` call currently."
         else
-            handle_actual_method_error!(args)
+            add_actual_method_error_report!(args)
             return nothing
         end
     else
-        handle_actual_method_error!(args)
+        add_actual_method_error_report!(args)
         return nothing
     end
     if !isa(fname, String)
-        handle_actual_method_error!(args)
+        add_actual_method_error_report!(args)
         return nothing
     end
 
@@ -1429,17 +1446,17 @@ function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func)
     # handle recursive `include`s
     if include_file in res.files_stack
         local report = RecursiveIncludeErrorReport(include_file, copy(res.files_stack), filename, lnn.line)
-        push!(res.toplevel_error_reports, report)
+        add_toplevel_error_report!(interp, report)
         return nothing
     end
 
-    function read_err_handler(@nospecialize(err), st)
+    function read_err_handler(@nospecialize(err), st, interp::ConcreteInterpreter)
         local report = ActualErrorWrapped(err, st, filename, lnn.line)
-        push!(res.toplevel_error_reports, report)
-        return nothing
+        add_toplevel_error_report!(interp, report)
+        nothing
     end
-    # `scrub_offset = 3` corresponds to `with_err_handling` -> `f`
-    include_text = with_err_handling(read_err_handler, #=scrub_offset=#2) do
+    # `scrub_offset = 1`: `f`
+    include_text = with_err_handling(read_err_handler, interp; scrub_offset=2) do
         if interp.include_callback === nothing # fallbacks to the default `read` function
             return read(include_file, String)
         end
@@ -1451,7 +1468,7 @@ function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func)
                       interp.config, context, interp.pkg_mod_depth)
 
     # TODO: actually, here we need to try to get the lastly analyzed result of the `_virtual_process!` call above
-    return nothing
+    nothing
 end
 
 const JET_VIRTUALPROCESS_FILE = Symbol(@__FILE__)
@@ -1496,12 +1513,12 @@ function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame::Frame, 
     st = st[1:i]
 
     report = ActualErrorWrapped(err, st, interp.filename, interp.lnn.line)
-    push!(interp.res.toplevel_error_reports, report)
+    add_toplevel_error_report!(interp, report)
 
     return nothing # stop further interpretation
 end
 
-function with_err_handling(f, err_handler, scrub_offset::Int)
+function with_err_handling(f, err_handler, handler_args...; scrub_offset::Int)
     try
         return f()
     catch err
@@ -1511,12 +1528,12 @@ function with_err_handling(f, err_handler, scrub_offset::Int)
         # scrub the original stacktrace so that it only contains frames from user code
         for (i, frame) in enumerate(st)
             if frame.file === JET_VIRTUALPROCESS_FILE && frame.func === :with_err_handling
-                st = st[1:(i - scrub_offset)]
+                st = st[1:(i-(3+scrub_offset))] # 3 denotes `with_err_handling` + `kwfunc(with_err_handling)` + `f`
                 break
             end
         end
 
-        return err_handler(err, st)
+        return err_handler(err, st, handler_args...)
     end
 end
 
