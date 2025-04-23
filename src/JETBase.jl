@@ -42,7 +42,7 @@ using CodeTracking: CodeTracking
 
 using LoweredCodeUtils: LoweredCodeUtils, add_ssa_preds!, callee_matches
 
-using JuliaInterpreter: _INACTIVE_EXCEPTION, Frame, JuliaInterpreter, is_quotenode_egal
+using JuliaInterpreter: _INACTIVE_EXCEPTION, Frame, Interpreter, JuliaInterpreter
 
 using MacroTools: @capture, normalise, striplines
 

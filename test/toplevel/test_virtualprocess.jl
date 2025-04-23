@@ -2736,6 +2736,9 @@ let old = Pkg.project().path
 
         res = report_package(JET597; toplevel_logger=nothing)
         @test isempty(res.res.toplevel_error_reports)
+
+        res = report_package(JET597; toplevel_logger=nothing)
+        @test isempty(res.res.toplevel_error_reports)
     finally
         Pkg.activate(old; io=devnull)
     end
