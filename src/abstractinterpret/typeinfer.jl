@@ -420,7 +420,7 @@ function CC.global_assignment_rt_exct(analyzer::AbstractAnalyzer, sv::AbsIntStat
             #     so using the type information may result in incorrect results,
             #     while just Deriving defined-ness information would probably be fine
             # TODO need to represent conditional case
-            get_binding_states(analyzer)[partition] = AbstractBindingState(false)
+            get_binding_states(analyzer)[partition] = AbstractBindingState(false, false)
         end
         return rte
     end
@@ -476,7 +476,7 @@ function const_assignment_rt_exct(analyzer::AbstractAnalyzer, sv::AbsIntState, s
             # `:const` assignment destructively overrides the binding type
             # TODO need to represent conditional case
             binding_states = get_binding_states(analyzer)
-            binding_states[partition] = AbstractBindingState(false, new_binding_typ′[])
+            binding_states[partition] = AbstractBindingState(true, false, new_binding_typ′[])
         end
         return rte
     end

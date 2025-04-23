@@ -82,10 +82,11 @@ struct CachedAnalysisResult
 end
 
 struct AbstractBindingState
+    isconst::Bool
     undef::Bool
     typ
-    AbstractBindingState(undef::Bool, @nospecialize typ) = new(undef, typ)
-    AbstractBindingState(undef::Bool) = new(undef)
+    AbstractBindingState(isconst::Bool, undef::Bool, @nospecialize typ) = new(isconst, undef, typ)
+    AbstractBindingState(isconst::Bool, undef::Bool) = new(isconst, undef)
 end
 const AbstractAbstractBindings = IdDict{Core.BindingPartition,AbstractBindingState}
 

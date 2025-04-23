@@ -1170,9 +1170,7 @@ end
     end
 
     @testset "https://github.com/aviatesk/JET.jl/issues/280" begin
-        # FIXME Remove `virtualize=false`` A bug within `resolve_toplevel_symbols!`
-        # UndefVarError: `Cstring` not defined in `Main.var"##JETVirtualModule#340"`
-        res = @analyze_toplevel virtualize=false begin
+        res = @analyze_toplevel begin
             using Libdl
             let
                 llvmpaths = filter(lib -> occursin(r"LLVM\b", basename(lib)), Libdl.dllist())
@@ -1189,11 +1187,22 @@ end
     end
 end
 
-let # global declaration
-    res = @analyze_toplevel begin
-        global var
+@testset "MissingConcretizationErrorReport" begin
+    let res = @analyze_toplevel begin
+            RandomType = rand((Bool,Int))
+            struct Struct
+                field::RandomType
+            end
+        end
+        isone = length(res.res.toplevel_error_reports) == 1
+        @test isone
+        if isone
+            report = only(res.res.toplevel_error_reports)
+            @test isa(report, MissingConcretizationErrorReport)
+            @test report.name === :RandomType
+            @test !report.isconst
+        end
     end
-    @test isempty(res.res.toplevel_error_reports)
 end
 
 @testset "toplevel throw" begin

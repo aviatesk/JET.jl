@@ -89,6 +89,42 @@ function print_report(io::IO, report::RecursiveIncludeErrorReport)
     println(io, " ⚈  included files: ", join(report.files, ' '))
 end
 
+# a special exception type that is supposed to be thrown only by `JuliaInterpreter.lookup(::ConcreteInterpreter)`
+struct MissingConcretizationError <: Exception
+    isconst::Bool
+    mod::Module
+    name::Symbol
+end
+
+struct MissingConcretizationErrorReport <: ToplevelErrorReport
+    isconst::Bool
+    mod::Module
+    name::Symbol
+    file::String
+    line::Int
+end
+function print_report(io::IO, report::MissingConcretizationErrorReport)
+    (; isconst, mod, name) = report
+    recommended_pattern = isconst ? ":(const $name = x_)" : ":($name = x_)"
+    msg = """
+    `$mod.$name` is not concretized but JET needs to use its actual value in order to define types or methods.
+    """
+    if !isconst
+        msg *= """
+        - If this binding can be declared as a constant, try to declare it as a constant (i.e. `const $name = ...`).
+        """
+    end
+    msg *= """- You may need to specify `$recommended_pattern` pattern to the `concretization_patterns`
+      configuration to allow JET to actually evaluate this binding, e.g.,
+      `report_file("path/to/file.jl"; concretization_patterns = [$recommended_pattern])`.
+    """
+    msg *= """- If the above $(isconst ? "approach does" : "approaches do") not work, try `concretization_patterns = [:(x_)]` to
+      concretize all top-level code in the module (recommended as a last resort since it
+      would incur any side effects in your code and may cause the analysis to take longer time).
+    """
+    print(io, msg)
+end
+
 """
 Configurations for top-level analysis.
 These configurations will be active for all the top-level entries explained in the
@@ -1294,6 +1330,38 @@ function select_dependencies!(concretize::BitVector, src::CodeInfo, edges, cl)
     nothing
 end
 
+# TODO use proper world age for the lookups
+function JuliaInterpreter.lookup(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node))
+    if node isa Symbol
+        node = GlobalRef(JuliaInterpreter.moduleof(frame), node)
+    end
+    if node isa GlobalRef && !@invokelatest(isdefinedglobal(node.mod, node.name))
+        binding_states = get_binding_states(interp.analyzer)
+        partition = Base.lookup_binding_partition(Base.get_world_counter(), node)
+        binding_state = get(binding_states, partition, nothing)
+        if binding_state !== nothing
+            if binding_state.undef
+                # if this binding is undefined at this point, just make it raise `UndefVarError`
+            else
+                # allow ConcreteInterpreter to use actual concrete values that have been
+                # figured out by the abstract analyzer
+                raise = true
+                if isdefined(binding_state, :typ)
+                    typ = binding_state.typ
+                    if typ isa Const
+                        # return typ.val
+                        raise = false
+                    end
+                end
+                # if this binding is not concrete, then propagate this error type so that
+                # it can be handled by `handle_err`
+                raise && throw(MissingConcretizationError(binding_state.isconst, node.mod, node.name))
+            end
+        end
+    end
+    return @invoke JuliaInterpreter.lookup(interp::Interpreter, frame::Frame, node::Any)
+end
+
 function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node), istoplevel::Bool)
     @assert istoplevel "ConcreteInterpreter can only work for top-level code"
 
@@ -1483,7 +1551,7 @@ function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame::Frame, 
     bt = catch_backtrace()
     st = stacktrace(bt)
 
-    # if the last error is from this file, it's likely to be a serious error of JET
+    # if the last error is raised from `evaluate_call!`, it's likely to be a serious error of JET
     lastframe = last(st)
     if lastframe.file === JET_VIRTUALPROCESS_FILE && lastframe.func === :evaluate_call!
         rethrow(err)
@@ -1495,6 +1563,12 @@ function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame::Frame, 
         # if errors happen in `JuliaInterpreter.maybe_evaluate_builtin`, we just discard all
         # the stacktrace assuming they are enough self-explanatory (corresponding to the last logic below)
         if frame.file === JULIAINTERPRETER_BUILTINS_FILE && frame.func === :maybe_evaluate_builtin
+            break # keep `i = 0`
+        end
+
+        # if errors happen in `JuliaInterpreter.lookup`, we just discard all the stacktrace
+        # and report `MissingConcretizationErrorReport`
+        if frame.file === JET_VIRTUALPROCESS_FILE && frame.func === :lookup
             break # keep `i = 0`
         end
 
@@ -1512,7 +1586,11 @@ function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame::Frame, 
     end
     st = st[1:i]
 
-    report = ActualErrorWrapped(err, st, interp.filename, interp.lnn.line)
+    if err isa MissingConcretizationError
+        report = MissingConcretizationErrorReport(err.isconst, err.mod, err.name, interp.filename, interp.lnn.line)
+    else
+        report = ActualErrorWrapped(err, st, interp.filename, interp.lnn.line)
+    end
     add_toplevel_error_report!(interp, report)
 
     return nothing # stop further interpretation
