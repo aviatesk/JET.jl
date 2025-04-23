@@ -56,7 +56,8 @@ As of April 19, 2025, you need to build Julia from [this branch](https://github.
 for using this 1.12 beta version.
 
 Also, please be aware that some minor features haven't been fully tested yet.
-In particular, there might be issues related to https://github.com/timholy/Revise.jl/issues/903.
+~~In particular, there might be issues related to https://github.com/timholy/Revise.jl/issues/903.~~
+Updated (April 23): As of April 23, 2025, this issue has been fixed on the latest version of Revise.jl.
 
 ## [0.10.2]
 ### Changed
