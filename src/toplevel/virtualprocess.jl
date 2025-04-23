@@ -1340,7 +1340,7 @@ function JuliaInterpreter.lookup(interp::ConcreteInterpreter, frame::Frame, @nos
         partition = Base.lookup_binding_partition(Base.get_world_counter(), node)
         binding_state = get(binding_states, partition, nothing)
         if binding_state !== nothing
-            if binding_state.undef
+            if binding_state.maybeundef
                 # if this binding is undefined at this point, just make it raise `UndefVarError`
             else
                 # allow ConcreteInterpreter to use actual concrete values that have been

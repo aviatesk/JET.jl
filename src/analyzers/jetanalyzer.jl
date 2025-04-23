@@ -741,10 +741,11 @@ end
 
 @jetreport struct UndefVarErrorReport <: InferenceErrorReport
     var::Union{GlobalRef,TypeVar,Symbol}
+    maybeundef::Bool
 end
 function JETInterface.print_report_message(io::IO, r::UndefVarErrorReport)
     var = r.var
-    if isa(var, TypeVar)
+    if isa(var, TypeVar) # TODO show "maybe undefined" case nicely?
         print(io, "`", var.name, "` not defined in static parameter matching")
     else
         if isa(var, GlobalRef)
@@ -752,7 +753,11 @@ function JETInterface.print_report_message(io::IO, r::UndefVarErrorReport)
         else
             print(io, "local variable `", var, "`")
         end
-        print(io, " is not defined")
+        if r.maybeundef
+            print(io, " may be undefined")
+        else
+            print(io, " is not defined")
+        end
     end
 end
 
@@ -771,10 +776,17 @@ function report_undef_global_var!(analyzer::JETAnalyzer, sv::InferenceState, bin
     # TODO use `abstract_eval_isdefinedglobal` for respecting world age
     if @invokelatest isdefinedglobal(gr.mod, gr.name)
         return false
-    elseif haskey(get_binding_states(analyzer), partition)
-        return false
     end
-    add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, gr))
+    binding_states = get_binding_states(analyzer)
+    binding_state = get(binding_states, partition, nothing)
+    maybeundef = false
+    if binding_state !== nothing
+        if !binding_state.maybeundef
+            return false
+        end
+        maybeundef = true
+    end
+    add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, gr, maybeundef))
     return true
 end
 
@@ -787,15 +799,14 @@ end
 (::TypoPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, n::Int) =
     report_undef_static_parameter!(analyzer, sv, n, false)
 function report_undef_static_parameter!(analyzer::JETAnalyzer, sv::InferenceState, n::Int, sound::Bool)
-    if 1 ≤ n ≤ length(sv.sptypes)
-        mi = sv.linfo
-        if sv.sptypes[n].undef && (sound || is_compileable_mi(mi))
-            tv = mi.sparam_vals[n]::TypeVar
-            add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, tv))
-            return true
-        end
-    else
-        add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, TypeVar(:unknown)))
+    if !(1 ≤ n ≤ length(sv.sptypes))
+        add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, TypeVar(:unknown), false))
+        return true
+    end
+    mi = sv.linfo
+    if sv.sptypes[n].undef && (sound || is_compileable_mi(mi))
+        tv = mi.sparam_vals[n]::TypeVar
+        add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, tv, false))
         return true
     end
     return false
@@ -814,7 +825,7 @@ function (::SoundPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::I
     var::SlotNumber, vtypes::VarTable, @nospecialize(ret))
     vtyp = vtypes[slot_id(var)]
     if vtyp.undef
-        add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, get_slotname(sv, var)))
+        add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, get_slotname(sv, var), true))
         return true
     end
     return false
@@ -822,7 +833,7 @@ end
 function (::BasicPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState,
     var::SlotNumber, vtypes::VarTable, @nospecialize(ret))
     ret === Bottom || return false
-    add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, get_slotname(sv, var)))
+    add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, get_slotname(sv, var), true))
     return true
 end
 

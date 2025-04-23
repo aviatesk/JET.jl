@@ -410,18 +410,20 @@ function CC.global_assignment_rt_exct(analyzer::AbstractAnalyzer, sv::AbsIntStat
     if saw_latestworld
         return Pair{Any,Any}(newty, ErrorException)
     end
-    istoplevel = istoplevelframe(sv)
     ⊔ = CC.join(typeinf_lattice(analyzer))
     newty′ = Ref{Any}(newty)
+    isconditional = true
+    if istoplevelframe(sv)
+        local postdomtree = CC.construct_postdomtree(sv.cfg)
+        isconditional = !CC.postdominates(postdomtree, sv.currbb, 1)
+    end
     (valid_worlds, ret) = CC.scan_partitions(analyzer, g, sv.world) do analyzer::AbstractAnalyzer, binding::Core.Binding, partition::Core.BindingPartition
         rte = CC.global_assignment_binding_rt_exct(analyzer, partition, newty′[])
-        if istoplevel
-            # XXX `binding_states` tracks the binding types that are known at top-level only,
-            #     so using the type information may result in incorrect results,
-            #     while just Deriving defined-ness information would probably be fine
-            # TODO need to represent conditional case
-            get_binding_states(analyzer)[partition] = AbstractBindingState(false, false)
-        end
+        # Non-const bindings may be assigned in any call, so it is fundamentally impossible
+        # to track their types precisely.
+        # However, by accurately determining whether a top-level assignment is conditional,
+        # it is possible to track such bindings’ `isdefined` status precisely.
+        get_binding_states(analyzer)[partition] = AbstractBindingState(false, isconditional)
         return rte
     end
     CC.update_valid_age!(sv, valid_worlds)
@@ -469,14 +471,23 @@ function const_assignment_rt_exct(analyzer::AbstractAnalyzer, sv::AbsIntState, s
     end
     ⊔ = CC.join(CC.typeinf_lattice(analyzer))
     new_binding_typ′ = Ref{Any}(new_binding_typ)
+    postdomtree = CC.construct_postdomtree(sv.cfg)
+    isconditional = !CC.postdominates(postdomtree, sv.currbb, 1)
     (valid_worlds, ret) = CC.scan_partitions(analyzer, gr, sv.world) do analyzer::AbstractAnalyzer, binding::Core.Binding, partition::Core.BindingPartition
         rte = const_assignment_binding_rt_exct(analyzer, partition)
         rt, exct = rte
         if rt !== Union{}
             # `:const` assignment destructively overrides the binding type
-            # TODO need to represent conditional case
             binding_states = get_binding_states(analyzer)
-            binding_states[partition] = AbstractBindingState(true, false, new_binding_typ′[])
+            if haskey(binding_states, partition)
+                old_binding_state = binding_states[partition]
+                @assert old_binding_state.isconst && isdefined(old_binding_state, :typ)
+                newmaybeundef = old_binding_state.maybeundef | isconditional
+                newtyp = old_binding_state.typ ⊔ new_binding_typ′[]
+                binding_states[partition] = AbstractBindingState(true, newmaybeundef, newtyp)
+            else
+                binding_states[partition] = AbstractBindingState(true, isconditional, new_binding_typ′[])
+            end
         end
         return rte
     end

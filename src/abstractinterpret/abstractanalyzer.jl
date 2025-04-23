@@ -83,10 +83,10 @@ end
 
 struct AbstractBindingState
     isconst::Bool
-    undef::Bool
+    maybeundef::Bool
     typ
-    AbstractBindingState(isconst::Bool, undef::Bool, @nospecialize typ) = new(isconst, undef, typ)
-    AbstractBindingState(isconst::Bool, undef::Bool) = new(isconst, undef)
+    AbstractBindingState(isconst::Bool, maybeundef::Bool, @nospecialize typ) = new(isconst, maybeundef, typ)
+    AbstractBindingState(isconst::Bool, maybeundef::Bool) = new(isconst, maybeundef)
 end
 const AbstractAbstractBindings = IdDict{Core.BindingPartition,AbstractBindingState}
 

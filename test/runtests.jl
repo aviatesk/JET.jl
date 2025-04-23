@@ -31,6 +31,7 @@ isempty(errmsg) || println(errmsg)
 
         @testset "toplevel" begin
             @testset "virtualprocess.jl" include("toplevel/test_virtualprocess.jl")
+            @testset "toplevel_inference.jl" include("toplevel/test_toplevel_inference.jl")
         end
 
         @testset "ui" begin
