@@ -51,13 +51,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Reimplemented top-level analysis features like `report_package`.
 By updating to this version, you can use these features on Julia v1.12.
 
-However, to use JET v0.10.3, you need to use Julia version `v"1.12.0-beta1.11"` or later.
-As of April 19, 2025, you need to build Julia from [this branch](https://github.com/JuliaLang/julia/pull/58009)
-for using this 1.12 beta version.
+However, to use JET v0.10.3, you need to use Julia version `v"1.12.0-beta2"` or later.
+~~As of April 19, 2025, you need to build Julia from [this branch](https://github.com/JuliaLang/julia/pull/58009)
+for using this 1.12 beta version.~~
+Updated (April 26, 2025): Julia version `v"1.12.0-beta2"` is available at
+[this link](https://julialang.org/downloads/#upcoming_release) now.
 
 Also, please be aware that some minor features haven't been fully tested yet.
 ~~In particular, there might be issues related to https://github.com/timholy/Revise.jl/issues/903.~~
-Updated (April 23): As of April 23, 2025, this issue has been fixed on the latest version of Revise.jl.
+Updated (April 23, 2025): This issue has been fixed on the latest version of Revise.jl.
 
 ## [0.10.2]
 ### Changed
