@@ -74,11 +74,66 @@ include("../setup.jl")
     end
 end
 
+@testset "`const x_ = ...` should not be concretized by default" begin
+    mktemp() do path, io
+        res = @eval @analyze_toplevel begin
+            using Downloads
+            function parse(config::String)
+                println("Do something")
+            end
+            const projectfile = Downloads.download(
+                "https://raw.githubusercontent.com/aviatesk/JET.jl/refs/heads/master/Project.toml", $(path))
+            parse(projectfile)
+        end
+        @test isempty(read(path, String))
+        @test isempty(res.res.toplevel_error_reports)
+        # @test isempty(res.res.inference_error_reports) # should be enabled once https://github.com/JuliaLang/julia/pull/58212 is merged
+    end
+    mktemp() do path, io
+        res = @eval @analyze_toplevel begin
+            const x = let s = "julia"
+                println($io, s)
+                s
+            end
+            length(x)
+        end
+        flush(io)
+        s = read(path, String)
+        @show s
+        res
+    end
+end
+
+@testset "module usage of abstract binding" begin
+    let res = @analyze_toplevel begin
+            module TopModule
+            const somename = "julia"
+            module InnerModule
+            using ..TopModule: somename
+            sum(somename)
+            end # module InnerModule
+            end # module TopModule
+        end
+        @test isempty(res.res.toplevel_error_reports)
+        test_sum_over_string(res)
+    end
+    let res = @analyze_toplevel begin
+            module Exporter
+            export exported_name
+            const exported_name = "julia"
+            end
+            using .Exporter
+            sum(exported_name)
+        end
+        @test isempty(res.res.toplevel_error_reports)
+        test_sum_over_string(res)
+    end
+end
+
 @testset "conditional assignment" begin
     let res = @analyze_toplevel begin
-            global s::Vector{Int}
             if rand(Bool)
-                s = rand(Int, 10)
+                global s::Vector{Int} = rand(Int, 10)
             end
             sum(s)
         end
@@ -93,8 +148,24 @@ end
     end
     let res = @analyze_toplevel begin
             if rand(Bool)
-                const s = rand(Int, 10)
-            else
+                const s = "julia"
+            end
+            sum(s)
+        end
+        isexpected = length(res.res.inference_error_reports) == 3
+        @test isexpected
+        if isexpected
+            @test any(res.res.inference_error_reports) do report
+                isa(report, UndefVarErrorReport) &&
+                report.var.name === :s &&
+                occursin("may be undefined", get_msg(report))
+            end
+            test_sum_over_string(res)
+        end
+    end
+    let res = @analyze_toplevel begin
+            const s = rand(Int, 10)
+            if rand(Bool)
                 const s = "julia"
             end
             sum(s)
@@ -229,7 +300,7 @@ end
         if isone
             report = only(res.res.toplevel_error_reports)
             @test isa(report, MissingConcretizationErrorReport)
-            @test report.name === :RandomType
+            @test report.var.name === :RandomType
             @test !report.isconst
         end
     end

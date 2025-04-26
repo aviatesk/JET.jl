@@ -479,15 +479,20 @@ function const_assignment_rt_exct(analyzer::AbstractAnalyzer, sv::AbsIntState, s
         if rt !== Union{}
             # `:const` assignment destructively overrides the binding type
             binding_states = get_binding_states(analyzer)
-            if haskey(binding_states, partition)
+            if !isconditional
+                binding_state = AbstractBindingState(true, false, new_binding_typ′[])
+            elseif haskey(binding_states, partition)
                 old_binding_state = binding_states[partition]
                 @assert old_binding_state.isconst && isdefined(old_binding_state, :typ)
-                newmaybeundef = old_binding_state.maybeundef | isconditional
+                newmaybeundef = old_binding_state.maybeundef & isconditional
                 newtyp = old_binding_state.typ ⊔ new_binding_typ′[]
-                binding_states[partition] = AbstractBindingState(true, newmaybeundef, newtyp)
+                binding_state = AbstractBindingState(true, newmaybeundef, newtyp)
             else
-                binding_states[partition] = AbstractBindingState(true, isconditional, new_binding_typ′[])
+                binding_state = AbstractBindingState(true, true, new_binding_typ′[])
             end
+            binding_states[partition] = binding_state
+            # HACK/FIXME
+            Core.eval(gr.mod, Expr(:const, gr.name, binding_state))
         end
         return rte
     end
@@ -497,7 +502,7 @@ end
 
 function const_assignment_binding_rt_exct(interp::AbstractInterpreter, partition::Core.BindingPartition)
     kind = CC.binding_kind(partition)
-    if CC.is_some_const_binding(kind) && !CC.is_some_implicit(kind)
+    if CC.is_some_const_binding(kind) && !CC.is_some_imported(kind)
         return Pair{Any,Any}(Nothing, Union{})
     elseif CC.is_some_explicit_imported(kind)
         return Pair{Any,Any}(Union{}, ErrorException)
@@ -509,11 +514,28 @@ end
 
 function CC.abstract_eval_partition_load(analyzer::AbstractAnalyzer, binding::Core.Binding, partition::Core.BindingPartition)
     res = @invoke CC.abstract_eval_partition_load(analyzer::AbstractInterpreter, binding::Core.Binding, partition::Core.BindingPartition)
+    ⊑ = CC.partialorder(CC.typeinf_lattice(analyzer))
+    if res.rt ⊑ AbstractBindingState
+        rt = res.rt
+        if rt isa Const
+            binding_state = rt.val::AbstractBindingState
+            if isdefined(binding_state, :typ)
+                (; exct, effects) = res
+                if binding_state.maybeundef
+                    ⊔ = CC.join(CC.typeinf_lattice(analyzer))
+                    exct = exct ⊔ UndefVarError
+                    effects = CC.Effects(effects; nothrow=exct===Union{})
+                end
+                return RTEffects(binding_state.typ, exct, effects)
+            end
+        end
+        return RTEffects(Any, res.exct, res.effects)
+    end
     binding_states = get_binding_states(analyzer)
     if haskey(binding_states, partition)
         binding_state = binding_states[partition]
         if isdefined(binding_state, :typ)
-            res = RTEffects(binding_state.typ, res.exct, res.effects)
+            return RTEffects(binding_state.typ, res.exct, res.effects)
         end
     end
     return res

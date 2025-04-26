@@ -469,7 +469,7 @@ end
     end
 
     # macro expansions with access to global variables will fail
-    let (vmod, res) = @analyze_toplevel2 begin
+    let res = @analyze_toplevel begin
             const arg = rand((false,false,false,))
 
             macro foo(ex)
@@ -480,14 +480,16 @@ end
 
             @foo sin()
         end
-
-        @test_broken isabstract(res, vmod, :arg)
-        @test isconcrete(res, vmod, Symbol("@foo"))
-        @test_broken length(res.res.toplevel_error_reports) == 1 && let
-            r = only(res.res.toplevel_error_reports)
-            @test isa(r, MissingConcretization) # this error should be considered as missing concretization
+        isexpected = length(res.res.toplevel_error_reports) == 1
+        @test isexpected
+        if isexpected
+            report = only(res.res.toplevel_error_reports)
+            # FIXME MissingConcretizationErrorReport support for macroexpansion
+            # Broken since currently there is no way to use JuliaInterpreter for macroexpansion
+            # Maybe some plugin system for JuliaLowering would fix this.
+            @test_broken isa(report, MissingConcretizationErrorReport)
+            # @test_broken report.var.name === :arg
         end
-        @test_broken isempty(res.res.inference_error_reports)
     end
 
     # macros should be able to expand :module or :toplevel expressions
@@ -716,181 +718,79 @@ end
 @testset "module usage" begin
     # using
     let res = @analyze_toplevel begin
-            module foo
-
+            module SomeModule
             using Base.Meta: isexpr
-
             isexpr(:(foo(bar)), :call)
             isexpr2(:(foo(bar)), :call)
-
-            end
+            end # SomeModule
         end
-
         @test isempty(res.res.toplevel_error_reports)
         report = only(res.res.inference_error_reports)
         @test report isa UndefVarErrorReport
         @test occursin("isexpr2", get_msg(report))
     end
-
-    # sequential usage
     let res = @analyze_toplevel begin
-            module foo
-
-            bar(s) = sum(s)
-
-            module baz
-
-            using ..foo
-
-            bar("julia") # -> UndefVarErrorReport
-
-            end # module bar
-
-            end # module foo
+            module OuterModule
+                somefunc(s) = sum(s)
+                module InnerModule
+                    using ..OuterModule
+                    somefunc("julia") # -> UndefVarErrorReport
+                end # module InnerModule
+            end # module OuterModule
         end
-
         @test isempty(res.res.toplevel_error_reports)
         @test !isempty(res.res.inference_error_reports)
         @test only(res.res.inference_error_reports) isa UndefVarErrorReport
     end
-
-    # usage of global objects
     let res = @analyze_toplevel begin
-            module foo
-
-            bar(s) = sum(s)
-
-            module baz
-
-            using ..foo
-
-            foo.bar("julia") # -> MethodErrorReports
-
-            end # module bar
-
-            end # module foo
+            module OuterModule
+                somefunc(s) = sum(s)
+                module InnerModule
+                    using ..OuterModule
+                    OuterModule.somefunc("julia") # -> MethodErrorReports
+                end # module InnerModule
+            end # module OuterModule
         end
-
         @test isempty(res.res.toplevel_error_reports)
         test_sum_over_string(res)
     end
-
     let res = @analyze_toplevel begin
-            module foo
-
-            bar(s) = sum(s)
-
-            module baz
-
-            using ..foo: bar
-
-            bar("julia") # -> MethodErrorReports
-
-            end # module bar
-
-            end # module foo
+            module OuterModule
+                somefunc(s) = sum(s)
+                module InnerModule
+                    using ..OuterModule: somefunc
+                    somefunc("julia") # -> MethodErrorReports
+                end # module InnerModule
+            end # module OuterModule
         end
-
         @test isempty(res.res.toplevel_error_reports)
         test_sum_over_string(res)
     end
-
     # module usage within a block
     let res = @analyze_toplevel begin
-            module foo
-
-            bar(s) = sum(s)
-
-            module baz
-
-            begin
-                using ..foo: bar
-                bar("julia") # -> MethodErrorReports
-            end
-
-            end # module bar
-
-            end # module foo
+            module OuterModule
+                somefunc(s) = sum(s)
+                module InnerModule
+                    begin
+                        using ..OuterModule: somefunc
+                        somefunc("julia") # -> MethodErrorReports
+                    end
+                end # module InnerModule
+            end # module OuterModule
         end
-
         @test isempty(res.res.toplevel_error_reports)
         test_sum_over_string(res)
-    end
-
-    @testset "module usage of abstract global variable" begin
-        let res = @analyze_toplevel begin
-                module foo
-
-                const bar = sum
-
-                module baz
-
-                using ..foo: bar
-
-                bar("julia")
-
-                end # module bar
-
-                end # module foo
-            end
-
-            @test isempty(res.res.toplevel_error_reports)
-            test_sum_over_string(res)
-        end
-
-        let res = @analyze_toplevel begin
-                module foo
-
-                const bar = "julia"
-
-                module baz
-
-                using ..foo: bar
-
-                sum(bar)
-
-                end # module bar
-
-                end # module foo
-            end
-
-            @test isempty(res.res.toplevel_error_reports)
-            test_sum_over_string(res)
-        end
-
-        let res = @analyze_toplevel begin
-                module foo
-
-                const bar = "julia"
-
-                export bar
-
-                end # module foo
-
-                using .foo
-                sum(bar)
-            end
-
-            @test isempty(res.res.toplevel_error_reports)
-            test_sum_over_string(res)
-        end
     end
 
     # export
     let res = @analyze_toplevel begin
-            module foo
-
-            bar(s) = sum(s)
-
-            export bar
-
-            end
-
-            using .foo
-
-            bar("julia") # -> MethodErrorReports
+            module Exporter
+            exported(s) = sum(s)
+            export exported
+            end # Exporter
+            using .Exporter
+            exported("julia") # -> MethodErrorReports
         end
-
         @test isempty(res.res.toplevel_error_reports)
         test_sum_over_string(res)
     end
@@ -1017,14 +917,14 @@ end
 @testset "error handling within ConcreteInterpreter" begin
     # NOTE some of the tests below are line-number-sensitive
 
+    @assert !isdefinedglobal(@__MODULE__, :BType)
     let res = @analyze_toplevel begin
-            struct A <: B end # UndefVarError(:B) should be handled into `res.toplevel_error_reports`
+            struct AType <: BType end # UndefVarError(:B) should be handled into `res.toplevel_error_reports`
         end
-
         er = only(res.res.toplevel_error_reports)
         @test er isa ActualErrorWrapped
-        @test er.err isa UndefVarError && er.err.var === :B
-        @test er.file == (@__FILE__) && er.line == (@__LINE__) - 6
+        @test er.err isa UndefVarError && er.err.var === :BType
+        @test er.file == (@__FILE__) && er.line == (@__LINE__) - 5
     end
 
     @testset "stacktrace scrubbing" begin
@@ -1244,23 +1144,30 @@ end
 
 @testset "custom concretization pattern" begin
     # custom concretization pattern should work on AST level
-    let (vmod, res) = @analyze_toplevel2 begin
-            const foo = Dict() # won't be concretized by default
+    mktemp() do path, io
+        res = @eval @analyze_toplevel begin
+            const foo = (print($io, "written if concretized"); Dict()) # shouldn't be concretized by default
         end
-        @test_broken !isconcrete(res, vmod, :foo) # FIXME: Remove `:const` concretization pattern
+        flush(io)
+        @test isempty(read(path, String))
     end
-    let (vmod, res) = @analyze_toplevel2 begin
-            const foo = Dict() # now this will be forcibly concretized
-        end concretization_patterns = [:(const foo = Dict())]
-        @test isconcrete(res, vmod, :foo)
+    mktemp() do path, io
+        res = @eval @analyze_toplevel concretization_patterns = [:(const foo = x_)] begin
+            const foo = (print($io, "written if concretized"); Dict()) # now this will be forcibly concretized
+        end
+        flush(io)
+        @test read(path, String) == "written if concretized"
     end
 
     # the analysis on `test/fixtures/concretization_patterns.jl` will produce inappropriate
     # top-level error report because of missing concretization
-    let res = report_file2(CONCRETIZATION_PATTERNS_FILE) # FIXME: Remove `:const` concretization pattern
-        @test_broken !isempty(res.res.toplevel_error_reports) && let
-            r = only(res.res.toplevel_error_reports)
-            @test isa(r, MissingConcretization)
+    let res = report_file2(CONCRETIZATION_PATTERNS_FILE)
+        isexpected = length(res.res.toplevel_error_reports) == 1
+        @test isexpected
+        if isexpected
+            report = only(res.res.toplevel_error_reports)
+            # FIXME MissingConcretizationErrorReport support for macroexpansion
+            @test_broken isa(report, MissingConcretizationErrorReport)
         end
     end
 
@@ -1313,7 +1220,7 @@ end
             # no configuration, thus top-level analysis should fail
             let res = report_file2(analysis_target)
                 nreported = print_reports(IOBuffer(), res)
-                @test_broken !iszero(nreported) # error reported # FIXME: Remove `:const` concretization pattern
+                @test !iszero(nreported)
             end
 
             # setup a configuration file
