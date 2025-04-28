@@ -1151,20 +1151,23 @@ end
 
 @testset "world age" begin
     # https://github.com/aviatesk/JET.jl/issues/104
-    res = @analyze_toplevel begin
-        using Test
-        @testset begin
-            a = @inferred(ones(Int,ntuple(d->1,1)), ntuple(x->x+1,1))
+    @test let res = @analyze_toplevel begin
+            using Test
+            @testset begin
+                a = @inferred(ones(Int,ntuple(d->1,1)), ntuple(x->x+1,1))
+            end
         end
+        @test isempty(res.res.toplevel_error_reports)
+        true
     end
-    @test true
 
-    res = @analyze_toplevel begin
-        using Test
-
-        @test_warn "foo" println(stderr, "foo")
+    @test let res = @analyze_toplevel begin
+            using Test
+            @test_warn "foo" println(stderr, "foo")
+        end
+        @test isempty(res.res.toplevel_error_reports)
+        true
     end
-    @test isempty(res.res.toplevel_error_reports)
 end
 
 @testset "avoid too much bail out from `_virtual_process!`" begin
