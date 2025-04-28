@@ -34,12 +34,6 @@ JET.ConcreteInterpreter
 JET.partially_interpret!
 ```
 
-### How top-level analysis is bridged to `AbstractAnalyzer`
-
-```@docs
-JET.AbstractGlobal
-```
-
 ## [Analysis Result](@id analysis-result)
 
 ```@docs
