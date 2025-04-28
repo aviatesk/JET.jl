@@ -200,10 +200,10 @@ function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer,
     ret = @invoke CC.abstract_call_gf_by_type(analyzer::AbstractAnalyzer,
         func::Any, arginfo::ArgInfo, si::StmtInfo, atype::Any, sv::InferenceState, max_methods::Int)
     atype′ = Ref{Any}(atype)
-    function after_abstract_call_gf_by_type(analyzer′, sv′)
+    function after_abstract_call_gf_by_type(analyzer′::JETAnalyzer, sv′::InferenceState)
         ret′ = ret[]
-        ReportPass(analyzer)(MethodErrorReport, analyzer, sv, ret′, arginfo.argtypes, atype′[])
-        ReportPass(analyzer)(UnanalyzedCallReport, analyzer, sv, ret′, atype′[])
+        ReportPass(analyzer′)(MethodErrorReport, analyzer′, sv′, ret′, arginfo.argtypes, atype′[])
+        ReportPass(analyzer′)(UnanalyzedCallReport, analyzer′, sv′, ret′, atype′[])
         return true
     end
     if isready(ret)
@@ -276,9 +276,9 @@ end
 
 function CC.abstract_invoke(analyzer::JETAnalyzer, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState)
     ret = @invoke CC.abstract_invoke(analyzer::AbstractAnalyzer, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState)
-    function after_abstract_invoke(analyzer′, sv′)
+    function after_abstract_invoke(analyzer′::JETAnalyzer, sv′::InferenceState)
         ret′ = ret[]
-        ReportPass(analyzer)(InvalidInvokeErrorReport, analyzer, sv, ret′, arginfo.argtypes)
+        ReportPass(analyzer′)(InvalidInvokeErrorReport, analyzer′, sv′, ret′, arginfo.argtypes)
         return true
     end
     if isready(ret)
@@ -293,9 +293,9 @@ end
 function CC.abstract_eval_statement_expr(analyzer::JETAnalyzer, e::Expr, sstate::StatementState, sv::InferenceState)
     ret = @invoke CC.abstract_eval_statement_expr(analyzer::AbstractAnalyzer, e::Expr, sstate::StatementState, sv::InferenceState)
     if e.head === :static_parameter
-        function after_abstract_eval_statement_expr(analyzer′, sv′)
+        function after_abstract_eval_statement_expr(analyzer′::JETAnalyzer, sv′::InferenceState)
             ret′ = ret[]
-            ReportPass(analyzer)(UndefVarErrorReport, analyzer, sv, e.args[1]::Int)
+            ReportPass(analyzer′)(UndefVarErrorReport, analyzer′, sv′, e.args[1]::Int)
             return true
         end
         if isready(ret)
