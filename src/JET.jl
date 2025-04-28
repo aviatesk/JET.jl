@@ -26,7 +26,11 @@ for exported_name in exports
     Core.eval(@__MODULE__, Expr(:export, exported_name))
 end
 
-using Base: Compiler as CC
+if Base.identify_package(@__MODULE__, "Compiler") !== nothing
+    using Compiler: Compiler as CC
+else
+    using Base: Compiler as CC
+end
 
 # Pre-release Julia versions are not supported, and we don't expect JET to even
 # precompile in pre-release versions. So, instead of having JET fail to precompile, we
@@ -53,6 +57,7 @@ end
 if CC !== Base.Compiler
     # XXX this shouldn't be necessary
     push_inithook!() do
+        @info "JET: Using the stdlib version of Compiler.jl" pkgversion(CC)
         Base.REFLECTION_COMPILER[] = CC
     end
 end
