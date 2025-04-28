@@ -185,7 +185,7 @@ end
 end
 
 @testset "multiple declaration/assignment" begin
-    let (vmod, res) = @analyze_toplevel2 begin
+    let res = @analyze_toplevel begin
             r1, r2 = rand(2)
             println(r1, r2)
         end
@@ -193,7 +193,7 @@ end
         @test isempty(res.res.inference_error_reports)
     end
 
-    let (vmod, res) = @analyze_toplevel2 begin
+    let res = @analyze_toplevel begin
             begin
                 local r1, r2
                 r1, r2 = rand(2)
@@ -204,7 +204,7 @@ end
         @test isempty(res.res.inference_error_reports)
     end
 
-    let (vmod, res) = @analyze_toplevel2 begin
+    let res = @analyze_toplevel begin
             let
                 global r1, r2
                 r1, r2 = rand(2)
@@ -215,7 +215,7 @@ end
         @test isempty(res.res.inference_error_reports)
     end
 
-    let (vmod, res) = @analyze_toplevel2 begin
+    let res = @analyze_toplevel begin
             ro1, ro2 = let
                 ri1, ri2 = rand(2)
                 println(ri1, ri2)
@@ -227,7 +227,7 @@ end
         @test isempty(res.res.inference_error_reports)
     end
 
-    let (vmod, res) = @analyze_toplevel2 begin
+    let res = @analyze_toplevel begin
             begin
                 local l
                 l, g = rand(2)
@@ -280,7 +280,7 @@ end
     @test isempty(res.res.inference_error_reports)
 end
 
-let (vmod, res) = @analyze_toplevel2 begin
+let res = @analyze_toplevel begin
         var = rand(Bool)
         const constvar = rand(Bool)
         println(var, constvar)

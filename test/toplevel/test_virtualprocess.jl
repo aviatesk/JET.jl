@@ -246,56 +246,78 @@ let res = @analyze_toplevel begin
 end
 
 @testset "'toplevel definitions'" begin
-    let
-        vmod, res = @analyze_toplevel2 begin
-            # function
+    let res = @analyze_toplevel begin
             foo() = nothing
-
-            # local function, shouldn't be evaluated
-            let
-                c = rand(Bool)
-                foo′(a) = a || c
+            foo()
+        end
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
+    end
+    let res = @analyze_toplevel begin
+            let c = rand(Bool)
+                foo(a) = c || sum(a)
+                foo("julia")
             end
-
-            # macro
+        end
+        @test isempty(res.res.toplevel_error_reports)
+        test_sum_over_string(res)
+    end
+    let res = @analyze_toplevel begin
             macro foo(ex) ex end
-
-            # abstract type
+            @foo func(a) = sum(a)
+            func("julia")
+        end
+        @test isempty(res.res.toplevel_error_reports)
+        test_sum_over_string(res)
+    end
+    let res = @analyze_toplevel begin
             abstract type Foo end
-
-            # struct
             struct Foo1 <: Foo
                 val::Int
             end
             mutable struct Foo2 <: Foo
                 val::Int
             end
-
-            # primitive type
-            primitive type Foo3 32 end
-
+            let val = 42
+                println(Foo1(val))
+                println(Foo2(val))
+            end
+        end
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
+    end
+    let res = @analyze_toplevel begin
+            primitive type Foo 32 end
+            println(sizeof(Foo))
+        end
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
+    end
+    let res = @analyze_toplevel begin
             # import, using
             using Base: Fix1
             import Base: getproperty
 
+            abstract type Foo end
             function getproperty(foo::Foo, sym::Symbol)
                 return if sym === :val
-                    getfield(foo, sym)::Int
+                    getfield(foo, sym)::String
                 else
                     getfield(foo, sym)
                 end
             end
-        end
 
-        @test isconcrete(res, vmod, :foo)
-        @test !isconcrete(res, vmod, :foo′)
-        @test isconcrete(res, vmod, Symbol("@foo"))
-        @test isconcrete(res, vmod, :Foo)
-        @test isconcrete(res, vmod, :Foo1)
-        @test isconcrete(res, vmod, :Foo2)
-        @test isconcrete(res, vmod, :Foo3)
-        @test isconcrete(res, vmod, :Fix1)
-        @test !isempty(methodswith(@invokelatest(getglobal(vmod, :Foo)), getproperty))
+            struct Foo1 <: Foo
+                val
+            end
+
+            global s::String = "julia"
+            let foo = Foo1(s)
+                sum(foo.val)
+            end
+        end
+        @test isempty(res.res.toplevel_error_reports)
+        test_sum_over_string(res)
     end
 
     # basic profiling with user-defined types
