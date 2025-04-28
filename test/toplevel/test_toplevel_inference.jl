@@ -247,18 +247,18 @@ end
             function area(c::Circle)
                 pi * c.radius^2
             end
-            area(Circle(2))
+            @show area(Circle(2))
         end
         @test_broken isempty(res.res.toplevel_error_reports)
     end
     let res = @analyze_toplevel begin
-        const Circle = @NamedTuple begin
+            const Circle = @NamedTuple begin
                 radius::Float64
             end
             function area(c::Circle)
                 pi * c.radius^2
             end
-            area(Circle(2))
+            @show area(Circle(2))
         end
     end
 end
