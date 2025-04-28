@@ -1338,6 +1338,7 @@ function JuliaInterpreter.lookup(interp::ConcreteInterpreter, frame::Frame, @nos
         if @invokelatest isdefinedglobal(node.mod, node.name)
             val = @invokelatest getglobal(node.mod, node.name)
             if val isa AbstractBindingState
+                # HACK/FIXME Concretize `AbstractBindingState`
                 if isdefined(val, :typ)
                     typ = val.typ
                     if typ isa Const
@@ -1363,8 +1364,7 @@ function JuliaInterpreter.lookup(interp::ConcreteInterpreter, frame::Frame, @nos
                     if isdefined(binding_state, :typ)
                         typ = binding_state.typ
                         if typ isa Const
-                            # return typ.val
-                            raise = false
+                            return typ.val
                         end
                     end
                     # if this binding is not concrete, then propagate this error type so that

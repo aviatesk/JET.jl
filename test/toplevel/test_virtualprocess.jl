@@ -808,102 +808,126 @@ end
 end
 
 @testset "binding scope handling" begin
-    let (vmod, res) = @analyze_toplevel2 begin
+    let res = @analyze_toplevel begin
+            let
+                localvar = rand(Bool)
+            end
+            println(localvar)
+        end
+        isexpected = length(res.res.inference_error_reports) == 1
+        @test isexpected
+        if isexpected
+            r = only(res.res.inference_error_reports)
+            @test r isa UndefVarErrorReport
+            @test r.var.name === :localvar
+        end
+    end
+
+    let res = @analyze_toplevel begin
             begin
                 local localvar = rand(Bool)
                 global globalvar = rand(Bool)
+                println(localvar)
             end
+            println(globalvar)
         end
-
-        @test !isanalyzed(res, vmod, :localvar)
-        @test isabstract(res, vmod, :globalvar)
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
     end
 
-    let (vmod, res) = @analyze_toplevel2 begin
-            begin
-                globalvar = rand(Bool)
-            end
-        end
-        @test isabstract(res, vmod, :globalvar)
-    end
-
-    let (vmod, res) = @analyze_toplevel2 begin
+    let res = @analyze_toplevel begin
             begin
                 local localvar = rand(Bool)
-                globalvar = localvar
+                globalvar = ~localvar
+                println(localvar)
             end
+            println(globalvar)
         end
-        @test !isanalyzed(res, vmod, :localvar)
-        @test isabstract(res, vmod, :globalvar)
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
     end
 
-    let (vmod, res) = @analyze_toplevel2 begin
+    let res = @analyze_toplevel begin
             begin
                 local localvar
                 localvar = rand(Bool) # this shouldn't be annotated as `global`
                 globalvar = localvar
+                println(localvar)
             end
+            println(globalvar)
         end
-        @test !isanalyzed(res, vmod, :localvar)
-        @test isabstract(res, vmod, :globalvar)
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
     end
 
-    let (vmod, res) = @analyze_toplevel2 begin
+    let res = @analyze_toplevel begin
             globalvar2 = begin
                 local localvar = rand(Bool)
-                globalvar1 = localvar
+                globalvar1 = ~localvar
+                println(localvar)
             end
+            println(globalvar1)
+            println(globalvar2)
         end
-        @test !isanalyzed(res, vmod, :localvar)
-        @test isabstract(res, vmod, :globalvar1)
-        @test isabstract(res, vmod, :globalvar2)
-    end
-
-    let (vmod, res) = @analyze_toplevel2 begin
-            let
-                localvar = rand(Bool)
-            end
-        end
-        @test !isanalyzed(res, vmod, :localvar)
-    end
-
-    let (vmod, res) = @analyze_toplevel2 begin
-            globalvar = let
-                localvar = rand(Bool)
-                localvar
-            end
-        end
-        @test !isanalyzed(res, vmod, :localvar)
-        @test isabstract(res, vmod, :globalvar)
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
     end
 
     # loops
     # -----
 
-    let (vmod, res) = @analyze_toplevel2 begin
+    let res = @analyze_toplevel begin
             for i = 1:100
                 localvar = i
             end
+            println(localvar)
         end
-        @test !isanalyzed(res, vmod, :localvar)
+        @test isempty(res.res.toplevel_error_reports)
+        isexpected = length(res.res.inference_error_reports) == 1
+        @test isexpected
+        if isexpected
+            report = only(res.res.inference_error_reports)
+            @test report isa UndefVarErrorReport
+            @test report.var.name === :localvar
+        end
     end
 
-    let (vmod, res) = @analyze_toplevel2 begin
-            for i in 1:10
+    let res = @analyze_toplevel begin
+            for i in 1:rand((0,10,100))
                 localvar = rand(Bool)
-                global globalvar = localvar
+                global globalvar = ~localvar
+                println(localvar)
             end
+            println(globalvar)
         end
-        @test !isanalyzed(res, vmod, :localvar)
-        @test isabstract(res, vmod, :globalvar)
+        @test isempty(res.res.toplevel_error_reports)
+        isexpected = length(res.res.inference_error_reports) == 1
+        @test isexpected
+        if isexpected
+            report = only(res.res.inference_error_reports)
+            @test report isa UndefVarErrorReport
+            @test report.var.name === :globalvar
+            @test report.maybeundef
+        end
     end
 
-    let (vmod, res) = @analyze_toplevel2 begin
+    let res = @analyze_toplevel begin
             while true
                 localvar = rand(Bool)
+                global globalvar = ~localvar
+                localvar && break
             end
+            println(globalvar)
         end
-        @test !isanalyzed(res, vmod, :localvar)
+        @test isempty(res.res.toplevel_error_reports)
+        isexpected = length(res.res.inference_error_reports) == 1
+        @test isexpected
+        if isexpected
+            report = only(res.res.inference_error_reports)
+            @test report isa UndefVarErrorReport
+            @test report.var.name === :globalvar
+            @test_broken report.maybeundef
+        end
     end
 end
 

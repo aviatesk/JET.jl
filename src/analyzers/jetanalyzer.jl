@@ -775,6 +775,7 @@ function report_undef_global_var!(analyzer::JETAnalyzer, sv::InferenceState, bin
     gr = binding.globalref
     # TODO use `abstract_eval_isdefinedglobal` for respecting world age
     if @invokelatest isdefinedglobal(gr.mod, gr.name)
+        # HACK/FIXME Concretize `AbstractBindingState`
         x = @invokelatest getglobal(gr.mod, gr.name)
         x isa AbstractBindingState || return false
         binding_state = x

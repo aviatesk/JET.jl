@@ -491,7 +491,11 @@ function const_assignment_rt_exct(analyzer::AbstractAnalyzer, sv::AbsIntState, s
                 binding_state = AbstractBindingState(true, true, new_binding_typ′[])
             end
             binding_states[partition] = binding_state
-            # HACK/FIXME
+            # HACK/FIXME Concretize `AbstractBindingState`
+            # For top-level analysis implementation reasons, we actually define this
+            # `AbstractBindingState` in the analyzed module’s namespace.
+            # This is necessary because binding resolution cannot be accurately tracked
+            # when using `export`/`using`.
             Core.eval(gr.mod, Expr(:const, gr.name, binding_state))
         end
         return rte
@@ -515,7 +519,8 @@ end
 function CC.abstract_eval_partition_load(analyzer::AbstractAnalyzer, binding::Core.Binding, partition::Core.BindingPartition)
     res = @invoke CC.abstract_eval_partition_load(analyzer::AbstractInterpreter, binding::Core.Binding, partition::Core.BindingPartition)
     ⊑ = CC.partialorder(CC.typeinf_lattice(analyzer))
-    if res.rt ⊑ AbstractBindingState
+    if res.rt !== Union{} && res.rt ⊑ AbstractBindingState
+        # HACK/FIXME Concretize `AbstractBindingState`
         rt = res.rt
         if rt isa Const
             binding_state = rt.val::AbstractBindingState

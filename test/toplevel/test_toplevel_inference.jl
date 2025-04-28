@@ -3,7 +3,7 @@ module test_toplevel_inference
 include("../setup.jl")
 
 @testset "inference with abstract binding" begin
-    let (m, res) = @analyze_toplevel2 begin
+    let res = @analyze_toplevel begin
             global a::Int
             sin(a)
         end
@@ -17,19 +17,19 @@ include("../setup.jl")
         end
     end
 
-    let (m, res) = @analyze_toplevel2 begin
+    let res = @analyze_toplevel begin
             const a = 0
             sin(a)
         end
         @test isempty(res.res.inference_error_reports)
     end
-    let (m, res) = @analyze_toplevel2 begin
+    let res = @analyze_toplevel begin
             const a = :jetzero # should be quoted, otherwise undef var error
             String(a)
         end
         @test isempty(res.res.inference_error_reports)
     end
-    let (m, res) = @analyze_toplevel2 begin
+    let res = @analyze_toplevel begin
             global a = 0
             sin(a)
         end
@@ -37,7 +37,7 @@ include("../setup.jl")
     end
 
     # sequential
-    let (m, res) = @analyze_toplevel2 begin
+    let res = @analyze_toplevel begin
             const a = rand(Int)
             println(sin(a))
             const a = 0
@@ -46,7 +46,7 @@ include("../setup.jl")
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
-    let (m, res) = @analyze_toplevel2 begin
+    let res = @analyze_toplevel begin
             const a = rand(Int)
             println(sin(a))
             const a = "julia"
@@ -55,7 +55,7 @@ include("../setup.jl")
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
-    let (m, res) = @analyze_toplevel2 begin
+    let res = @analyze_toplevel begin
             const a = rand(Int)
             println(sin(a))
             const a = "julia"
@@ -64,7 +64,7 @@ include("../setup.jl")
         @test isempty(res.res.toplevel_error_reports)
         test_sum_over_string(res)
     end
-    let (m, res) = @analyze_toplevel2 begin
+    let res = @analyze_toplevel begin
             global a = 0
             sin(a)
             global a = 0.0
@@ -99,8 +99,9 @@ end
         end
         flush(io)
         s = read(path, String)
-        @show s
-        res
+        @test isempty(read(path, String))
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
     end
 end
 
