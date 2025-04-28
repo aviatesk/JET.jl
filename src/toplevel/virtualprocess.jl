@@ -92,19 +92,18 @@ end
 # a special exception type that is supposed to be thrown only by `JuliaInterpreter.lookup(::ConcreteInterpreter)`
 struct MissingConcretizationError <: Exception
     isconst::Bool
-    mod::Module
-    name::Symbol
+    var::GlobalRef
 end
 
 struct MissingConcretizationErrorReport <: ToplevelErrorReport
     isconst::Bool
-    mod::Module
-    name::Symbol
+    var::GlobalRef
     file::String
     line::Int
 end
 function print_report(io::IO, report::MissingConcretizationErrorReport)
-    (; isconst, mod, name) = report
+    (; isconst, var) = report
+    (; mod, name) = var
     recommended_pattern = isconst ? ":(const $name = x_)" : ":($name = x_)"
     msg = """
     `$mod.$name` is not concretized but JET needs to use its actual value in order to define types or methods.
@@ -347,7 +346,7 @@ default_concretization_patterns() = (
     # concretize type aliases
     # https://github.com/aviatesk/JET.jl/issues/237
     :(const T_ = U_{P__}), :(T_ = U_{P__}),
-    :(const x_ = y_)) # TODO Remove me 0.10
+)
 
 @nospecialize
 with_toplevel_logger(f, config::ToplevelConfig; kwargs...) =
@@ -1335,27 +1334,43 @@ function JuliaInterpreter.lookup(interp::ConcreteInterpreter, frame::Frame, @nos
     if node isa Symbol
         node = GlobalRef(JuliaInterpreter.moduleof(frame), node)
     end
-    if node isa GlobalRef && !@invokelatest(isdefinedglobal(node.mod, node.name))
-        binding_states = get_binding_states(interp.analyzer)
-        partition = Base.lookup_binding_partition(Base.get_world_counter(), node)
-        binding_state = get(binding_states, partition, nothing)
-        if binding_state !== nothing
-            if binding_state.undef
-                # if this binding is undefined at this point, just make it raise `UndefVarError`
-            else
-                # allow ConcreteInterpreter to use actual concrete values that have been
-                # figured out by the abstract analyzer
-                raise = true
-                if isdefined(binding_state, :typ)
-                    typ = binding_state.typ
+    if node isa GlobalRef
+        if @invokelatest isdefinedglobal(node.mod, node.name)
+            val = @invokelatest getglobal(node.mod, node.name)
+            if val isa AbstractBindingState
+                # HACK/FIXME Concretize `AbstractBindingState`
+                if isdefined(val, :typ)
+                    typ = val.typ
                     if typ isa Const
-                        # return typ.val
-                        raise = false
+                        # allow ConcreteInterpreter to use actual concrete values that have
+                        # been figured out by the abstract analyzer
+                        return typ.val
                     end
                 end
-                # if this binding is not concrete, then propagate this error type so that
-                # it can be handled by `handle_err`
-                raise && throw(MissingConcretizationError(binding_state.isconst, node.mod, node.name))
+                throw(MissingConcretizationError(val.isconst, node))
+            end
+            return val
+        else
+            binding_states = get_binding_states(interp.analyzer)
+            partition = Base.lookup_binding_partition(Base.get_world_counter(), node)
+            binding_state = get(binding_states, partition, nothing)
+            if binding_state !== nothing
+                if binding_state.maybeundef
+                    # if this binding is undefined at this point, just make it raise `UndefVarError`
+                else
+                    # allow ConcreteInterpreter to use actual concrete values that have been
+                    # figured out by the abstract analyzer
+                    raise = true
+                    if isdefined(binding_state, :typ)
+                        typ = binding_state.typ
+                        if typ isa Const
+                            return typ.val
+                        end
+                    end
+                    # if this binding is not concrete, then propagate this error type so that
+                    # it can be handled by `handle_err`
+                    raise && throw(MissingConcretizationError(binding_state.isconst, node))
+                end
             end
         end
     end
@@ -1587,7 +1602,7 @@ function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame::Frame, 
     st = st[1:i]
 
     if err isa MissingConcretizationError
-        report = MissingConcretizationErrorReport(err.isconst, err.mod, err.name, interp.filename, interp.lnn.line)
+        report = MissingConcretizationErrorReport(err.isconst, err.var, interp.filename, interp.lnn.line)
     else
         report = ActualErrorWrapped(err, st, interp.filename, interp.lnn.line)
     end

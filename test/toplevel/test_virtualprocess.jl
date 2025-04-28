@@ -246,56 +246,78 @@ let res = @analyze_toplevel begin
 end
 
 @testset "'toplevel definitions'" begin
-    let
-        vmod, res = @analyze_toplevel2 begin
-            # function
+    let res = @analyze_toplevel begin
             foo() = nothing
-
-            # local function, shouldn't be evaluated
-            let
-                c = rand(Bool)
-                foo′(a) = a || c
+            foo()
+        end
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
+    end
+    let res = @analyze_toplevel begin
+            let c = rand(Bool)
+                foo(a) = c || sum(a)
+                foo("julia")
             end
-
-            # macro
+        end
+        @test isempty(res.res.toplevel_error_reports)
+        test_sum_over_string(res)
+    end
+    let res = @analyze_toplevel begin
             macro foo(ex) ex end
-
-            # abstract type
+            @foo func(a) = sum(a)
+            func("julia")
+        end
+        @test isempty(res.res.toplevel_error_reports)
+        test_sum_over_string(res)
+    end
+    let res = @analyze_toplevel begin
             abstract type Foo end
-
-            # struct
             struct Foo1 <: Foo
                 val::Int
             end
             mutable struct Foo2 <: Foo
                 val::Int
             end
-
-            # primitive type
-            primitive type Foo3 32 end
-
+            let val = 42
+                println(Foo1(val))
+                println(Foo2(val))
+            end
+        end
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
+    end
+    let res = @analyze_toplevel begin
+            primitive type Foo 32 end
+            println(sizeof(Foo))
+        end
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
+    end
+    let res = @analyze_toplevel begin
             # import, using
             using Base: Fix1
             import Base: getproperty
 
+            abstract type Foo end
             function getproperty(foo::Foo, sym::Symbol)
                 return if sym === :val
-                    getfield(foo, sym)::Int
+                    getfield(foo, sym)::String
                 else
                     getfield(foo, sym)
                 end
             end
-        end
 
-        @test isconcrete(res, vmod, :foo)
-        @test !isconcrete(res, vmod, :foo′)
-        @test isconcrete(res, vmod, Symbol("@foo"))
-        @test isconcrete(res, vmod, :Foo)
-        @test isconcrete(res, vmod, :Foo1)
-        @test isconcrete(res, vmod, :Foo2)
-        @test isconcrete(res, vmod, :Foo3)
-        @test isconcrete(res, vmod, :Fix1)
-        @test !isempty(methodswith(@invokelatest(getglobal(vmod, :Foo)), getproperty))
+            struct Foo1 <: Foo
+                val
+            end
+
+            global s::String = "julia"
+            let foo = Foo1(s)
+                sum(foo.val)
+            end
+        end
+        @test isempty(res.res.toplevel_error_reports)
+        test_sum_over_string(res)
     end
 
     # basic profiling with user-defined types
@@ -416,6 +438,28 @@ end
             @test isabstract(res, vmod, :bar)
         end
     end
+
+    @testset "sequential definitions" begin
+        let res = @analyze_toplevel begin
+                foobar(1:1000)
+
+                foobar(a) = length(a)
+            end
+            @test only(res.res.inference_error_reports) isa UndefVarErrorReport
+        end
+
+        let res = @analyze_toplevel begin
+                usefunc(a) = sin(func_impl(a))
+
+                func_impl(a) = length(a)
+                usefunc("julia") # should not error
+
+                func_impl(a) = a
+                usefunc(42)  # should not error too
+            end
+            @test isempty(res.res.inference_error_reports)
+        end
+    end
 end
 
 @testset "macro expansions" begin
@@ -447,7 +491,7 @@ end
     end
 
     # macro expansions with access to global variables will fail
-    let (vmod, res) = @analyze_toplevel2 begin
+    let res = @analyze_toplevel begin
             const arg = rand((false,false,false,))
 
             macro foo(ex)
@@ -458,14 +502,16 @@ end
 
             @foo sin()
         end
-
-        @test_broken isabstract(res, vmod, :arg)
-        @test isconcrete(res, vmod, Symbol("@foo"))
-        @test_broken length(res.res.toplevel_error_reports) == 1 && let
-            r = only(res.res.toplevel_error_reports)
-            @test isa(r, MissingConcretization) # this error should be considered as missing concretization
+        isexpected = length(res.res.toplevel_error_reports) == 1
+        @test isexpected
+        if isexpected
+            report = only(res.res.toplevel_error_reports)
+            # FIXME MissingConcretizationErrorReport support for macroexpansion
+            # Broken since currently there is no way to use JuliaInterpreter for macroexpansion
+            # Maybe some plugin system for JuliaLowering would fix this.
+            @test_broken isa(report, MissingConcretizationErrorReport)
+            # @test_broken report.var.name === :arg
         end
-        @test_broken isempty(res.res.inference_error_reports)
     end
 
     # macros should be able to expand :module or :toplevel expressions
@@ -502,16 +548,7 @@ end
     end
 end
 
-@testset "`const` handling" begin
-    let res = @analyze_toplevel begin
-            const s = "julia"
-            sum(s)
-        end
-
-        @test isempty(res.res.toplevel_error_reports)
-        test_sum_over_string(res)
-    end
-
+@testset "lowering error" begin
     let res = @analyze_toplevel begin
             let
                 const s = "julia"
@@ -703,181 +740,79 @@ end
 @testset "module usage" begin
     # using
     let res = @analyze_toplevel begin
-            module foo
-
+            module SomeModule
             using Base.Meta: isexpr
-
             isexpr(:(foo(bar)), :call)
             isexpr2(:(foo(bar)), :call)
-
-            end
+            end # SomeModule
         end
-
         @test isempty(res.res.toplevel_error_reports)
         report = only(res.res.inference_error_reports)
         @test report isa UndefVarErrorReport
         @test occursin("isexpr2", get_msg(report))
     end
-
-    # sequential usage
     let res = @analyze_toplevel begin
-            module foo
-
-            bar(s) = sum(s)
-
-            module baz
-
-            using ..foo
-
-            bar("julia") # -> UndefVarErrorReport
-
-            end # module bar
-
-            end # module foo
+            module OuterModule
+                somefunc(s) = sum(s)
+                module InnerModule
+                    using ..OuterModule
+                    somefunc("julia") # -> UndefVarErrorReport
+                end # module InnerModule
+            end # module OuterModule
         end
-
         @test isempty(res.res.toplevel_error_reports)
         @test !isempty(res.res.inference_error_reports)
         @test only(res.res.inference_error_reports) isa UndefVarErrorReport
     end
-
-    # usage of global objects
     let res = @analyze_toplevel begin
-            module foo
-
-            bar(s) = sum(s)
-
-            module baz
-
-            using ..foo
-
-            foo.bar("julia") # -> MethodErrorReports
-
-            end # module bar
-
-            end # module foo
+            module OuterModule
+                somefunc(s) = sum(s)
+                module InnerModule
+                    using ..OuterModule
+                    OuterModule.somefunc("julia") # -> MethodErrorReports
+                end # module InnerModule
+            end # module OuterModule
         end
-
         @test isempty(res.res.toplevel_error_reports)
         test_sum_over_string(res)
     end
-
     let res = @analyze_toplevel begin
-            module foo
-
-            bar(s) = sum(s)
-
-            module baz
-
-            using ..foo: bar
-
-            bar("julia") # -> MethodErrorReports
-
-            end # module bar
-
-            end # module foo
+            module OuterModule
+                somefunc(s) = sum(s)
+                module InnerModule
+                    using ..OuterModule: somefunc
+                    somefunc("julia") # -> MethodErrorReports
+                end # module InnerModule
+            end # module OuterModule
         end
-
         @test isempty(res.res.toplevel_error_reports)
         test_sum_over_string(res)
     end
-
     # module usage within a block
     let res = @analyze_toplevel begin
-            module foo
-
-            bar(s) = sum(s)
-
-            module baz
-
-            begin
-                using ..foo: bar
-                bar("julia") # -> MethodErrorReports
-            end
-
-            end # module bar
-
-            end # module foo
+            module OuterModule
+                somefunc(s) = sum(s)
+                module InnerModule
+                    begin
+                        using ..OuterModule: somefunc
+                        somefunc("julia") # -> MethodErrorReports
+                    end
+                end # module InnerModule
+            end # module OuterModule
         end
-
         @test isempty(res.res.toplevel_error_reports)
         test_sum_over_string(res)
-    end
-
-    @testset "module usage of abstract global variable" begin
-        let res = @analyze_toplevel begin
-                module foo
-
-                const bar = sum
-
-                module baz
-
-                using ..foo: bar
-
-                bar("julia")
-
-                end # module bar
-
-                end # module foo
-            end
-
-            @test isempty(res.res.toplevel_error_reports)
-            test_sum_over_string(res)
-        end
-
-        let res = @analyze_toplevel begin
-                module foo
-
-                const bar = "julia"
-
-                module baz
-
-                using ..foo: bar
-
-                sum(bar)
-
-                end # module bar
-
-                end # module foo
-            end
-
-            @test isempty(res.res.toplevel_error_reports)
-            test_sum_over_string(res)
-        end
-
-        let res = @analyze_toplevel begin
-                module foo
-
-                const bar = "julia"
-
-                export bar
-
-                end # module foo
-
-                using .foo
-                sum(bar)
-            end
-
-            @test isempty(res.res.toplevel_error_reports)
-            test_sum_over_string(res)
-        end
     end
 
     # export
     let res = @analyze_toplevel begin
-            module foo
-
-            bar(s) = sum(s)
-
-            export bar
-
-            end
-
-            using .foo
-
-            bar("julia") # -> MethodErrorReports
+            module Exporter
+            exported(s) = sum(s)
+            export exported
+            end # Exporter
+            using .Exporter
+            exported("julia") # -> MethodErrorReports
         end
-
         @test isempty(res.res.toplevel_error_reports)
         test_sum_over_string(res)
     end
@@ -894,313 +829,126 @@ end
     end
 end
 
-@testset "sequential" begin
+@testset "binding scope handling" begin
     let res = @analyze_toplevel begin
-            foobar(1:1000)
-
-            foobar(a) = length(a)
+            let
+                localvar = rand(Bool)
+            end
+            println(localvar)
         end
-        @test only(res.res.inference_error_reports) isa UndefVarErrorReport
+        isexpected = length(res.res.inference_error_reports) == 1
+        @test isexpected
+        if isexpected
+            r = only(res.res.inference_error_reports)
+            @test r isa UndefVarErrorReport
+            @test r.var.name === :localvar
+        end
     end
 
     let res = @analyze_toplevel begin
-            usefunc(a) = sin(func_impl(a))
-
-            func_impl(a) = length(a)
-            usefunc("julia") # should not error
-
-            func_impl(a) = a
-            usefunc(42)  # should not error too
+            begin
+                local localvar = rand(Bool)
+                global globalvar = rand(Bool)
+                println(localvar)
+            end
+            println(globalvar)
         end
+        @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
-end
 
-@testset "abstract global variables" begin
-    let
-        vmod, res = @analyze_toplevel2 begin
-            var = rand(Bool)
-            const constvar = rand(Bool)
-        end
-
-        @test isabstract(res, vmod, :var)
-        @test isabstract(res, vmod, :var)
-        @test_broken isabstract(res, vmod, :constvar)
-        @test_broken isabstract(res, vmod, :constvar)
-    end
-
-    @testset "scope" begin
-        # function
-        # --------
-
-        let
-            vmod, res = @analyze_toplevel2 begin
-                begin
-                    local localvar = rand(Bool)
-                    global globalvar = rand(Bool)
-                end
-            end
-
-            @test !isanalyzed(res, vmod, :localvar)
-            @test isabstract(res, vmod, :globalvar)
-        end
-
-        # blocks
-        # ------
-
-        let
-            vmod, res = @analyze_toplevel2 begin
-                begin
-                    globalvar = rand(Bool)
-                end
-            end
-
-            @test isabstract(res, vmod, :globalvar)
-        end
-
-        let
-            vmod, res = @analyze_toplevel2 begin
-                begin
-                    local localvar = rand(Bool)
-                    globalvar = localvar
-                end
-            end
-
-            @test !isanalyzed(res, vmod, :localvar)
-            @test isabstract(res, vmod, :globalvar)
-        end
-
-        let
-            vmod, res = @analyze_toplevel2 begin
-                begin
-                    local localvar
-                    localvar = rand(Bool) # this shouldn't be annotated as `global`
-                    globalvar = localvar
-                end
-            end
-
-            @test !isanalyzed(res, vmod, :localvar)
-            @test isabstract(res, vmod, :globalvar)
-        end
-
-        let
-            vmod, res = @analyze_toplevel2 begin
-                globalvar2 = begin
-                    local localvar = rand(Bool)
-                    globalvar1 = localvar
-                end
-            end
-
-            @test !isanalyzed(res, vmod, :localvar)
-            @test isabstract(res, vmod, :globalvar1)
-            @test isabstract(res, vmod, :globalvar2)
-        end
-
-        let
-            vmod, res = @analyze_toplevel2 begin
-                let
-                    localvar = rand(Bool)
-                end
-            end
-
-            @test !isanalyzed(res, vmod, :localvar)
-        end
-
-        let
-            vmod, res = @analyze_toplevel2 begin
-                globalvar = let
-                    localvar = rand(Bool)
-                    localvar
-                end
-            end
-
-            @test !isanalyzed(res, vmod, :localvar)
-            @test isabstract(res, vmod, :globalvar)
-        end
-
-        # loops
-        # -----
-
-        let
-            vmod, res = @analyze_toplevel2 begin
-                for i = 1:100
-                    localvar = i
-                end
-            end
-
-            @test !isanalyzed(res, vmod, :localvar)
-        end
-
-        let
-            vmod, res = @analyze_toplevel2 begin
-                for i in 1:10
-                    localvar = rand(Bool)
-                    global globalvar = localvar
-                end
-            end
-
-            @test !isanalyzed(res, vmod, :localvar)
-            @test isabstract(res, vmod, :globalvar)
-        end
-
-        let
-            vmod, res = @analyze_toplevel2 begin
-                while true
-                    localvar = rand(Bool)
-                end
-            end
-
-            @test !isanalyzed(res, vmod, :localvar)
-        end
-    end
-
-    @testset "multiple declaration/assignment" begin
-        let
-            vmod, res = @analyze_toplevel2 begin
-                r1, r2 = rand(2)
-            end
-
-            @test isabstract(res, vmod, :r1)
-            @test isabstract(res, vmod, :r2)
-        end
-
-        let
-            vmod, res = @analyze_toplevel2 begin
-                begin
-                    local r1, r2
-                    r1, r2 = rand(2)
-                end
-            end
-
-            @test !isanalyzed(res, vmod, :r1)
-            @test !isanalyzed(res, vmod, :r2)
-        end
-
-        let
-            vmod, res = @analyze_toplevel2 begin
-                let
-                    global r1, r2
-                    r1, r2 = rand(2)
-                end
-            end
-
-            @test isabstract(res, vmod, :r1)
-            @test isabstract(res, vmod, :r2)
-        end
-
-        let
-            vmod, res = @analyze_toplevel2 begin
-                ro1, ro2 = let
-                    ri1, ri2 = rand(2)
-                end
-            end
-
-            @test !isanalyzed(res, vmod, :ri1)
-            @test !isanalyzed(res, vmod, :ri2)
-            @test isabstract(res, vmod, :ro1)
-            @test isabstract(res, vmod, :ro2)
-        end
-
-        let
-            vmod, res = @analyze_toplevel2 begin
-                begin
-                    local l
-                    l, g = rand(2)
-                end
-            end
-            @test !isanalyzed(res, vmod, :l)
-            @test isabstract(res, vmod, :g)
-        end
-    end
-
-    @testset "concretize statically constant variables" begin
-        let
-            m, res = @analyze_toplevel2 begin
-                const a = 0
-            end
-            @test isconcrete(res, m, :a) && @invokelatest(m.a) == 0
-        end
-
-        # try to concretize even if it's not declared as constant
-        let
-            m, res = @analyze_toplevel2 begin
-                a = 0
-            end
-            @test_broken isconcrete(res, m, :a) && @invokelatest(m.a) == 0
-        end
-
-        let
-            m, res = @analyze_toplevel2 begin
-                const a = :jetzero # should be quoted, otherwise undef var error
-            end
-            @test_broken isconcrete(res, m, :a) && @invokelatest(m.a) === :jetzero
-        end
-
-        # sequential
-        let
-            m, res = @analyze_toplevel2 begin
-                a = rand(Int)
-                a = 0
-            end
-            @test_broken isconcrete(res, m, :a) && @invokelatest(m.a) == 0
-        end
-        let
-            m, res = @analyze_toplevel2 begin
-                a = 0
-                a = rand(Int)
-            end
-            @test isabstract(res, m, :a)
-        end
-    end
-
-    @testset "https://github.com/aviatesk/JET.jl/issues/142" begin
-        res = @analyze_toplevel begin
-            Circle = @NamedTuple begin
-                radius::Float64
-            end
-
-            function area(c::Circle)
-                pi * c.radius^2
-            end
-
-            area(Circle(2))
-        end
-
-        @test_broken isempty(res.res.toplevel_error_reports) # Broken: make JuliaInterpreter able to use `Const` binding
-    end
-
-    @testset "https://github.com/aviatesk/JET.jl/issues/280" begin
-        res = @analyze_toplevel begin
-            using Libdl
-            let
-                llvmpaths = filter(lib -> occursin(r"LLVM\b", basename(lib)), Libdl.dllist())
-                if length(llvmpaths) != 1
-                    throw(ArgumentError("Found one or multiple LLVM libraries"))
-                end
-                libllvm = Libdl.dlopen(llvmpaths[1])
-                gethostcpufeatures = Libdl.dlsym(libllvm, :LLVMGetHostCPUFeatures)
-                ccall(gethostcpufeatures, Cstring, ())
-            end
-        end
-
-        @test isempty(res.res.toplevel_error_reports)
-    end
-end
-
-@testset "MissingConcretizationErrorReport" begin
     let res = @analyze_toplevel begin
-            RandomType = rand((Bool,Int))
-            struct Struct
-                field::RandomType
+            begin
+                local localvar = rand(Bool)
+                globalvar = ~localvar
+                println(localvar)
             end
+            println(globalvar)
         end
-        isone = length(res.res.toplevel_error_reports) == 1
-        @test isone
-        if isone
-            report = only(res.res.toplevel_error_reports)
-            @test isa(report, MissingConcretizationErrorReport)
-            @test report.name === :RandomType
-            @test !report.isconst
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
+    end
+
+    let res = @analyze_toplevel begin
+            begin
+                local localvar
+                localvar = rand(Bool) # this shouldn't be annotated as `global`
+                globalvar = localvar
+                println(localvar)
+            end
+            println(globalvar)
+        end
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
+    end
+
+    let res = @analyze_toplevel begin
+            globalvar2 = begin
+                local localvar = rand(Bool)
+                globalvar1 = ~localvar
+                println(localvar)
+            end
+            println(globalvar1)
+            println(globalvar2)
+        end
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
+    end
+
+    # loops
+    # -----
+
+    let res = @analyze_toplevel begin
+            for i = 1:100
+                localvar = i
+            end
+            println(localvar)
+        end
+        @test isempty(res.res.toplevel_error_reports)
+        isexpected = length(res.res.inference_error_reports) == 1
+        @test isexpected
+        if isexpected
+            report = only(res.res.inference_error_reports)
+            @test report isa UndefVarErrorReport
+            @test report.var.name === :localvar
+        end
+    end
+
+    let res = @analyze_toplevel begin
+            for i in 1:rand((0,10,100))
+                localvar = rand(Bool)
+                global globalvar = ~localvar
+                println(localvar)
+            end
+            println(globalvar)
+        end
+        @test isempty(res.res.toplevel_error_reports)
+        isexpected = length(res.res.inference_error_reports) == 1
+        @test isexpected
+        if isexpected
+            report = only(res.res.inference_error_reports)
+            @test report isa UndefVarErrorReport
+            @test report.var.name === :globalvar
+            @test report.maybeundef
+        end
+    end
+
+    let res = @analyze_toplevel begin
+            while true
+                localvar = rand(Bool)
+                global globalvar = ~localvar
+                localvar && break
+            end
+            println(globalvar)
+        end
+        @test isempty(res.res.toplevel_error_reports)
+        isexpected = length(res.res.inference_error_reports) == 1
+        @test isexpected
+        if isexpected
+            report = only(res.res.inference_error_reports)
+            @test report isa UndefVarErrorReport
+            @test report.var.name === :globalvar
+            @test_broken report.maybeundef
         end
     end
 end
@@ -1215,14 +963,14 @@ end
 @testset "error handling within ConcreteInterpreter" begin
     # NOTE some of the tests below are line-number-sensitive
 
+    @assert !isdefinedglobal(@__MODULE__, :BType)
     let res = @analyze_toplevel begin
-            struct A <: B end # UndefVarError(:B) should be handled into `res.toplevel_error_reports`
+            struct AType <: BType end # UndefVarError(:B) should be handled into `res.toplevel_error_reports`
         end
-
         er = only(res.res.toplevel_error_reports)
         @test er isa ActualErrorWrapped
-        @test er.err isa UndefVarError && er.err.var === :B
-        @test er.file == (@__FILE__) && er.line == (@__LINE__) - 6
+        @test er.err isa UndefVarError && er.err.var === :BType
+        @test er.file == (@__FILE__) && er.line == (@__LINE__) - 5
     end
 
     @testset "stacktrace scrubbing" begin
@@ -1271,6 +1019,50 @@ end
             sf = only(er.st)
             @test sf.file === Symbol(@__FILE__) && sf.line == (@__LINE__) - 9
         end
+    end
+end
+
+@testset "getglobal with abstract global variable" begin
+    # nested module access will be resolved as a direct call of `getfield`
+    let res = @analyze_toplevel begin
+            module foo
+
+            const bar = sum
+
+            module baz
+
+            using ..foo
+
+            foo.bar("julia") # -> MethodErrorReports
+
+            end # module bar
+
+            end # module foo
+        end
+
+        @test isempty(res.res.toplevel_error_reports)
+        test_sum_over_string(res)
+    end
+
+    # this should work even if the accessed variable is not constant
+    let res = @analyze_toplevel begin
+            module foo
+
+            bar = sum
+
+            module baz
+
+            using ..foo
+
+            foo.bar("julia") # -> MethodErrorReports
+
+            end # module bar
+
+            end # module foo
+        end
+
+        @test isempty(res.res.toplevel_error_reports)
+        test_sum_over_string(res; broken=true)
     end
 end
 
@@ -1339,66 +1131,6 @@ false && @testset "invalid constant redefinition/declaration" begin
     end
 end
 
-@testset "non-deterministic abstract global assignments" begin
-    let
-        vmod, res = @analyze_toplevel2 begin
-            v = '0'
-            v = 0 # deterministic
-        end
-        @test isanalyzed(res, vmod, :v)
-    end
-    let
-        vmod, res = @analyze_toplevel2 begin
-            v = '0'
-            v = rand(Int) # deterministic
-        end
-        @test isanalyzed(res, vmod, :v)
-    end
-    let
-        vmod, res = @analyze_toplevel2 begin
-            v = '0'
-            rand(Bool) && (v = 0) # non-deterministic
-        end
-        @test isanalyzed(res, vmod, :v)
-    end
-    let
-        vmod, res = @analyze_toplevel2 begin
-            v = '0'
-            rand(Bool) && (v = rand(Int)) # non-deterministic
-        end
-        @test isanalyzed(res, vmod, :v)
-    end
-
-    # end to end
-    let
-        vmod, res = @analyze_toplevel2 begin
-            v = '0'
-            v = rand(Int) # deterministic
-
-            f(::Number) = :ok
-            f(v) # no method error should NOT happen here
-        end
-
-        @test isempty(res.res.inference_error_reports)
-    end
-    let
-        vmod, res = @analyze_toplevel2 begin
-            v = '0'
-            rand(Bool) && (v = rand(Int)) # non-deterministic
-
-            f(::Number) = :ok
-            f(v) # union-split no method error should happen here
-        end
-
-        @test_broken length(res.res.inference_error_reports ) == 1 && let
-            er = only(res.res.inference_error_reports)
-            @test er isa MethodErrorReport
-            @test isa(er.t, Vector)
-            true
-        end
-    end
-end
-
 @testset "docstrings" begin
     # can find errors within docstring generation
     let
@@ -1458,23 +1190,30 @@ end
 
 @testset "custom concretization pattern" begin
     # custom concretization pattern should work on AST level
-    let (vmod, res) = @analyze_toplevel2 begin
-            const foo = Dict() # won't be concretized by default
+    mktemp() do path, io
+        res = @eval @analyze_toplevel begin
+            const foo = (print($io, "written if concretized"); Dict()) # shouldn't be concretized by default
         end
-        @test_broken !isconcrete(res, vmod, :foo) # FIXME: Remove `:const` concretization pattern
+        flush(io)
+        @test isempty(read(path, String))
     end
-    let (vmod, res) = @analyze_toplevel2 begin
-            const foo = Dict() # now this will be forcibly concretized
-        end concretization_patterns = [:(const foo = Dict())]
-        @test isconcrete(res, vmod, :foo)
+    mktemp() do path, io
+        res = @eval @analyze_toplevel concretization_patterns = [:(const foo = x_)] begin
+            const foo = (print($io, "written if concretized"); Dict()) # now this will be forcibly concretized
+        end
+        flush(io)
+        @test read(path, String) == "written if concretized"
     end
 
     # the analysis on `test/fixtures/concretization_patterns.jl` will produce inappropriate
     # top-level error report because of missing concretization
-    let res = report_file2(CONCRETIZATION_PATTERNS_FILE) # FIXME: Remove `:const` concretization pattern
-        @test_broken !isempty(res.res.toplevel_error_reports) && let
-            r = only(res.res.toplevel_error_reports)
-            @test isa(r, MissingConcretization)
+    let res = report_file2(CONCRETIZATION_PATTERNS_FILE)
+        isexpected = length(res.res.toplevel_error_reports) == 1
+        @test isexpected
+        if isexpected
+            report = only(res.res.toplevel_error_reports)
+            # FIXME MissingConcretizationErrorReport support for macroexpansion
+            @test_broken isa(report, MissingConcretizationErrorReport)
         end
     end
 
@@ -1527,7 +1266,7 @@ end
             # no configuration, thus top-level analysis should fail
             let res = report_file2(analysis_target)
                 nreported = print_reports(IOBuffer(), res)
-                @test_broken !iszero(nreported) # error reported # FIXME: Remove `:const` concretization pattern
+                @test !iszero(nreported)
             end
 
             # setup a configuration file

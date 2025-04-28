@@ -106,14 +106,32 @@ end
 # `report_file` with silent top-level logger
 report_file2(args...; kwargs...) = report_file(args...; toplevel_logger = nothing, kwargs...)
 
-isconcrete(res::JET.JETToplevelResult, mod::Module, sym::Symbol) = isconcrete(res.analyzer, mod, sym)
+isconcrete(res::JET.JETToplevelResult, args...) = isconcrete(res.analyzer, args...)
 isconcrete(analyzer::JET.AbstractAnalyzer, mod::Module, sym::Symbol) =
     @invokelatest(isdefinedglobal(mod, sym)) && !isabstract(analyzer, mod, sym)
 
-isabstract(res::JET.JETToplevelResult, mod::Module, sym::Symbol) = isabstract(res.analyzer, mod, sym)
+isabstract(res::JET.JETToplevelResult, args...) = isabstract(res.analyzer, args...)
 function isabstract(analyzer::JET.AbstractAnalyzer, mod::Module, sym::Symbol)
     binding = convert(Core.Binding, GlobalRef(mod, sym))
     return haskey(JET.get_binding_states(analyzer), binding.partitions)
+end
+
+isabstractconcrete(res::JET.JETToplevelResult, args...) = isabstractconcrete(res.analyzer, args...)
+function isabstractconcrete(analyzer::JET.AbstractAnalyzer, mod::Module, sym::Symbol, T=nothing)
+    binding = convert(Core.Binding, GlobalRef(mod, sym))
+    binding_state = get(JET.get_binding_states(analyzer), binding.partitions, nothing)
+    binding_state === nothing && return false
+    if isdefined(binding_state, :typ)
+        typ = binding_state.typ
+        if typ isa Const
+            if T === nothing
+                return true
+            else
+                return typ.value isa T
+            end
+        end
+    end
+    return false
 end
 
 # JET will try to concretize global variable when its type is a constant at analysis time,
