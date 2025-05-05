@@ -413,7 +413,6 @@ struct ConcreteInterpreter{F,Analyzer<:AbstractAnalyzer} <: Interpreter
     config::ToplevelConfig
     res::VirtualProcessResult
     pkg_mod_depth::Int
-    include_callback # ::Union{Nothing,Base.Callable}
     failed::Base.RefValue{Bool}
 end
 
@@ -883,7 +882,7 @@ function _virtual_process!(res::VirtualProcessResult,
         failed = Ref(false)
         interp = ConcreteInterpreter(filename, lnnref[], usemodule_with_err_handling,
                                      context, analyzer, config, res, pkg_mod_depth,
-                                     config.include_callback, failed)
+                                     failed)
         if force_concretize
             JuliaInterpreter.finish!(interp, Frame(context, src), true)
             continue
@@ -1540,10 +1539,10 @@ function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func)
     end
     # `scrub_offset = 1`: `f`
     include_text = with_err_handling(read_err_handler, interp; scrub_offset=2) do
-        if interp.include_callback === nothing # fallbacks to the default `read` function
+        if interp.config.include_callback === nothing # fallbacks to the default `read` function
             return read(include_file, String)
         end
-        return interp.include_callback(include_file)
+        return interp.config.include_callback(include_file)
     end
     isnothing(include_text) && return nothing # typically no file error
 

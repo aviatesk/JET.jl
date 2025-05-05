@@ -135,7 +135,7 @@ end
 #         end
 #         test_sum_over_string(res)
 #     end
-
+#
 #     let res = @analyze_toplevel begin
 #             let Main = "julia" # local `Main` should not be resolved to virtual module
 #                 sum(Main)
@@ -143,30 +143,30 @@ end
 #         end
 #         test_sum_over_string(res)
 #     end
-
+#
 #     # https://github.com/aviatesk/JET.jl/issues/151
 #     let res = @analyze_toplevel begin
 #             struct X end
-
+#
 #             module A
 #             using ..Main: X
 #             end
 #         end
-
+#
 #         @test isempty(res.res.toplevel_error_reports)
 #     end
-
+#
 #     let res = @analyze_toplevel begin
 #             struct X end
-
+#
 #             module A
 #             using ..Main: X as X′
 #             end
 #         end
-
+#
 #         @test isempty(res.res.toplevel_error_reports)
 #     end
-
+#
 #     # stress test
 #     let res = @analyze_toplevel begin
 #             module A
@@ -174,7 +174,7 @@ end
 #             struct Y end
 #             export X, y
 #             end
-
+#
 #             module B1
 #             import ..Main.A
 #             println(A.X)
@@ -183,7 +183,7 @@ end
 #             using ..Main.A
 #             println(A.X)
 #             end
-
+#
 #             module C11
 #             import ..Main.A: X
 #             println(X)
@@ -200,7 +200,7 @@ end
 #             using ..Main.A: X, Y
 #             println(X, Y)
 #             end
-
+#
 #             module D11
 #             import ..Main.A: X as x
 #             println(x)
@@ -218,7 +218,7 @@ end
 #             println(x, y)
 #             end
 #         end
-
+#
 #         @test isempty(res.res.toplevel_error_reports)
 #     end
 # end
