@@ -2137,7 +2137,7 @@ end
 @testset "package dependency" begin
     test_report_package(:(module UsingCore
             using Core: Box
-            makebox() = Core.Box()
+            makebox() = Box()
         end)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)

@@ -414,6 +414,30 @@ struct ConcreteInterpreter{F,Analyzer<:AbstractAnalyzer} <: Interpreter
     res::VirtualProcessResult
     pkg_mod_depth::Int
     failed::Base.RefValue{Bool}
+    recurse::Base.RefValue{Bool}
+    function ConcreteInterpreter(
+        filename::String,
+        lnn::LineNumberNode,
+        usemodule_with_err_handling::F,
+        context::Module,
+        analyzer::Analyzer,
+        config::ToplevelConfig,
+        res::VirtualProcessResult,
+        pkg_mod_depth::Int,
+        failed::Base.RefValue{Bool}) where {F,Analyzer<:AbstractAnalyzer}
+        return new{F,Analyzer}(
+            filename,
+            lnn,
+            usemodule_with_err_handling,
+            context,
+            analyzer,
+            config,
+            res,
+            pkg_mod_depth,
+            failed,
+            Ref(false), # recurse
+        )
+    end
 end
 
 add_toplevel_error_report!(res::VirtualProcessResult, @nospecialize report::ToplevelErrorReport) =
@@ -707,6 +731,9 @@ function _virtual_process!(res::VirtualProcessResult,
         if isexpr(ex, (:export, :public))
             @goto eval_usemodule
         end
+        @static if VERSION ≥ v"1.13.0-DEV.459"
+        error("`usemodule_with_err_handling` is not supposed to be called on this Julia version")
+        else
         # TODO recursive analysis on dependencies?
         pkgid = config.pkgid
         if pkgid !== nothing
@@ -768,6 +795,7 @@ function _virtual_process!(res::VirtualProcessResult,
                 end
             end
         end
+        end # @static if VERSION < v"1.13.0-DEV.459"
         @label eval_usemodule
         # `scrub_offset = 1`: `Core.eval`
         with_err_handling(general_err_handler, interp; scrub_offset=1) do
@@ -911,10 +939,6 @@ end
 # check if all statements of `src` have been concretized
 function bail_out_concretized(concretized::BitVector, src::CodeInfo)
     if all(concretized)
-        return true
-    elseif (length(concretized) == 2 && (concretized[1] && ismoduleusage(src.code[1])) &&
-            (!concretized[2] && src.code[2] isa ReturnNode))
-        # special case module usage statements
         return true
     end
     return false
@@ -1183,22 +1207,23 @@ end
 
 function select_direct_requirement!(concretize, stmts, edges)
     for (idx, stmt) in enumerate(stmts)
-        if (LoweredCodeUtils.ismethod(stmt) ||    # don't abstract away method definitions
-            LoweredCodeUtils.istypedef(stmt) ||   # don't abstract away type definitions
-            (isexpr(stmt, :call) && length(stmt.args) ≥ 1 && stmt.args[1] == GlobalRef(Core, :_defaultctors)) ||
-            ismoduleusage(stmt) || # module usages are handled by `ConcreteInterpreter`
-            isexpr(stmt, :globaldecl) ||
-            isexpr(stmt, :latestworld))
+        if (LoweredCodeUtils.ismethod(stmt) ||  # concretize method definitions
+            LoweredCodeUtils.istypedef(stmt))   # concretize type definitions
             concretize[idx] = true
-            continue
-        end
-
-        if isexpr(stmt, :(=))
-            lhs, rhs = stmt.args
-            stmt = rhs
-        end
-        # `include` calls are special cased
-        if is_known_call(stmt, :include, stmts)
+        elseif isexpr(stmt, :globaldecl)
+            concretize[idx] = true
+        elseif isexpr(stmt, :latestworld)
+            concretize[idx] = true
+        elseif ismoduleusage(stmt) # module usages are handled by `ConcreteInterpreter`
+            concretize[idx] = true
+        elseif ((@static VERSION ≥ v"1.13.0-DEV.459" && true) &&
+                (is_known_call_egal(stmt, Base._eval_using, stmts) ||
+                 is_known_call_egal(stmt, Base._eval_import, stmts)))
+            concretize[idx] = true
+        elseif is_known_call_egal(stmt, Core._defaultctors, stmts)
+            concretize[idx] = true
+        elseif is_known_call(stmt, :include, stmts)
+            # `include` calls are special cased
             concretize[idx] = true
         elseif is_known_getproperty(stmt, :include, stmts)
             # this is something like:
@@ -1210,9 +1235,9 @@ function select_direct_requirement!(concretize, stmts, edges)
             # so require `%x` too
             concretize[idx] = true
             concretize[edges.succs[idx]] .= true
-        # `eval` calls are difficult to analyze, but since they may contain toplevel
-        # definitions, JET just concretizes them always
         elseif is_known_call(stmt, :eval, stmts)
+            # `eval`s are difficult to analyze statically,
+            # JET concretizes them always as they may contain arbitrary toplevel definitions
             concretize[idx] = true
         elseif is_known_getproperty(stmt, :eval, stmts)
             concretize[idx] = true
@@ -1249,6 +1274,14 @@ function is_known_getproperty(@nospecialize(stmt), func::Symbol, stmts::Vector{A
         end
     end
     return false
+end
+function is_known_call_egal(@nospecialize(stmt), @nospecialize(func), stmts::Vector{Any})
+    isexpr(stmt, :call) || return false
+    f = stmt.args[1]
+    if f isa SSAValue
+        f = stmts[f.id]
+    end
+    return JuliaInterpreter.is_global_ref_egal(f, nameof(func), func)
 end
 
 function add_required_inplace!(concretize::BitVector, src::CodeInfo, edges, cl)
@@ -1377,7 +1410,7 @@ function JuliaInterpreter.lookup(interp::ConcreteInterpreter, frame::Frame, @nos
 end
 
 function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node), istoplevel::Bool)
-    @assert istoplevel "ConcreteInterpreter can only work for top-level code"
+    @assert istoplevel || interp.recurse[] "ConcreteInterpreter is not configured correctly"
 
     if ismoduleusage(node)
         for ex in to_simple_module_usages(node)
@@ -1426,7 +1459,6 @@ end
 
 ismoduleusage(@nospecialize(x)) = isexpr(x, (:import, :using, :export, :public))
 
-# assuming `ismoduleusage(x)` holds
 function to_simple_module_usages(x::Expr)
     @assert ismoduleusage(x)
     ret = _to_simple_module_usages(x)
@@ -1479,11 +1511,38 @@ function JuliaInterpreter.evaluate_call!(interp::ConcreteInterpreter, frame::Fra
         else
             # otherwise just call it to trigger a method error
         end
+    elseif ((@static VERSION ≥ v"1.13.0-DEV.459" && true) &&
+            ((f === Base._eval_using) || (f === Base._eval_import)))
+        pkgid = interp.config.pkgid
+        if pkgid !== nothing
+            pass = LoadingPass(JuliaInterpreter.moduleof(frame), pkgid)
+            return pass(f, args...)
+        end
+    end
+    if false # interp.recurse[]
+        return @invoke JuliaInterpreter.evaluate_call!(interp::Interpreter, frame::Frame, call_expr::Expr, enter_generated::Bool)
     end
     return @invokelatest f(args...)
 end
 
-isinclude(@nospecialize f) = f isa Base.IncludeInto || (isa(f, Function) && nameof(f) === :include)
+using CassetteOverlay
+@MethodTable loading_method_table
+struct LoadingPass <: AbstractBindingOverlay{@__MODULE__,:loading_method_table}
+    context::Module
+    pkgid::Base.PkgId
+end
+@overlay loading_method_table function Base.identify_package_env(where::Module, name::String)
+    self = getpass()
+    if where === self.context
+        pkgid = self.pkgid
+    else # XXX does this case happen?
+        pkgid = @nonoverlay Base.PkgId(where)
+    end
+    return @nonoverlay Base.identify_package_env(pkgid, name)
+end
+@overlay loading_method_table function Base.require(into::Module, mod::Symbol)
+    Base.__require(into, mod)
+end
 
 function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func), args::Vector{Any})
     filename = interp.filename
