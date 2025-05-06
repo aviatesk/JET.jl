@@ -1466,15 +1466,10 @@ end
 # - Ignore C-side function definitions created via `Base._ccallable`. These definitions
 #   are not namespaced in the module and can cause false-positive name conflict errors
 #   when running analysis multiple times (see aviatesk/JET.jl#597).
-function JuliaInterpreter.evaluate_call!(interp::ConcreteInterpreter, frame::Frame, call_expr::Expr, enter_generated::Bool)
-    # @assert !enter_generated
-    pc = frame.pc
-    ret = JuliaInterpreter.bypass_builtins(interp, frame, call_expr, pc)
-    isa(ret, Some{Any}) && return ret.value
-    ret = JuliaInterpreter.maybe_evaluate_builtin(interp, frame, call_expr, false)
-    isa(ret, Some{Any}) && return ret.value
-    args = JuliaInterpreter.collect_args(interp, frame, call_expr)
-    f = popfirst!(args) # now it's really just `args`
+function JuliaInterpreter.evaluate_call!(interp::ConcreteInterpreter, frame::Frame, fargs::Vector{Any}, enter_generated::Bool)
+    args = fargs
+    f = popfirst!(fargs)
+    args = fargs # now it's really args
     isinclude(f) && return handle_include(interp, f, args)
     if f === Base._ccallable
         # skip concrete-interpretation of `jl_extern_c`
