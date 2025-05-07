@@ -1502,8 +1502,9 @@ function JuliaInterpreter.evaluate_call!(interp::ConcreteInterpreter, frame::Fra
     args = fargs
     f = popfirst!(fargs)
     args = fargs # now it's really args
-    isinclude(f) && return handle_include(interp, f, args)
-    if f === Base._ccallable
+    if f isa Base.IncludeInto || (f isa Function && nameof(f) === :include)
+        return handle_include(interp, f, args)
+    elseif f === Base._ccallable
         # skip concrete-interpretation of `jl_extern_c`
         if length(args) == 2 && args[1] isa Type && args[2] isa Type
             # ignore only if the method dispatch is successful
@@ -1511,38 +1512,58 @@ function JuliaInterpreter.evaluate_call!(interp::ConcreteInterpreter, frame::Fra
         else
             # otherwise just call it to trigger a method error
         end
-    elseif ((@static VERSION ≥ v"1.13.0-DEV.459" && true) &&
-            ((f === Base._eval_using) || (f === Base._eval_import)))
+    end
+    @static if VERSION ≥ v"1.13.0-DEV.459"
         pkgid = interp.config.pkgid
         if pkgid !== nothing
-            pass = LoadingPass(JuliaInterpreter.moduleof(frame), pkgid)
-            return pass(f, args...)
+            if f === Base._eval_using || f === Base._eval_import
+                interp.recurse[] = true
+                pushfirst!(fargs, f)
+                res = @invoke JuliaInterpreter.evaluate_call!(interp::Interpreter, frame::Frame, fargs::Vector{Any}, enter_generated::Bool)
+                interp.recurse[] = false
+                return res
+            elseif f === Base.identify_package_env
+                if length(args) == 2
+                    where, name = args[1], args[2]
+                    if where isa Module && name isa String
+                        return Base.identify_package_env(pkgid, name)
+                    end
+                end
+            end
         end
     end
-    if false # interp.recurse[]
-        return @invoke JuliaInterpreter.evaluate_call!(interp::Interpreter, frame::Frame, call_expr::Expr, enter_generated::Bool)
+    if interp.recurse[]
+        pushfirst!(fargs, f)
+        return @invoke JuliaInterpreter.evaluate_call!(interp::Interpreter, frame::Frame, fargs::Vector{Any}, enter_generated::Bool)
     end
     return @invokelatest f(args...)
 end
 
-using CassetteOverlay
+using Base.Experimental: @MethodTable, @overlay
 @MethodTable loading_method_table
-struct LoadingPass <: AbstractBindingOverlay{@__MODULE__,:loading_method_table}
-    context::Module
-    pkgid::Base.PkgId
-end
-@overlay loading_method_table function Base.identify_package_env(where::Module, name::String)
-    self = getpass()
-    if where === self.context
-        pkgid = self.pkgid
-    else # XXX does this case happen?
-        pkgid = @nonoverlay Base.PkgId(where)
-    end
-    return @nonoverlay Base.identify_package_env(pkgid, name)
-end
 @overlay loading_method_table function Base.require(into::Module, mod::Symbol)
-    Base.__require(into, mod)
+    Base.__require(into, mod) # ignore `invoke_in_world`
 end
+JuliaInterpreter.method_table(::ConcreteInterpreter) = loading_method_table
+
+# using CassetteOverlay
+# @MethodTable loading_method_table
+# struct LoadingPass <: AbstractBindingOverlay{@__MODULE__,:loading_method_table}
+#     context::Module
+#     pkgid::Base.PkgId
+# end
+# @overlay loading_method_table function Base.identify_package_env(where::Module, name::String)
+#     self = getpass()
+#     if where === self.context
+#         pkgid = self.pkgid
+#     else # XXX does this case happen?
+#         pkgid = @nonoverlay Base.PkgId(where)
+#     end
+#     return @nonoverlay Base.identify_package_env(pkgid, name)
+# end
+# @overlay loading_method_table function Base.require(into::Module, mod::Symbol)
+#     Base.__require(into, mod)
+# end
 
 function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func), args::Vector{Any})
     filename = interp.filename
@@ -1614,55 +1635,55 @@ const JULIAINTERPRETER_BUILTINS_FILE = let
 end
 
 # handle errors from toplevel user code
-function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame::Frame, @nospecialize(err))
-    # catch stack trace
-    bt = catch_backtrace()
-    st = stacktrace(bt)
+# function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame::Frame, @nospecialize(err))
+#     # catch stack trace
+#     bt = catch_backtrace()
+#     st = stacktrace(bt)
 
-    # if the last error is raised from `evaluate_call!`, it's likely to be a serious error of JET
-    lastframe = last(st)
-    if lastframe.file === JET_VIRTUALPROCESS_FILE && lastframe.func === :evaluate_call!
-        rethrow(err)
-    end
+#     # if the last error is raised from `evaluate_call!`, it's likely to be a serious error of JET
+#     lastframe = last(st)
+#     if lastframe.file === JET_VIRTUALPROCESS_FILE && lastframe.func === :evaluate_call!
+#         rethrow(err)
+#     end
 
-    # scrub the original stacktrace so that it only contains frames from user code
-    i = 0
-    for (j, frame) in enumerate(st)
-        # if errors happen in `JuliaInterpreter.maybe_evaluate_builtin`, we just discard all
-        # the stacktrace assuming they are enough self-explanatory (corresponding to the last logic below)
-        if frame.file === JULIAINTERPRETER_BUILTINS_FILE && frame.func === :maybe_evaluate_builtin
-            break # keep `i = 0`
-        end
+#     # scrub the original stacktrace so that it only contains frames from user code
+#     i = 0
+#     for (j, frame) in enumerate(st)
+#         # if errors happen in `JuliaInterpreter.maybe_evaluate_builtin`, we just discard all
+#         # the stacktrace assuming they are enough self-explanatory (corresponding to the last logic below)
+#         if frame.file === JULIAINTERPRETER_BUILTINS_FILE && frame.func === :maybe_evaluate_builtin
+#             break # keep `i = 0`
+#         end
 
-        # if errors happen in `JuliaInterpreter.lookup`, we just discard all the stacktrace
-        # and report `MissingConcretizationErrorReport`
-        if frame.file === JET_VIRTUALPROCESS_FILE && frame.func === :lookup
-            break # keep `i = 0`
-        end
+#         # if errors happen in `JuliaInterpreter.lookup`, we just discard all the stacktrace
+#         # and report `MissingConcretizationErrorReport`
+#         if frame.file === JET_VIRTUALPROCESS_FILE && frame.func === :lookup
+#             break # keep `i = 0`
+#         end
 
-        # find an error frame that happened at `@invokelatest f(fargs...)` in the overload
-        # `JuliaInterpreter.evaluate_call!(::ConcreteInterpreter, ::Frame, ::Expr, ::Bool)`
-        if frame.file === JET_VIRTUALPROCESS_FILE && frame.func === :evaluate_call!
-            i = j - 1 # offset: `evaluate_call!`
-            break
-        end
+#         # find an error frame that happened at `@invokelatest f(fargs...)` in the overload
+#         # `JuliaInterpreter.evaluate_call!(::ConcreteInterpreter, ::Frame, ::Expr, ::Bool)`
+#         if frame.file === JET_VIRTUALPROCESS_FILE && frame.func === :evaluate_call!
+#             i = j - 1 # offset: `evaluate_call!`
+#             break
+#         end
 
-        # other general errors may happen at `JuliaInterpreter.collect_args`, etc.
-        # we don't show any stacktrace for those errors (by keeping the original `i = 0`)
-        # since they are hopefully self-explanatory
-        continue
-    end
-    st = st[1:i]
+#         # other general errors may happen at `JuliaInterpreter.collect_args`, etc.
+#         # we don't show any stacktrace for those errors (by keeping the original `i = 0`)
+#         # since they are hopefully self-explanatory
+#         continue
+#     end
+#     # st = st[1:i]
 
-    if err isa MissingConcretizationError
-        report = MissingConcretizationErrorReport(err.isconst, err.var, interp.filename, interp.lnn.line)
-    else
-        report = ActualErrorWrapped(err, st, interp.filename, interp.lnn.line)
-    end
-    add_toplevel_error_report!(interp, report)
+#     if err isa MissingConcretizationError
+#         report = MissingConcretizationErrorReport(err.isconst, err.var, interp.filename, interp.lnn.line)
+#     else
+#         report = ActualErrorWrapped(err, st, interp.filename, interp.lnn.line)
+#     end
+#     add_toplevel_error_report!(interp, report)
 
-    return nothing # stop further interpretation
-end
+#     return nothing # stop further interpretation
+# end
 
 function with_err_handling(f, err_handler, handler_args...; scrub_offset::Int)
     try
