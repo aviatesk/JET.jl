@@ -325,13 +325,41 @@ const issue560μ = zeros(Issue560Vec3, 2, 3, 4, 5)
 issue560f(μ) = reinterpret(reshape, Float64, μ)
 @test_opt issue560f(issue560μ)
 
-f_issue643_1(x) = throw("$x <- dynamic dispatches from this interpolation should be ignored")
-@noinline _f_issue643_2(x) = "$x <- dynamic dispatches from this interpolation should be ignored"
+f_issue643_1(x) = throw("$x <- dynamic dispatches from this interpolation should be IGNORED")
+@noinline _f_issue643_2(x) = "$x <- dynamic dispatches from this interpolation should be IGNORED"
 f_issue643_2(x) = throw(_f_issue643_2(x))
-test_opt(f_issue643_1, (Any,); broken=true)
-test_opt(f_issue643_1, (Any,); broken=true) # check cached case
-test_opt(f_issue643_2, (Any,); broken=true)
-test_opt(f_issue643_2, (Any,); broken=true) # check cached case
+function f_issue643_3(x)
+    x isa Float64 ||
+        throw("$x <- dynamic dispatches from this interpolation should be IGNORED")
+    return sin(x)
+end
+function f_issue643_4(x, c)
+    if c
+        throw("$x <- dynamic dispatches from this interpolation should be IGNORED")
+    end
+    "$x <- dynamic dispatches from this interpolation should be REPORTED"
+end
+test_opt(f_issue643_1, (Any,))
+test_opt(f_issue643_1, (Any,)) # check cached case
+test_opt(f_issue643_2, (Any,))
+test_opt(f_issue643_2, (Any,)) # check cached case
+test_opt(f_issue643_3, (Any,))
+test_opt(f_issue643_3, (Any,)) # check cached case
+let res = report_opt(f_issue643_4, (Any,Bool))
+    @test count(@nospecialize(r)->r isa RuntimeDispatchReport, get_reports(res)) == 1
+end
+let res = report_opt(f_issue643_1, (Any,); skip_throw_blocks=false)
+    @test any(@nospecialize(r)->r isa RuntimeDispatchReport, get_reports(res))
+end
+let res = report_opt(f_issue643_2, (Any,); skip_throw_blocks=false)
+    @test any(@nospecialize(r)->r isa RuntimeDispatchReport, get_reports(res))
+end
+let res = report_opt(f_issue643_3, (Any,); skip_throw_blocks=false)
+    @test any(@nospecialize(r)->r isa RuntimeDispatchReport, get_reports(res))
+end
+let res = report_opt(f_issue643_4, (Any,Bool); skip_throw_blocks=false)
+    @test count(@nospecialize(r)->r isa RuntimeDispatchReport, get_reports(res)) == 2
+end
 # the dynamic dispatch should be reported if the method is analyzed standalone
 @test !isempty(get_reports(report_opt(_f_issue643_2, (Any,))))
 
