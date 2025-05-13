@@ -577,8 +577,8 @@ end
         context = gen_virtual_module(@__MODULE__)
         res = report_file2(f1; context, virtualize = false)
 
-        @test f1 in res.res.included_files
-        @test f2 in res.res.included_files
+        @test f1 in JET.included_files(res.res)
+        @test f2 in JET.included_files(res.res)
         @test isconcrete(res, context, :foo)
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
@@ -587,7 +587,7 @@ end
     let f = normpath(FIXTURES_DIR, "nonexistinclude.jl")
         res = report_file2(f)
 
-        @test f in res.res.included_files
+        @test f in JET.included_files(res.res)
         @test !isempty(res.res.toplevel_error_reports)
         @test first(res.res.toplevel_error_reports) isa ActualErrorWrapped
         @test !isempty(res.res.inference_error_reports)
@@ -597,7 +597,7 @@ end
     let f = normpath(FIXTURES_DIR, "selfrecursiveinclude.jl")
         res = report_file2(f)
 
-        @test f in res.res.included_files
+        @test f in JET.included_files(res.res)
         @test !isempty(res.res.toplevel_error_reports)
         @test first(res.res.toplevel_error_reports) isa RecursiveIncludeErrorReport
     end
@@ -606,8 +606,8 @@ end
         f2 = normpath(FIXTURES_DIR, "chainrecursiveinclude2.jl")
         res = report_file2(f1)
 
-        @test f1 in res.res.included_files
-        @test f2 in res.res.included_files
+        @test f1 in JET.included_files(res.res)
+        @test f2 in JET.included_files(res.res)
         @test !isempty(res.res.toplevel_error_reports)
         let report = only(res.res.toplevel_error_reports)
             @test report isa RecursiveIncludeErrorReport
@@ -623,8 +623,8 @@ end
         f2 = normpath(FIXTURES_DIR, "include2.jl")
         res = report_file2(f1)
 
-        @test f1 in res.res.included_files
-        @test f2 in res.res.included_files
+        @test f1 in JET.included_files(res.res)
+        @test f2 in JET.included_files(res.res)
         @test isempty(res.res.toplevel_error_reports)
     end
 
@@ -634,8 +634,8 @@ end
         context = gen_virtual_module(@__MODULE__)
         res = report_file2(modf; context, virtualize=false)
 
-        @test modf in res.res.included_files
-        @test inc2 in res.res.included_files
+        @test modf in JET.included_files(res.res)
+        @test inc2 in JET.included_files(res.res)
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
         @test isconcrete(res, @invokelatest(context.Outer), :foo)
