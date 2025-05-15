@@ -95,7 +95,8 @@ end
 
 using .CC.IRShow: LineInfoNode
 using .CC: ConstCallResult
-# push_inithook!() do # FIXME with TODO use Compiler.jl stdlib
+# FIXME do this automatically when loading non-fallback version of the Compiler stdlib
+# push_inithook!() do
 #     @eval InteractiveUtils.@activate Compiler
 # end
 
