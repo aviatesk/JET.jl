@@ -363,11 +363,18 @@ end
 
 const Actual2Virtual = Pair{Module,Module}
 
+const ModuleRangeInfo = Pair{UnitRange{Int},Module}
+struct AnalyzedFileInfo
+    module_range_infos::Vector{ModuleRangeInfo}
+end
+AnalyzedFileInfo() = AnalyzedFileInfo(ModuleRangeInfo[])
+
 """
     res::VirtualProcessResult
 
-- `res.included_files::Set{String}`: files that have been analyzed
-- `res.defined_modules::Set{Module}`: module contexts created while this top-level analysis
+- `res.analyzed_files::Dict{String,AnalyzedFileInfo}`: files that have been analyzed with
+    their corresponding module analyzed_files attached.
+- `res.defined_modules::Set{Module}`: module analyzed_files created while this top-level analysis
 - `res.toplevel_error_reports::Vector{ToplevelErrorReport}`: toplevel errors found during the
     text parsing or partial (actual) interpretation; these reports are "critical" and should
     have precedence over `inference_error_reports`
@@ -377,7 +384,7 @@ const Actual2Virtual = Pair{Module,Module}
 - `res.actual2virtual::$Actual2Virtual`: keeps actual and virtual module
 """
 struct VirtualProcessResult
-    included_files::Set{String}
+    analyzed_files::Dict{String,AnalyzedFileInfo}
     files_stack::Vector{String}
     defined_modules::Set{Module}
     toplevel_error_reports::Vector{ToplevelErrorReport}
@@ -385,7 +392,7 @@ struct VirtualProcessResult
     toplevel_signatures::Vector{Type}
     actual2virtual::Union{Actual2Virtual,Nothing}
     VirtualProcessResult(actual2virtual::Union{Actual2Virtual,Nothing}, context::Module) =
-        new(Set{String}(),
+        new(Dict{String,AnalyzedFileInfo}(),
             Vector{String}(),
             Set{Module}((context,)),
             ToplevelErrorReport[],
@@ -393,6 +400,8 @@ struct VirtualProcessResult
             Type[],
             actual2virtual)
 end
+
+included_files(res::VirtualProcessResult) = keys(res.analyzed_files)
 
 """
     ConcreteInterpreter
@@ -639,7 +648,7 @@ function _virtual_process!(res::VirtualProcessResult,
         @assert isexpr(parsed, :toplevel)
         _virtual_process!(res, parsed, filename, analyzer, config, context, pkg_mod_depth)
     else
-        push!(res.included_files, filename)
+        res.analyzed_files[filename] = AnalyzedFileInfo(ModuleRangeInfo[0:typemax(Int) => context])
         source = JuliaSyntax.SourceFile(stream; filename)
         for diagnostic in stream.diagnostics
             add_toplevel_error_report!(res, ParseErrorReport(diagnostic, source))
@@ -660,12 +669,13 @@ function _virtual_process!(res::VirtualProcessResult,
                            analyzer::AbstractAnalyzer,
                            config::ToplevelConfig,
                            context::Module,
-                           pkg_mod_depth::Int,
-                           force_concretize::Bool = false)
-    push!(res.included_files, filename)
+                           pkg_mod_depth::Int;
+                           force_concretize::Bool = false,
+                           lnnref::Base.RefValue{LineNumberNode} = Ref(LineNumberNode(0, filename)))
+    let analyzed_file_info = get!(AnalyzedFileInfo, res.analyzed_files, filename)
+        push!(analyzed_file_info.module_range_infos, lnnref[].line:typemax(Int) => context)
+    end
     push!(res.files_stack, filename)
-
-    local lnnref = Ref(LineNumberNode(0, filename))
 
     function general_err_handler(@nospecialize(err), st, x::Union{VirtualProcessResult,ConcreteInterpreter})
         local report = ActualErrorWrapped(err, st, filename, lnnref[].line)
@@ -782,10 +792,6 @@ function _virtual_process!(res::VirtualProcessResult,
     while !isempty(exs)
         (; x, force_concretize) = pop!(exs)
 
-        # with_toplevel_logger(config; filter=≥(JET_LOGGER_LEVEL_DEBUG)) do @nospecialize(io)
-        #     println(io, "analyzing ", x)
-        # end
-
         # update line info
         if isa(x, LineNumberNode)
             lnnref[] = x
@@ -858,7 +864,14 @@ function _virtual_process!(res::VirtualProcessResult,
             newcontext = newcontext::Module
             push!(res.defined_modules, newcontext)
             _virtual_process!(res, newtoplevelex, filename, analyzer, config, newcontext,
-                              pkg_mod_depth+1, force_concretize)
+                              pkg_mod_depth+1;
+                              force_concretize, lnnref)
+            analyzed_file_info = res.analyzed_files[filename]
+            let idx = findfirst(module_range_info::ModuleRangeInfo ->
+                    last(module_range_info) === newcontext, analyzed_file_info.module_range_infos)::Int
+                thisrange, thiscontext = analyzed_file_info.module_range_infos[idx]
+                analyzed_file_info.module_range_infos[idx] = (first(thisrange):lnnref[].line => thiscontext)
+            end
 
             continue
         end
