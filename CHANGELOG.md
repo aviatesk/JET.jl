@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 <!-- links start -->
+[0.10.6]: https://github.com/aviatesk/JET.jl/compare/v0.10.5...v0.10.6
 [0.10.5]: https://github.com/aviatesk/JET.jl/compare/v0.10.4...v0.10.5
 [0.10.4]: https://github.com/aviatesk/JET.jl/compare/v0.10.3...v0.10.4
 [0.10.3]: https://github.com/aviatesk/JET.jl/compare/v0.10.2...v0.10.3
@@ -42,6 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.8.1]: https://github.com/aviatesk/JET.jl/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/aviatesk/JET.jl/compare/v0.7.15...v0.8.0
 <!-- links end -->
+
+## [0.10.6]
+### Changed
+- Started to use the new [Compiler.jl](https://github.com/JuliaLang/BaseCompiler.jl) stdlib
+  as the base compiler, allowing easier switch of the compiler implementation (aviatesk/JET.jl#710).
 
 ## [0.10.5]
 ### Changed
