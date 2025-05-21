@@ -13,7 +13,7 @@ function JET._watch_file_with_func(func, args...; jetconfigs...)
 
     included_files = let res = func(args...; jetconfigs...)
         show(res) # XXX use `display` here?
-        res.res.included_files
+        JET.included_files(res.res)
     end
 
     interrupted = false
@@ -23,7 +23,7 @@ function JET._watch_file_with_func(func, args...; jetconfigs...)
                         postpone = true, all = config.revise_all) do
                 next_included_files = let res = func(args...; jetconfigs...)
                     show(res) # XXX use `display` here?
-                    res.res.included_files
+                    JET.included_files(res.res)
                 end
                 if any(∉(included_files), next_included_files)
                     # refresh watch files

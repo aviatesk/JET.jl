@@ -577,8 +577,8 @@ end
         context = gen_virtual_module(@__MODULE__)
         res = report_file2(f1; context, virtualize = false)
 
-        @test f1 in res.res.included_files
-        @test f2 in res.res.included_files
+        @test f1 in JET.included_files(res.res)
+        @test f2 in JET.included_files(res.res)
         @test isconcrete(res, context, :foo)
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
@@ -587,7 +587,7 @@ end
     let f = normpath(FIXTURES_DIR, "nonexistinclude.jl")
         res = report_file2(f)
 
-        @test f in res.res.included_files
+        @test f in JET.included_files(res.res)
         @test !isempty(res.res.toplevel_error_reports)
         @test first(res.res.toplevel_error_reports) isa ActualErrorWrapped
         @test !isempty(res.res.inference_error_reports)
@@ -597,7 +597,7 @@ end
     let f = normpath(FIXTURES_DIR, "selfrecursiveinclude.jl")
         res = report_file2(f)
 
-        @test f in res.res.included_files
+        @test f in JET.included_files(res.res)
         @test !isempty(res.res.toplevel_error_reports)
         @test first(res.res.toplevel_error_reports) isa RecursiveIncludeErrorReport
     end
@@ -606,8 +606,8 @@ end
         f2 = normpath(FIXTURES_DIR, "chainrecursiveinclude2.jl")
         res = report_file2(f1)
 
-        @test f1 in res.res.included_files
-        @test f2 in res.res.included_files
+        @test f1 in JET.included_files(res.res)
+        @test f2 in JET.included_files(res.res)
         @test !isempty(res.res.toplevel_error_reports)
         let report = only(res.res.toplevel_error_reports)
             @test report isa RecursiveIncludeErrorReport
@@ -623,8 +623,8 @@ end
         f2 = normpath(FIXTURES_DIR, "include2.jl")
         res = report_file2(f1)
 
-        @test f1 in res.res.included_files
-        @test f2 in res.res.included_files
+        @test f1 in JET.included_files(res.res)
+        @test f2 in JET.included_files(res.res)
         @test isempty(res.res.toplevel_error_reports)
     end
 
@@ -634,8 +634,8 @@ end
         context = gen_virtual_module(@__MODULE__)
         res = report_file2(modf; context, virtualize=false)
 
-        @test modf in res.res.included_files
-        @test inc2 in res.res.included_files
+        @test modf in JET.included_files(res.res)
+        @test inc2 in JET.included_files(res.res)
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
         @test isconcrete(res, @invokelatest(context.Outer), :foo)
@@ -696,6 +696,7 @@ end
     end
 
     # `include_callback`
+    # ------------------
     function include_callback(filename::String)
         return """
         sum("julia")
@@ -718,6 +719,72 @@ end
         @test report isa ActualErrorWrapped
         err = report.err
         @test err isa ErrorException
+    end
+end
+
+@testset "analyzed_files" begin
+    text = """
+    #= L1=# module Foo
+    #= L2=#     #=cursor Foo=#
+    #= L3=#     export foo, bar
+    #= L4=#     #=cursor Foo=#
+    #= L5=#     function foo(x)
+    #= L6=#         #=cursor Foo=#
+    #= L7=#         x
+    #= L8=#         #=cursor Foo=#
+    #= L9=#     end
+    #=L10=#     #=cursor Foo=#
+    #=L11=#
+    #=L12=#     module Bar
+    #=L13=#         #=cursor Bar=#
+    #=L14=#         export bar
+    #=L15=#
+    #=L16=#         #=cursor Bar=#
+    #=L17=#         function bar(x)
+    #=L18=#             #=cursor Bar=#
+    #=L19=#             x
+    #=L20=#             #=cursor Bar=#
+    #=L21=#         end
+    #=L22=#
+    #=L23=#         #=cursor Bar=#
+    #=L24=#     end # Bar
+    #=L25=#     #=cursor Foo=#
+    #=L26=#
+    #=L27=#     using .Bar
+    #=L28=#     #=cursor Foo=#
+    #=L29=# end # module Foo
+    #=L30=# #=cursor=#
+    """
+
+    lines = split(text, '\n')
+    lines_Foo = Int[]
+    lines_Bar = Int[]
+    for (i, line) in enumerate(lines)
+        if occursin(r"#=cursor Foo=#", line)
+            push!(lines_Foo, i)
+        elseif occursin(r"#=cursor Bar=#", line)
+            push!(lines_Bar, i)
+        end
+    end
+
+    res = report_text(text, "test_analyzed_files.jl")
+    @test only(keys(res.res.analyzed_files)) == "test_analyzed_files.jl"
+    analyzed_file_info = only(values(res.res.analyzed_files))
+
+    function get_module_context(line)
+        _, idx = findmin(analyzed_file_info.module_range_infos) do (range, mod)
+            line in range || return typemax(Int)
+            return last(range) - first(range)
+        end
+        last(analyzed_file_info.module_range_infos[idx])
+    end
+
+    # NOTE `broken` test cases require aviatesk/JET.jl#709 to be fixed
+    for line in lines_Foo
+        @test nameof(get_module_context(line)) == :Foo broken=line==28
+    end
+    for line in lines_Bar
+        @test nameof(get_module_context(line)) == :Bar broken=line≥18
     end
 end
 
