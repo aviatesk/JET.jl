@@ -781,10 +781,10 @@ end
 
     # NOTE `broken` test cases require aviatesk/JET.jl#709 to be fixed
     for line in lines_Foo
-        @test nameof(get_module_context(line)) == :Foo broken=line==28
+        @test nameof(get_module_context(line)) == :Foo
     end
     for line in lines_Bar
-        @test nameof(get_module_context(line)) == :Bar broken=line≥18
+        @test nameof(get_module_context(line)) == :Bar
     end
 end
 
