@@ -1,6 +1,7 @@
 using JET, InteractiveUtils
 
 const CC = JET.CC
+const JS = JET.JS
 
 using .CC: Bottom, widenconst, ⊑
 

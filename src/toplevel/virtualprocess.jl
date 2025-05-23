@@ -39,18 +39,18 @@ function Base.getproperty(er::ToplevelErrorReport, sym::Symbol)
 end
 
 struct ParseErrorReport <: ToplevelErrorReport
-    diagnostic::JuliaSyntax.Diagnostic
-    source::JuliaSyntax.SourceFile
+    diagnostic::JS.Diagnostic
+    source::JS.SourceFile
     file::String
     line::Int
-    function ParseErrorReport(diagnostic::JuliaSyntax.Diagnostic, source::JuliaSyntax.SourceFile)
-        line = JuliaSyntax.source_line(source, JuliaSyntax.first_byte(diagnostic))
+    function ParseErrorReport(diagnostic::JS.Diagnostic, source::JS.SourceFile)
+        line = JS.source_line(source, JS.first_byte(diagnostic))
         return new(diagnostic, source, source.filename::String, line)
     end
 end
 # don't show stacktrace for syntax errors
 print_report(io::IO, report::ParseErrorReport) =
-    JuliaSyntax.show_diagnostic(io, report.diagnostic, report.source)
+    JS.show_diagnostic(io, report.diagnostic, report.source)
 
 # TODO Use JuliaLowering.jl here
 struct LoweringErrorReport <: ToplevelErrorReport
@@ -479,7 +479,7 @@ following steps on each code block (`blk`) of `toplevelex`:
     allows us to customize JET's concretization strategy.
     See [`ToplevelConfig`](@ref) for more details.
 """
-function virtual_process(x::Union{AbstractString,Expr},
+function virtual_process(x::Union{AbstractString,JS.SyntaxNode,Expr},
                          filename::AbstractString,
                          analyzer::AbstractAnalyzer,
                          config::ToplevelConfig)
@@ -658,17 +658,18 @@ function _virtual_process!(res::VirtualProcessResult,
     end
 
     s = String(s)::String
-    stream = JuliaSyntax.ParseStream(s)
-    JuliaSyntax.parse!(stream; rule=:all)
+    stream = JS.ParseStream(s)
+    JS.parse!(stream; rule=:all)
     if isempty(stream.diagnostics)
-        parsed = JuliaSyntax.build_tree(Expr, stream; filename)
-        @assert isexpr(parsed, :toplevel)
+        parsed = JS.build_tree(JS.SyntaxNode, stream; filename)
         _virtual_process!(res, parsed, filename, analyzer, config, context, pkg_mod_depth)
     else
-        res.analyzed_files[filename] = AnalyzedFileInfo(ModuleRangeInfo[0:typemax(Int) => context])
-        source = JuliaSyntax.SourceFile(stream; filename)
+        sourcefile = JS.SourceFile(stream; filename)
+        first_line = JS.source_line(sourcefile, JS.first_byte(stream))
+        last_line = JS.source_line(sourcefile, JS.last_byte(stream))
+        res.analyzed_files[filename] = AnalyzedFileInfo(ModuleRangeInfo[first_line:last_line => context])
         for diagnostic in stream.diagnostics
-            add_toplevel_error_report!(res, ParseErrorReport(diagnostic, source))
+            add_toplevel_error_report!(res, ParseErrorReport(diagnostic, sourcefile))
         end
     end
 
@@ -680,6 +681,19 @@ function _virtual_process!(res::VirtualProcessResult,
     return res
 end
 
+# check if all statements of `src` have been concretized
+function bail_out_concretized(concretized::BitVector, src::CodeInfo)
+    if all(concretized)
+        return true
+    elseif (length(concretized) == 2 && (concretized[1] && ismoduleusage(src.code[1])) &&
+            (!concretized[2] && src.code[2] isa ReturnNode))
+        # special case module usage statements
+        return true
+    end
+    return false
+end
+
+# this version is used only for testing, `@analyze_toplevel` in particular
 function _virtual_process!(res::VirtualProcessResult,
                            toplevelex::Expr,
                            filename::AbstractString,
@@ -687,12 +701,11 @@ function _virtual_process!(res::VirtualProcessResult,
                            config::ToplevelConfig,
                            context::Module,
                            pkg_mod_depth::Int;
-                           force_concretize::Bool = false,
-                           lnnref::Base.RefValue{LineNumberNode} = Ref(LineNumberNode(0, filename)))
-    let analyzed_file_info = get!(AnalyzedFileInfo, res.analyzed_files, filename)
-        push!(analyzed_file_info.module_range_infos, lnnref[].line:typemax(Int) => context)
-    end
+                           force_concretize::Bool = false)
+    res.analyzed_files[filename] = AnalyzedFileInfo() # just register analyzed file
     push!(res.files_stack, filename)
+
+    local lnnref::Base.RefValue{LineNumberNode} = Ref(LineNumberNode(0, filename))
 
     function general_err_handler(@nospecialize(err), st, x::Union{VirtualProcessResult,ConcreteInterpreter})
         local report = ActualErrorWrapped(err, st, filename, lnnref[].line)
@@ -882,13 +895,7 @@ function _virtual_process!(res::VirtualProcessResult,
             push!(res.defined_modules, newcontext)
             _virtual_process!(res, newtoplevelex, filename, analyzer, config, newcontext,
                               pkg_mod_depth+1;
-                              force_concretize, lnnref)
-            analyzed_file_info = res.analyzed_files[filename]
-            let idx = findfirst(module_range_info::ModuleRangeInfo ->
-                    last(module_range_info) === newcontext, analyzed_file_info.module_range_infos)::Int
-                thisrange, thiscontext = analyzed_file_info.module_range_infos[idx]
-                analyzed_file_info.module_range_infos[idx] = (first(thisrange):lnnref[].line => thiscontext)
-            end
+                              force_concretize)
 
             continue
         end
@@ -938,22 +945,306 @@ function _virtual_process!(res::VirtualProcessResult,
     return res
 end
 
-# check if all statements of `src` have been concretized
-function bail_out_concretized(concretized::BitVector, src::CodeInfo)
-    if all(concretized)
-        return true
-    elseif (length(concretized) == 2 && (concretized[1] && ismoduleusage(src.code[1])) &&
-            (!concretized[2] && src.code[2] isa ReturnNode))
-        # special case module usage statements
-        return true
-    end
-    return false
-end
-
 struct VExpr
     x
     force_concretize::Bool
     VExpr(@nospecialize(x), force_concretize::Bool) = new(x, force_concretize)
+end
+
+function _virtual_process!(res::VirtualProcessResult,
+                           toplevelex::JS.SyntaxNode,
+                           filename::AbstractString,
+                           analyzer::AbstractAnalyzer,
+                           config::ToplevelConfig,
+                           context::Module,
+                           pkg_mod_depth::Int;
+                           force_concretize::Bool = false)
+    toplevelkind = JS.kind(toplevelex)
+    if !(toplevelkind === K"toplevel" || toplevelkind === K"module")
+        error(lazy"Can't analyze SyntaxNode with $(toplevelkind)")
+    end
+
+    lnnref = let sourcefile = JS.sourcefile(toplevelex),
+                 first_line = JS.source_line(sourcefile, JS.first_byte(toplevelex)),
+                 last_line = JS.source_line(sourcefile, JS.last_byte(toplevelex))
+        analyzed_file_info = get!(AnalyzedFileInfo, res.analyzed_files, filename)
+        push!(analyzed_file_info.module_range_infos, first_line:last_line => context)
+        Ref(LineNumberNode(first_line, filename))
+    end
+    push!(res.files_stack, filename)
+
+    function general_err_handler(@nospecialize(err), st, x::Union{VirtualProcessResult,ConcreteInterpreter})
+        local report = ActualErrorWrapped(err, st, filename, lnnref[].line)
+        add_toplevel_error_report!(x, report)
+        nothing
+    end
+
+    function macroexpand_with_err_handling(mod::Module, x::Expr)
+        # `scrub_offset = 2`: `macroexpand` -> kwfunc (`macroexpand`)
+        with_err_handling(general_err_handler, res; scrub_offset=2) do
+            # XXX we want to non-recursive, sequential partial macro expansion here, which allows
+            # us to collect more fine-grained error reports within macro expansions
+            # but it can lead to invalid macro hygiene escaping because of https://github.com/JuliaLang/julia/issues/20241
+            macroexpand(mod, x; recursive = true #= but want to use `false` here =#)
+        end
+    end
+    function eval_with_err_handling(mod::Module, x::Expr)
+        # `scrub_offset = 1`: `Core.eval`
+        with_err_handling(general_err_handler, res; scrub_offset=1) do
+            Core.eval(mod, x)
+        end
+    end
+    function lower_with_err_handling(mod::Module, x::Expr)
+        # `scrub_offset = 1`: `lower`
+        with_err_handling(general_err_handler, res; scrub_offset=1) do
+            lwr = lower(mod, x)
+            if isexpr(lwr, :error)
+                # here we should capture syntax errors found during lowering
+                msg = first(lwr.args)::String
+                add_toplevel_error_report!(res, LoweringErrorReport(msg, filename, lnnref[].line))
+                return nothing
+            end
+            return lwr
+        end
+    end
+    local dependencies = Set{Symbol}()
+    function usemodule_with_err_handling(interp::ConcreteInterpreter, ex::Expr)
+        mod = interp.context
+        if isexpr(ex, (:export, :public))
+            @goto eval_usemodule
+        end
+        # TODO recursive analysis on dependencies?
+        pkgid = config.pkgid
+        if pkgid !== nothing
+            module_usage = pattern_match_module_usage(ex)
+            (; modpath) = module_usage
+            dep = first(modpath)::Symbol
+            if !(dep === :. || # relative module doesn't need to be fixed
+                 dep === :Base || dep === :Core) # modules available by default
+                if dep === Symbol(pkgid.name)
+                    # it's somehow allowed to use the package itself without the relative module path,
+                    # so we need to special case it and fix it to use the relative module path
+                    for _ = 1:pkg_mod_depth
+                        pushfirst!(modpath, :.)
+                    end
+                else
+                    if dep ∉ dependencies
+                        depstr = String(dep)
+                        depid = Base.identify_package(pkgid, depstr)
+                        if depid === nothing
+                            # IDEA better message in a case of `any(m::Module->dep===nameof(m), res.defined_modules))`?
+                            local report = DependencyError(pkgid.name, depstr, filename, lnnref[].line)
+                            add_toplevel_error_report!(interp, report)
+                            return nothing
+                        end
+                        require_ex = :(const $dep = Base.require($depid))
+                        # TODO better handling of loading errors that may happen here
+                        require_res = with_err_handling(general_err_handler, interp; scrub_offset=1) do
+                            Core.eval(mod, require_ex)
+                            true
+                        end
+                        isnothing(require_res) && return nothing
+                        push!(dependencies, dep)
+                    end
+                    pushfirst!(modpath, :.)
+                end
+                fixed_module_usage = ModuleUsage(module_usage; modpath)
+                ex = form_module_usage(fixed_module_usage)
+            elseif dep === :.
+                # The syntax `import ..Submod` refers to the name that is available within
+                # a parent module specified by the number of `.` dots, indicating how many
+                # levels up the module hierarchy to go. However, when it comes to package
+                # loading, it seems to work regardless of the number of dots. For now, in
+                # `report_package`, adjust `modpath` here to mimic the package loading behavior.
+                topmodidx = findfirst(@nospecialize(mp)->mp!==:., modpath)::Int
+                topmodsym = modpath[topmodidx]
+                curmod = mod
+                for i = 1:(topmodidx-1)
+                    if topmodsym isa Symbol && isdefined(curmod, topmodsym)
+                        modpath = modpath[topmodidx:end]
+                        for j = 1:i
+                            pushfirst!(modpath, :.)
+                        end
+                        fixed_module_usage = ModuleUsage(module_usage; modpath)
+                        ex = form_module_usage(fixed_module_usage)
+                        break
+                    else
+                        curmod = parentmodule(curmod)
+                    end
+                end
+            end
+        end
+        @label eval_usemodule
+        # `scrub_offset = 1`: `Core.eval`
+        with_err_handling(general_err_handler, interp; scrub_offset=1) do
+            Core.eval(mod, ex)
+            true
+        end
+    end
+
+    # transform, and then analyze sequentially
+    # IDEA the following code has some of duplicated work with `JuliaInterpreter.ExprSpliter` and we may want to factor them out
+    if toplevelkind === K"toplevel"
+        exs = VNode[VNode(toplevelex[i], force_concretize) for i = JS.numchildren(toplevelex):-1:1]
+    else
+        exs = let blk = toplevelex[2]
+            @assert JS.kind(blk) === K"block"
+            VNode[VNode(blk[i], force_concretize) for i = JS.numchildren(blk):-1:1]
+        end
+    end
+    while !isempty(exs)
+        local ex = pop!(exs)
+        (; node, force_concretize) = ex
+        if isdefined(ex, :x)
+            isexpanded = true
+            x = ex.x
+        else
+            isexpanded = false
+            x = Expr(node)
+        end
+        lnnref[] = lnn = LineNumberNode(JS.source_line(node), filename)
+
+        # apply user-specified concretization strategy, which is configured as expression
+        # pattern match on surface level AST code representation; if any of the specified
+        # patterns matches `x`, JET just concretizes everything involved with it
+        # since patterns are expected to work on surface level AST, we should configure it
+        # here before macro expansion and lowering
+        if !force_concretize
+            for pat in config.concretization_patterns
+                if @capture(x, $pat)
+                    with_toplevel_logger(config; filter=≥(JET_LOGGER_LEVEL_DEBUG)) do @nospecialize(io)
+                        line, file = lnn.line, lnn.file
+                        x′ = striplines(normalise(x))
+                        println(io, "concretization pattern `$pat` matched `$x′` at $file:$line")
+                    end
+                    force_concretize = true
+                    break
+                end
+            end
+        end
+
+        # although we will lower `x` after special-handling `:toplevel` and `:module` expressions,
+        # expand `macrocall`s here because macro can arbitrarily generate those expressions
+        if isexpr(x, :macrocall)
+            newx = macroexpand_with_err_handling(context, x)
+
+            # if any error happened during macro expansion, bail out now and continue
+            isnothing(newx) && continue
+
+            # special case and flatten the resulting expression expanded from `@doc` macro
+            # the macro expands to a block expression and so it makes it difficult to specify
+            # concretization pattern correctly since `@doc` macro is attached implicitly
+            if first(x.args) === GlobalRef(Core, Symbol("@doc"))
+                # `@doc` macro usually produces :block expression, but may also produce :toplevel
+                # one when attached to a module expression
+                @assert isexpr(newx, :block) || isexpr(newx, :toplevel)
+                for i = length(newx.args):-1:1
+                    push!(exs, VNode(node, force_concretize, newx.args[i]))
+                end
+            else
+                push!(exs, VNode(node, force_concretize, newx))
+            end
+
+            continue
+        end
+
+        # flatten container expression
+        if isexpr(x, :toplevel)
+            if isexpanded
+                for i = length(x.args):-1:1
+                    push!(exs, VNode(node, force_concretize, x.args[i]))
+                end
+            else
+                for i = JS.numchildren(node):-1:1
+                    push!(exs, VNode(node[i], force_concretize))
+                end
+            end
+            continue
+        end
+
+        # handle `:module` definition and module usage;
+        # should happen here because modules need to be loaded sequentially while
+        # "toplevel definitions" inside of the loaded modules shouldn't be evaluated in a
+        # context of `context` module
+
+        if isexpr(x, :module)
+            if isexpanded
+                newblk = x.args[3]
+                @assert isexpr(newblk, :block)
+                newtoplevelex = Expr(:toplevel, newblk.args...)
+                x.args[3] = Expr(:block) # empty module's code body
+                newcontext = eval_with_err_handling(context, x)
+                isnothing(newcontext) && continue # error happened, e.g. duplicated naming
+                newcontext = newcontext::Module
+                push!(res.defined_modules, newcontext)
+                _virtual_process!(res, newblk, filename, analyzer, config, newcontext,
+                                  pkg_mod_depth+1;
+                                  force_concretize)
+            else
+                @assert JS.kind(node) === K"module"
+                x.args[3] = Expr(:block) # empty module's code body
+                newcontext = eval_with_err_handling(context, x)
+                isnothing(newcontext) && continue # error happened, e.g. duplicated naming
+                newcontext = newcontext::Module
+                push!(res.defined_modules, newcontext)
+                _virtual_process!(res, node, filename, analyzer, config, newcontext,
+                                  pkg_mod_depth+1;
+                                  force_concretize)
+            end
+            continue
+        end
+
+        # avoid wrapping 1-arg `:global` declaration into a block
+        if isexpr(x, :global) && length(x.args) == 1 && only(x.args) isa Symbol
+            eval_with_err_handling(context, x)
+            continue
+        end
+
+        blk = Expr(:block, lnn, x) # attach current line number info
+        lwr = lower_with_err_handling(context, blk)
+
+        isnothing(lwr) && continue # error happened during lowering
+        isexpr(lwr, :thunk) || continue # literal
+
+        src = only(lwr.args)::CodeInfo
+
+        fix_self_references!(res.actual2virtual, src)
+
+        failed = Ref(false)
+        interp = ConcreteInterpreter(filename, lnn, usemodule_with_err_handling,
+                                     context, analyzer, config, res, pkg_mod_depth,
+                                     failed)
+        if force_concretize
+            JuliaInterpreter.finish!(interp, Frame(context, src), true)
+            continue
+        end
+        concretized = partially_interpret!(interp, context, src)
+
+        if bail_out_concretized(concretized, src)
+            # bail out if nothing to analyze (just a performance optimization)
+            continue
+        elseif failed[]
+            continue
+        end
+
+        analyzer = AbstractAnalyzer(analyzer, concretized)
+
+        (_, result), _ = analyze_toplevel!(analyzer, src, context)
+
+        append!(res.inference_error_reports, get_reports(analyzer, result)) # collect error reports
+    end
+
+    pop!(res.files_stack)
+
+    return res
+end
+
+struct VNode
+    node::JS.SyntaxNode
+    force_concretize::Bool
+    x # expanded
+    VNode(node::JS.SyntaxNode, force_concretize::Bool) = new(node, force_concretize)
+    VNode(node::JS.SyntaxNode, force_concretize::Bool, @nospecialize(x)) = new(node, force_concretize, x)
 end
 
 function push_vex_stack!(exs::Vector{VExpr}, newex::Expr, force_concretize::Bool)

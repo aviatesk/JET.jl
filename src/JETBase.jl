@@ -36,7 +36,8 @@ using Base.Meta: ParseError, isexpr, lower
 
 using Base.Experimental: @MethodTable, @overlay
 
-using JuliaSyntax: JuliaSyntax
+using JuliaSyntax: JuliaSyntax as JS
+using .JS: @K_str
 
 using CodeTracking: CodeTracking
 
@@ -900,13 +901,13 @@ function analyze_and_report_text!(analyzer::AbstractAnalyzer, text::AbstractStri
     return JETToplevelResult(analyzer, res, source; jetconfigs...)
 end
 
-function analyze_and_report_expr!(analyzer::AbstractAnalyzer, expr::Expr,
+function analyze_and_report_expr!(analyzer::AbstractAnalyzer, parsed::Union{Expr,JS.SyntaxNode},
                                   filename::AbstractString = "top-level",
                                   pkgid::Union{Nothing,PkgId} = nothing;
                                   jetconfigs...)
     validate_configs(analyzer, jetconfigs)
     config = ToplevelConfig(pkgid; jetconfigs...)
-    res = virtual_process(expr, filename, analyzer, config)
+    res = virtual_process(parsed, filename, analyzer, config)
     analyzername = nameof(typeof(analyzer))
     source = lazy"$analyzername: \"$filename\""
     return JETToplevelResult(analyzer, res, source; jetconfigs...)
