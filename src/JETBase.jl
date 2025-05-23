@@ -30,7 +30,7 @@ using .CC: @nospecs, ⊑,
     nearest_common_dominator, singleton_type, slot_id, specialize_method, tmeet, tmerge,
     typeinf_lattice, widenconst, widenlattice
 
-using Base: IdSet, get_world_counter, generating_output
+using Base: IdSet, PkgId, get_world_counter, generating_output
 
 using Base.Meta: ParseError, isexpr, lower
 
@@ -696,7 +696,7 @@ Note that this is intended to be used by developers of `AbstractAnalyzer` only.
 General users should use high-level entry points like [`report_file`](@ref).
 """
 function analyze_and_report_file!(analyzer::AbstractAnalyzer, filename::AbstractString,
-                                  pkgid::Union{Nothing,Base.PkgId} = nothing;
+                                  pkgid::Union{Nothing,PkgId} = nothing;
                                   jetconfigs...)
     jetconfigs = apply_file_config(jetconfigs, filename)
     entrytext = read(filename, String)
@@ -888,7 +888,7 @@ General users should use high-level entry points like [`report_text`](@ref).
 """
 function analyze_and_report_text!(analyzer::AbstractAnalyzer, text::AbstractString,
                                   filename::AbstractString = "top-level",
-                                  pkgid::Union{Nothing,Base.PkgId} = nothing;
+                                  pkgid::Union{Nothing,PkgId} = nothing;
                                   jetconfigs...)
     validate_configs(analyzer, jetconfigs)
     config = ToplevelConfig(pkgid; jetconfigs...)
@@ -900,7 +900,7 @@ end
 
 function analyze_and_report_expr!(analyzer::AbstractAnalyzer, expr::Expr,
                                   filename::AbstractString = "top-level",
-                                  pkgid::Union{Nothing,Base.PkgId} = nothing;
+                                  pkgid::Union{Nothing,PkgId} = nothing;
                                   jetconfigs...)
     validate_configs(analyzer, jetconfigs)
     config = ToplevelConfig(pkgid; jetconfigs...)

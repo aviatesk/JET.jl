@@ -306,7 +306,7 @@ These configurations will be active for all the top-level entries explained in t
 ---
 """
 struct ToplevelConfig
-    pkgid::Union{Nothing,Base.PkgId}
+    pkgid::Union{Nothing,PkgId}
     context::Module
     analyze_from_definitions::Union{Bool,Symbol}
     concretization_patterns::Vector{Any}
@@ -314,7 +314,7 @@ struct ToplevelConfig
     toplevel_logger # ::Union{Nothing,IO}
     include_callback # ::Union{Nothing,Base.Callable}
     function ToplevelConfig(
-        pkgid::Union{Nothing,Base.PkgId} = nothing;
+        pkgid::Union{Nothing,PkgId} = nothing;
         context::Module = Main,
         analyze_from_definitions::Union{Bool,Symbol} = false,
         concretization_patterns = Any[],
@@ -600,9 +600,9 @@ function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProce
             method_table=unwrap_method_table(CC.method_table(analyzer)),
             world=new_world,
             raise=false)
-        if match !== nothing && (
-            !(entrypoint isa Symbol)#=implies analyze_from_definitions === true=# ||
-            match.method.name === entrypoint)
+        if (match !== nothing &&
+            (!(entrypoint isa Symbol) || # implies `analyze_from_definitions===true`
+             match.method.name === entrypoint))
             succeeded[] += 1
             with_toplevel_logger(config; pre=clearline) do @nospecialize(io)
                 (i == n ? println : print)(io, "analyzing from top-level definitions ($(succeeded[])/$n)")
@@ -689,7 +689,7 @@ function _virtual_process!(res::VirtualProcessResult,
             # XXX we want to non-recursive, sequential partial macro expansion here, which allows
             # us to collect more fine-grained error reports within macro expansions
             # but it can lead to invalid macro hygiene escaping because of https://github.com/JuliaLang/julia/issues/20241
-            macroexpand(mod, x; recursive = true #= but want to use `false` here =#)
+            macroexpand(mod, x; recursive=true)
         end
     end
     function eval_with_err_handling(mod::Module, x::Expr)
