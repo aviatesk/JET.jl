@@ -309,7 +309,7 @@ Prints a report of the top-level error `report` to the given `io`.
 """
 function print_report end
 
-include("toplevel/virtualprocess.jl")
+include("toplevel/toplevel.jl")
 
 # results
 # =======

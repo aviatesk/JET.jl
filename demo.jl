@@ -3,11 +3,15 @@
 
 # JET can find simple errors:
 
+module Fibonacci
+
 fib(n) = n ≤ 2 ? n : fib(n-1) + fib(n-2)
 
 fib(1000)   # => never terminates
 fib(m)      # => ERROR: UndefVarError: `m` not defined
 fib("1000") # => ERROR: MethodError: no method matching isless(::String, ::Int64)
+
+end # module Fibonacci
 
 # JET supports all Julia language features:
 
