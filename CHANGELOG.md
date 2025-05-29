@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Started to use the new [Compiler.jl](https://github.com/JuliaLang/BaseCompiler.jl) stdlib
   as the base compiler, allowing easier switch of the compiler implementation (aviatesk/JET.jl#710).
+- `JETInterface` now includes the `ToplevelErrorReport` interface.
 
 ## [0.10.5]
 ### Changed
