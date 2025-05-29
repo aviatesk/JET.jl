@@ -346,7 +346,7 @@ function get_reports(result::JETToplevelResult)
     else
         reports = res.inference_error_reports
         if get(result.jetconfigs, :target_defined_modules, false)
-            target_modules = res.defined_modules
+            target_modules = defined_modules(res)
         else
             target_modules = nothing
         end

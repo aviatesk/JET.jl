@@ -391,7 +391,6 @@ AnalyzedFileInfo() = AnalyzedFileInfo(ModuleRangeInfo[])
 
 - `res.analyzed_files::Dict{String,AnalyzedFileInfo}`: files that have been analyzed with
     their corresponding module analyzed_files attached.
-- `res.defined_modules::Set{Module}`: module analyzed_files created while this top-level analysis
 - `res.toplevel_error_reports::Vector{ToplevelErrorReport}`: toplevel errors found during the
     text parsing or partial (actual) interpretation; these reports are "critical" and should
     have precedence over `inference_error_reports`
@@ -402,22 +401,27 @@ AnalyzedFileInfo() = AnalyzedFileInfo(ModuleRangeInfo[])
 """
 struct VirtualProcessResult
     analyzed_files::Dict{String,AnalyzedFileInfo}
-    files_stack::Vector{String}
-    defined_modules::Set{Module}
     toplevel_error_reports::Vector{ToplevelErrorReport}
     inference_error_reports::Vector{InferenceErrorReport}
     toplevel_signatures::Vector{Type}
     actual2virtual::Union{Actual2Virtual,Nothing}
     VirtualProcessResult(actual2virtual::Union{Actual2Virtual,Nothing}, context::Module) =
         new(Dict{String,AnalyzedFileInfo}(),
-            Vector{String}(),
-            Set{Module}((context,)),
             ToplevelErrorReport[],
             InferenceErrorReport[],
             Type[],
             actual2virtual)
 end
 
+function defined_modules(res::VirtualProcessResult)
+    ret = Set{Module}()
+    for (_, analyzed_file_info) in res.analyzed_files
+        for module_range_info in analyzed_file_info.module_range_infos
+            push!(ret, last(module_range_info))
+        end
+    end
+    ret
+end
 included_files(res::VirtualProcessResult) = keys(res.analyzed_files)
 
 """
@@ -439,6 +443,7 @@ struct ConcreteInterpreter{F,Analyzer<:AbstractAnalyzer} <: Interpreter
     config::ToplevelConfig
     res::VirtualProcessResult
     pkg_mod_depth::Int
+    files_stack::Vector{String}
     failed::Base.RefValue{Bool}
 end
 
@@ -522,7 +527,7 @@ function virtual_process(x::Union{AbstractString,JS.SyntaxNode},
     end
     res = VirtualProcessResult(actual2virtual, context)
     try
-        _virtual_process!(res, x, filename, analyzer, config, context, #=pkg_mod_depth=#0, overrideex)
+        _virtual_process!(res, x, filename, analyzer, config, context, #=pkg_mod_depth=#0, #=files_stack=#String[]; overrideex)
     finally
         Preferences.main_uuid[] = old_main_uuid
     end
@@ -652,6 +657,7 @@ function _virtual_process!(res::VirtualProcessResult,
                            config::ToplevelConfig,
                            context::Module,
                            pkg_mod_depth::Int,
+                           files_stack::Vector{String};
                            overrideex::Union{Nothing,Expr}=nothing)
     overrideex === nothing ||
         error("Given full code text `overrideex` does not need to be provided")
@@ -666,7 +672,7 @@ function _virtual_process!(res::VirtualProcessResult,
     JS.parse!(stream; rule=:all)
     if isempty(stream.diagnostics)
         parsed = JS.build_tree(JS.SyntaxNode, stream; filename)
-        _virtual_process!(res, parsed, filename, analyzer, config, context, pkg_mod_depth)
+        _virtual_process!(res, parsed, filename, analyzer, config, context, pkg_mod_depth, files_stack)
     else
         sourcefile = JS.SourceFile(stream; filename)
         first_line = JS.source_line(sourcefile, JS.first_byte(stream))
@@ -726,9 +732,10 @@ function _virtual_process!(res::VirtualProcessResult,
                            config::ToplevelConfig,
                            context::Module,
                            pkg_mod_depth::Int,
+                           files_stack::Vector{String};
+                           force_concretize::Bool = false,
                            # HACK allow expanded `Expr` to be analyzed instead of `toplevelnode`
-                           overrideex::Union{Nothing,Expr}=nothing; # TODO Remove this after JL integration
-                           force_concretize::Bool = false)
+                           overrideex::Union{Nothing,Expr}=nothing) # TODO Remove this after JL integration)
     if overrideex === nothing
         local toplevelkind = JS.kind(toplevelnode)
         (toplevelkind === K"toplevel" || toplevelkind === K"module") ||
@@ -745,7 +752,7 @@ function _virtual_process!(res::VirtualProcessResult,
         push!(analyzed_file_info.module_range_infos, first_line:last_line => context)
         Ref(LineNumberNode(first_line, filename))
     end
-    push!(res.files_stack, filename)
+    push!(files_stack, filename)
 
     function general_err_handler(@nospecialize(err), st, x::Union{VirtualProcessResult,ConcreteInterpreter})
         local report = ActualErrorWrapped(err, st, filename, lnnref[].line)
@@ -949,19 +956,17 @@ function _virtual_process!(res::VirtualProcessResult,
                 newcontext = eval_with_err_handling(context, x)
                 isnothing(newcontext) && continue # error happened, e.g. duplicated naming
                 newcontext = newcontext::Module
-                push!(res.defined_modules, newcontext)
                 _virtual_process!(res, node, filename, analyzer, config, newcontext::Module,
-                                  pkg_mod_depth+1, overrideex;
-                                  force_concretize)
+                                  pkg_mod_depth+1, files_stack;
+                                  force_concretize, overrideex)
             else
                 @assert JS.kind(node) === K"module"
                 x.args[3] = Expr(:block) # empty module's code body
                 newcontext = eval_with_err_handling(context, x)
                 isnothing(newcontext) && continue # error happened, e.g. duplicated naming
                 newcontext = newcontext::Module
-                push!(res.defined_modules, newcontext)
                 _virtual_process!(res, node, filename, analyzer, config, newcontext,
-                                  pkg_mod_depth+1;
+                                  pkg_mod_depth+1, files_stack;
                                   force_concretize)
             end
             continue
@@ -986,7 +991,7 @@ function _virtual_process!(res::VirtualProcessResult,
         failed = Ref(false)
         interp = ConcreteInterpreter(filename, lnn, usemodule_with_err_handling,
                                      context, analyzer, config, res, pkg_mod_depth,
-                                     failed)
+                                     files_stack, failed)
         if force_concretize
             JuliaInterpreter.finish!(interp, Frame(context, src), true)
             continue
@@ -1007,7 +1012,7 @@ function _virtual_process!(res::VirtualProcessResult,
         append!(res.inference_error_reports, get_reports(analyzer, result)) # collect error reports
     end
 
-    pop!(res.files_stack)
+    pop!(files_stack)
 
     return res
 end
@@ -1599,8 +1604,8 @@ function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func)
 
     include_file = normpath(dirname(filename), fname)
     # handle recursive `include`s
-    if include_file in res.files_stack
-        local report = RecursiveIncludeErrorReport(include_file, copy(res.files_stack), filename, lnn.line)
+    if include_file in interp.files_stack
+        local report = RecursiveIncludeErrorReport(include_file, copy(interp.files_stack), filename, lnn.line)
         add_toplevel_error_report!(interp, report)
         return nothing
     end
@@ -1620,7 +1625,7 @@ function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func)
     isnothing(include_text) && return nothing # typically no file error
 
     _virtual_process!(interp.res, include_text::String, include_file, interp.analyzer,
-                      interp.config, context, interp.pkg_mod_depth)
+                      interp.config, context, interp.pkg_mod_depth, interp.files_stack)
 
     # TODO: actually, here we need to try to get the lastly analyzed result of the `_virtual_process!` call above
     nothing
