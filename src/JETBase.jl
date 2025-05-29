@@ -548,13 +548,14 @@ end
 # when virtualized, fix virtual module printing based on string manipulation;
 # the "actual" modules may not be loaded into this process
 function (postprocessor::PostProcessor)(s::AbstractString)
-    isdefined(postprocessor, :actual2virtual) || return s
-    actual, virtual = postprocessor.actual2virtual
-    if actual == "Main"
-        return replace(s, "Main." => "", virtual => actual)
-    else
-        return replace(s, virtual => actual)
+    if isdefined(postprocessor, :actual2virtual)
+        actual, virtual = postprocessor.actual2virtual
+        s = replace(s, virtual => actual)
+        if actual == "Main"
+            s = replace(s, "Main." => "")
+        end
     end
+    return s
 end
 
 # we may need something like this for stdlibs as well ?
