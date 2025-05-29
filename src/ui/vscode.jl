@@ -1,7 +1,7 @@
 module VSCode
 
 import ..JET:
-    gen_postprocess,
+    PostProcessor,
     tofullpath,
     AbstractAnalyzer,
     JETToplevelResult,
@@ -59,21 +59,21 @@ function Base.show(io::IO, ::MIME"application/vnd.julia-vscode.diagnostics",
                    res::JETToplevelResult)
     forward_to_console_output(res; res.jetconfigs...)
     config = PrintConfig(; res.jetconfigs...)
-    postprocess = gen_postprocess(res.res.actual2virtual)
+    postprocessor = PostProcessor(res.res.actual2virtual)
     return vscode_diagnostics(res.analyzer,
                               get_reports(res),
                               res.source,
                               config;
-                              postprocess)
+                              postprocessor)
 end
 function vscode_diagnostics(analyzer::Analyzer,
                             reports::Vector{ToplevelErrorReport},
                             source::AbstractString,
                             config::PrintConfig=PrintConfig();
-                            postprocess = identity) where {Analyzer<:AbstractAnalyzer}
+                            postprocessor::PostProcessor = PostProcessor()) where {Analyzer<:AbstractAnalyzer}
     return (; source = String(source),
               items = map(reports) do report
-                  return (; msg = postprocess(sprint(print_report, report)),
+                  return (; msg = postprocessor(sprint(print_report, report)),
                             path = tovscodepath(report.file),
                             line = report.line,
                             severity = 0) # 0: Error, 1: Warning, 2: Information, 3: Hint
@@ -97,17 +97,17 @@ function vscode_diagnostics(analyzer::Analyzer,
                             reports::Vector{InferenceErrorReport},
                             source::AbstractString,
                             config::PrintConfig=PrintConfig();
-                            postprocess = identity) where {Analyzer<:AbstractAnalyzer}
+                            postprocessor::PostProcessor = PostProcessor()) where {Analyzer<:AbstractAnalyzer}
     order = vscode_diagnostics_order(analyzer)
     return (; source = String(source),
               items = map(reports) do report
                   showpoint = (order ? first : last)(report.vst)
-                  return (; msg = postprocess(sprint(print_report, report, config)),
+                  return (; msg = postprocessor(sprint(print_report, report, config)),
                             path = tovscodepath(showpoint.file),
                             line = showpoint.line,
                             severity = 1, # 0: Error, 1: Warning, 2: Information, 3: Hint
                             relatedInformation = map((order ? identity : reverse)(report.vst)) do frame
-                                return (; msg = postprocess(sprint(print_frame_sig, frame, config)),
+                                return (; msg = postprocessor(sprint(print_frame_sig, frame, config)),
                                           path = tovscodepath(frame.file),
                                           line = frame.line)
                             end)

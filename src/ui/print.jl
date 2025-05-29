@@ -6,7 +6,7 @@ function print_reports(io::IO, res::JETToplevelResult)
     io = IOContext(io, :limit => true)
     return print_reports(io,
                          get_reports(res),
-                         gen_postprocess(res.res.actual2virtual);
+                         PostProcessor(res.res.actual2virtual);
                          res.jetconfigs...)
 end
 
@@ -112,7 +112,7 @@ end
 
 function print_reports(io::IO,
                        reports::Vector{ToplevelErrorReport},
-                       @nospecialize(postprocess = identity);
+                       postprocessor::PostProcessor = PostProcessor();
                        jetconfigs...)
     config = PrintConfig(; jetconfigs...)
 
@@ -147,7 +147,7 @@ function print_reports(io::IO,
 
             printlnstyled(io, '└', '─'^(length(s)-1); color)
         end
-    end |> postprocess |> (x->print(io::IO,x))
+    end |> postprocessor |> (x->print(io::IO,x))
 
     return n
 end
@@ -157,7 +157,7 @@ end
 
 function print_reports(io::IO,
                        reports::Vector{InferenceErrorReport},
-                       @nospecialize(postprocess = identity);
+                       postprocessor::PostProcessor = PostProcessor();
                        jetconfigs...)
     config = PrintConfig(; jetconfigs...)
 
@@ -185,7 +185,7 @@ function print_reports(io::IO,
             end
             print_stack(io, report, config, wrote_linfos)
         end
-    end |> postprocess |> (x->print(io::IO,x))
+    end |> postprocessor |> (x->print(io::IO,x))
 
     return n
 end

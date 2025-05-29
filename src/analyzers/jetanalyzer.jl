@@ -311,9 +311,6 @@ function CC.abstract_eval_globalref(analyzer::JETAnalyzer, g::GlobalRef, saw_lat
     if saw_latestworld
         return CC.RTEffects(Any, Any, CC.generic_getglobal_effects)
     end
-    # For inference purposes, we don't particularly care which global binding we end up loading, we only
-    # care about its type. However, we would still like to terminate the world range for the particular
-    # binding we end up reaching such that codegen can emit a simpler pointer load.
     (valid_worlds, ret) = CC.scan_leaf_partitions(analyzer, g, sv.world) do analyzer::AbstractAnalyzer, binding::Core.Binding, partition::Core.BindingPartition
         if partition.min_world ≤ sv.world.this ≤ partition.max_world # XXX This should probably be fixed on the Julia side
             ReportPass(analyzer)(UndefVarErrorReport, analyzer, sv, binding, partition)

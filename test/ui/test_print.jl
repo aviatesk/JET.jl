@@ -56,7 +56,7 @@ end
             foo(rand(Char, 1000000000)...)
         """, filename)
         io = IOBuffer()
-        @test !iszero(print_reports(io, res.res.inference_error_reports, JET.gen_postprocess(res.res.actual2virtual)))
+        @test !iszero(print_reports(io, res.res.inference_error_reports, JET.PostProcessor(res.res.actual2virtual)))
         let s = String(take!(io))
             @test occursin("1 possible error found", s)
             @test occursin("$(escape_string(filename)):1", s) # toplevel call site

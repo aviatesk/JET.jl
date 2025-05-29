@@ -536,17 +536,26 @@ linfomod(linfo::MethodInstance) = (def = linfo.def; isa(def, Method) ? def.modul
 # UIs
 # ===
 
+struct PostProcessor
+    actual2virtual::Pair{String,String}
+    PostProcessor() = new()
+    PostProcessor(::Nothing) = new()
+    function PostProcessor((actualmod, virtualmod)::Actual2Virtual)
+        new(string(actualmod) => string(virtualmod))
+    end
+end
+
 # when virtualized, fix virtual module printing based on string manipulation;
 # the "actual" modules may not be loaded into this process
-gen_postprocess(::Nothing) = return identity
-function gen_postprocess((actualmod, virtualmod)::Actual2Virtual)
-    virtual = string(virtualmod)
-    actual  = string(actualmod)
-    return actualmod === Main ?
-           replace2("Main." => "") ∘ replace2(virtual => actual) :
-           replace2(virtual => actual)
+function (postprocessor::PostProcessor)(s::AbstractString)
+    isdefined(postprocessor, :actual2virtual) || return s
+    actual, virtual = postprocessor.actual2virtual
+    if actual == "Main"
+        return replace(s, "Main." => "", virtual => actual)
+    else
+        return replace(s, virtual => actual)
+    end
 end
-replace2(pat) = x -> replace(x, pat)
 
 # we may need something like this for stdlibs as well ?
 

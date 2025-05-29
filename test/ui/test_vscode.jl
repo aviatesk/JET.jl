@@ -4,7 +4,7 @@ include("../setup.jl")
 
 import JET.VSCode:
     get_reports,
-    gen_postprocess,
+    PostProcessor,
     vscode_diagnostics
 
 @testset "sources" begin
@@ -90,11 +90,11 @@ end
             report_file2(path)
         end
         reports = get_reports_with_test(res)
-        postprocess = gen_postprocess(res.res.actual2virtual)
+        postprocessor = PostProcessor(res.res.actual2virtual)
         diagnostics = vscode_diagnostics(res.analyzer,
                                          reports,
                                          res.source;
-                                         postprocess)
+                                         postprocessor)
         check_basic_integration(diagnostics, reports)
         @test !isempty(diagnostics.items) && !isempty(reports)
         item = first(diagnostics.items)
@@ -111,11 +111,11 @@ end
             report_file2(path)
         end
         reports = get_reports_with_test(res)
-        postprocess = gen_postprocess(res.res.actual2virtual)
+        postprocessor = PostProcessor(res.res.actual2virtual)
         diagnostics = vscode_diagnostics(res.analyzer,
                                          reports,
                                          res.source;
-                                         postprocess)
+                                         postprocessor)
         check_basic_integration(diagnostics, reports)
         @test !isempty(diagnostics.items) && !isempty(reports)
         item = first(diagnostics.items)
