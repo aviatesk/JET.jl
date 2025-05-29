@@ -73,10 +73,7 @@ function print_signature end
 This `baremodule` exports names that form the APIs of [`AbstractAnalyzer` Framework](@ref AbstractAnalyzer-Framework).
 `using JET.JETInterface` loads all names that are necessary to define a plugin analysis.
 """
-baremodule JETInterface
-import ..JET: print_report_message, print_signature, copy_report
-export print_report_message, print_signature, copy_report
-end
+baremodule JETInterface end
 
 # hooks
 # -----
@@ -304,6 +301,11 @@ include("abstractinterpret/inferenceerrorreport.jl")
 include("abstractinterpret/abstractanalyzer.jl")
 include("abstractinterpret/typeinfer.jl")
 
+"""
+    print_report(io::IO, report::ToplevelErrorReport)
+
+Prints a report of the top-level error `report` to the given `io`.
+"""
 function print_report end
 
 include("toplevel/virtualprocess.jl")
@@ -1168,8 +1170,9 @@ reexport_as_api!(JETInterface,
     # AbstractAnalyzer API
     AbstractAnalyzer, AnalyzerState, ReportPass, AnalysisToken,
     valid_configurations, aggregation_policy, VSCode.vscode_diagnostics_order,
-    # InferenceErrorReport API
-    InferenceErrorReport, copy_report, #=print_report_message, print_signature,=# report_color,
+    # ErrorReport API
+    InferenceErrorReport, ToplevelErrorReport, copy_report, print_report,
+    print_report_message, print_signature, report_color,
     # generic entry points,
     analyze_and_report_call!, call_test_ex, func_test,
     analyze_and_report_file!, analyze_and_report_package!, analyze_and_report_text!,

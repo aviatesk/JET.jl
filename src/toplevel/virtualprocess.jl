@@ -10,6 +10,23 @@ See also: [`virtual_process`](@ref), [`ConcreteInterpreter`](@ref)
 """
 abstract type ToplevelErrorReport end
 
+"""
+    ToplevelErrorReport()
+
+In order for `Report <: ToplevelErrorReport` to implement the interface,
+it should satisfy the following requirements:
+
+- **Required fields** \\
+  `Report` should have the following fields:
+  * `file::String`: the filename of this error
+  * `line::Int`: the line number of this error
+
+- **Required overloads** \\
+
+  * [`JETInterface.print_report(io::IO, report::Report)`](@ref print_report)
+"""
+ToplevelErrorReport()
+
 # `ToplevelErrorReport` interface
 function Base.getproperty(er::ToplevelErrorReport, sym::Symbol)
     return if sym === :file

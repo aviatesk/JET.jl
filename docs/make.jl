@@ -99,6 +99,8 @@ function generate_api_doc(examples_pages)
                     return "JET.AnalysisToken(::JET.AbstractAnalyzer)"
                 elseif obj === JET.InferenceErrorReport
                     return "JET.InferenceErrorReport()"
+                elseif obj === JET.ToplevelErrorReport
+                    return "JET.ToplevelErrorReport()"
                 else
                     return string(parentmodule(obj), '.', nameof(obj))
                 end
