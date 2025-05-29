@@ -781,10 +781,10 @@ end
 
     # NOTE `broken` test cases require aviatesk/JET.jl#709 to be fixed
     for line in lines_Foo
-        @test nameof(get_module_context(line)) == :Foo broken=line==28
+        @test nameof(get_module_context(line)) == :Foo
     end
     for line in lines_Bar
-        @test nameof(get_module_context(line)) == :Bar broken=line≥18
+        @test nameof(get_module_context(line)) == :Bar
     end
 end
 
@@ -1028,63 +1028,63 @@ end
 end
 
 @testset "error handling within ConcreteInterpreter" begin
-    # NOTE some of the tests below are line-number-sensitive
-
     @assert !isdefinedglobal(@__MODULE__, :BType)
-    let res = @analyze_toplevel begin
-            struct AType <: BType end # UndefVarError(:B) should be handled into `res.toplevel_error_reports`
-        end
+    mktemp() do filename, io
+        res = report_text("""
+        struct AType <: BType end # L1
+        """, filename)
         er = only(res.res.toplevel_error_reports)
         @test er isa ActualErrorWrapped
         @test er.err isa UndefVarError && er.err.var === :BType
-        @test er.file == (@__FILE__) && er.line == (@__LINE__) - 5
+        @test er.file == filename && er.line == 1 # L1
     end
 
     @testset "stacktrace scrubbing" begin
         # scrub internal frames until (errored) user macro
-        let res = @analyze_toplevel begin
+        mktemp() do filename, io
+            res = report_text("""
                 macro badmacro(s) throw(s) end # L1
                 @badmacro "hi"                 # L2
-            end
-
+            """, filename)
             er = only(res.res.toplevel_error_reports)
             @test er isa ActualErrorWrapped
-            @test er.file == (@__FILE__) && er.line == (@__LINE__) - 5 # L2
+            @test er.file == filename && er.line == 2 # L2
             @test length(er.st) == 1
             sf = only(er.st)
-            @test sf.file === Symbol(@__FILE__) && sf.line == (@__LINE__) - 9 # L1
+            @test sf.file === Symbol(filename) && sf.line == 1
             @test sf.func === Symbol("@badmacro")
         end
 
         # TODO add test for `eval_with_err_handling` and `lower_with_err_handling`
 
         # scrub all the internal frame when errors happens in `maybe_evaluate_builtin`
-        let res = @analyze_toplevel begin
-                struct A
+        mktemp() do filename, io
+            res = report_text("""
+                struct A # L1
                     fld::UndefinedType
                 end
-            end
-
+            """, filename)
             er = only(res.res.toplevel_error_reports)
             @test er isa ActualErrorWrapped
             @test er.err isa UndefVarError && er.err.var === :UndefinedType
-            @test er.file == (@__FILE__) && er.line == (@__LINE__) - 8
+            @test er.file == filename && er.line == 1 # L1
             @test isempty(er.st)
         end
 
         # errors from user functions (i.e. those from `@invokelatest f(fargs...)` in the overload
         # `JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)`)
-        let res = @analyze_toplevel begin
-                foo() = throw("don't call me, pal")
-                struct A <: foo() end
-            end
+        mktemp() do filename, io
+            res = report_text("""
+                foo() = throw("don't call me, pal") # L1
+                struct A <: foo() end # L2
+            """, filename)
 
             er = only(res.res.toplevel_error_reports)
             @test er isa ActualErrorWrapped
             @test er.err == "don't call me, pal"
-            @test er.file == (@__FILE__) && er.line == (@__LINE__) - 6
+            @test er.file == filename && er.line == 2
             sf = only(er.st)
-            @test sf.file === Symbol(@__FILE__) && sf.line == (@__LINE__) - 9
+            @test sf.file === Symbol(filename) && sf.line == 1
         end
     end
 end

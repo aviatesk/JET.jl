@@ -1,13 +1,14 @@
 using JET, InteractiveUtils
 
 const CC = JET.CC
+const JS = JET.JS
 
 using .CC: Bottom, widenconst, ⊑
 
 using JET:
-    AbstractAnalyzer, InferenceErrorReport, JETAnalyzer, ToplevelConfig,
-    ToplevelErrorReport, gen_virtual_module, get_reports, get_result, print_reports,
-    virtual_process, virtualize_module_context
+    AbstractAnalyzer, InferenceErrorReport, JETAnalyzer, ToplevelErrorReport,
+    gen_virtual_module, get_reports, get_result, print_reports,
+    virtualize_module_context
 
 using Base.Meta: isexpr
 
@@ -92,15 +93,13 @@ end
 _analyze_toplevel_ex(ex, lnn, jetconfigs) =
     :(analyze_toplevel($(QuoteNode(ex)), $(QuoteNode(lnn)); $(map(esc, jetconfigs)...)))
 
-function analyze_toplevel(ex, lnn; jetconfigs...)
+function analyze_toplevel(@nospecialize(ex), lnn; jetconfigs...)
     toplevelex = (isexpr(ex, :block) ?
                   Expr(:toplevel, lnn, ex.args...) : # flatten here
                   Expr(:toplevel, lnn, ex))
     analyzer = JETAnalyzer(; jetconfigs...)
-    config = ToplevelConfig(; jetconfigs...)
     filename = let file = lnn.file; isnothing(file) ? "top-level" : String(file) end
-    res = virtual_process(toplevelex, filename, analyzer, config)
-    return JET.JETToplevelResult(analyzer, res, "analyze_toplevel"; jetconfigs...)
+    return JET.analyze_and_report_expr!(analyzer, toplevelex, filename; jetconfigs...)
 end
 
 # `report_file` with silent top-level logger

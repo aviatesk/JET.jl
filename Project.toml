@@ -34,7 +34,7 @@ Example = "0.5.3"
 InteractiveUtils = "1.10"
 JSON3 = "1"
 JuliaInterpreter = "0.10.3"
-JuliaSyntax = "0.4.10, 1.0"
+JuliaSyntax = "1.0"
 Libdl = "1.10"
 Logging = "1.10"
 LoweredCodeUtils = "3.3"
@@ -51,7 +51,7 @@ julia = "1.12"
 [extras]
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
-Cthulhu = "f68482b8-f384-11e8-15f7-abe071a5a75f"
+# Cthulhu = "f68482b8-f384-11e8-15f7-abe071a5a75f"
 Downloads = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
 Example = "7876af07-990d-54b4-ab0e-23690620f79a"
 JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
@@ -67,7 +67,7 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 test = [
     "Aqua",
     "BenchmarkTools",
-    "Cthulhu",
+    # "Cthulhu",
     "Downloads",
     "Example",
     "JSON3",
