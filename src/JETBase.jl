@@ -901,13 +901,21 @@ function analyze_and_report_text!(analyzer::AbstractAnalyzer, text::AbstractStri
     return JETToplevelResult(analyzer, res, source; jetconfigs...)
 end
 
-function analyze_and_report_expr!(analyzer::AbstractAnalyzer, parsed::Union{Expr,JS.SyntaxNode},
+function analyze_and_report_expr!(analyzer::AbstractAnalyzer, x::Union{JS.SyntaxNode,Expr},
                                   filename::AbstractString = "top-level",
                                   pkgid::Union{Nothing,PkgId} = nothing;
                                   jetconfigs...)
     validate_configs(analyzer, jetconfigs)
     config = ToplevelConfig(pkgid; jetconfigs...)
-    res = virtual_process(parsed, filename, analyzer, config)
+    if x isa Expr
+        # HACK build a dummy `SyntaxNode` while passing `overrideex`
+        toplevelnode = JS.build_tree(JS.SyntaxNode, JS.parse!(JS.ParseStream(""); rule=:all); filename)
+        overrideex = x
+    else
+        toplevelnode = x
+        overrideex = nothing
+    end
+    res = virtual_process(toplevelnode, filename, analyzer, config; overrideex)
     analyzername = nameof(typeof(analyzer))
     source = lazy"$analyzername: \"$filename\""
     return JETToplevelResult(analyzer, res, source; jetconfigs...)

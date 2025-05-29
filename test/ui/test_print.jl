@@ -37,33 +37,31 @@ end
 end
 
 @testset "print inference errors" begin
-    let #=== LINE SENSITIVITY START ===#
-        res = @analyze_toplevel begin
+    mktemp() do filename, io
+        res = report_text("""
             global s::String = "julia"
             sum(s)
-        end
-
+        """, filename)
         io = IOBuffer()
         @test !iszero(print_reports(io, res.res.inference_error_reports))
         let s = String(take!(io))
             @test occursin("2 possible errors found", s)
-            @test occursin("$(escape_string(@__FILE__)):$((@__LINE__)-7)", s) # toplevel call site
+            @test occursin("$(escape_string(filename)):2", s) # toplevel call site
         end
-    end #=== LINE SENSITIVITY END ===#
+    end
 
-    let #=== LINE SENSITIVITY START ===#
-        res = @analyze_toplevel begin
+    mktemp() do filename, io
+        res = report_text("""
             foo(args...) = args_typo # typo
             foo(rand(Char, 1000000000)...)
-        end
-
+        """, filename)
         io = IOBuffer()
         @test !iszero(print_reports(io, res.res.inference_error_reports, JET.gen_postprocess(res.res.actual2virtual)))
         let s = String(take!(io))
             @test occursin("1 possible error found", s)
-            @test occursin("$(escape_string(@__FILE__)):$((@__LINE__)-8)", s) # toplevel call site
+            @test occursin("$(escape_string(filename)):1", s) # toplevel call site
         end
-    end #=== LINE SENSITIVITY END ===#
+    end
 end
 
 @testset "repr" begin
