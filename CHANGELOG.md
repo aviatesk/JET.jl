@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 <!-- links start -->
+[Unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.10.6...HEAD
 [0.10.6]: https://github.com/aviatesk/JET.jl/compare/v0.10.5...v0.10.6
 [0.10.5]: https://github.com/aviatesk/JET.jl/compare/v0.10.4...v0.10.5
 [0.10.4]: https://github.com/aviatesk/JET.jl/compare/v0.10.3...v0.10.4
@@ -43,6 +44,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.8.1]: https://github.com/aviatesk/JET.jl/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/aviatesk/JET.jl/compare/v0.7.15...v0.8.0
 <!-- links end -->
+
+## [Unreleased]
+### Changed
+- Improved accuracy of `VirtualProcessResult.analyzed_files`.
+- JET now requires JuliaSyntax to v1.0.
+### Removed
+- Support for Cthulhu extension has been temporarily removed.
+  This is because JET requires JuliaSyntax@1.0, while Cthulhu still requires JuliaSyntax@0.4.
+  We will restore extension support once Cthulhu (or more precisely, TypedSyntax.jl) supports JuliaSyntax@1.0.
 
 ## [0.10.6]
 ### Changed
