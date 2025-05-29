@@ -1121,6 +1121,8 @@ function (::BasicPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer
         report_fieldtype!(analyzer, sv, argtypes, ret) && return true
     elseif f === getglobal
         report_getglobal!(analyzer, sv, argtypes, ret) && return true
+    # elseif f === setglobal!
+    #     report_setglobal!!(analyzer, sv, argtypes, ret) && return true
     elseif length(argtypes) == 2 && is_division_func(f)
         report_divide_error!(analyzer, sv, f, argtypes) && return true
     end
@@ -1138,8 +1140,10 @@ function (::TypoPass)(::Type{AbstractBuiltinErrorReport}, analyzer::JETAnalyzer,
         report_getfield!(analyzer, sv, argtypes, ret) && return true
     elseif f === getglobal
         report_getglobal!(analyzer, sv, argtypes, ret) && return true
-    elseif f === setglobal!
-        report_setglobal!!(analyzer, sv, argtypes) && return true
+    elseif f === setfield!
+        report_setfield!!(analyzer, sv, argtypes, ret) && return true
+    # elseif f === setglobal!
+    #     report_setglobal!!(analyzer, sv, argtypes, ret) && return true
     end
     return false
 end
