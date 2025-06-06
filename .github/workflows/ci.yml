@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }}
+    name: Julia ${{ matrix.version }} / ${{ matrix.os }} ${{ matrix.arch }} / ${{ matrix.precompile }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false # don't stop CI even when one of them fails
@@ -17,27 +17,35 @@ jobs:
           # - version: '1' # current stable
           #   os: ubuntu-latest
           #   arch: x64
-          # - version: '1.11' # lowest version supported
-          #   os: ubuntu-latest
-          #   arch: x64
+          #   precompile: true
           - version: "1.12-nightly" # next release
             os: ubuntu-latest
             arch: x64
-          - version: "nightly" # dev
+            precompile: true
+          - version: "1.12-nightly" # x86 ubuntu
+            os: ubuntu-latest
+            arch: x86
+            precompile: true
+          - version: "1.12-nightly" # precompile_workload = false
             os: ubuntu-latest
             arch: x64
-          # - version: '1' # x86 ubuntu
-          #   os: ubuntu-latest
-          #   arch: x86
-          # - version: '1' # x86 windows
-          #   os: windows-latest
-          #   arch: x86
-          # - version: '1' # x64 windows
-          #   os: windows-latest
-          #   arch: x64
-          # - version: '1' # x64 macOS
-          #   os: macos-latest
-          #   arch: x64
+            precompile: false
+          - version: "1.12-nightly" # macos
+            os: macos-latest
+            arch: x64
+            precompile: true
+          - version: "1.12-nightly" # x86 windows
+            os: windows-latest
+            arch: x64
+            precompile: true
+          - version: "1.12-nightly" # x86 windows
+            os: windows-latest
+            arch: x86
+            precompile: true
+          - version: "nightly" # nightly
+            os: ubuntu-latest
+            arch: x64
+            precompile: true
     steps:
       - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@v2
@@ -45,11 +53,12 @@ jobs:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
       - uses: julia-actions/cache@v2
-      - name: set `JET_DEV_MODE` # enable development assertions (needs to happen before precompile)
+      - name: set `JET_DEV_MODE = true` # enable development assertions (needs to happen before precompile)
         working-directory: .
         run: |
           echo '[JET]
-          JET_DEV_MODE = true' >> LocalPreferences.toml
+          JET_DEV_MODE = true
+          precompile_workload = ${{ matrix.precompile }}' >> LocalPreferences.toml
       - uses: julia-actions/julia-buildpkg@latest
       - uses: julia-actions/julia-runtest@latest
       - uses: julia-actions/julia-processcoverage@v1

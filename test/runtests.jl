@@ -19,7 +19,8 @@ end
 isempty(outmsg) || println(outmsg)
 isempty(errmsg) || println(errmsg)
 
-@info "JET setup information:" JET.JET_DEV_MODE
+using JET: Preferences
+@info "JET setup information:" JET.JET_DEV_MODE Preferences.load_preference(JET, "precompile_workload", true)
 
 @testset "JET.jl" begin
     @static if JET.JET_LOADABLE

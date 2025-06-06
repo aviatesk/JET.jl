@@ -47,8 +47,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Changed
+- Precompilation of JET has been re-enabled. This should significantly improve
+  startup times:
+  ```bash
+  $ julia --startup-file=no -e '
+    macro simpletime(ex)
+        :(let s = time()
+            $(ex)
+            e = time()
+            elapsed = round(e - s; digits=2)
+            println("  Elapsed: $elapsed sec")
+        end)
+    end
+    @simpletime using JET
+    @simpletime @report_call sum("julia")
+    @simpletime report_file(normpath(pkgdir(JET), "demo.jl"); toplevel_logger=nothing)'
+  ```
+  ```
+  v0.10.6
+    Elapsed: 1.25 sec
+    Elapsed: 10.08 sec
+    Elapsed: 11.43 sec
+  This version
+    Elapsed: 1.33 sec
+    Elapsed: 0.01 sec
+    Elapsed: 0.14 sec
+  ```
+
+  This makes the precompilation during installation take longer.
+  If you're developing JET itself, we recommend having:
+  > LocalPreferences.toml
+  ```toml
+  [JET]
+  precompile_workload = false
+  ```
 - Improved accuracy of `VirtualProcessResult.analyzed_files`.
-- JET now requires JuliaSyntax to v1.0.
+- JET now requires JuliaSyntax v1.0.
 ### Removed
 - Support for Cthulhu extension has been temporarily removed.
   This is because JET requires JuliaSyntax@1.0, while Cthulhu still requires JuliaSyntax@0.4.
