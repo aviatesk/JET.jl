@@ -1198,11 +1198,17 @@ const DIVIDE_ERROR_MSG = sprint(showerror, DivideError())
 @nospecs type_error_msg(f, expected, actual) =
     lazy"TypeError: in $f, expected $expected, got a value of type $actual"
 function field_error_msg(@nospecialize(typ), name::Symbol)
+    typ = typ::Union{UnionAll,DataType}
     flds = join(map(n->"`$n`", fieldnames(typ)), ", ")
     if typ <: Tuple
         typ = Tuple # reproduce base error message
     end
-    tname = nameof(typ::Union{DataType,UnionAll})
+    @static if VERSION ≥ v"1.12.0-beta4.14"
+        # JuliaLang/julia#58507
+        tname = string(typ.name.wrapper)
+    else
+        tname = string(typ.name)
+    end
     return lazy"FieldError: type $tname has no field `$name`, available fields: $flds"
 end
 function bounds_error_msg(@nospecialize(typ), name::Int)
@@ -1260,7 +1266,7 @@ function report_fieldaccess!(analyzer::JETAnalyzer, sv::InferenceState, @nospeci
     end
 
     namev = (name::Const).val
-    objtyp = s00
+    objtyp = s
     if namev isa Symbol
         msg = field_error_msg(objtyp, namev)
     elseif namev isa Int
