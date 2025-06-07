@@ -11,3 +11,5 @@
 ./LocalPreferences.toml
 ./Manifest.toml
 ./Manifest-*.toml
+.claude
+julia
