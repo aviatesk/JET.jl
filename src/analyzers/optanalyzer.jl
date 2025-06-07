@@ -199,9 +199,23 @@ function CC.const_prop_call(analyzer::OptAnalyzer,
 end
 
 # TODO better to work only with `CC.finish!`
+@static if VERSION ≥ v"1.13.0-DEV.565"
+function CC.finishinfer!(frame::InferenceState, analyzer::OptAnalyzer, cycleid::Int,
+                         opt_cache::IdDict{MethodInstance, CodeInstance})
+    ret = @invoke CC.finishinfer!(frame::InferenceState, analyzer::AbstractAnalyzer, cycleid::Int,
+                                  opt_cache::IdDict{MethodInstance, CodeInstance})
+    finishinfer!_overload(frame, analyzer)
+    return ret
+end
+else
 function CC.finishinfer!(frame::InferenceState, analyzer::OptAnalyzer, cycleid::Int)
     ret = @invoke CC.finishinfer!(frame::InferenceState, analyzer::AbstractAnalyzer, cycleid::Int)
+    finishinfer!_overload(frame, analyzer)
+    return ret
+end
+end
 
+function finishinfer!_overload(frame::InferenceState, analyzer::OptAnalyzer)
     analyze = true
     if analyzer.skip_noncompileable_calls
         mi = frame.linfo
@@ -221,8 +235,6 @@ function CC.finishinfer!(frame::InferenceState, analyzer::OptAnalyzer, cycleid::
         # report pass for captured variables
         ReportPass(analyzer)(CapturedVariableReport, analyzer, frame)
     end
-
-    return ret
 end
 
 @jetreport struct CapturedVariableReport <: InferenceErrorReport
