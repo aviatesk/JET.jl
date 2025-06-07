@@ -6,7 +6,7 @@ const JS = JET.JS
 using .CC: Bottom, widenconst, ⊑
 
 using JET:
-    AbstractAnalyzer, InferenceErrorReport, JETAnalyzer, ToplevelErrorReport,
+    AbstractAnalyzer, InferenceErrorReport, JETAnalyzer, JETConcreteInterpreter, ToplevelErrorReport,
     gen_virtual_module, get_reports, get_result, print_reports,
     virtualize_module_context
 
@@ -97,9 +97,9 @@ function analyze_toplevel(@nospecialize(ex), lnn; jetconfigs...)
     toplevelex = (isexpr(ex, :block) ?
                   Expr(:toplevel, lnn, ex.args...) : # flatten here
                   Expr(:toplevel, lnn, ex))
-    analyzer = JETAnalyzer(; jetconfigs...)
+    interp = JETConcreteInterpreter(JETAnalyzer(; jetconfigs...))
     filename = let file = lnn.file; isnothing(file) ? "top-level" : String(file) end
-    return JET.analyze_and_report_expr!(analyzer, toplevelex, filename; jetconfigs...)
+    return JET.analyze_and_report_expr!(interp, toplevelex, filename; jetconfigs...)
 end
 
 # `report_file` with silent top-level logger
