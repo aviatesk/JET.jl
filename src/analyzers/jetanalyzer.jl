@@ -1207,7 +1207,7 @@ function field_error_msg(@nospecialize(typ), name::Symbol)
         # JuliaLang/julia#58507
         tname = string(typ.name.wrapper)
     else
-        tname = string(typ.name)
+        tname = nameof(typ)
     end
     return lazy"FieldError: type $tname has no field `$name`, available fields: $flds"
 end
