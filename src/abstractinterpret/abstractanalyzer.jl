@@ -372,16 +372,6 @@ abstract type ReportPass end
     See the documentation of `$AbstractAnalyzer` and `$ReportPass`.
     """)
 end
-# some specific reports are necessary to be collected during `AbstractAnalyzer`'s core routine
-# and ignore them by default (analyzer can opt-in to collect them by overloading this with
-# their own report pass)
-# otherwise, it means malformed report pass call, and we should inform users of it
-function (rp::ReportPass)(T#=::Type{<:InferenceErrorReport}=#, @nospecialize(args...))
-    if !(T === InvalidConstantRedefinition || T === InvalidConstantDeclaration)
-        throw(MethodError(rp, (T, args..., Base.get_world_counter())))
-    end
-    return false
-end
 
 # interface 4
 # -----------
