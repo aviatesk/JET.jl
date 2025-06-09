@@ -87,6 +87,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for Cthulhu extension has been temporarily removed.
   This is because JET requires JuliaSyntax@1.0, while Cthulhu still requires JuliaSyntax@0.4.
   We will restore extension support once Cthulhu (or more precisely, TypedSyntax.jl) supports JuliaSyntax@1.0.
+- Removed the `include_callback` functionality that was added in [0.9.14].
+  External consumers should subtype `JET.ConcreteInterpreter` and implement
+  their own customized interpretation logic (aviatesk/JET.jl#721).
+### Added (Internal)
+- Added the ability for external users of JET to customize virtualprocess.jl.
+  Similar to the design of `JuliaInterpreter.Interpreter` and `Base.Compiler.AbstractInterpreter`,
+  the new `JET.ConcreteInterpreter <: JuliaInterpreter.Interpreter` interface is designed,
+  allowing external packages to subtype it and customize the behavior of `virtual_process(interp::JET.ConcreteInterpreter, ...)`.
+  Please note that this is still undocumented and is a highly experimental interface.
+  Currently, it is being experimentally used in the [JETLS](https://github.com/aviatesk/JETLS.jl) project. (aviatesk/JET.jl#721).
 
 ## [0.10.6]
 ### Changed
