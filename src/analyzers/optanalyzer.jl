@@ -166,7 +166,7 @@ JETInterface.ReportPass(analyzer::OptAnalyzer) = analyzer.report_pass
 JETInterface.AnalysisToken(analyzer::OptAnalyzer) = analyzer.analysis_token
 JETInterface.vscode_diagnostics_order(analyzer::OptAnalyzer) = false
 
-const OPT_ANALYZER_CACHE = IdDict{UInt, AnalysisToken}()
+const OPT_ANALYZER_CACHE = Dict{UInt, AnalysisToken}()
 
 struct OptAnalysisPass <: ReportPass end
 

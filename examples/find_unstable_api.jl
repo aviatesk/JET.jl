@@ -50,7 +50,7 @@ JETInterface.AbstractAnalyzer(analyzer::UnstableAPIAnalyzer, state::AnalyzerStat
 JETInterface.ReportPass(analyzer::UnstableAPIAnalyzer) = UnstableAPIAnalysisPass()
 JETInterface.AnalysisToken(analyzer::UnstableAPIAnalyzer) = analyzer.analysis_token
 
-const UNSTABLE_API_ANALYZER_CACHE = IdDict{UInt, AnalysisToken}()
+const UNSTABLE_API_ANALYZER_CACHE = Dict{UInt, AnalysisToken}()
 
 # Next, we overload some of `Base.Compiler`'s [abstract interpretation](@ref abstractinterpret) methods,
 # and inject a customized analysis pass (here we gonna name it `UnstableAPIAnalysisPass`).

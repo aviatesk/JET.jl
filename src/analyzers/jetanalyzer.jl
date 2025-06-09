@@ -108,7 +108,7 @@ end
 JETInterface.ReportPass(analyzer::JETAnalyzer) = analyzer.report_pass
 JETInterface.AnalysisToken(analyzer::JETAnalyzer) = analyzer.analysis_token
 
-const JET_ANALYZER_CACHE = IdDict{UInt, AnalysisToken}()
+const JET_ANALYZER_CACHE = Dict{UInt, AnalysisToken}()
 
 JETAnalyzerConfig(analyzer::JETAnalyzer) = analyzer.config
 
