@@ -906,7 +906,7 @@ function analyze_and_report_text!(interp::ConcreteInterpreter, text::AbstractStr
                                   filename::AbstractString = "top-level",
                                   pkgid::Union{Nothing,PkgId} = nothing;
                                   jetconfigs...)
-    analyzer = AbstractAnalyzer(interp)
+    analyzer = ToplevelAbstractAnalyzer(interp)
     validate_configs(analyzer, jetconfigs)
     config = ToplevelConfig(pkgid; jetconfigs...)
     res = virtual_process(interp, text, filename, config)
@@ -919,7 +919,7 @@ function analyze_and_report_expr!(interp::ConcreteInterpreter, x::Union{JS.Synta
                                   filename::AbstractString = "top-level",
                                   pkgid::Union{Nothing,PkgId} = nothing;
                                   jetconfigs...)
-    analyzer = AbstractAnalyzer(interp)
+    analyzer = ToplevelAbstractAnalyzer(interp)
     validate_configs(analyzer, jetconfigs)
     config = ToplevelConfig(pkgid; jetconfigs...)
     if x isa Expr
@@ -1192,7 +1192,7 @@ end
 
 reexport_as_api!(JETInterface,
     # AbstractAnalyzer API
-    AbstractAnalyzer, AnalyzerState, ReportPass, AnalysisToken,
+    AbstractAnalyzer, AnalyzerState, AnalysisToken, ReportPass, ToplevelAbstractAnalyzer,
     valid_configurations, aggregation_policy, VSCode.vscode_diagnostics_order,
     # ErrorReport API
     InferenceErrorReport, ToplevelErrorReport, copy_report, print_report,

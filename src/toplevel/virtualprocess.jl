@@ -392,7 +392,7 @@ AnalyzedFileInfo() = AnalyzedFileInfo(ModuleRangeInfo[])
     text parsing or partial (actual) interpretation; these reports are "critical" and should
     have precedence over `inference_error_reports`
 - `res.inference_error_reports::Vector{InferenceErrorReport}`: possible error reports found
-    by `AbstractAnalyzer`
+    by `ToplevelAbstractAnalyzer`
 - `res.toplevel_signatures`: signatures of methods defined within the analyzed files
 - `res.actual2virtual::$Actual2Virtual`: keeps actual and virtual module
 """
@@ -467,7 +467,7 @@ An interface to inject code into JET's virtual process via JuliaInterpreter's in
 Subtypes are expected to implement:
 - `get_state(interp::T) -> InterpretationState` - return the interpreter state
 - `ConcreteInterpreter(interp::T, state::InterpretationState) -> T` - create new interpreter with state
-- `AbstractAnalyzer(interp::T) -> analyzer::AbstractAnalyzer` - return the analyzer for this interpreter
+- `ToplevelAbstractAnalyzer(interp::T) -> analyzer::ToplevelAbstractAnalyzer` - return the analyzer for this interpreter
 """
 abstract type ConcreteInterpreter <: JuliaInterpreter.Interpreter end
 
@@ -487,11 +487,11 @@ end
     """)
 end
 
-@noinline function AbstractAnalyzer(interp::ConcreteInterpreter)
+@noinline function ToplevelAbstractAnalyzer(interp::ConcreteInterpreter)
     InterpType = nameof(typeof(interp))
     error(lazy"""
     Missing `JET.ConcreteInterpreter` API:
-    `$InterpType` is required to implement the `JET.AbstractAnalyzer(interp::$InterpType) -> analyzer::JET.AbstractAnalyzer` interface.
+    `$InterpType` is required to implement the `JET.AbstractAnalyzer(interp::$InterpType) -> analyzer::JET.ToplevelAbstractAnalyzer` interface.
     """)
 end
 
@@ -500,17 +500,17 @@ end
 
 The default implementation of ConcreteInterpreter used by JET's virtual process.
 """
-struct JETConcreteInterpreter{Analyzer<:AbstractAnalyzer} <: ConcreteInterpreter
+struct JETConcreteInterpreter{Analyzer<:ToplevelAbstractAnalyzer} <: ConcreteInterpreter
     analyzer::Analyzer
     state::InterpretationState
-    JETConcreteInterpreter(analyzer::Analyzer) where Analyzer<:AbstractAnalyzer = new{Analyzer}(analyzer)
-    JETConcreteInterpreter(analyzer::Analyzer, state::InterpretationState) where Analyzer<:AbstractAnalyzer = new{Analyzer}(analyzer, state)
+    JETConcreteInterpreter(analyzer::Analyzer) where Analyzer<:ToplevelAbstractAnalyzer = new{Analyzer}(analyzer)
+    JETConcreteInterpreter(analyzer::Analyzer, state::InterpretationState) where Analyzer<:ToplevelAbstractAnalyzer = new{Analyzer}(analyzer, state)
 end
 
 # Implement the required interface methods
 get_state(interp::JETConcreteInterpreter) = interp.state
 ConcreteInterpreter(interp::JETConcreteInterpreter, state::InterpretationState) = JETConcreteInterpreter(interp.analyzer, state)
-AbstractAnalyzer(interp::JETConcreteInterpreter) = interp.analyzer
+ToplevelAbstractAnalyzer(interp::JETConcreteInterpreter) = interp.analyzer
 
 """
     virtual_process(interp::ConcreteInterpreter,
@@ -530,7 +530,7 @@ iterate the following steps on each code block (`blk`) of `toplevelnode`:
    module with virtualized one: see `fix_self_references`
 4. `ConcreteInterpreter` partially interprets some statements in `lwr` that should not be
    abstracted away (e.g. a `:method` definition); see also [`partially_interpret!`](@ref)
-5. finally, `AbstractAnalyzer` analyzes the remaining statements by abstract interpretation
+5. finally, `ToplevelAbstractAnalyzer` analyzes the remaining statements by abstract interpretation
 
 !!! warning
     In order to process the toplevel code sequentially as Julia runtime does, `virtual_process`
@@ -598,7 +598,7 @@ function virtual_process(interp::ConcreteInterpreter,
     end
 
     # TODO move this aggregation to `analyze_from_definitions!`?
-    unique!(aggregation_policy(AbstractAnalyzer(interp)), res.inference_error_reports)
+    unique!(aggregation_policy(ToplevelAbstractAnalyzer(interp)), res.inference_error_reports)
 
     return res
 end
@@ -664,7 +664,7 @@ gen_virtual_module(parent::Module = Main; name = VIRTUAL_MODULE_NAME) =
 function analyze_from_definitions!(interp::ConcreteInterpreter, res::VirtualProcessResult, config::ToplevelConfig)
     succeeded = Ref(0)
     start = time()
-    analyzer = AbstractAnalyzer(interp)
+    analyzer = ToplevelAbstractAnalyzer(interp)
     analyzerstate = AnalyzerState(analyzer)
     oldworld = analyzerstate.world
     new_world = get_world_counter()
@@ -995,7 +995,7 @@ function _virtual_process!(interp::ConcreteInterpreter,
             continue
         end
 
-        analyzer = AbstractAnalyzer(AbstractAnalyzer(thisinterp), concretized)
+        analyzer = ToplevelAbstractAnalyzer(ToplevelAbstractAnalyzer(thisinterp), concretized)
 
         (_, result), _ = analyze_toplevel!(analyzer, src, state.context)
 
@@ -1422,7 +1422,7 @@ function JuliaInterpreter.lookup(interp::ConcreteInterpreter, frame::Frame, @nos
             end
             return val
         else
-            binding_states = get_binding_states(AbstractAnalyzer(interp))
+            binding_states = get_binding_states(ToplevelAbstractAnalyzer(interp))
             partition = Base.lookup_binding_partition(Base.get_world_counter(), node)
             binding_state = get(binding_states, partition, nothing)
             if binding_state !== nothing
@@ -1775,7 +1775,7 @@ function with_err_handling(f, err_handler, handler_args...; scrub_offset::Int)
 end
 
 # a bridge to abstract interpretation
-function analyze_toplevel!(analyzer::AbstractAnalyzer, src::CodeInfo, context_module::Module)
+function analyze_toplevel!(analyzer::ToplevelAbstractAnalyzer, src::CodeInfo, context_module::Module)
     resolve_toplevel_symbols!(src, context_module)
 
     # construct toplevel `MethodInstance`
