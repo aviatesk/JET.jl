@@ -50,7 +50,7 @@ that are specific to the error analysis.
   the beginning of the analysis like [`report_package`](@ref).
 ---
 """
-struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
+struct JETAnalyzer{RP<:ReportPass} <: ToplevelAbstractAnalyzer
     state::AnalyzerState
     analysis_token::AnalysisToken
     report_pass::RP
@@ -170,7 +170,7 @@ a package, or improve the accuracy of base abstract interpretation analysis.
 # =========
 
 function CC.InferenceState(result::InferenceResult, cache_mode::UInt8, analyzer::JETAnalyzer)
-    frame = @invoke CC.InferenceState(result::InferenceResult, cache_mode::UInt8, analyzer::AbstractAnalyzer)
+    frame = @invoke CC.InferenceState(result::InferenceResult, cache_mode::UInt8, analyzer::ToplevelAbstractAnalyzer)
     if isnothing(frame) # indicates something bad happened within `retrieve_code_info`
         ReportPass(analyzer)(GeneratorErrorReport, analyzer, result)
     end
@@ -191,13 +191,13 @@ function CC.finish!(analyzer::JETAnalyzer, caller::InferenceState, validation_wo
         throw("unexpected state happened, inspect `$(@__MODULE__).src`")
     end
 
-    return @invoke CC.finish!(analyzer::AbstractAnalyzer, caller::InferenceState, validation_world::UInt, time_before::UInt64)
+    return @invoke CC.finish!(analyzer::ToplevelAbstractAnalyzer, caller::InferenceState, validation_world::UInt, time_before::UInt64)
 end
 
 function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer,
     @nospecialize(func), arginfo::ArgInfo, si::StmtInfo, @nospecialize(atype), sv::InferenceState,
     max_methods::Int)
-    ret = @invoke CC.abstract_call_gf_by_type(analyzer::AbstractAnalyzer,
+    ret = @invoke CC.abstract_call_gf_by_type(analyzer::ToplevelAbstractAnalyzer,
         func::Any, arginfo::ArgInfo, si::StmtInfo, atype::Any, sv::InferenceState, max_methods::Int)
     atype′ = Ref{Any}(atype)
     function after_abstract_call_gf_by_type(analyzer′::JETAnalyzer, sv′::InferenceState)
@@ -216,7 +216,7 @@ end
 
 function CC.from_interprocedural!(analyzer::JETAnalyzer,
     @nospecialize(rt), sv::InferenceState, arginfo::ArgInfo, @nospecialize(maybecondinfo))
-    ret = @invoke CC.from_interprocedural!(analyzer::AbstractAnalyzer,
+    ret = @invoke CC.from_interprocedural!(analyzer::ToplevelAbstractAnalyzer,
         rt::Any, sv::InferenceState, arginfo::ArgInfo, maybecondinfo::Any)
     if JETAnalyzerConfig(analyzer).ignore_missing_comparison
         # Widen the return type of comparison operator calls to ignore the possibility of
@@ -251,7 +251,7 @@ function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
         newresult = MethodCallResult(result.rt, result.exct, neweffects, result.edge,
                                      result.edgecycle, result.edgelimited,
                                      result.volatile_inf_result)
-        res = @invoke CC.concrete_eval_eligible(analyzer::AbstractAnalyzer,
+        res = @invoke CC.concrete_eval_eligible(analyzer::ToplevelAbstractAnalyzer,
             f::Any, newresult::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
         if res === :concrete_eval
             return :concrete_eval
@@ -275,7 +275,7 @@ function concrete_eval_eligible_ignoring_overlay(result::MethodCallResult, argin
 end
 
 function CC.abstract_invoke(analyzer::JETAnalyzer, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState)
-    ret = @invoke CC.abstract_invoke(analyzer::AbstractAnalyzer, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState)
+    ret = @invoke CC.abstract_invoke(analyzer::ToplevelAbstractAnalyzer, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState)
     function after_abstract_invoke(analyzer′::JETAnalyzer, sv′::InferenceState)
         ret′ = ret[]
         ReportPass(analyzer′)(InvalidInvokeErrorReport, analyzer′, sv′, ret′, arginfo.argtypes)
@@ -291,7 +291,7 @@ end
 
 # report pass for undefined static parameter
 function CC.abstract_eval_statement_expr(analyzer::JETAnalyzer, e::Expr, sstate::StatementState, sv::InferenceState)
-    ret = @invoke CC.abstract_eval_statement_expr(analyzer::AbstractAnalyzer, e::Expr, sstate::StatementState, sv::InferenceState)
+    ret = @invoke CC.abstract_eval_statement_expr(analyzer::ToplevelAbstractAnalyzer, e::Expr, sstate::StatementState, sv::InferenceState)
     if e.head === :static_parameter
         function after_abstract_eval_statement_expr(analyzer′::JETAnalyzer, sv′::InferenceState)
             ret′ = ret[]
@@ -311,7 +311,7 @@ function CC.abstract_eval_globalref(analyzer::JETAnalyzer, g::GlobalRef, saw_lat
     if saw_latestworld
         return CC.RTEffects(Any, Any, CC.generic_getglobal_effects)
     end
-    (valid_worlds, ret) = CC.scan_leaf_partitions(analyzer, g, sv.world) do analyzer::AbstractAnalyzer, binding::Core.Binding, partition::Core.BindingPartition
+    (valid_worlds, ret) = CC.scan_leaf_partitions(analyzer, g, sv.world) do analyzer::JETAnalyzer, binding::Core.Binding, partition::Core.BindingPartition
         if partition.min_world ≤ sv.world.this ≤ partition.max_world # XXX This should probably be fixed on the Julia side
             ReportPass(analyzer)(UndefVarErrorReport, analyzer, sv, binding, partition)
         end
@@ -330,7 +330,7 @@ function CC.abstract_eval_setglobal!(analyzer::JETAnalyzer, sv::InferenceState, 
 end
 
 function CC.abstract_eval_value(analyzer::JETAnalyzer, @nospecialize(e), sstate::StatementState, sv::InferenceState)
-    ret = @invoke CC.abstract_eval_value(analyzer::AbstractAnalyzer, e::Any, sstate::StatementState, sv::InferenceState)
+    ret = @invoke CC.abstract_eval_value(analyzer::ToplevelAbstractAnalyzer, e::Any, sstate::StatementState, sv::InferenceState)
 
     # report non-boolean condition error
     stmt = get_stmt((sv, get_currpc(sv)))
@@ -348,12 +348,12 @@ function CC.abstract_throw(analyzer::JETAnalyzer, argtypes::Vector{Any}, sv::Inf
     ft = popfirst!(argtypes)
     ReportPass(analyzer)(SeriousExceptionReport, analyzer, sv, argtypes)
     pushfirst!(argtypes, ft)
-    return @invoke CC.abstract_throw(analyzer::AbstractAnalyzer, argtypes::Vector{Any}, sv::InferenceState)
+    return @invoke CC.abstract_throw(analyzer::ToplevelAbstractAnalyzer, argtypes::Vector{Any}, sv::InferenceState)
 end
 
 function CC.builtin_tfunction(analyzer::JETAnalyzer,
     @nospecialize(f), argtypes::Vector{Any}, sv::InferenceState) # `AbstractAnalyzer` isn't overloaded on `return_type`
-    ret = @invoke CC.builtin_tfunction(analyzer::AbstractAnalyzer,
+    ret = @invoke CC.builtin_tfunction(analyzer::ToplevelAbstractAnalyzer,
         f::Any, argtypes::Vector{Any}, sv::InferenceState)
 
     if f === fieldtype

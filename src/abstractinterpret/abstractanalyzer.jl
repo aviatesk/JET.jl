@@ -297,19 +297,6 @@ function AbstractAnalyzer(analyzer::T) where {T<:AbstractAnalyzer}
     return AbstractAnalyzer(analyzer, newstate)
 end
 
-# constructor for sequential toplevel JET analysis
-function AbstractAnalyzer(analyzer::T, concretized::BitVector;
-    # update world age to take in newly added methods defined by `ConcreteInterpreter`
-    world::UInt = get_world_counter()
-    ) where {T<:AbstractAnalyzer}
-    newstate = AnalyzerState(world;
-                             inf_params = InferenceParams(analyzer),
-                             opt_params = OptimizationParams(analyzer),
-                             concretized,
-                             binding_states = get_binding_states(analyzer))
-    return AbstractAnalyzer(analyzer, newstate)
-end
-
 # interface 3
 # -----------
 # 3. `ReportPass(analyzer::NewAnalyzer) -> ReportPass`
@@ -533,3 +520,76 @@ CC.may_compress(::AbstractAnalyzer) = generating_output()
 
 # this overload is necessary to avoid caching with the const ABI
 CC.may_discard_trees(::AbstractAnalyzer) = false
+
+# ToplevelAbstractAnalyzer
+# ========================
+
+"""
+    abstract type ToplevelAbstractAnalyzer <: AbstractAnalyzer end
+
+A specialized interface type for analyzers that perform top-level analysis of Julia code.
+
+`ToplevelAbstractAnalyzer` extends [`AbstractAnalyzer`](@ref) to provide clear separation
+between analyzers that support top-level analysis and those that don't, offering several
+key architectural benefits:
+- _Type Safety_: Only analyzers that explicitly extend `ToplevelAbstractAnalyzer` can be
+  used with JET's `virtual_process` system, making it clear at compile time which analyzers
+  support top-level analysis capabilities.
+- _Responsibility Separation_: Analyzers like `OptAnalyzer` that don't perform top-level
+  analysis are no longer required to handle top-level specific code paths, reducing
+  complexity and improving performance.
+
+## Top-Level Analysis Capabilities
+
+`ToplevelAbstractAnalyzer` provides specialized functionality for analyzing top-level
+Julia constructs such as:
+- Global variable assignments
+- Constant declarations (`const` statements)
+- Module definitions and imports
+- Method definitions at the top level
+- Package-level code execution
+
+This analyzer type is used in [`virtual_process`](@ref) system to analyze Julia code
+as it would be executed at the top level, handling both concrete interpretation of some
+statements and abstract interpretation of others.
+
+## Usage
+
+`ToplevelAbstractAnalyzer` is typically used through JET's virtual process system:
+
+```julia
+# Create a concrete interpreter with a toplevel analyzer
+interp = JETConcreteInterpreter(JETAnalyzer(...))
+analyzer = ToplevelAbstractAnalyzer(interp)
+
+# Analyze top-level code
+result = analyze_and_report_text!(interp, "x = 1; y = x + 1")
+```
+
+## Implementation Requirements
+
+Concrete subtypes of `ToplevelAbstractAnalyzer` must implement all the interfaces required
+by [`AbstractAnalyzer`](@ref), and will automatically inherit the specialized top-level
+analysis behaviors provided by this type.
+
+## See Also
+
+- [`AbstractAnalyzer`](@ref): The base analyzer interface
+- [`JETAnalyzer`](@ref): JET's default error analyzer that implements this interface
+- [`virtual_process`](@ref): The main function that uses this analyzer type
+- [`ConcreteInterpreter`](@ref): The concrete interpreter that works with this analyzer
+"""
+abstract type ToplevelAbstractAnalyzer <: AbstractAnalyzer end
+
+# constructor for sequential toplevel JET analysis
+function ToplevelAbstractAnalyzer(analyzer::T, concretized::BitVector;
+    # update world age to take in newly added methods defined by `ConcreteInterpreter`
+    world::UInt = get_world_counter()
+    ) where {T<:AbstractAnalyzer}
+    newstate = AnalyzerState(world;
+                             inf_params = InferenceParams(analyzer),
+                             opt_params = OptimizationParams(analyzer),
+                             concretized,
+                             binding_states = get_binding_states(analyzer))
+    return AbstractAnalyzer(analyzer, newstate)
+end

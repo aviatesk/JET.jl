@@ -39,7 +39,7 @@ using JET: CC            # to inject a customized report pass
 # First off, we define `UnstableAPIAnalyzer`, which is a new [`AbstractAnalyzer`](@ref) and will
 # implement the customized report pass
 
-struct UnstableAPIAnalyzer{T} <: AbstractAnalyzer
+struct UnstableAPIAnalyzer{T} <: ToplevelAbstractAnalyzer
     state::AnalyzerState
     analysis_token::AnalysisToken
     is_target_module::T
@@ -69,7 +69,7 @@ function CC.abstract_eval_special_value(analyzer::UnstableAPIAnalyzer, @nospecia
     end
 
     ## recurse into JET's default abstract interpretation routine
-    return @invoke CC.abstract_eval_special_value(analyzer::AbstractAnalyzer, e, vtypes::CC.VarTable, sv::CC.InferenceState)
+    return @invoke CC.abstract_eval_special_value(analyzer::ToplevelAbstractAnalyzer, e, vtypes::CC.VarTable, sv::CC.InferenceState)
 end
 
 function CC.builtin_tfunction(analyzer::UnstableAPIAnalyzer, @nospecialize(f), argtypes::Vector{Any}, sv::CC.InferenceState)
@@ -88,7 +88,7 @@ function CC.builtin_tfunction(analyzer::UnstableAPIAnalyzer, @nospecialize(f), a
     end
 
     ## recurse into JET's default abstract interpretation routine
-    return @invoke CC.builtin_tfunction(analyzer::AbstractAnalyzer, f, argtypes::Vector{Any}, sv::CC.InferenceState)
+    return @invoke CC.builtin_tfunction(analyzer::ToplevelAbstractAnalyzer, f, argtypes::Vector{Any}, sv::CC.InferenceState)
 end
 
 # Additionally, we can cut off the performance cost involved with Julia's native compiler's optimizations passes:

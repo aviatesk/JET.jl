@@ -97,6 +97,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   allowing external packages to subtype it and customize the behavior of `virtual_process(interp::JET.ConcreteInterpreter, ...)`.
   Please note that this is still undocumented and is a highly experimental interface.
   Currently, it is being experimentally used in the [JETLS](https://github.com/aviatesk/JETLS.jl) project. (aviatesk/JET.jl#721).
+- Introduced `ToplevelAbstractAnalyzer` interface type that extends `AbstractAnalyzer` to provide
+  clear separation between analyzers that support top-level analysis and those that don't.
+  This architectural improvement ensures type safety by restricting `virtual_process` usage to
+  analyzers that explicitly extend `ToplevelAbstractAnalyzer`, while keeping non-toplevel 
+  analyzers like `OptAnalyzer` free from toplevel-specific logic (aviatesk/JET.jl#722).
 
 ## [0.10.6]
 ### Changed
