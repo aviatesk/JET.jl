@@ -329,7 +329,6 @@ struct ToplevelConfig
     concretization_patterns::Vector{Any}
     virtualize::Bool
     toplevel_logger # ::Union{Nothing,IO}
-    include_callback # ::Union{Nothing,Base.Callable}
     function ToplevelConfig(
         pkgid::Union{Nothing,PkgId} = nothing;
         context::Module = Main,
@@ -337,7 +336,6 @@ struct ToplevelConfig
         concretization_patterns = Any[],
         virtualize::Bool = true,
         toplevel_logger::Union{Nothing,IO} = nothing,
-        include_callback::Union{Nothing,Base.Callable} = nothing,
         __jetconfigs...)
         concretization_patterns = Any[striplines(normalise(x)) for x in concretization_patterns]
         for pat in default_concretization_patterns()
@@ -352,8 +350,7 @@ struct ToplevelConfig
             analyze_from_definitions,
             concretization_patterns,
             virtualize,
-            toplevel_logger,
-            include_callback)
+            toplevel_logger)
     end
 end
 
@@ -425,43 +422,104 @@ end
 included_files(res::VirtualProcessResult) = keys(res.analyzed_files)
 
 """
-    ConcreteInterpreter
+    InterpretationState
 
-The trait to inject code into JuliaInterpreter's interpretation process; JET.jl overloads:
-- `JuliaInterpreter.step_expr!` to add error report pass for module usage expressions and
-  support package analysis
-- `JuliaInterpreter.evaluate_call!` to special case `include` calls
-- `JuliaInterpreter.handle_err` to wrap an error happened during interpretation into
-  `ActualErrorWrapped`
+Holds the state needed by ConcreteInterpreter implementations.
 """
-struct ConcreteInterpreter{F,Analyzer<:AbstractAnalyzer} <: Interpreter
-    filename::String
-    lnn::LineNumberNode
-    usemodule_with_err_handling::F
-    context::Module
+mutable struct InterpretationState
+    const filename::String
+    curline::Int
+    const dependencies::Set{Symbol}
+    const context::Module
+    const config::ToplevelConfig
+    const res::VirtualProcessResult
+    const pkg_mod_depth::Int
+    const files_stack::Vector{String}
+    isfailed::Bool
+end
+function InterpretationState(state::InterpretationState;
+                             filename::String = state.filename,
+                             curline::Int = state.curline,
+                             dependencies::Set{Symbol} = state.dependencies,
+                             context::Module = state.context,
+                             config::ToplevelConfig = state.config,
+                             res::VirtualProcessResult = state.res,
+                             pkg_mod_depth::Int = state.pkg_mod_depth,
+                             files_stack::Vector{String} = state.files_stack,
+                             isfailed::Bool = state.isfailed)
+    return InterpretationState(
+        filename,
+        curline,
+        dependencies,
+        context,
+        config,
+        res,
+        pkg_mod_depth,
+        files_stack,
+        isfailed)
+end
+
+"""
+    abstract type ConcreteInterpreter <: JuliaInterpreter.Interpreter end
+
+An interface to inject code into JET's virtual process via JuliaInterpreter's interpretation.
+
+Subtypes are expected to implement:
+- `get_state(interp::T) -> InterpretationState` - return the interpreter state
+- `ConcreteInterpreter(interp::T, state::InterpretationState) -> T` - create new interpreter with state
+- `AbstractAnalyzer(interp::T) -> analyzer::AbstractAnalyzer` - return the analyzer for this interpreter
+"""
+abstract type ConcreteInterpreter <: JuliaInterpreter.Interpreter end
+
+@noinline function get_state(interp::ConcreteInterpreter)
+    InterpType = nameof(typeof(interp))
+    error(lazy"""
+    Missing `JET.ConcreteInterpreter` API:
+    `$InterpType` is required to implement the `JET.get_state(interp::$InterpType) -> JET.InterpretationState` interface.
+    """)
+end
+
+@noinline function ConcreteInterpreter(interp::ConcreteInterpreter, state::InterpretationState)
+    InterpType = nameof(typeof(interp))
+    error(lazy"""
+    Missing `JET.ConcreteInterpreter` API:
+    `$InterpType` is required to implement the `JET.ConcreteInterpreter(interp::$InterpType, state::JET.InterpretationState) -> interp::$InterpType` interface.
+    """)
+end
+
+@noinline function AbstractAnalyzer(interp::ConcreteInterpreter)
+    InterpType = nameof(typeof(interp))
+    error(lazy"""
+    Missing `JET.ConcreteInterpreter` API:
+    `$InterpType` is required to implement the `JET.AbstractAnalyzer(interp::$InterpType) -> analyzer::JET.AbstractAnalyzer` interface.
+    """)
+end
+
+"""
+    JETConcreteInterpreter
+
+The default implementation of ConcreteInterpreter used by JET's virtual process.
+"""
+struct JETConcreteInterpreter{Analyzer<:AbstractAnalyzer} <: ConcreteInterpreter
     analyzer::Analyzer
-    config::ToplevelConfig
-    res::VirtualProcessResult
-    pkg_mod_depth::Int
-    files_stack::Vector{String}
-    failed::Base.RefValue{Bool}
+    state::InterpretationState
+    JETConcreteInterpreter(analyzer::Analyzer) where Analyzer<:AbstractAnalyzer = new{Analyzer}(analyzer)
+    JETConcreteInterpreter(analyzer::Analyzer, state::InterpretationState) where Analyzer<:AbstractAnalyzer = new{Analyzer}(analyzer, state)
 end
 
-add_toplevel_error_report!(res::VirtualProcessResult, @nospecialize report::ToplevelErrorReport) =
-    push!(res.toplevel_error_reports, report)
-function add_toplevel_error_report!(interp::ConcreteInterpreter, @nospecialize report::ToplevelErrorReport)
-    add_toplevel_error_report!(interp.res, report)
-    interp.failed[] = true
-    return nothing
-end
+# Implement the required interface methods
+get_state(interp::JETConcreteInterpreter) = interp.state
+ConcreteInterpreter(interp::JETConcreteInterpreter, state::InterpretationState) = JETConcreteInterpreter(interp.analyzer, state)
+AbstractAnalyzer(interp::JETConcreteInterpreter) = interp.analyzer
 
 """
-    virtual_process(s::AbstractString,
+    virtual_process(interp::ConcreteInterpreter,
+                    x::Union{AbstractString,JS.SyntaxNode},
                     filename::AbstractString,
-                    analyzer::AbstractAnalyzer,
-                    config::ToplevelConfig) -> res::VirtualProcessResult
+                    config::ToplevelConfig;
+                    overrideex::Union{Nothing,Expr}=nothing) -> res::VirtualProcessResult
 
-Simulates Julia's toplevel execution and collects error points, and finally returns $(@doc VirtualProcessResult)
+Simulates Julia's toplevel execution and collects error points, and finally returns `VirtualProcessResult`.
 
 This function first parses `s::AbstractString` into `toplevelnode::JS.SyntaxNode` and then
 iterate the following steps on each code block (`blk`) of `toplevelnode`:
@@ -484,9 +542,9 @@ iterate the following steps on each code block (`blk`) of `toplevelnode`:
     allows us to customize JET's concretization strategy.
     See [`ToplevelConfig`](@ref) for more details.
 """
-function virtual_process(x::Union{AbstractString,JS.SyntaxNode},
+function virtual_process(interp::ConcreteInterpreter,
+                         x::Union{AbstractString,JS.SyntaxNode},
                          filename::AbstractString,
-                         analyzer::AbstractAnalyzer,
                          config::ToplevelConfig;
                          overrideex::Union{Nothing,Expr}=nothing)
     if config.virtualize
@@ -526,19 +584,21 @@ function virtual_process(x::Union{AbstractString,JS.SyntaxNode},
         Preferences.main_uuid[] = pkgid.uuid
     end
     res = VirtualProcessResult(actual2virtual, context)
+    state = InterpretationState(filename, 0, Set{Symbol}(),
+                                context, config, res, 0, String[], false)
     try
-        _virtual_process!(res, x, filename, analyzer, config, context, #=pkg_mod_depth=#0, #=files_stack=#String[]; overrideex)
+        _virtual_process!(interp, x, state; overrideex)
     finally
         Preferences.main_uuid[] = old_main_uuid
     end
 
     # analyze collected signatures unless critical error happened
     if should_analyze_from_definitions(config) && isempty(res.toplevel_error_reports)
-        analyze_from_definitions!(analyzer, res, config)
+        analyze_from_definitions!(interp, res, config)
     end
 
     # TODO move this aggregation to `analyze_from_definitions!`?
-    unique!(aggregation_policy(analyzer), res.inference_error_reports)
+    unique!(aggregation_policy(AbstractAnalyzer(interp)), res.inference_error_reports)
 
     return res
 end
@@ -601,17 +661,18 @@ gen_virtual_module(parent::Module = Main; name = VIRTUAL_MODULE_NAME) =
 # generator should have been collected, and we will just analyze them separately
 # if code generation has failed given the entry method signature, the overload of
 # `InferenceState(..., ::AbstractAnalyzer)` will collect `GeneratorErrorReport`
-function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProcessResult, config::ToplevelConfig)
+function analyze_from_definitions!(interp::ConcreteInterpreter, res::VirtualProcessResult, config::ToplevelConfig)
     succeeded = Ref(0)
     start = time()
-    state = AnalyzerState(analyzer)
-    oldworld = state.world
+    analyzer = AbstractAnalyzer(interp)
+    analyzerstate = AnalyzerState(analyzer)
+    oldworld = analyzerstate.world
     new_world = get_world_counter()
-    state.world = new_world
+    analyzerstate.world = new_world
     if analyzer isa JETAnalyzer && analyzer.report_pass === BasicPass()
-        analyzer = JETAnalyzer(state, DefinitionAnalysisPass(), JETAnalyzerConfig(analyzer))
+        analyzer = JETAnalyzer(analyzerstate, DefinitionAnalysisPass(), JETAnalyzerConfig(analyzer))
     else
-        analyzer = AbstractAnalyzer(analyzer, state)
+        analyzer = AbstractAnalyzer(analyzer, analyzerstate)
     end
     entrypoint = config.analyze_from_definitions
     n = length(res.toplevel_signatures)
@@ -641,7 +702,7 @@ function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProce
             println(io, "couldn't find a single method matching the signature `", tt, "`")
         end
     end
-    state.world = oldworld
+    analyzerstate.world = oldworld
     with_toplevel_logger(config) do @nospecialize(io)
         sec = round(time() - start; digits = 3)
         println(io, "analyzed $(succeeded[]) top-level definitions (took $sec sec)")
@@ -650,21 +711,23 @@ function analyze_from_definitions!(analyzer::AbstractAnalyzer, res::VirtualProce
 end
 clearline(io) = print(io, '\r')
 
-function _virtual_process!(res::VirtualProcessResult,
+function add_toplevel_error_report!(state::InterpretationState, @nospecialize report::ToplevelErrorReport)
+    push!(state.res.toplevel_error_reports, report)
+    state.isfailed = true
+    nothing
+end
+
+function _virtual_process!(interp::ConcreteInterpreter,
                            s::AbstractString,
-                           filename::AbstractString,
-                           analyzer::AbstractAnalyzer,
-                           config::ToplevelConfig,
-                           context::Module,
-                           pkg_mod_depth::Int,
-                           files_stack::Vector{String};
+                           state::InterpretationState;
                            overrideex::Union{Nothing,Expr}=nothing)
     overrideex === nothing ||
         error("Given full code text `overrideex` does not need to be provided")
 
     start = time()
+    (; config, filename) = state
     with_toplevel_logger(config) do @nospecialize(io)
-        println(io, "entered into $filename")
+        println(io, "entered into $(filename)")
     end
 
     s = String(s)::String
@@ -672,23 +735,24 @@ function _virtual_process!(res::VirtualProcessResult,
     JS.parse!(stream; rule=:all)
     if isempty(stream.diagnostics)
         parsed = JS.build_tree(JS.SyntaxNode, stream; filename)
-        _virtual_process!(res, parsed, filename, analyzer, config, context, pkg_mod_depth, files_stack)
+        _virtual_process!(interp, parsed, state)
     else
         sourcefile = JS.SourceFile(stream; filename)
         first_line = JS.source_line(sourcefile, JS.first_byte(stream))
         last_line = JS.source_line(sourcefile, JS.last_byte(stream))
-        res.analyzed_files[filename] = AnalyzedFileInfo(ModuleRangeInfo[first_line:last_line => context])
+        state.res.analyzed_files[filename] = AnalyzedFileInfo(
+            ModuleRangeInfo[first_line:last_line => state.context])
         for diagnostic in stream.diagnostics
-            add_toplevel_error_report!(res, ParseErrorReport(diagnostic, sourcefile))
+            add_toplevel_error_report!(state, ParseErrorReport(diagnostic, sourcefile))
         end
     end
 
     with_toplevel_logger(config) do @nospecialize(io)
         sec = round(time() - start; digits = 3)
-        println(io, " exited from $filename (took $sec sec)")
+        println(io, " exited from $(filename) (took $sec sec)")
     end
 
-    return res
+    return state.res
 end
 
 # check if all statements of `src` have been concretized
@@ -725,14 +789,46 @@ function push_vnode_stack!(vnodes::Vector{VNode}, node::JS.SyntaxNode, newex::Ex
     return vnodes
 end
 
-function _virtual_process!(res::VirtualProcessResult,
+function general_err_handler(@nospecialize(err), st, state::InterpretationState)
+    report = ActualErrorWrapped(err, st, state.filename, state.curline)
+    add_toplevel_error_report!(state, report)
+    nothing
+end
+
+function eval_with_err_handling(state::InterpretationState, x::Expr)
+    # `scrub_offset = 1`: `Core.eval`
+    with_err_handling(general_err_handler, state; scrub_offset=1) do
+        Core.eval(state.context, x)
+    end
+end
+
+function macroexpand_with_err_handling(state::InterpretationState, x::Expr)
+    # `scrub_offset = 2`: `macroexpand` -> kwfunc (`macroexpand`)
+    with_err_handling(general_err_handler, state; scrub_offset=2) do
+        # XXX we want to non-recursive, sequential partial macro expansion here, which allows
+        # us to collect more fine-grained error reports within macro expansions
+        # but it can lead to invalid macro hygiene escaping because of https://github.com/JuliaLang/julia/issues/20241
+        macroexpand(state.context, x; recursive = true #= but want to use `false` here =#)
+    end
+end
+
+function lower_with_err_handling(state::InterpretationState, x::Expr)
+    # `scrub_offset = 1`: `lower`
+    with_err_handling(general_err_handler, state; scrub_offset=1) do
+        lwr = lower(state.context, x)
+        if isexpr(lwr, :error)
+            # here we should capture syntax errors found during lowering
+            msg = first(lwr.args)::String
+            add_toplevel_error_report!(state, LoweringErrorReport(msg, state.filename, state.curline))
+            return nothing
+        end
+        return lwr
+    end
+end
+
+function _virtual_process!(interp::ConcreteInterpreter,
                            toplevelnode::JS.SyntaxNode,
-                           filename::AbstractString,
-                           analyzer::AbstractAnalyzer,
-                           config::ToplevelConfig,
-                           context::Module,
-                           pkg_mod_depth::Int,
-                           files_stack::Vector{String};
+                           state::InterpretationState;
                            force_concretize::Bool = false,
                            # HACK allow expanded `Expr` to be analyzed instead of `toplevelnode`
                            overrideex::Union{Nothing,Expr}=nothing) # TODO Remove this after JL integration)
@@ -744,124 +840,13 @@ function _virtual_process!(res::VirtualProcessResult,
         @assert isexpr(overrideex, :toplevel)
     end
 
-    local lnnref::Base.RefValue{LineNumberNode} = let
-        sourcefile = JS.sourcefile(toplevelnode)
-        first_line = JS.source_line(sourcefile, JS.first_byte(toplevelnode))
-        last_line = JS.source_line(sourcefile, JS.last_byte(toplevelnode))
-        analyzed_file_info = get!(AnalyzedFileInfo, res.analyzed_files, filename)
-        push!(analyzed_file_info.module_range_infos, first_line:last_line => context)
-        Ref(LineNumberNode(first_line, filename))
-    end
-    push!(files_stack, filename)
-
-    function general_err_handler(@nospecialize(err), st, x::Union{VirtualProcessResult,ConcreteInterpreter})
-        local report = ActualErrorWrapped(err, st, filename, lnnref[].line)
-        add_toplevel_error_report!(x, report)
-        nothing
-    end
-
-    function macroexpand_with_err_handling(mod::Module, x::Expr)
-        # `scrub_offset = 2`: `macroexpand` -> kwfunc (`macroexpand`)
-        with_err_handling(general_err_handler, res; scrub_offset=2) do
-            # XXX we want to non-recursive, sequential partial macro expansion here, which allows
-            # us to collect more fine-grained error reports within macro expansions
-            # but it can lead to invalid macro hygiene escaping because of https://github.com/JuliaLang/julia/issues/20241
-            macroexpand(mod, x; recursive = true #= but want to use `false` here =#)
-        end
-    end
-    function eval_with_err_handling(mod::Module, x::Expr)
-        # `scrub_offset = 1`: `Core.eval`
-        with_err_handling(general_err_handler, res; scrub_offset=1) do
-            Core.eval(mod, x)
-        end
-    end
-    function lower_with_err_handling(mod::Module, x::Expr)
-        # `scrub_offset = 1`: `lower`
-        with_err_handling(general_err_handler, res; scrub_offset=1) do
-            lwr = lower(mod, x)
-            if isexpr(lwr, :error)
-                # here we should capture syntax errors found during lowering
-                msg = first(lwr.args)::String
-                add_toplevel_error_report!(res, LoweringErrorReport(msg, filename, lnnref[].line))
-                return nothing
-            end
-            return lwr
-        end
-    end
-    local dependencies = Set{Symbol}()
-    function usemodule_with_err_handling(interp::ConcreteInterpreter, ex::Expr)
-        mod = interp.context
-        if isexpr(ex, (:export, :public))
-            @goto eval_usemodule
-        end
-        # TODO recursive analysis on dependencies?
-        pkgid = config.pkgid
-        if pkgid !== nothing
-            module_usage = pattern_match_module_usage(ex)
-            (; modpath) = module_usage
-            dep = first(modpath)::Symbol
-            if !(dep === :. || # relative module doesn't need to be fixed
-                 dep === :Base || dep === :Core) # modules available by default
-                if dep === Symbol(pkgid.name)
-                    # it's somehow allowed to use the package itself without the relative module path,
-                    # so we need to special case it and fix it to use the relative module path
-                    for _ = 1:pkg_mod_depth
-                        pushfirst!(modpath, :.)
-                    end
-                else
-                    if dep ∉ dependencies
-                        depstr = String(dep)
-                        depid = Base.identify_package(pkgid, depstr)
-                        if depid === nothing
-                            # IDEA better message in a case of `any(m::Module->dep===nameof(m), res.defined_modules))`?
-                            local report = DependencyError(pkgid.name, depstr, filename, lnnref[].line)
-                            add_toplevel_error_report!(interp, report)
-                            return nothing
-                        end
-                        require_ex = :(const $dep = Base.require($depid))
-                        # TODO better handling of loading errors that may happen here
-                        require_res = with_err_handling(general_err_handler, interp; scrub_offset=1) do
-                            Core.eval(mod, require_ex)
-                            true
-                        end
-                        isnothing(require_res) && return nothing
-                        push!(dependencies, dep)
-                    end
-                    pushfirst!(modpath, :.)
-                end
-                fixed_module_usage = ModuleUsage(module_usage; modpath)
-                ex = form_module_usage(fixed_module_usage)
-            elseif dep === :.
-                # The syntax `import ..Submod` refers to the name that is available within
-                # a parent module specified by the number of `.` dots, indicating how many
-                # levels up the module hierarchy to go. However, when it comes to package
-                # loading, it seems to work regardless of the number of dots. For now, in
-                # `report_package`, adjust `modpath` here to mimic the package loading behavior.
-                topmodidx = findfirst(@nospecialize(mp)->mp!==:., modpath)::Int
-                topmodsym = modpath[topmodidx]
-                curmod = mod
-                for i = 1:(topmodidx-1)
-                    if topmodsym isa Symbol && isdefined(curmod, topmodsym)
-                        modpath = modpath[topmodidx:end]
-                        for j = 1:i
-                            pushfirst!(modpath, :.)
-                        end
-                        fixed_module_usage = ModuleUsage(module_usage; modpath)
-                        ex = form_module_usage(fixed_module_usage)
-                        break
-                    else
-                        curmod = parentmodule(curmod)
-                    end
-                end
-            end
-        end
-        @label eval_usemodule
-        # `scrub_offset = 1`: `Core.eval`
-        with_err_handling(general_err_handler, interp; scrub_offset=1) do
-            Core.eval(mod, ex)
-            true
-        end
-    end
+    sourcefile = JS.sourcefile(toplevelnode)
+    first_line = JS.source_line(sourcefile, JS.first_byte(toplevelnode))
+    last_line = JS.source_line(sourcefile, JS.last_byte(toplevelnode))
+    analyzed_file_info = get!(AnalyzedFileInfo, state.res.analyzed_files, state.filename)
+    push!(analyzed_file_info.module_range_infos, first_line:last_line => state.context)
+    state.curline = first_line
+    push!(state.files_stack, state.filename)
 
     # transform, and then analyze sequentially
     # IDEA the following code has some of duplicated work with `JuliaInterpreter.ExprSpliter` and we may want to factor them out
@@ -880,7 +865,7 @@ function _virtual_process!(res::VirtualProcessResult,
     while !isempty(vnodes)
         local ex = pop!(vnodes)
         (; node, force_concretize) = ex
-        local x, isexpanded::Bool, lnn::LineNumberNode;
+        local x, isexpanded::Bool
         if isdefined(ex, :x)
             isexpanded = true
             x = ex.x
@@ -888,7 +873,7 @@ function _virtual_process!(res::VirtualProcessResult,
             isexpanded = false
             x = Expr(node)
         end
-        lnn = lnnref[] = LineNumberNode(JS.source_line(node), filename)
+        state.curline = JS.source_line(node)
 
         # apply user-specified concretization strategy, which is configured as expression
         # pattern match on surface level AST code representation; if any of the specified
@@ -896,12 +881,11 @@ function _virtual_process!(res::VirtualProcessResult,
         # since patterns are expected to work on surface level AST, we should configure it
         # here before macro expansion and lowering
         if !force_concretize
-            for pat in config.concretization_patterns
+            for pat in state.config.concretization_patterns
                 if @capture(x, $pat)
-                    with_toplevel_logger(config; filter=≥(JET_LOGGER_LEVEL_DEBUG)) do @nospecialize(io)
-                        line, file = lnn.line, lnn.file
+                    with_toplevel_logger(state.config; filter=≥(JET_LOGGER_LEVEL_DEBUG)) do @nospecialize(io)
                         x′ = striplines(normalise(x))
-                        println(io, "concretization pattern `$pat` matched `$x′` at $file:$line")
+                        println(io, "concretization pattern `$pat` matched `$x′` at $(state.filename):$(state.curline)")
                     end
                     force_concretize = true
                     break
@@ -912,7 +896,7 @@ function _virtual_process!(res::VirtualProcessResult,
         # although we will lower `x` after special-handling `:toplevel` and `:module` expressions,
         # expand `macrocall`s here because macro can arbitrarily generate those expressions
         if isexpr(x, :macrocall)
-            newx = macroexpand_with_err_handling(context, x)
+            newx = macroexpand_with_err_handling(state, x)
 
             # if any error happened during macro expansion, bail out now and continue
             isnothing(newx) && continue
@@ -953,20 +937,26 @@ function _virtual_process!(res::VirtualProcessResult,
                 @assert isexpr(newblk, :block)
                 overrideex = Expr(:toplevel, newblk.args...)
                 x.args[3] = Expr(:block) # empty module's code body
-                newcontext = eval_with_err_handling(context, x)
+                newcontext = eval_with_err_handling(state, x)
                 isnothing(newcontext) && continue # error happened, e.g. duplicated naming
                 newcontext = newcontext::Module
-                _virtual_process!(res, node, filename, analyzer, config, newcontext::Module,
-                                  pkg_mod_depth+1, files_stack;
+                newstate = InterpretationState(state;
+                                               context = newcontext,
+                                               pkg_mod_depth = state.pkg_mod_depth + 1,
+                                               dependencies = Set{Symbol}())
+                _virtual_process!(interp, node, newstate;
                                   force_concretize, overrideex)
             else
                 @assert JS.kind(node) === K"module"
                 x.args[3] = Expr(:block) # empty module's code body
-                newcontext = eval_with_err_handling(context, x)
+                newcontext = eval_with_err_handling(state, x)
                 isnothing(newcontext) && continue # error happened, e.g. duplicated naming
                 newcontext = newcontext::Module
-                _virtual_process!(res, node, filename, analyzer, config, newcontext,
-                                  pkg_mod_depth+1, files_stack;
+                newstate = InterpretationState(state;
+                                               context = newcontext,
+                                               pkg_mod_depth = state.pkg_mod_depth + 1,
+                                               dependencies = Set{Symbol}())
+                _virtual_process!(interp, node, newstate;
                                   force_concretize)
             end
             continue
@@ -974,47 +964,47 @@ function _virtual_process!(res::VirtualProcessResult,
 
         # avoid wrapping 1-arg `:global` declaration into a block
         if isexpr(x, :global) && length(x.args) == 1 && only(x.args) isa Symbol
-            eval_with_err_handling(context, x)
+            eval_with_err_handling(state, x)
             continue
         end
 
+        # create LineNumberNode here for lowering
+        lnn = LineNumberNode(state.curline, state.filename)
         blk = Expr(:block, lnn, x) # attach current line number info
-        lwr = lower_with_err_handling(context, blk)
+        lwr = lower_with_err_handling(state, blk)
 
         isnothing(lwr) && continue # error happened during lowering
         isexpr(lwr, :thunk) || continue # literal
 
         src = only(lwr.args)::CodeInfo
 
-        fix_self_references!(res.actual2virtual, src)
+        fix_self_references!(state.res.actual2virtual, src)
 
-        failed = Ref(false)
-        interp = ConcreteInterpreter(filename, lnn, usemodule_with_err_handling,
-                                     context, analyzer, config, res, pkg_mod_depth,
-                                     files_stack, failed)
+        state.isfailed = false
+        thisinterp = ConcreteInterpreter(interp, state)
         if force_concretize
-            JuliaInterpreter.finish!(interp, Frame(context, src), true)
+            JuliaInterpreter.finish!(thisinterp, Frame(state.context, src), true)
             continue
         end
-        concretized = partially_interpret!(interp, context, src)
+        concretized = partially_interpret!(thisinterp, state.context, src)
 
         if bail_out_concretized(concretized, src)
             # bail out if nothing to analyze (just a performance optimization)
             continue
-        elseif failed[]
+        elseif state.isfailed
             continue
         end
 
-        analyzer = AbstractAnalyzer(analyzer, concretized)
+        analyzer = AbstractAnalyzer(AbstractAnalyzer(thisinterp), concretized)
 
-        (_, result), _ = analyze_toplevel!(analyzer, src, context)
+        (_, result), _ = analyze_toplevel!(analyzer, src, state.context)
 
-        append!(res.inference_error_reports, get_reports(analyzer, result)) # collect error reports
+        append!(state.res.inference_error_reports, get_reports(analyzer, result)) # collect error reports
     end
 
-    pop!(files_stack)
+    pop!(state.files_stack)
 
-    return res
+    return state.res
 end
 
 function split_module_path(m::Module)
@@ -1200,9 +1190,8 @@ function partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::Cod
     concretize = select_statements(mod, src)
     @assert length(src.code) == length(concretize)
 
-    with_toplevel_logger(interp.config; filter=≥(JET_LOGGER_LEVEL_DEBUG)) do @nospecialize(io)
-        line, file = interp.lnn.line, interp.lnn.file
-        println(io, "concretization plan at $file:$line:")
+    with_toplevel_logger(get_state(interp).config; filter=≥(JET_LOGGER_LEVEL_DEBUG)) do @nospecialize(io)
+        println(io, "concretization plan at $(get_state(interp).filename):$(get_state(interp).curline):")
         LoweredCodeUtils.print_with_code(io, src, concretize)
     end
 
@@ -1433,7 +1422,7 @@ function JuliaInterpreter.lookup(interp::ConcreteInterpreter, frame::Frame, @nos
             end
             return val
         else
-            binding_states = get_binding_states(interp.analyzer)
+            binding_states = get_binding_states(AbstractAnalyzer(interp))
             partition = Base.lookup_binding_partition(Base.get_world_counter(), node)
             binding_state = get(binding_states, partition, nothing)
             if binding_state !== nothing
@@ -1459,12 +1448,89 @@ function JuliaInterpreter.lookup(interp::ConcreteInterpreter, frame::Frame, @nos
     return @invoke JuliaInterpreter.lookup(interp::Interpreter, frame::Frame, node::Any)
 end
 
+function usemodule_with_err_handling(interp::ConcreteInterpreter, ex::Expr)
+    state = get_state(interp)
+    mod = state.context
+    if isexpr(ex, (:export, :public))
+        @goto eval_usemodule
+    end
+    # TODO recursive analysis on dependencies?
+    config = state.config
+    pkgid = config.pkgid
+    if pkgid !== nothing
+        module_usage = pattern_match_module_usage(ex)
+        (; modpath) = module_usage
+        dep = first(modpath)::Symbol
+        if !(dep === :. || # relative module doesn't need to be fixed
+             dep === :Base || dep === :Core) # modules available by default
+            if dep === Symbol(pkgid.name)
+                # it's somehow allowed to use the package itself without the relative module path,
+                # so we need to special case it and fix it to use the relative module path
+                for _ = 1:state.pkg_mod_depth
+                    pushfirst!(modpath, :.)
+                end
+            else
+                dependencies = state.dependencies
+                if dep ∉ dependencies
+                    depstr = String(dep)
+                    depid = Base.identify_package(pkgid, depstr)
+                    if depid === nothing
+                        # IDEA better message in a case of `any(m::Module->dep===nameof(m), res.defined_modules))`?
+                        local report = DependencyError(pkgid.name, depstr, state.filename, state.curline)
+                        add_toplevel_error_report!(state, report)
+                        return nothing
+                    end
+                    require_ex = :(const $dep = Base.require($depid))
+                    # TODO better handling of loading errors that may happen here
+                    require_res = with_err_handling(general_err_handler, state; scrub_offset=1) do
+                        Core.eval(mod, require_ex)
+                        true
+                    end
+                    isnothing(require_res) && return nothing
+                    push!(dependencies, dep)
+                end
+                pushfirst!(modpath, :.)
+            end
+            fixed_module_usage = ModuleUsage(module_usage; modpath)
+            ex = form_module_usage(fixed_module_usage)
+        elseif dep === :.
+            # The syntax `import ..Submod` refers to the name that is available within
+            # a parent module specified by the number of `.` dots, indicating how many
+            # levels up the module hierarchy to go. However, when it comes to package
+            # loading, it seems to work regardless of the number of dots. For now, in
+            # `report_package`, adjust `modpath` here to mimic the package loading behavior.
+            topmodidx = findfirst(@nospecialize(mp)->mp!==:., modpath)::Int
+            topmodsym = modpath[topmodidx]
+            curmod = mod
+            for i = 1:(topmodidx-1)
+                if topmodsym isa Symbol && isdefined(curmod, topmodsym)
+                    modpath = modpath[topmodidx:end]
+                    for j = 1:i
+                        pushfirst!(modpath, :.)
+                    end
+                    fixed_module_usage = ModuleUsage(module_usage; modpath)
+                    ex = form_module_usage(fixed_module_usage)
+                    break
+                else
+                    curmod = parentmodule(curmod)
+                end
+            end
+        end
+    end
+    @label eval_usemodule
+    # `scrub_offset = 1`: `Core.eval`
+    with_err_handling(general_err_handler, state; scrub_offset=1) do
+        Core.eval(mod, ex)
+        true
+    end
+end
+
 function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node), istoplevel::Bool)
     @assert istoplevel "ConcreteInterpreter can only work for top-level code"
 
     if ismoduleusage(node)
         for ex in to_simple_module_usages(node)
-            if interp.usemodule_with_err_handling(interp, ex) === nothing
+            if usemodule_with_err_handling(interp, ex) === nothing
                 break
             end
         end
@@ -1473,14 +1539,14 @@ function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, 
 
     res = @invoke JuliaInterpreter.step_expr!(interp::Interpreter, frame::Frame, node::Any, istoplevel::Bool)
 
-    should_analyze_from_definitions(interp.config) && collect_toplevel_signature!(interp, frame, node)
+    should_analyze_from_definitions(get_state(interp).config) && collect_toplevel_signature!(interp, frame, node)
 
     return res
 end
 
 function collect_toplevel_signature!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node))
     isexpr(node, :method, 3) || return nothing
-    entrypoint = interp.config.analyze_from_definitions
+    entrypoint = get_state(interp).config.analyze_from_definitions
     if entrypoint isa Symbol
         methname = node.args[1]
         if methname isa GlobalRef
@@ -1495,7 +1561,7 @@ function collect_toplevel_signature!(interp::ConcreteInterpreter, frame::Frame, 
         JuliaInterpreter.lookup(frame, sigs)::SimpleVector
     tt = form_method_signature(atype_params::SimpleVector, sparams::SimpleVector)
     @assert !CC.has_free_typevars(tt) "free type variable left in toplevel_signatures"
-    push!(interp.res.toplevel_signatures, tt)
+    push!(get_state(interp).res.toplevel_signatures, tt)
 end
 
 # form a method signature from the first and second parameters of lowered `:method` expression
@@ -1569,15 +1635,16 @@ end
 isinclude(@nospecialize f) = f isa Base.IncludeInto || (isa(f, Function) && nameof(f) === :include)
 
 function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func), args::Vector{Any})
-    filename = interp.filename
-    res = interp.res
-    lnn = interp.lnn
-    context = interp.context
+    state = get_state(interp)
+    filename = state.filename
+    res = state.res
+    line = state.curline
+    include_context = state.context
 
     function add_actual_method_error_report!(args::Vector{Any})
         err = MethodError(include_func, args)
-        local report = ActualErrorWrapped(err, [], filename, lnn.line)
-        add_toplevel_error_report!(interp, report)
+        local report = ActualErrorWrapped(err, [], filename, line)
+        add_toplevel_error_report!(state, report)
     end
 
     nargs = length(args)
@@ -1586,7 +1653,8 @@ function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func)
     elseif nargs == 2
         x, fname = args
         if isa(x, Module)
-            context = x
+            include_context = x
+            # TODO propagate appropriate `dependencies` to `newstate`
         elseif isa(x, Function)
             @warn "JET is unable to analyze `include(mapexpr::Function, filename::String)` call currently."
         else
@@ -1604,31 +1672,29 @@ function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func)
 
     include_file = normpath(dirname(filename), fname)
     # handle recursive `include`s
-    if include_file in interp.files_stack
-        local report = RecursiveIncludeErrorReport(include_file, copy(interp.files_stack), filename, lnn.line)
-        add_toplevel_error_report!(interp, report)
+    if include_file in state.files_stack
+        local report = RecursiveIncludeErrorReport(include_file, copy(state.files_stack), filename, line)
+        add_toplevel_error_report!(state, report)
         return nothing
     end
 
-    function read_err_handler(@nospecialize(err), st, interp::ConcreteInterpreter)
-        local report = ActualErrorWrapped(err, st, filename, lnn.line)
-        add_toplevel_error_report!(interp, report)
-        nothing
-    end
-    # `scrub_offset = 1`: `f`
-    include_text = with_err_handling(read_err_handler, interp; scrub_offset=2) do
-        if interp.config.include_callback === nothing # fallbacks to the default `read` function
-            return read(include_file, String)
-        end
-        return interp.config.include_callback(include_file)
-    end
+    include_text = try_read_file(interp, include_context, include_file)
     isnothing(include_text) && return nothing # typically no file error
 
-    _virtual_process!(interp.res, include_text::String, include_file, interp.analyzer,
-                      interp.config, context, interp.pkg_mod_depth, interp.files_stack)
+    newstate = InterpretationState(state;
+                                   filename = include_file,
+                                   context = include_context)
+    _virtual_process!(interp, include_text::String, newstate)
 
     # TODO: actually, here we need to try to get the lastly analyzed result of the `_virtual_process!` call above
     nothing
+end
+
+function try_read_file(interp::ConcreteInterpreter, include_context::Module, include_file::AbstractString)
+    # `scrub_offset = 1`: `f`
+    return with_err_handling(general_err_handler, get_state(interp); scrub_offset=1) do
+        return read(include_file, String)
+    end
 end
 
 const JET_VIRTUALPROCESS_FILE = Symbol(@__FILE__)
@@ -1678,12 +1744,13 @@ function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame::Frame, 
     end
     st = st[1:i]
 
+    state = get_state(interp)
     if err isa MissingConcretizationError
-        report = MissingConcretizationErrorReport(err.isconst, err.var, interp.filename, interp.lnn.line)
+        report = MissingConcretizationErrorReport(err.isconst, err.var, state.filename, state.curline)
     else
-        report = ActualErrorWrapped(err, st, interp.filename, interp.lnn.line)
+        report = ActualErrorWrapped(err, st, state.filename, state.curline)
     end
-    add_toplevel_error_report!(interp, report)
+    add_toplevel_error_report!(state, report)
 
     return nothing # stop further interpretation
 end

@@ -1545,8 +1545,8 @@ specified by a `$CONFIG_FILE_NAME` configuration file.
 """
 function report_file(args...; jetconfigs...)
     # TODO read a configuration file and apply it here?
-    analyzer = JETAnalyzer(; jetconfigs...)
-    return analyze_and_report_file!(analyzer, args...; jetconfigs...)
+    interp = JETConcreteInterpreter(JETAnalyzer(; jetconfigs...))
+    return analyze_and_report_file!(interp, args...; jetconfigs...)
 end
 
 """
@@ -1608,8 +1608,8 @@ See also [`report_file`](@ref).
 """
 function report_package(args...; ignore_missing_comparison::Bool=true, jetconfigs...)
     # TODO read a configuration file and apply it here?
-    analyzer = JETAnalyzer(; ignore_missing_comparison, jetconfigs...)
-    return analyze_and_report_package!(analyzer, args...; ignore_missing_comparison, jetconfigs...)
+    interp = JETConcreteInterpreter(JETAnalyzer(; ignore_missing_comparison, jetconfigs...))
+    return analyze_and_report_package!(interp, args...; ignore_missing_comparison, jetconfigs...)
 end
 
 """
@@ -1646,8 +1646,8 @@ end
 Analyzes top-level `text` and returns back type-level errors.
 """
 function report_text(args...; jetconfigs...)
-    analyzer = JETAnalyzer(; jetconfigs...)
-    return analyze_and_report_text!(analyzer, args...; jetconfigs...)
+    interp = JETConcreteInterpreter(JETAnalyzer(; jetconfigs...))
+    return analyze_and_report_text!(interp, args...; jetconfigs...)
 end
 
 """

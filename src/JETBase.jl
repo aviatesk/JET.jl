@@ -701,19 +701,20 @@ is_entry(analyzer::AbstractAnalyzer, mi::MethodInstance) = get_entry(analyzer) =
 # ---------
 
 """
-    analyze_and_report_file!(analyzer::AbstractAnalyzer, filename::AbstractString; jetconfigs...) -> JETToplevelResult
+    analyze_and_report_file!(interp::ConcreteInterpreter, filename::AbstractString; jetconfigs...) -> JETToplevelResult
 
-A generic entry point to analyze a file with `AbstractAnalyzer`.
+A generic entry point to analyze a file with `interp::ConcreteInterpreter`.
 Finally returns the analysis result as [`JETToplevelResult`](@ref).
-Note that this is intended to be used by developers of `AbstractAnalyzer` only.
+Note that this is intended to be used by developers of `AbstractAnalyzer` and
+`ConcreteInterpreter` only.
 General users should use high-level entry points like [`report_file`](@ref).
 """
-function analyze_and_report_file!(analyzer::AbstractAnalyzer, filename::AbstractString,
+function analyze_and_report_file!(interp::ConcreteInterpreter, filename::AbstractString,
                                   pkgid::Union{Nothing,PkgId} = nothing;
                                   jetconfigs...)
     jetconfigs = apply_file_config(jetconfigs, filename)
     entrytext = read(filename, String)
-    return analyze_and_report_text!(analyzer, entrytext, filename, pkgid; jetconfigs...)
+    return analyze_and_report_text!(interp, entrytext, filename, pkgid; jetconfigs...)
 end
 
 function apply_file_config(jetconfigs, filename::AbstractString)
@@ -847,23 +848,24 @@ function trymetaparse(s::String, name::Symbol)
 end
 
 """
-    analyze_and_report_package!(analyzer::AbstractAnalyzer,
+    analyze_and_report_package!(interp::ConcreteInterpreter,
                                 package::Union{AbstractString,Module,Nothing} = nothing;
                                 jetconfigs...) -> JETToplevelResult
 
-A generic entry point to analyze a package with `AbstractAnalyzer`.
+A generic entry point to analyze a package with `interp::ConcreteInterpreter`.
 Finally returns the analysis result as [`JETToplevelResult`](@ref).
-Note that this is intended to be used by developers of `AbstractAnalyzer` only.
+Note that this is intended to be used by developers of `AbstractAnalyzer` and
+`ConcreteInterpreter` only.
 General users should use high-level entry points like [`report_package`](@ref).
 """
-function analyze_and_report_package!(analyzer::AbstractAnalyzer,
+function analyze_and_report_package!(interp::ConcreteInterpreter,
                                      package::Union{AbstractString,Module,Nothing} = nothing;
                                      jetconfigs...)
     (; filename, pkgid) = find_pkg(package)
     jetconfigs = kwargs_dict(jetconfigs)
     set_if_missing!(jetconfigs, :analyze_from_definitions, true)
     set_if_missing!(jetconfigs, :concretization_patterns, [:(x_)]) # concretize all top-level code
-    return analyze_and_report_file!(analyzer, filename, pkgid; jetconfigs...)
+    return analyze_and_report_file!(interp, filename, pkgid; jetconfigs...)
 end
 
 function find_pkg(pkgname::AbstractString)
@@ -890,31 +892,34 @@ function find_pkg(::Nothing)
 end
 
 """
-    analyze_and_report_text!(analyzer::AbstractAnalyzer, text::AbstractString,
+    analyze_and_report_text!(interp::ConcreteInterpreter, text::AbstractString,
                              filename::AbstractString = "top-level";
                              jetconfigs...) -> JETToplevelResult
 
-A generic entry point to analyze a top-level code with `AbstractAnalyzer`.
+A generic entry point to analyze a top-level code with `interp::ConcreteInterpreter`.
 Finally returns the analysis result as [`JETToplevelResult`](@ref).
-Note that this is intended to be used by developers of `AbstractAnalyzer` only.
+Note that this is intended to be used by developers of `AbstractAnalyzer` and
+`ConcreteInterpreter` only.
 General users should use high-level entry points like [`report_text`](@ref).
 """
-function analyze_and_report_text!(analyzer::AbstractAnalyzer, text::AbstractString,
+function analyze_and_report_text!(interp::ConcreteInterpreter, text::AbstractString,
                                   filename::AbstractString = "top-level",
                                   pkgid::Union{Nothing,PkgId} = nothing;
                                   jetconfigs...)
+    analyzer = AbstractAnalyzer(interp)
     validate_configs(analyzer, jetconfigs)
     config = ToplevelConfig(pkgid; jetconfigs...)
-    res = virtual_process(text, filename, analyzer, config)
+    res = virtual_process(interp, text, filename, config)
     analyzername = nameof(typeof(analyzer))
     source = lazy"$analyzername: \"$filename\""
     return JETToplevelResult(analyzer, res, source; jetconfigs...)
 end
 
-function analyze_and_report_expr!(analyzer::AbstractAnalyzer, x::Union{JS.SyntaxNode,Expr},
+function analyze_and_report_expr!(interp::ConcreteInterpreter, x::Union{JS.SyntaxNode,Expr},
                                   filename::AbstractString = "top-level",
                                   pkgid::Union{Nothing,PkgId} = nothing;
                                   jetconfigs...)
+    analyzer = AbstractAnalyzer(interp)
     validate_configs(analyzer, jetconfigs)
     config = ToplevelConfig(pkgid; jetconfigs...)
     if x isa Expr
@@ -925,7 +930,7 @@ function analyze_and_report_expr!(analyzer::AbstractAnalyzer, x::Union{JS.Syntax
         toplevelnode = x
         overrideex = nothing
     end
-    res = virtual_process(toplevelnode, filename, analyzer, config; overrideex)
+    res = virtual_process(interp, toplevelnode, filename, config; overrideex)
     analyzername = nameof(typeof(analyzer))
     source = lazy"$analyzername: \"$filename\""
     return JETToplevelResult(analyzer, res, source; jetconfigs...)
@@ -1151,7 +1156,7 @@ const GENERAL_CONFIGURATIONS = Set{Symbol}((
     # general
     :report_config, :target_modules, :ignored_modules, :target_defined_modules,
     # toplevel
-    :context, :analyze_from_definitions, :concretization_patterns, :virtualize, :toplevel_logger, :include_callback,
+    :context, :analyze_from_definitions, :concretization_patterns, :virtualize, :toplevel_logger,
     # ui
     :print_toplevel_success, :print_inference_success, :fullpath, :stacktrace_types_limit,
     :vscode_console_output,
