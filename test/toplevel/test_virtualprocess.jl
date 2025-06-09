@@ -694,32 +694,6 @@ end
             include(mymapexpr, "somefile.jl")
         end
     end
-
-    # `include_callback`
-    # ------------------
-    function include_callback(filename::String)
-        return """
-        sum("julia")
-        """
-    end
-    let res = @analyze_toplevel include_callback = include_callback begin
-            include("somefile.jl")
-        end
-        @test length(res.res.toplevel_error_reports) == 0
-        test_sum_over_string(res)
-    end
-    function include_callback_error(filename::String)
-        error("unexpected include")
-    end
-    let res = @analyze_toplevel include_callback = include_callback_error begin
-            include("somefile.jl")
-        end
-        @test length(res.res.toplevel_error_reports) == 1
-        report = only(res.res.toplevel_error_reports)
-        @test report isa ActualErrorWrapped
-        err = report.err
-        @test err isa ErrorException
-    end
 end
 
 @testset "analyzed_files" begin

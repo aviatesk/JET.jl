@@ -329,7 +329,6 @@ struct ToplevelConfig
     concretization_patterns::Vector{Any}
     virtualize::Bool
     toplevel_logger # ::Union{Nothing,IO}
-    include_callback # ::Union{Nothing,Base.Callable}
     function ToplevelConfig(
         pkgid::Union{Nothing,PkgId} = nothing;
         context::Module = Main,
@@ -337,7 +336,6 @@ struct ToplevelConfig
         concretization_patterns = Any[],
         virtualize::Bool = true,
         toplevel_logger::Union{Nothing,IO} = nothing,
-        include_callback::Union{Nothing,Base.Callable} = nothing,
         __jetconfigs...)
         concretization_patterns = Any[striplines(normalise(x)) for x in concretization_patterns]
         for pat in default_concretization_patterns()
@@ -352,8 +350,7 @@ struct ToplevelConfig
             analyze_from_definitions,
             concretization_patterns,
             virtualize,
-            toplevel_logger,
-            include_callback)
+            toplevel_logger)
     end
 end
 
@@ -1681,18 +1678,7 @@ function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func)
         return nothing
     end
 
-    function read_err_handler(@nospecialize(err), st, state::InterpretationState)
-        local report = ActualErrorWrapped(err, st, filename, line)
-        add_toplevel_error_report!(state, report)
-        nothing
-    end
-    # `scrub_offset = 1`: `f`
-    include_text = with_err_handling(read_err_handler, state; scrub_offset=2) do
-        if state.config.include_callback === nothing # fallbacks to the default `read` function
-            return read(include_file, String)
-        end
-        return state.config.include_callback(include_file)
-    end
+    include_text = try_read_file(interp, include_context, include_file)
     isnothing(include_text) && return nothing # typically no file error
 
     newstate = InterpretationState(state;
@@ -1702,6 +1688,13 @@ function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func)
 
     # TODO: actually, here we need to try to get the lastly analyzed result of the `_virtual_process!` call above
     nothing
+end
+
+function try_read_file(interp::ConcreteInterpreter, include_context::Module, include_file::AbstractString)
+    # `scrub_offset = 1`: `f`
+    return with_err_handling(general_err_handler, get_state(interp); scrub_offset=1) do
+        return read(include_file, String)
+    end
 end
 
 const JET_VIRTUALPROCESS_FILE = Symbol(@__FILE__)
