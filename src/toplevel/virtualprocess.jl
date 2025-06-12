@@ -671,11 +671,8 @@ function analyze_from_definitions!(interp::ConcreteInterpreter, config::Toplevel
     analyzer = ToplevelAbstractAnalyzer(interp, non_toplevel_concretized;
         world = get_world_counter(),
         refresh_local_cache = false)
-    analyzerstate = AnalyzerState(analyzer)
     if analyzer isa JETAnalyzer && analyzer.report_pass === BasicPass()
-        analyzer = JETAnalyzer(analyzerstate, DefinitionAnalysisPass(), JETAnalyzerConfig(analyzer))
-    else
-        analyzer = AbstractAnalyzer(analyzer, analyzerstate)
+        analyzer = JETAnalyzer(AnalyzerState(analyzer), DefinitionAnalysisPass(), JETAnalyzerConfig(analyzer))
     end
     entrypoint = config.analyze_from_definitions
     res = InterpretationState(interp).res
