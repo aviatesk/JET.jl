@@ -159,7 +159,7 @@ function AnalyzerState(world::UInt  = get_world_counter();
     results::IdDict{InferenceResult,AnalysisResult} = IdDict{InferenceResult,AnalysisResult}(),
     inf_params::Union{Nothing,InferenceParams} = nothing,
     opt_params::Union{Nothing,OptimizationParams} = nothing,
-    concretized::BitVector = _CONCRETIZED,
+    concretized::BitVector = non_toplevel_concretized,
     binding_states::AbstractAbstractBindings = AbstractAbstractBindings(),
     jetconfigs...)
     isnothing(inf_params) && (inf_params = JETInferenceParams(; jetconfigs...))
@@ -179,7 +179,7 @@ function AnalyzerState(world::UInt  = get_world_counter();
 end
 
 # dummies for non-toplevel analysis
-const _CONCRETIZED  = BitVector()
+const non_toplevel_concretized  = BitVector()
 
 """
 Configurations for abstract interpretation performed by JET.

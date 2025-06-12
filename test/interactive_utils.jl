@@ -7,12 +7,9 @@ using .CC: Bottom, widenconst, ⊑
 
 using JET:
     AbstractAnalyzer, InferenceErrorReport, JETAnalyzer, JETConcreteInterpreter, ToplevelErrorReport,
-    gen_virtual_module, get_reports, get_result, print_reports,
-    virtualize_module_context
+    gen_virtual_module, get_reports, get_result, print_reports, virtualize_module_context
 
 using Base.Meta: isexpr
-
-get_cache(analyzer::AbstractAnalyzer) = JET.get_inf_cache(analyzer)
 
 let ts = Type[]
     function subtypes_recursive!(t)

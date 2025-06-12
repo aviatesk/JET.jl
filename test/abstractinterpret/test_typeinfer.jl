@@ -167,8 +167,8 @@ end
         end)
 
         @test !isempty(get_reports_with_test(result))
-        @test !isempty(get_cache(result.analyzer))
-        @test any(get_cache(result.analyzer)) do analysis_result
+        @test !isempty(JET.get_inf_cache(result.analyzer))
+        @test any(JET.get_inf_cache(result.analyzer)) do analysis_result
             analysis_result.argtypes==Any[Const(getproperty),m.Foo{Int},Const(:baz)]
         end
     end
@@ -187,10 +187,10 @@ end
 
         # there should be local cache for each erroneous constant analysis
         @test !isempty(get_reports_with_test(result))
-        @test any(get_cache(result.analyzer)) do analysis_result
+        @test any(JET.get_inf_cache(result.analyzer)) do analysis_result
             analysis_result.argtypes==Any[Const(m.getter),m.Foo{Int},Const(:baz)]
         end
-        @test any(get_cache(result.analyzer)) do analysis_result
+        @test any(JET.get_inf_cache(result.analyzer)) do analysis_result
             analysis_result.argtypes==Any[Const(m.getter),m.Foo{Int},Const(:qux)]
         end
     end
@@ -555,7 +555,7 @@ end
         return Val{oc(1,2,3)}()
     end
     result = @report_call oc_varargs_constprop()
-    @test !isempty(get_cache(result.analyzer))
+    @test !isempty(JET.get_inf_cache(result.analyzer))
 end
 
 # FIXME Remove `virtualize=false`` A bug within `resolve_toplevel_symbols!`
