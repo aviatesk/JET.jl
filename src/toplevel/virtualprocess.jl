@@ -861,6 +861,7 @@ function _virtual_process!(interp::ConcreteInterpreter,
     else
         push_vnode_stack!(vnodes, toplevelnode, overrideex, force_concretize)
     end
+    concretized = falses(0)
     while !isempty(vnodes)
         local ex = pop!(vnodes)
         (; node, force_concretize) = ex
@@ -986,7 +987,7 @@ function _virtual_process!(interp::ConcreteInterpreter,
             JuliaInterpreter.finish!(interp, Frame(state.context, src), true)
             continue
         end
-        concretized = partially_interpret!(interp, state.context, src)
+        partially_interpret!(interp, concretized, state.context, src)
 
         if bail_out_concretized(concretized, src)
             # bail out if nothing to analyze (just a performance optimization)
@@ -1176,7 +1177,7 @@ function walk_and_transform!(@nospecialize(x), inner, outer, scope::Vector{Symbo
 end
 
 """
-    partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::CodeInfo)
+    partially_interpret!(interp::ConcreteInterpreter, concretize::BitVector, mod::Module, src::CodeInfo)
 
 Partially interprets statements in `src` using JuliaInterpreter.jl:
 - concretizes "toplevel definitions", i.e. `:method`, `:struct_type`, `:abstract_type` and
@@ -1186,9 +1187,9 @@ Partially interprets statements in `src` using JuliaInterpreter.jl:
   (TODO: enter into the loaded module and keep JET analysis)
 - special-cases `include` calls so that top-level analysis recursively enters the included file
 """
-function partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::CodeInfo)
-    concretize = select_statements(mod, src)
-    @assert length(src.code) == length(concretize)
+function partially_interpret!(interp::ConcreteInterpreter, concretize::BitVector, mod::Module, src::CodeInfo)
+    fill!(resize!(concretize, length(src.code)), false)
+    select_statements!(concretize, mod, src)
 
     with_toplevel_logger(InterpretationState(interp).config; filter=≥(JET_LOGGER_LEVEL_DEBUG)) do @nospecialize(io)
         println(io, "concretization plan at $(InterpretationState(interp).filename):$(InterpretationState(interp).curline):")
@@ -1204,16 +1205,16 @@ function partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::Cod
 end
 
 # select statements that should be concretized, and actually interpreted rather than abstracted
-function select_statements(mod::Module, src::CodeInfo)
+function select_statements!(concretize::BitVector, mod::Module, src::CodeInfo)
     cl = LoweredCodeUtils.CodeLinks(mod, src) # make `CodeEdges` hold `CodeLinks`?
     edges = LoweredCodeUtils.CodeEdges(src, cl)
-    concretize = falses(length(src.code))
     select_direct_requirement!(concretize, src.code, edges)
     select_dependencies!(concretize, src, edges, cl)
     return concretize
 end
 
 # just for testing, and debugging
+select_statements(mod::Module, src::CodeInfo) = select_statements!(falses(length(src.code)), mod, src)
 function select_statements(mod::Module, src::CodeInfo, names::Symbol...)
     idxs = findall(src.code) do @nospecialize stmt
         return any(names) do name
