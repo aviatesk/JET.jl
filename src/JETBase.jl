@@ -298,6 +298,8 @@ jet_logger_level(@nospecialize io::IO) = get(io, JET_LOGGER_LEVEL, DEFAULT_LOGGE
 # analysis core
 # =============
 
+abstract type ConcreteInterpreter <: JuliaInterpreter.Interpreter end
+
 include("abstractinterpret/inferenceerrorreport.jl")
 include("abstractinterpret/abstractanalyzer.jl")
 include("abstractinterpret/typeinfer.jl")

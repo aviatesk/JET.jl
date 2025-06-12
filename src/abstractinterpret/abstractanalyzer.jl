@@ -582,10 +582,10 @@ analysis behaviors provided by this type.
 abstract type ToplevelAbstractAnalyzer <: AbstractAnalyzer end
 
 # constructor for sequential toplevel JET analysis
-function ToplevelAbstractAnalyzer(analyzer::T, concretized::BitVector;
-    # update world age to take in newly added methods defined by `ConcreteInterpreter`
-    world::UInt = get_world_counter()
-    ) where {T<:AbstractAnalyzer}
+function ToplevelAbstractAnalyzer(interp::ConcreteInterpreter, concretized::BitVector,
+                                  # update world age to take in newly added methods defined by `ConcreteInterpreter`
+                                  world::UInt = get_world_counter())
+    analyzer = ToplevelAbstractAnalyzer(interp)
     newstate = AnalyzerState(world;
                              inf_params = InferenceParams(analyzer),
                              opt_params = OptimizationParams(analyzer),
