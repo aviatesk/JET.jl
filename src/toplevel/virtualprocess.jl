@@ -442,11 +442,13 @@ function InterpretationState(state::InterpretationState;
                              curline::Int = state.curline,
                              dependencies::Set{Symbol} = state.dependencies,
                              context::Module = state.context,
-                             config::ToplevelConfig = state.config,
-                             res::VirtualProcessResult = state.res,
-                             pkg_mod_depth::Int = state.pkg_mod_depth,
-                             files_stack::Vector{String} = state.files_stack,
-                             isfailed::Bool = state.isfailed)
+                             pkg_mod_depth::Int = state.pkg_mod_depth)
+    # these fields should be shared across all states
+    config::ToplevelConfig = state.config
+    res::VirtualProcessResult = state.res
+    files_stack::Vector{String} = state.files_stack
+    # these fields should be initialized with default values
+    isfailed = false
     return InterpretationState(
         filename,
         curline,
@@ -584,8 +586,9 @@ function virtual_process(interp::ConcreteInterpreter,
         Preferences.main_uuid[] = pkgid.uuid
     end
     res = VirtualProcessResult(actual2virtual, context)
-    state = InterpretationState(filename, 0, Set{Symbol}(),
-                                context, config, res, 0, String[], false)
+    state = InterpretationState(filename, #=curline=#0, #=dependencies=#Set{Symbol}(),
+                                context, config, res, #=pkg_mod_depth=#0,
+                                #=files_stack=#String[], #=isfailed=#false)
     try
         _virtual_process!(interp, x, state; overrideex)
     finally
@@ -1683,6 +1686,7 @@ function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func)
 
     newstate = InterpretationState(state;
                                    filename = include_file,
+                                   curline = 0,
                                    context = include_context)
     _virtual_process!(interp, include_text::String, newstate)
 
