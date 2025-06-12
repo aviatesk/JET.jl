@@ -155,33 +155,47 @@ end
 set_cache_target!(analyzer::AbstractAnalyzer, target::Union{Nothing,Pair{Symbol,InferenceState}}) = setfield!(AnalyzerState(analyzer), :cache_target, target)
 set_entry!(analyzer::AbstractAnalyzer, entry::Union{Nothing,MethodInstance}) = setfield!(AnalyzerState(analyzer), :entry, entry)
 
+# The main constructor used at analysis entries
 function AnalyzerState(world::UInt  = get_world_counter();
-    # `inf_cache` and `results` should be synced
-    local_cache::Union{Nothing,Tuple{Vector{InferenceResult},IdDict{InferenceResult,AnalysisResult}}} = nothing,
-    inf_params::Union{Nothing,InferenceParams} = nothing,
-    opt_params::Union{Nothing,OptimizationParams} = nothing,
-    concretized::BitVector = non_toplevel_concretized,
-    binding_states::AbstractAbstractBindings = AbstractAbstractBindings(),
-    jetconfigs...)
-    isnothing(inf_params) && (inf_params = JETInferenceParams(; jetconfigs...))
-    isnothing(opt_params) && (opt_params = JETOptimizationParams(; jetconfigs...))
-    if isnothing(local_cache)
+                       jetconfigs...)
+    inf_params = JETInferenceParams(; jetconfigs...)
+    opt_params = JETOptimizationParams(; jetconfigs...)
+    return AnalyzerState(#=world::UInt=# world,
+                         #=inf_cache::Vector{InferenceResult}=# InferenceResult[],
+                         #=inf_params::InferenceParams=# inf_params,
+                         #=opt_params::OptimizationParams=# opt_params,
+                         #=analysis_results::IdDict{InferenceResult,AnalysisResult}=# IdDict{InferenceResult,AnalysisResult}(),
+                         #=report_stash::Vector{InferenceErrorReport}=# InferenceErrorReport[],
+                         #=cache_target::Union{Nothing,Pair{Symbol,InferenceState}}=# nothing,
+                         #=concretized::BitVector=# non_toplevel_concretized,
+                         #=binding_states::AbstractAbstractBindings=# AbstractAbstractBindings(),
+                         #=entry::Union{Nothing,MethodInstance}=# nothing)
+end
+
+# The constructor that inherits from existing `state::AnalyzerState`
+function AnalyzerState(state::AnalyzerState, refresh_local_cache::Bool=true;
+                       world::UInt = state.world,
+                       inf_params::InferenceParams = state.inf_params,
+                       opt_params::OptimizationParams = state.opt_params,
+                       concretized::BitVector = state.concretized,
+                       binding_states::AbstractAbstractBindings = state.binding_states,
+                       entry::Union{Nothing,MethodInstance} = state.entry)
+    if refresh_local_cache
         inf_cache = InferenceResult[]
         analysis_results = IdDict{InferenceResult,AnalysisResult}()
     else
-        inf_cache, analysis_results = local_cache
+        (; inf_cache, analysis_results) = state
     end
-    report_stash = InferenceErrorReport[]
-    return AnalyzerState(#=world::UInt=# world,
-                         #=inf_cache::Vector{InferenceResult}=# inf_cache,
-                         #=inf_params::InferenceParams=# inf_params,
-                         #=opt_params::OptimizationParams=# opt_params,
-                         #=analysis_results::IdDict{InferenceResult,AnalysisResult}=# analysis_results,
-                         #=report_stash::Vector{InferenceErrorReport}=# report_stash,
-                         #=cache_target::Union{Nothing,Pair{Symbol,InferenceState}}=# nothing,
-                         #=concretized::BitVector=# concretized,
-                         #=binding_states::AbstractAbstractBindings=# binding_states,
-                         #=entry::Union{Nothing,MethodInstance}=# nothing)
+    return AnalyzerState(world,
+                         inf_cache,
+                         inf_params,
+                         opt_params,
+                         analysis_results,
+                         #=report_stash=# InferenceErrorReport[],
+                         #=cache_target=# nothing,
+                         concretized,
+                         binding_states,
+                         entry)
 end
 
 # dummies for non-toplevel analysis
@@ -296,10 +310,8 @@ end
 
 # constructor for additional JET analysis in the middle of parent (non top-level) abstractinterpret
 function AbstractAnalyzer(analyzer::T) where {T<:AbstractAnalyzer}
-    newstate = AnalyzerState(CC.get_inference_world(analyzer);
-                             local_cache = (get_inf_cache(analyzer), get_analysis_results(analyzer)),
-                             inf_params = InferenceParams(analyzer),
-                             opt_params = OptimizationParams(analyzer))
+    state = AnalyzerState(analyzer)
+    newstate = AnalyzerState(state, #=refresh_local_cache=#false)
     return AbstractAnalyzer(analyzer, newstate)
 end
 
@@ -589,16 +601,11 @@ abstract type ToplevelAbstractAnalyzer <: AbstractAnalyzer end
 
 # constructor for sequential toplevel JET analysis
 function ToplevelAbstractAnalyzer(interp::ConcreteInterpreter, concretized::BitVector;
-                                  # update world age to take in newly added methods defined by `ConcreteInterpreter`
-                                  world::UInt = get_world_counter(),
                                   refresh_local_cache::Bool = true)
+    # use the latest world age to take in newly added methods defined by `ConcreteInterpreter`
+    world = get_world_counter()
     analyzer = ToplevelAbstractAnalyzer(interp)
-    local_cache = refresh_local_cache ? nothing : (get_inf_cache(analyzer), get_analysis_results(analyzer))
-    newstate = AnalyzerState(world;
-                             local_cache,
-                             inf_params = InferenceParams(analyzer),
-                             opt_params = OptimizationParams(analyzer),
-                             concretized,
-                             binding_states = get_binding_states(analyzer))
+    state = AnalyzerState(analyzer)
+    newstate = AnalyzerState(state, refresh_local_cache; world, concretized)
     return AbstractAnalyzer(analyzer, newstate)
 end

@@ -668,9 +668,7 @@ gen_virtual_module(parent::Module = Main; name = VIRTUAL_MODULE_NAME) =
 function analyze_from_definitions!(interp::ConcreteInterpreter, config::ToplevelConfig)
     succeeded = Ref(0)
     start = time()
-    analyzer = ToplevelAbstractAnalyzer(interp, non_toplevel_concretized;
-        world = get_world_counter(),
-        refresh_local_cache = false)
+    analyzer = ToplevelAbstractAnalyzer(interp, non_toplevel_concretized; refresh_local_cache = false)
     if analyzer isa JETAnalyzer && analyzer.report_pass === BasicPass()
         analyzer = JETAnalyzer(AnalyzerState(analyzer), DefinitionAnalysisPass(), JETAnalyzerConfig(analyzer))
     end
