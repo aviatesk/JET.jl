@@ -119,18 +119,18 @@ JETInterface.AnalyzerState(analyzer::NewAnalyzer) = analyzer.state
 mutable struct AnalyzerState
     ## AbstractInterpreter ##
 
-    world::UInt
-    inf_cache::Vector{InferenceResult}
-    inf_params::InferenceParams
-    opt_params::OptimizationParams
+    const world::UInt
+    const inf_cache::Vector{InferenceResult}
+    const inf_params::InferenceParams
+    const opt_params::OptimizationParams
 
     ## AbstractAnalyzer ##
 
-    results::IdDict{InferenceResult,AnalysisResult}
+    const analysis_results::IdDict{InferenceResult,AnalysisResult}
 
     # the temporal stash to keep reports that are collected within the currently-analyzed frame:
     # they will be appended to the caller when returning back to the caller inference/optimization
-    report_stash::Vector{InferenceErrorReport}
+    const report_stash::Vector{InferenceErrorReport}
 
     # the temporal stash to keep track of the context of caller inference/optimization and
     # the caller itself, to which reconstructed cached reports will be appended
@@ -139,9 +139,9 @@ mutable struct AnalyzerState
     ## abstract toplevel execution ##
 
     # will be used in toplevel analysis (skip inference on actually interpreted statements)
-    concretized::BitVector
+    const concretized::BitVector
 
-    binding_states::AbstractAbstractBindings # TODO Make this globally maintained?
+    const binding_states::AbstractAbstractBindings # TODO Make this globally maintained?
 
     # some `AbstractAnalyzer` may want to use this
     entry::Union{Nothing,MethodInstance}
@@ -150,32 +150,52 @@ end
 # define shortcut getter/setter methods for `AbstractAnalyzer`s
 for fld in fieldnames(AnalyzerState)
     getter = Symbol("get_", fld)
-    setter = Symbol("set_", fld, '!')
-    @eval (@__MODULE__) @inline $getter(analyzer::AbstractAnalyzer)    = getfield(AnalyzerState(analyzer), $(QuoteNode(fld)))
-    @eval (@__MODULE__) @inline $setter(analyzer::AbstractAnalyzer, v) = setfield!(AnalyzerState(analyzer), $(QuoteNode(fld)), v)
+    @eval (@__MODULE__) @inline $getter(analyzer::AbstractAnalyzer) = getfield(AnalyzerState(analyzer), $(QuoteNode(fld)))
 end
+set_cache_target!(analyzer::AbstractAnalyzer, target::Union{Nothing,Pair{Symbol,InferenceState}}) = setfield!(AnalyzerState(analyzer), :cache_target, target)
+set_entry!(analyzer::AbstractAnalyzer, entry::Union{Nothing,MethodInstance}) = setfield!(AnalyzerState(analyzer), :entry, entry)
 
+# The main constructor used at analysis entries
 function AnalyzerState(world::UInt  = get_world_counter();
-    results::IdDict{InferenceResult,AnalysisResult} = IdDict{InferenceResult,AnalysisResult}(),
-    inf_params::Union{Nothing,InferenceParams} = nothing,
-    opt_params::Union{Nothing,OptimizationParams} = nothing,
-    concretized::BitVector = non_toplevel_concretized,
-    binding_states::AbstractAbstractBindings = AbstractAbstractBindings(),
-    jetconfigs...)
-    isnothing(inf_params) && (inf_params = JETInferenceParams(; jetconfigs...))
-    isnothing(opt_params) && (opt_params = JETOptimizationParams(; jetconfigs...))
-    inf_cache = InferenceResult[]
-    report_stash = InferenceErrorReport[]
+                       jetconfigs...)
+    inf_params = JETInferenceParams(; jetconfigs...)
+    opt_params = JETOptimizationParams(; jetconfigs...)
     return AnalyzerState(#=world::UInt=# world,
-                         #=inf_cache::Vector{InferenceResult}=# inf_cache,
+                         #=inf_cache::Vector{InferenceResult}=# InferenceResult[],
                          #=inf_params::InferenceParams=# inf_params,
                          #=opt_params::OptimizationParams=# opt_params,
-                         #=results::IdDict{InferenceResult,AnalysisResult}=# results,
-                         #=report_stash::Vector{InferenceErrorReport}=# report_stash,
+                         #=analysis_results::IdDict{InferenceResult,AnalysisResult}=# IdDict{InferenceResult,AnalysisResult}(),
+                         #=report_stash::Vector{InferenceErrorReport}=# InferenceErrorReport[],
                          #=cache_target::Union{Nothing,Pair{Symbol,InferenceState}}=# nothing,
-                         #=concretized::BitVector=# concretized,
-                         #=binding_states::AbstractAbstractBindings=# binding_states,
+                         #=concretized::BitVector=# non_toplevel_concretized,
+                         #=binding_states::AbstractAbstractBindings=# AbstractAbstractBindings(),
                          #=entry::Union{Nothing,MethodInstance}=# nothing)
+end
+
+# The constructor that inherits from existing `state::AnalyzerState`
+function AnalyzerState(state::AnalyzerState, refresh_local_cache::Bool=true;
+                       world::UInt = state.world,
+                       inf_params::InferenceParams = state.inf_params,
+                       opt_params::OptimizationParams = state.opt_params,
+                       concretized::BitVector = state.concretized,
+                       binding_states::AbstractAbstractBindings = state.binding_states,
+                       entry::Union{Nothing,MethodInstance} = state.entry)
+    if refresh_local_cache
+        inf_cache = InferenceResult[]
+        analysis_results = IdDict{InferenceResult,AnalysisResult}()
+    else
+        (; inf_cache, analysis_results) = state
+    end
+    return AnalyzerState(world,
+                         inf_cache,
+                         inf_params,
+                         opt_params,
+                         analysis_results,
+                         #=report_stash=# InferenceErrorReport[],
+                         #=cache_target=# nothing,
+                         concretized,
+                         binding_states,
+                         entry)
 end
 
 # dummies for non-toplevel analysis
@@ -290,10 +310,8 @@ end
 
 # constructor for additional JET analysis in the middle of parent (non top-level) abstractinterpret
 function AbstractAnalyzer(analyzer::T) where {T<:AbstractAnalyzer}
-    newstate = AnalyzerState(CC.get_inference_world(analyzer);
-                             results    = get_results(analyzer),
-                             inf_params = InferenceParams(analyzer),
-                             opt_params = OptimizationParams(analyzer))
+    state = AnalyzerState(analyzer)
+    newstate = AnalyzerState(state, #=refresh_local_cache=#false)
     return AbstractAnalyzer(analyzer, newstate)
 end
 
@@ -471,8 +489,8 @@ end
 # ===============
 # define how AbstractAnalyzer manages `InferenceResult`
 
-Base.getindex(analyzer::AbstractAnalyzer, result::InferenceResult) = get_results(analyzer)[result]
-Base.setindex!(analyzer::AbstractAnalyzer, analysis_result::AnalysisResult, result::InferenceResult) = get_results(analyzer)[result] = analysis_result
+Base.getindex(analyzer::AbstractAnalyzer, result::InferenceResult) = get_analysis_results(analyzer)[result]
+Base.setindex!(analyzer::AbstractAnalyzer, analysis_result::AnalysisResult, result::InferenceResult) = get_analysis_results(analyzer)[result] = analysis_result
 
 function init_result!(analyzer::AbstractAnalyzer, result::InferenceResult)
     analyzer[result] = AnalysisResult(InferenceErrorReport[])
@@ -582,14 +600,12 @@ analysis behaviors provided by this type.
 abstract type ToplevelAbstractAnalyzer <: AbstractAnalyzer end
 
 # constructor for sequential toplevel JET analysis
-function ToplevelAbstractAnalyzer(analyzer::T, concretized::BitVector;
-    # update world age to take in newly added methods defined by `ConcreteInterpreter`
-    world::UInt = get_world_counter()
-    ) where {T<:AbstractAnalyzer}
-    newstate = AnalyzerState(world;
-                             inf_params = InferenceParams(analyzer),
-                             opt_params = OptimizationParams(analyzer),
-                             concretized,
-                             binding_states = get_binding_states(analyzer))
+function ToplevelAbstractAnalyzer(interp::ConcreteInterpreter, concretized::BitVector;
+                                  refresh_local_cache::Bool = true)
+    # use the latest world age to take in newly added methods defined by `ConcreteInterpreter`
+    world = get_world_counter()
+    analyzer = ToplevelAbstractAnalyzer(interp)
+    state = AnalyzerState(analyzer)
+    newstate = AnalyzerState(state, refresh_local_cache; world, concretized)
     return AbstractAnalyzer(analyzer, newstate)
 end

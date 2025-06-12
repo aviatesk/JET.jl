@@ -467,17 +467,17 @@ end
 An interface to inject code into JET's virtual process via JuliaInterpreter's interpretation.
 
 Subtypes are expected to implement:
-- `get_state(interp::T) -> InterpretationState` - return the interpreter state
+- `InterpretationState(interp::T) -> InterpretationState` - return the interpreter state
 - `ConcreteInterpreter(interp::T, state::InterpretationState) -> T` - create new interpreter with state
 - `ToplevelAbstractAnalyzer(interp::T) -> analyzer::ToplevelAbstractAnalyzer` - return the analyzer for this interpreter
 """
-abstract type ConcreteInterpreter <: JuliaInterpreter.Interpreter end
+:(ConcreteInterpreter)
 
-@noinline function get_state(interp::ConcreteInterpreter)
+@noinline function InterpretationState(interp::ConcreteInterpreter)
     InterpType = nameof(typeof(interp))
     error(lazy"""
     Missing `JET.ConcreteInterpreter` API:
-    `$InterpType` is required to implement the `JET.get_state(interp::$InterpType) -> JET.InterpretationState` interface.
+    `$InterpType` is required to implement the `JET.InterpretationState(interp::$InterpType) -> JET.InterpretationState` interface.
     """)
 end
 
@@ -510,7 +510,7 @@ struct JETConcreteInterpreter{Analyzer<:ToplevelAbstractAnalyzer} <: ConcreteInt
 end
 
 # Implement the required interface methods
-get_state(interp::JETConcreteInterpreter) = interp.state
+InterpretationState(interp::JETConcreteInterpreter) = interp.state
 ConcreteInterpreter(interp::JETConcreteInterpreter, state::InterpretationState) = JETConcreteInterpreter(interp.analyzer, state)
 ToplevelAbstractAnalyzer(interp::JETConcreteInterpreter) = interp.analyzer
 
@@ -589,15 +589,16 @@ function virtual_process(interp::ConcreteInterpreter,
     state = InterpretationState(filename, #=curline=#0, #=dependencies=#Set{Symbol}(),
                                 context, config, res, #=pkg_mod_depth=#0,
                                 #=files_stack=#String[], #=isfailed=#false)
+    interp = ConcreteInterpreter(interp, state)
     try
-        _virtual_process!(interp, x, state; overrideex)
+        _virtual_process!(interp, x; overrideex)
     finally
         Preferences.main_uuid[] = old_main_uuid
     end
 
     # analyze collected signatures unless critical error happened
     if should_analyze_from_definitions(config) && isempty(res.toplevel_error_reports)
-        analyze_from_definitions!(interp, res, config)
+        analyze_from_definitions!(interp, config)
     end
 
     # TODO move this aggregation to `analyze_from_definitions!`?
@@ -664,20 +665,15 @@ gen_virtual_module(parent::Module = Main; name = VIRTUAL_MODULE_NAME) =
 # generator should have been collected, and we will just analyze them separately
 # if code generation has failed given the entry method signature, the overload of
 # `InferenceState(..., ::AbstractAnalyzer)` will collect `GeneratorErrorReport`
-function analyze_from_definitions!(interp::ConcreteInterpreter, res::VirtualProcessResult, config::ToplevelConfig)
+function analyze_from_definitions!(interp::ConcreteInterpreter, config::ToplevelConfig)
     succeeded = Ref(0)
     start = time()
-    analyzer = ToplevelAbstractAnalyzer(interp)
-    analyzerstate = AnalyzerState(analyzer)
-    oldworld = analyzerstate.world
-    new_world = get_world_counter()
-    analyzerstate.world = new_world
+    analyzer = ToplevelAbstractAnalyzer(interp, non_toplevel_concretized; refresh_local_cache = false)
     if analyzer isa JETAnalyzer && analyzer.report_pass === BasicPass()
-        analyzer = JETAnalyzer(analyzerstate, DefinitionAnalysisPass(), JETAnalyzerConfig(analyzer))
-    else
-        analyzer = AbstractAnalyzer(analyzer, analyzerstate)
+        analyzer = JETAnalyzer(AnalyzerState(analyzer), DefinitionAnalysisPass(), JETAnalyzerConfig(analyzer))
     end
     entrypoint = config.analyze_from_definitions
+    res = InterpretationState(interp).res
     n = length(res.toplevel_signatures)
     for i = 1:n
         tt = res.toplevel_signatures[i]
@@ -685,7 +681,7 @@ function analyze_from_definitions!(interp::ConcreteInterpreter, res::VirtualProc
             # NOTE use the latest world counter with `method_table(analyzer)` unwrapped,
             # otherwise it may use a world counter when this method isn't defined yet
             method_table=unwrap_method_table(CC.method_table(analyzer)),
-            world=new_world,
+            world=CC.get_inference_world(analyzer),
             raise=false)
         if (match !== nothing &&
             (!(entrypoint isa Symbol) || # implies `analyze_from_definitions===true`
@@ -705,7 +701,6 @@ function analyze_from_definitions!(interp::ConcreteInterpreter, res::VirtualProc
             println(io, "couldn't find a single method matching the signature `", tt, "`")
         end
     end
-    analyzerstate.world = oldworld
     with_toplevel_logger(config) do @nospecialize(io)
         sec = round(time() - start; digits = 3)
         println(io, "analyzed $(succeeded[]) top-level definitions (took $sec sec)")
@@ -721,13 +716,13 @@ function add_toplevel_error_report!(state::InterpretationState, @nospecialize re
 end
 
 function _virtual_process!(interp::ConcreteInterpreter,
-                           s::AbstractString,
-                           state::InterpretationState;
+                           s::AbstractString;
                            overrideex::Union{Nothing,Expr}=nothing)
     overrideex === nothing ||
         error("Given full code text `overrideex` does not need to be provided")
 
     start = time()
+    state = InterpretationState(interp)
     (; config, filename) = state
     with_toplevel_logger(config) do @nospecialize(io)
         println(io, "entered into $(filename)")
@@ -738,7 +733,7 @@ function _virtual_process!(interp::ConcreteInterpreter,
     JS.parse!(stream; rule=:all)
     if isempty(stream.diagnostics)
         parsed = JS.build_tree(JS.SyntaxNode, stream; filename)
-        _virtual_process!(interp, parsed, state)
+        _virtual_process!(interp, parsed)
     else
         sourcefile = JS.SourceFile(stream; filename)
         first_line = JS.source_line(sourcefile, JS.first_byte(stream))
@@ -830,8 +825,7 @@ function lower_with_err_handling(state::InterpretationState, x::Expr)
 end
 
 function _virtual_process!(interp::ConcreteInterpreter,
-                           toplevelnode::JS.SyntaxNode,
-                           state::InterpretationState;
+                           toplevelnode::JS.SyntaxNode;
                            force_concretize::Bool = false,
                            # HACK allow expanded `Expr` to be analyzed instead of `toplevelnode`
                            overrideex::Union{Nothing,Expr}=nothing) # TODO Remove this after JL integration)
@@ -842,6 +836,8 @@ function _virtual_process!(interp::ConcreteInterpreter,
     else
         @assert isexpr(overrideex, :toplevel)
     end
+
+    state = InterpretationState(interp)
 
     sourcefile = JS.sourcefile(toplevelnode)
     first_line = JS.source_line(sourcefile, JS.first_byte(toplevelnode))
@@ -865,6 +861,7 @@ function _virtual_process!(interp::ConcreteInterpreter,
     else
         push_vnode_stack!(vnodes, toplevelnode, overrideex, force_concretize)
     end
+    concretized = falses(0)
     while !isempty(vnodes)
         local ex = pop!(vnodes)
         (; node, force_concretize) = ex
@@ -947,7 +944,8 @@ function _virtual_process!(interp::ConcreteInterpreter,
                                                context = newcontext,
                                                pkg_mod_depth = state.pkg_mod_depth + 1,
                                                dependencies = Set{Symbol}())
-                _virtual_process!(interp, node, newstate;
+                newinterp = ConcreteInterpreter(interp, newstate)
+                _virtual_process!(newinterp, node;
                                   force_concretize, overrideex)
             else
                 @assert JS.kind(node) === K"module"
@@ -959,7 +957,8 @@ function _virtual_process!(interp::ConcreteInterpreter,
                                                context = newcontext,
                                                pkg_mod_depth = state.pkg_mod_depth + 1,
                                                dependencies = Set{Symbol}())
-                _virtual_process!(interp, node, newstate;
+                newinterp = ConcreteInterpreter(interp, newstate)
+                _virtual_process!(newinterp, node;
                                   force_concretize)
             end
             continue
@@ -984,12 +983,11 @@ function _virtual_process!(interp::ConcreteInterpreter,
         fix_self_references!(state.res.actual2virtual, src)
 
         state.isfailed = false
-        thisinterp = ConcreteInterpreter(interp, state)
         if force_concretize
-            JuliaInterpreter.finish!(thisinterp, Frame(state.context, src), true)
+            JuliaInterpreter.finish!(interp, Frame(state.context, src), true)
             continue
         end
-        concretized = partially_interpret!(thisinterp, state.context, src)
+        partially_interpret!(interp, concretized, state.context, src)
 
         if bail_out_concretized(concretized, src)
             # bail out if nothing to analyze (just a performance optimization)
@@ -998,7 +996,7 @@ function _virtual_process!(interp::ConcreteInterpreter,
             continue
         end
 
-        analyzer = ToplevelAbstractAnalyzer(ToplevelAbstractAnalyzer(thisinterp), concretized)
+        analyzer = ToplevelAbstractAnalyzer(interp, concretized)
 
         (_, result), _ = analyze_toplevel!(analyzer, src, state.context)
 
@@ -1179,7 +1177,7 @@ function walk_and_transform!(@nospecialize(x), inner, outer, scope::Vector{Symbo
 end
 
 """
-    partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::CodeInfo)
+    partially_interpret!(interp::ConcreteInterpreter, concretize::BitVector, mod::Module, src::CodeInfo)
 
 Partially interprets statements in `src` using JuliaInterpreter.jl:
 - concretizes "toplevel definitions", i.e. `:method`, `:struct_type`, `:abstract_type` and
@@ -1189,12 +1187,12 @@ Partially interprets statements in `src` using JuliaInterpreter.jl:
   (TODO: enter into the loaded module and keep JET analysis)
 - special-cases `include` calls so that top-level analysis recursively enters the included file
 """
-function partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::CodeInfo)
-    concretize = select_statements(mod, src)
-    @assert length(src.code) == length(concretize)
+function partially_interpret!(interp::ConcreteInterpreter, concretize::BitVector, mod::Module, src::CodeInfo)
+    fill!(resize!(concretize, length(src.code)), false)
+    select_statements!(concretize, mod, src)
 
-    with_toplevel_logger(get_state(interp).config; filter=≥(JET_LOGGER_LEVEL_DEBUG)) do @nospecialize(io)
-        println(io, "concretization plan at $(get_state(interp).filename):$(get_state(interp).curline):")
+    with_toplevel_logger(InterpretationState(interp).config; filter=≥(JET_LOGGER_LEVEL_DEBUG)) do @nospecialize(io)
+        println(io, "concretization plan at $(InterpretationState(interp).filename):$(InterpretationState(interp).curline):")
         LoweredCodeUtils.print_with_code(io, src, concretize)
     end
 
@@ -1207,16 +1205,16 @@ function partially_interpret!(interp::ConcreteInterpreter, mod::Module, src::Cod
 end
 
 # select statements that should be concretized, and actually interpreted rather than abstracted
-function select_statements(mod::Module, src::CodeInfo)
+function select_statements!(concretize::BitVector, mod::Module, src::CodeInfo)
     cl = LoweredCodeUtils.CodeLinks(mod, src) # make `CodeEdges` hold `CodeLinks`?
     edges = LoweredCodeUtils.CodeEdges(src, cl)
-    concretize = falses(length(src.code))
     select_direct_requirement!(concretize, src.code, edges)
     select_dependencies!(concretize, src, edges, cl)
     return concretize
 end
 
 # just for testing, and debugging
+select_statements(mod::Module, src::CodeInfo) = select_statements!(falses(length(src.code)), mod, src)
 function select_statements(mod::Module, src::CodeInfo, names::Symbol...)
     idxs = findall(src.code) do @nospecialize stmt
         return any(names) do name
@@ -1452,7 +1450,7 @@ function JuliaInterpreter.lookup(interp::ConcreteInterpreter, frame::Frame, @nos
 end
 
 function usemodule_with_err_handling(interp::ConcreteInterpreter, ex::Expr)
-    state = get_state(interp)
+    state = InterpretationState(interp)
     mod = state.context
     if isexpr(ex, (:export, :public))
         @goto eval_usemodule
@@ -1542,14 +1540,15 @@ function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, 
 
     res = @invoke JuliaInterpreter.step_expr!(interp::Interpreter, frame::Frame, node::Any, istoplevel::Bool)
 
-    should_analyze_from_definitions(get_state(interp).config) && collect_toplevel_signature!(interp, frame, node)
+    should_analyze_from_definitions(InterpretationState(interp).config) && collect_toplevel_signature!(interp, frame, node)
 
     return res
 end
 
 function collect_toplevel_signature!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node))
     isexpr(node, :method, 3) || return nothing
-    entrypoint = get_state(interp).config.analyze_from_definitions
+    state = InterpretationState(interp)
+    entrypoint = state.config.analyze_from_definitions
     if entrypoint isa Symbol
         methname = node.args[1]
         if methname isa GlobalRef
@@ -1564,7 +1563,7 @@ function collect_toplevel_signature!(interp::ConcreteInterpreter, frame::Frame, 
         JuliaInterpreter.lookup(frame, sigs)::SimpleVector
     tt = form_method_signature(atype_params::SimpleVector, sparams::SimpleVector)
     @assert !CC.has_free_typevars(tt) "free type variable left in toplevel_signatures"
-    push!(get_state(interp).res.toplevel_signatures, tt)
+    push!(state.res.toplevel_signatures, tt)
 end
 
 # form a method signature from the first and second parameters of lowered `:method` expression
@@ -1638,7 +1637,7 @@ end
 isinclude(@nospecialize f) = f isa Base.IncludeInto || (isa(f, Function) && nameof(f) === :include)
 
 function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func), args::Vector{Any})
-    state = get_state(interp)
+    state = InterpretationState(interp)
     filename = state.filename
     res = state.res
     line = state.curline
@@ -1688,7 +1687,8 @@ function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func)
                                    filename = include_file,
                                    curline = 0,
                                    context = include_context)
-    _virtual_process!(interp, include_text::String, newstate)
+    newinterp = ConcreteInterpreter(interp, newstate)
+    _virtual_process!(newinterp, include_text::String)
 
     # TODO: actually, here we need to try to get the lastly analyzed result of the `_virtual_process!` call above
     nothing
@@ -1696,7 +1696,7 @@ end
 
 function try_read_file(interp::ConcreteInterpreter, include_context::Module, include_file::AbstractString)
     # `scrub_offset = 1`: `f`
-    return with_err_handling(general_err_handler, get_state(interp); scrub_offset=1) do
+    return with_err_handling(general_err_handler, InterpretationState(interp); scrub_offset=1) do
         return read(include_file, String)
     end
 end
@@ -1748,7 +1748,7 @@ function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame::Frame, 
     end
     st = st[1:i]
 
-    state = get_state(interp)
+    state = InterpretationState(interp)
     if err isa MissingConcretizationError
         report = MissingConcretizationErrorReport(err.isconst, err.var, state.filename, state.curline)
     else
