@@ -119,18 +119,18 @@ JETInterface.AnalyzerState(analyzer::NewAnalyzer) = analyzer.state
 mutable struct AnalyzerState
     ## AbstractInterpreter ##
 
-    world::UInt
-    inf_cache::Vector{InferenceResult}
-    inf_params::InferenceParams
-    opt_params::OptimizationParams
+    const world::UInt
+    const inf_cache::Vector{InferenceResult}
+    const inf_params::InferenceParams
+    const opt_params::OptimizationParams
 
     ## AbstractAnalyzer ##
 
-    results::IdDict{InferenceResult,AnalysisResult}
+    const results::IdDict{InferenceResult,AnalysisResult}
 
     # the temporal stash to keep reports that are collected within the currently-analyzed frame:
     # they will be appended to the caller when returning back to the caller inference/optimization
-    report_stash::Vector{InferenceErrorReport}
+    const report_stash::Vector{InferenceErrorReport}
 
     # the temporal stash to keep track of the context of caller inference/optimization and
     # the caller itself, to which reconstructed cached reports will be appended
@@ -139,9 +139,9 @@ mutable struct AnalyzerState
     ## abstract toplevel execution ##
 
     # will be used in toplevel analysis (skip inference on actually interpreted statements)
-    concretized::BitVector
+    const concretized::BitVector
 
-    binding_states::AbstractAbstractBindings # TODO Make this globally maintained?
+    const binding_states::AbstractAbstractBindings # TODO Make this globally maintained?
 
     # some `AbstractAnalyzer` may want to use this
     entry::Union{Nothing,MethodInstance}
@@ -156,7 +156,8 @@ for fld in fieldnames(AnalyzerState)
 end
 
 function AnalyzerState(world::UInt  = get_world_counter();
-    results::IdDict{InferenceResult,AnalysisResult} = IdDict{InferenceResult,AnalysisResult}(),
+    # `inf_cache` and `results` should be synced
+    inf_cache_results::Union{Nothing,Tuple{Vector{InferenceResult},IdDict{InferenceResult,AnalysisResult}}} = nothing,
     inf_params::Union{Nothing,InferenceParams} = nothing,
     opt_params::Union{Nothing,OptimizationParams} = nothing,
     concretized::BitVector = non_toplevel_concretized,
@@ -164,7 +165,12 @@ function AnalyzerState(world::UInt  = get_world_counter();
     jetconfigs...)
     isnothing(inf_params) && (inf_params = JETInferenceParams(; jetconfigs...))
     isnothing(opt_params) && (opt_params = JETOptimizationParams(; jetconfigs...))
-    inf_cache = InferenceResult[]
+    if isnothing(inf_cache_results)
+        inf_cache = InferenceResult[]
+        results = IdDict{InferenceResult,AnalysisResult}()
+    else
+        inf_cache, results = inf_cache_results
+    end
     report_stash = InferenceErrorReport[]
     return AnalyzerState(#=world::UInt=# world,
                          #=inf_cache::Vector{InferenceResult}=# inf_cache,
@@ -291,7 +297,7 @@ end
 # constructor for additional JET analysis in the middle of parent (non top-level) abstractinterpret
 function AbstractAnalyzer(analyzer::T) where {T<:AbstractAnalyzer}
     newstate = AnalyzerState(CC.get_inference_world(analyzer);
-                             results    = get_results(analyzer),
+                             inf_cache_results = (get_inf_cache(analyzer), get_results(analyzer)),
                              inf_params = InferenceParams(analyzer),
                              opt_params = OptimizationParams(analyzer))
     return AbstractAnalyzer(analyzer, newstate)
@@ -582,11 +588,14 @@ analysis behaviors provided by this type.
 abstract type ToplevelAbstractAnalyzer <: AbstractAnalyzer end
 
 # constructor for sequential toplevel JET analysis
-function ToplevelAbstractAnalyzer(interp::ConcreteInterpreter, concretized::BitVector,
+function ToplevelAbstractAnalyzer(interp::ConcreteInterpreter, concretized::BitVector;
                                   # update world age to take in newly added methods defined by `ConcreteInterpreter`
-                                  world::UInt = get_world_counter())
+                                  world::UInt = get_world_counter(),
+                                  refresh_local_cache::Bool = true)
     analyzer = ToplevelAbstractAnalyzer(interp)
+    inf_cache_results = refresh_local_cache ? nothing : (get_inf_cache(analyzer), get_results(analyzer))
     newstate = AnalyzerState(world;
+                             inf_cache_results,
                              inf_params = InferenceParams(analyzer),
                              opt_params = OptimizationParams(analyzer),
                              concretized,

@@ -668,11 +668,10 @@ gen_virtual_module(parent::Module = Main; name = VIRTUAL_MODULE_NAME) =
 function analyze_from_definitions!(interp::ConcreteInterpreter, config::ToplevelConfig)
     succeeded = Ref(0)
     start = time()
-    analyzer = ToplevelAbstractAnalyzer(interp)
+    analyzer = ToplevelAbstractAnalyzer(interp, non_toplevel_concretized;
+        world = get_world_counter(),
+        refresh_local_cache = false)
     analyzerstate = AnalyzerState(analyzer)
-    oldworld = analyzerstate.world
-    new_world = get_world_counter()
-    analyzerstate.world = new_world
     if analyzer isa JETAnalyzer && analyzer.report_pass === BasicPass()
         analyzer = JETAnalyzer(analyzerstate, DefinitionAnalysisPass(), JETAnalyzerConfig(analyzer))
     else
@@ -707,7 +706,6 @@ function analyze_from_definitions!(interp::ConcreteInterpreter, config::Toplevel
             println(io, "couldn't find a single method matching the signature `", tt, "`")
         end
     end
-    analyzerstate.world = oldworld
     with_toplevel_logger(config) do @nospecialize(io)
         sec = round(time() - start; digits = 3)
         println(io, "analyzed $(succeeded[]) top-level definitions (took $sec sec)")
