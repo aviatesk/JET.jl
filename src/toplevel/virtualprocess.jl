@@ -591,7 +591,7 @@ function virtual_process(interp::ConcreteInterpreter,
                                 #=files_stack=#String[], #=isfailed=#false)
     interp = ConcreteInterpreter(interp, state)
     try
-        _virtual_process!(interp, x; overrideex)
+        virtual_process!(interp, x, overrideex)
     finally
         Preferences.main_uuid[] = old_main_uuid
     end
@@ -605,6 +605,13 @@ function virtual_process(interp::ConcreteInterpreter,
     unique!(aggregation_policy(ToplevelAbstractAnalyzer(interp)), res.inference_error_reports)
 
     return res
+end
+
+# analysis is initiated or entered into new file
+function virtual_process!(interp::ConcreteInterpreter,
+                          x::Union{AbstractString,JS.SyntaxNode},
+                          overrideex::Union{Nothing,Expr}=nothing)
+    _virtual_process!(interp, x; overrideex)
 end
 
 """
@@ -694,11 +701,11 @@ function analyze_from_definitions!(interp::ConcreteInterpreter, config::Toplevel
                 match.method, match.spec_types, match.sparams)
             reports = get_reports(analyzer, result)
             append!(res.inference_error_reports, reports)
-            continue
-        end
-        # something went wrong
-        with_toplevel_logger(config; filter=≥(JET_LOGGER_LEVEL_DEBUG), pre=clearline) do @nospecialize(io)
-            println(io, "couldn't find a single method matching the signature `", tt, "`")
+        else
+            # something went wrong
+            with_toplevel_logger(config; filter=≥(JET_LOGGER_LEVEL_DEBUG), pre=clearline) do @nospecialize(io)
+                println(io, "couldn't find a single method matching the signature `", tt, "`")
+            end
         end
     end
     with_toplevel_logger(config) do @nospecialize(io)
@@ -1688,7 +1695,7 @@ function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func)
                                    curline = 0,
                                    context = include_context)
     newinterp = ConcreteInterpreter(interp, newstate)
-    _virtual_process!(newinterp, include_text::String)
+    virtual_process!(newinterp, include_text::String)
 
     # TODO: actually, here we need to try to get the lastly analyzed result of the `_virtual_process!` call above
     nothing
