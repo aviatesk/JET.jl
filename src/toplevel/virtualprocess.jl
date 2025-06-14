@@ -1687,15 +1687,19 @@ function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func)
         return nothing
     end
 
-    include_text = try_read_file(interp, include_context, include_file)
-    isnothing(include_text) && return nothing # typically no file error
+    included = try_read_file(interp, include_context, include_file)
+    isnothing(included) && return nothing # typically no file error
+    if !(included isa AbstractString || included isa JS.SyntaxNode)
+        @warn lazy"Unexpected value returned from `try_read_file(interp::$(nameof(typeof(interp))), ...)" typeof(included)
+        return nothing
+    end
 
     newstate = InterpretationState(state;
                                    filename = include_file,
                                    curline = 0,
                                    context = include_context)
     newinterp = ConcreteInterpreter(interp, newstate)
-    virtual_process!(newinterp, include_text::String)
+    virtual_process!(newinterp, included)
 
     # TODO: actually, here we need to try to get the lastly analyzed result of the `_virtual_process!` call above
     nothing
