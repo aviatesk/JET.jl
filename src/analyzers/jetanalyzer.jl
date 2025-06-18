@@ -815,27 +815,52 @@ end
 
 # undefined local variable report passes
 
-# these report passes use `:throw_undef_if_not` and `:(unreachable)` introduced by the native
-# optimization pass, and thus supposed to only work on post-optimization code
-# (::SoundPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, e::SlotNumber, vtypes::VarTable, @nospecialize(ret)) =
-#     report_undefined_local_slots!(analyzer, sv, e, vtypes, ret, #=unsound=#false)
-# (::BasicPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, e::SlotNumber, vtypes::VarTable, @nospecialize(ret)) =
-#     report_undefined_local_slots!(analyzer, sv, e, vtypes, ret, #=unsound=#true)
-
-function (::SoundPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState,
-    var::SlotNumber, vtypes::VarTable, @nospecialize(ret))
-    vtyp = vtypes[slot_id(var)]
-    if vtyp.undef
-        add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, get_slotname(sv, var), true))
-        return true
-    end
-    return false
+function CC.finishinfer!(frame::CC.InferenceState, analyzer::JETAnalyzer, cycleid::Int)
+    ReportPass(analyzer)(UndefVarErrorReport, analyzer, frame)
+    @invoke CC.finishinfer!(frame::CC.InferenceState, analyzer::ToplevelAbstractAnalyzer, cycleid::Int)
 end
-function (::BasicPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState,
-    var::SlotNumber, vtypes::VarTable, @nospecialize(ret))
-    ret === Bottom || return false
-    add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, get_slotname(sv, var), true))
-    return true
+
+(::SoundPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState) =
+    report_undefined_local_vars!(analyzer, sv, #=sound=#true)
+(::BasicPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState) =
+    report_undefined_local_vars!(analyzer, sv, #=sound=#false)
+(::TypoPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState) =
+    report_undefined_local_vars!(analyzer, sv, #=sound=#false)
+
+# TODO implement `sound` mode
+function report_undefined_local_vars!(analyzer::JETAnalyzer, sv::CC.InferenceState, sound::Bool)
+    stmts = sv.src.code
+    nstmts = length(stmts)
+    ssavaluetypes = sv.ssavaluetypes
+    oldpc = sv.currpc
+    any_report = false
+    for i = 1:nstmts
+        if isconcretized(analyzer, sv, i)
+            continue # no need to be analyzed
+        end
+        if CC.was_reached(sv, i)
+            var = stmts[i]
+            if var isa SlotNumber && ssavaluetypes[i] === Union{}
+                currpc = sv.currpc = i
+                if !is_constant_propagated(sv)
+                    if isempty(sv.ssavalue_uses[currpc])
+                        # This case is when an undefined local variable is just declared,
+                        # but such cases can become reachable when constant propagation
+                        # for capturing closures doesn't occur.
+                        # In the future, improvements to the compiler should make such cases
+                        # unreachable in the first place, but for now we completely ignore
+                        # such cases to suppress false positives.
+                        @goto next
+                    end
+                end
+                add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, get_slotname(sv, var), true))
+                any_report |= true
+                @label next
+                sv.currpc = oldpc
+            end
+        end
+    end
+    return any_report
 end
 
 @jetreport struct IncompatibleGlobalAssignmentError <: InferenceErrorReport

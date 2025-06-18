@@ -174,6 +174,8 @@ issue586(t::Vararg{Type{<:T}}) where {T} = T
 _func_undefvar(bar) = bar + baz
 func_undefvar(a) = _func_undefvar(a)
 
+@noinline callfunc_localundef(f) = f()
+
 @testset "UndefVarErrorReport" begin
     @testset "global" begin
         let result = report_call(()->foo)
@@ -232,7 +234,7 @@ func_undefvar(a) = _func_undefvar(a)
         end
     end
 
-    @static false && @testset "local" begin
+    @testset "local" begin
         let result = report_call((Bool,)) do b
                 if b
                     bar = rand(Int)
@@ -284,27 +286,26 @@ func_undefvar(a) = _func_undefvar(a)
             @test isempty(get_reports_with_test(result))
         end
 
-        let result = report_call((Bool,)) do b
-                if b
-                    bar = rand()
-                end
-
-                return if b
-                    return nothing
-                else
-                    # ideally we want to have report for this pass, but tons of work will be
-                    # needed to report this pass
-                    return bar
+        # should not report false positives for closure patterns
+        let result = report_call() do
+                local res = nothing
+                callfunc_localundef() do
+                    println(res)
                 end
             end
-            @test_broken length(get_reports_with_test(result)) === 1 &&
-                is_local_undef_var(get_reports_with_test(result), :bar)
+            @test isempty(get_reports_with_test(result))
         end
-
-        # TODO better closure handling
+        let result = report_call() do
+                local res
+                callfunc_localundef() do
+                    println(res)
+                end
+            end
+            @test_broken is_local_undef_var(only(get_reports(result)), :res)
+        end
         let result = report_call() do
                 local a
-                function inner(n)
+                @noinline function inner(n)
                     if n > 0
                        a = n
                     end
@@ -312,7 +313,7 @@ func_undefvar(a) = _func_undefvar(a)
                 inner(rand(Int))
                 return a
             end
-            @test_broken isempty(get_reports_with_test(result))
+            @test_broken is_local_undef_var(only(get_reports(result)), :res)
         end
 
         let # should work for top-level analysis
@@ -325,9 +326,8 @@ func_undefvar(a) = _func_undefvar(a)
                     end
                 end
             end
-            let r = only(res.res.inference_error_reports)
-                @test is_local_undef_var(r, :bar)
-            end
+            r = only(res.res.inference_error_reports)
+            @test is_local_undef_var(r, :bar)
         end
     end
 
