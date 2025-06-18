@@ -81,12 +81,31 @@ function CC.abstract_call_known(analyzer::AbstractAnalyzer,
         f::Any, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState, max_methods::Int)
     f′ = Ref{Any}(f)
     function after_call_known(analyzer′::AbstractAnalyzer, sv′::InferenceState)
-        ret′ = ret[]
         analyze_task_parallel_code!(analyzer′, f′[], arginfo, sv′)
         return true
     end
     if isready(ret)
         after_call_known(analyzer, sv)
+        @static if VERSION < v"1.13.0-DEV.21"
+            # early take in of https://github.com/JuliaLang/julia/pull/57222 for v1.12
+            if f === setfield!
+                (; argtypes, fargs) = arginfo
+                if length(argtypes) == 4 && isa(argtypes[3], Const)
+                    # from there on we know that the struct field will never be undefined,
+                    # so we try to encode that information with a `PartialStruct`
+                    farg2 = CC.ssa_def_slot(fargs[2], sv)
+                    if farg2 isa SlotNumber
+                        refined = CC.form_partially_defined_struct(argtypes[2], argtypes[3])
+                        if refined !== nothing
+                            refinements = CC.SlotRefinement(farg2, refined)
+                            ret = Future(let res = ret[]
+                                CallMeta(res.rt, res.exct, res.effects, res.info, refinements)
+                            end)
+                        end
+                    end
+                end
+            end
+        end
     else
         push!(sv.tasks, after_call_known)
     end
