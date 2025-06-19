@@ -146,10 +146,19 @@ function is_global_undef_var(@nospecialize(r::InferenceErrorReport), name::Symbo
     return var isa GlobalRef && var.name === name
 end
 
-function is_local_undef_var(@nospecialize(r::InferenceErrorReport), name::Symbol)
+function is_local_undef_var(@nospecialize(r::InferenceErrorReport);
+                            name::Union{Nothing,Symbol} = nothing,
+                            maybeundef::Union{Nothing,Bool} = nothing)
     r isa UndefVarErrorReport || return false
     var = r.var
-    return var === name
+    var isa Symbol || return false
+    if name !== nothing
+        var === name || return false
+    end
+    if maybeundef !== nothing
+        r.maybeundef === maybeundef || return false
+    end
+    return true
 end
 
 # for inspection

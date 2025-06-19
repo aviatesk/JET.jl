@@ -234,7 +234,7 @@ func_undefvar(a) = _func_undefvar(a)
         end
     end
 
-    @testset "local" begin
+    @testset "local undef var" begin
         let result = report_call((Bool,)) do b
                 if b
                     bar = rand(Int)
@@ -243,7 +243,18 @@ func_undefvar(a) = _func_undefvar(a)
                 return bar # undefined in this pass
             end
             r = only(get_reports_with_test(result))
-            @test is_local_undef_var(r, :bar)
+            @test is_local_undef_var(r; name=:bar, maybeundef=false)
+            @test last(r.vst).line == (@__LINE__)-4
+        end
+
+        let result = report_call((Bool,)) do b
+                if b
+                    bar = 42
+                end
+                return bar # may be undefined
+            end
+            r = only(get_reports_with_test(result))
+            @test is_local_undef_var(r; name=:bar, maybeundef=true)
             @test last(r.vst).line == (@__LINE__)-4
         end
 
@@ -261,23 +272,23 @@ func_undefvar(a) = _func_undefvar(a)
 
             result = Core.eval(m, :($report_call(baz, (Bool,))))
             r = only(get_reports_with_test(result))
-            @test is_local_undef_var(r, :bar)
+            @test is_local_undef_var(r; name=:bar)
             @test last(r.vst).line == (@__LINE__)-8
 
             # works when cached
             result = Core.eval(m, :($report_call(baz, (Bool,))))
             r = only(get_reports_with_test(result))
-            @test is_local_undef_var(r, :bar)
+            @test is_local_undef_var(r; name=:bar)
             @test last(r.vst).line == (@__LINE__)-14
         end
 
-        # try to exclude false negatives as possible (by collecting reports in after-optimization pass)
+        # @isdefined integration
         let result = report_call((Bool,)) do b
                 if b
                     bar = rand()
                 end
 
-                return if b
+                if @isdefined bar
                     return bar # this shouldn't be reported
                 else
                     return nothing
@@ -301,7 +312,7 @@ func_undefvar(a) = _func_undefvar(a)
                     println(res)
                 end
             end
-            @test_broken is_local_undef_var(only(get_reports(result)), :res)
+            @test_broken is_local_undef_var(only(get_reports(result)); name=:res)
         end
         let result = report_call() do
                 local a
@@ -313,7 +324,7 @@ func_undefvar(a) = _func_undefvar(a)
                 inner(rand(Int))
                 return a
             end
-            @test_broken is_local_undef_var(only(get_reports(result)), :res)
+            @test_broken is_local_undef_var(only(get_reports(result)); name=:res)
         end
 
         let # should work for top-level analysis
@@ -327,7 +338,7 @@ func_undefvar(a) = _func_undefvar(a)
                 end
             end
             r = only(res.res.inference_error_reports)
-            @test is_local_undef_var(r, :bar)
+            @test is_local_undef_var(r; name=:bar)
         end
     end
 

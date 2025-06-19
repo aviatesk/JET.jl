@@ -81,6 +81,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [JET]
   precompile_workload = false
   ```
+- `report_call` and `report_package` now reports undefined local variables.
+  Error reports should be obtained for local variables that can be undefined
+  in cases like the following:
+  ```julia-repl
+  julia> report_call((Int,)) do x
+             local y
+             return sin(y) # `y` is not defined here
+         end
+  ═════ 1 possible error found ═════
+  ┌ (::var"#8#9")(x::Int64) @ Main ./REPL[7]:3
+  │ local variable `y` is not defined: y
+  └────────────────────
+
+  julia> report_call((Bool,Int,)) do c, x
+             if c
+                 y = x
+             end
+             return sin(y) # `y` may be undefined here
+         end
+  ═════ 1 possible error found ═════
+  ┌ (::var"#5#6")(c::Bool, x::Int64) @ Main ./REPL[6]:5
+  │ local variable `y` may be undefined: y::Int64
+  └────────────────────
+  ```
 - Improved accuracy of `VirtualProcessResult.analyzed_files`.
 - JET now requires JuliaSyntax v1.0.
 ### Removed
@@ -100,7 +124,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Introduced `ToplevelAbstractAnalyzer` interface type that extends `AbstractAnalyzer` to provide
   clear separation between analyzers that support top-level analysis and those that don't.
   This architectural improvement ensures type safety by restricting `virtual_process` usage to
-  analyzers that explicitly extend `ToplevelAbstractAnalyzer`, while keeping non-toplevel 
+  analyzers that explicitly extend `ToplevelAbstractAnalyzer`, while keeping non-toplevel
   analyzers like `OptAnalyzer` free from toplevel-specific logic (aviatesk/JET.jl#722).
 
 ## [0.10.6]
