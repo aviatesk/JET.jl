@@ -24,10 +24,10 @@ try; f_method_instance2(Some{AbstractString}("throws")); catch end
     end
 end
 
-@testset "`find_pkg`" begin
-    using Pkg, JET
-    using JET: find_pkg
+using Pkg, JET
+using JET: find_pkg
 
+@testset "`find_pkg`" begin
     pkgid = Base.PkgId(JET)
     filename = pathof(JET)
     target = (; pkgid, filename)
