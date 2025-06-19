@@ -989,7 +989,7 @@ end
             report = only(res.res.inference_error_reports)
             @test report isa UndefVarErrorReport
             @test report.var.name === :globalvar
-            @test_broken report.maybeundef
+            @test report.maybeundef
         end
     end
 end

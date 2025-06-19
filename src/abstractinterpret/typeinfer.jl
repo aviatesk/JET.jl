@@ -81,12 +81,31 @@ function CC.abstract_call_known(analyzer::AbstractAnalyzer,
         f::Any, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState, max_methods::Int)
     f′ = Ref{Any}(f)
     function after_call_known(analyzer′::AbstractAnalyzer, sv′::InferenceState)
-        ret′ = ret[]
         analyze_task_parallel_code!(analyzer′, f′[], arginfo, sv′)
         return true
     end
     if isready(ret)
         after_call_known(analyzer, sv)
+        @static if VERSION < v"1.13.0-DEV.21"
+            # early take in of https://github.com/JuliaLang/julia/pull/57222 for v1.12
+            if f === setfield!
+                (; argtypes, fargs) = arginfo
+                if length(argtypes) == 4 && isa(argtypes[3], Const)
+                    # from there on we know that the struct field will never be undefined,
+                    # so we try to encode that information with a `PartialStruct`
+                    farg2 = CC.ssa_def_slot(fargs[2], sv)
+                    if farg2 isa SlotNumber
+                        refined = CC.form_partially_defined_struct(argtypes[2], argtypes[3])
+                        if refined !== nothing
+                            refinements = CC.SlotRefinement(farg2, refined)
+                            ret = Future(let res = ret[]
+                                CallMeta(res.rt, res.exct, res.effects, res.info, refinements)
+                            end)
+                        end
+                    end
+                end
+            end
+        end
     else
         push!(sv.tasks, after_call_known)
     end
@@ -395,21 +414,27 @@ end
 # top-level bridge
 # ================
 
+function isconcretized(analyzer::ToplevelAbstractAnalyzer, frame::InferenceState, pc::Int=frame.currpc)
+    return istoplevelframe(frame) && get_concretized(analyzer)[pc]
+end
+
 function CC.abstract_eval_basic_statement(analyzer::ToplevelAbstractAnalyzer, @nospecialize(stmt),
     sstate::StatementState, frame::InferenceState, result::Union{Nothing,Future{RTEffects}})
-    if istoplevelframe(frame)
-        if get_concretized(analyzer)[frame.currpc]
-            return CC.AbstractEvalBasicStatementResult(nothing, Bottom, nothing, nothing, nothing, false) # bail out if it has been interpreted by `ConcreteInterpreter`
+    if isexpr(stmt, :latestworld)
+        if isconcretized(analyzer, frame)
+            # ignore the effect of `:latestworld` if its effect took in place by `ConcreteInterpreter`
+            return CC.AbstractEvalBasicStatementResult(nothing, Any, nothing, nothing, nothing, #=saw_latestworld=#false)
         end
     end
     return @invoke CC.abstract_eval_basic_statement(analyzer::AbstractAnalyzer, stmt::Any,
         sstate::StatementState, frame::InferenceState, result::Union{Nothing,Future{RTEffects}})
 end
 
-function CC.global_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::AbsIntState, saw_latestworld::Bool, g::GlobalRef, @nospecialize(newty))
+function CC.global_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::InferenceState, saw_latestworld::Bool, g::GlobalRef, @nospecialize(newty))
     if saw_latestworld
         return Pair{Any,Any}(newty, ErrorException)
     end
+    isconcretized = JET.isconcretized(analyzer, sv) # this statement has been analyzed by `ConcreteInterpreter`
     ⊔ = CC.join(typeinf_lattice(analyzer))
     newty′ = Ref{Any}(newty)
     isconditional = true
@@ -419,11 +444,15 @@ function CC.global_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::Ab
     end
     (valid_worlds, ret) = CC.scan_partitions(analyzer, g, sv.world) do analyzer::AbstractAnalyzer, binding::Core.Binding, partition::Core.BindingPartition
         rte = CC.global_assignment_binding_rt_exct(analyzer, partition, newty′[])
-        # Non-const bindings may be assigned in any call, so it is fundamentally impossible
-        # to track their types precisely.
-        # However, by accurately determining whether a top-level assignment is conditional,
-        # it is possible to track such bindings’ `isdefined` status precisely.
-        get_binding_states(analyzer)[partition] = AbstractBindingState(false, isconditional)
+        if isconcretized
+            # skip the assignment effect if this has been concretized already
+        else
+            # Non-const bindings may be assigned in any call, so it is fundamentally impossible
+            # to track their types precisely.
+            # However, by accurately determining whether a top-level assignment is conditional,
+            # it is possible to track such bindings’ `isdefined` status precisely.
+            get_binding_states(analyzer)[partition] = AbstractBindingState(false, isconditional)
+        end
         return rte
     end
     CC.update_valid_age!(sv, valid_worlds)
@@ -431,15 +460,17 @@ function CC.global_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::Ab
 end
 
 function CC.abstract_eval_statement_expr(analyzer::ToplevelAbstractAnalyzer, e::Expr, sstate::StatementState,
-                                         sv::AbsIntState)::Future{RTEffects}
+                                         sv::InferenceState)::Future{RTEffects}
     if isexpr(e, :const)
-        return abstract_eval_const_stmt(analyzer, e, sstate, sv)
+        if !isconcretized(analyzer, sv) # skip the assignment effect if this has been concretized already
+            return abstract_eval_const_stmt(analyzer, e, sstate, sv)
+        end
     end
-    return @invoke CC.abstract_eval_statement_expr(analyzer::AbstractAnalyzer, e::Expr, sstate::StatementState, sv::AbsIntState)
+    return @invoke CC.abstract_eval_statement_expr(analyzer::AbstractAnalyzer, e::Expr, sstate::StatementState, sv::InferenceState)
 end
 
 # XXX Do we need to port this back to Julia base?
-function abstract_eval_const_stmt(analyzer::ToplevelAbstractAnalyzer, stmt::Expr, sstate::StatementState, sv::AbsIntState)
+function abstract_eval_const_stmt(analyzer::ToplevelAbstractAnalyzer, stmt::Expr, sstate::StatementState, sv::InferenceState)
     na = length(stmt.args)
     if na == 0 # currently noub
         return RTEffects(Union{}, ErrorException, EFFECTS_THROWS)
@@ -464,7 +495,7 @@ function abstract_eval_const_stmt(analyzer::ToplevelAbstractAnalyzer, stmt::Expr
     end
 end
 
-function const_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::AbsIntState, saw_latestworld::Bool, gr::GlobalRef,
+function const_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::InferenceState, saw_latestworld::Bool, gr::GlobalRef,
                                   @nospecialize(new_binding_typ))
     if saw_latestworld
         return Pair{Any,Any}(Nothing, ErrorException)
