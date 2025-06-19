@@ -815,9 +815,18 @@ end
 
 # undefined local variable report passes
 
+@static if VERSION ≥ v"1.13.0-DEV.565"
+function CC.finishinfer!(frame::InferenceState, analyzer::JETAnalyzer, cycleid::Int,
+                         opt_cache::IdDict{MethodInstance, CodeInstance})
+    ReportPass(analyzer)(UndefVarErrorReport, analyzer, frame)
+    @invoke CC.finishinfer!(frame::InferenceState, analyzer::ToplevelAbstractAnalyzer, cycleid::Int,
+                            opt_cache::IdDict{MethodInstance, CodeInstance})
+end
+else
 function CC.finishinfer!(frame::CC.InferenceState, analyzer::JETAnalyzer, cycleid::Int)
     ReportPass(analyzer)(UndefVarErrorReport, analyzer, frame)
     @invoke CC.finishinfer!(frame::CC.InferenceState, analyzer::ToplevelAbstractAnalyzer, cycleid::Int)
+end
 end
 
 (::SoundPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState) =
