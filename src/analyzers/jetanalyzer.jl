@@ -289,7 +289,7 @@ function CC.abstract_invoke(analyzer::JETAnalyzer, arginfo::ArgInfo, si::StmtInf
     return ret
 end
 
-# report pass for undefined static parameter
+# inject report pass for undefined static parameter
 function CC.abstract_eval_statement_expr(analyzer::JETAnalyzer, e::Expr, sstate::StatementState, sv::InferenceState)
     ret = @invoke CC.abstract_eval_statement_expr(analyzer::ToplevelAbstractAnalyzer, e::Expr, sstate::StatementState, sv::InferenceState)
     if e.head === :static_parameter
@@ -305,6 +305,17 @@ function CC.abstract_eval_statement_expr(analyzer::JETAnalyzer, e::Expr, sstate:
         end
     end
     return ret
+end
+
+# inject report pass for undefined local variables
+function CC.abstract_eval_special_value(analyzer::JETAnalyzer, @nospecialize(e), sstate::StatementState, sv::InferenceState)
+    if e isa SlotNumber
+        vtypes = sstate.vtypes
+        if vtypes !== nothing
+            ReportPass(analyzer)(UndefVarErrorReport, analyzer, sv, e, vtypes)
+        end
+    end
+    return @invoke CC.abstract_eval_special_value(analyzer::ToplevelAbstractAnalyzer, e::Any, sstate::StatementState, sv::InferenceState)
 end
 
 function CC.abstract_eval_globalref(analyzer::JETAnalyzer, g::GlobalRef, saw_latestworld::Bool, sv::InferenceState)
@@ -815,61 +826,43 @@ end
 
 # undefined local variable report passes
 
-@static if VERSION ≥ v"1.13.0-DEV.565"
-function CC.finishinfer!(frame::InferenceState, analyzer::JETAnalyzer, cycleid::Int,
-                         opt_cache::IdDict{MethodInstance, CodeInstance})
-    ReportPass(analyzer)(UndefVarErrorReport, analyzer, frame)
-    @invoke CC.finishinfer!(frame::InferenceState, analyzer::ToplevelAbstractAnalyzer, cycleid::Int,
-                            opt_cache::IdDict{MethodInstance, CodeInstance})
-end
-else
-function CC.finishinfer!(frame::CC.InferenceState, analyzer::JETAnalyzer, cycleid::Int)
-    ReportPass(analyzer)(UndefVarErrorReport, analyzer, frame)
-    @invoke CC.finishinfer!(frame::CC.InferenceState, analyzer::ToplevelAbstractAnalyzer, cycleid::Int)
-end
-end
+(::SoundPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, var::SlotNumber, vtypes::VarTable) =
+    report_undefined_local_vars!(analyzer, sv, var, vtypes, #=sound=#true)
+(::BasicPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, var::SlotNumber, vtypes::VarTable) =
+    report_undefined_local_vars!(analyzer, sv, var, vtypes, #=sound=#false)
+(::TypoPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState, var::SlotNumber, vtypes::VarTable) =
+    report_undefined_local_vars!(analyzer, sv, var, vtypes, #=sound=#false)
 
-(::SoundPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState) =
-    report_undefined_local_vars!(analyzer, sv, #=sound=#true)
-(::BasicPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState) =
-    report_undefined_local_vars!(analyzer, sv, #=sound=#false)
-(::TypoPass)(::Type{UndefVarErrorReport}, analyzer::JETAnalyzer, sv::InferenceState) =
-    report_undefined_local_vars!(analyzer, sv, #=sound=#false)
-
-# TODO implement `sound` mode
-function report_undefined_local_vars!(analyzer::JETAnalyzer, sv::CC.InferenceState, sound::Bool)
-    stmts = sv.src.code
-    nstmts = length(stmts)
-    ssavaluetypes = sv.ssavaluetypes
-    oldpc = sv.currpc
-    any_report = false
-    for i = 1:nstmts
-        if isconcretized(analyzer, sv, i)
-            continue # no need to be analyzed
-        end
-        if CC.was_reached(sv, i)
-            var = stmts[i]
-            if var isa SlotNumber && ssavaluetypes[i] === Union{}
-                currpc = sv.currpc = i
-                if !is_constant_propagated(sv)
-                    if isempty(sv.ssavalue_uses[currpc])
-                        # This case is when an undefined local variable is just declared,
-                        # but such cases can become reachable when constant propagation
-                        # for capturing closures doesn't occur.
-                        # In the future, improvements to the compiler should make such cases
-                        # unreachable in the first place, but for now we completely ignore
-                        # such cases to suppress false positives.
-                        @goto next
-                    end
-                end
-                add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, get_slotname(sv, var), true))
-                any_report |= true
-                @label next
-                sv.currpc = oldpc
-            end
+# TODO implement `sound` mode?
+function report_undefined_local_vars!(analyzer::JETAnalyzer, sv::CC.InferenceState, var::SlotNumber, vtypes::VarTable, sound::Bool)
+    if isconcretized(analyzer, sv)
+        return false # no need to be analyzed
+    end
+    vtype = vtypes[slot_id(var)]
+    vtype.undef || return false
+    if !is_constant_propagated(sv)
+        if isempty(sv.ssavalue_uses[sv.currpc])
+            # This case is when an undefined local variable is just declared,
+            # but such cases can become reachable when constant propagation
+            # for capturing closures doesn't occur.
+            # In the future, improvements to the compiler should make such cases
+            # unreachable in the first place, but for now we completely ignore
+            # such cases to suppress false positives.
+            return false
         end
     end
-    return any_report
+    name = get_slotname(sv, var)
+    if name === Symbol("")
+        # Such unnamed local variables are mainly introduced by `try/catch/finally` clauses.
+        # Due to insufficient liveness analysis of the current compiler for such code,
+        # the isdefined-ness of such variables may not be properly determined.
+        # For the time being, until the compiler implementation is improved,
+        # we ignore this case to suppress false positives.
+        return false
+    end
+    maybeundef = vtype.typ !== Union{}
+    add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, name, maybeundef))
+    return true
 end
 
 @jetreport struct IncompatibleGlobalAssignmentError <: InferenceErrorReport
