@@ -938,12 +938,14 @@ function _virtual_process!(interp::ConcreteInterpreter,
         # "toplevel definitions" inside of the loaded modules shouldn't be evaluated in a
         # context of `context` module
 
+        lnn = LineNumberNode(state.curline, state.filename)
+
         if isexpr(x, :module)
             if isexpanded
                 newblk = x.args[3]
                 @assert isexpr(newblk, :block)
                 overrideex = Expr(:toplevel, newblk.args...)
-                x.args[3] = Expr(:block) # empty module's code body
+                x.args[3] = Expr(:block, lnn) # empty module's code body
                 newcontext = eval_with_err_handling(state, x)
                 isnothing(newcontext) && continue # error happened, e.g. duplicated naming
                 newcontext = newcontext::Module
@@ -956,7 +958,7 @@ function _virtual_process!(interp::ConcreteInterpreter,
                                   force_concretize, overrideex)
             else
                 @assert JS.kind(node) === K"module"
-                x.args[3] = Expr(:block) # empty module's code body
+                x.args[3] = Expr(:block, lnn) # empty module's code body
                 newcontext = eval_with_err_handling(state, x)
                 isnothing(newcontext) && continue # error happened, e.g. duplicated naming
                 newcontext = newcontext::Module
@@ -977,8 +979,6 @@ function _virtual_process!(interp::ConcreteInterpreter,
             continue
         end
 
-        # create LineNumberNode here for lowering
-        lnn = LineNumberNode(state.curline, state.filename)
         blk = Expr(:block, lnn, x) # attach current line number info
         lwr = lower_with_err_handling(state, blk)
 
