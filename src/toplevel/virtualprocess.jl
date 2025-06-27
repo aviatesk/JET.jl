@@ -817,8 +817,9 @@ function macroexpand_with_err_handling(state::InterpretationState, x::Expr)
     end
 end
 
-function lower_with_err_handling(state::InterpretationState, x::Expr)
+function lower_with_err_handling(interp::ConcreteInterpreter, ::JS.SyntaxNode, x::Expr)
     # `scrub_offset = 1`: `lower`
+    state = InterpretationState(interp)
     with_err_handling(general_err_handler, state; scrub_offset=1) do
         lwr = lower(state.context, x)
         if isexpr(lwr, :error)
@@ -980,7 +981,7 @@ function _virtual_process!(interp::ConcreteInterpreter,
         end
 
         blk = Expr(:block, lnn, x) # attach current line number info
-        lwr = lower_with_err_handling(state, blk)
+        lwr = lower_with_err_handling(interp, node, blk)
 
         isnothing(lwr) && continue # error happened during lowering
         isexpr(lwr, :thunk) || continue # literal
