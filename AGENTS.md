@@ -57,20 +57,18 @@
 
 # Running Test Code
 Please make sure to test new code when you wrote.
-When running tests, use the [`./julia`](./julia) script if it exists in the root
-directory of this repository.
-If it doesn't exist, simply use the `julia` command.
 
 If explicit test file or code is provided, prioritize running that.
 Otherwise, you can run the entire test suite for the JET project by executing
 `using Pkg; Pkg.test()` from the root directory of this repository.
 
 For example, if you receive a prompt like this:
-> Improve the error message of diagnostics.
-> Use test/test_diagnostics for the test cases.
-And if `./julia` exists, the command you should run is:
+> Improve the printed message of top-level error reports.
+> Use test/ui/test_print.jl for the test cases.
+
+The command you should run is:
 ```
-$ ./julia --startup-file=no -e 'using Test; @testset "test_diagnostics" include("test/test_diagnostics")'
+$ julia --startup-file=no -e 'using Test; @testset "test_print" include("test/ui/test_print.jl")'
 ```
 Note that the usage of the `--startup-file=no` flag, which avoids loading
 unnecessary startup utilities.
