@@ -851,7 +851,12 @@ function _virtual_process!(interp::ConcreteInterpreter,
     first_line = JS.source_line(sourcefile, JS.first_byte(toplevelnode))
     last_line = JS.source_line(sourcefile, JS.last_byte(toplevelnode))
     analyzed_file_info = get!(AnalyzedFileInfo, state.res.analyzed_files, state.filename)
-    push!(analyzed_file_info.module_range_infos, first_line:last_line => state.context)
+    if sourcefile.code == JS.sourcetext(toplevelnode)
+        # If this `toplevelnode` is the file itself, recognize all ranges as this module context
+        push!(analyzed_file_info.module_range_infos, 1:typemax(Int) => state.context)
+    else
+        push!(analyzed_file_info.module_range_infos, first_line:last_line => state.context)
+    end
     state.curline = first_line
     push!(state.files_stack, state.filename)
 
