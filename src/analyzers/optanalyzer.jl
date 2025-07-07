@@ -128,51 +128,46 @@ that are specific to the optimization analysis.
   ```
 ---
 """
-struct OptAnalyzer{RP<:ReportPass,FF} <: AbstractAnalyzer
+abstract type OptAnalyzer <: AbstractAnalyzer end
+
+struct BasicOptAnalyzer{FF} <: OptAnalyzer
     state::AnalyzerState
     analysis_token::AnalysisToken
-    report_pass::RP
     function_filter::FF
     skip_noncompileable_calls::Bool
     __analyze_frame::BitVector # temporary stash to keep per-frame analysis-skip configuration
 
-    function OptAnalyzer(state::AnalyzerState,
-                         report_pass::RP,
-                         function_filter::FF,
-                         skip_noncompileable_calls::Bool) where {RP<:ReportPass,FF}
-        cache_key = compute_hash(state.inf_params, state.opt_params, report_pass,
+    function BasicOptAnalyzer(state::AnalyzerState,
+                              function_filter::FF,
+                              skip_noncompileable_calls::Bool) where {FF}
+        cache_key = compute_hash(state.inf_params, state.opt_params, nameof(BasicOptAnalyzer),
                                  skip_noncompileable_calls)
         cache_key = @invoke hash(function_filter::Any, cache_key::UInt) # HACK avoid dynamic dispatch
         analysis_token = get!(AnalysisToken, OPT_ANALYZER_CACHE, cache_key)
-        return new{RP,FF}(state,
-                          analysis_token,
-                          report_pass,
-                          function_filter,
-                          skip_noncompileable_calls,
-                          #=__analyze_frame=# BitVector())
+        return new{FF}(state,
+                       analysis_token,
+                       function_filter,
+                       skip_noncompileable_calls,
+                       #=__analyze_frame=# BitVector())
     end
 end
 
 # AbstractAnalyzer API requirements
-JETInterface.AnalyzerState(analyzer::OptAnalyzer) = analyzer.state
-function JETInterface.AbstractAnalyzer(analyzer::OptAnalyzer, state::AnalyzerState)
-    return OptAnalyzer(
+JETInterface.AnalyzerState(analyzer::BasicOptAnalyzer) = analyzer.state
+function JETInterface.AbstractAnalyzer(analyzer::BasicOptAnalyzer, state::AnalyzerState)
+    return BasicOptAnalyzer(
         state,
-        analyzer.report_pass,
         analyzer.function_filter,
         analyzer.skip_noncompileable_calls)
 end
-JETInterface.ReportPass(analyzer::OptAnalyzer) = analyzer.report_pass
-JETInterface.AnalysisToken(analyzer::OptAnalyzer) = analyzer.analysis_token
+JETInterface.AnalysisToken(analyzer::BasicOptAnalyzer) = analyzer.analysis_token
 JETInterface.vscode_diagnostics_order(analyzer::OptAnalyzer) = false
 
 const OPT_ANALYZER_CACHE = Dict{UInt, AnalysisToken}()
 
-struct OptAnalysisPass <: ReportPass end
-
 optanalyzer_function_filter(@nospecialize f) = true
 
-function CC.const_prop_call(analyzer::OptAnalyzer,
+function CC.const_prop_call(analyzer::BasicOptAnalyzer,
     mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
     concrete_eval_result::Union{Nothing,ConstCallResult})
     ret = @invoke CC.const_prop_call(analyzer::AbstractAnalyzer,
@@ -185,7 +180,7 @@ function CC.const_prop_call(analyzer::OptAnalyzer,
     end
     return ret
 end
-function CC.const_prop_call(analyzer::OptAnalyzer,
+function CC.const_prop_call(analyzer::BasicOptAnalyzer,
     mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::CC.IRInterpretationState,
     concrete_eval_result::Union{Nothing,ConstCallResult})
     if concrete_eval_result !== nothing
@@ -200,7 +195,7 @@ end
 
 # TODO better to work only with `CC.finish!`
 @static if VERSION ≥ v"1.13.0-DEV.565"
-function CC.finishinfer!(frame::InferenceState, analyzer::OptAnalyzer, cycleid::Int,
+function CC.finishinfer!(frame::InferenceState, analyzer::BasicOptAnalyzer, cycleid::Int,
                          opt_cache::IdDict{MethodInstance, CodeInstance})
     ret = @invoke CC.finishinfer!(frame::InferenceState, analyzer::AbstractAnalyzer, cycleid::Int,
                                   opt_cache::IdDict{MethodInstance, CodeInstance})
@@ -208,14 +203,14 @@ function CC.finishinfer!(frame::InferenceState, analyzer::OptAnalyzer, cycleid::
     return ret
 end
 else
-function CC.finishinfer!(frame::InferenceState, analyzer::OptAnalyzer, cycleid::Int)
+function CC.finishinfer!(frame::InferenceState, analyzer::BasicOptAnalyzer, cycleid::Int)
     ret = @invoke CC.finishinfer!(frame::InferenceState, analyzer::AbstractAnalyzer, cycleid::Int)
     finishinfer!_overload(frame, analyzer)
     return ret
 end
 end
 
-function finishinfer!_overload(frame::InferenceState, analyzer::OptAnalyzer)
+function finishinfer!_overload(frame::InferenceState, analyzer::BasicOptAnalyzer)
     analyze = true
     if analyzer.skip_noncompileable_calls
         mi = frame.linfo
@@ -233,7 +228,7 @@ function finishinfer!_overload(frame::InferenceState, analyzer::OptAnalyzer)
     push!(analyzer.__analyze_frame, analyze)
     if analyze
         # report pass for captured variables
-        ReportPass(analyzer)(CapturedVariableReport, analyzer, frame)
+        report_captured_variable(analyzer, frame)
     end
 end
 
@@ -248,7 +243,7 @@ function JETInterface.print_report_message(io::IO, (; name)::CapturedVariableRep
     end
 end
 JETInterface.print_signature(::CapturedVariableReport) = false
-function (::OptAnalysisPass)(::Type{CapturedVariableReport}, analyzer::OptAnalyzer, frame::InferenceState)
+function report_captured_variable(analyzer::BasicOptAnalyzer, frame::InferenceState)
     local reported = false
     code = frame.src.code
     for pc = 1:length(code)
@@ -269,7 +264,7 @@ function (::OptAnalysisPass)(::Type{CapturedVariableReport}, analyzer::OptAnalyz
     return reported
 end
 
-function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState, validation_world::UInt, time_before::UInt64)
+function CC.finish!(analyzer::BasicOptAnalyzer, frame::InferenceState, validation_world::UInt, time_before::UInt64)
     caller = frame.result
 
     # get the source before running `finish!` to keep the reference to `OptimizationState`
@@ -288,10 +283,10 @@ function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState, validation_wor
     end
 
     if analyze
-        ReportPass(analyzer)(OptimizationFailureReport, analyzer, caller)
+        report_optimization_failure(analyzer, caller)
 
         if src isa OptimizationState
-            ReportPass(analyzer)(RuntimeDispatchReport, analyzer, caller, src)
+            report_runtime_dispatch(analyzer, caller, src)
         elseif (@static JET_DEV_MODE ? true : false)
             if src === nothing # the optimization didn't happen
             else # and this pass should never happen
@@ -310,7 +305,7 @@ end
 function JETInterface.print_report_message(io::IO, ::OptimizationFailureReport)
     print(io, "failed to optimize due to recursion")
 end
-function (::OptAnalysisPass)(::Type{OptimizationFailureReport}, analyzer::OptAnalyzer, caller::InferenceResult)
+function report_optimization_failure(analyzer::BasicOptAnalyzer, caller::InferenceResult)
     if caller.src === nothing # the optimization didn't happen
         add_new_report!(analyzer, caller, OptimizationFailureReport(caller.linfo))
         return true
@@ -322,7 +317,7 @@ end
 function JETInterface.print_report_message(io::IO, ::RuntimeDispatchReport)
     print(io, "runtime dispatch detected")
 end
-function (::OptAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::OptAnalyzer, caller::InferenceResult, opt::OptimizationState)
+function report_runtime_dispatch(analyzer::BasicOptAnalyzer, caller::InferenceResult, opt::OptimizationState)
     (; src, sptypes, slottypes) = opt
 
     # TODO better to work on `opt.ir::IRCode` (with some updates on `handle_sig!`)
@@ -354,23 +349,21 @@ end
 
 # the entry constructor
 function OptAnalyzer(world::UInt = Base.get_world_counter();
-    report_pass::ReportPass = OptAnalysisPass(),
     function_filter = optanalyzer_function_filter,
     skip_noncompileable_calls::Bool = true,
     jetconfigs...)
     state = AnalyzerState(world; jetconfigs...)
-    return OptAnalyzer(
+    return BasicOptAnalyzer(
         state,
-        report_pass,
         function_filter,
         skip_noncompileable_calls)
 end
 
 const OPT_ANALYZER_CONFIGURATIONS = Set{Symbol}((
-    :report_pass, :function_filter, :skip_noncompileable_calls))
+    :function_filter, :skip_noncompileable_calls))
 
 let valid_keys = GENERAL_CONFIGURATIONS ∪ OPT_ANALYZER_CONFIGURATIONS
-    @eval JETInterface.valid_configurations(::OptAnalyzer) = $valid_keys
+    @eval JETInterface.valid_configurations(::BasicOptAnalyzer) = $valid_keys
 end
 
 """
