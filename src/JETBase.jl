@@ -693,7 +693,12 @@ end
 
 function analyze_frame!(analyzer::AbstractAnalyzer, frame::InferenceState)
     set_entry!(analyzer, frame.linfo)
-    CC.typeinf(analyzer, frame)
+    tworld = typeinf_world(analyzer)
+    if tworld !== nothing
+        Base.invoke_in_world(tworld, CC.typeinf, analyzer, frame)
+    else
+        CC.typeinf(analyzer, frame)
+    end
     return analyzer, frame.result
 end
 
@@ -1195,7 +1200,7 @@ end
 reexport_as_api!(JETInterface,
     # AbstractAnalyzer API
     AbstractAnalyzer, AnalyzerState, AnalysisToken, ToplevelAbstractAnalyzer,
-    valid_configurations, aggregation_policy, VSCode.vscode_diagnostics_order,
+    valid_configurations, aggregation_policy, typeinf_world, VSCode.vscode_diagnostics_order,
     # ErrorReport API
     InferenceErrorReport, ToplevelErrorReport, copy_report, print_report,
     print_report_message, print_signature, report_color,
@@ -1210,6 +1215,16 @@ reexport_as_api!(JETInterface,
 
 include("analyzers/jetanalyzer.jl")
 include("analyzers/optanalyzer.jl")
+
+# NOTE Use the fixed world here to make `JETAnalyzer`/`OptAnalyzer` robust against potential invalidations
+const JET_TYPEINF_WORLD = Ref{UInt}(typemax(UInt))
+
+# Initialize `JET_TYPEINF_WORLD[]` within `__init__`:
+# Note that precompilation below will use the current world age rather than `typemax(UInt)`,
+# since `Base.invoke_in_world` uses the current world age when the given world age is higher than the current one.
+push_inithook!() do
+    JET_TYPEINF_WORLD[] = Base.get_world_counter()
+end
 
 module __demo__ end
 
