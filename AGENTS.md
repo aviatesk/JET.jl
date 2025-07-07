@@ -36,12 +36,12 @@
   ...
   ```
 
-- Only include comments where truly necessary.
+- For AI agents: **ONLY INCLUDE COMMENTS WHERE TRULY NECESSARY**.
   When the function name or implementation clearly indicates its purpose or
   behavior, redundant comments are unnecessary.
 
 - On the other hand, for general utilities that expected to be used in multiple
-  places in the language server, it's fine to use docstrings to clarify their
+  places in this package, it's fine to use docstrings to clarify their
   behavior. However, even in these cases, if the function name and behavior are
   self-explanatory, no special docstring is needed.
 
@@ -67,8 +67,8 @@ For example, if you receive a prompt like this:
 > Use test/ui/test_print.jl for the test cases.
 
 The command you should run is:
-```
-$ julia --startup-file=no -e 'using Test; @testset "test_print" include("test/ui/test_print.jl")'
+```bash
+julia --startup-file=no -e 'using Test; @testset "test_print" include("test/ui/test_print.jl")'
 ```
 Note that the usage of the `--startup-file=no` flag, which avoids loading
 unnecessary startup utilities.
@@ -97,26 +97,70 @@ And `test/test_virtualprocess.jl` is included from `test/runtests.jl` like this:
 end
 ```
 
-Also, in each test file, you are encouraged to use `let`-blocks to ensure that
-names aren't unintentionally reused between multiple test cases:
-> test/test_virtualprocess.jl
+In each test file, you are encouraged to use `@testset "testset name"` to
+organize our tests cleanly. For code clarity, unless specifically necessary,
+avoid using `using`, `import`, and `struct` definitions  inside `@testset`
+blocks, and instead place them at the top level.
+
+Also, you are encouraged to use `let`-blocks to ensure that names aren't
+unintentionally reused between multiple test cases.
+For example, here is what good test code looks like:
 ```julia
 module test_virtualprocess
+
 using Test # Each module space needs to explicitly declare the code needed for execution
-function test_something(s::AbstractString)
+using JET: some_func
+
+function test_with()
     ...
 end
-let s = "..."
-    @test test_something(s)
+function testcase_util(s::AbstractString)
+    ...
 end
-let s = "..."
-    @test test_something(s)
+function with_testcase(s::AbstractString)
+    ...
 end
+
+@testset "some_func" begin
+    let s = "..."
+        ret = some_func(testcase_util(s))
+        @test test_with(ret)
+    end
+    let s = "..."
+        ret = some_func(testcase_util(s))
+        @test test_with(ret)
+    end
+
+    # or `let` is unnecessary when testing with function scope
+    with_testcase(s) do case
+        ret = some_func(case)
+        @test test_with(ret)
+    end
+end
+
 end # module test_virtualprocess
 ```
-Here, `test_something` is defined at the top level of the `test_virtualprocess`
-module because it's a common routine used by multiple test cases, but variables
-like `s` that are created for each test case are localized using `let`.
+Additionally, by using `@testset` as shown above, not only are tests hierarchized,
+but through integration with [TestRunner.jl](https://github.com/aviatesk/TestRunner.jl),
+you can also selectively execute specific `@testset`s, without executing the
+entire test file or test suite.
+If you're using this language server for development as well, you can run tests
+from code lenses or code actions within test files. If you need to run them from
+the command line, you can use commands like the following
+(assuming the `testrunner` executable is installed):
+```bash
+testrunner --verbose test/test_virtualprocess "some_func"
+```
+Note that TestRunner.jl is still experimental.
+The most reliable way to run tests is still to execute test files standalone.
+
+# Environment-Related Issues
+For AI agents: **NEVER MODIFY [Project.toml](./Project.toml) OR  [test/Project.toml](./test/Project.toml) BY YOURSELF**.
+If you encounter errors that seem to be environment-related when running tests,
+in most cases this is due to working directory issues, so first `cd` to the root directory of this project
+and re-run the tests. Never attempt to fix environment-related issues yourself.
+If you cannot resolve the problem, return back the prompt and inform the human
+engineer and ask for instructions.
 
 # About Modifications to Code You've Written
 If you, as an AI agent, add or modify code, and the user appears to have made
