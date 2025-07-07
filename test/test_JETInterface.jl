@@ -1,27 +1,36 @@
 module test_JETInterface
 
 using JET.JETInterface, JET, Test, InteractiveUtils
-using JET: get_reports, BasicPass, UndefVarErrorReport
+using JET: get_reports, UndefVarErrorReport
 
-# customized report pass
-# ======================
+# customized analyzer example
+# ===========================
 
-struct IgnoreAllPass <: ReportPass end
-(::IgnoreAllPass)(::Type{<:InferenceErrorReport}, @nospecialize(_...)) = false
-let result = @report_call report_pass=IgnoreAllPass() sum("julia")
-    @test isempty(get_reports(result))
+# Example: create an analyzer that ignores all reports
+struct IgnoreAllAnalyzer <: AbstractAnalyzer
+    state::AnalyzerState
+    analysis_token::AnalysisToken
 end
 
-struct IgnoreAllExceptGlobalUndefVarPass <: ReportPass end
-(::IgnoreAllExceptGlobalUndefVarPass)(::Type{<:InferenceErrorReport}, @nospecialize(_...)) = false
-(::IgnoreAllExceptGlobalUndefVarPass)(::Type{UndefVarErrorReport}, @nospecialize(args...)) = BasicPass()(UndefVarErrorReport, args...)
-let result = report_call(; report_pass=IgnoreAllExceptGlobalUndefVarPass()) do
-        sum("julia") # should be ignored
-        undefvar
-    end
-    let r = only(get_reports(result))
-        @test isa(r, UndefVarErrorReport) && isa(r.var, GlobalRef) && r.var.name === :undefvar
-    end
+IgnoreAllAnalyzer(world::UInt=Base.get_world_counter(); jetconfigs...) =
+    IgnoreAllAnalyzer(AnalyzerState(world; jetconfigs...), AnalysisToken())
+
+# API requirements
+JETInterface.AnalyzerState(analyzer::IgnoreAllAnalyzer) = analyzer.state
+JETInterface.AbstractAnalyzer(analyzer::IgnoreAllAnalyzer, state::AnalyzerState) = 
+    IgnoreAllAnalyzer(state, analyzer.analysis_token)
+JETInterface.AnalysisToken(analyzer::IgnoreAllAnalyzer) = analyzer.analysis_token
+
+# This analyzer ignores all reports by not implementing any report methods
+
+function report_call_ignore_all(args...; jetconfigs...)
+    @nospecialize args jetconfigs
+    analyzer = IgnoreAllAnalyzer(; jetconfigs...)
+    return analyze_and_report_call!(analyzer, args...; jetconfigs...)
+end
+
+let result = report_call_ignore_all(sum, ("julia",))
+    @test isempty(get_reports(result))
 end
 
 # AbstractAnalyzer API
@@ -69,15 +78,10 @@ JETInterface.AbstractAnalyzer(analyzer::APIValidator, state::AnalyzerState) = AP
 
 @test_throws ERROR_MSG @report_apivalidator compute_sins(10)
 
-# interface 3: `ReportPass(analyzer::APIValidator) -> ReportPass`
-JETInterface.ReportPass(analyzer::APIValidator) = IgnoreAllPass()
-
-@test_throws ERROR_MSG @report_apivalidator compute_sins(10)
-
-# interface 4: `AnalysisToken(analyzer::APIValidator) -> AnalysisToken`
+# interface 3: `AnalysisToken(analyzer::APIValidator) -> AnalysisToken`
 JETInterface.AnalysisToken(analyzer::APIValidator) = analyzer.analysis_token
 
-# because `APIValidator` uses `IgnoreAllPass`, we won't get any reports
+# `APIValidator` doesn't implement any report methods, so we won't get any reports
 let result = @report_apivalidator compute_sins(10)
     @test isempty(get_reports(result))
 end
