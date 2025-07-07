@@ -419,6 +419,8 @@ end
 # optional API
 # ------------
 
+typeinf_world(analyzer::AbstractAnalyzer) = nothing
+
 """
     JETInterface.valid_configurations(analyzer::AbstractAnalyzer) -> names or nothing
 

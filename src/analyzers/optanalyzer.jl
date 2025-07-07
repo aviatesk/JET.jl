@@ -164,13 +164,12 @@ function JETInterface.AbstractAnalyzer(analyzer::OptAnalyzer, state::AnalyzerSta
 end
 JETInterface.ReportPass(analyzer::OptAnalyzer) = analyzer.report_pass
 JETInterface.AnalysisToken(analyzer::OptAnalyzer) = analyzer.analysis_token
-JETInterface.vscode_diagnostics_order(analyzer::OptAnalyzer) = false
+JETInterface.typeinf_world(::OptAnalyzer) = JET_TYPEINF_WORLD[]
+JETInterface.vscode_diagnostics_order(::OptAnalyzer) = false
 
 const OPT_ANALYZER_CACHE = Dict{UInt, AnalysisToken}()
 
 struct OptAnalysisPass <: ReportPass end
-
-optanalyzer_function_filter(@nospecialize f) = true
 
 function CC.const_prop_call(analyzer::OptAnalyzer,
     mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
@@ -333,7 +332,7 @@ function (::OptAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::OptAnalyze
             f = singleton_type(ft)
             if f !== nothing
                 f isa Builtin && continue # ignore `:call`s of language intrinsics
-                analyzer.function_filter(f) || continue # ignore user-specified functions
+                (isnothing(analyzer.function_filter) || @invokelatest(analyzer.function_filter(f))) || continue # ignore user-specified functions
             end
             lins = get_lins((opt, pc))
             isempty(lins) && continue # dead statement, just ignore it
@@ -355,7 +354,7 @@ end
 # the entry constructor
 function OptAnalyzer(world::UInt = Base.get_world_counter();
     report_pass::ReportPass = OptAnalysisPass(),
-    function_filter = optanalyzer_function_filter,
+    function_filter = nothing,
     skip_noncompileable_calls::Bool = true,
     jetconfigs...)
     state = AnalyzerState(world; jetconfigs...)

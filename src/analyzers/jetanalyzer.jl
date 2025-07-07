@@ -107,6 +107,7 @@ function JETInterface.AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerSta
 end
 JETInterface.ReportPass(analyzer::JETAnalyzer) = analyzer.report_pass
 JETInterface.AnalysisToken(analyzer::JETAnalyzer) = analyzer.analysis_token
+JETInterface.typeinf_world(::JETAnalyzer) = JET_TYPEINF_WORLD[]
 
 const JET_ANALYZER_CACHE = Dict{UInt, AnalysisToken}()
 
