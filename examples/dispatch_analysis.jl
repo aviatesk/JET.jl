@@ -63,13 +63,7 @@ end
 ## AbstractAnalyzer API requirements
 JETInterface.AnalyzerState(analyzer::DispatchAnalyzer) = analyzer.state
 JETInterface.AbstractAnalyzer(analyzer::DispatchAnalyzer, state::AnalyzerState) = DispatchAnalyzer(state, analyzer.analysis_token, analyzer.opts, analyzer.frame_filter)
-JETInterface.ReportPass(analyzer::DispatchAnalyzer) = DispatchAnalysisPass()
 JETInterface.AnalysisToken(analyzer::DispatchAnalyzer) = analyzer.analysis_token
-
-struct DispatchAnalysisPass <: ReportPass end
-
-## ignore all reports defined by JET, since we'll just define our own reports
-(::DispatchAnalysisPass)(T::Type{<:InferenceErrorReport}, @nospecialize(_...)) = return
 
 function CC.finish!(analyzer::DispatchAnalyzer, frame::CC.InferenceState, validation_world::UInt, time_before::UInt64)
     caller = frame.result
@@ -85,9 +79,9 @@ function CC.finish!(analyzer::DispatchAnalyzer, frame::CC.InferenceState, valida
     if analyzer.frame_filter(frame.linfo)
         if isa(src, Core.Const) # the optimization was very successful, nothing to report
         elseif isnothing(src) # means, compiler decides not to do optimization
-            ReportPass(analyzer)(OptimizationFailureReport, analyzer, caller, src)
+            report_optimization_failure!(analyzer, caller, src)
         elseif isa(src, CC.OptimizationState) # the compiler optimized it, analyze it
-            ReportPass(analyzer)(RuntimeDispatchReport, analyzer, caller, src)
+            report_runtime_dispatch!(analyzer, caller, src)
         else # and thus this pass should never happen
             ## as we should already report `OptimizationFailureReport` for this case
             throw("got $src, unexpected source found")
@@ -101,7 +95,7 @@ end
 function JETInterface.print_report_message(io::IO, ::OptimizationFailureReport)
     print(io, "failed to optimize due to recursion")
 end
-function (::DispatchAnalysisPass)(::Type{OptimizationFailureReport}, analyzer::DispatchAnalyzer, result::CC.InferenceResult)
+function report_optimization_failure!(analyzer::DispatchAnalyzer, result::CC.InferenceResult, src)
     add_new_report!(analyzer, result, OptimizationFailureReport(result.linfo))
 end
 
@@ -110,7 +104,7 @@ function JETInterface.print_report_message(io::IO, ::RuntimeDispatchReport)
     print(io, "runtime dispatch detected")
 end
 
-function (::DispatchAnalysisPass)(::Type{RuntimeDispatchReport}, analyzer::DispatchAnalyzer, caller::CC.InferenceResult, opt::CC.OptimizationState)
+function report_runtime_dispatch!(analyzer::DispatchAnalyzer, caller::CC.InferenceResult, opt::CC.OptimizationState)
     (; sptypes, slottypes) = opt
     for (pc, x) in enumerate(opt.src.code)
         if Base.Meta.isexpr(x, :call)

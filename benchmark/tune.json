@@ -172,7 +172,7 @@
               "tags": []
             }
           ],
-          "JETAnalyzer{BasicPass}": [
+          "mode=:basic": [
             "BenchmarkGroup",
             {
               "data": {
@@ -250,7 +250,7 @@
               "tags": []
             }
           ],
-          "JETAnalyzer{SoundPass}": [
+          "mode=:sound": [
             "BenchmarkGroup",
             {
               "data": {
@@ -328,7 +328,7 @@
               "tags": []
             }
           ],
-          "JETAnalyzer{BasicPass} top-level": [
+          "mode=:basic top-level": [
             "BenchmarkGroup",
             {
               "data": {

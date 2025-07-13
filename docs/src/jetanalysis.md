@@ -98,9 +98,9 @@ bar(s::AbstractString) = parse(Int, s)
 ```
 
 So far, we have used the default error analysis pass, which collects problems according to
-one specific (somewhat opinionated) definition of "errors" (see the [`JET.BasicPass`](@ref) for more details).
-JET offers other error reporting passes, including the "sound" error detection ([`JET.SoundPass`](@ref))
-as well as the simpler "typo" detection pass ([`JET.TypoPass`](@ref))[^2].
+one specific (somewhat opinionated) definition of "errors".
+JET offers other error reporting passes, including the "sound" error detection
+as well as the simpler "typo" detection pass.
 They can be switched using the `mode` configuration:
 
 [^2]: JET offers the framework to define your own abstract interpretation-based analysis.
@@ -449,7 +449,4 @@ In addition to the [general configurations](@ref), the error analysis can take t
 following specific configurations:
 ```@docs
 JET.JETAnalyzer
-JET.BasicPass
-JET.SoundPass
-JET.TypoPass
 ```

@@ -4,7 +4,6 @@ include("../setup.jl")
 
 @testset "configurations" begin
     @test_throws JET.JETConfigError report_call(function () end; mode=:badmode)
-    @test_throws JET.JETConfigError report_call(function () end; report_pass=JET.BasicPass(), mode=:sound)
 
     # cache key should be same for the same configurations
     let cache1 = JET.AnalysisToken(JETAnalyzer()),
@@ -20,7 +19,7 @@ include("../setup.jl")
         @test cache1 !== cache2
     end
 
-    # configurations other than `InferenceParams` and `ReportPass`
+    # configurations other than `InferenceParams` and analyzer mode
     # shouldn't affect the cache key identity
     let analyzer1 = JETAnalyzer(; toplevel_logger=nothing),
         analyzer2 = JETAnalyzer(; toplevel_logger=IOBuffer())
@@ -29,9 +28,9 @@ include("../setup.jl")
         @test cache1 === cache2
     end
 
-    # cache key should be different for different report passes
-    let analyzer1 = JETAnalyzer(; report_pass=JET.BasicPass()),
-        analyzer2 = JETAnalyzer(; report_pass=JET.SoundPass())
+    # cache key should be different for different analyzer modes
+    let analyzer1 = JETAnalyzer(; mode=:basic),
+        analyzer2 = JETAnalyzer(; mode=:sound)
         cache1 = JET.AnalysisToken(analyzer1)
         cache2 = JET.AnalysisToken(analyzer2)
         @test cache1 !== cache2
@@ -892,7 +891,7 @@ end
 issue363(f, args...) = f(args...)
 func_report_entry(a::Int) = "hello"
 
-@testset "BasicPass" begin
+@testset "BasicJETAnalyzer" begin
     @testset "basic_filter" begin
         # skip errors on abstract dispatch
         # https://github.com/aviatesk/JET.jl/issues/154
@@ -921,7 +920,7 @@ func_report_entry(a::Int) = "hello"
     end
 end
 
-@testset "SoundPass" begin
+@testset ":sound mode" begin
     let # `:basicfilter`
         m = Module()
         # `==(::Missing, ::Any) -> Missing` will be reported
@@ -973,7 +972,7 @@ end
 struct NoFieldStruct; v; end
 access_field(x::NoFieldStruct, sym) = getfield(x, sym)
 
-@testset "TypoPass" begin
+@testset ":typo mode" begin
     @test_call mode=:typo sum("julia") # don't report NoMethodError, etc.
 
     @testset "global undef var" begin

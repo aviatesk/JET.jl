@@ -46,26 +46,21 @@ struct UnstableAPIAnalyzer{T} <: ToplevelAbstractAnalyzer
 end
 JETInterface.AnalyzerState(analyzer::UnstableAPIAnalyzer) = analyzer.state
 JETInterface.AbstractAnalyzer(analyzer::UnstableAPIAnalyzer, state::AnalyzerState) =
-    UnstableAPIAnalyzer(state, analyzer.is_target_module)
-JETInterface.ReportPass(analyzer::UnstableAPIAnalyzer) = UnstableAPIAnalysisPass()
+    UnstableAPIAnalyzer(state, analyzer.analysis_token, analyzer.is_target_module)
 JETInterface.AnalysisToken(analyzer::UnstableAPIAnalyzer) = analyzer.analysis_token
 
 const UNSTABLE_API_ANALYZER_CACHE = Dict{UInt, AnalysisToken}()
 
-# Next, we overload some of `Base.Compiler`'s [abstract interpretation](@ref abstractinterpret) methods,
-# and inject a customized analysis pass (here we gonna name it `UnstableAPIAnalysisPass`).
+# Next, we overload some of `Base.Compiler`'s [abstract interpretation](@ref abstractinterpret) methods.
 # In this analysis, we are interested in whether a binding that appears in a target code is
 # an "unstable API" or not, and we can simply check if each abstract element appeared during
 # abstract interpretation meets our criteria of "unstable API".
 # For that purpose, it's suffice to overload `CC.abstract_eval_special_value`
 # and `CC.builtin_tfunction`.
-# To inject a report pass, we use [`ReportPass(::AbstractAnalyzer)`](@ref) interface.
-
-struct UnstableAPIAnalysisPass <: ReportPass end
 
 function CC.abstract_eval_special_value(analyzer::UnstableAPIAnalyzer, @nospecialize(e), vtypes::CC.VarTable, sv::CC.InferenceState)
     if analyzer.is_target_module(sv.mod) # we care only about what we wrote
-        ReportPass(analyzer)(UnstableAPI, analyzer, sv, e)
+        report_unstable_api!(analyzer, sv, e)
     end
 
     ## recurse into JET's default abstract interpretation routine
@@ -80,7 +75,7 @@ function CC.builtin_tfunction(analyzer::UnstableAPIAnalyzer, @nospecialize(f), a
                 if isa(a2, Core.Const) && (v2 = a2.val; isa(v2, Symbol))
                     if analyzer.is_target_module(sv.mod) || # we care only about what we wrote, but with relaxed filter
                        (parent = sv.parent; isa(parent, CC.InferenceState) && analyzer.is_target_module(parent.mod))
-                        ReportPass(analyzer)(UnstableAPI, analyzer, sv, GlobalRef(v1, v2))
+                        report_unstable_api!(analyzer, sv, GlobalRef(v1, v2))
                     end
                 end
             end
@@ -98,16 +93,8 @@ CC.may_optimize(analyzer::UnstableAPIAnalyzer) = false
 # We define "unstable API"s such that they're:
 # 1. undefined binding, or
 # 2. not `export`ed nor documented, if defined
-# and we're not interested in any other program properties other than whether our code contains "unstable API"s or not.
-
-# So in our report pass, we would like to ignore all the reports implemented by JET.jl by default
-(::UnstableAPIAnalysisPass)(T::Type{<:InferenceErrorReport}, analyzer, state, @nospecialize(spec_args...)) = return
-
-# but except the report of undefined global references (i.e. `UndefVarErrorReport`).
-# This overload allow us to find code that falls into the category 1.
-function (::UnstableAPIAnalysisPass)(T::Type{JET.UndefVarErrorReport}, analyzer, state, @nospecialize(spec_args...))
-    JET.BasicPass()(T, analyzer, state, spec_args...) # forward to JET's default report pass
-end
+# and we're not interested in any other program properties other than whether our code
+# contains "unstable API"s or not.
 
 # And now we will define new [`InferenceErrorReport`](@ref) report type `UnstableAPI`,
 # which represents the category 2, and implement a report pass to detect it.
@@ -118,12 +105,11 @@ end
 function JETInterface.print_report_message(io::IO, (; g)::UnstableAPI)
     (; mod, name) = g
     mod = Base.binding_module(mod, name)
-    msg = lazy"usage of unstable API `$mod.$name` found"
     print(io, "usage of unstable API `", mod, '.', name, "` found")
 end
 JETInterface.report_color(::UnstableAPI) = :yellow
 
-function (::UnstableAPIAnalysisPass)(::Type{UnstableAPI}, analyzer::UnstableAPIAnalyzer, sv, @nospecialize(e))
+function report_unstable_api!(analyzer::UnstableAPIAnalyzer, sv, @nospecialize(e))
     if isa(e, GlobalRef)
         (; mod, name) = e
         isdefined(mod, name) || return false # this global reference falls into the category 1, should be caught by `UndefVarErrorReport` instead
@@ -191,13 +177,13 @@ function UnstableAPIAnalyzer(world::UInt = Base.get_world_counter();
     analysis_token = get!(AnalysisToken, UNSTABLE_API_ANALYZER_CACHE, cache_key)
     return UnstableAPIAnalyzer(state, analysis_token, is_target_module)
 end
-function report_unstable_api(args...; jetconfigs...)
+function report_unstable_api!(args...; jetconfigs...)
     @nospecialize args jetconfigs
     analyzer = UnstableAPIAnalyzer(; jetconfigs...)
     return analyze_and_report_call!(analyzer, args...; jetconfigs...)
 end
-macro report_unstable_api(ex0...)
-    return InteractiveUtils.gen_call_with_extracted_types_and_kwargs(__module__, :report_unstable_api, ex0)
+macro report_unstable_api!(ex0...)
+    return InteractiveUtils.gen_call_with_extracted_types_and_kwargs(__module__, :report_unstable_api!, ex0)
 end
 
 # ### Simple cases
@@ -209,18 +195,18 @@ end
 function some_reflection_code(@nospecialize(f))
     return any(Base.hasgenerator, methods(f)) # Base.hasgenerator is unstable
 end
-@report_unstable_api some_reflection_code(sin)
+@report_unstable_api! some_reflection_code(sin)
 
 # `UnstableAPIAnalyzer` can find an "unstable" global variable:
 module foo; bar = 1 end
-report_unstable_api((Any,)) do a
+report_unstable_api!((Any,)) do a
     foo.bar + a # foo.bar is unstable
 end
 
 # `UnstableAPIAnalyzer` can detect "unstable API"s even if they're imported binding or
 # nested reference (, which will be resolve to `getproperty`)
 using Base: hasgenerator
-report_unstable_api((Any,)) do mi
+report_unstable_api!((Any,)) do mi
     ## NOTE every function call appearing here is unstable
     ci = hasgenerator(mi) ? CC.get_staged(mi) : Base.uncompressed_ast(mi)
 end

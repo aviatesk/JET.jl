@@ -18,51 +18,51 @@ end
 
 # warm up
 @report_call identity(nothing)
-@report_call report_pass=FreshPass(JET.BasicPass()) identity(nothing)
-@report_call report_pass=FreshPass(JET.SoundPass()) identity(nothing)
-@report_opt report_pass=FreshPass(JET.OptAnalysisPass()) identity(nothing)
+@report_call __cache_hash__=gensym() identity(nothing)
+@report_call mode=:sound __cache_hash__=gensym() identity(nothing)
+@report_opt __cache_hash__=gensym() identity(nothing)
 show(devnull, @report_call sum("julia"))
 
 # analysis performance
 # --------------------
 
-let g = addgroup!(SUITE, "JETAnalyzer{BasicPass}")
-    g["identity(nothing)"] = @benchmarkable (@report_call report_pass=FreshPass(JET.BasicPass()) identity(nothing))
-    g["sum(\"julia\")"] = @benchmarkable (@report_call report_pass=FreshPass(JET.BasicPass()) sum("julia"))
-    g["sum(\"julia\") (cached)"] = @benchmarkable (@report_call report_pass=JET.BasicPass() sum("julia"))
-    g["rand(Bool)"] = @benchmarkable (@report_call report_pass=FreshPass(JET.BasicPass()) rand(Bool)) seconds=10.0
-    g["println(QuoteNode(nothing))"] = @benchmarkable (@report_call report_pass=FreshPass(JET.BasicPass()) println(QuoteNode(nothing))) seconds=30.0
+let g = addgroup!(SUITE, "mode=:basic")
+    g["identity(nothing)"] = @benchmarkable (@report_call __cache_hash__=gensym() identity(nothing))
+    g["sum(\"julia\")"] = @benchmarkable (@report_call __cache_hash__=gensym() sum("julia"))
+    g["sum(\"julia\") (cached)"] = @benchmarkable (@report_call sum("julia"))
+    g["rand(Bool)"] = @benchmarkable (@report_call __cache_hash__=gensym() rand(Bool)) seconds=10.0
+    g["println(QuoteNode(nothing))"] = @benchmarkable (@report_call __cache_hash__=gensym() println(QuoteNode(nothing))) seconds=30.0
     tune_benchmarks!(g)
 end
 
-let g = addgroup!(SUITE, "JETAnalyzer{BasicPass} top-level")
-    g["simple"] = @benchmarkable (@analyze_toplevel report_pass=FreshPass(JET.BasicPass()) begin
+let g = addgroup!(SUITE, "mode=:basic top-level")
+    g["simple"] = @benchmarkable (@analyze_toplevel __cache_hash__=gensym() begin
         const mysum = sum
         mysum("julia")
     end) seconds=10.0
-    g["demo"] = @benchmarkable report_file("demo.jl"; report_pass=FreshPass(JET.BasicPass()), toplevel_logger=nothing) seconds=60.0
+    g["demo"] = @benchmarkable report_file("demo.jl"; __cache_hash__=gensym(), toplevel_logger=nothing) seconds=60.0
     g["self analysis"] = @benchmarkable JET.analyze_method!(analyzer, m) setup = begin
-        analyzer = JET.JETAnalyzer(; report_pass=FreshPass(JET.BasicPass()))
+        analyzer = JET.JETAnalyzer(; __cache_hash__=gensym())
         m = only(methods(JET.virtual_process))
     end seconds=40.0
     tune_benchmarks!(g)
 end
 
-let g = addgroup!(SUITE, "JETAnalyzer{SoundPass}")
-    g["identity(nothing)"] = @benchmarkable (@report_call report_pass=FreshPass(JET.SoundPass()) identity(nothing))
-    g["sum(\"julia\")"] = @benchmarkable (@report_call report_pass=FreshPass(JET.SoundPass()) sum("julia"))
-    g["sum(\"julia\") (cached)"] = @benchmarkable (@report_call report_pass=JET.SoundPass() sum("julia"))
-    g["rand(Bool)"] = @benchmarkable (@report_call report_pass=FreshPass(JET.SoundPass()) rand(Bool)) seconds=10.0
-    g["println(QuoteNode(nothing))"] = @benchmarkable (@report_call report_pass=FreshPass(JET.SoundPass()) println(QuoteNode(nothing))) seconds=30.0
+let g = addgroup!(SUITE, "mode=:sound")
+    g["identity(nothing)"] = @benchmarkable (@report_call mode=:sound __cache_hash__=gensym() identity(nothing))
+    g["sum(\"julia\")"] = @benchmarkable (@report_call mode=:sound __cache_hash__=gensym() sum("julia"))
+    g["sum(\"julia\") (cached)"] = @benchmarkable (@report_call mode=:sound sum("julia"))
+    g["rand(Bool)"] = @benchmarkable (@report_call mode=:sound __cache_hash__=gensym() rand(Bool)) seconds=10.0
+    g["println(QuoteNode(nothing))"] = @benchmarkable (@report_call mode=:sound __cache_hash__=gensym() println(QuoteNode(nothing))) seconds=30.0
     tune_benchmarks!(g)
 end
 
 let g = addgroup!(SUITE, "OptAnalyzer")
-    g["identity(nothing)"] = @benchmarkable (@report_opt report_pass=FreshPass(JET.OptAnalysisPass()) identity(nothing))
-    g["sum(\"julia\")"] = @benchmarkable (@report_opt report_pass=FreshPass(JET.OptAnalysisPass()) sum("julia"))
-    g["sum(\"julia\") (cached)"] = @benchmarkable (@report_opt report_pass=JET.OptAnalysisPass() sum("julia"))
-    g["rand(Bool)"] = @benchmarkable (@report_opt report_pass=FreshPass(JET.OptAnalysisPass()) rand(Bool)) seconds=10.0
-    g["println(QuoteNode(nothing))"] = @benchmarkable (@report_opt report_pass=FreshPass(JET.OptAnalysisPass()) println(QuoteNode(nothing))) seconds=30.0
+    g["identity(nothing)"] = @benchmarkable (@report_opt __cache_hash__=gensym() identity(nothing))
+    g["sum(\"julia\")"] = @benchmarkable (@report_opt __cache_hash__=gensym() sum("julia"))
+    g["sum(\"julia\") (cached)"] = @benchmarkable (@report_opt sum("julia"))
+    g["rand(Bool)"] = @benchmarkable (@report_opt __cache_hash__=gensym() rand(Bool)) seconds=10.0
+    g["println(QuoteNode(nothing))"] = @benchmarkable (@report_opt __cache_hash__=gensym() println(QuoteNode(nothing))) seconds=30.0
     tune_benchmarks!(g)
 end
 

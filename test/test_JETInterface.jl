@@ -1,28 +1,6 @@
 module test_JETInterface
 
 using JET.JETInterface, JET, Test, InteractiveUtils
-using JET: get_reports, BasicPass, UndefVarErrorReport
-
-# customized report pass
-# ======================
-
-struct IgnoreAllPass <: ReportPass end
-(::IgnoreAllPass)(::Type{<:InferenceErrorReport}, @nospecialize(_...)) = false
-let result = @report_call report_pass=IgnoreAllPass() sum("julia")
-    @test isempty(get_reports(result))
-end
-
-struct IgnoreAllExceptGlobalUndefVarPass <: ReportPass end
-(::IgnoreAllExceptGlobalUndefVarPass)(::Type{<:InferenceErrorReport}, @nospecialize(_...)) = false
-(::IgnoreAllExceptGlobalUndefVarPass)(::Type{UndefVarErrorReport}, @nospecialize(args...)) = BasicPass()(UndefVarErrorReport, args...)
-let result = report_call(; report_pass=IgnoreAllExceptGlobalUndefVarPass()) do
-        sum("julia") # should be ignored
-        undefvar
-    end
-    let r = only(get_reports(result))
-        @test isa(r, UndefVarErrorReport) && isa(r.var, GlobalRef) && r.var.name === :undefvar
-    end
-end
 
 # AbstractAnalyzer API
 # ====================
@@ -69,17 +47,12 @@ JETInterface.AbstractAnalyzer(analyzer::APIValidator, state::AnalyzerState) = AP
 
 @test_throws ERROR_MSG @report_apivalidator compute_sins(10)
 
-# interface 3: `ReportPass(analyzer::APIValidator) -> ReportPass`
-JETInterface.ReportPass(analyzer::APIValidator) = IgnoreAllPass()
-
-@test_throws ERROR_MSG @report_apivalidator compute_sins(10)
-
-# interface 4: `AnalysisToken(analyzer::APIValidator) -> AnalysisToken`
+# interface 3: `AnalysisToken(analyzer::APIValidator) -> AnalysisToken`
 JETInterface.AnalysisToken(analyzer::APIValidator) = analyzer.analysis_token
 
-# because `APIValidator` uses `IgnoreAllPass`, we won't get any reports
+# `APIValidator` doesn't implement any report methods, so we won't get any reports
 let result = @report_apivalidator compute_sins(10)
-    @test isempty(get_reports(result))
+    @test isempty(JET.get_reports(result))
 end
 
 end # module test_JETInterface

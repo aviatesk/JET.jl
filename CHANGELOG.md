@@ -46,6 +46,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- links end -->
 
 ## [Unreleased]
+
+### Breaking
+- The `ReportPass` interface has been removed. The `[@]report_call` entrypoints
+  continue to support the `mode::Symbol` option with values `:basic`, `:typo`,
+  or `:sound` (aviatesk/JET.jl#731).
+  - Advanced analysis customization that was previously possible using the
+    `ReportPass` interface can now be achieved by the `JET.JETAnalyzer` type,
+    which is now an abstract type.
+  - For `OptAnalyzer`, such customization is no longer possible, but for most
+    use cases, simply configuring `function_filter` is sufficient.
+
 ### Changed
 - Precompilation of JET has been re-enabled. This should significantly improve
   startup times:
