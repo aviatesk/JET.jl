@@ -103,9 +103,6 @@ JET offers other error reporting passes, including the "sound" error detection
 as well as the simpler "typo" detection pass.
 They can be switched using the `mode` configuration:
 
-[^2]: JET offers the framework to define your own abstract interpretation-based analysis.
-      See [`AbstractAnalyzer`-Framework](@ref) if interested.
-
 ```@repl quickstart
 function myifelse(cond, a, b)
     if cond
