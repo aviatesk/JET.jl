@@ -19,32 +19,28 @@ as subtype of `AbstractAnalyzer`, and is expected to implement the following int
    or [abstract interpretation](@ref abstractinterpret), given the previous
    `analyzer::NewAnalyzer` and [`state::AnalyzerState`](@ref AnalyzerState).
 
-3. **`JETInterface.ReportPass(analyzer::NewAnalyzer) -> ReportPass`**:
-   Returns [`ReportPass`](@ref) used for `analyzer::NewAnalyzer`.
-
-4. **`JETInterface.AnalysisToken(analyzer::NewAnalyzer) -> AnalysisToken`**:
+3. **`JETInterface.AnalysisToken(analyzer::NewAnalyzer) -> AnalysisToken`**:
    Returns a unique `AnalysisToken` object used for `analyzer::NewAnalyzer`.
 
-See also [`AnalyzerState`](@ref), [`ReportPass`](@ref) and [`AnalysisToken`](@ref).
+See also [`AnalyzerState`](@ref) and [`AnalysisToken`](@ref).
 
 # Example
 
-JET.jl defines its default error analyzer `JETAnalyzer <: AbstractAnalyzer` as the following
+JET.jl defines its default error analyzer `BasicJETAnalyzer <: AbstractAnalyzer` as the following
 (modified a bit for the sake of simplicity):
 ```julia
 # the default error analyzer for JET.jl
-struct JETAnalyzer{RP<:ReportPass} <: AbstractAnalyzer
+struct BasicJETAnalyzer <: AbstractAnalyzer
     state::AnalyzerState
-    report_pass::RP
+    analysis_token::AnalysisToken
+    # ... other fields
 end
 
 # AbstractAnalyzer API requirements
-JETInterface.AnalyzerState(analyzer::JETAnalyzer) = analyzer.state
-JETInterface.AbstractAnalyzer(analyzer::JETAnalyzer, state::AnalyzerState) = JETAnalyzer(ReportPass(analyzer), state)
-JETInterface.ReportPass(analyzer::JETAnalyzer) = analyzer.report_pass
-let global_analysis_token = AnalysisToken()
-    JETInterface.AnalysisToken(analyzer::JETAnalyzer) = global_analysis_token
-end
+JETInterface.AnalyzerState(analyzer::BasicJETAnalyzer) = analyzer.state
+JETInterface.AbstractAnalyzer(analyzer::BasicJETAnalyzer, state::AnalyzerState) = 
+    BasicJETAnalyzer(state, analyzer.analysis_token, ...)
+JETInterface.AnalysisToken(analyzer::BasicJETAnalyzer) = analyzer.analysis_token
 ```
 """
 abstract type AbstractAnalyzer <: AbstractInterpreter end
@@ -317,70 +313,7 @@ end
 
 # interface 3
 # -----------
-# 3. `ReportPass(analyzer::NewAnalyzer) -> ReportPass`
-
-"""
-    abstract type ReportPass end
-
-An interface type that represents `AbstractAnalyzer`'s report pass.
-`analyzer::AbstractAnalyzer` injects report passes using the `(::ReportPass)(::Type{InferenceErrorReport}, ::AbstractAnalyzer, state, ...)`
-interface, which provides a flexible and efficient layer to configure the analysis done by `AbstractAnalyzer`.
-
----
-
-    JETInterface.ReportPass(analyzer::AbstractAnalyzer) -> ReportPass
-
-If `NewAnalyzer` implements the `AbstractAnalyzer` interface, `NewAnalyzer` should implement
-this `ReportPass(analyzer::NewAnalyzer) -> ReportPass` interface.
-
-`ReportPass` allows `NewAnalyzer` to provide a very flexible configuration layer for `NewAnalyzer`'s analysis;
-an user can define their own `ReportPass` to control how `NewAnalyzer` collects report errors
-while still using the analysis routine implemented by `NewAnalyzer`.
-
-# Example
-
-For example, [`JETAnalyzer`](@ref) accepts a custom `ReportPass` passed as part of the
-[general configurations](@ref) (see the documentation of [`AbstractAnalyzer`](@ref) for
-an example implementation).
-And we can setup a custom report pass `IgnoreAllExceptGlobalUndefVar`, that ignores all the
-reports that are otherwise collected by `JETAnalyzer` except `UndefVarErrorReport`:
-```julia
-# custom report pass that ignores all the reports except `UndefVarErrorReport`
-struct IgnoreAllExceptGlobalUndefVar <: ReportPass end
-
-# ignores all the reports analyzed by `JETAnalyzer`
-(::IgnoreAllExceptGlobalUndefVar)(::Type{<:InferenceErrorReport}, @nospecialize(_...)) = return
-
-# forward to `BasicPass` to collect `UndefVarErrorReport`
-function (::IgnoreAllExceptGlobalUndefVar)(::Type{UndefVarErrorReport}, @nospecialize(args...))
-    BasicPass()(UndefVarErrorReport, args...)
-end
-
-no_method_error()    = 1 + "1"
-undef_global_error() = undefvar
-report_call(; report_pass=IgnoreAllExceptGlobalUndefVar()) do
-    if rand(Bool)
-        return no_method_error()    # "no matching method found" error report won't be reported here
-    else
-        return undef_global_error() # "`undefvar` is not defined" error report will be reported
-    end
-end
-```
-"""
-abstract type ReportPass end
-
-@noinline function ReportPass(analyzer::AbstractAnalyzer)
-    AnalyzerType = nameof(typeof(analyzer))
-    error(lazy"""
-    Missing `$AbstractAnalyzer` API:
-    `$AnalyzerType` is required to implement the `$ReportPass(analyzer::$AnalyzerType) -> $ReportPass` interface.
-    See the documentation of `$AbstractAnalyzer` and `$ReportPass`.
-    """)
-end
-
-# interface 4
-# -----------
-# 4. `JETInterface.AnalysisToken(analyzer::NewAnalyzer) -> AnalysisToken`
+# 3. `JETInterface.AnalysisToken(analyzer::NewAnalyzer) -> AnalysisToken`
 
 """
     mutable struct AnalysisToken

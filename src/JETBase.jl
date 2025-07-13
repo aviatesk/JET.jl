@@ -1194,7 +1194,7 @@ end
 
 reexport_as_api!(JETInterface,
     # AbstractAnalyzer API
-    AbstractAnalyzer, AnalyzerState, AnalysisToken, ReportPass, ToplevelAbstractAnalyzer,
+    AbstractAnalyzer, AnalyzerState, AnalysisToken, ToplevelAbstractAnalyzer,
     valid_configurations, aggregation_policy, VSCode.vscode_diagnostics_order,
     # ErrorReport API
     InferenceErrorReport, ToplevelErrorReport, copy_report, print_report,

@@ -676,8 +676,8 @@ function analyze_from_definitions!(interp::ConcreteInterpreter, config::Toplevel
     succeeded = Ref(0)
     start = time()
     analyzer = ToplevelAbstractAnalyzer(interp, non_toplevel_concretized; refresh_local_cache = false)
-    if analyzer isa JETAnalyzer && analyzer.report_pass === BasicPass()
-        analyzer = JETAnalyzer(AnalyzerState(analyzer), DefinitionAnalysisPass(), JETAnalyzerConfig(analyzer))
+    if analyzer isa BasicJETAnalyzer
+        analyzer = FromDefinitionJETAnalyzer(analyzer.state, analyzer.analysis_token, analyzer.method_table, analyzer.config)
     end
     entrypoint = config.analyze_from_definitions
     res = InterpretationState(interp).res

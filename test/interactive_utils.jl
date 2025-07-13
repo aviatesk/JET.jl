@@ -3,7 +3,7 @@ using JET, InteractiveUtils
 const CC = JET.CC
 const JS = JET.JS
 
-using .CC: Bottom, widenconst, ⊑
+using JET.CC: Bottom, widenconst, ⊑
 
 using JET:
     AbstractAnalyzer, InferenceErrorReport, JETAnalyzer, JETConcreteInterpreter, ToplevelErrorReport,
