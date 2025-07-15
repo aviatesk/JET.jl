@@ -1654,7 +1654,6 @@ isinclude(@nospecialize f) = f isa Base.IncludeInto || (isa(f, Function) && name
 function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func), args::Vector{Any})
     state = InterpretationState(interp)
     filename = state.filename
-    res = state.res
     line = state.curline
     include_context = state.context
 
