@@ -157,6 +157,7 @@ function JETInterface.AbstractAnalyzer(analyzer::OptAnalyzer, state::AnalyzerSta
         analyzer.skip_noncompileable_calls)
 end
 JETInterface.AnalysisToken(analyzer::OptAnalyzer) = analyzer.analysis_token
+JETInterface.typeinf_world(::OptAnalyzer) = JET_TYPEINF_WORLD[]
 JETInterface.vscode_diagnostics_order(::OptAnalyzer) = false
 
 const OPT_ANALYZER_CACHE = Dict{UInt, AnalysisToken}()
@@ -331,7 +332,7 @@ function report_runtime_dispatch!(analyzer::OptAnalyzer, caller::InferenceResult
             f = singleton_type(ft)
             if f !== nothing
                 f isa Builtin && continue # ignore `:call`s of language intrinsics
-                analyzer.function_filter(f) || continue # ignore user-specified functions
+                (isnothing(analyzer.function_filter) || @invokelatest(analyzer.function_filter(f))) || continue # ignore user-specified functions
             end
             lins = get_lins((opt, pc))
             isempty(lins) && continue # dead statement, just ignore it

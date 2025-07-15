@@ -38,7 +38,7 @@ end
 
 # AbstractAnalyzer API requirements
 JETInterface.AnalyzerState(analyzer::BasicJETAnalyzer) = analyzer.state
-JETInterface.AbstractAnalyzer(analyzer::BasicJETAnalyzer, state::AnalyzerState) = 
+JETInterface.AbstractAnalyzer(analyzer::BasicJETAnalyzer, state::AnalyzerState) =
     BasicJETAnalyzer(state, analyzer.analysis_token, ...)
 JETInterface.AnalysisToken(analyzer::BasicJETAnalyzer) = analyzer.analysis_token
 ```
@@ -351,6 +351,23 @@ end
 
 # optional API
 # ------------
+
+"""
+    typeinf_world(analyzer::AbstractAnalyzer) -> world::Union{UInt,Nothing}
+
+Return the world age to use for type inference performed by the given `analyzer`,
+or `nothing` to use the current world.
+
+When a specific world age is returned, the analyzer will invoke type inference
+within that fixed world using `Base.invoke_in_world`. This makes the analysis
+implementation more robust against potential invalidations that may be caused
+by loading external packages.
+
+The default implementation returns `nothing`, meaning type inference runs in
+the latest world. Specific analyzer implementations may override this to return
+a fixed world age for stability.
+"""
+typeinf_world(::AbstractAnalyzer) = nothing
 
 """
     JETInterface.valid_configurations(analyzer::AbstractAnalyzer) -> names or nothing

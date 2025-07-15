@@ -116,6 +116,9 @@ function JETInterface.AbstractAnalyzer(analyzer::T, state::AnalyzerState) where 
     return T(state, analysis_token, method_table, analyzer.config)
 end
 JETInterface.AnalysisToken(analyzer::JETAnalyzer) = analyzer.analysis_token
+JETInterface.typeinf_world(::BasicJETAnalyzer) = JET_TYPEINF_WORLD[]
+JETInterface.typeinf_world(::SoundJETAnalyzer) = JET_TYPEINF_WORLD[]
+JETInterface.typeinf_world(::TypoJETAnalyzer) = JET_TYPEINF_WORLD[]
 
 const JET_ANALYZER_CACHE = Dict{UInt, AnalysisToken}()
 

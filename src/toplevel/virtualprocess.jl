@@ -509,10 +509,13 @@ struct JETConcreteInterpreter{Analyzer<:ToplevelAbstractAnalyzer} <: ConcreteInt
     JETConcreteInterpreter(analyzer::Analyzer, state::InterpretationState) where Analyzer<:ToplevelAbstractAnalyzer = new{Analyzer}(analyzer, state)
 end
 
-# Implement the required interface methods
+# `ConcreteInterpreter` required interface
 InterpretationState(interp::JETConcreteInterpreter) = interp.state
 ConcreteInterpreter(interp::JETConcreteInterpreter, state::InterpretationState) = JETConcreteInterpreter(interp.analyzer, state)
 ToplevelAbstractAnalyzer(interp::JETConcreteInterpreter) = interp.analyzer
+
+# `ConcreteInterpreter` optional interface
+interpret_world(::JETConcreteInterpreter) = JET_INTERPRET_WORLD[]
 
 """
     virtual_process(interp::ConcreteInterpreter,

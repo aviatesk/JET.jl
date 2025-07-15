@@ -4,6 +4,8 @@ using Preferences: Preferences
 
 const JET_DEV_MODE = Preferences.@load_preference("JET_DEV_MODE", false)
 
+const USE_FIXED_WORLD = Preferences.@load_preference("use_fixed_world", !JET_DEV_MODE)
+
 const PKG_EVAL = Base.get_bool_env("JULIA_PKGEVAL", false)
 
 const JET_LOADABLE = JET_DEV_MODE || PKG_EVAL || (get(VERSION.prerelease, 1, "") != "DEV")
