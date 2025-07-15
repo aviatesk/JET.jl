@@ -47,16 +47,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Breaking
-- The `ReportPass` interface has been removed. The `[@]report_call` entrypoints
-  continue to support the `mode::Symbol` option with values `:basic`, `:typo`,
-  or `:sound` (aviatesk/JET.jl#731).
-  - Advanced analysis customization that was previously possible using the
-    `ReportPass` interface can now be achieved by the `JET.JETAnalyzer` type,
-    which is now an abstract type.
-  - For `OptAnalyzer`, such customization is no longer possible, but for most
-    use cases, simply configuring `function_filter` is sufficient.
-
 ### Changed
 - Precompilation of JET has been re-enabled. This should significantly improve
   startup times:
@@ -119,7 +109,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved accuracy of `VirtualProcessResult.analyzed_files`.
 - JET now requires JuliaSyntax v1.0.
 ### Removed
-- Support for Cthulhu extension has been temporarily removed.
+- **BREAKING**: The `ReportPass` interface has been removed. The `[@]report_call`
+  entrypoints continue to support the `mode::Symbol` option with values
+  `:basic`, `:typo`, or `:sound` (aviatesk/JET.jl#731).
+  - Advanced analysis customization that was previously possible using the
+    `ReportPass` interface can now be achieved by the `JET.JETAnalyzer` type,
+    which is now an abstract type.
+  - For `OptAnalyzer`, such customization is no longer possible, but for most
+    use cases, simply configuring `function_filter` is sufficient.
+- **WARNING**: Support for Cthulhu extension has been temporarily removed.
   This is because JET requires JuliaSyntax@1.0, while Cthulhu still requires JuliaSyntax@0.4.
   We will restore extension support once Cthulhu (or more precisely, TypedSyntax.jl) supports JuliaSyntax@1.0.
 - Removed the `include_callback` functionality that was added in [0.9.14].
