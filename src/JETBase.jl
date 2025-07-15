@@ -300,6 +300,23 @@ jet_logger_level(@nospecialize io::IO) = get(io, JET_LOGGER_LEVEL, DEFAULT_LOGGE
 
 abstract type ConcreteInterpreter <: JuliaInterpreter.Interpreter end
 
+"""
+    interpret_world(interp::ConcreteInterpreter) -> world::Union{UInt,Nothing}
+
+Return the world age to use for interpretation performed by the given `interp`,
+or `nothing` to use the current world.
+
+When a specific world age is returned, the interpreter will invoke functions
+within that fixed world using `Base.invoke_in_world`. This makes the interpretation
+implementation more robust against potential invalidations that may be caused
+by loading external packages.
+
+The default implementation returns `nothing`, meaning interpretation runs in
+the latest world. Specific interpreter implementations may override this to return
+a fixed world age for stability.
+"""
+interpret_world(::ConcreteInterpreter) = nothing
+
 include("abstractinterpret/inferenceerrorreport.jl")
 include("abstractinterpret/abstractanalyzer.jl")
 include("abstractinterpret/typeinfer.jl")
@@ -694,10 +711,10 @@ end
 function analyze_frame!(analyzer::AbstractAnalyzer, frame::InferenceState)
     set_entry!(analyzer, frame.linfo)
     tworld = typeinf_world(analyzer)
-    if tworld !== nothing
-        Base.invoke_in_world(tworld, CC.typeinf, analyzer, frame)
-    else
+    if isnothing(tworld) || JET_DEV_MODE
         CC.typeinf(analyzer, frame)
+    else
+        Base.invoke_in_world(tworld, CC.typeinf, analyzer, frame)
     end
     return analyzer, frame.result
 end
@@ -916,7 +933,12 @@ function analyze_and_report_text!(interp::ConcreteInterpreter, text::AbstractStr
     analyzer = ToplevelAbstractAnalyzer(interp)
     validate_configs(analyzer, jetconfigs)
     config = ToplevelConfig(pkgid; jetconfigs...)
-    res = virtual_process(interp, text, filename, config)
+    iworld = interpret_world(interp)
+    if isnothing(iworld) || JET_DEV_MODE
+        res = virtual_process(interp, text, filename, config)
+    else
+        res = Base.invoke_in_world(iworld, virtual_process, interp, text, filename, config)
+    end
     analyzername = nameof(typeof(analyzer))
     source = lazy"$analyzername: \"$filename\""
     return JETToplevelResult(analyzer, res, source; jetconfigs...)
@@ -937,7 +959,12 @@ function analyze_and_report_expr!(interp::ConcreteInterpreter, x::Union{JS.Synta
         toplevelnode = x
         overrideex = nothing
     end
-    res = virtual_process(interp, toplevelnode, filename, config; overrideex)
+    iworld = interpret_world(interp)
+    if isnothing(iworld) || JET_DEV_MODE
+        res = virtual_process(interp, toplevelnode, filename, config; overrideex)
+    else
+        res = Base.invoke_in_world(iworld, virtual_process, interp, toplevelnode, filename, config; overrideex)
+    end
     analyzername = nameof(typeof(analyzer))
     source = lazy"$analyzername: \"$filename\""
     return JETToplevelResult(analyzer, res, source; jetconfigs...)
@@ -1219,11 +1246,16 @@ include("analyzers/optanalyzer.jl")
 # NOTE Use the fixed world here to make `JETAnalyzer`/`OptAnalyzer` robust against potential invalidations
 const JET_TYPEINF_WORLD = Ref{UInt}(typemax(UInt))
 
-# Initialize `JET_TYPEINF_WORLD[]` within `__init__`:
+# NOTE Use the fixed world here to make `JETConcreteInterpreter` robust against potential invalidations
+const JET_INTERPRET_WORLD = Ref{UInt}(typemax(UInt))
+
+# Initialize `JET_TYPEINF_WORLD[]` and `JET_INTERPRET_WORLD[]` within `__init__`:
 # Note that precompilation below will use the current world age rather than `typemax(UInt)`,
 # since `Base.invoke_in_world` uses the current world age when the given world age is higher than the current one.
 push_inithook!() do
-    JET_TYPEINF_WORLD[] = Base.get_world_counter()
+    world = Base.get_world_counter()
+    JET_TYPEINF_WORLD[] = world
+    JET_INTERPRET_WORLD[] = world
 end
 
 module __demo__ end

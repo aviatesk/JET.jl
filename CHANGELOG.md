@@ -108,6 +108,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ```
 - Improved accuracy of `VirtualProcessResult.analyzed_files`.
 - JET now requires JuliaSyntax v1.0.
+- JET's pre-defined analyzers (`JETAnalyzer` and `OptAnalyzer`) and interpreters
+  (`JETConcreteInterpreter`) now use fixed world ages for improved robustness
+  against invalidations that may be caused by loading external packages
+  (aviatesk/JET.jl#732). This behavior is enabled by default (more specifically,
+  when the `JET_DEV_MODE` is turned off).
+  - Added `typeinf_world(analyzer::AbstractAnalyzer)` optional interface for
+    controlling the world age used during type inference.
+  - Added `interpret_world(interp::ConcreteInterpreter)` optional interface for
+    controlling the world age used during interpretation.
 ### Removed
 - **BREAKING**: The `ReportPass` interface has been removed. The `[@]report_call`
   entrypoints continue to support the `mode::Symbol` option with values
