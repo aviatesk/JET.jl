@@ -711,7 +711,7 @@ end
 function analyze_frame!(analyzer::AbstractAnalyzer, frame::InferenceState)
     set_entry!(analyzer, frame.linfo)
     tworld = typeinf_world(analyzer)
-    if isnothing(tworld) || JET_DEV_MODE
+    if isnothing(tworld) || !USE_FIXED_WORLD
         CC.typeinf(analyzer, frame)
     else
         Base.invoke_in_world(tworld, CC.typeinf, analyzer, frame)
@@ -934,7 +934,7 @@ function analyze_and_report_text!(interp::ConcreteInterpreter, text::AbstractStr
     validate_configs(analyzer, jetconfigs)
     config = ToplevelConfig(pkgid; jetconfigs...)
     iworld = interpret_world(interp)
-    if isnothing(iworld) || JET_DEV_MODE
+    if isnothing(iworld) || !USE_FIXED_WORLD
         res = virtual_process(interp, text, filename, config)
     else
         res = Base.invoke_in_world(iworld, virtual_process, interp, text, filename, config)
@@ -960,7 +960,7 @@ function analyze_and_report_expr!(interp::ConcreteInterpreter, x::Union{JS.Synta
         overrideex = nothing
     end
     iworld = interpret_world(interp)
-    if isnothing(iworld) || JET_DEV_MODE
+    if isnothing(iworld) || !USE_FIXED_WORLD
         res = virtual_process(interp, toplevelnode, filename, config; overrideex)
     else
         res = Base.invoke_in_world(iworld, virtual_process, interp, toplevelnode, filename, config; overrideex)
