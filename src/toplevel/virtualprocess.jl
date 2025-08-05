@@ -52,14 +52,33 @@ end
 print_report(io::IO, report::ParseErrorReport) =
     JS.show_diagnostic(io, report.diagnostic, report.source)
 
-# TODO Use JuliaLowering.jl here
-struct LoweringErrorReport <: ToplevelErrorReport
-    msg::String
+# TODO Use JuliaLowering.jl
+struct MacroExpansionErrorReport <: ToplevelErrorReport
+    err
+    st::Base.StackTraces.StackTrace
     file::String
     line::Int
 end
-# don't show stacktrace for lowering errors
-print_report(io::IO, report::LoweringErrorReport) = showerror(io, ErrorException(lazy"syntax: $(report.msg)"))
+function print_report(io::IO, report::MacroExpansionErrorReport)
+    println(io, "Macro expansion error:")
+    showerror(io, report.err, report.st)
+end
+
+# TODO Use JuliaLowering.jl
+struct LoweringErrorReport <: ToplevelErrorReport
+    err
+    file::String
+    line::Int
+    st::Base.StackTraces.StackTrace
+end
+function print_report(io::IO, report::LoweringErrorReport)
+    if isdefined(report, :st)
+        println(io, "Lowering error:")
+        showerror(io, report.err, report.st)
+    else
+        showerror(io, ErrorException(lazy"syntax: $(report.msg)"))
+    end
+end
 
 # wraps general errors from actual execution
 struct ActualErrorWrapped <: ToplevelErrorReport
@@ -71,7 +90,7 @@ struct ActualErrorWrapped <: ToplevelErrorReport
         return new(err, st, file, line)
     end
 end
-# TODO: add context information, i.e. during macroexpansion, defining something
+# TODO: add context information
 print_report(io::IO, report::ActualErrorWrapped) = showerror(io, report.err, report.st)
 
 struct DependencyError <: ToplevelErrorReport
@@ -803,6 +822,18 @@ function general_err_handler(@nospecialize(err), st, state::InterpretationState)
     nothing
 end
 
+function macro_expansion_err_handler(@nospecialize(err), st, state::InterpretationState)
+    report = MacroExpansionErrorReport(err, st, state.filename, state.curline)
+    add_toplevel_error_report!(state, report)
+    nothing
+end
+
+function lowering_err_handler(@nospecialize(err), st, state::InterpretationState)
+    report = LoweringErrorReport(err, state.filename, state.curline, st)
+    add_toplevel_error_report!(state, report)
+    nothing
+end
+
 function eval_with_err_handling(state::InterpretationState, x::Expr)
     # `scrub_offset = 1`: `Core.eval`
     with_err_handling(general_err_handler, state; scrub_offset=1) do
@@ -812,22 +843,24 @@ end
 
 function macroexpand_with_err_handling(state::InterpretationState, x::Expr)
     # `scrub_offset = 2`: `macroexpand` -> kwfunc (`macroexpand`)
-    with_err_handling(general_err_handler, state; scrub_offset=2) do
-        # XXX we want to non-recursive, sequential partial macro expansion here, which allows
-        # us to collect more fine-grained error reports within macro expansions
+    with_err_handling(macro_expansion_err_handler, state; scrub_offset=2) do
+        # XXX we want to non-recursive, sequential partial macro expansion here,
+        # which allows us to collect more fine-grained error reports within macro expansions
         # but it can lead to invalid macro hygiene escaping because of https://github.com/JuliaLang/julia/issues/20241
-        macroexpand(state.context, x; recursive = true #= but want to use `false` here =#)
+        macroexpand(state.context, x; recursive = true)
     end
 end
 
 function lower_with_err_handling(interp::ConcreteInterpreter, ::JS.SyntaxNode, x::Expr)
     # `scrub_offset = 1`: `lower`
     state = InterpretationState(interp)
-    with_err_handling(general_err_handler, state; scrub_offset=1) do
-        lwr = lower(state.context, x)
+
+    x_expanded = @something macroexpand_with_err_handling(state, x) return nothing
+
+    with_err_handling(lowering_err_handler, state; scrub_offset=1) do
+        lwr = lower(state.context, x_expanded)
         if isexpr(lwr, :error)
-            # here we should capture syntax errors found during lowering
-            msg = first(lwr.args)::String
+            msg = first(lwr.args)
             add_toplevel_error_report!(state, LoweringErrorReport(msg, state.filename, state.curline))
             return nothing
         end

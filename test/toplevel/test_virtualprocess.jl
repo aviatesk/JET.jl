@@ -1001,6 +1001,27 @@ end
     @test only(res.res.inference_error_reports) isa UncaughtExceptionReport
 end
 
+@testset "macro expansion error report" begin
+    let res = @analyze_toplevel begin
+            macro badmacro(s) throw(s) end
+            @badmacro "hi"
+        end
+        @test only(res.res.toplevel_error_reports) isa MacroExpansionErrorReport
+    end
+    let res = @analyze_toplevel begin
+            macro badmacro(s) throw(s) end
+            x = @badmacro "hi"
+        end
+        @test only(res.res.toplevel_error_reports) isa MacroExpansionErrorReport
+    end
+end
+
+@testset "lowering error report" begin
+    let res = report_text("macro badmacro(x) \$(x) end")
+        @test only(res.res.toplevel_error_reports) isa LoweringErrorReport
+    end
+end
+
 @testset "error handling within ConcreteInterpreter" begin
     @assert !isdefinedglobal(@__MODULE__, :BType)
     mktemp() do filename, io
@@ -1021,7 +1042,7 @@ end
                 @badmacro "hi"                 # L2
             """, filename)
             er = only(res.res.toplevel_error_reports)
-            @test er isa ActualErrorWrapped
+            @test er isa MacroExpansionErrorReport
             @test er.file == filename && er.line == 2 # L2
             @test length(er.st) == 1
             sf = only(er.st)

@@ -116,6 +116,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `JET_DEV_MODE` is turned off). You can configure this behavior by setting
   the new `JET.use_fixed_world = !JET.JET_DEV_MODE` preference.
 - Updated depedency versions (allowing JET to be used with CodeTracking v2).
+- For errors that occur during JET's top-level analysis, it is now possible to
+  distinguish between those that occur during macro expansion
+  (`JET.MacroExpansionErrorReport`) and those that occur during lowering
+  (`JET.LoweringErrorReport`) (aviatesk/JET.jl#737).
 ### Removed
 - **BREAKING**: The `ReportPass` interface has been removed. The `[@]report_call`
   entrypoints continue to support the `mode::Symbol` option with values
