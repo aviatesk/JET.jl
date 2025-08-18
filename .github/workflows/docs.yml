@@ -14,7 +14,7 @@ jobs:
       contents: write
       statuses: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: julia-actions/setup-julia@latest
         with:
           version: '1.12-nightly' # next release
