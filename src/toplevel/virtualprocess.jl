@@ -1829,13 +1829,8 @@ function with_err_handling(f, err_handler, handler_args...; scrub_offset::Int)
     end
 end
 
-# a bridge to abstract interpretation
 function analyze_toplevel!(analyzer::ToplevelAbstractAnalyzer, src::CodeInfo, context_module::Module)
-    resolve_toplevel_symbols!(src, context_module)
-
-    # construct toplevel `MethodInstance`
-    mi = @ccall jl_method_instance_for_thunk(
-        src::Any, context_module::Any)::Ref{Core.MethodInstance}
+    mi = construct_toplevel_mi(src, context_module)
 
     result = InferenceResult(mi);
     init_result!(analyzer, result)
@@ -1847,8 +1842,13 @@ function analyze_toplevel!(analyzer::ToplevelAbstractAnalyzer, src::CodeInfo, co
     return analyze_frame!(analyzer, frame), frame
 end
 
-# resolve toplevel symbols (and other expressions like `:foreigncall`) within `src`
-# so that it is eligible for abstractintepret and optimization
+function construct_toplevel_mi(src::Core.CodeInfo, context_module::Module)
+    resolve_toplevel_symbols!(src, context_module)
+    return @ccall jl_method_instance_for_thunk(src::Any, context_module::Any)::Ref{Core.MethodInstance}
+end
+
+# Perform some post-hoc mutation on lowered code, as expected by some abstract interpretation
+# routines, especially for `:foreigncall` and `:cglobal`.
 # TODO `jl_resolve_globals_in_ir` may throw, and we should redirect the error to `ToplevelErrorReport`
 function resolve_toplevel_symbols!(src::CodeInfo, mod::Module)
     @ccall jl_resolve_definition_effects_in_ir(
