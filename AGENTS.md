@@ -1,8 +1,8 @@
 # Formatting
-- When writing Julia code, use `4 whitespaces` for indentation and try to keep
-  the maximum line length under `92` characters.
-- When writing Markdown text, use `2 whitespaces` for indentation and try to
-  keep the maximum line length under `80` characters.
+- When writing Julia code, use _4 whitespaces_ for indentation and try to keep
+  the maximum line length under _92 characters_.
+- When writing Markdown text, use _2 whitespaces_ for indentation and try to
+  keep the maximum line length under _80 characters_.
 - When writing commit messages, follow the format `component: brief summary` for
   the title. In the body of the commit message, provide a brief prose summary of
   the purpose of the changes made.
