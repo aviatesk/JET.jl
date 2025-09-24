@@ -1059,11 +1059,11 @@ end
 The trait to inject code into JuliaInterpreter's interpretation process; JET.jl overloads:
 - `JuliaInterpreter.step_expr!` to add error report pass for module usage expressions and
   support package analysis
-- `JuliaInterpreter.evaluate_call_recurse!` to special case `include` calls
+- `JuliaInterpreter.evaluate_call!` to special case `include` calls
 - `JuliaInterpreter.handle_err` to wrap an error happened during interpretation into
   `ActualErrorWrapped`
 """
-struct ConcreteInterpreter{F,Analyzer<:AbstractAnalyzer}
+struct ConcreteInterpreter{F,Analyzer<:AbstractAnalyzer} <: Interpreter
     filename::String
     lnn::LineNumberNode
     usemodule_with_err_handling::F
@@ -1207,7 +1207,7 @@ function is_known_getproperty(@nospecialize(stmt), func::Symbol, stmts::Vector{A
     if (callee_matches(f, Base, :getproperty) ||
         callee_matches(f, Core, :getproperty) ||
         callee_matches(f, Core.Compiler, :getproperty))
-        if is_quotenode_egal(stmt.args[3], func)
+        if JuliaInterpreter.is_quotenode_egal(stmt.args[3], func)
             return true
         end
     end
@@ -1300,7 +1300,7 @@ function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, 
         return frame.pc += 1
     end
 
-    res = @invoke JuliaInterpreter.step_expr!(interp::Any, frame::Frame, node::Any, istoplevel::Bool)
+    res = @invoke JuliaInterpreter.step_expr!(interp::Interpreter, frame::Frame, node::Any, istoplevel::Bool)
 
     should_analyze_from_definitions(interp.config) && collect_toplevel_signature!(interp, frame, node)
 
@@ -1368,28 +1368,27 @@ function _to_simple_module_usages(x::Expr)
     return Expr[Expr(x.head, ex) for ex in Expr[Expr(arg.head, a, a′) for a′ in as]]
 end
 
-# adapted from https://github.com/JuliaDebug/JuliaInterpreter.jl/blob/2f5f80034bc287a60fe77c4e3b5a49a087e38f8b/src/interpret.jl#L188-L199
-# works almost same as `JuliaInterpreter.evaluate_call_compiled!`, but with few important tweaks:
-# - a special handling for `include` call to recursively apply JET's analysis on the included file
-# - some `@invokelatest` are added where we directly call an user expression
-#   since `_virtual_process!` iteratively interprets toplevel expressions but the world age
-#   is not updated at each iteration so we need to make sure the user expression is
-#   evaluated in the latest world age where newly defined functions are available.
-function JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)
+# This overload performs almost the same work as
+# `JuliaInterpreter.evaluate_call!(::JuliaInterpreter.NonRecursiveInterpreter, ...)`
+# but includes a few important adjustments specific to JET's virtual process:
+# - Special handling for `include` calls: recursively apply JET analysis to included files.
+# - Ignore C-side function definitions created via `Base._ccallable`. These definitions
+#   are not namespaced in the module and can cause false-positive name conflict errors
+#   when running analysis multiple times (see aviatesk/JET.jl#597).
+function JuliaInterpreter.evaluate_call!(interp::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)
     # @assert !enter_generated
     pc = frame.pc
     ret = JuliaInterpreter.bypass_builtins(interp, frame, call_expr, pc)
     isa(ret, Some{Any}) && return ret.value
-    ret = @invokelatest JuliaInterpreter.maybe_evaluate_builtin(frame, call_expr, false)
+    ret = JuliaInterpreter.maybe_evaluate_builtin(interp, frame, call_expr, false)
     isa(ret, Some{Any}) && return ret.value
     args = JuliaInterpreter.collect_args(interp, frame, call_expr)
     f = popfirst!(args) # now it's really just `args`
     isinclude(f) && return handle_include(interp, f, args)
     if f === Base._ccallable
-        # skip concrete-interpretation of `jl_extern_c` as the C-side function definition
-        # isn't really essential for Julia-level analysis
+        # skip concrete-interpretation of `jl_extern_c`
         if length(args) == 2 && args[1] isa Type && args[2] isa Type
-            # ignore it only if the method dispatch is successful
+            # ignore only if the method dispatch is successful
             return nothing
         else
             # otherwise just call it to trigger a method error
@@ -1477,7 +1476,7 @@ function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame::Frame, 
 
     # if the last error is from this file, it's likely to be a serious error of JET
     lastframe = last(st)
-    if lastframe.file === JET_VIRTUALPROCESS_FILE && lastframe.func === :evaluate_call_recurse!
+    if lastframe.file === JET_VIRTUALPROCESS_FILE && lastframe.func === :evaluate_call!
         rethrow(err)
     end
 
@@ -1491,9 +1490,9 @@ function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame::Frame, 
         end
 
         # find an error frame that happened at `@invokelatest f(fargs...)` in the overload
-        # `JuliaInterpreter.evaluate_call_recurse!(interp::ConcreteInterpreter, frame::Frame, call_expr::Expr; enter_generated::Bool=false)`
-        if frame.file === JET_VIRTUALPROCESS_FILE && frame.func === :evaluate_call_recurse!
-            i = j - 4 # offset: `evaluate_call_recurse` -> kwfunc (`evaluate_call_recurse`) -> `invokelatest` -> kwfunc (`invokelatest`)
+        # `JuliaInterpreter.evaluate_call!(::ConcreteInterpreter, ::Frame, ::Expr, ::Bool)`
+        if frame.file === JET_VIRTUALPROCESS_FILE && frame.func === :evaluate_call!
+            i = j - 1 # offset: `evaluate_call!`
             break
         end
 
