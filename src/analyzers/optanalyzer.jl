@@ -361,7 +361,8 @@ function OptAnalyzer(world::UInt = Base.get_world_counter();
     cache_key = compute_hash(state.inf_params, state.opt_params, OptAnalyzer,
                              skip_noncompileable_calls, __cache_hash__)
     cache_key = @invoke hash(function_filter::Any, cache_key::UInt) # HACK avoid dynamic dispatch
-    analysis_token = get!(AnalysisToken, OPT_ANALYZER_CACHE, cache_key)
+    # analysis_token = get!(AnalysisToken, OPT_ANALYZER_CACHE, cache_key)
+    analysis_token = AnalysisToken() # disable cache for now
     return OptAnalyzer(
         state,
         analysis_token,
