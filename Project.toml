@@ -8,6 +8,7 @@ CodeTracking = "da1fd8a2-8d9e-5ec2-8556-3022fb5608a2"
 Compiler = "807dbc54-b67e-4c79-8afb-eafe4df6f2e1"
 InteractiveUtils = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
 JuliaInterpreter = "aa1ae85d-cabe-5617-a682-6adf51b2e16a"
+JuliaLowering = "f3c80556-a63f-4383-b822-37d64f81a311"
 JuliaSyntax = "70703baa-626e-46a2-a12c-08ffd08c73b4"
 LoweredCodeUtils = "6f1432cf-f94c-5a45-995e-cdbf5db27b0b"
 MacroTools = "1914dd2f-81c6-5fcd-8719-6d5c9610ff09"
@@ -16,12 +17,14 @@ PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
 Preferences = "21216c6a-2e73-6563-6e65-726566657250"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
+[sources]
+JuliaLowering = {rev = "jetls-hacking", url = "https://github.com/mlechu/JuliaLowering.jl"}
+JuliaSyntax = {rev = "jetls-hacking", url = "https://github.com/JuliaLang/JuliaSyntax.jl"}
+
 [weakdeps]
-# Cthulhu = "f68482b8-f384-11e8-15f7-abe071a5a75f"
 Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 
 [extensions]
-# JETCthulhuExt = "Cthulhu"
 JETReviseExt = "Revise"
 
 [compat]
@@ -29,7 +32,6 @@ Aqua = "0.8.2"
 BenchmarkTools = "1.3.2"
 CodeTracking = "1, 2"
 Compiler = "0.1"
-# Cthulhu = "2.17"
 Downloads = "1.6.0"
 Example = "0.5.3"
 InteractiveUtils = "1.10"
@@ -53,7 +55,6 @@ julia = "1.12"
 [extras]
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
-# Cthulhu = "f68482b8-f384-11e8-15f7-abe071a5a75f"
 Downloads = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
 Example = "7876af07-990d-54b4-ab0e-23690620f79a"
 JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
@@ -66,18 +67,4 @@ TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = [
-    "Aqua",
-    "BenchmarkTools",
-    # "Cthulhu",
-    "Downloads",
-    "Example",
-    "JSON3",
-    "Libdl",
-    "Logging",
-    "Random",
-    "Revise",
-    "StaticArrays",
-    "TOML",
-    "Test",
-]
+test = ["Aqua", "BenchmarkTools", "Downloads", "Example", "JSON3", "Libdl", "Logging", "Random", "Revise", "StaticArrays", "TOML", "Test"]
