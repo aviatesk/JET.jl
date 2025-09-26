@@ -47,6 +47,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- links end -->
 
 ## [Unreleased]
+### Changed
+- Fixed compatibility with `Base.@deprecate_binding` macro, which before
+  could trigger an internal error in packages using it.
 
 ## [0.10.7]
 ### Changed

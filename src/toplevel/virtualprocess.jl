@@ -1640,6 +1640,12 @@ function _to_simple_module_usages(x::Expr)
         return Expr[Expr(x.head, arg) for arg in x.args]
     end
     arg = only(x.args)
+    if isexpr(arg, :escape) && isa(only(arg.args), Symbol)
+        # Base.@deprecate_binding produces expressions of
+        # the form  :(export $(Expr(:escape, :a)))
+        arg = only(arg.args)
+        return Expr[Expr(x.head, arg)]
+    end
     if isa(arg, Symbol)
         # `export a`, `public a`
         return Expr[x]

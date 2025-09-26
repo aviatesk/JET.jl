@@ -118,6 +118,8 @@ end
         Expr[:(export a), :(export b)]
     @test JET.to_simple_module_usages(:(export a)) ==
         Expr[:(export a)]
+    @test JET.to_simple_module_usages(:(export $(Expr(:escape, :a)))) ==
+        Expr[:(export a)]
     @test JET.to_simple_module_usages(:(import Pkg as P)) ==
         Expr[:(import Pkg as P)]
     @test JET.to_simple_module_usages(:(using A)) ==
