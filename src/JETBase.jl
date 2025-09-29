@@ -1242,6 +1242,7 @@ reexport_as_api!(JETInterface,
 
 include("analyzers/jetanalyzer.jl")
 include("analyzers/optanalyzer.jl")
+include("analyzers/trimanalyzer.jl")
 
 # NOTE Use the fixed world here to make `JETAnalyzer`/`OptAnalyzer` robust against potential invalidations
 const JET_TYPEINF_WORLD = Ref{UInt}(typemax(UInt))
