@@ -148,4 +148,38 @@ end
     @test !occursin(repr(Typ), result_string(result))
 end
 
+@testset "sourceinfo" begin
+    let result = report_call(()->sum("abc"); sourceinfo=:full)
+        s = result_string(result)
+        @test occursin(r"@ Base /.*reduce\.jl:\d+", s)
+    end
+
+    let result = report_call(()->sum("abc"); sourceinfo=:default)
+        s = result_string(result)
+        @test occursin(r"@ Base \./reduce\.jl:\d+", s)
+    end
+
+    let result = report_call(()->sum("abc"); sourceinfo=:compact)
+        s = result_string(result)
+        @test occursin(r"@ Base reduce\.jl:\d+", s)
+        @test !occursin(r"@ Base /.*reduce\.jl:\d+", s)
+    end
+
+    let result = report_call(()->sum("abc"); sourceinfo=:minimal)
+        s = result_string(result)
+        @test occursin(r"@ Base\n", s)
+        @test !occursin(r"reduce\.jl", s)
+    end
+
+    let result = report_call(()->sum("abc"); sourceinfo=:none)
+        s = result_string(result)
+        @test !occursin(r"@ Base", s)
+        @test !occursin(r"reduce\.jl", s)
+    end
+
+    let result = report_call(()->sum("abc"); sourceinfo=:invalid)
+        @test_throws ArgumentError result_string(result)
+    end
+end
+
 end # module test_print

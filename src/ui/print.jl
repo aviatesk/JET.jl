@@ -26,9 +26,17 @@ Configurations for report printing.
 The configurations below will be active whenever `show`ing [JET's analysis result](@ref analysis-result) within REPL.
 
 ---
+- `sourceinfo::Symbol = :default` \\
+  Controls how file paths are displayed in stack traces and error reports.
+  - `:full` - Expand all file paths to absolute paths
+  - `:default` - Show paths as-is, prefixing `./` only for relative paths
+  - `:compact` - Show basename only for absolute paths, relative paths unchanged
+  - `:minimal` - Show only module information, omit file paths (no `path:line`)
+  - `:none` - Omit location information entirely (no `@ Module path:line`).
+     For toplevel errors, treated as `:compact` since location is essential.
+---
 - `fullpath::Bool = false` \\
-  Controls whether or not expand a file path to full path when printing analyzed call stack.
-  Note that paths of Julia's `Base` files will also be expanded when set to `true`.
+  **Deprecated**: Use `sourceinfo` instead. `fullpath=true` is equivalent to `sourceinfo=:full`.
 ---
 - `print_toplevel_success::Bool = false` \\
   If `true`, prints a message when there is no toplevel errors found.
@@ -45,16 +53,25 @@ The configurations below will be active whenever `show`ing [JET's analysis resul
 struct PrintConfig
     print_toplevel_success::Bool
     print_inference_success::Bool
-    fullpath::Bool
+    sourceinfo::Symbol
     stacktrace_types_limit::Union{Nothing,Int}
     function PrintConfig(; print_toplevel_success::Bool = false,
                            print_inference_success::Bool = true,
-                           fullpath::Bool = false,
+                           sourceinfo::Symbol = :default,
                            stacktrace_types_limit::Union{Nothing,Int} = nothing,
-                           __jetconfigs...)
+                           jetconfigs...)
+        if haskey(jetconfigs, :fullpath)
+            @warn "`fullpath` option is deprecated. Use `sourceinfo` instead." maxlog=1
+            if get(jetconfigs, :fullpath, false)::Bool
+                sourceinfo = :full
+            end
+        end
+        if sourceinfo ∉ (:full, :default, :compact, :minimal, :none)
+            throw(ArgumentError("Invalid sourceinfo: $sourceinfo. Must be one of :full, :default, :compact, :minimal, :none"))
+        end
         return new(print_toplevel_success,
                    print_inference_success,
-                   fullpath,
+                   sourceinfo,
                    stacktrace_types_limit)
     end
 end
@@ -88,6 +105,18 @@ function print_rails(io, depth)
     for i = 1:depth
         color = RAIL_COLORS[i%N_RAILS+1]
         printstyled(io, '│'; color)
+    end
+end
+
+function format_path(path::AbstractString, sourceinfo::Symbol)
+    if sourceinfo === :full
+        return tofullpath(path)
+    elseif sourceinfo === :compact
+        return isabspath(path) ? basename(path) : path
+    elseif sourceinfo === :default
+        return isabspath(path) ? path : "./" * path
+    else # :none
+        return ""
     end
 end
 
@@ -136,7 +165,12 @@ function print_reports(io::IO,
         end
 
         for report in reports
-            filepath = (config.fullpath ? tofullpath : identity)(report.file)
+            # For top-level errors, :none and :minimal don't make sense, so treat them as :compact
+            style = config.sourceinfo
+            if style === :none || style === :minimal
+                style = :compact
+            end
+            filepath = format_path(report.file, style)
             printlnstyled(io, "┌ @ ", filepath, ':', report.line, ' '; color)
 
             errlines = with_bufferring(ctx) do io
@@ -234,15 +268,11 @@ function print_frame_sig(io, frame, config)
 end
 
 function print_frame_loc(io, frame, config, color)
+    if config.sourceinfo === :none
+        return
+    end
     def = frame.linfo.def
     mod = def isa Module ? def : def.module
-    path = String(frame.file)
-    line = fixed_line_number(frame)
-    if config.fullpath
-        path = tofullpath(path)
-    elseif !isabspath(path)
-        path = "./" * path
-    end
     printstyled(io, "@ "; color)
     # IDEA use the same coloring as the Base stacktrace?
     # modulecolor = get!(Base.STACKTRACE_FIXEDCOLORS, mod) do
@@ -250,7 +280,11 @@ function print_frame_loc(io, frame, config, color)
     # end
     modulecolor = color
     printstyled(io, mod; color = modulecolor)
-    printstyled(io, ' ', path, ':', line; color)
+    if config.sourceinfo !== :minimal
+        path = format_path(String(frame.file), config.sourceinfo)
+        line = fixed_line_number(frame)
+        printstyled(io, ' ', path, ':', line; color)
+    end
 end
 
 function fixed_line_number(frame)
