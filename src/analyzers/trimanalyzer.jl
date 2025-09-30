@@ -228,6 +228,7 @@ function is_inlineable(analyzer::TrimAnalyzer, match, info)
 end
 
 function report_dispatch_error!(analyzer::TrimAnalyzer, sv::CC.InferenceState, call::CC.CallMeta, @nospecialize(atype))
+    (is_compileable_mi(sv.linfo) || is_entry(analyzer, sv.linfo)) || return
     info = call.info
     if info === CC.NoCallInfo()
         report = DispatchErrorReport(sv, atype)
@@ -257,7 +258,6 @@ function report_dispatch_error!(analyzer::TrimAnalyzer, sv::CC.InferenceState, c
             end
         end
     end
-    return false
 end
 
 # Constructor
