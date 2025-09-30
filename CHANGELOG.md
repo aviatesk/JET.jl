@@ -47,6 +47,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- links end -->
 
 ## [Unreleased]
+### Added
+- ui: Add `sourceinfo` configuration option to control file path display in
+  error reports. The new option supports five modes:
+  - `:full` - Expand all file paths to absolute paths
+  - `:default` - Show paths as-is, prefixing `./` only for relative paths
+  - `:compact` - Show basename only for absolute paths, relative paths unchanged
+  - `:minimal` - Show only module information, omit file paths
+  - `:none` - Omit location information entirely (treated as `:compact` for
+    toplevel errors where location is essential)
+
+### Deprecated
+- ui: The `fullpath` configuration option is now deprecated in favor of
+  `sourceinfo`. Use `sourceinfo=:full` instead of `fullpath=true`.
 
 ## [0.10.7]
 ### Changed

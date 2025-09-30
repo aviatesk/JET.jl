@@ -1065,19 +1065,19 @@ test_call(Base.aligned_sizeof, (Union{DataType,Union},))
 
 # allow concrete evaluation for core reflection methods
 # https://github.com/aviatesk/JET.jl/issues/522
-@test Base.return_types(; interp=JET.JETAnalyzer()) do
+@test Base.infer_return_type(; interp=JET.JETAnalyzer()) do
     Val(fieldcount(Int))
-end |> only === Val{0}
-@test Base.return_types(; interp=JET.JETAnalyzer()) do
+end === Val{0}
+@test Base.infer_return_type(; interp=JET.JETAnalyzer()) do
     Val(fieldcount(Vector))
-end |> only === Val{2}
+end === Val{2}
 struct CheckFieldIndex; a; end
-@test Base.return_types(; interp=JET.JETAnalyzer()) do
+@test Base.infer_return_type(; interp=JET.JETAnalyzer()) do
     Val(Base.fieldindex(CheckFieldIndex, :a))
-end |> only === Val{1}
-@test @eval Base.return_types(; interp=JET.JETAnalyzer()) do
+end === Val{1}
+@test @eval Base.infer_return_type(; interp=JET.JETAnalyzer()) do
     Val(length($(Core.svec(1,2,3))))
-end |> only === Val{3}
+end === Val{3}
 @test_call sort([1,2,3])
 @test_call sort!([1,2,3])
 # aviatesk/JET.jl#669

@@ -1192,7 +1192,7 @@ const GENERAL_CONFIGURATIONS = Set{Symbol}((
     # toplevel
     :context, :analyze_from_definitions, :concretization_patterns, :virtualize, :toplevel_logger,
     # ui
-    :print_toplevel_success, :print_inference_success, :fullpath, :stacktrace_types_limit,
+    :print_toplevel_success, :print_inference_success, :fullpath, :sourceinfo, :stacktrace_types_limit,
     :vscode_console_output,
     # watch
     :revise_all, :revise_modules))

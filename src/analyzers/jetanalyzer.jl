@@ -245,9 +245,9 @@ function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
             return :concrete_eval
         end
     else
-        if (f === Base.fieldindex ||
-            f === Base.typejoin ||
-            f === Base.typejoin_union_tuple)
+        if (f === Base.fieldcount || f === Base.fieldindex ||
+            f === length || # TODO Remove me once JuliaLang/julia#59706 is merged
+            f === Base.typejoin || f === Base.typejoin_union_tuple)
             if concrete_eval_eligible_ignoring_overlay(result, arginfo)
                 return :concrete_eval
             end
