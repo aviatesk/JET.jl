@@ -757,6 +757,23 @@ function CC.InferenceState(result::InferenceResult, cache_mode::UInt8,  analyzer
         end
         src isa Core.CodeInfo || @goto fallback
 
+        for i = 1:length(src.code)
+            stmt = src.code[i]
+            if isexpr(stmt, :foreigncall)
+                for j = 1:length(stmt.args)
+                    if isa(stmt.args[j], Expr)
+                        @goto fallback
+                    end
+                end
+            elseif isexpr(stmt, :call)
+                if stmt.args[1] === :cglobal
+                    stmt.args[1] = GlobalRef(Base, :cglobal)
+                end
+            elseif stmt === GlobalRef(Core, :new)
+                @goto fallback
+            end
+        end
+
         # Validate the mapping between this tree and `CodeInfo`. Otherwise type annotation will fail.
         tree_stmts = tree[3][1]
         length(src.code) == JS.numchildren(tree_stmts) || @goto fallback
