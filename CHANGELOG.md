@@ -6,7 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 <!-- links start -->
-[Unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.10.7...HEAD
+[Unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.10.8...HEAD
+[0.10.8]: https://github.com/aviatesk/JET.jl/compare/v0.10.7...v0.10.8
 [0.10.7]: https://github.com/aviatesk/JET.jl/compare/v0.10.6...v0.10.7
 [0.10.6]: https://github.com/aviatesk/JET.jl/compare/v0.10.5...v0.10.6
 [0.10.5]: https://github.com/aviatesk/JET.jl/compare/v0.10.4...v0.10.5
@@ -47,6 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- links end -->
 
 ## [Unreleased]
+
+## [0.10.8]
 ### Added
 - ui: Add `sourceinfo` configuration option to control file path display in
   error reports. The new option supports five modes:
