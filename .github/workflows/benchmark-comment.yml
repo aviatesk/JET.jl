@@ -51,13 +51,13 @@ jobs:
       # create/update comment
       - name: create comment
         if: ${{ steps.fc.outputs.comment-id == 0 }}
-        uses: peter-evans/create-or-update-comment@v4
+        uses: peter-evans/create-or-update-comment@v5
         with:
           issue-number: ${{ steps.output-pull-request-number.outputs.body }}
           body: ${{ steps.output-result-markdown.outputs.body }}
       - name: update comment
         if: ${{ steps.fc.outputs.comment-id != 0 }}
-        uses: peter-evans/create-or-update-comment@v4
+        uses: peter-evans/create-or-update-comment@v5
         with:
           comment-id: ${{ steps.fc.outputs.comment-id }}
           body: ${{ steps.output-result-markdown.outputs.body }}
