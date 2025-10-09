@@ -14,27 +14,30 @@ jobs:
       fail-fast: false # don't stop CI even when one of them fails
       matrix:
         include:
-          # - version: '1' # current stable
+          - version: '1' # current stable
+            os: ubuntu-latest
+            arch: x64
+          - version: "1.12" # minimum version supported
+            os: ubuntu-latest
+            arch: x64
+          # - version: "1.13-nightly" # next release
           #   os: ubuntu-latest
           #   arch: x64
-          - version: "1.12-nightly" # next release
-            os: ubuntu-latest
-            arch: x64
-          - version: "1.12-nightly" # x86 ubuntu
-            os: ubuntu-latest
-            arch: x86
-          - version: "1.12-nightly" # macos
-            os: macos-latest
-            arch: x64
-          - version: "1.12-nightly" # x86 windows
-            os: windows-latest
-            arch: x64
-          - version: "1.12-nightly" # x86 windows
-            os: windows-latest
-            arch: x86
           - version: "nightly" # nightly
             os: ubuntu-latest
             arch: x64
+          - version: "1" # x86 ubuntu
+            os: ubuntu-latest
+            arch: x86
+          - version: "1" # macos
+            os: macos-latest
+            arch: x64
+          - version: "1" # x86 windows
+            os: windows-latest
+            arch: x64
+          - version: "1" # x86 windows
+            os: windows-latest
+            arch: x86
     steps:
       - uses: actions/checkout@v5
       - uses: julia-actions/setup-julia@v2
@@ -65,7 +68,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: julia-actions/setup-julia@v2
         with:
-          version: "1.12-nightly" # next release
+          version: "1"
           arch: x64
       - uses: julia-actions/cache@v2
       - name: set preferences  # needs to happen before precompile_workload

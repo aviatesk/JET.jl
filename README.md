@@ -6,18 +6,11 @@
 
 JET employs Julia's type inference system to detect potential bugs and type instabilities.
 
-> [!WARNING]
-> **The current latest version, v0.10 series, is only compatible with [Julia v1.12](https://julialang.org/downloads/#upcoming_release),
-> and some features may not function correctly at this moment**.
-> - **Compatibility**: JET v0.10 supports Julia v1.12 but is incompatible with v1.11.
->   Users on v1.11 should continue using JET v0.9, which will only receive bug fixes.
-> - **Functionality**: ~~This version provides basic local analysis features but lacks~~
->   ~~fully functional top-level analysis capabilities. These will be addressed in future updates.~~
->   Updated (v0.10.3): As of v0.10.3, most functions, including top-level analysis features
->   like `report_package`, should now be functional.
-> - **Future Plans**: Development will focus on stabilizing v0.10 and refactoring JET
->   for integration with [the new language server project](https://github.com/aviatesk/JETLS.jl).
->   For stable use, stick with v0.9.
+> [!INFO]
+> **The current latest version, v0.10 series, is only compatible with [Julia v1.12](https://julialang.org/downloads/#current_stable_release) only**
+>
+> The JET version that works with v1.11 is the [v0.9 series](https://github.com/aviatesk/JET.jl/tree/release-0.9),
+> but please note that bug fixes and new features added in the v0.10 series may not necessarily be available.
 
 > [!WARNING]
 > Please note that due to JET's tight integration with the Julia compiler, the results
@@ -45,6 +38,16 @@ julia> using Pkg; Pkg.add("JET")
 
 julia> using JET
 ```
+
+> [!WARNING]
+> The package manager will install the latest version of JET available for your Julia version.
+> However, depending on the versions of dependency packages already installed
+> in your environment, a working version of JET may not be installed.
+> This can particularly occur when the version of [JuliaInterpreter.jl](https://github.com/JuliaDebug/JuliaInterpreter.jl)
+> is incompatible with JET, since JuliaInterpreter is also a dependency of the
+> very commonly used package [Revise.jl](https://github.com/timholy/Revise.jl)
+> In such cases, the most reliable way to install and use a working JET is to
+> set up a temporary environment (e.g., `Pkg.temp()`) and use JET there.
 
 ### Detect type instability with `@report_opt`
 Type instabilities can be detected in function calls using the `@report_opt` macro, which works similar to the `@code_warntype` macro.
