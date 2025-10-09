@@ -52,8 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.10.9]
 ### Fixed
-- Fixed method error handling in `LoweringErrorReport` to improve error
-  reporting accuracy.
+- Fixed method error from the `LoweringErrorReport` constructor.
 - Added support for macros that return `:toplevel` expressions, fixing
   wrong error reports from e.g. [`@enumx`](https://github.com/fredrikekre/EnumX.jl)
   macros (aviatesk/JET.jl#748, aviatesk/JET.jl#759).
