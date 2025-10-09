@@ -6,7 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 <!-- links start -->
-[Unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.10.8...HEAD
+[Unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.10.9...HEAD
+[0.10.9]: https://github.com/aviatesk/JET.jl/compare/v0.10.8...v0.10.9
 [0.10.8]: https://github.com/aviatesk/JET.jl/compare/v0.10.7...v0.10.8
 [0.10.7]: https://github.com/aviatesk/JET.jl/compare/v0.10.6...v0.10.7
 [0.10.6]: https://github.com/aviatesk/JET.jl/compare/v0.10.5...v0.10.6
@@ -48,6 +49,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- links end -->
 
 ## [Unreleased]
+
+## [0.10.9]
+### Fixed
+- Fixed method error handling in `LoweringErrorReport` to improve error
+  reporting accuracy.
+- Added support for macros that return `:toplevel` expressions, fixing
+  wrong error reports from e.g. [`@enumx`](https://github.com/fredrikekre/EnumX.jl)
+  macros (aviatesk/JET.jl#748, aviatesk/JET.jl#759).
 
 ## [0.10.8]
 ### Added
