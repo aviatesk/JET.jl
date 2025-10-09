@@ -70,13 +70,15 @@ struct LoweringErrorReport <: ToplevelErrorReport
     file::String
     line::Int
     st::Base.StackTraces.StackTrace
+    LoweringErrorReport(@nospecialize(err), file::String, line::Int, st::Base.StackTraces.StackTrace) = new(err, file, line, st)
+    LoweringErrorReport(@nospecialize(msg), file::String, line::Int) = new(msg, file, line)
 end
 function print_report(io::IO, report::LoweringErrorReport)
     if isdefined(report, :st)
         println(io, "Lowering error:")
         showerror(io, report.err, report.st)
     else
-        showerror(io, ErrorException(lazy"syntax: $(report.msg)"))
+        showerror(io, ErrorException(lazy"syntax: $(report.err)"))
     end
 end
 
