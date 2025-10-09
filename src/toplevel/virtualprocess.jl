@@ -853,14 +853,14 @@ function macroexpand_with_err_handling(state::InterpretationState, x::Expr)
     end
 end
 
-function lower_with_err_handling(interp::ConcreteInterpreter, ::JS.SyntaxNode, x::Expr)
+function lower_with_err_handling(interp::ConcreteInterpreter, ::JS.SyntaxNode, xblk::Expr)
     # `scrub_offset = 1`: `lower`
     state = InterpretationState(interp)
 
-    x_expanded = @something macroexpand_with_err_handling(state, x) return nothing
+    xexpanded = @something macroexpand_with_err_handling(state, xblk) return nothing
 
     with_err_handling(lowering_err_handler, state; scrub_offset=1) do
-        lwr = lower(state.context, x_expanded)
+        lwr = lower(state.context, xexpanded)
         if isexpr(lwr, :error)
             msg = first(lwr.args)
             add_toplevel_error_report!(state, LoweringErrorReport(msg, state.filename, state.curline))
@@ -946,7 +946,11 @@ function _virtual_process!(interp::ConcreteInterpreter,
 
         # although we will lower `x` after special-handling `:toplevel` and `:module` expressions,
         # expand `macrocall`s here because macro can arbitrarily generate those expressions
-        if isexpr(x, :macrocall)
+        if isexpr(x, :macrocall) ||
+            # This kind of code occurs when a macro returns a `:toplevel` expression.
+            # This expression contains information about the macro expansion position and module context,
+            # but for now we just ignore that.
+            isexpr(x, :var"hygienic-scope")
             newx = macroexpand_with_err_handling(state, x)
 
             # if any error happened during macro expansion, bail out now and continue

@@ -529,9 +529,9 @@ end
             end
         end
         # FIXME syntax: "module" expression not at top level
-        @test_broken isempty(res.res.toplevel_error_reports)
-        @test_broken isconcrete(res, vmod, :foo)
-        @test_broken isconcrete(res, vmod.foo, :bar)
+        @test isempty(res.res.toplevel_error_reports)
+        @test isconcrete(res, vmod, :foo)
+        @test isconcrete(res, vmod.foo, :bar)
 
         vmod, res = @analyze_toplevel2 begin
             """
@@ -1014,6 +1014,16 @@ end
         end
         @test only(res.res.toplevel_error_reports) isa MacroExpansionErrorReport
     end
+end
+
+@testset ":hygienic-scope handling" begin
+    res = report_text("""
+        macro typdef(T)
+            Expr(:toplevel, :(baremodule \$(esc(T)) end))
+        end
+        @typdef T42
+        """)
+    @test isempty(res.res.toplevel_error_reports)
 end
 
 @testset "lowering error report" begin
