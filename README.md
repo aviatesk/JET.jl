@@ -44,9 +44,11 @@ julia> using JET
 > The package manager will install the latest version of JET available for your Julia version.
 > However, depending on the versions of dependency packages already installed
 > in your environment, a working version of JET may not be installed.
+>
 > This can particularly occur when the version of [JuliaInterpreter.jl](https://github.com/JuliaDebug/JuliaInterpreter.jl)
 > is incompatible with JET, since JuliaInterpreter is also a dependency of the
-> very commonly used package [Revise.jl](https://github.com/timholy/Revise.jl)
+> very commonly used package [Revise.jl](https://github.com/timholy/Revise.jl).
+>
 > In such cases, the most reliable way to install and use a working JET is to
 > set up a temporary environment (e.g., `Pkg.temp()`) and use JET there.
 
