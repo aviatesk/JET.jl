@@ -704,7 +704,8 @@ function analyze_method_instance!(analyzer::AbstractAnalyzer, mi::MethodInstance
     return analyze_frame!(analyzer, frame)
 end
 
-function find_target_tree(stlwr::JL.SyntaxTree, result::CC.InferenceResult)
+find_target_tree(stlwr::JL.SyntaxTree, ::InferenceResult) = find_target_tree(stlwr)
+function find_target_tree(stlwr::JL.SyntaxTree)
     JS.kind(stlwr) === JS.K"code_info" || return nothing
     JS.numchildren(stlwr) ≥ 1 || return nothing
     target_tree = nothing
@@ -756,6 +757,14 @@ function CC.InferenceState(result::InferenceResult, cache_mode::UInt8,  analyzer
             @goto fallback
         end
         src isa Core.CodeInfo || @goto fallback
+        src = resolve_toplevel_symbols!(src, m.module)
+
+        for i = 1:length(src.code)
+            stmt = src.code[i]
+            if stmt isa GlobalRef && stmt.name === :new
+                @goto fallback
+            end
+        end
 
         # Validate the mapping between this tree and `CodeInfo`. Otherwise type annotation will fail.
         tree_stmts = tree[3][1]
