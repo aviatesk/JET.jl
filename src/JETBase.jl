@@ -893,10 +893,10 @@ function analyze_and_report_package!(interp::ConcreteInterpreter,
 end
 
 function find_pkg(pkgname::AbstractString)
-    pkgenv = Base.identify_package_env(pkgname)
+    pkgenv = @lock Base.require_lock Base.identify_package_env(pkgname)
     isnothing(pkgenv) && error(lazy"Unknown package $pkgname.")
     pkgid, env = pkgenv
-    filename = Base.locate_package(pkgid, env)
+    filename = @lock Base.require_lock Base.locate_package(pkgid, env)
     isnothing(filename) && error(lazy"Expected $pkgname to have a source file.")
     return (; pkgid, filename)
 end
@@ -904,7 +904,7 @@ end
 function find_pkg(pkgmod::Module)
     filename = pathof(pkgmod)
     isnothing(filename) && error(lazy"Cannot analyze a module defined in the REPL.")
-    pkgid = Base.identify_package(String(nameof(pkgmod)))
+    pkgid = @lock Base.require_lock Base.identify_package(String(nameof(pkgmod)))
     isnothing(pkgid) && error(lazy"Expected $pkgmod to exist as a package.")
     return (; pkgid, filename)
 end
