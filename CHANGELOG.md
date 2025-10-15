@@ -6,7 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 <!-- links start -->
-[Unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.10.9...HEAD
+[Unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.10.10...HEAD
+[0.10.10]: https://github.com/aviatesk/JET.jl/compare/v0.10.9...v0.10.10
 [0.10.9]: https://github.com/aviatesk/JET.jl/compare/v0.10.8...v0.10.9
 [0.10.8]: https://github.com/aviatesk/JET.jl/compare/v0.10.7...v0.10.8
 [0.10.7]: https://github.com/aviatesk/JET.jl/compare/v0.10.6...v0.10.7
@@ -49,6 +50,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- links end -->
 
 ## [Unreleased]
+
+## [0.10.10]
+### Fixed
+- Fix locking issue with `Base.require_lock` that occurs in Julia 1.12.1 (aviatesk/JET.jl#762)
 
 ## [0.10.9]
 ### Fixed
