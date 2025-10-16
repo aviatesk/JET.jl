@@ -2,6 +2,7 @@ let README = normpath(dirname(@__DIR__), "README.md")
     s = read(README, String)
     s = replace(s,
         # replace the GitHub README admonition syntax with that of the Julia documentation
+        "> [!NOTE]" => "!!! note",
         "> [!WARNING]" => "!!! warning",
         r"^\> (.+)$"m=>s"    \1",
         r"^\>$"m=>s"")
