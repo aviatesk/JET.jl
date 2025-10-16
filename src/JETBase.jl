@@ -4,6 +4,7 @@ let README = normpath(dirname(@__DIR__), "README.md")
         # replace the GitHub README admonition syntax with that of the Julia documentation
         "> [!NOTE]" => "!!! note",
         "> [!WARNING]" => "!!! warning",
+        "> [!IMPORTANT]" => "!!! note",
         r"^\> (.+)$"m=>s"    \1",
         r"^\>$"m=>s"")
     @doc s JET
