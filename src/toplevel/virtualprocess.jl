@@ -423,7 +423,7 @@ struct VirtualProcessResult
     inference_error_reports::Vector{InferenceErrorReport}
     toplevel_signatures::Vector{Type}
     actual2virtual::Union{Actual2Virtual,Nothing}
-    VirtualProcessResult(actual2virtual::Union{Actual2Virtual,Nothing}, context::Module) =
+    VirtualProcessResult(actual2virtual::Union{Actual2Virtual,Nothing}) =
         new(Dict{String,AnalyzedFileInfo}(),
             ToplevelErrorReport[],
             InferenceErrorReport[],
@@ -609,7 +609,7 @@ function virtual_process(interp::ConcreteInterpreter,
     if pkgid !== nothing && pkgid.uuid !== nothing
         Preferences.main_uuid[] = pkgid.uuid
     end
-    res = VirtualProcessResult(actual2virtual, context)
+    res = VirtualProcessResult(actual2virtual)
     state = InterpretationState(filename, #=curline=#0, #=dependencies=#Set{Symbol}(),
                                 context, config, res, #=pkg_mod_depth=#0,
                                 #=files_stack=#String[], #=isfailed=#false)
@@ -705,8 +705,8 @@ function analyze_from_definitions!(interp::ConcreteInterpreter, config::Toplevel
     end
     entrypoint = config.analyze_from_definitions
     res = InterpretationState(interp).res
-    n = length(res.toplevel_signatures)
-    for i = 1:n
+    n_sigs = length(res.toplevel_signatures)
+    for i = 1:n_sigs
         tt = res.toplevel_signatures[i]
         match = Base._which(tt;
             # NOTE use the latest world counter with `method_table(analyzer)` unwrapped,
@@ -719,7 +719,7 @@ function analyze_from_definitions!(interp::ConcreteInterpreter, config::Toplevel
              match.method.name === entrypoint))
             succeeded[] += 1
             with_toplevel_logger(config; pre=clearline) do @nospecialize(io)
-                (i == n ? println : print)(io, "analyzing from top-level definitions ($(succeeded[])/$n)")
+                (i == n_sigs ? println : print)(io, "analyzing from top-level definitions ($(succeeded[])/$n_sigs)")
             end
             analyzer, result = analyze_method_signature!(analyzer,
                 match.method, match.spec_types, match.sparams)
