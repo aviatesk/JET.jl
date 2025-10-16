@@ -1596,48 +1596,80 @@ end
 
 """
     report_package(package::Module; jetconfigs...) -> JETToplevelResult
-    report_package(package::AbstractString; jetconfigs...) -> JETToplevelResult
 
-Analyzes `package` in the same way as [`report_file`](@ref) and returns back type-level errors
-with the special default configurations, which are especially tuned for analyzing a package
-(see below for details).
-The `package` argument can be either a `Module` or a `AbstractString`.
-In the latter case it must be the name of a package in your current environment.
+Analyzes `package` and returns back type-level errors.
+
+This function uses [Revise.jl](https://github.com/timholy/Revise.jl) to collect method
+signatures defined in the package and analyzes each method based on its signature.
+This approach allows JET to analyze a package without requiring top-level call sites or
+actual usage examples.
 
 The error analysis performed by this function is configured as follows by default:
-- `analyze_from_definitions = true`: This allows JET to start analysis without top-level
-  call sites. This is useful for analyzing a package since a package itself usually only
-  contains definitions of types and methods but not their usages (i.e. call sites).
-- `concretization_patterns = [:(x_)]`: Concretizes every top-level code in a given `package`.
-  The concretizations are generally preferred for successful analysis as far as they can be
-  performed cheaply. In most cases it is indeed cheap to interpret and concretize top-level
-  code written in a package since it usually only defines types and methods.
 - `ignore_missing_comparison = true`: JET ignores the possibility of a poorly-inferred
   comparison operator call (e.g. `==`) returning `missing`. This is useful because
   `report_package` often relies on poor input argument type information at the beginning of
   analysis, leading to noisy error reports from branching on the potential `missing` return
   value of such a comparison operator call. If a target package needs to handle `missing`,
-  this  configuration shuold be turned off since it hides the possibility of errors that
-  may actually at runtime.
+  this configuration should be turned off since it hides the possibility of errors that
+  may actually occur at runtime.
 
-See [`ToplevelConfig`](@ref) and [`JETAnalyzer`](@ref) for more details.
+See [`JETAnalyzer`](@ref) for more details on error analysis configurations.
 
-Still the [general configurations](@ref) and [the error analysis specific configurations](@ref jetanalysis-config)
+The [general configurations](@ref) and [the error analysis specific configurations](@ref jetanalysis-config)
 can be specified as a keyword argument, and if given, they are preferred over the default
 configurations described above.
+"""
+function report_package(pkgmod::Module;
+                        ignore_missing_comparison::Bool=true,
+                        target_defined_modules::Union{Nothing,Bool}=nothing,
+                        jetconfigs...)
+    # TODO read a configuration file and apply it here?
+    if isnothing(target_defined_modules)
+        target_defined_modules = false
+    else
+        @warn """
+        `target_defined_modules::Bool` configuration is deprecated.
+        Please use `target_modules` instead and specify the modules you want to target with e.g. `target_modules=(pkgmod,)`
+        """
+    end
+    analyzer = JETAnalyzer(; ignore_missing_comparison, target_defined_modules, jetconfigs...)
+    return analyze_and_report_package!(analyzer, pkgmod; ignore_missing_comparison, target_defined_modules, jetconfigs...)
+end
 
----
+"""
+    report_package(package::AbstractString; jetconfigs...) -> JETToplevelResult
 
+Finds and analyzes the loaded package corresponding to `package::AbstractString`.
+
+!!! warning "Deprecated"
+    This entry point has been deprecated since v0.11.
+    Please load the target package in advance and use `report_package(::Module)` to pass
+    the package module directly.
+"""
+function report_package(pkgname::AbstractString; jetconfigs...)
+    Base.depwarn(
+        "report_package(package::AbstractString) is deprecated. " *
+        "Load the target package in advance and use report_package(::Module) instead.",
+        :report_package)
+    return report_package(find_pkgmod(pkgname); jetconfigs...)
+end
+
+"""
     report_package(; jetconfigs...) -> JETToplevelResult
 
 Like above but analyzes the package of the current project.
 
-See also [`report_file`](@ref).
+!!! warning "Deprecated"
+    This entry point has been deprecated since v0.11.
+    Please load the target package in advance and use `report_package(::Module)` to pass
+    the package module directly.
 """
-function report_package(args...; ignore_missing_comparison::Bool=true, jetconfigs...)
-    # TODO read a configuration file and apply it here?
-    interp = JETConcreteInterpreter(JETAnalyzer(; ignore_missing_comparison, jetconfigs...))
-    return analyze_and_report_package!(interp, args...; ignore_missing_comparison, jetconfigs...)
+function report_package(::Nothing=nothing; jetconfigs...)
+    Base.depwarn(
+        "report_package() without arguments is deprecated. " *
+        "Load the target package in advance and use report_package(::Module) instead.",
+        :report_package)
+    return report_package(find_pkgmod(nothing); jetconfigs...)
 end
 
 """
@@ -1656,8 +1688,10 @@ Like [`@test_call`](@ref), `test_package` is fully integrated with the
 See [`@test_call`](@ref) for the details.
 
 ```julia
+julia> using Example
+
 julia> @testset "test_package" begin
-           test_package("Example"; toplevel_logger=nothing)
+           test_package(Example; toplevel_logger=nothing)
        end;
 Test Summary: | Pass  Total  Time
 test_package  |    1      1  0.0s

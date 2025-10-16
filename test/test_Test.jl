@@ -170,13 +170,14 @@ end
 
 # top-level entries
 # https://github.com/aviatesk/JET.jl/issues/490
+using Example
 let ts = with_isolated_testset() do
-        test_package("Example")
+        test_package(Example)
     end
     @test ts.n_passed == 1
 end
 let ts = with_isolated_testset() do
-        test_package("Unexisting")
+        test_package(Unexisting)
     end
     @test ts.n_passed == 0
     @test only(ts.results) isa Test.Error

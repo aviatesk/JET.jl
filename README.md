@@ -109,7 +109,9 @@ julia> Pkg.status()
 Status `/private/var/folders/xh/6zzly9vx71v05_y67nm_s9_c0000gn/T/jl_h07K2m/Project.toml`
   [1520ce14] AbstractTrees v0.4.4
 
-julia> report_package("AbstractTrees")
+julia> using AbstractTrees
+
+julia> report_package(AbstractTrees)
 [ some output elided ]
 ═════ 7 possible errors found ═════
 ┌ isroot(root::Any, x::Any) @ AbstractTrees ~/.julia/packages/AbstractTrees/EUx8s/src/base.jl:102
