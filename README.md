@@ -107,31 +107,58 @@ julia> using Pkg; Pkg.activate(; temp=true, io=devnull); Pkg.add("AbstractTrees"
 
 julia> Pkg.status()
 Status `/private/var/folders/xh/6zzly9vx71v05_y67nm_s9_c0000gn/T/jl_h07K2m/Project.toml`
-  [1520ce14] AbstractTrees v0.4.4
+  [1520ce14] AbstractTrees v0.4.5
 
-julia> report_package("AbstractTrees")
-[ some output elided ]
+ulia> report_package(AbstractTrees)
+[toplevel-info] Analyzing top-level definition (progress: 256/256)
+[toplevel-info] Analyzed all top-level definitions (all: 256 | analyzed: 256 | cached: 0 | took: 7.116 sec)
+[ Info: tracking Base
 ═════ 7 possible errors found ═════
-┌ isroot(root::Any, x::Any) @ AbstractTrees ~/.julia/packages/AbstractTrees/EUx8s/src/base.jl:102
+┌ isroot(root::Any, x::Any) @ AbstractTrees /Users/aviatesk/.julia/packages/AbstractTrees/Ftf8W/src/base.jl:102
 │ no matching method found `parent(::Any, ::Any)`: AbstractTrees.parent(root::Any, x::Any)
 └────────────────────
-┌ AbstractTrees.IndexNode(tree::Any) @ AbstractTrees ~/.julia/packages/AbstractTrees/EUx8s/src/indexing.jl:117
+┌ StableNode{T}(x::T, ch::Any) where T @ AbstractTrees /Users/aviatesk/.julia/packages/AbstractTrees/Ftf8W/src/base.jl:260
+│┌ collect(::Type{StableNode{_A}} where _A, itr::Any) @ Base ./array.jl:641
+││┌ _collect(::Type{StableNode{_A}}, itr::Any, isz::Union{Base.HasLength, Base.HasShape}) where _A @ Base ./array.jl:643
+│││┌ _array_for(::Type{StableNode{_A}} where _A, itr::Base.HasLength, isz::Any) @ Base ./array.jl:673
+││││┌ _similar_shape(itr::Base.HasLength, ::Base.HasLength) @ Base ./array.jl:657
+│││││ no matching method found `length(::Base.HasLength)`: length(itr::Base.HasLength)
+││││└────────────────────
+││││┌ _similar_shape(itr::Base.HasLength, ::Base.HasShape) @ Base ./array.jl:658
+│││││┌ axes(A::Base.HasLength) @ Base ./abstractarray.jl:98
+││││││ no matching method found `size(::Base.HasLength)`: size(A::Base.HasLength)
+│││││└────────────────────
+┌ IndexNode(tree::Any) @ AbstractTrees /Users/aviatesk/.julia/packages/AbstractTrees/Ftf8W/src/indexing.jl:117
 │ no matching method found `rootindex(::Any)`: rootindex(tree::Any)
 └────────────────────
-┌ parent(idx::AbstractTrees.IndexNode) @ AbstractTrees ~/.julia/packages/AbstractTrees/EUx8s/src/indexing.jl:127
-│ no matching method found `parentindex(::Any, ::Any)`: pidx = parentindex((idx::AbstractTrees.IndexNode).tree::Any, (idx::AbstractTrees.IndexNode).index::Any)
+┌ parent(idx::IndexNode) @ AbstractTrees /Users/aviatesk/.julia/packages/AbstractTrees/Ftf8W/src/indexing.jl:127
+│ no matching method found `parentindex(::Any, ::Any)`: pidx = parentindex((idx::IndexNode).tree::Any, (idx::IndexNode).index::Any)
 └────────────────────
-┌ nextsibling(idx::AbstractTrees.IndexNode) @ AbstractTrees ~/.julia/packages/AbstractTrees/EUx8s/src/indexing.jl:132
-│ no matching method found `nextsiblingindex(::Any, ::Any)`: sidx = nextsiblingindex((idx::AbstractTrees.IndexNode).tree::Any, (idx::AbstractTrees.IndexNode).index::Any)
+┌ nextsibling(idx::IndexNode) @ AbstractTrees /Users/aviatesk/.julia/packages/AbstractTrees/Ftf8W/src/indexing.jl:132
+│ no matching method found `nextsiblingindex(::Any, ::Any)`: sidx = nextsiblingindex((idx::IndexNode).tree::Any, (idx::IndexNode).index::Any)
 └────────────────────
-┌ prevsibling(idx::AbstractTrees.IndexNode) @ AbstractTrees ~/.julia/packages/AbstractTrees/EUx8s/src/indexing.jl:137
-│ no matching method found `prevsiblingindex(::Any, ::Any)`: sidx = prevsiblingindex((idx::AbstractTrees.IndexNode).tree::Any, (idx::AbstractTrees.IndexNode).index::Any)
+┌ prevsibling(idx::IndexNode) @ AbstractTrees /Users/aviatesk/.julia/packages/AbstractTrees/Ftf8W/src/indexing.jl:137
+│ no matching method found `prevsiblingindex(::Any, ::Any)`: sidx = prevsiblingindex((idx::IndexNode).tree::Any, (idx::IndexNode).index::Any)
 └────────────────────
-┌ prevsibling(csr::AbstractTrees.IndexedCursor) @ AbstractTrees ~/.julia/packages/AbstractTrees/EUx8s/src/cursors.jl:234
-│ no matching method found `getindex(::Nothing, ::Int64)` (1/2 union split): (AbstractTrees.parent(csr::AbstractTrees.IndexedCursor)::Union{Nothing, AbstractTrees.IndexedCursor})[idx::Int64]
+
+julia> report_package(AbstractTrees; target_modules=(AbstractTrees,)) # ignore errors that occur outside the AbstractTrees module context
+[toplevel-info] Skipped analysis for cached definition (256/256)
+[toplevel-info] Analyzed all top-level definitions (all: 256 | analyzed: 0 | cached: 256 | took: 0.036 sec)
+═════ 5 possible errors found ═════
+┌ isroot(root::Any, x::Any) @ AbstractTrees /Users/aviatesk/.julia/packages/AbstractTrees/Ftf8W/src/base.jl:102
+│ no matching method found `parent(::Any, ::Any)`: AbstractTrees.parent(root::Any, x::Any)
 └────────────────────
-┌ (::AbstractTrees.var"#17#18")(n::Any) @ AbstractTrees ~/.julia/packages/AbstractTrees/EUx8s/src/iteration.jl:323
-│ no matching method found `parent(::Any, ::Any)`: AbstractTrees.parent(getfield(#self#::AbstractTrees.var"#17#18", :tree)::Any, n::Any)
+┌ IndexNode(tree::Any) @ AbstractTrees /Users/aviatesk/.julia/packages/AbstractTrees/Ftf8W/src/indexing.jl:117
+│ no matching method found `rootindex(::Any)`: rootindex(tree::Any)
+└────────────────────
+┌ parent(idx::IndexNode) @ AbstractTrees /Users/aviatesk/.julia/packages/AbstractTrees/Ftf8W/src/indexing.jl:127
+│ no matching method found `parentindex(::Any, ::Any)`: pidx = parentindex((idx::IndexNode).tree::Any, (idx::IndexNode).index::Any)
+└────────────────────
+┌ nextsibling(idx::IndexNode) @ AbstractTrees /Users/aviatesk/.julia/packages/AbstractTrees/Ftf8W/src/indexing.jl:132
+│ no matching method found `nextsiblingindex(::Any, ::Any)`: sidx = nextsiblingindex((idx::IndexNode).tree::Any, (idx::IndexNode).index::Any)
+└────────────────────
+┌ prevsibling(idx::IndexNode) @ AbstractTrees /Users/aviatesk/.julia/packages/AbstractTrees/Ftf8W/src/indexing.jl:137
+│ no matching method found `prevsiblingindex(::Any, ::Any)`: sidx = prevsiblingindex((idx::IndexNode).tree::Any, (idx::IndexNode).index::Any)
 └────────────────────
 ```
 

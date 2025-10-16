@@ -189,6 +189,18 @@ These configurations will be active for all the top-level entries explained in t
 - `target_defined_modules::Bool = false` \\
   If `true`, automatically set the [`target_modules`](@ref result-config) configuration so that
   JET filters out errors that are reported within modules that JET doesn't analyze directly.
+
+  !!! warning "Deprecated"
+      This configuration is deprecated since JET v0.11.
+      In particular, if you were using this configuration with [`report_package`](@ref),
+      you should load your package in advance and use the
+      [`target_modules` configuration](@ref result-config)
+      to achieve the same filtering behavior
+      ```julia-repl
+      julia> report_package("MyPkg"; target_defined_modules=true) # deprecated
+
+      julia> using MyPkg; report_package(MyPkg; target_modules=(MyPkg,)) # preferred
+      ```
 ---
 - `analyze_from_definitions::Union{Bool,Symbol} = false` \\
   If `true`, JET will start analysis using signatures of top-level definitions (e.g. method signatures),
@@ -721,7 +733,7 @@ function analyze_from_definitions!(interp::ConcreteInterpreter, config::Toplevel
             with_toplevel_logger(config; pre=clearline) do @nospecialize(io)
                 (i == n_sigs ? println : print)(io, "analyzing from top-level definitions ($(succeeded[])/$n_sigs)")
             end
-            analyzer, result = analyze_method_signature!(analyzer,
+            result = analyze_method_signature!(analyzer,
                 match.method, match.spec_types, match.sparams)
             reports = get_reports(analyzer, result)
             append!(res.inference_error_reports, reports)
@@ -738,7 +750,11 @@ function analyze_from_definitions!(interp::ConcreteInterpreter, config::Toplevel
     end
     return nothing
 end
-clearline(io) = print(io, '\r')
+
+# Clear the entire line and return cursor to beginning
+# \e[2K clears the entire line (K=erase line, 2=entire line)
+# \r returns cursor to beginning of line
+clearline(io) = print(io, "\e[2K\r")
 
 function add_toplevel_error_report!(state::InterpretationState, @nospecialize report::ToplevelErrorReport)
     push!(state.res.toplevel_error_reports, report)
@@ -1053,7 +1069,7 @@ function _virtual_process!(interp::ConcreteInterpreter,
 
         analyzer = ToplevelAbstractAnalyzer(interp, concretized)
 
-        (_, result), _ = analyze_toplevel!(analyzer, src, state.context)
+        result = analyze_toplevel!(analyzer, src, state.context)
 
         append!(state.res.inference_error_reports, get_reports(analyzer, result)) # collect error reports
     end
@@ -1845,7 +1861,7 @@ function analyze_toplevel!(analyzer::ToplevelAbstractAnalyzer, src::CodeInfo, co
     # `typeinf_edge` won't add "toplevel-to-callee" edges
     frame = InferenceState(result, src, #=cache_mode=#:global, analyzer)::InferenceState
 
-    return analyze_frame!(analyzer, frame), frame
+    return analyze_frame!(analyzer, frame)
 end
 
 function construct_toplevel_mi(src::Core.CodeInfo, context_module::Module)

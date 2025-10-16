@@ -1,9 +1,9 @@
 # [General Configurations](@id general-configurations)
 
-JET can be fine-tuned very flexibly.
-Any entry point explained in [JET's default error analysis](@ref jetanalysis-entry) and [the optimization analysis](@ref optanalysis-entry)
-can accept any of the configuration parameters described below as keyword arguments (or optional parameters for the interactive macros).
-For example, you can analyze the call of `sum("julia")` with the [`fullpath`](@ref print-config) configuration enabled as like:
+JET offers extensive customization options through its configuration system.
+All entry points covered in [JET's default error analysis](@ref jetanalysis-entry) and [the optimization analysis](@ref optanalysis-entry)
+accept the configuration parameters outlined below as keyword arguments (or optional parameters for interactive macros).
+For instance, you can analyze the call `sum("julia")` with the [`fullpath`](@ref print-config) configuration enabled:
 ```julia
 @report_call fullpath=true sum("julia")
 ```
@@ -11,15 +11,17 @@ or equivalently:
 ```julia
 report_call(sum, (String,); fullpath=true)
 ```
-Similarly you can analyze a top-level script `path/to/file.jl` with specifying [`target_defined_modules` configuration](@ref toplevel-config) as follows:
+
+You can also analyze a top-level script `path/to/file.jl` while specifying the [`target_modules` configuration](@ref result-config):
 ```julia
 report_file("path/to/file.jl";
-            target_defined_modules = true)
+            target_modules = (Main,))
 ```
 
 !!! note
-    Please ignore the names of documented objects appearing below, like "[`JET.configured_reports`](@ref)".
-    They are just remnants of documentation internals, and you will never directly interact with them.
+    The documented objects listed below (such as "`JET.configured_reports`") represent internal configuration structures.
+    While you won't interact with these objects directly, their documentation describes the available configuration options
+    that you can pass as keyword arguments to JET's analysis functions.
 
 
 ## [Configurations for Analysis Result](@id result-config)
