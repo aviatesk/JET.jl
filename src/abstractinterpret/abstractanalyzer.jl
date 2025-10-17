@@ -141,6 +141,8 @@ mutable struct AnalyzerState
 
     # some `AbstractAnalyzer` may want to use this
     entry::Union{Nothing,MethodInstance}
+
+    const tree_cache::IdDict{CC.InferenceResult, JL.SyntaxTree}
 end
 
 # define shortcut getter/setter methods for `AbstractAnalyzer`s
@@ -165,7 +167,8 @@ function AnalyzerState(world::UInt  = get_world_counter();
                          #=cache_target::Union{Nothing,Pair{Symbol,InferenceState}}=# nothing,
                          #=concretized::BitVector=# non_toplevel_concretized,
                          #=binding_states::AbstractAbstractBindings=# AbstractAbstractBindings(),
-                         #=entry::Union{Nothing,MethodInstance}=# nothing)
+                         #=entry::Union{Nothing,MethodInstance}=# nothing,
+                         #=tree_cache=# IdDict{CC.InferenceResult, JL.SyntaxTree}())
 end
 
 # The constructor that inherits from existing `state::AnalyzerState`
@@ -175,7 +178,8 @@ function AnalyzerState(state::AnalyzerState, refresh_local_cache::Bool=true;
                        opt_params::OptimizationParams = state.opt_params,
                        concretized::BitVector = state.concretized,
                        binding_states::AbstractAbstractBindings = state.binding_states,
-                       entry::Union{Nothing,MethodInstance} = state.entry)
+                       entry::Union{Nothing,MethodInstance} = state.entry,
+                       tree_cache::IdDict{CC.InferenceResult, JL.SyntaxTree} = state.tree_cache)
     if refresh_local_cache
         inf_cache = InferenceResult[]
         analysis_results = IdDict{InferenceResult,AnalysisResult}()
@@ -191,7 +195,8 @@ function AnalyzerState(state::AnalyzerState, refresh_local_cache::Bool=true;
                          #=cache_target=# nothing,
                          concretized,
                          binding_states,
-                         entry)
+                         entry,
+                         tree_cache)
 end
 
 # dummies for non-toplevel analysis
