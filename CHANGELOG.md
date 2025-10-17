@@ -6,7 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 <!-- links start -->
-[Unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.10.10...HEAD
+[Unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.10.11...HEAD
+[0.10.11]: https://github.com/aviatesk/JET.jl/compare/v0.10.10...v0.10.11
 [0.10.10]: https://github.com/aviatesk/JET.jl/compare/v0.10.9...v0.10.10
 [0.10.9]: https://github.com/aviatesk/JET.jl/compare/v0.10.8...v0.10.9
 [0.10.8]: https://github.com/aviatesk/JET.jl/compare/v0.10.7...v0.10.8
@@ -50,6 +51,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- links end -->
 
 ## [Unreleased]
+
+## [0.10.11]
 ### Fixed
 - Fixed compatibility with `Base.@deprecate_binding` macro, which before
   could trigger an internal error in packages using it (aviatesk/JET.jl#733, aviatesk/JET.jl#765).
