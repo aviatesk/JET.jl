@@ -50,6 +50,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- links end -->
 
 ## [Unreleased]
+### Fixed
+- Fixed compatibility with `Base.@deprecate_binding` macro, which before
+  could trigger an internal error in packages using it (aviatesk/JET.jl#733, aviatesk/JET.jl#765).
 
 ## [0.10.10]
 ### Fixed
