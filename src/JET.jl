@@ -20,6 +20,8 @@ const exports = Set{Symbol}((
     :watch_file,
     # optanalyzer
     Symbol("@report_opt"), :report_opt, Symbol("@test_opt"), :test_opt,
+    # trimanalyzer
+    Symbol("@report_trim"), :report_trim, Symbol("@test_trim"), :test_trim,
     # configurations
     :LastFrameModule, :AnyFrameModule
 ))
