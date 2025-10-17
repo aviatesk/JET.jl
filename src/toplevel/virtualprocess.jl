@@ -1646,10 +1646,6 @@ function _to_simple_module_usages(x::Expr)
         return Expr[Expr(x.head, arg) for arg in x.args]
     end
     arg = only(x.args)
-    if isa(arg, Symbol)
-        # `export a`, `public a`
-        return Expr[x]
-    end
     if isexpr(arg, :as)
         # `import Pkg as P`
         arg = first(arg.args)
@@ -1658,10 +1654,14 @@ function _to_simple_module_usages(x::Expr)
         # `using A`
         return Expr[x]
     end
-    # `using A: sym1, sym2, ...`
-    @assert isexpr(arg, :(:))
-    a, as... = arg.args
-    return Expr[Expr(x.head, ex) for ex in Expr[Expr(arg.head, a, a′) for a′ in as]]
+    if isexpr(arg, :(:))
+        # `using A: sym1, sym2, ...`
+        a, as... = arg.args
+        return Expr[Expr(x.head, ex) for ex in Expr[Expr(arg.head, a, a′) for a′ in as]]
+    else
+        # `export a`, `public a`
+        return Expr[x]
+    end
 end
 
 # This overload performs almost the same work as
