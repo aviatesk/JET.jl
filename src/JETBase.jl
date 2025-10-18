@@ -53,6 +53,8 @@ using InteractiveUtils: InteractiveUtils, gen_call_with_extracted_types_and_kwar
 
 using Pkg: Pkg, TOML
 
+using Revise
+
 using Test:
     Broken, DefaultTestSet, Error, Fail, FallbackTestSet, FallbackTestSetException, Pass,
     Result, TESTSET_PRINT_ENABLE, Test, get_testset
@@ -873,48 +875,128 @@ function trymetaparse(s::String, name::Symbol)
     return ret
 end
 
-"""
-    analyze_and_report_package!(interp::ConcreteInterpreter,
-                                package::Union{AbstractString,Module,Nothing} = nothing;
-                                jetconfigs...) -> JETToplevelResult
-
-A generic entry point to analyze a package with `interp::ConcreteInterpreter`.
-Finally returns the analysis result as [`JETToplevelResult`](@ref).
-Note that this is intended to be used by developers of `AbstractAnalyzer` and
-`ConcreteInterpreter` only.
-General users should use high-level entry points like [`report_package`](@ref).
-"""
-function analyze_and_report_package!(interp::ConcreteInterpreter,
-                                     package::Union{AbstractString,Module,Nothing} = nothing;
-                                     jetconfigs...)
-    (; filename, pkgid) = find_pkg(package)
-    jetconfigs = kwargs_dict(jetconfigs)
-    set_if_missing!(jetconfigs, :analyze_from_definitions, true)
-    set_if_missing!(jetconfigs, :concretization_patterns, [:(x_)]) # concretize all top-level code
-    return analyze_and_report_file!(interp, filename, pkgid; jetconfigs...)
+function find_pkgmod(pkg)
+    pkgid, _ = find_pkg(pkg)
+    pkgmod = get(Base.loaded_modules, pkgid, nothing)
+    isnothing(pkgmod) && error(lazy"Package $(pkgid.name) is not loaded.")
+    return pkgmod
 end
 
 function find_pkg(pkgname::AbstractString)
     pkgenv = @lock Base.require_lock Base.identify_package_env(pkgname)
     isnothing(pkgenv) && error(lazy"Unknown package $pkgname.")
-    pkgid, env = pkgenv
-    filename = @lock Base.require_lock Base.locate_package(pkgid, env)
-    isnothing(filename) && error(lazy"Expected $pkgname to have a source file.")
-    return (; pkgid, filename)
-end
-
-function find_pkg(pkgmod::Module)
-    filename = pathof(pkgmod)
-    isnothing(filename) && error(lazy"Cannot analyze a module defined in the REPL.")
-    pkgid = @lock Base.require_lock Base.identify_package(String(nameof(pkgmod)))
-    isnothing(pkgid) && error(lazy"Expected $pkgmod to exist as a package.")
-    return (; pkgid, filename)
+    return pkgenv
 end
 
 function find_pkg(::Nothing)
     project = Pkg.project()
     project.ispackage || error(lazy"Active project at $(project.path) is not a package.")
     return find_pkg(project.name)
+end
+
+struct SigAnalysisResult
+    reports::Vector{InferenceErrorReport}
+    # codeinst::CodeInstance
+end
+
+function on_sig_evaluated(::Revise.SigInfoState, ::Revise.SigInfo)
+    # TODO: Run JET analysis upon signature evaluation?
+    # match = Base._which(siginfo.sig; ...)
+    # if match !== nothing
+    #     analyzer, result = analyze_method_signature!(...)
+    #     reports = get_reports(analyzer, result)
+    #     return SigAnalysisResult(sig, reports)
+    # end
+
+    # For now, return the placeholder result always
+    return missing
+end
+
+on_sig_deleted(::Revise.SigInfoState, ::Revise.SigInfo) = nothing
+
+push_inithook!() do
+    Revise.register_sig_extension!(
+        :JET,
+        Revise.SigExtensionRegistry(
+            on_sig_evaluated,
+            on_sig_deleted))
+end
+
+"""
+    analyze_and_report_package!(analyzer::AbstractAnalyzer, package::Module; jetconfigs...) -> JETToplevelResult
+
+A generic entry point to analyze a package with `analyzer::AbstractAnalyzer`.
+Finally returns the analysis result as [`JETToplevelResult`](@ref).
+Note that this is intended to be used by developers of `AbstractAnalyzer` only.
+General users should use high-level entry points like [`report_package`](@ref).
+"""
+function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module; jetconfigs...)
+    pkgid = Base.PkgId(pkgmod)
+    haskey(Revise.pkgdatas, pkgid) || Revise.watch_package(pkgid)
+    if !haskey(Revise.pkgdatas, pkgid)
+        error(lazy"Package $pkgmod is not analyzable.")
+    end
+
+    pkgdata = Revise.pkgdatas[pkgid]
+    for file in Revise.srcfiles(pkgdata)
+        fi = Revise.maybe_parse_from_cache!(pkgdata, file)
+        Revise.maybe_extract_sigs!(fi)
+    end
+
+    start = time()
+    succeeded = Ref(0)
+    analyzed = Ref(0)
+    res = VirtualProcessResult(nothing)
+    jetconfigs = set_if_missing(jetconfigs, :toplevel_logger, IOContext(stdout, JET_LOGGER_LEVEL => DEFAULT_LOGGER_LEVEL))
+    config = ToplevelConfig(; jetconfigs...)
+    analyzer′ = analyzer
+    if analyzer′ isa BasicJETAnalyzer
+        analyzer′ = FromDefinitionJETAnalyzer(analyzer′.state, analyzer′.analysis_token, analyzer′.method_table, analyzer′.config)
+    end
+
+    n_sigs = 0
+    for fi in pkgdata.fileinfos, (_, exsigs) in fi.modexsigs, (_, siginfos) in exsigs
+        isnothing(siginfos) && continue
+        n_sigs += length(siginfos)
+    end
+
+    for fi in pkgdata.fileinfos, (_, exsigs) in fi.modexsigs, (_, siginfos) in exsigs
+        isnothing(siginfos) && continue
+        for (i, siginfo) in enumerate(siginfos)
+            match = Base._which(siginfo.sig;
+                method_table = unwrap_method_table(CC.method_table(analyzer′)),
+                world = CC.get_inference_world(analyzer′),
+                raise = false)
+            analyzed[] += 1
+            if match !== nothing
+                succeeded[] += 1
+                with_toplevel_logger(config; pre=clearline) do @nospecialize(io)
+                    (analyzed[] == n_sigs ? println : print)(io, "analyzing from top-level definitions ($(succeeded[])/$n_sigs)")
+                end
+                analyzer′, result = analyze_method_signature!(analyzer′,
+                    match.method, match.spec_types, match.sparams)
+                reports = get_reports(analyzer′, result)
+                append!(res.inference_error_reports, reports)
+                siginfos[i] = Revise.replace_extended_data(siginfo, :JET, SigAnalysisResult(reports))
+            else
+                with_toplevel_logger(config; filter=≥(JET_LOGGER_LEVEL_DEBUG), pre=clearline) do @nospecialize(io)
+                    println(io, "couldn't find a single method matching the signature `", siginfo.sig, "`")
+                end
+            end
+        end
+    end
+
+    with_toplevel_logger(config) do @nospecialize(io)
+        sec = round(time() - start; digits = 3)
+        println(io, "analyzed $(succeeded[]) top-level definitions (took $sec sec)")
+    end
+
+    unique!(aggregation_policy(analyzer′), res.inference_error_reports)
+
+    analyzername = nameof(typeof(analyzer))
+    pkgname = String(nameof(pkgmod))
+    source = lazy"$analyzername: $pkgname"
+    return JETToplevelResult(analyzer, res, source; jetconfigs...)
 end
 
 """

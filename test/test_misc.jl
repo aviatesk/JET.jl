@@ -24,33 +24,6 @@ try; f_method_instance2(Some{AbstractString}("throws")); catch end
     end
 end
 
-using Pkg, JET
-using JET: find_pkg
-
-@testset "`find_pkg`" begin
-    pkgid = Base.PkgId(JET)
-    filename = pathof(JET)
-    target = (; pkgid, filename)
-
-    @test find_pkg("JET") == target
-    @test_throws ErrorException find_pkg("unknown")
-
-    @test find_pkg(JET) == target
-    @test_throws ErrorException find_pkg(Module())
-
-    # suppress logs from Pkg.jl if possible
-    old = Pkg.project().path
-    try
-        Pkg.activate(pkgdir(JET); io=devnull)
-        @test find_pkg(nothing) == target
-
-        Pkg.activate(; temp=true, io=devnull)
-        @test_throws ErrorException find_pkg(nothing)
-    finally
-        Pkg.activate(old; io=devnull)
-    end
-end
-
 using JET: process_config_dict
 using TOML: TOML
 macro toml_str(s); TOML.parse(TOML.Parser(s)); end

@@ -2125,12 +2125,15 @@ function test_report_package(test_func, module_ex;
 
             Pkg.activate(; temp=true, io=devnull)
             Pkg.develop(; path=pkgpath, io=devnull)
-            Pkg.precompile(; io=devnull)
 
             pkgfile = normpath(pkgpath, "src", "$pkgname.jl")
             write(pkgfile, string(pkgcode))
+            Pkg.precompile(; io=devnull)
 
-            res = report_package(pkgname; toplevel_logger=nothing, jetconfigs...)
+            pkgid, _ = JET.find_pkg(pkgname)
+            pkgmod = Base.require(pkgid)
+
+            res = report_package(pkgmod; toplevel_logger=nothing, jetconfigs...)
 
             @eval @testset $pkgname $test_func($res)
 
