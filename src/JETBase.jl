@@ -894,29 +894,33 @@ function find_pkg(::Nothing)
     return find_pkg(project.name)
 end
 
-# using OrderedCollections: OrderedDict
+struct SigAnalysisResult
+    reports::Vector{InferenceErrorReport}
+    # codeinst::CodeInstance
+end
 
-# struct SigAnalysisResult
-#     codeinst::CodeInstance
-#     reports::Vector{InferenceErrorReport}
-# end
+function on_sig_evaluated(::Revise.SigInfoState, ::Revise.SigInfo)
+    # TODO: Run JET analysis upon signature evaluation?
+    # match = Base._which(siginfo.sig; ...)
+    # if match !== nothing
+    #     analyzer, result = analyze_method_signature!(...)
+    #     reports = get_reports(analyzer, result)
+    #     return SigAnalysisResult(sig, reports)
+    # end
 
-# struct ExSigsInfo
-#     sigs::Vector{Pair{Union{Nothing,Core.MethodTable}, Type}}
-#     results::Vector{SigAnalysisResult}
-# end
+    # For now, return the placeholder result always
+    return missing
+end
 
-# struct FileInfo
-#     modexsigs::OrderedDict{Module, OrderedDict{Revise.RelocatableExpr,SigAnalysisResult}}
-# end
+on_sig_deleted(::Revise.SigInfoState, ::Revise.SigInfo) = nothing
 
-# struct PkgData
-#     info::Revise.PkgFiles
-#     fileinfos::Vector{FileInfo}
-#     # requirements
-# end
-
-# const pkgdatas = Dict{Base.PkgId, PkgData}()
+push_inithook!() do
+    Revise.register_sig_extension!(
+        :JET,
+        Revise.SigExtensionRegistry(
+            on_sig_evaluated,
+            on_sig_deleted))
+end
 
 """
     analyze_and_report_package!(analyzer::AbstractAnalyzer, package::Module; jetconfigs...) -> JETToplevelResult
@@ -951,21 +955,18 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
     end
 
     n_sigs = 0
-    for fi in pkgdata.fileinfos, (_, exsigs) in fi.modexsigs, (_, sigs) in exsigs
-        isnothing(sigs) && continue
-        n_sigs += length(sigs)
+    for fi in pkgdata.fileinfos, (_, exsigs) in fi.modexsigs, (_, siginfos) in exsigs
+        isnothing(siginfos) && continue
+        n_sigs += length(siginfos)
     end
 
-    for fi in pkgdata.fileinfos, (_, exsigs) in fi.modexsigs, (_, sigs) in exsigs
-        isnothing(sigs) && continue
-        for i = 1:length(sigs)
-            sig = sigs[i][2]
-            match = Base._which(sig;
-                # NOTE use the latest world counter with `method_table(analyzer)` unwrapped,
-                # otherwise it may use a world counter when this method isn't defined yet
-                method_table=unwrap_method_table(CC.method_table(analyzer′)),
-                world=CC.get_inference_world(analyzer′),
-                raise=false)
+    for fi in pkgdata.fileinfos, (_, exsigs) in fi.modexsigs, (_, siginfos) in exsigs
+        isnothing(siginfos) && continue
+        for (i, siginfo) in enumerate(siginfos)
+            match = Base._which(siginfo.sig;
+                method_table = unwrap_method_table(CC.method_table(analyzer′)),
+                world = CC.get_inference_world(analyzer′),
+                raise = false)
             analyzed[] += 1
             if match !== nothing
                 succeeded[] += 1
@@ -976,9 +977,10 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
                     match.method, match.spec_types, match.sparams)
                 reports = get_reports(analyzer′, result)
                 append!(res.inference_error_reports, reports)
+                siginfos[i] = Revise.replace_extended_data(siginfo, :JET, SigAnalysisResult(reports))
             else
                 with_toplevel_logger(config; filter=≥(JET_LOGGER_LEVEL_DEBUG), pre=clearline) do @nospecialize(io)
-                    println(io, "couldn't find a single method matching the signature `", sig, "`")
+                    println(io, "couldn't find a single method matching the signature `", siginfo.sig, "`")
                 end
             end
         end
