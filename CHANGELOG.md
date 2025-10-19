@@ -6,7 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 <!-- links start -->
-[Unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.10.11...HEAD
+[Unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.10.12...HEAD
+[0.10.12]: https://github.com/aviatesk/JET.jl/compare/v0.10.11...v0.10.12
 [0.10.11]: https://github.com/aviatesk/JET.jl/compare/v0.10.10...v0.10.11
 [0.10.10]: https://github.com/aviatesk/JET.jl/compare/v0.10.9...v0.10.10
 [0.10.9]: https://github.com/aviatesk/JET.jl/compare/v0.10.8...v0.10.9
@@ -51,6 +52,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- links end -->
 
 ## [Unreleased]
+### Fixed
+- Enabled concrete evaluation in `report_call`, reducing false positives in more
+  general cases
+
+## [0.10.12]
+### Fixed
+- Enabled more concrete evaluation in `report_call`, fixing false positive reports
+  such as those reported for `@report_call 1.0 > π` (aviatesk/JET.jl#767)
+- Fixed error reporting for `setglobal!` on variables with incompatible types,
+  fixing a test failure on v1.12 (aviatesk/JET.jl#768).
 
 ## [0.10.11]
 ### Fixed
