@@ -1113,4 +1113,7 @@ test_call((Vector{Int},String)) do a, b
     end
 end
 
+# JuliaLang/julia#59884
+@test_call 1.0 > π
+
 end # module test_jetanalyzer

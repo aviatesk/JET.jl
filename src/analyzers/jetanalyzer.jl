@@ -229,6 +229,33 @@ given that the number of matching methods are limited beforehand.
 """
 CC.bail_out_call(::JETAnalyzer, ::CC.InferenceLoopState, ::InferenceState) = false
 
+# # For newer Julia versions:
+# function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
+#     @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
+#     # `JETAnalyzer` uses an overlay method table, but those overlay definitions are
+#     # concrete evaluation safe, so we can completely ignore the `nonoverlayed` bit to achieve maximum precision through concrete-evaluation
+#     neweffects = CC.Effects(result.effects; nonoverlayed=CC.ALWAYS_TRUE)
+#     result = MethodCallResult(result.rt, result.exct, neweffects, result.edge,
+#                               result.edgecycle, result.edgelimited,
+#                               result.volatile_inf_result)
+#     res = @invoke CC.concrete_eval_eligible(analyzer::ToplevelAbstractAnalyzer,
+#         f::Any, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
+#     # Ensure that semi-concrete interpretation is definitely disabled to prevent it from occurring
+#     return res === :concrete_eval ? res : :none
+# end
+
+# # This overload disables concrete evaluation ad-hoc when concrete evaluation returns `Bottom`
+# # (i.e., when an error occurs during concrete evaluation) and falls back to constant propagation
+# # to enable error reporting
+# function CC.concrete_eval_call(analyzer::JETAnalyzer,
+#     @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
+#     invokecall::Union{CC.InvokeCall,Nothing})
+#     res = @invoke CC.concrete_eval_call(analyzer::ToplevelAbstractAnalyzer,
+#         f::Any, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
+#         invokecall::Union{CC.InvokeCall,Nothing})
+#     return res.rt === Bottom ? nothing : res
+# end
+
 # TODO Reasons about error found by [semi-]concrete evaluation:
 # For now JETAnalyzer allows the regular constant-prop' only,
 # unless the analyzed effects are proven to be `:nothrow`.
@@ -246,10 +273,19 @@ function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
         end
     else
         if (f === Base.fieldcount || f === Base.fieldindex ||
-            f === length || # TODO Remove me once JuliaLang/julia#59706 is merged
             f === Base.typejoin || f === Base.typejoin_union_tuple)
             if concrete_eval_eligible_ignoring_overlay(result, arginfo)
                 return :concrete_eval
+            end
+        else
+            edge = result.edge
+            if edge !== nothing
+                m = edge.def.def
+                if m isa Method && m.file === Symbol("runtime_internals.jl")
+                    if concrete_eval_eligible_ignoring_overlay(result, arginfo)
+                        return :concrete_eval
+                    end
+                end
             end
         end
     end
