@@ -895,7 +895,7 @@ function _report_global_assignment!(analyzer::JETAnalyzer, sv::InferenceState, r
             @goto report
         end
     else
-        if ret.rt === Bottom && ret.exct === ErrorException
+        if ret.rt === Bottom && ret.exct === @static VERSION ≥ v"1.12.0" ? TypeError : ErrorException
             @label report
             mod = name = nothing
             if M isa Const
