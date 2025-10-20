@@ -229,34 +229,33 @@ given that the number of matching methods are limited beforehand.
 """
 CC.bail_out_call(::JETAnalyzer, ::CC.InferenceLoopState, ::InferenceState) = false
 
-# # For newer Julia versions:
-# function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
-#     @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
-#     # `JETAnalyzer` uses an overlay method table, but those overlay definitions are
-#     # concrete evaluation safe, so we can completely ignore the `nonoverlayed` bit to achieve maximum precision through concrete-evaluation
-#     neweffects = CC.Effects(result.effects; nonoverlayed=CC.ALWAYS_TRUE)
-#     result = MethodCallResult(result.rt, result.exct, neweffects, result.edge,
-#                               result.edgecycle, result.edgelimited,
-#                               result.volatile_inf_result)
-#     res = @invoke CC.concrete_eval_eligible(analyzer::ToplevelAbstractAnalyzer,
-#         f::Any, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
-#     # Ensure that semi-concrete interpretation is definitely disabled to prevent it from occurring
-#     return res === :concrete_eval ? res : :none
-# end
+@static if VERSION ≥ v"1.13.0-DEV.1352"
+function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
+    @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
+    # `JETAnalyzer` uses an overlay method table, but those overlay definitions are
+    # concrete evaluation safe, so we can completely ignore the `nonoverlayed` bit to achieve maximum precision through concrete-evaluation
+    neweffects = CC.Effects(result.effects; nonoverlayed=CC.ALWAYS_TRUE)
+    result = MethodCallResult(result.rt, result.exct, neweffects, result.edge,
+                              result.edgecycle, result.edgelimited,
+                              result.volatile_inf_result)
+    res = @invoke CC.concrete_eval_eligible(analyzer::ToplevelAbstractAnalyzer,
+        f::Any, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
+    # Ensure that semi-concrete interpretation is definitely disabled to prevent it from occurring
+    return res === :concrete_eval ? res : :none
+end
+# This overload disables concrete evaluation ad-hoc when concrete evaluation returns `Bottom`
+# (i.e., when an error occurs during concrete evaluation) and falls back to constant propagation
+# to enable error reporting
+function CC.concrete_eval_call(analyzer::JETAnalyzer,
+    @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
+    invokecall::Union{CC.InvokeCall,Nothing})
+    res = @invoke CC.concrete_eval_call(analyzer::ToplevelAbstractAnalyzer,
+        f::Any, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
+        invokecall::Union{CC.InvokeCall,Nothing})
+    return res.rt === Bottom ? nothing : res
+end
 
-# # This overload disables concrete evaluation ad-hoc when concrete evaluation returns `Bottom`
-# # (i.e., when an error occurs during concrete evaluation) and falls back to constant propagation
-# # to enable error reporting
-# function CC.concrete_eval_call(analyzer::JETAnalyzer,
-#     @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
-#     invokecall::Union{CC.InvokeCall,Nothing})
-#     res = @invoke CC.concrete_eval_call(analyzer::ToplevelAbstractAnalyzer,
-#         f::Any, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
-#         invokecall::Union{CC.InvokeCall,Nothing})
-#     return res.rt === Bottom ? nothing : res
-# end
-
-# TODO Reasons about error found by [semi-]concrete evaluation:
+else # @static if VERSION ≥ v"1.13.0-DEV.1350"
 # For now JETAnalyzer allows the regular constant-prop' only,
 # unless the analyzed effects are proven to be `:nothrow`.
 function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
@@ -292,11 +291,11 @@ function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
     # disables both concrete evaluation and semi-concrete interpretation
     return :none
 end
-
 function concrete_eval_eligible_ignoring_overlay(result::MethodCallResult, arginfo::ArgInfo)
     result.edge !== nothing || return false
     return CC.is_foldable(result.effects) && CC.is_all_const_arg(arginfo, #=start=#2)
 end
+end # @static if VERSION ≥ v"1.13.0-DEV.1350"
 
 function CC.abstract_invoke(analyzer::JETAnalyzer, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState)
     ret = @invoke CC.abstract_invoke(analyzer::ToplevelAbstractAnalyzer, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState)
@@ -930,24 +929,23 @@ function _report_global_assignment!(analyzer::JETAnalyzer, sv::InferenceState, r
         if ret.exct !== Union{}
             @goto report
         end
-    else
-        if ret.rt === Bottom && ret.exct === @static VERSION ≥ v"1.12.0" ? TypeError : ErrorException
-            @label report
-            mod = name = nothing
-            if M isa Const
-                mod′ = M.val
-                if mod′ isa Module
-                    mod = mod′
-                end
+    elseif ret.rt === Bottom && ret.exct === @static VERSION ≥ v"1.12.0" ? TypeError : ErrorException
+        @label report
+        mod = name = nothing
+        if M isa Const
+            mod′ = M.val
+            if mod′ isa Module
+                mod = mod′
             end
-            if s isa Const
-                name′ = s.val
-                if name′ isa Symbol
-                    name = name′
-                end
-            end
-            add_new_report!(analyzer, sv.result, IncompatibleGlobalAssignmentError(sv, @something(mod, Module(:Unknown)), @something(name, :unknown)))
         end
+        if s isa Const
+            name′ = s.val
+            if name′ isa Symbol
+                name = name′
+            end
+        end
+        add_new_report!(analyzer, sv.result,
+            IncompatibleGlobalAssignmentError(sv, @something(mod, Module(:Unknown)), @something(name, :unknown)))
     end
 end
 
