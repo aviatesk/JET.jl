@@ -711,9 +711,9 @@ function analyze_from_definitions!(interp::ConcreteInterpreter, config::Toplevel
         match = Base._which(tt;
             # NOTE use the latest world counter with `method_table(analyzer)` unwrapped,
             # otherwise it may use a world counter when this method isn't defined yet
-            method_table=unwrap_method_table(CC.method_table(analyzer)),
-            world=CC.get_inference_world(analyzer),
-            raise=false)
+            method_table = CC.method_table(analyzer),
+            world = CC.get_inference_world(analyzer),
+            raise = false)
         if (match !== nothing &&
             (!(entrypoint isa Symbol) || # implies `analyze_from_definitions===true`
              match.method.name === entrypoint))
