@@ -411,6 +411,53 @@ function CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState, validatio
     return @invoke CC.finish!(analyzer::AbstractInterpreter, frame::InferenceState, validation_world::UInt, time_before::UInt64)
 end
 
+function annotate_types!(citree::JL.SyntaxTree, frame::CC.InferenceState)
+    for i = 1:length(frame.src.code)
+        stmt = frame.src.code[i]
+        stmttype = frame.src.ssavaluetypes[i]
+        stmttree = citree[i]
+        if JS.kind(stmttree) in JS.KSet"newvar goto gotoifnot"
+            # The `ssavaluetype` corresponding to these nodes is always `Any`, and since
+            # the provenance information for these nodes is very broad, it's more convenient
+            # for the implementation of `get_type_for_range` to leave them untyped
+            continue
+        end
+        JL.setattr!(stmttree; type=stmttype)
+        if stmt isa Expr
+            stmt.head === :meta && continue
+            treeref = stmttree
+            if stmt.head === :(=)
+                lhs = stmt.args[1]
+                if lhs isa Core.SlotNumber
+                    JL.setattr!(treeref[1]; type=stmttype)
+                end
+                stmt = stmt.args[2]
+                stmt isa Expr || continue
+                treeref = treeref[2]
+            end
+            for i = 1:length(stmt.args)
+                arg = stmt.args[i]
+                if arg isa Core.SlotNumber
+                    argtyp = CC.argextype(arg, frame.src, frame.sptypes)
+                    JL.setattr!(treeref[i]; type=argtyp)
+                end
+            end
+        elseif stmt isa ReturnNode
+            rettyp = CC.argextype(stmt.val, frame.src, frame.sptypes)
+            JL.setattr!(stmttree; type=rettyp)
+        end
+    end
+end
+
+function CC.finishinfer!(frame::CC.InferenceState, analyzer::AbstractAnalyzer, cycleid::Int)
+    ret = @invoke CC.finishinfer!(frame::CC.InferenceState, analyzer::AbstractInterpreter, cycleid::Int)
+    if haskey(analyzer.state.tree_cache, frame.result)
+        tree = analyzer.state.tree_cache[frame.result]
+        annotate_types!(tree[3][1], frame)
+    end
+    return ret
+end
+
 # top-level bridge
 # ================
 

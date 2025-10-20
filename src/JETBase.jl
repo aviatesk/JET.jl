@@ -39,6 +39,7 @@ using Base.Meta: ParseError, isexpr, lower
 using Base.Experimental: @MethodTable, @overlay
 
 using JuliaSyntax: JuliaSyntax as JS
+using JuliaLowering: JuliaLowering as JL
 using .JS: @K_str
 
 using CodeTracking: CodeTracking
@@ -700,9 +701,99 @@ function analyze_method_instance!(analyzer::AbstractAnalyzer, mi::MethodInstance
     return analyze_frame!(analyzer, frame)
 end
 
+find_target_tree(stlwr::JL.SyntaxTree, ::InferenceResult) = find_target_tree(stlwr)
+function find_target_tree(stlwr::JL.SyntaxTree)
+    JS.kind(stlwr) === JS.K"code_info" || return nothing
+    JS.numchildren(stlwr) ≥ 1 || return nothing
+    target_tree = nothing
+    stlwr1 = stlwr[1]
+    for i = 1:JS.numchildren(stlwr1)
+        stlwrᵢ = stlwr1[i]
+        if JS.kind(stlwrᵢ) === JS.K"method" && JS.numchildren(stlwrᵢ) ≥ 3
+            mtree = stlwrᵢ[3]
+            if JS.kind(mtree) === JS.K"code_info"
+                if !isnothing(target_tree)
+                    return nothing # TODO kwfunc, func with defualt arguments
+                else
+                    target_tree = stlwrᵢ
+                end
+            end
+        end
+    end
+    return target_tree
+end
+
+prepare_type_attr(st::JL.SyntaxTree) = let g = JL.syntax_graph(st)
+    attrs = Dict(pairs(g.attributes))
+    attrs[:type] = Dict{Int, Any}()
+    return JL.SyntaxTree(JL.SyntaxGraph(g.edge_ranges, g.edges, attrs), st._id)
+end
+
+function ParseStream!(s::Union{AbstractString,Vector{UInt8}}; rule::Symbol=:all)
+    stream = JS.ParseStream(s)
+    JS.parse!(stream; rule)
+    return stream
+end
+
 function CC.InferenceState(result::InferenceResult, cache_mode::UInt8,  analyzer::AbstractAnalyzer)
     init_result!(analyzer, result)
+    m = result.linfo.def
+    if m isa Method
+        s, first_line = @something CodeTracking.definition(String, m) @goto fallback
+        ps = ParseStream!(s; rule=:statement)
+        st0 = JS.build_tree(JL.SyntaxTree, ps; first_line)
+        stlwr = try
+            JL.lower(m.module, st0)
+        catch
+            @goto fallback
+        end
+        tree = @something find_target_tree(stlwr, result) @goto fallback
+        src = try
+            JL.to_lowered_expr(tree[3])
+        catch
+            @goto fallback
+        end
+        src isa Core.CodeInfo || @goto fallback
+        src = resolve_toplevel_symbols!(src, m.module)
+
+        for i = 1:length(src.code)
+            stmt = src.code[i]
+            if stmt isa GlobalRef && stmt.name === :new
+                @goto fallback
+            end
+        end
+
+        # Validate the mapping between this tree and `CodeInfo`. Otherwise type annotation will fail.
+        tree_stmts = tree[3][1]
+        length(src.code) == JS.numchildren(tree_stmts) || @goto fallback
+        world = CC.get_inference_world(analyzer)
+        mi = result.linfo
+        orig_src = CC.retrieve_code_info(mi, world)
+        length(src.code) == length(orig_src.code) || @goto fallback
+
+        # XXX JL bug probably. Need to fix up things so that inference can actually use this `src` for infernece
+        src.nargs = orig_src.nargs
+        src.isva = orig_src.isva
+
+        analyzer.state.tree_cache[result] = prepare_type_attr(tree)
+        return CC.InferenceState(result, src, cache_mode, analyzer)
+    end
+    @label fallback
     return @invoke InferenceState(result::InferenceResult, cache_mode::UInt8, analyzer::AbstractInterpreter)
+end
+
+function get_trees(result::JETCallResult, name::Symbol)
+    results = collect(keys(result.analyzer.state.analysis_results))
+    idxs = findall(results) do r::InferenceResult
+        m = r.linfo.def
+        m isa Method || return false
+        m.name === name
+    end
+    trees = JL.SyntaxTree[]
+    for r in results[idxs]
+        push!(trees, @something get(result.analyzer.state.tree_cache, r, nothing) continue)
+    end
+    return trees
 end
 
 function analyze_frame!(analyzer::AbstractAnalyzer, frame::InferenceState)
