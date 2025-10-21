@@ -1000,10 +1000,7 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
     # Revise's signature population may execute code, which can increment the world age,
     # so we update to the latest world age here
     newstate = AnalyzerState(AnalyzerState(analyzer); world=Base.get_world_counter())
-    analyzer′ = AbstractAnalyzer(analyzer, newstate)
-    if analyzer′ isa BasicJETAnalyzer
-        analyzer′ = FromDefinitionJETAnalyzer(analyzer′.state, analyzer′.analysis_token, analyzer′.method_table, analyzer′.config)
-    end
+    analyzer = AbstractAnalyzer(analyzer, newstate)
 
     n_sigs = 0
     for fi in pkgdata.fileinfos, (_, exsigs) in fi.modexsigs, (_, siginfos) in exsigs
@@ -1017,11 +1014,12 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
                 clearline(io)
             end
             counter[] += 1
-            inf_world = CC.get_inference_world(analyzer′)
+            inf_world = CC.get_inference_world(analyzer)
             ext = Revise.get_extended_data(siginfo, :JET)
             if ext !== nothing && ext.data isa SigAnalysisResult
                 prev_result = ext.data::SigAnalysisResult
-                if prev_result.codeinst.max_world ≥ inf_world ≥ prev_result.codeinst.min_world
+                if (CC.cache_owner(analyzer) === prev_result.codeinst.owner &&
+                    prev_result.codeinst.max_world ≥ inf_world ≥ prev_result.codeinst.min_world)
                     with_toplevel_logger(config) do @nospecialize(io)
                         (counter[] == n_sigs ? println : print)(io, "Skipped analysis for cached definition ($(counter[])/$n_sigs)")
                     end
@@ -1031,7 +1029,7 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
                 end
             end
             match = Base._which(siginfo.sig;
-                method_table = CC.method_table(analyzer′),
+                method_table = CC.method_table(analyzer),
                 world = inf_world,
                 raise = false)
             if match !== nothing
@@ -1045,10 +1043,10 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
                         p(io, "Analyzing top-level definition (progress: $(counter[])/$n_sigs)")
                     end
                 end
-                result = analyze_method_signature!(analyzer′,
+                result = analyze_method_signature!(analyzer,
                     match.method, match.spec_types, match.sparams)
                 analyzed[] += 1
-                reports = get_reports(analyzer′, result)
+                reports = get_reports(analyzer, result)
                 siginfos[i] = Revise.replace_extended_data(siginfo, :JET, SigAnalysisResult(reports, result.ci))
                 @label gotreports
                 append!(res.inference_error_reports, reports)
@@ -1067,7 +1065,7 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
         println(io, "Analyzed all top-level definitions (all: $(counter[]) | analyzed: $(analyzed[]) | cached: $(cached[]) | took: $sec sec)")
     end
 
-    unique!(aggregation_policy(analyzer′), res.inference_error_reports)
+    unique!(aggregation_policy(analyzer), res.inference_error_reports)
 
     analyzername = nameof(typeof(analyzer))
     pkgname = String(nameof(pkgmod))

@@ -1,12 +1,3 @@
-struct JETAnalyzerConfig
-    ignore_missing_comparison::Bool
-    function JETAnalyzerConfig(;
-        ignore_missing_comparison::Bool=false,
-        __jetconfigs...)
-        return new(
-            ignore_missing_comparison)
-    end
-end
 
 """
 Every [entry point of error analysis](@ref jetanalysis-entry) can accept
@@ -46,7 +37,28 @@ that are specific to the error analysis.
   error reports in the situations where specific input arguments type is not available at
   the beginning of the analysis like [`report_package`](@ref).
 ---
+- `ignore_throws::Bool = false`:\\
+  If `true`, JET will not report errors from uncaught `throw` calls.
+  This is turned off by default, but is useful when analyzing package-level definitions
+  where `throw` calls are often intentional (e.g., interface function definitions that
+  throw errors by default) and not indicative of actual problems.
+  This configuration is enabled by default in [`report_package`](@ref)
+  to reduce noise from such intentional throws.
+---
 """
+struct JETAnalyzerConfig
+    ignore_missing_comparison::Bool
+    ignore_throws::Bool
+    function JETAnalyzerConfig(;
+        ignore_missing_comparison::Bool=false,
+        ignore_throws::Bool=false,
+        __jetconfigs...)
+        return new(
+            ignore_missing_comparison,
+            ignore_throws)
+    end
+end
+
 abstract type JETAnalyzer <: ToplevelAbstractAnalyzer end
 
 struct BasicJETAnalyzer <: JETAnalyzer
@@ -64,13 +76,6 @@ struct SoundJETAnalyzer <: JETAnalyzer
 end
 
 struct TypoJETAnalyzer <: JETAnalyzer
-    state::AnalyzerState
-    analysis_token::AnalysisToken
-    method_table::CachedMethodTable{OverlayMethodTable}
-    config::JETAnalyzerConfig
-end
-
-struct FromDefinitionJETAnalyzer <: JETAnalyzer
     state::AnalyzerState
     analysis_token::AnalysisToken
     method_table::CachedMethodTable{OverlayMethodTable}
@@ -127,7 +132,7 @@ JETAnalyzerConfig(analyzer::JETAnalyzer) = analyzer.config
 # Analyzer-specific filters
 # =========================
 
-function basic_filter(analyzer::Union{BasicJETAnalyzer,FromDefinitionJETAnalyzer}, sv::InferenceState)
+function basic_filter(analyzer::BasicJETAnalyzer, sv::InferenceState)
     mi = sv.linfo
     is_compileable_mi(mi) && return true
     return is_entry(analyzer, mi) # `report_call` may start analysis with abstract signature
@@ -171,8 +176,10 @@ function CC.finish!(analyzer::JETAnalyzer, caller::InferenceState, validation_wo
     if isnothing(src)
         # caught in cycle, similar error should have been reported where the source is available
     elseif src isa CodeInfo
-        # report pass for uncaught `throw` calls
-        report_uncaught_exception!(analyzer, caller, src.code)
+        if !JETAnalyzerConfig(analyzer).ignore_throws
+            # report pass for uncaught `throw` calls
+            report_uncaught_exception!(analyzer, caller, src.code)
+        end
     else
         # NOTE `src` never be `OptpimizationState` since `CC.may_optimize(::JETAnalyzer) === false`
         Core.eval(@__MODULE__, :(src = $src))
@@ -379,9 +386,11 @@ function CC.abstract_eval_value(analyzer::JETAnalyzer, @nospecialize(e), sstate:
 end
 
 function CC.abstract_throw(analyzer::JETAnalyzer, argtypes::Vector{Any}, sv::InferenceState)
-    ft = popfirst!(argtypes)
-    report_serious_exception!(analyzer, sv, argtypes)
-    pushfirst!(argtypes, ft)
+    if !JETAnalyzerConfig(analyzer).ignore_throws
+        ft = popfirst!(argtypes)
+        report_serious_exception!(analyzer, sv, argtypes)
+        pushfirst!(argtypes, ft)
+    end
     return @invoke CC.abstract_throw(analyzer::ToplevelAbstractAnalyzer, argtypes::Vector{Any}, sv::InferenceState)
 end
 
@@ -436,7 +445,6 @@ JETInterface.print_report_message(io::IO, rep::GeneratorErrorReport) = showerror
 report_generator_error!(::JETAnalyzer, ::InferenceResult) = nothing
 report_generator_error!(analyzer::BasicJETAnalyzer, result::InferenceResult) = _report_generator_error!(analyzer, result)
 report_generator_error!(analyzer::SoundJETAnalyzer, result::InferenceResult) = _report_generator_error!(analyzer, result)
-report_generator_error!(analyzer::FromDefinitionJETAnalyzer, result::InferenceResult) = _report_generator_error!(analyzer, result)
 function _report_generator_error!(analyzer::JETAnalyzer, result::InferenceResult)
     mi = result.linfo
     m = mi.def::Method
@@ -496,18 +504,15 @@ report_uncaught_exception!(analyzer::BasicJETAnalyzer, frame::InferenceState, st
     _report_uncaught_exception_maybe!(analyzer, frame, stmts)
 report_uncaught_exception!(analyzer::SoundJETAnalyzer, frame::InferenceState, stmts::Vector{Any}) =
     _report_uncaught_exception!(analyzer, frame, stmts)
-report_uncaught_exception!(analyzer::FromDefinitionJETAnalyzer, frame::InferenceState, ::Vector{Any}) =
-    filter_maybe_throws!(analyzer, frame)
 
 function _report_uncaught_exception_maybe!(analyzer::JETAnalyzer, frame::InferenceState, stmts::Vector{Any})
     if frame.bestguess === Bottom
-        return _report_uncaught_exception!(analyzer, frame, stmts)
+        _report_uncaught_exception!(analyzer, frame, stmts)
     else
-        filter_maybe_throws!(analyzer, frame)
-        return false
+        ignore_uncaught_exceptions!(analyzer, frame)
     end
 end
-function filter_maybe_throws!(analyzer::JETAnalyzer, frame::InferenceState)
+function ignore_uncaught_exceptions!(analyzer::JETAnalyzer, frame::InferenceState)
     # the non-`Bottom` result may mean `throw` calls from the children frames
     # (if exists) are caught and not propagated here
     # we don't want to cache the caught `UncaughtExceptionReport`s for this frame and
@@ -592,8 +597,6 @@ report_method_error!(analyzer::BasicJETAnalyzer, sv::InferenceState, call::CallM
     report_method_error!(analyzer, sv, call, argtypes, atype, #=sound=#false)
 report_method_error!(analyzer::SoundJETAnalyzer, sv::InferenceState, call::CallMeta, argtypes::Argtypes, @nospecialize(atype)) =
     report_method_error!(analyzer, sv, call, argtypes, atype, #=sound=#true)
-report_method_error!(analyzer::FromDefinitionJETAnalyzer, sv::InferenceState, call::CallMeta, argtypes::Argtypes, @nospecialize(atype)) =
-    report_method_error!(analyzer, sv, call, argtypes, atype, #=sound=#false)
 
 function report_method_error!(analyzer::JETAnalyzer,
     sv::InferenceState, call::CallMeta, argtypes::Argtypes, @nospecialize(atype), sound::Bool)
@@ -757,8 +760,6 @@ report_invalid_invoke!(analyzer::BasicJETAnalyzer, sv::InferenceState, ret::Call
     _report_invalid_invoke!(analyzer, sv, ret, argtypes)
 report_invalid_invoke!(analyzer::SoundJETAnalyzer, sv::InferenceState, ret::CallMeta, argtypes::Argtypes) =
     _report_invalid_invoke!(analyzer, sv, ret, argtypes)
-report_invalid_invoke!(analyzer::FromDefinitionJETAnalyzer, sv::InferenceState, ret::CallMeta, argtypes::Argtypes) =
-    _report_invalid_invoke!(analyzer, sv, ret, argtypes)
 
 function _report_invalid_invoke!(analyzer::JETAnalyzer, sv::InferenceState, ret::CallMeta, argtypes::Argtypes)
     if ret.rt === Bottom
@@ -807,8 +808,6 @@ report_undef_global_var!(analyzer::SoundJETAnalyzer, sv::InferenceState, binding
     _report_undef_global_var!(analyzer, sv, binding, partition, true)
 report_undef_global_var!(analyzer::TypoJETAnalyzer, sv::InferenceState, binding::Core.Binding, partition::Core.BindingPartition) =
     _report_undef_global_var!(analyzer, sv, binding, partition, false)
-report_undef_global_var!(analyzer::FromDefinitionJETAnalyzer, sv::InferenceState, binding::Core.Binding, partition::Core.BindingPartition) =
-    _report_undef_global_var!(analyzer, sv, binding, partition, false)
 
 function _report_undef_global_var!(analyzer::JETAnalyzer, sv::InferenceState, binding::Core.Binding, partition::Core.BindingPartition, sound::Bool)
     gr = binding.globalref
@@ -843,8 +842,6 @@ report_undef_static_param!(analyzer::SoundJETAnalyzer, sv::InferenceState, n::In
     _report_undef_static_param!(analyzer, sv, n, true)
 report_undef_static_param!(analyzer::TypoJETAnalyzer, sv::InferenceState, n::Int) =
     _report_undef_static_param!(analyzer, sv, n, false)
-report_undef_static_param!(analyzer::FromDefinitionJETAnalyzer, sv::InferenceState, n::Int) =
-    _report_undef_static_param!(analyzer, sv, n, false)
 
 function _report_undef_static_param!(analyzer::JETAnalyzer, sv::InferenceState, n::Int, sound::Bool)
     if !(1 ≤ n ≤ length(sv.sptypes))
@@ -870,8 +867,6 @@ report_undef_local_var!(analyzer::BasicJETAnalyzer, sv::InferenceState, var::Slo
 report_undef_local_var!(analyzer::SoundJETAnalyzer, sv::InferenceState, var::SlotNumber, vtypes::VarTable) =
     _report_undef_local_var!(analyzer, sv, var, vtypes, true)
 report_undef_local_var!(analyzer::TypoJETAnalyzer, sv::InferenceState, var::SlotNumber, vtypes::VarTable) =
-    _report_undef_local_var!(analyzer, sv, var, vtypes, false)
-report_undef_local_var(analyzer::FromDefinitionJETAnalyzer, sv::InferenceState, var::SlotNumber, vtypes::VarTable) =
     _report_undef_local_var!(analyzer, sv, var, vtypes, false)
 
 function _report_undef_local_var!(analyzer::JETAnalyzer, sv::CC.InferenceState, var::SlotNumber, vtypes::VarTable, sound::Bool)
@@ -918,8 +913,6 @@ report_global_assignment!(analyzer::BasicJETAnalyzer, sv::InferenceState, ret::C
 report_global_assignment!(analyzer::SoundJETAnalyzer, sv::InferenceState, ret::CallMeta, @nospecialize(M), @nospecialize(s), @nospecialize(v)) =
     _report_global_assignment!(analyzer, sv, ret, M, s, v, true)
 report_global_assignment!(analyzer::TypoJETAnalyzer, sv::InferenceState, ret::CallMeta, @nospecialize(M), @nospecialize(s), @nospecialize(v)) =
-    _report_global_assignment!(analyzer, sv, ret, M, s, v, false)
-report_global_assignment!(analyzer::FromDefinitionJETAnalyzer, sv::InferenceState, ret::CallMeta, @nospecialize(M), @nospecialize(s), @nospecialize(v)) =
     _report_global_assignment!(analyzer, sv, ret, M, s, v, false)
 
 function _report_global_assignment!(analyzer::JETAnalyzer, sv::InferenceState, ret::CallMeta,
@@ -985,8 +978,6 @@ report_non_boolean_cond!(analyzer::BasicJETAnalyzer, sv::InferenceState, @nospec
     _report_non_boolean_cond!(analyzer, sv, t, false)
 report_non_boolean_cond!(analyzer::SoundJETAnalyzer, sv::InferenceState, @nospecialize(t)) =
     _report_non_boolean_cond!(analyzer, sv, t, true)
-report_non_boolean_cond!(analyzer::FromDefinitionJETAnalyzer, sv::InferenceState, @nospecialize(t)) =
-    _report_non_boolean_cond!(analyzer, sv, t, false)
 
 function _report_non_boolean_cond!(analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(t), sound::Bool)
     if !sound
@@ -1168,8 +1159,6 @@ report_builtin_error!(analyzer::SoundJETAnalyzer, sv::InferenceState, @nospecial
     _report_builtin_error_sound!(analyzer, sv, f, argtypes, ret)
 report_builtin_error!(analyzer::TypoJETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(ret)) =
     _report_builtin_error_typo!(analyzer, sv, f, argtypes, ret)
-report_builtin_error!(analyzer::FromDefinitionJETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(ret)) =
-    _report_builtin_error_basic!(analyzer, sv, f, argtypes, ret)
 
 function _report_builtin_error_basic!(analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(ret))
     if f === getfield
@@ -1425,7 +1414,7 @@ function JETAnalyzer(world::UInt = Base.get_world_counter();
 end
 
 const JET_ANALYZER_CONFIGURATIONS = Set{Symbol}((
-    :mode, :ignore_missing_comparison, :__cache_hash__))
+    :mode, :ignore_missing_comparison, :ignore_throws, :__cache_hash__))
 
 let valid_keys = GENERAL_CONFIGURATIONS ∪ JET_ANALYZER_CONFIGURATIONS
     @eval JETInterface.valid_configurations(::JETAnalyzer) = $valid_keys
@@ -1649,6 +1638,11 @@ configurations. By default, `report_package` enables the following configuration
   value of such a comparison operator call. If a target package needs to handle `missing`,
   this configuration should be turned off since it hides the possibility of errors that
   may actually occur at runtime.
+- `ignore_throws = true`: JET will not report errors from `throw` calls and uncaught
+  exceptions. This is useful because package-level definitions often include intentional
+  error-throwing interface functions (e.g., `@noinline interface_func(::T) = error("Interface not implemented")`),
+  which are not indicative of actual problems. If you want to analyze exception handling in
+  your package, this configuration should be turned off.
 
 !!! tip "About `target_modules` configuration"
     One of the most common issues of this analysis is that the results of `report_package(pkg)`
@@ -1678,6 +1672,7 @@ configurations. By default, `report_package` enables the following configuration
 """
 function report_package(pkgmod::Module;
                         ignore_missing_comparison::Bool=true,
+                        ignore_throws::Bool=true,
                         target_defined_modules::Union{Nothing,Bool}=nothing, # TODO remove this handling from v0.12
                         jetconfigs...)
     # TODO read a configuration file and apply it here?
@@ -1690,8 +1685,8 @@ function report_package(pkgmod::Module;
         """
         target_modules = (pkgmod,)
     end
-    analyzer = JETAnalyzer(; ignore_missing_comparison, target_modules, jetconfigs...)
-    return analyze_and_report_package!(analyzer, pkgmod; ignore_missing_comparison, target_modules, jetconfigs...)
+    analyzer = JETAnalyzer(; ignore_missing_comparison, ignore_throws, target_modules, jetconfigs...)
+    return analyze_and_report_package!(analyzer, pkgmod; target_modules, jetconfigs...)
 end
 
 """
