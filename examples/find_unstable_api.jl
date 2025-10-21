@@ -230,9 +230,10 @@ end
 
 using Pkg #hide
 if "IRTools" in keys(Pkg.project().dependencies) #hide
-report_package_unstable_api("IRTools";
+using IRTools
+report_package_unstable_api(IRTools;
                             ## to only find errors detected within the module context of `IRTools`
-                            target_defined_modules=true)
+                            target_modules=(IRTools,))
 else #hide
 @warn "IRTools isn't installed in the current environment at $(Pkg.project().path)" #hide
 end #hide

@@ -14,15 +14,17 @@ MacroTools = "1914dd2f-81c6-5fcd-8719-6d5c9610ff09"
 Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
 Preferences = "21216c6a-2e73-6563-6e65-726566657250"
+Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[sources]
+Revise = {rev = "avi/extension", url = "https://github.com/timholy/Revise.jl"}
 
 [weakdeps]
 # Cthulhu = "f68482b8-f384-11e8-15f7-abe071a5a75f"
-Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 
 [extensions]
 # JETCthulhuExt = "Cthulhu"
-JETReviseExt = "Revise"
 
 [compat]
 Aqua = "0.8.2"
@@ -44,7 +46,7 @@ Pkg = "1.10"
 PrecompileTools = "1.3.2"
 Preferences = "1.4"
 Random = "1.10"
-Revise = "3.3"
+Revise = "3.11"
 StaticArrays = "1.7.0"
 TOML = "1.0.3"
 Test = "1.10"

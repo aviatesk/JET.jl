@@ -53,6 +53,8 @@ using InteractiveUtils: InteractiveUtils, gen_call_with_extracted_types_and_kwar
 
 using Pkg: Pkg, TOML
 
+using Revise
+
 using Test:
     Broken, DefaultTestSet, Error, Fail, FallbackTestSet, FallbackTestSetException, Pass,
     Result, TESTSET_PRINT_ENABLE, Test, get_testset
@@ -360,13 +362,7 @@ function get_reports(result::JETToplevelResult)
         # the AST transformation, so they always have precedence over `ret.inference_error_reports`
         return res.toplevel_error_reports
     else
-        reports = res.inference_error_reports
-        if get(result.jetconfigs, :target_defined_modules, false)
-            target_modules = defined_modules(res)
-        else
-            target_modules = nothing
-        end
-        return configured_reports(reports; target_modules, result.jetconfigs...)
+        return configured_reports(res.inference_error_reports; result.jetconfigs...)
     end
 end
 
@@ -626,7 +622,7 @@ end
 function analyze_and_report_call!(analyzer::AbstractAnalyzer, @nospecialize(tt::Type{<:Tuple});
                                   jetconfigs...)
     validate_configs(analyzer, jetconfigs)
-    analyzer, result = analyze_gf_by_type!(analyzer, tt)
+    result = analyze_gf_by_type!(analyzer, tt)
     analyzername = nameof(typeof(analyzer))
     sig = LazyPrinter(io::IO->Base.show_tuple_as_call(io, Symbol(""), tt))
     source = lazy"$analyzername: $sig"
@@ -635,7 +631,7 @@ end
 function analyze_and_report_call!(analyzer::AbstractAnalyzer, mi::MethodInstance;
                                   jetconfigs...)
     validate_configs(analyzer, jetconfigs)
-    analyzer, result = analyze_method_instance!(analyzer, mi)
+    result = analyze_method_instance!(analyzer, mi)
     analyzername = nameof(typeof(analyzer))
     sig = LazyPrinter(io::IO->Base.show_tuple_as_call(io, Symbol(""), mi.specTypes))
     source = lazy"$analyzername: $sig"
@@ -683,7 +679,7 @@ function analyze_and_report_opaque_closure!(analyzer::AbstractAnalyzer, oc::Core
     env = Base.to_tuple_type(Any[Core.Typeof(x) for x in oc.captures])
     tt = Tuple{env, #=sig=#(Base.to_tuple_type(types)::DataType).parameters...}
     mi = specialize_method(oc.source::Method, tt, svec())
-    analyzer, result = analyze_method_instance!(analyzer, mi)
+    result = analyze_method_instance!(analyzer, mi)
     analyzername = nameof(typeof(analyzer))
     sig = LazyPrinter(io->Base.show_tuple_as_call(io, Symbol(""), tt))
     source = lazy"$analyzername: $sig"
@@ -692,12 +688,15 @@ end
 
 function analyze_method_instance!(analyzer::AbstractAnalyzer, mi::MethodInstance)
     result = InferenceResult(mi)
-
+    result.ci = ci = CC.engine_reserve(analyzer, mi)
     frame = InferenceState(result, #=cache_mode=#:global, analyzer)
-
-    isnothing(frame) && return analyzer, result
-
-    return analyze_frame!(analyzer, frame)
+    if isnothing(frame)
+        CC.engine_reject(analyzer, ci)
+        return result
+    end
+    result = analyze_frame!(analyzer, frame)
+    CC.engine_reject(analyzer, ci)
+    return result
 end
 
 function CC.InferenceState(result::InferenceResult, cache_mode::UInt8,  analyzer::AbstractAnalyzer)
@@ -713,7 +712,7 @@ function analyze_frame!(analyzer::AbstractAnalyzer, frame::InferenceState)
     else
         Base.invoke_in_world(tworld, CC.typeinf, analyzer, frame)
     end
-    return analyzer, frame.result
+    return frame.result
 end
 
 is_entry(analyzer::AbstractAnalyzer, mi::MethodInstance) = get_entry(analyzer) === mi
@@ -868,48 +867,134 @@ function trymetaparse(s::String, name::Symbol)
     return ret
 end
 
-"""
-    analyze_and_report_package!(interp::ConcreteInterpreter,
-                                package::Union{AbstractString,Module,Nothing} = nothing;
-                                jetconfigs...) -> JETToplevelResult
-
-A generic entry point to analyze a package with `interp::ConcreteInterpreter`.
-Finally returns the analysis result as [`JETToplevelResult`](@ref).
-Note that this is intended to be used by developers of `AbstractAnalyzer` and
-`ConcreteInterpreter` only.
-General users should use high-level entry points like [`report_package`](@ref).
-"""
-function analyze_and_report_package!(interp::ConcreteInterpreter,
-                                     package::Union{AbstractString,Module,Nothing} = nothing;
-                                     jetconfigs...)
-    (; filename, pkgid) = find_pkg(package)
-    jetconfigs = kwargs_dict(jetconfigs)
-    set_if_missing!(jetconfigs, :analyze_from_definitions, true)
-    set_if_missing!(jetconfigs, :concretization_patterns, [:(x_)]) # concretize all top-level code
-    return analyze_and_report_file!(interp, filename, pkgid; jetconfigs...)
+function find_pkgmod(pkg)
+    pkgid, _ = find_pkg(pkg)
+    pkgmod = get(Base.loaded_modules, pkgid, nothing)
+    isnothing(pkgmod) && error(lazy"Package $(pkgid.name) is not loaded.")
+    return pkgmod
 end
 
 function find_pkg(pkgname::AbstractString)
     pkgenv = @lock Base.require_lock Base.identify_package_env(pkgname)
     isnothing(pkgenv) && error(lazy"Unknown package $pkgname.")
-    pkgid, env = pkgenv
-    filename = @lock Base.require_lock Base.locate_package(pkgid, env)
-    isnothing(filename) && error(lazy"Expected $pkgname to have a source file.")
-    return (; pkgid, filename)
-end
-
-function find_pkg(pkgmod::Module)
-    filename = pathof(pkgmod)
-    isnothing(filename) && error(lazy"Cannot analyze a module defined in the REPL.")
-    pkgid = @lock Base.require_lock Base.identify_package(String(nameof(pkgmod)))
-    isnothing(pkgid) && error(lazy"Expected $pkgmod to exist as a package.")
-    return (; pkgid, filename)
+    return pkgenv
 end
 
 function find_pkg(::Nothing)
     project = Pkg.project()
     project.ispackage || error(lazy"Active project at $(project.path) is not a package.")
     return find_pkg(project.name)
+end
+
+struct SigAnalysisResult
+    reports::Vector{InferenceErrorReport}
+    codeinst::CodeInstance
+end
+
+"""
+    analyze_and_report_package!(analyzer::AbstractAnalyzer, package::Module; jetconfigs...) -> JETToplevelResult
+
+A generic entry point to analyze a package with `analyzer::AbstractAnalyzer`.
+Finally returns the analysis result as [`JETToplevelResult`](@ref).
+Note that this is intended to be used by developers of `AbstractAnalyzer` only.
+General users should use high-level entry points like [`report_package`](@ref).
+"""
+function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module; jetconfigs...)
+    pkgid = Base.PkgId(pkgmod)
+    haskey(Revise.pkgdatas, pkgid) || Revise.watch_package(pkgid)
+    if !haskey(Revise.pkgdatas, pkgid)
+        error(lazy"Package $pkgmod is not analyzable.")
+    end
+
+    # If Revise hasn't instantiated signatures yet, populate that cache here
+    pkgdata = Revise.pkgdatas[pkgid]
+    for file in Revise.srcfiles(pkgdata)
+        fi = Revise.maybe_parse_from_cache!(pkgdata, file)
+        Revise.maybe_extract_sigs!(fi)
+    end
+
+    start = time()
+    counter, analyzed, cached = Ref(0), Ref(0), Ref(0)
+    res = VirtualProcessResult(nothing)
+    jetconfigs = set_if_missing(jetconfigs, :toplevel_logger, IOContext(stdout, JET_LOGGER_LEVEL => DEFAULT_LOGGER_LEVEL))
+    config = ToplevelConfig(; jetconfigs...)
+
+    # Revise's signature population may execute code, which can increment the world age,
+    # so we update to the latest world age here
+    newstate = AnalyzerState(AnalyzerState(analyzer); world=Base.get_world_counter())
+    analyzer′ = AbstractAnalyzer(analyzer, newstate)
+    if analyzer′ isa BasicJETAnalyzer
+        analyzer′ = FromDefinitionJETAnalyzer(analyzer′.state, analyzer′.analysis_token, analyzer′.method_table, analyzer′.config)
+    end
+
+    n_sigs = 0
+    for fi in pkgdata.fileinfos, (_, exsigs) in fi.modexsigs, (_, siginfos) in exsigs
+        isnothing(siginfos) && continue
+        n_sigs += length(siginfos)
+    end
+    for fi in pkgdata.fileinfos, (_, exsigs) in fi.modexsigs, (_, siginfos) in exsigs
+        isnothing(siginfos) && continue
+        for (i, siginfo) in enumerate(siginfos)
+            with_toplevel_logger(config) do @nospecialize(io)
+                clearline(io)
+            end
+            counter[] += 1
+            inf_world = CC.get_inference_world(analyzer′)
+            ext = Revise.get_extended_data(siginfo, :JET)
+            if ext !== nothing && ext.data isa SigAnalysisResult
+                prev_result = ext.data::SigAnalysisResult
+                if prev_result.codeinst.max_world ≥ inf_world ≥ prev_result.codeinst.min_world
+                    with_toplevel_logger(config) do @nospecialize(io)
+                        (counter[] == n_sigs ? println : print)(io, "Skipped analysis for cached definition ($(counter[])/$n_sigs)")
+                    end
+                    cached[] += 1
+                    reports = prev_result.reports
+                    @goto gotreports
+                end
+            end
+            match = Base._which(siginfo.sig;
+                method_table = CC.method_table(analyzer′),
+                world = inf_world,
+                raise = false)
+            if match !== nothing
+                with_toplevel_logger(config; pre=clearline) do @nospecialize(io)
+                    p = (counter[] == n_sigs ? println : print)
+                    if jet_logger_level(io) ≥ JET_LOGGER_LEVEL_DEBUG
+                        print(io, "Analyzing top-level definition `")
+                        Base.show_tuple_as_call(io, Symbol(""), siginfo.sig)
+                        p(io, "` (progress: $(counter[])/$n_sigs)")
+                    else
+                        p(io, "Analyzing top-level definition (progress: $(counter[])/$n_sigs)")
+                    end
+                end
+                result = analyze_method_signature!(analyzer′,
+                    match.method, match.spec_types, match.sparams)
+                analyzed[] += 1
+                reports = get_reports(analyzer′, result)
+                siginfos[i] = Revise.replace_extended_data(siginfo, :JET, SigAnalysisResult(reports, result.ci))
+                @label gotreports
+                append!(res.inference_error_reports, reports)
+            else
+                with_toplevel_logger(config) do @nospecialize(io)
+                    print(io, "Couldn't find a single matching method for the signature `")
+                    Base.show_tuple_as_call(io, Symbol(""), siginfo.sig)
+                    println(io, "` (progress: $(counter[])/$n_sigs)")
+                end
+            end
+        end
+    end
+
+    with_toplevel_logger(config) do @nospecialize(io)
+        sec = round(time() - start; digits = 3)
+        println(io, "Analyzed all top-level definitions (all: $(counter[]) | analyzed: $(analyzed[]) | cached: $(cached[]) | took: $sec sec)")
+    end
+
+    unique!(aggregation_policy(analyzer′), res.inference_error_reports)
+
+    analyzername = nameof(typeof(analyzer))
+    pkgname = String(nameof(pkgmod))
+    source = lazy"$analyzername: $pkgname"
+    return JETToplevelResult(analyzer, res, source; jetconfigs...)
 end
 
 """
@@ -1017,8 +1102,71 @@ function watch_file_with_func(func, args...; jetconfigs...)
     end
 end
 
-# Stub to be filled out by loading the Revise extension
-function _watch_file_with_func end
+struct InsufficientWatches <: Exception
+    included_files::Set{String}
+end
+
+function _watch_file_with_func(func, args...; jetconfigs...)
+    local included_files::Set{String}
+
+    config = WatchConfig(; jetconfigs...)
+
+    included_files = let res = func(args...; jetconfigs...)
+        show(res) # XXX use `display` here?
+        JET.included_files(res.res)
+    end
+
+    interrupted = false
+    while !interrupted
+        try
+            Revise.entr(collect(included_files), config.revise_modules;
+                        postpone = true, all = config.revise_all) do
+                next_included_files = let res = func(args...; jetconfigs...)
+                    show(res) # XXX use `display` here?
+                    JET.included_files(res.res)
+                end
+                if any(∉(included_files), next_included_files)
+                    # refresh watch files
+                    throw(InsufficientWatches(next_included_files))
+                end
+                return nothing
+            end
+            interrupted = true # `InterruptException` was gracefully handled within `entr`, shutdown watch mode
+        catch err
+            # handle "expected" errors, keep running
+
+            if isa(err, InsufficientWatches)
+                included_files = err.included_files
+                continue
+            elseif (isa(err, LoadError) ||
+                    (isa(err, ErrorException) && startswith(err.msg, "lowering returned an error")) ||
+                    isa(err, Revise.ReviseEvalException))
+                continue
+
+            # async errors
+            elseif isa(err, CompositeException)
+                errs = err.exceptions
+                i = findfirst(@nospecialize(e)->isa(e, TaskFailedException), errs)
+                if !isnothing(i)
+                    tfe = errs[i]::TaskFailedException
+                    let res = tfe.task.result
+                        if isa(res, InsufficientWatches)
+                            included_files = res.included_files
+                            continue
+                        elseif (isa(res, LoadError) ||
+                                (isa(res, ErrorException) && startswith(res.msg, "lowering returned an error")) ||
+                                isa(res, Revise.ReviseEvalException))
+                            continue
+                        end
+                    end
+                end
+            end
+
+            # fatal uncaught error happened in Revise.jl
+            rethrow(err)
+        end
+    end
+end
 
 # Test.jl integration
 # -------------------
@@ -1185,7 +1333,7 @@ end
 
 const GENERAL_CONFIGURATIONS = Set{Symbol}((
     # general
-    :report_config, :target_modules, :ignored_modules, :target_defined_modules,
+    :report_config, :target_modules, :ignored_modules,
     # toplevel
     :context, :analyze_from_definitions, :concretization_patterns, :virtualize, :toplevel_logger,
     # ui

@@ -52,9 +52,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- links end -->
 
 ## [Unreleased]
-### Fixed
-- Enabled concrete evaluation in `report_call`, reducing false positives in more
-  general cases
+### Changed
+- **Major improvement to `report_package`**: Switched to a Revise.jl-based
+  implementation that brings significant improvements:
+  - **Incremental analysis**: Analysis results are now cached and reused across
+    multiple runs. When you analyze the same package again, only methods
+    affected by code changes are re-analyzed, while unchanged methods reuse
+    their cached results. This dramatically reduces analysis time for iterative
+    development workflows.
+  - **Improved robustness**: The new implementation leverages Revise's
+    battle-tested infrastructure for tracking package definitions, providing
+    much more reliable analysis coverage across diverse code patterns compared
+    to the previous custom code loading mechanism.
+  - **Breaking change**: `report_package` now requires a `Module` argument
+    instead of accepting a package name as `AbstractString`. Users must now
+    load the target package before analysis. See the deprecated section for
+    more details.
+  - **Limitation**: As a trade-off of the Revise-based approach, `report_package`
+    can no longer analyze packages that fail to load. Previously, `report_package`
+    could atl least report top-level errors for such packages (though it
+    couldn't perform inference-based analysis). Now users must fix loading
+    errors before applying JET analysis via `report_package`. These errors are
+    typically straightforward to fix by examining the error output from
+    `using MyPkg` or `Pkg.precompile()`.
+  - The previous default configurations `analyze_from_definitions=true` and
+    `concretization_patterns=[:(x_)]` are no longer needed or used, as the
+    Revise-based approach does not require JET's own code loading mechanism.
+- Revise.jl is now a required dependency instead of an optional weak
+  dependency. This means `watch_package` no longer requires manually loading
+  Revise with `using Revise` before use.
+- Enabled the [ad-hoc concrete evaluation](https://github.com/JuliaLang/julia/pull/59908)
+  in `JETAnalyzer` for Julia v1.13 and higher, reducing false positives in more general cases
+
+### Deprecated
+- `report_package(::AbstractString)`, `report_package([::Nothing])`:
+  The old signatures accepting a package name as a string, or no arguments are
+  deprecated. Load the package first and pass the `Module` instead:
+  ```julia-repl
+  # Preferred (v0.11):
+  julia> using MyPackage
+  julia> report_package(MyPackage)
+
+  # Deprecated (v0.10):
+  julia> report_package("MyPackage")
+  julia> report_package()
+  ```
+- `target_defined_modules` configuration: Use the more flexible `target_modules`
+  configuration instead. To limit error reports to your package's module
+  context (filtering out errors from dependencies), use:
+  ```julia
+  report_package(MyPackage; target_modules=(MyPackage,))
+  ```
 
 ## [0.10.12]
 ### Fixed

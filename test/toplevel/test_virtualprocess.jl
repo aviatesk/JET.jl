@@ -2125,12 +2125,15 @@ function test_report_package(test_func, module_ex;
 
             Pkg.activate(; temp=true, io=devnull)
             Pkg.develop(; path=pkgpath, io=devnull)
-            Pkg.precompile(; io=devnull)
 
             pkgfile = normpath(pkgpath, "src", "$pkgname.jl")
             write(pkgfile, string(pkgcode))
+            Pkg.precompile(; io=devnull)
 
-            res = report_package(pkgname; toplevel_logger=nothing, jetconfigs...)
+            pkgid, _ = JET.find_pkg(pkgname)
+            pkgmod = Base.require(pkgid)
+
+            res = report_package(pkgmod; toplevel_logger=nothing, jetconfigs...)
 
             @eval @testset $pkgname $test_func($res)
 
@@ -2301,20 +2304,21 @@ end
         r = only(res.res.inference_error_reports)
         @test isa(r, UndefVarErrorReport) && r.var.name === :xxx
     end
-    test_report_package(:(module BadRelativeInner
-            module Inner end
-            using Inner # should be `using .Inner`
-        end)) do res
-        r = only(res.res.toplevel_error_reports)
-        @test isa(r, DependencyError) && r.pkg == "BadRelativeInner" && r.dep == "Inner"
-    end
 
-    test_report_package(:(module UninstalledDependency
-            using UninstalledDep
-        end)) do res
-        r = only(res.res.toplevel_error_reports)
-        @test isa(r, DependencyError) && r.pkg == "UninstalledDependency" && r.dep == "UninstalledDep"
-    end
+    # `report_package` cannot analyze unloadable packages since v0.11
+    # test_report_package(:(module BadRelativeInner
+    #         module Inner end
+    #         using Inner # should be `using .Inner`
+    #     end)) do res
+    #     r = only(res.res.toplevel_error_reports)
+    #     @test isa(r, DependencyError) && r.pkg == "BadRelativeInner" && r.dep == "Inner"
+    # end
+    # test_report_package(:(module UninstalledDependency
+    #         using UninstalledDep
+    #     end)) do res
+    #     r = only(res.res.toplevel_error_reports)
+    #     @test isa(r, DependencyError) && r.pkg == "UninstalledDependency" && r.dep == "UninstalledDep"
+    # end
 
     test_report_package(:(module LoadPreferences
             using Preferences
