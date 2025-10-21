@@ -581,4 +581,99 @@ let res = report_opt() do
     @test isempty(get_reports_with_test(res))
 end
 
+module BasicFiltering
+    function foo(a)
+        r1 = sum(a)
+        r2 = undefsum(a)
+        return r1, r2
+    end
+end
+
+module SubmoduleFiltering
+    module SubMod
+        function sub_func(x::Int)
+            return undefined_var
+        end
+    end
+
+    function parent_func(x::String)
+        return SubMod.sub_func(parse(Int, x))
+    end
+end
+
+@testset "report filtering" begin
+    @testset "basic filtering" begin
+        let result = @report_call BasicFiltering.foo("julia")
+            test_sum_over_string(result)
+            @test any(r->is_global_undef_var(r, :undefsum), get_reports_with_test(result))
+        end
+
+        let result = @report_call target_modules=(BasicFiltering,) BasicFiltering.foo("julia")
+            r = only(get_reports_with_test(result))
+            @test is_global_undef_var(r, :undefsum)
+        end
+
+        let result = @report_call target_modules=(AnyFrameModule(BasicFiltering),) BasicFiltering.foo("julia")
+            test_sum_over_string(result)
+            @test any(r->is_global_undef_var(r, :undefsum), get_reports_with_test(result))
+        end
+
+        let result = @report_call ignored_modules=(Base,) BasicFiltering.foo("julia")
+            r = only(get_reports_with_test(result))
+            @test is_global_undef_var(r, :undefsum)
+        end
+
+        let result = @report_call ignored_modules=(BasicFiltering,) BasicFiltering.foo("julia")
+            test_sum_over_string(result)
+            @test !any(r->is_global_undef_var(r, :undefsum), get_reports_with_test(result))
+        end
+    end
+
+    @testset "submodule filtering" begin
+        let result = @report_call SubmoduleFiltering.parent_func("not_a_number")
+            reports = get_reports_with_test(result)
+            @test !isempty(reports)
+        end
+
+        let result = @report_call target_modules=(SubmoduleFiltering,) SubmoduleFiltering.parent_func("42")
+            reports = get_reports_with_test(result)
+            @test !isempty(reports)
+            @test any(r->is_global_undef_var(r, :undefined_var), reports)
+        end
+
+        let result = @report_call target_modules=(LastFrameModuleExact(SubmoduleFiltering),) SubmoduleFiltering.parent_func("42")
+            reports = get_reports_with_test(result)
+            @test isempty(reports)
+        end
+
+        let result = @report_call target_modules=(LastFrameModuleExact(SubmoduleFiltering.SubMod),) SubmoduleFiltering.parent_func("42")
+            reports = get_reports_with_test(result)
+            @test !isempty(reports)
+            @test any(r->is_global_undef_var(r, :undefined_var), reports)
+        end
+
+        let result = @report_call target_modules=(AnyFrameModule(SubmoduleFiltering.SubMod),) SubmoduleFiltering.parent_func("42")
+            reports = get_reports_with_test(result)
+            @test !isempty(reports)
+            @test any(r->is_global_undef_var(r, :undefined_var), reports)
+        end
+
+        let result = @report_call target_modules=(AnyFrameModuleExact(SubmoduleFiltering),) SubmoduleFiltering.parent_func("42")
+            reports = get_reports_with_test(result)
+            @test !isempty(reports)
+        end
+
+        let result = @report_call ignored_modules=(SubmoduleFiltering,) SubmoduleFiltering.parent_func("42")
+            reports = get_reports_with_test(result)
+            @test isempty(reports)
+        end
+
+        let result = @report_call ignored_modules=(LastFrameModuleExact(SubmoduleFiltering),) SubmoduleFiltering.parent_func("42")
+            reports = get_reports_with_test(result)
+            @test !isempty(reports)
+            @test any(r->is_global_undef_var(r, :undefined_var), reports)
+        end
+    end
+end
+
 end # module test_typeinfer
