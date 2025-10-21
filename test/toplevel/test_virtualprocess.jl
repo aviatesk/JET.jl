@@ -1425,7 +1425,7 @@ end
 
     # avoid unassigned keyword argument error from top-level definition analysis
     # https://github.com/aviatesk/JET.jl/issues/487
-    let res = @analyze_toplevel analyze_from_definitions=true begin
+    let res = @analyze_toplevel analyze_from_definitions=true ignore_throws=true begin
             struct Bar
                 x
             end
@@ -1436,7 +1436,7 @@ end
 
     # avoid error report from methods that are written to throw
     # https://github.com/aviatesk/JET.jl/issues/477
-    let res = @analyze_toplevel analyze_from_definitions=true begin
+    let res = @analyze_toplevel analyze_from_definitions=true ignore_throws=true begin
             function foo end
             @noinline foo(::T) where T = error(lazy"`foo(::$T)` is not implemented")
         end

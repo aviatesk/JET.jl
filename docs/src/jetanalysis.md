@@ -445,5 +445,5 @@ JET.test_text
 In addition to the [general configurations](@ref), the error analysis can take the
 following specific configurations:
 ```@docs
-JET.JETAnalyzer
+JET.JETAnalyzerConfig
 ```
