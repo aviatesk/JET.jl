@@ -229,7 +229,7 @@ given that the number of matching methods are limited beforehand.
 """
 CC.bail_out_call(::JETAnalyzer, ::CC.InferenceLoopState, ::InferenceState) = false
 
-@static if VERSION ≥ v"1.13.0-DEV.1352"
+@static if VERSION ≥ v"1.13.0-DEV.1352" || VERSION ≥ v"1.12.2"
 function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
     @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
     # `JETAnalyzer` uses an overlay method table, but those overlay definitions are
@@ -255,7 +255,7 @@ function CC.concrete_eval_call(analyzer::JETAnalyzer,
     return res.rt === Bottom ? nothing : res
 end
 
-else # @static if VERSION ≥ v"1.13.0-DEV.1350"
+else # @static if VERSION ≥ v"1.13.0-DEV.1350" || VERSION ≥ v"1.12.2"
 # For now JETAnalyzer allows the regular constant-prop' only,
 # unless the analyzed effects are proven to be `:nothrow`.
 function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
@@ -295,7 +295,7 @@ function concrete_eval_eligible_ignoring_overlay(result::MethodCallResult, argin
     result.edge !== nothing || return false
     return CC.is_foldable(result.effects) && CC.is_all_const_arg(arginfo, #=start=#2)
 end
-end # @static if VERSION ≥ v"1.13.0-DEV.1350"
+end # @static if VERSION ≥ v"1.13.0-DEV.1350" || VERSION ≥ v"1.12.2"
 
 function CC.abstract_invoke(analyzer::JETAnalyzer, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState)
     ret = @invoke CC.abstract_invoke(analyzer::ToplevelAbstractAnalyzer, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState)
@@ -929,7 +929,7 @@ function _report_global_assignment!(analyzer::JETAnalyzer, sv::InferenceState, r
         if ret.exct !== Union{}
             @goto report
         end
-    elseif ret.rt === Bottom && ret.exct === @static VERSION ≥ v"1.12.0" ? TypeError : ErrorException
+    elseif ret.rt === Bottom && ret.exct === TypeError
         @label report
         mod = name = nothing
         if M isa Const
@@ -1269,12 +1269,7 @@ function field_error_msg(@nospecialize(typ), name::Symbol)
     if typ <: Tuple
         typ = Tuple # reproduce base error message
     end
-    @static if VERSION ≥ v"1.12.0-beta4.14"
-        # JuliaLang/julia#58507
-        tname = string(typ.name.wrapper)
-    else
-        tname = nameof(typ)
-    end
+    tname = string(typ.name.wrapper)
     return lazy"FieldError: type $tname has no field `$name`, available fields: $flds"
 end
 function bounds_error_msg(@nospecialize(typ), name::Int)
