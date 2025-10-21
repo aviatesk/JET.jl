@@ -87,7 +87,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enabled the [ad-hoc concrete evaluation](https://github.com/JuliaLang/julia/pull/59908)
   in `JETAnalyzer` for Julia v1.13 and higher, reducing false positives in more general cases
 - **Module filtering behavior change**: `target_modules` and `ignored_modules`
-  now include submodules by default (aviatesk/JET.jl#628):
+  now include submodules by default (aviatesk/JET.jl#628, aviatesk/JET.jl#772):
   - **Submodule-inclusive filtering**: When a `Module` object is passed to
     `target_modules` or `ignored_modules`, JET now matches not only that exact
     module but also all of its submodules. This provides more intuitive
@@ -109,6 +109,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `ReportMatcher`: abstract interface type for `JET.match_report`
     - `LastFrameModuleExact`: exact match in last frame only
     - `AnyFrameModuleExact`: exact match in any frame
+
+### Added
+- **Symbol-based module filtering**: `target_modules` and `ignored_modules` now
+  accept `Symbol` in addition to `Module` objects (aviatesk/JET.jl#602, aviatesk/JET.jl#773).
+  This allows filtering by module name without requiring the module as a dependency:
+  ```julia
+  # Filter by module name without loading CUDA package
+  report_call(f, args...; ignored_modules=(:CUDA,))
+
+  # Equivalent to passing the Module object (if CUDA is loaded)
+  report_call(f, args...; ignored_modules=(CUDA,))
+  ```
+  All matcher types (`LastFrameModule`, `AnyFrameModule`, `LastFrameModuleExact`,
+  `AnyFrameModuleExact`) now accept `Union{Module,Symbol}`.
 
 ### Deprecated
 - `report_package(::AbstractString)`, `report_package([::Nothing])`:
