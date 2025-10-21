@@ -852,42 +852,6 @@ end
     end
 end
 
-@testset "configured_reports" begin
-    M = Module()
-    @eval M begin
-        function foo(a)
-            r1 = sum(a)       # => Base: MethodError(+(::Char, ::Char)), MethodError(zero(::Type{Any}))
-            r2 = undefsum(a)  # => @__MODULE__: UndefVarError(:undefsum)
-            return r1, r2
-        end
-    end
-
-    let result = @report_call M.foo("julia")
-        test_sum_over_string(result)
-        @test any(r->is_global_undef_var(r, :undefsum), get_reports_with_test(result))
-    end
-
-    let result = @report_call target_modules=(M,) M.foo("julia")
-        r = only(get_reports_with_test(result))
-        @test is_global_undef_var(r, :undefsum)
-    end
-
-    let result = @report_call target_modules=(AnyFrameModule(M),) M.foo("julia")
-        test_sum_over_string(result)
-        @test any(r->is_global_undef_var(r, :undefsum), get_reports_with_test(result))
-    end
-
-    let result = @report_call ignored_modules=(Base,) M.foo("julia")
-        r = only(get_reports_with_test(result))
-        @test is_global_undef_var(r, :undefsum)
-    end
-
-    let result = @report_call ignored_modules=(M,) M.foo("julia")
-        test_sum_over_string(result)
-        @test !any(r->is_global_undef_var(r, :undefsum), get_reports_with_test(result))
-    end
-end
-
 issue363(f, args...) = f(args...)
 func_report_entry(a::Int) = "hello"
 

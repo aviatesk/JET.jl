@@ -86,6 +86,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Revise with `using Revise` before use.
 - Enabled the [ad-hoc concrete evaluation](https://github.com/JuliaLang/julia/pull/59908)
   in `JETAnalyzer` for Julia v1.13 and higher, reducing false positives in more general cases
+- **Module filtering behavior change**: `target_modules` and `ignored_modules`
+  now include submodules by default (aviatesk/JET.jl#628):
+  - **Submodule-inclusive filtering**: When a `Module` object is passed to
+    `target_modules` or `ignored_modules`, JET now matches not only that exact
+    module but also all of its submodules. This provides more intuitive
+    filtering behavior in most use cases.
+  - **Breaking change**: This changes the filtering behavior when
+    `target_modules` or `ignored_modules` accept an iterator of modules.
+    To preserve the previous exact-match behavior (matching only the specified
+    module without its submodules), wrap the module with `LastFrameModuleExact`
+    or `AnyFrameModuleExact`:
+    ```julia
+    # New default (v0.11+): matches MyPackage and all its submodules
+    report_call(f, args...; target_modules=(MyPackage,))
+
+    # Previous behavior (v0.10): matched only MyPackage exactly
+    # To preserve this in v0.11+, use:
+    report_call(f, args...; target_modules=(LastFrameModuleExact(MyPackage),))
+    ```
+  - New matcher types:
+    - `ReportMatcher`: abstract interface type for `JET.match_report`
+    - `LastFrameModuleExact`: exact match in last frame only
+    - `AnyFrameModuleExact`: exact match in any frame
 
 ### Deprecated
 - `report_package(::AbstractString)`, `report_package([::Nothing])`:
