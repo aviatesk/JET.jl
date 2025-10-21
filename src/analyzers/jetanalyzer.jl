@@ -38,10 +38,10 @@ that are specific to the error analysis.
   the beginning of the analysis like [`report_package`](@ref).
 ---
 - `ignore_throws::Bool = false`:\\
-  If `true`, JET will not report errors from uncaught `throw` calls.
-  This is turned off by default, but is useful when analyzing package-level definitions
-  where `throw` calls are often intentional (e.g., interface function definitions that
-  throw errors by default) and not indicative of actual problems.
+  If `true`, JET will not report errors from `throw` calls and exceptions that may propagate
+  to callers. This is turned off by default, but is useful when analyzing package-level
+  definitions where `throw` calls are often intentional (e.g., interface function definitions
+  that throw errors by default) and not indicative of actual problems.
   This configuration is enabled by default in [`report_package`](@ref)
   to reduce noise from such intentional throws.
 ---
@@ -1638,11 +1638,12 @@ configurations. By default, `report_package` enables the following configuration
   value of such a comparison operator call. If a target package needs to handle `missing`,
   this configuration should be turned off since it hides the possibility of errors that
   may actually occur at runtime.
-- `ignore_throws = true`: JET will not report errors from `throw` calls and uncaught
-  exceptions. This is useful because package-level definitions often include intentional
-  error-throwing interface functions (e.g., `@noinline interface_func(::T) = error("Interface not implemented")`),
-  which are not indicative of actual problems. If you want to analyze exception handling in
-  your package, this configuration should be turned off.
+- `ignore_throws = true`: JET will not report errors from `throw` calls and exceptions
+  that may propagate to callers. This is useful because package-level definitions often
+  include intentional error-throwing interface functions (e.g.,
+  `@noinline interface_func(::T) = error("Interface not implemented")`), which are not
+  indicative of actual problems. If you want to analyze exception handling in your package,
+  this configuration should be turned off.
 
 !!! tip "About `target_modules` configuration"
     One of the most common issues of this analysis is that the results of `report_package(pkg)`
