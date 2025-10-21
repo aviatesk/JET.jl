@@ -425,9 +425,13 @@ These configurations are always active.
   either of the data types below that match [`report::InferenceErrorReport`](@ref InferenceErrorReport)'s
   context module as follows:
   - `m::Module` or `JET.LastFrameModule(m::Module)`: matches if the module context of `report`'s innermost stack frame is `m` or any of its submodules
-  - `JET.LastFrameModuleExact(m::Module)`: matches if the module context of `report`'s innermost stack frame is exactly `m`, excluding submodules
+  - `name::Symbol` or `JET.LastFrameModule(name::Symbol)`: matches if the module name of `report`'s innermost stack frame is `name` or any of its parent modules is named `name`
   - `JET.AnyFrameModule(m::Module)`: matches if the module context of any of `report`'s stack frames is `m` or any of its submodules
+  - `JET.AnyFrameModule(name::Symbol)`: matches if the module name of any of `report`'s stack frames is `name` or any of its parent modules is named `name`
+  - `JET.LastFrameModuleExact(m::Module)`: matches if the module context of `report`'s innermost stack frame is exactly `m`, excluding submodules
+  - `JET.LastFrameModuleExact(name::Symbol)`: matches if the module name of `report`'s innermost stack frame is exactly `name`
   - `JET.AnyFrameModuleExact(m::Module)`: matches if the module context of any of `report`'s stack frames is exactly `m`, excluding submodules
+  - `JET.AnyFrameModuleExact(name::Symbol)`: matches if the module name of any of `report`'s stack frames is exactly `name`
   - user-type `T <: JET.ReportMatcher`: matches according to user-definition overload `match_report(::T, report::InferenceErrorReport)`
 ---
 - `ignored_modules = nothing` \\
@@ -439,9 +443,13 @@ These configurations are always active.
   either of the data types below that match [`report::InferenceErrorReport`](@ref InferenceErrorReport)'s
   context module as follows:
   - `m::Module` or `JET.LastFrameModule(m::Module)`: matches if the module context of `report`'s innermost stack frame is `m` or any of its submodules
-  - `JET.LastFrameModuleExact(m::Module)`: matches if the module context of `report`'s innermost stack frame is exactly `m`, excluding submodules
+  - `name::Symbol` or `JET.LastFrameModule(name::Symbol)`: matches if the module name of `report`'s innermost stack frame is `name` or any of its parent modules is named `name`
   - `JET.AnyFrameModule(m::Module)`: matches if the module context of any of `report`'s stack frames is `m` or any of its submodules
+  - `JET.AnyFrameModule(name::Symbol)`: matches if the module name of any of `report`'s stack frames is `name` or any of its parent modules is named `name`
+  - `JET.LastFrameModuleExact(m::Module)`: matches if the module context of `report`'s innermost stack frame is exactly `m`, excluding submodules
+  - `JET.LastFrameModuleExact(name::Symbol)`: matches if the module name of `report`'s innermost stack frame is exactly `name`
   - `JET.AnyFrameModuleExact(m::Module)`: matches if the module context of any of `report`'s stack frames is exactly `m`, excluding submodules
+  - `JET.AnyFrameModuleExact(name::Symbol)`: matches if the module name of any of `report`'s stack frames is exactly `name`
   - user-type `T <: JET.ReportMatcher`: matches according to user-definition overload `match_report(::T, report::InferenceErrorReport)`
 ---
 - `report_config = nothing` \\
@@ -505,6 +513,13 @@ julia> @report_call ignored_modules=(Base,) foo("julia")
 ┌ foo(a::String) @ Main ./REPL[14]:3
 │ `Main.undefsum` is not defined: r2 = undefsum(a::String)
 └────────────────────
+
+# alternatively, you can use Symbol to specify the module name without requiring it as a dependency:
+julia> @report_call ignored_modules=(:Base,) foo("julia")
+═════ 1 possible error found ═════
+┌ foo(a::String) @ Main ./REPL[14]:3
+│ `Main.undefsum` is not defined: r2 = undefsum(a::String)
+└────────────────────
 ```
 ---
 """
@@ -525,16 +540,16 @@ end
 abstract type ReportMatcher end
 
 struct LastFrameModule <: ReportMatcher
-    mod::Module
+    mod::Union{Module,Symbol}
 end
 struct AnyFrameModule <: ReportMatcher
-    mod::Module
+    mod::Union{Module,Symbol}
 end
 struct LastFrameModuleExact <: ReportMatcher
-    mod::Module
+    mod::Union{Module,Symbol}
 end
 struct AnyFrameModuleExact <: ReportMatcher
-    mod::Module
+    mod::Union{Module,Symbol}
 end
 
 function issubmodule(child::Module, parent::Module)
@@ -544,22 +559,45 @@ function issubmodule(child::Module, parent::Module)
     return issubmodule(pm, parent)
 end
 
+function issubmoduleof(mod::Module, name::Symbol)
+    nameof(mod) === name && return true
+    pm = parentmodule(mod)
+    pm === mod && return false
+    return issubmoduleof(pm, name)
+end
+
 function match_report(matcher::LastFrameModule, @nospecialize(report::InferenceErrorReport))
     m = linfomod(last(report.vst).linfo)
-    return issubmodule(m, matcher.mod)
+    mod = matcher.mod
+    return mod isa Module ? issubmodule(m, mod) : issubmoduleof(m, mod)
 end
 function match_report(matcher::AnyFrameModule, @nospecialize(report::InferenceErrorReport))
-    return any(report.vst) do vsf
-        issubmodule(linfomod(vsf.linfo), matcher.mod)
+    mod = matcher.mod
+    if mod isa Module
+        return any(report.vst) do vsf
+            issubmodule(linfomod(vsf.linfo), mod)
+        end
+    else
+        return any(report.vst) do vsf
+            issubmoduleof(linfomod(vsf.linfo), mod)
+        end
     end
 end
 function match_report(matcher::LastFrameModuleExact, @nospecialize(report::InferenceErrorReport))
     m = linfomod(last(report.vst).linfo)
-    return m === matcher.mod
+    mod = matcher.mod
+    return matcher.mod isa Module ? m === mod : nameof(m) === mod
 end
 function match_report(matcher::AnyFrameModuleExact, @nospecialize(report::InferenceErrorReport))
-    return any(report.vst) do vsf
-        linfomod(vsf.linfo) === matcher.mod
+    mod = matcher.mod
+    if mod isa Module
+        return any(report.vst) do vsf
+            linfomod(vsf.linfo) === mod
+        end
+    else
+        return any(report.vst) do vsf
+            nameof(linfomod(vsf.linfo)) === mod
+        end
     end
 end
 @noinline match_report(x::ReportMatcher, @nospecialize(_::InferenceErrorReport)) =
