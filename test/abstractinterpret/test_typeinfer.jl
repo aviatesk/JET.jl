@@ -674,6 +674,38 @@ end
             @test any(r->is_global_undef_var(r, :undefined_var), reports)
         end
     end
+
+    @testset "Symbol-based filtering" begin
+        let result = @report_call target_modules=(:BasicFiltering,) BasicFiltering.foo([1,2,3])
+            reports = get_reports_with_test(result)
+            @test length(reports) == 1
+            @test any(r->is_global_undef_var(r, :undefsum), reports)
+        end
+
+        let result = @report_call ignored_modules=(:Base,) BasicFiltering.foo([1,2,3])
+            reports = get_reports_with_test(result)
+            @test length(reports) == 1
+            @test any(r->is_global_undef_var(r, :undefsum), reports)
+        end
+
+        let result = @report_call target_modules=(LastFrameModule(:SubmoduleFiltering),) SubmoduleFiltering.parent_func("42")
+            reports = get_reports_with_test(result)
+            @test !isempty(reports)
+            @test any(r->is_global_undef_var(r, :undefined_var), reports)
+        end
+
+        let result = @report_call target_modules=(LastFrameModuleExact(:SubMod),) SubmoduleFiltering.parent_func("42")
+            reports = get_reports_with_test(result)
+            @test length(reports) == 1
+            @test any(r->is_global_undef_var(r, :undefined_var), reports)
+        end
+
+        let result = @report_call ignored_modules=(LastFrameModuleExact(:SubmoduleFiltering),) SubmoduleFiltering.parent_func("42")
+            reports = get_reports_with_test(result)
+            @test !isempty(reports)
+            @test any(r->is_global_undef_var(r, :undefined_var), reports)
+        end
+    end
 end
 
 end # module test_typeinfer
