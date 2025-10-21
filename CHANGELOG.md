@@ -54,12 +54,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Changed
 - **Major improvement to `report_package`**: Switched to a Revise.jl-based
-  implementation that brings significant improvements:
+  implementation that brings significant improvements (aviatesk/JET.jl#763):
   - **Incremental analysis**: Analysis results are now cached and reused across
     multiple runs. When you analyze the same package again, only methods
     affected by code changes are re-analyzed, while unchanged methods reuse
     their cached results. This dramatically reduces analysis time for iterative
     development workflows.
+    > E.g. Incremental analysis on JET itself
+
+    https://github.com/user-attachments/assets/b1906040-1c95-443e-948e-d8959262f272
   - **Improved robustness**: The new implementation leverages Revise's
     battle-tested infrastructure for tracking package definitions, providing
     much more reliable analysis coverage across diverse code patterns compared
