@@ -7,11 +7,11 @@
 JET employs Julia's type inference system to detect potential bugs and type instabilities.
 
 > [!NOTE]
-> **The current latest version, v0.10 series, is only compatible with
-> [Julia v1.12](https://julialang.org/downloads/#current_stable_release) only**
+> **The current latest version, v0.11 series, is only compatible with
+> [Julia v1.12](https://julialang.org/downloads/#current_stable_release) only**.
 >
 > The JET version that works with v1.11 is the [v0.9 series](https://github.com/aviatesk/JET.jl/tree/release-0.9),
-> but please note that bug fixes and new features added in the v0.10 series may not necessarily be available.
+> but please note that bug fixes and new features added in the subsequent series may not necessarily be available.
 
 > [!WARNING]
 > Please note that due to JET's tight integration with the Julia compiler, the results

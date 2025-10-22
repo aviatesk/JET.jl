@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- links start -->
 [Unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.10.12...HEAD
+[0.11.0]: https://github.com/aviatesk/JET.jl/compare/v0.10.12...v0.11.0
 [0.10.12]: https://github.com/aviatesk/JET.jl/compare/v0.10.11...v0.10.12
 [0.10.11]: https://github.com/aviatesk/JET.jl/compare/v0.10.10...v0.10.11
 [0.10.10]: https://github.com/aviatesk/JET.jl/compare/v0.10.9...v0.10.10
@@ -52,6 +53,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- links end -->
 
 ## [Unreleased]
+
+## [0.11.0]
 ### Changed
 - **Major improvement to `report_package`**: Switched to a Revise.jl-based
   implementation that brings significant improvements (aviatesk/JET.jl#763):
