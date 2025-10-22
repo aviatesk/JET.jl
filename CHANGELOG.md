@@ -65,7 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     development workflows.
     > E.g. Incremental analysis on JET itself
 
-    https://github.com/user-attachments/assets/b1906040-1c95-443e-948e-d8959262f272
+    https://github.com/user-attachments/assets/5ba14a46-7d08-4440-a24e-e7ba3540b913
   - **Improved robustness**: The new implementation leverages Revise's
     battle-tested infrastructure for tracking package definitions, providing
     much more reliable analysis coverage across diverse code patterns compared
