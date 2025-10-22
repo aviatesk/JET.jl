@@ -109,7 +109,9 @@ julia> Pkg.status()
 Status `/private/var/folders/xh/6zzly9vx71v05_y67nm_s9_c0000gn/T/jl_h07K2m/Project.toml`
   [1520ce14] AbstractTrees v0.4.5
 
-ulia> report_package(AbstractTrees)
+julia> using AbstractTrees
+
+julia> report_package(AbstractTrees)
 [toplevel-info] Analyzing top-level definition (progress: 256/256)
 [toplevel-info] Analyzed all top-level definitions (all: 256 | analyzed: 256 | cached: 0 | took: 7.116 sec)
 [ Info: tracking Base
