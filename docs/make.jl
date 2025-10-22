@@ -31,7 +31,7 @@ function generate_index!()
                 if startswith(line, "julia> ")
                     writeln(io, replace(line,
                         "julia> "=>"",
-                        r"report_package\((.*)\)"=>s"report_package(\1; toplevel_logger=nothing)"))
+                        r"report_package\((.*)\)"=>s"report_package(\1, toplevel_logger=nothing)"))
                 end
                 continue
             end
