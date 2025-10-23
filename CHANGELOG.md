@@ -84,8 +84,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The previous default configurations `analyze_from_definitions=true` and
     `concretization_patterns=[:(x_)]` are no longer needed or used, as the
     Revise-based approach does not require JET's own code loading mechanism.
+    These configurations can still be used in other top-level analysis entry
+    points (e.g. `report_file` and `report_text`).
 - Revise.jl is now a required dependency instead of an optional weak
-  dependency. This means `watch_package` no longer requires manually loading
+  dependency. This means `watch_file` no longer requires manually loading
   Revise with `using Revise` before use.
 - Enabled the [ad-hoc concrete evaluation](https://github.com/JuliaLang/julia/pull/59908)
   in `JETAnalyzer` for Julia v1.13 and higher, reducing false positives in more general cases
