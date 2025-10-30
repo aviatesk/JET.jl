@@ -53,6 +53,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- links end -->
 
 ## [Unreleased]
+### Internal
+- Restructured the project file to use the [`[workspace]`](https://pkgdocs.julialang.org/v1/toml-files/#The-%5Bworkspace%5D-section) for the test environment of JET.
+  This allows running tests with `julia --project=./test test/runtests.jl` successfully.
 
 ## [0.11.0]
 ### Changed
