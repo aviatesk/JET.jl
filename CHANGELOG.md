@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 <!-- links start -->
-[Unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.10.12...HEAD
+[Unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.11.0...HEAD
 [0.11.0]: https://github.com/aviatesk/JET.jl/compare/v0.10.12...v0.11.0
 [0.10.12]: https://github.com/aviatesk/JET.jl/compare/v0.10.11...v0.10.12
 [0.10.11]: https://github.com/aviatesk/JET.jl/compare/v0.10.10...v0.10.11
