@@ -15,9 +15,6 @@ StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
-[sources]
-JET = {path = "."}
-
 [compat]
 Aqua = "0.8.2"
 BenchmarkTools = "1.3.2"

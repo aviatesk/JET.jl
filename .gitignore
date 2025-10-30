@@ -2,7 +2,6 @@
 !/benchmark/Manifest.toml
 !/benchmark/tune.json
 /docs/build/
-!/docs/Manifest.toml
 !/docs/LocalPreferences.toml
 /docs/src/index.md
 /docs/src/generated-*.md
