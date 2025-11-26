@@ -27,7 +27,7 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 # JETCthulhuExt = "Cthulhu"
 
 [compat]
-CodeTracking = "1, 2"
+CodeTracking = "1, 2, 3"
 Compiler = "0.1"
 # Cthulhu = "2.17"
 InteractiveUtils = "1.10"
