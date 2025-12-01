@@ -745,8 +745,7 @@ function apply_file_config(jetconfigs, filename::AbstractString)
     if !isnothing(configfile)
         config = parse_config_file(configfile)
         merge!(jetconfigs, config) # overwrite configurations
-        toplevel_logger = get(jetconfigs, :toplevel_logger, nothing)
-        with_toplevel_logger(toplevel_logger; filter=≥(JET_LOGGER_LEVEL_INFO)) do @nospecialize(io)
+        toplevel_logger(get(jetconfigs, :toplevel_logger, nothing); filter=≥(JET_LOGGER_LEVEL_INFO)) do @nospecialize(io::IO)
             println(io, lazy"applied configurations in $configfile")
         end
     end
