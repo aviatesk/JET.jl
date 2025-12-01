@@ -3,21 +3,31 @@
   the maximum line length under _92 characters_.
 - When writing Markdown text, use _2 whitespaces_ for indentation and try to
   keep the maximum line length under _80 characters_.
-- When writing commit messages, follow the format `component: brief summary` for
+  - Additionally, prioritize simple text style and limit unnecessary decorations
+    (e.g. `**`) to only truly necessary locations. This is a style that should
+    generally be aimed for, but pay particular attention when writing Markdown.
+  - Headers should use sentence case (only the first word capitalized), not
+    title case. For example:
+    - Good: `## Conclusion and alternative approaches`
+    - Bad: `## Conclusion And Alternative Approaches`
+- When writing commit messages, follow the format `component: Brief summary` for
   the title. In the body of the commit message, provide a brief prose summary of
   the purpose of the changes made.
   Also, ensure that the maximum line length never exceeds 72 characters.
   When referencing external GitHub PRs or issues, use proper GitHub interlinking
   format (e.g., `owner/repo#123` for PRs/issues).
+  Finally, if you write code yourself, include a "Written by Claude" footer at
+  the end of the commit message (no emoji nonsense). However, when simply asked
+  to write a commit message, there's no need to add that footer.
 
-# Coding Rules
+# Coding rules
 - When writing functions, use the most restrictive signature type possible.
   This allows JET to easily catch unintended errors.
   Of course, when prototyping, it's perfectly fine to start with loose type
   declarations, but for the functions you ultimately commit, it's desirable to
   use type declarations as much as possible.
-  Especially when AI agents suggest code, please make sure to clearly
-  specify the argument types that functions expect.
+  Especially when AI agents suggest code, please make sure to clearly specify
+  the argument types that functions expect.
   In situations where there's no particular need to make a function generic, or
   if you're unsure what to do, submit the function with the most restrictive
   signature type you can think of.
@@ -55,7 +65,7 @@
   end
   ```
 
-# Running Test Code
+# Running test code
 Please make sure to test new code when you wrote.
 
 If explicit test file or code is provided, prioritize running that.
@@ -73,7 +83,7 @@ julia --startup-file=no -e 'using Test; @testset "test_print" include("test/ui/t
 Note that the usage of the `--startup-file=no` flag, which avoids loading
 unnecessary startup utilities.
 
-# About Test Code
+# Test code structure
 Test code should be written in files that define independent module spaces with
 a `test_` prefix.
 Then include these files from [`test/runtests.jl`](./test/runtests.jl).
@@ -154,15 +164,14 @@ testrunner --verbose test/test_virtualprocess "some_func"
 Note that TestRunner.jl is still experimental.
 The most reliable way to run tests is still to execute test files standalone.
 
-# Environment-Related Issues
+# Environment-related issues
 For AI agents: **NEVER MODIFY [Project.toml](./Project.toml) OR  [test/Project.toml](./test/Project.toml) BY YOURSELF**.
 If you encounter errors that seem to be environment-related when running tests,
 in most cases this is due to working directory issues, so first `cd` to the root directory of this project
 and re-run the tests. Never attempt to fix environment-related issues yourself.
-If you cannot resolve the problem, return back the prompt and inform the human
-engineer and ask for instructions.
+If you cannot resolve the problem, inform the human engineer and ask for instructions.
 
-# About Modifications to Code You've Written
+# About modifications to code you've written
 If you, as an AI agent, add or modify code, and the user appears to have made
 further manual changes to that code after your response, please respect those
 modifications as much as possible.
