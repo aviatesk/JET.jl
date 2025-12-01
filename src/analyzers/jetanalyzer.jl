@@ -123,7 +123,7 @@ JETInterface.typeinf_world(::BasicJETAnalyzer) = JET_TYPEINF_WORLD[]
 JETInterface.typeinf_world(::SoundJETAnalyzer) = JET_TYPEINF_WORLD[]
 JETInterface.typeinf_world(::TypoJETAnalyzer) = JET_TYPEINF_WORLD[]
 
-const JET_ANALYZER_CACHE = Dict{UInt, AnalysisToken}()
+const JET_ANALYZER_CACHE = CASDict{UInt,AnalysisToken}()
 
 JETAnalyzerConfig(analyzer::JETAnalyzer) = analyzer.config
 
