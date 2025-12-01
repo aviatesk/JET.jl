@@ -822,8 +822,7 @@ function apply_file_config(jetconfigs, filename::AbstractString)
     if !isnothing(configfile)
         config = parse_config_file(configfile)
         merge!(jetconfigs, config) # overwrite configurations
-        toplevel_logger = get(jetconfigs, :toplevel_logger, nothing)
-        with_toplevel_logger(toplevel_logger; filter=≥(JET_LOGGER_LEVEL_INFO)) do @nospecialize(io)
+        toplevel_logger(get(jetconfigs, :toplevel_logger, nothing); filter=≥(JET_LOGGER_LEVEL_INFO)) do @nospecialize(io::IO)
             println(io, lazy"applied configurations in $configfile")
         end
     end
@@ -1010,7 +1009,7 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
     for fi in pkgdata.fileinfos, (_, exsigs) in fi.modexsigs, (_, siginfos) in exsigs
         isnothing(siginfos) && continue
         for (i, siginfo) in enumerate(siginfos)
-            with_toplevel_logger(config) do @nospecialize(io)
+            toplevel_logger(config) do @nospecialize(io::IO)
                 clearline(io)
             end
             counter[] += 1
@@ -1020,7 +1019,7 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
                 prev_result = ext.data::SigAnalysisResult
                 if (CC.cache_owner(analyzer) === prev_result.codeinst.owner &&
                     prev_result.codeinst.max_world ≥ inf_world ≥ prev_result.codeinst.min_world)
-                    with_toplevel_logger(config) do @nospecialize(io)
+                    toplevel_logger(config) do @nospecialize(io::IO)
                         (counter[] == n_sigs ? println : print)(io, "Skipped analysis for cached definition ($(counter[])/$n_sigs)")
                     end
                     cached[] += 1
@@ -1033,14 +1032,13 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
                 world = inf_world,
                 raise = false)
             if match !== nothing
-                with_toplevel_logger(config; pre=clearline) do @nospecialize(io)
-                    p = (counter[] == n_sigs ? println : print)
+                toplevel_logger(config; pre=clearline) do @nospecialize(io::IO)
                     if jet_logger_level(io) ≥ JET_LOGGER_LEVEL_DEBUG
                         print(io, "Analyzing top-level definition `")
                         Base.show_tuple_as_call(io, Symbol(""), siginfo.sig)
-                        p(io, "` (progress: $(counter[])/$n_sigs)")
+                        print(io, "` (progress: $(counter[])/$n_sigs)")
                     else
-                        p(io, "Analyzing top-level definition (progress: $(counter[])/$n_sigs)")
+                        print(io, "Analyzing top-level definition (progress: $(counter[])/$n_sigs)")
                     end
                 end
                 result = analyze_method_signature!(analyzer,
@@ -1051,7 +1049,7 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
                 @label gotreports
                 append!(res.inference_error_reports, reports)
             else
-                with_toplevel_logger(config) do @nospecialize(io)
+                toplevel_logger(config) do @nospecialize(io::IO)
                     print(io, "Couldn't find a single matching method for the signature `")
                     Base.show_tuple_as_call(io, Symbol(""), siginfo.sig)
                     println(io, "` (progress: $(counter[])/$n_sigs)")
@@ -1060,7 +1058,7 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
         end
     end
 
-    with_toplevel_logger(config) do @nospecialize(io)
+    toplevel_logger(config; pre=println) do @nospecialize(io::IO)
         sec = round(time() - start; digits = 3)
         println(io, "Analyzed all top-level definitions (all: $(counter[]) | analyzed: $(analyzed[]) | cached: $(cached[]) | took: $sec sec)")
     end
