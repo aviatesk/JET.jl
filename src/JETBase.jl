@@ -296,9 +296,6 @@ jet_logger_level(@nospecialize io::IO) = get(io, JET_LOGGER_LEVEL, DEFAULT_LOGGE
 
 # multithreading
 
-include("AtomicContainers/AtomicContainers.jl")
-using .AtomicContainers
-
 """
     CASDict{K,V}
 
