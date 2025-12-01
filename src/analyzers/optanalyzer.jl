@@ -160,7 +160,7 @@ JETInterface.AnalysisToken(analyzer::OptAnalyzer) = analyzer.analysis_token
 JETInterface.typeinf_world(::OptAnalyzer) = JET_TYPEINF_WORLD[]
 JETInterface.vscode_diagnostics_order(::OptAnalyzer) = false
 
-const OPT_ANALYZER_CACHE = Dict{UInt, AnalysisToken}()
+const OPT_ANALYZER_CACHE = CASDict{UInt,AnalysisToken}()
 
 # overloads
 # =========

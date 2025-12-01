@@ -294,6 +294,37 @@ const JET_LOGGER_LEVELS_DESC = let
 end
 jet_logger_level(@nospecialize io::IO) = get(io, JET_LOGGER_LEVEL, DEFAULT_LOGGER_LEVEL)::Int
 
+# multithreading
+
+include("AtomicContainers/AtomicContainers.jl")
+using .AtomicContainers
+
+"""
+    CASDict{K,V}
+
+A thread-safe dictionary using Compare-And-Swap (CAS) operations for lock-free updates.
+Reads are always lock-free via atomic load. Writes use a CAS retry loop, making this
+suitable for lightweight, pure update functions that are safe to retry.
+
+Currently implements [`get!`](@ref) only.
+"""
+mutable struct CASDict{K,V}
+    @atomic data::Dict{K,V}
+    CASDict{K,V}() where {K,V} = new{K,V}(Dict{K,V}())
+end
+
+function Base.get!(f::Base.Callable, d::CASDict{K,V}, key::K) where {K,V}
+    old = @atomic :acquire d.data
+    val = get(old, key, nothing)
+    val !== nothing && return val::V
+    while true
+        new = copy(old)
+        val = get!(f, new, key)::V
+        old, success = @atomicreplace :acquire_release :monotonic d.data old => new
+        success && return val
+    end
+end
+
 # analysis core
 # =============
 
@@ -326,6 +357,20 @@ include("abstractinterpret/typeinfer.jl")
 Prints a report of the top-level error `report` to the given `io`.
 """
 function print_report end
+
+mutable struct PackageAnalysisProgress
+    const reports::Vector{InferenceErrorReport}
+    const reports_lock::ReentrantLock
+    @atomic done::Int
+    @atomic analyzed::Int
+    @atomic cached::Int
+    const interval::Int
+    @atomic next_interval::Int
+    function PackageAnalysisProgress(n_sigs::Int)
+        interval = max(n_sigs ÷ 25, 1)
+        new(InferenceErrorReport[], ReentrantLock(), 0, 0, 0, interval, interval)
+    end
+end
 
 include("toplevel/virtualprocess.jl")
 
@@ -968,6 +1013,11 @@ struct SigAnalysisResult
     codeinst::CodeInstance
 end
 
+struct SigWorkItem
+    siginfos::Vector{Revise.SigInfo}
+    index::Int
+end
+
 """
     analyze_and_report_package!(analyzer::AbstractAnalyzer, package::Module; jetconfigs...) -> JETToplevelResult
 
@@ -991,7 +1041,6 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
     end
 
     start = time()
-    counter, analyzed, cached = Ref(0), Ref(0), Ref(0)
     res = VirtualProcessResult(nothing)
     jetconfigs = set_if_missing(jetconfigs, :toplevel_logger, IOContext(stdout, JET_LOGGER_LEVEL => DEFAULT_LOGGER_LEVEL))
     config = ToplevelConfig(; jetconfigs...)
@@ -1001,66 +1050,89 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
     newstate = AnalyzerState(AnalyzerState(analyzer); world=Base.get_world_counter())
     analyzer = AbstractAnalyzer(analyzer, newstate)
 
-    n_sigs = 0
-    for fi in pkgdata.fileinfos, (_, exsigs) in fi.modexsigs, (_, siginfos) in exsigs
-        isnothing(siginfos) && continue
-        n_sigs += length(siginfos)
-    end
+    workitems = SigWorkItem[]
     for fi in pkgdata.fileinfos, (_, exsigs) in fi.modexsigs, (_, siginfos) in exsigs
         isnothing(siginfos) && continue
         for (i, siginfo) in enumerate(siginfos)
-            toplevel_logger(config) do @nospecialize(io::IO)
-                clearline(io)
-            end
-            counter[] += 1
-            inf_world = CC.get_inference_world(analyzer)
+            push!(workitems, SigWorkItem(siginfos, i))
+        end
+    end
+
+    n_sigs = length(workitems)
+    progress = PackageAnalysisProgress(n_sigs)
+    inf_world = CC.get_inference_world(analyzer)
+
+    toplevel_logger(config) do @nospecialize(io::IO)
+        print(io, "Analyzing top-level definitions (progress: 0/$n_sigs | interval: $(progress.interval))")
+    end
+
+    tasks = map(workitems) do workitem
+        (; siginfos, index) = workitem
+        siginfo = siginfos[index]
+        Threads.@spawn :default try
             ext = Revise.get_extended_data(siginfo, :JET)
+            local reports::Vector{InferenceErrorReport}
             if ext !== nothing && ext.data isa SigAnalysisResult
                 prev_result = ext.data::SigAnalysisResult
                 if (CC.cache_owner(analyzer) === prev_result.codeinst.owner &&
                     prev_result.codeinst.max_world ≥ inf_world ≥ prev_result.codeinst.min_world)
-                    toplevel_logger(config) do @nospecialize(io::IO)
-                        (counter[] == n_sigs ? println : print)(io, "Skipped analysis for cached definition ($(counter[])/$n_sigs)")
-                    end
-                    cached[] += 1
+                    @atomic progress.cached += 1
                     reports = prev_result.reports
                     @goto gotreports
                 end
             end
+            # Create a new analyzer with fresh local caches (`inf_cache` and `analysis_results`)
+            # to avoid data races between concurrent signature analysis tasks
+            task_analyzer = AbstractAnalyzer(analyzer,
+                AnalyzerState(AnalyzerState(analyzer), #=refresh_local_cache=#true))
             match = Base._which(siginfo.sig;
-                method_table = CC.method_table(analyzer),
+                method_table = CC.method_table(task_analyzer),
                 world = inf_world,
                 raise = false)
             if match !== nothing
-                toplevel_logger(config; pre=clearline) do @nospecialize(io::IO)
-                    if jet_logger_level(io) ≥ JET_LOGGER_LEVEL_DEBUG
-                        print(io, "Analyzing top-level definition `")
-                        Base.show_tuple_as_call(io, Symbol(""), siginfo.sig)
-                        print(io, "` (progress: $(counter[])/$n_sigs)")
-                    else
-                        print(io, "Analyzing top-level definition (progress: $(counter[])/$n_sigs)")
-                    end
-                end
-                result = analyze_method_signature!(analyzer,
+                result = analyze_method_signature!(task_analyzer,
                     match.method, match.spec_types, match.sparams)
-                analyzed[] += 1
-                reports = get_reports(analyzer, result)
-                siginfos[i] = Revise.replace_extended_data(siginfo, :JET, SigAnalysisResult(reports, result.ci))
-                @label gotreports
-                append!(res.inference_error_reports, reports)
+                @atomic progress.analyzed += 1
+                reports = get_reports(task_analyzer, result)
+                siginfos[index] = Revise.replace_extended_data(siginfo, :JET, SigAnalysisResult(reports, result.ci))
             else
-                toplevel_logger(config) do @nospecialize(io::IO)
+                toplevel_logger(config; pre=println) do @nospecialize(io::IO)
                     print(io, "Couldn't find a single matching method for the signature `")
                     Base.show_tuple_as_call(io, Symbol(""), siginfo.sig)
-                    println(io, "` (progress: $(counter[])/$n_sigs)")
+                    println(io, "`")
+                end
+                reports = InferenceErrorReport[]
+            end
+            @label gotreports
+            isempty(reports) || @lock progress.reports_lock append!(progress.reports, reports)
+        catch err
+            @error "Error analyzing method signature" siginfo.sig
+            Base.showerror(stderr, err, catch_backtrace())
+        finally
+            done = (@atomic progress.done += 1)
+            current_next = @atomic progress.next_interval
+            if done >= current_next
+                @atomicreplace progress.next_interval current_next => current_next + progress.interval
+                toplevel_logger(config; pre=clearline) do @nospecialize(io::IO)
+                    print(io, "Analyzing top-level definitions (progress: $done/$n_sigs)")
                 end
             end
         end
     end
 
+    waitall(tasks)
+
+    append!(res.inference_error_reports, progress.reports)
+
+    toplevel_logger(config; pre=clearline) do @nospecialize(io::IO)
+        done = @atomic progress.done
+        print(io, "Analyzing top-level definitions (progress: $done/$n_sigs)")
+    end
     toplevel_logger(config; pre=println) do @nospecialize(io::IO)
         sec = round(time() - start; digits = 3)
-        println(io, "Analyzed all top-level definitions (all: $(counter[]) | analyzed: $(analyzed[]) | cached: $(cached[]) | took: $sec sec)")
+        analyzed = @atomic progress.analyzed
+        cached = @atomic progress.cached
+        println(io, "Analyzed all top-level definitions (all: $n_sigs | analyzed: $analyzed | cached: $cached | took: $sec sec)")
     end
 
     unique!(aggregation_policy(analyzer), res.inference_error_reports)

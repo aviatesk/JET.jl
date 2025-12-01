@@ -734,42 +734,71 @@ gen_virtual_module(parent::Module = Main; name = VIRTUAL_MODULE_NAME) =
 # if code generation has failed given the entry method signature, the overload of
 # `InferenceState(..., ::AbstractAnalyzer)` will collect `GeneratorErrorReport`
 function analyze_from_definitions!(interp::ConcreteInterpreter, config::ToplevelConfig)
-    succeeded = Ref(0)
     start = time()
-    analyzer = ToplevelAbstractAnalyzer(interp, non_toplevel_concretized; refresh_local_cache = false)
     entrypoint = config.analyze_from_definitions
     res = InterpretationState(interp).res
     n_sigs = length(res.toplevel_signatures)
-    for i = 1:n_sigs
-        tt = res.toplevel_signatures[i]
-        match = Base._which(tt;
-            # NOTE use the latest world counter with `method_table(analyzer)` unwrapped,
-            # otherwise it may use a world counter when this method isn't defined yet
-            method_table = CC.method_table(analyzer),
-            world = CC.get_inference_world(analyzer),
-            raise = false)
-        if (match !== nothing &&
-            (!(entrypoint isa Symbol) || # implies `analyze_from_definitions===true`
-             match.method.name === entrypoint))
-            succeeded[] += 1
-            toplevel_logger(config; pre=clearline) do @nospecialize(io::IO)
-                print(io, "analyzing from top-level definitions ($(succeeded[])/$n_sigs)")
+    n_sigs == 0 && return nothing
+
+    progress = PackageAnalysisProgress(n_sigs)
+
+    toplevel_logger(config) do @nospecialize(io::IO)
+        print(io, "analyzing from top-level definitions (0/$n_sigs)")
+    end
+
+    tasks = map(1:n_sigs) do i
+        Threads.@spawn begin
+            tt = res.toplevel_signatures[i]
+            # Create a new analyzer with fresh local caches (`inf_cache` and `analysis_results`)
+            # to avoid data races between concurrent signature analysis tasks
+            analyzer = ToplevelAbstractAnalyzer(interp, non_toplevel_concretized;
+                refresh_local_cache = true)
+            match = Base._which(tt;
+                # NOTE use the latest world counter with `method_table(analyzer)` unwrapped,
+                # otherwise it may use a world counter when this method isn't defined yet
+                method_table = CC.method_table(analyzer),
+                world = CC.get_inference_world(analyzer),
+                raise = false)
+            if (match !== nothing &&
+                (!(entrypoint isa Symbol) || # implies `analyze_from_definitions===true`
+                 match.method.name === entrypoint))
+                @atomic progress.analyzed += 1
+                result = analyze_method_signature!(analyzer,
+                    match.method, match.spec_types, match.sparams)
+                reports = get_reports(analyzer, result)
+                isempty(reports) || @lock progress.reports_lock append!(progress.reports, reports)
+            else
+                # something went wrong
+                toplevel_logger(config; pre=clearline) do @nospecialize(io::IO)
+                    println(io, "couldn't find a single method matching the signature `", tt, "`")
+                end
             end
-            result = analyze_method_signature!(analyzer,
-                match.method, match.spec_types, match.sparams)
-            reports = get_reports(analyzer, result)
-            append!(res.inference_error_reports, reports)
-        else
-            # something went wrong
-            toplevel_logger(config; filter=≥(JET_LOGGER_LEVEL_DEBUG), pre=clearline) do @nospecialize(io::IO)
-                println(io, "couldn't find a single method matching the signature `", tt, "`")
+            done = (@atomic progress.done += 1)
+            current_next = @atomic progress.next_interval
+            if done >= current_next
+                @atomicreplace progress.next_interval current_next => current_next + progress.interval
+                toplevel_logger(config; pre=clearline) do @nospecialize(io::IO)
+                    analyzed = @atomic progress.analyzed
+                    print(io, "analyzing from top-level definitions ($analyzed/$n_sigs)")
+                end
             end
         end
     end
+
+    waitall(tasks)
+
+    append!(res.inference_error_reports, progress.reports)
+
+    toplevel_logger(config; pre=clearline) do @nospecialize(io::IO)
+        done = @atomic progress.done
+        print(io, "analyzing from top-level definitions ($done/$n_sigs)")
+    end
     toplevel_logger(config; pre=println) do @nospecialize(io::IO)
         sec = round(time() - start; digits = 3)
-        println(io, "analyzed $(succeeded[]) top-level definitions (took $sec sec)")
+        analyzed = @atomic progress.analyzed
+        println(io, "analyzed $analyzed top-level definitions (took $sec sec)")
     end
+
     return nothing
 end
 

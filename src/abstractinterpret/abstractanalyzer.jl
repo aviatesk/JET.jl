@@ -295,7 +295,7 @@ end
 # -----------
 # 2. `AbstractAnalyzer(analyzer::NewAnalyzer, state::AnalyzerState) -> NewAnalyzer`
 
-@noinline function AbstractAnalyzer(analyzer::AbstractAnalyzer, state::AnalyzerState)
+@noinline function AbstractAnalyzer(analyzer::AbstractAnalyzer, ::AnalyzerState)
     AnalyzerType = nameof(typeof(analyzer))
     error(lazy"""
     Missing `$AbstractAnalyzer` API:

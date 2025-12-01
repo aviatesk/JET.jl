@@ -53,6 +53,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- links end -->
 
 ## [Unreleased]
+### Changed
+- **Parallelized `report_package`**: Method signature analysis in `report_package`
+  is now parallelized using Julia's multithreading, providing significant
+  speedup on multi-core systems.
+
+  > With `--threads=4,2`
+  - Benchmark on `report_package(JET)`: 52.07s → 17.75s (~3x faster)
+  - Benchmark on `report_package(CSV)`: 44.23s → 19.57s (~2x faster)
+
 ### Internal
 - Refactored the project file to use the [`[workspace]`](https://pkgdocs.julialang.org/v1/toml-files/#The-%5Bworkspace%5D-section) for the docs/test environment of JET.
   This allows running e.g. `julia --project=./test test/runtests.jl` or
