@@ -6,7 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 <!-- links start -->
-[Unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.11.2...HEAD
+[0.11.2]: https://github.com/aviatesk/JET.jl/compare/v0.11.1...v0.11.2
+[0.11.1]: https://github.com/aviatesk/JET.jl/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/aviatesk/JET.jl/compare/v0.10.12...v0.11.0
 [0.10.12]: https://github.com/aviatesk/JET.jl/compare/v0.10.11...v0.10.12
 [0.10.11]: https://github.com/aviatesk/JET.jl/compare/v0.10.10...v0.10.11
@@ -53,6 +55,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- links end -->
 
 ## [Unreleased]
+
+## [0.11.2]
 ### Changed
 - **Parallelized `report_package`**: Method signature analysis in `report_package`
   is now parallelized using Julia's multithreading, providing significant
@@ -61,6 +65,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   > With `--threads=4,2`
   - Benchmark on `report_package(JET)`: 52.07s → 17.75s (~3x faster)
   - Benchmark on `report_package(CSV)`: 44.23s → 19.57s (~2x faster)
+
+## [0.11.1]
+### Changed
+- Added CodeTracking v3 as a compatible version.
 
 ### Internal
 - Refactored the project file to use the [`[workspace]`](https://pkgdocs.julialang.org/v1/toml-files/#The-%5Bworkspace%5D-section) for the docs/test environment of JET.
