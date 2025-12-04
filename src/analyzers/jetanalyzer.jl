@@ -123,7 +123,8 @@ JETInterface.typeinf_world(::BasicJETAnalyzer) = JET_TYPEINF_WORLD[]
 JETInterface.typeinf_world(::SoundJETAnalyzer) = JET_TYPEINF_WORLD[]
 JETInterface.typeinf_world(::TypoJETAnalyzer) = JET_TYPEINF_WORLD[]
 
-const JET_ANALYZER_CACHE = CASDict{UInt,AnalysisToken}()
+const JET_ANALYZER_CACHE = Dict{UInt,AnalysisToken}()
+const JET_ANALYZER_CACHE_LOCK = ReentrantLock()
 
 JETAnalyzerConfig(analyzer::JETAnalyzer) = analyzer.config
 
@@ -1396,15 +1397,15 @@ function JETAnalyzer(world::UInt = Base.get_world_counter();
     # Create the appropriate analyzer type based on mode
     if mode === :basic
         cache_key = compute_hash(state.inf_params, BasicJETAnalyzer, config, __cache_hash__)
-        analysis_token = get!(AnalysisToken, JET_ANALYZER_CACHE, cache_key)
+        analysis_token = @lock JET_ANALYZER_CACHE_LOCK get!(AnalysisToken, JET_ANALYZER_CACHE, cache_key)
         return BasicJETAnalyzer(state, analysis_token, method_table, config)
     elseif mode === :sound
         cache_key = compute_hash(state.inf_params, SoundJETAnalyzer, config, __cache_hash__)
-        analysis_token = get!(AnalysisToken, JET_ANALYZER_CACHE, cache_key)
+        analysis_token = @lock JET_ANALYZER_CACHE_LOCK get!(AnalysisToken, JET_ANALYZER_CACHE, cache_key)
         return SoundJETAnalyzer(state, analysis_token, method_table, config)
     elseif mode === :typo
         cache_key = compute_hash(state.inf_params, TypoJETAnalyzer, config, __cache_hash__)
-        analysis_token = get!(AnalysisToken, JET_ANALYZER_CACHE, cache_key)
+        analysis_token = @lock JET_ANALYZER_CACHE_LOCK get!(AnalysisToken, JET_ANALYZER_CACHE, cache_key)
         return TypoJETAnalyzer(state, analysis_token, method_table, config)
     else
         throw(JETConfigError("`mode` configuration should be either of `:basic`, `:sound` or `:typo`", :mode, mode))

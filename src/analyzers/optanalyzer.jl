@@ -160,7 +160,8 @@ JETInterface.AnalysisToken(analyzer::OptAnalyzer) = analyzer.analysis_token
 JETInterface.typeinf_world(::OptAnalyzer) = JET_TYPEINF_WORLD[]
 JETInterface.vscode_diagnostics_order(::OptAnalyzer) = false
 
-const OPT_ANALYZER_CACHE = CASDict{UInt,AnalysisToken}()
+const OPT_ANALYZER_CACHE = Dict{UInt,AnalysisToken}()
+const OPT_ANALYZER_CACHE_LOCK = ReentrantLock()
 
 # overloads
 # =========
@@ -361,7 +362,7 @@ function OptAnalyzer(world::UInt = Base.get_world_counter();
     cache_key = compute_hash(state.inf_params, state.opt_params, OptAnalyzer,
                              skip_noncompileable_calls, __cache_hash__)
     cache_key = @invoke hash(function_filter::Any, cache_key::UInt) # HACK avoid dynamic dispatch
-    analysis_token = get!(AnalysisToken, OPT_ANALYZER_CACHE, cache_key)
+    analysis_token = @lock OPT_ANALYZER_CACHE_LOCK get!(AnalysisToken, OPT_ANALYZER_CACHE, cache_key)
     return OptAnalyzer(
         state,
         analysis_token,

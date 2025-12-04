@@ -294,34 +294,6 @@ const JET_LOGGER_LEVELS_DESC = let
 end
 jet_logger_level(@nospecialize io::IO) = get(io, JET_LOGGER_LEVEL, DEFAULT_LOGGER_LEVEL)::Int
 
-# multithreading
-
-"""
-    CASDict{K,V}
-
-A thread-safe dictionary using Compare-And-Swap (CAS) operations for lock-free updates.
-Reads are always lock-free via atomic load. Writes use a CAS retry loop, making this
-suitable for lightweight, pure update functions that are safe to retry.
-
-Currently implements [`get!`](@ref) only.
-"""
-mutable struct CASDict{K,V}
-    @atomic data::Dict{K,V}
-    CASDict{K,V}() where {K,V} = new{K,V}(Dict{K,V}())
-end
-
-function Base.get!(f::Base.Callable, d::CASDict{K,V}, key::K) where {K,V}
-    old = @atomic :acquire d.data
-    val = get(old, key, nothing)
-    val !== nothing && return val::V
-    while true
-        new = copy(old)
-        val = get!(f, new, key)::V
-        old, success = @atomicreplace :acquire_release :monotonic d.data old => new
-        success && return val
-    end
-end
-
 # analysis core
 # =============
 
