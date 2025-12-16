@@ -48,7 +48,7 @@ jobs:
         run: echo ${{ github.event.pull_request.number }} > ./pull-request-number.artifact
 
       # save as artifacts (performance tracking (comment) workflow will use it)
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: perforamance-tracking
           path: ./*.artifact
