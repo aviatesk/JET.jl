@@ -235,7 +235,11 @@ given that the number of matching methods are limited beforehand.
 """
 CC.bail_out_call(::JETAnalyzer, ::CC.InferenceLoopState, ::InferenceState) = false
 
+<<<<<<< Updated upstream
 @static if VERSION ≥ v"1.13.0-DEV.1352" || VERSION ≥ v"1.12.2"
+=======
+@static if VERSION ≥ v"1.13.0-DEV.1352" || VERSION ≥ v"1.12.1"
+>>>>>>> Stashed changes
 function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
     @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
     # `JETAnalyzer` uses an overlay method table, but those overlay definitions are
@@ -261,7 +265,11 @@ function CC.concrete_eval_call(analyzer::JETAnalyzer,
     return res.rt === Bottom ? nothing : res
 end
 
+<<<<<<< Updated upstream
 else # @static if VERSION ≥ v"1.13.0-DEV.1350" || VERSION ≥ v"1.12.2"
+=======
+else # @static if VERSION ≥ v"1.13.0-DEV.1350" || VERSION ≥ v"1.12.1"
+>>>>>>> Stashed changes
 # For now JETAnalyzer allows the regular constant-prop' only,
 # unless the analyzed effects are proven to be `:nothrow`.
 function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
@@ -301,7 +309,11 @@ function concrete_eval_eligible_ignoring_overlay(result::MethodCallResult, argin
     result.edge !== nothing || return false
     return CC.is_foldable(result.effects) && CC.is_all_const_arg(arginfo, #=start=#2)
 end
+<<<<<<< Updated upstream
 end # @static if VERSION ≥ v"1.13.0-DEV.1350" || VERSION ≥ v"1.12.2"
+=======
+end # @static if VERSION ≥ v"1.13.0-DEV.1350" || VERSION ≥ v"1.12.1"
+>>>>>>> Stashed changes
 
 function CC.abstract_invoke(analyzer::JETAnalyzer, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState)
     ret = @invoke CC.abstract_invoke(analyzer::ToplevelAbstractAnalyzer, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState)
