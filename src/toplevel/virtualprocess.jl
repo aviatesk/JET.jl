@@ -751,8 +751,7 @@ function analyze_from_definitions!(interp::ConcreteInterpreter, config::Toplevel
             tt = res.toplevel_signatures[i]
             # Create a new analyzer with fresh local caches (`inf_cache` and `analysis_results`)
             # to avoid data races between concurrent signature analysis tasks
-            analyzer = ToplevelAbstractAnalyzer(interp, non_toplevel_concretized;
-                refresh_local_cache = true)
+            analyzer = ToplevelAbstractAnalyzer(interp, non_toplevel_concretized)
             match = Base._which(tt;
                 # NOTE use the latest world counter with `method_table(analyzer)` unwrapped,
                 # otherwise it may use a world counter when this method isn't defined yet

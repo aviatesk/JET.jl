@@ -550,12 +550,11 @@ analysis behaviors provided by this type.
 abstract type ToplevelAbstractAnalyzer <: AbstractAnalyzer end
 
 # constructor for sequential toplevel JET analysis
-function ToplevelAbstractAnalyzer(interp::ConcreteInterpreter, concretized::BitVector;
-                                  refresh_local_cache::Bool = true)
+function ToplevelAbstractAnalyzer(interp::ConcreteInterpreter, concretized::BitVector)
     # use the latest world age to take in newly added methods defined by `ConcreteInterpreter`
     world = get_world_counter()
     analyzer = ToplevelAbstractAnalyzer(interp)
     state = AnalyzerState(analyzer)
-    newstate = AnalyzerState(state, refresh_local_cache; world, concretized)
+    newstate = AnalyzerState(state; world, concretized)
     return AbstractAnalyzer(analyzer, newstate)
 end
