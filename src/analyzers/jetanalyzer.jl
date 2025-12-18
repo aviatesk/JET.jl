@@ -315,7 +315,6 @@ function CC.abstract_eval_statement_expr(analyzer::JETAnalyzer, e::Expr, sstate:
     ret = @invoke CC.abstract_eval_statement_expr(analyzer::ToplevelAbstractAnalyzer, e::Expr, sstate::StatementState, sv::InferenceState)
     if e.head === :static_parameter
         function after_abstract_eval_statement_expr(analyzer′::JETAnalyzer, sv′::InferenceState)
-            ret′ = ret[]
             report_undef_static_param!(analyzer′, sv′, e.args[1]::Int)
             return true
         end
@@ -1269,6 +1268,7 @@ function field_error_msg(@nospecialize(typ), name::Symbol)
     end
     @static if VERSION ≥ v"1.12.0-beta4.14"
         # JuliaLang/julia#58507
+        typ = Base.unwrap_unionall(typ)::DataType
         tname = string(typ.name.wrapper)
     else
         tname = nameof(typ)
