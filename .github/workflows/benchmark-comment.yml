@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v6
 
       # restore records from the artifacts
-      - uses: dawidd6/action-download-artifact@v11
+      - uses: dawidd6/action-download-artifact@v12
         with:
           workflow: benchmark.yml
           name: perforamance-tracking
