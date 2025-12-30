@@ -1304,7 +1304,7 @@ end
         baz(a::Int) = return a
         qux(a::T) where T<:Integer = return a
     end
-    @test isempty(res.res.toplevel_signatures)
+    @test isempty(res.res.signature_infos)
 
     vmod, res = @analyze_toplevel2 analyze_from_definitions=true begin
         foo() = return
@@ -1313,21 +1313,21 @@ end
         baz(a::Int) = return a
         qux(a::T) where T<:Integer = return a
     end
-    @test !isempty(res.res.toplevel_signatures)
-    @test any(res.res.toplevel_signatures) do sig
-        sig === Tuple{typeof(vmod.foo)}
+    @test !isempty(res.res.signature_infos)
+    @test any(res.res.signature_infos) do (; tt)
+        tt === Tuple{typeof(vmod.foo)}
     end
-    @test any(res.res.toplevel_signatures) do sig
-        sig === Tuple{typeof(vmod.bar),Any}
+    @test any(res.res.signature_infos) do (; tt)
+        tt === Tuple{typeof(vmod.bar),Any}
     end
-    @test any(res.res.toplevel_signatures) do sig
-        sig === Tuple{typeof(vmod.baz),Any}
+    @test any(res.res.signature_infos) do (; tt)
+        tt === Tuple{typeof(vmod.baz),Any}
     end
-    @test any(res.res.toplevel_signatures) do sig
-        sig === Tuple{typeof(vmod.baz),Int}
+    @test any(res.res.signature_infos) do (; tt)
+        tt === Tuple{typeof(vmod.baz),Int}
     end
-    @test any(res.res.toplevel_signatures) do sig
-        sig <: Tuple{typeof(vmod.qux),Integer} # `Tuple{typeof(vmod.qux),TypeVar}`
+    @test any(res.res.signature_infos) do (; tt)
+        tt <: Tuple{typeof(vmod.qux),Integer} # `Tuple{typeof(vmod.qux),TypeVar}`
     end
 
     vmod, res = @analyze_toplevel2 analyze_from_definitions=true begin
@@ -1340,9 +1340,9 @@ end
             nothing
         end
     end
-    @test !isempty(res.res.toplevel_signatures)
-    @test all(res.res.toplevel_signatures) do @nospecialize sig
-        !Base.has_free_typevars(sig)
+    @test !isempty(res.res.signature_infos)
+    @test all(res.res.signature_infos) do (; tt)
+        !Base.has_free_typevars(tt)
     end
 end
 
@@ -1487,7 +1487,7 @@ end
         vmod, res = @analyze_toplevel2 analyze_from_definitions=true let
             foo(a) = a # should be concretized, and its signature should have been collected
         end
-        @test length(res.res.toplevel_signatures) == 1
+        @test length(res.res.signature_infos) == 1
     end
 
     # simple negative case test, which checks we do NOT select statements not involved with any definition
@@ -1695,7 +1695,7 @@ end
                 throw("foo")
             end
             @test isconcrete(res, vmod, :foo)
-            @test isempty(res.res.toplevel_signatures)
+            @test isempty(res.res.signature_infos)
         end
     end
 
@@ -1713,7 +1713,7 @@ end
             end
 
             @test isempty(res.res.toplevel_error_reports)
-            @test length(res.res.toplevel_signatures) == 1
+            @test length(res.res.signature_infos) == 1
             test_sum_over_string(res)
         end
 
@@ -1727,7 +1727,7 @@ end
             end
 
             @test isempty(res.res.toplevel_error_reports)
-            @test length(res.res.toplevel_signatures) == 1
+            @test length(res.res.signature_infos) == 1
             test_sum_over_string(res)
         end
 
@@ -1746,7 +1746,7 @@ end
             end
 
             @test isempty(res.res.toplevel_error_reports)
-            @test length(res.res.toplevel_signatures) == 2
+            @test length(res.res.signature_infos) == 2
             test_sum_over_string(res)
             @test any(r->is_global_undef_var(r, :err2), res.res.inference_error_reports)
         end
