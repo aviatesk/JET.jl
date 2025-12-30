@@ -441,6 +441,16 @@ struct AnalyzedFileInfo
 end
 AnalyzedFileInfo() = AnalyzedFileInfo(ModuleRangeInfo[])
 
+struct SignatureInfo
+    filename::String
+    mod::Module
+    tt::Type
+    src
+    SignatureInfo(
+        filename::AbstractString, mod::Module, @nospecialize(tt::Type), @nospecialize(src)
+    ) = new(filename, mod, tt, src)
+end
+
 """
     res::VirtualProcessResult
 
@@ -451,14 +461,14 @@ AnalyzedFileInfo() = AnalyzedFileInfo(ModuleRangeInfo[])
     have precedence over `inference_error_reports`
 - `res.inference_error_reports::Vector{InferenceErrorReport}`: possible error reports found
     by `ToplevelAbstractAnalyzer`
-- `res.toplevel_signatures`: signatures of methods defined within the analyzed files
+- `res.signature_infos`: signatures of methods defined within the analyzed files
 - `res.actual2virtual::$Actual2Virtual`: keeps actual and virtual module
 """
 struct VirtualProcessResult
     analyzed_files::Dict{String,AnalyzedFileInfo}
     toplevel_error_reports::Vector{ToplevelErrorReport}
     inference_error_reports::Vector{InferenceErrorReport}
-    toplevel_signatures::Vector{Type}
+    signature_infos::Vector{SignatureInfo}
     actual2virtual::Union{Actual2Virtual,Nothing}
     VirtualProcessResult(actual2virtual::Union{Actual2Virtual,Nothing}) =
         new(Dict{String,AnalyzedFileInfo}(),
@@ -737,7 +747,7 @@ function analyze_from_definitions!(interp::ConcreteInterpreter, config::Toplevel
     start = time()
     entrypoint = config.analyze_from_definitions
     res = InterpretationState(interp).res
-    n_sigs = length(res.toplevel_signatures)
+    n_sigs = length(res.signature_infos)
     n_sigs == 0 && return nothing
 
     progress = PackageAnalysisProgress(n_sigs)
@@ -748,7 +758,7 @@ function analyze_from_definitions!(interp::ConcreteInterpreter, config::Toplevel
 
     tasks = map(1:n_sigs) do i
         Threads.@spawn begin
-            tt = res.toplevel_signatures[i]
+            (; tt) = res.signature_infos[i]
             # Create a new analyzer with fresh local caches (`inf_cache` and `analysis_results`)
             # to avoid data races between concurrent signature analysis tasks
             analyzer = ToplevelAbstractAnalyzer(interp, non_toplevel_concretized)
@@ -1678,12 +1688,17 @@ function collect_toplevel_signature!(interp::ConcreteInterpreter, frame::Frame, 
             return nothing
         end
     end
-    sigs = node.args[2]
     atype_params, sparams, #=linenode=#_ =
-        JuliaInterpreter.lookup(frame, sigs)::SimpleVector
+        JuliaInterpreter.lookup(frame, node.args[2])::SimpleVector
     tt = form_method_signature(atype_params::SimpleVector, sparams::SimpleVector)
-    @assert !CC.has_free_typevars(tt) "free type variable left in toplevel_signatures"
-    push!(state.res.toplevel_signatures, tt)
+    @assert !CC.has_free_typevars(tt) "free type variable left in signature_infos"
+    if !(tt isa Type)
+        @warn "Found non-Type method signature" tt
+        return nothing
+    end
+    mod = JuliaInterpreter.moduleof(frame)
+    src = JuliaInterpreter.lookup(frame, node.args[3])
+    push!(state.res.signature_infos, SignatureInfo(state.filename, mod, tt, src))
 end
 
 # form a method signature from the first and second parameters of lowered `:method` expression
