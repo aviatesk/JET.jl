@@ -445,9 +445,9 @@ struct SignatureInfo
     filename::String
     mod::Module
     tt::Type
-    src::CodeInfo
+    src
     SignatureInfo(
-        filename::AbstractString, mod::Module, @nospecialize(tt::Type), src::CodeInfo
+        filename::AbstractString, mod::Module, @nospecialize(tt::Type), @nospecialize(src)
     ) = new(filename, mod, tt, src)
 end
 
@@ -1697,7 +1697,7 @@ function collect_toplevel_signature!(interp::ConcreteInterpreter, frame::Frame, 
         return nothing
     end
     mod = JuliaInterpreter.moduleof(frame)
-    src = JuliaInterpreter.lookup(frame, node.args[3])::Core.CodeInfo
+    src = JuliaInterpreter.lookup(frame, node.args[3])
     push!(state.res.signature_infos, SignatureInfo(state.filename, mod, tt, src))
 end
 
