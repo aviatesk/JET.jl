@@ -55,6 +55,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- links end -->
 
 ## [Unreleased]
+### Changed
+- Updated Revise dependency version to v3.13
 
 ## [0.11.2]
 ### Changed
