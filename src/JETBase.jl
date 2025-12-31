@@ -983,7 +983,7 @@ struct SigAnalysisResult
 end
 
 struct SigWorkItem
-    siginfos::Vector{Revise.SigInfo}
+    exinfos::Vector{Union{Revise.SigInfo,Revise.TypeInfo}}
     index::Int
 end
 
@@ -1020,10 +1020,12 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
     analyzer = AbstractAnalyzer(analyzer, newstate)
 
     workitems = SigWorkItem[]
-    for fi in pkgdata.fileinfos, (_, exsigs) in fi.modexsigs, (_, siginfos) in exsigs
-        isnothing(siginfos) && continue
-        for (i, siginfo) in enumerate(siginfos)
-            push!(workitems, SigWorkItem(siginfos, i))
+    for fi in pkgdata.fileinfos, (_, exs_infos) in fi.mod_exs_infos, (_, exinfos) in exs_infos
+        isnothing(exinfos) && continue
+        for (i, exinfo) in enumerate(exinfos)
+            if exinfo isa Revise.SigInfo
+                push!(workitems, SigWorkItem(exinfos, i))
+            end
         end
     end
 
@@ -1036,8 +1038,8 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
     end
 
     tasks = map(workitems) do workitem
-        (; siginfos, index) = workitem
-        siginfo = siginfos[index]
+        (; exinfos, index) = workitem
+        siginfo = exinfos[index]::Revise.SigInfo
         Threads.@spawn :default try
             ext = Revise.get_extended_data(siginfo, :JET)
             local reports::Vector{InferenceErrorReport}
@@ -1063,7 +1065,7 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
                     match.method, match.spec_types, match.sparams)
                 @atomic progress.analyzed += 1
                 reports = get_reports(task_analyzer, result)
-                siginfos[index] = Revise.replace_extended_data(siginfo, :JET, SigAnalysisResult(reports, result.ci))
+                exinfos[index] = Revise.replace_extended_data(siginfo, :JET, SigAnalysisResult(reports, result.ci))
             else
                 toplevel_logger(config; pre=println) do @nospecialize(io::IO)
                     print(io, "Couldn't find a single matching method for the signature `")
