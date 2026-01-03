@@ -84,7 +84,7 @@ struct AbstractBindingState
     AbstractBindingState(isconst::Bool, maybeundef::Bool, @nospecialize typ) = new(isconst, maybeundef, typ)
     AbstractBindingState(isconst::Bool, maybeundef::Bool) = new(isconst, maybeundef)
 end
-const AbstractAbstractBindings = IdDict{Core.BindingPartition,AbstractBindingState}
+const AbstractBindings = IdDict{Core.BindingPartition,AbstractBindingState}
 
 """
     mutable struct AnalyzerState
@@ -137,7 +137,7 @@ mutable struct AnalyzerState
     # will be used in toplevel analysis (skip inference on actually interpreted statements)
     const concretized::BitVector
 
-    const binding_states::AbstractAbstractBindings # TODO Make this globally maintained?
+    const binding_states::AbstractBindings # TODO Make this globally maintained?
 
     # some `AbstractAnalyzer` may want to use this
     entry::Union{Nothing,MethodInstance}
@@ -164,7 +164,7 @@ function AnalyzerState(world::UInt  = get_world_counter();
                          #=report_stash::Vector{InferenceErrorReport}=# InferenceErrorReport[],
                          #=cache_target::Union{Nothing,Pair{Symbol,InferenceState}}=# nothing,
                          #=concretized::BitVector=# non_toplevel_concretized,
-                         #=binding_states::AbstractAbstractBindings=# AbstractAbstractBindings(),
+                         #=binding_states::AbstractBindings=# AbstractBindings(),
                          #=entry::Union{Nothing,MethodInstance}=# nothing)
 end
 
@@ -174,7 +174,7 @@ function AnalyzerState(state::AnalyzerState, refresh_local_cache::Bool=true;
                        inf_params::InferenceParams = state.inf_params,
                        opt_params::OptimizationParams = state.opt_params,
                        concretized::BitVector = state.concretized,
-                       binding_states::AbstractAbstractBindings = state.binding_states,
+                       binding_states::AbstractBindings = state.binding_states,
                        entry::Union{Nothing,MethodInstance} = state.entry)
     if refresh_local_cache
         inf_cache = InferenceResult[]
