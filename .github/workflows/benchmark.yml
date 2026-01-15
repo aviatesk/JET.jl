@@ -50,5 +50,5 @@ jobs:
       # save as artifacts (performance tracking (comment) workflow will use it)
       - uses: actions/upload-artifact@v6
         with:
-          name: perforamance-tracking
+          name: performance-tracking
           path: ./*.artifact

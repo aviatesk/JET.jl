@@ -28,7 +28,7 @@ jobs:
       - uses: dawidd6/action-download-artifact@v11
         with:
           workflow: benchmark.yml
-          name: perforamance-tracking
+          name: performance-tracking
           workflow_conclusion: success
       - name: output benchmark result
         id: output-result-markdown
