@@ -421,15 +421,16 @@ function toplevel_logger(
     print(ioctx, "[toplevel-", JET_LOGGER_LEVELS[level], "] ")
     f(ioctx)
     log = String(take!(buf))
-    if Threads.nthreads(:interactive) == 0 && Threads.nthreads(:default) == 1
-        # In this case, the original task is busy, so without sequential execution,
-        # logs will not be output
-        print(io, log)
-    else
-        # Without `Threads.@spawn :interactive`, when the caller's task thread is busy,
-        # task switching may not occur and logs may not appear
-        wait(Threads.@spawn :interactive @lock toplevel_logger_io_lock print(io, log))
-    end
+    # if Threads.nthreads(:interactive) == 0 && Threads.nthreads(:default) == 1
+    #     # In this case, the original task is busy, so without sequential execution,
+    #     # logs will not be output
+    #     print(io, log)
+    # else
+    #     # Without `Threads.@spawn :interactive`, when the caller's task thread is busy,
+    #     # task switching may not occur and logs may not appear
+    #     wait(Threads.@spawn :interactive @lock toplevel_logger_io_lock print(io, log))
+    # end
+    print(io, log)
 end
 @specialize
 
@@ -757,7 +758,7 @@ function analyze_from_definitions!(interp::ConcreteInterpreter, config::Toplevel
     end
 
     tasks = map(1:n_sigs) do i
-        Threads.@spawn begin
+        #=Threads.@spawn=# begin
             (; tt) = res.signature_infos[i]
             # Create a new analyzer with fresh local caches (`inf_cache` and `analysis_results`)
             # to avoid data races between concurrent signature analysis tasks
@@ -794,7 +795,7 @@ function analyze_from_definitions!(interp::ConcreteInterpreter, config::Toplevel
         end
     end
 
-    waitall(tasks)
+    # waitall(tasks)
 
     append!(res.inference_error_reports, progress.reports)
 

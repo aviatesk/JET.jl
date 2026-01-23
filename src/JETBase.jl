@@ -1040,7 +1040,7 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
     tasks = map(workitems) do workitem
         (; exinfos, index) = workitem
         siginfo = exinfos[index]::Revise.SigInfo
-        Threads.@spawn :default try
+        #=Threads.@spawn :default=# try
             ext = Revise.get_extended_data(siginfo, :JET)
             local reports::Vector{InferenceErrorReport}
             if ext !== nothing && ext.data isa SigAnalysisResult
@@ -1091,7 +1091,7 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
         end
     end
 
-    waitall(tasks)
+    # waitall(tasks)
 
     append!(res.inference_error_reports, progress.reports)
 
