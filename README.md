@@ -169,8 +169,6 @@ JET explores the functions you call directly as well as their *inferable* callee
 
 JET integrates with [SnoopCompile](https://github.com/timholy/SnoopCompile.jl), and you can sometimes use SnoopCompile to collect the data to perform more comprehensive analyses. SnoopCompile's limitation is that it only collects data for calls that have not been previously inferred, so you must perform this type of analysis in a fresh session.
 
-See [SnoopCompile's JET-integration documentation](https://timholy.github.io/SnoopCompile.jl/stable/jet/) for further details.
-
 ## Acknowledgement
 This project started as my undergrad thesis project at Kyoto University, supervised by Prof. Takashi Sakuragawa.
 We were heavily inspired by [ruby/typeprof](https://github.com/ruby/typeprof), an experimental type understanding/checking tool for Ruby.
