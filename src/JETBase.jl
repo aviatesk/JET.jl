@@ -20,36 +20,32 @@ using Core: Builtin, IntrinsicFunction, Intrinsics, SimpleVector, svec
 
 using Core.IR
 
-using .CC: @nospecs, ⊑,
-    AbsIntState, AbstractInterpreter, AbstractLattice, ArgInfo, Bottom, CFG,
-    CachedMethodTable, CallMeta, ConstCallInfo, Effects, EFFECTS_THROWS, Future,
-    InferenceParams, InferenceResult, InferenceState, InternalMethodTable, InvokeCallInfo,
-    MethodCallResult, MethodMatchInfo, MethodMatches, NOT_FOUND, OptimizationState,
-    OptimizationParams, OverlayMethodTable, RTEffects, StatementState, StmtInfo,
-    UnionSplitInfo, UnionSplitMethodMatches, VarState, VarTable, WorldRange, WorldView,
-    argextype, argtype_by_index, argtypes_to_type, compute_basic_blocks,
-    construct_postdomtree, hasintersect, ignorelimited, instanceof_tfunc,
-    nearest_common_dominator, singleton_type, slot_id, specialize_method, tmeet, tmerge,
-    typeinf_lattice, widenconst, widenlattice
+using .CC: @nospecs, AbstractInterpreter, AbstractLattice, ArgInfo, Bottom, CFG,
+    CachedMethodTable, CallMeta, ConstCallInfo, EFFECTS_THROWS, Future, InferenceParams,
+    InferenceResult, InferenceState, InvokeCallInfo, MethodCallResult, MethodMatchInfo,
+    NOT_FOUND, OptimizationParams, OptimizationState, OverlayMethodTable, RTEffects,
+    StatementState, StmtInfo, UnionSplitInfo, VarState, VarTable, WorldRange, WorldView,
+    argextype, argtype_by_index, argtypes_to_type, hasintersect, ignorelimited,
+    instanceof_tfunc, singleton_type, slot_id, specialize_method, tmeet, tmerge,
+    typeinf_lattice, widenconst, widenlattice, ⊑
 
-using Base: IdSet, PkgId, get_world_counter, generating_output
+using Base: PkgId, generating_output, get_world_counter
 
-using Base.Meta: ParseError, isexpr, lower
+using Base.Meta: isexpr, lower
 
 using Base.Experimental: @MethodTable, @overlay
 
-using JuliaSyntax: JuliaSyntax as JS
-using .JS: @K_str
+using JuliaSyntax: @K_str, JuliaSyntax as JS
 
 using CodeTracking: CodeTracking
 
 using LoweredCodeUtils: LoweredCodeUtils, add_ssa_preds!, callee_matches
 
-using JuliaInterpreter: _INACTIVE_EXCEPTION, Frame, Interpreter, JuliaInterpreter
+using JuliaInterpreter: Frame, Interpreter, JuliaInterpreter, _INACTIVE_EXCEPTION
 
 using MacroTools: @capture, normalise, striplines
 
-using InteractiveUtils: InteractiveUtils, gen_call_with_extracted_types_and_kwargs
+using InteractiveUtils: InteractiveUtils
 
 using Pkg: Pkg, TOML
 
@@ -160,7 +156,7 @@ macro withmixedhash(typedef)
 
     h_init = UInt === UInt64 ? rand(UInt64) : rand(UInt32)
     hash_body = quote h = $h_init end
-    for (fld, typ) in fld2typs
+    for (fld, _typ) in fld2typs
         push!(hash_body.args, :(h = Base.hash(x.$fld, h)::UInt))
     end
     push!(hash_body.args, :(return h))
@@ -231,11 +227,11 @@ end
 get_ssavaluetype((sv, pc)::StateAtPC) = (sv.src.ssavaluetypes::Vector{Any})[pc]
 
 get_slottype(s::Union{StateAtPC,State}, slot) = get_slottype(s, slot_id(slot))
-get_slottype((sv, pc)::StateAtPC, slot::Int) = get_slottype(sv, slot)
+get_slottype((sv, _pc)::StateAtPC, slot::Int) = get_slottype(sv, slot)
 get_slottype(sv::State, slot::Int) = sv.slottypes[slot]
 
 get_slotname(s::Union{StateAtPC,State}, slot) = get_slotname(s, slot_id(slot))
-get_slotname((sv, pc)::StateAtPC, slot::Int) = sv.src.slotnames[slot]
+get_slotname((sv, _pc)::StateAtPC, slot::Int) = sv.src.slotnames[slot]
 get_slotname(sv::State, slot::Int) = sv.src.slotnames[slot]
 
 # check if we're in a toplevel module
@@ -1346,7 +1342,7 @@ function call_test_ex(funcname::Symbol, testname::Symbol, ex0, __module__, __sou
 end
 
 function _call_test_ex(funcname::Symbol, testname::Symbol, ex0, __module__, __source__)
-    analysis = gen_call_with_extracted_types_and_kwargs(__module__, funcname, ex0)
+    analysis = InteractiveUtils.gen_call_with_extracted_types_and_kwargs(__module__, funcname, ex0)
     orig_expr = QuoteNode(Expr(:macrocall, GlobalRef(@__MODULE__, testname), __source__, ex0...))
     source = QuoteNode(__source__)
     testres = :(try

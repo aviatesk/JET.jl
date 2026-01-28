@@ -590,7 +590,7 @@ function print_callsig(io, @nospecialize(t))
     print(io, '`')
 end
 
-report_method_error!(::JETAnalyzer, ::InferenceState, ::CallMeta, ::Argtypes, @nospecialize(atype)) = nothing
+report_method_error!(::JETAnalyzer, ::InferenceState, ::CallMeta, ::Argtypes, @nospecialize(_atype)) = nothing
 report_method_error!(analyzer::BasicJETAnalyzer, sv::InferenceState, call::CallMeta, argtypes::Argtypes, @nospecialize(atype)) =
     report_method_error!(analyzer, sv, call, argtypes, atype, #=sound=#false)
 report_method_error!(analyzer::SoundJETAnalyzer, sv::InferenceState, call::CallMeta, argtypes::Argtypes, @nospecialize(atype)) =
@@ -726,8 +726,6 @@ end
     argtypes::Argtypes
 end
 function JETInterface.print_report_message(io::IO, (; argtypes)::InvalidInvokeErrorReport)
-    fallback_msg = "invalid invoke" # mostly because of runtime unreachable
-
     ft = widenconst(argtype_by_index(argtypes, 2))
     if ft === Bottom
         print(io, "invalid invoke") # mostly because of runtime unreachable
@@ -807,7 +805,7 @@ report_undef_global_var!(analyzer::SoundJETAnalyzer, sv::InferenceState, binding
 report_undef_global_var!(analyzer::TypoJETAnalyzer, sv::InferenceState, binding::Core.Binding, partition::Core.BindingPartition) =
     _report_undef_global_var!(analyzer, sv, binding, partition, false)
 
-function _report_undef_global_var!(analyzer::JETAnalyzer, sv::InferenceState, binding::Core.Binding, partition::Core.BindingPartition, sound::Bool)
+function _report_undef_global_var!(analyzer::JETAnalyzer, sv::InferenceState, binding::Core.Binding, partition::Core.BindingPartition, _sound::Bool)
     gr = binding.globalref
     # TODO use `abstract_eval_isdefinedglobal` for respecting world age
     if @invokelatest isdefinedglobal(gr.mod, gr.name)
@@ -867,7 +865,7 @@ report_undef_local_var!(analyzer::SoundJETAnalyzer, sv::InferenceState, var::Slo
 report_undef_local_var!(analyzer::TypoJETAnalyzer, sv::InferenceState, var::SlotNumber, vtypes::VarTable) =
     _report_undef_local_var!(analyzer, sv, var, vtypes, false)
 
-function _report_undef_local_var!(analyzer::JETAnalyzer, sv::CC.InferenceState, var::SlotNumber, vtypes::VarTable, sound::Bool)
+function _report_undef_local_var!(analyzer::JETAnalyzer, sv::CC.InferenceState, var::SlotNumber, vtypes::VarTable, _sound::Bool)
     if isconcretized(analyzer, sv)
         return false # no need to be analyzed
     end
@@ -905,7 +903,7 @@ end
 JETInterface.print_report_message(io::IO, report::IncompatibleGlobalAssignmentError) =
     print(io, "cannot assign an incompatible value to the global ", report.mod, '.', report.name, '.')
 
-report_global_assignment!(::JETAnalyzer, ::InferenceState, ::CallMeta, @nospecialize(M), @nospecialize(s), @nospecialize(v)) = nothing
+report_global_assignment!(::JETAnalyzer, ::InferenceState, ::CallMeta, @nospecialize(_M), @nospecialize(_s), @nospecialize(_v)) = nothing
 report_global_assignment!(analyzer::BasicJETAnalyzer, sv::InferenceState, ret::CallMeta, @nospecialize(M), @nospecialize(s), @nospecialize(v)) =
     _report_global_assignment!(analyzer, sv, ret, M, s, v, false)
 report_global_assignment!(analyzer::SoundJETAnalyzer, sv::InferenceState, ret::CallMeta, @nospecialize(M), @nospecialize(s), @nospecialize(v)) =
@@ -914,7 +912,7 @@ report_global_assignment!(analyzer::TypoJETAnalyzer, sv::InferenceState, ret::Ca
     _report_global_assignment!(analyzer, sv, ret, M, s, v, false)
 
 function _report_global_assignment!(analyzer::JETAnalyzer, sv::InferenceState, ret::CallMeta,
-                                    @nospecialize(M), @nospecialize(s), @nospecialize(v),
+                                    @nospecialize(M), @nospecialize(s), @nospecialize(_v),
                                     sound::Bool)
     if sound
         if ret.exct !== Union{}
@@ -971,7 +969,7 @@ function JETInterface.print_report_message(io::IO, report::NonBooleanCondErrorRe
     end
 end
 
-report_non_boolean_cond!(::JETAnalyzer, ::InferenceState, @nospecialize(t)) = nothing
+report_non_boolean_cond!(::JETAnalyzer, ::InferenceState, @nospecialize(_t)) = nothing
 report_non_boolean_cond!(analyzer::BasicJETAnalyzer, sv::InferenceState, @nospecialize(t)) =
     _report_non_boolean_cond!(analyzer, sv, t, false)
 report_non_boolean_cond!(analyzer::SoundJETAnalyzer, sv::InferenceState, @nospecialize(t)) =
@@ -1273,10 +1271,11 @@ function report_fieldaccess!(analyzer::JETAnalyzer, sv::InferenceState, @nospeci
 
     if issetfield!
         if !_mutability_errorcheck(s00)
-            msg = lazy"setfield!: immutable struct of type $s00 cannot be changed"
-            report = BuiltinErrorReport(sv, setfield!, msg)
-            add_new_report!(analyzer, sv.result, report)
-            return true
+            let msg = lazy"setfield!: immutable struct of type $s00 cannot be changed"
+                report = BuiltinErrorReport(sv, setfield!, msg)
+                add_new_report!(analyzer, sv.result, report)
+                return true
+            end
         end
     end
 
@@ -1302,10 +1301,11 @@ function report_fieldaccess!(analyzer::JETAnalyzer, sv::InferenceState, @nospeci
         end
         nametyp = widenconst(name)
         if !hasintersect(nametyp, Symbol)
-            msg = type_error_msg(getglobal, Symbol, nametyp)
-            report = BuiltinErrorReport(sv, getglobal, msg)
-            add_new_report!(analyzer, sv.result, report)
-            return true
+            let msg = type_error_msg(getglobal, Symbol, nametyp)
+                report = BuiltinErrorReport(sv, getglobal, msg)
+                add_new_report!(analyzer, sv.result, report)
+                return true
+            end
         end
     end
     fidx = _getfield_fieldindex(s, name)
@@ -1320,9 +1320,7 @@ function report_fieldaccess!(analyzer::JETAnalyzer, sv::InferenceState, @nospeci
         msg = field_error_msg(objtyp, namev)
     elseif namev isa Int
         msg = bounds_error_msg(objtyp, namev)
-    else
-        @assert false "invalid field analysis"
-    end
+    else throw(ErrorException("invalid field analysis")) end
     add_new_report!(analyzer, sv.result, BuiltinErrorReport(sv, f, msg))
     return true
 end
@@ -1352,7 +1350,7 @@ function report_divide_error!(analyzer::JETAnalyzer, sv::InferenceState, @nospec
     return false
 end
 
-function handle_invalid_builtins!(analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(ret))
+function handle_invalid_builtins!(analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), ::Argtypes, @nospecialize(ret))
     # we don't bail out using `basic_filter` here because the native tfuncs are already very permissive
     if ret === Bottom
         msg = GENERAL_BUILTIN_ERROR_MSG
@@ -1451,7 +1449,7 @@ The [general configurations](@ref) and [the error analysis specific configuratio
 can be specified as an optional argument.
 """
 macro report_call(ex0...)
-    return gen_call_with_extracted_types_and_kwargs(__module__, :report_call, ex0)
+    return InteractiveUtils.gen_call_with_extracted_types_and_kwargs(__module__, :report_call, ex0)
 end
 
 # Test.jl integration

@@ -93,7 +93,7 @@ function CC.abstract_call_known(analyzer::AbstractAnalyzer,
                 if length(argtypes) == 4 && isa(argtypes[3], Const)
                     # from there on we know that the struct field will never be undefined,
                     # so we try to encode that information with a `PartialStruct`
-                    farg2 = CC.ssa_def_slot(fargs[2], sv)
+                    farg2 = isnothing(fargs) ? nothing : CC.ssa_def_slot(fargs[2], sv)
                     if farg2 isa SlotNumber
                         refined = CC.form_partially_defined_struct(argtypes[2], argtypes[3])
                         if refined !== nothing
@@ -392,7 +392,7 @@ function finish_frame!(analyzer::AbstractAnalyzer, frame::InferenceState)
     cache_reports!(analyzer, caller, reports)
 end
 
-function cache_reports!(analyzer::AbstractAnalyzer, caller::InferenceResult,
+function cache_reports!(::AbstractAnalyzer, caller::InferenceResult,
                         reports::Vector{InferenceErrorReport})
     cached_reports = InferenceErrorReport[]
     mi = caller.linfo
@@ -435,14 +435,11 @@ function CC.global_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::In
         return Pair{Any,Any}(newty, ErrorException)
     end
     isconcretized = JET.isconcretized(analyzer, sv) # this statement has been analyzed by `ConcreteInterpreter`
-    ⊔ = CC.join(typeinf_lattice(analyzer))
     newty′ = Ref{Any}(newty)
-    isconditional = true
-    if istoplevelframe(sv)
-        local postdomtree = CC.construct_postdomtree(sv.cfg)
-        isconditional = !CC.postdominates(postdomtree, sv.currbb, 1)
-    end
-    (valid_worlds, ret) = CC.scan_partitions(analyzer, g, sv.world) do analyzer::AbstractAnalyzer, binding::Core.Binding, partition::Core.BindingPartition
+    isconditional = istoplevelframe(sv) ? let postdomtree = CC.construct_postdomtree(sv.cfg)
+        !CC.postdominates(postdomtree, sv.currbb, 1)
+    end : true
+    (valid_worlds, ret) = CC.scan_partitions(analyzer, g, sv.world) do analyzer::AbstractAnalyzer, ::Core.Binding, partition::Core.BindingPartition
         rte = CC.global_assignment_binding_rt_exct(analyzer, partition, newty′[])
         if isconcretized
             # skip the assignment effect if this has been concretized already
@@ -506,7 +503,7 @@ function const_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::Infere
     isconditional = !CC.postdominates(postdomtree, sv.currbb, 1)
     (valid_worlds, ret) = CC.scan_partitions(analyzer, gr, sv.world) do analyzer::ToplevelAbstractAnalyzer, binding::Core.Binding, partition::Core.BindingPartition
         rte = const_assignment_binding_rt_exct(analyzer, partition)
-        rt, exct = rte
+        rt, _exct = rte
         if rt !== Union{}
             # `:const` assignment destructively overrides the binding type
             binding_states = get_binding_states(analyzer)
