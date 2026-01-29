@@ -770,12 +770,15 @@ end
 
 function analyze_method_instance!(analyzer::AbstractAnalyzer, mi::MethodInstance)
     result = InferenceResult(mi)
-
+    result.ci = ci = CC.engine_reserve(analyzer, mi)
     frame = InferenceState(result, #=cache_mode=#:global, analyzer)
-
-    isnothing(frame) && return analyzer, result
-
-    return analyze_frame!(analyzer, frame)
+    if isnothing(frame)
+        CC.engine_reject(analyzer, ci)
+        return analyzer, result
+    end
+    _, result = analyze_frame!(analyzer, frame)
+    CC.engine_reject(analyzer, ci)
+    return analyzer, result
 end
 
 function CC.InferenceState(result::InferenceResult, cache_mode::UInt8,  analyzer::AbstractAnalyzer)
