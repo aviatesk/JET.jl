@@ -1080,4 +1080,14 @@ end
 # JuliaLang/julia#59884
 @test_call 1.0 > π
 
+@static if VERSION >= v"1.12.5"
+struct PR60857A; x::Union{Nothing,Int}; end
+struct PR60857B; x::Int; end
+pr60857getx(a::PR60857A) = something(a.x, 0)
+pr60857getx(b::PR60857B) = b.x
+test_call((Union{PR60857A,PR60857B},)) do ab
+    sin(pr60857getx(ab))
+end
+end
+
 end # module test_jetanalyzer
