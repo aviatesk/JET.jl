@@ -1897,9 +1897,9 @@ function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame::Frame, 
     return nothing # stop further interpretation
 end
 
-function with_err_handling(f, err_handler, handler_args...; scrub_offset::Int)
+@noinline function with_err_handling(f, err_handler, handler_args...; scrub_offset::Int)
     try
-        return f()
+        return @noinline f()
     catch err
         bt = catch_backtrace()
         st = stacktrace(bt)
