@@ -57,6 +57,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Add method-matching report filtering via `LastFrameMethod` and `AnyFrameMethod`.
+
 ## [0.11.3]
 ### Changed
 - Updated Revise dependency version to v3.13

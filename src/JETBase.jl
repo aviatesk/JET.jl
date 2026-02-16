@@ -558,6 +558,13 @@ struct AnyFrameModuleExact <: ReportMatcher
     mod::Union{Module,Symbol}
 end
 
+struct LastFrameMethod <: ReportMatcher
+    meth::Union{Function,Method,Symbol}
+end
+struct AnyFrameMethod <: ReportMatcher
+    meth::Union{Function,Method,Symbol}
+end
+
 function issubmodule(child::Module, parent::Module)
     child === parent && return true
     pm = parentmodule(child)
@@ -604,6 +611,28 @@ function match_report(matcher::AnyFrameModuleExact, @nospecialize(report::Infere
         return any(report.vst) do vsf
             nameof(linfomod(vsf.linfo)) === mod
         end
+    end
+end
+function match_report(matcher::LastFrameMethod, @nospecialize(report::InferenceErrorReport))
+    def = last(report.vst).linfo.def
+    meth = matcher.meth
+    if meth isa Symbol
+        return def.name === meth
+    elseif meth isa Method
+        return def === meth
+    else # if meth isa Function
+        return def in methods(meth)
+    end
+end
+function match_report(matcher::AnyFrameMethod, @nospecialize(report::InferenceErrorReport))
+    # check all VirtualFrames in the VirtualStackTrace for a match to the specified method
+    meth = matcher.meth
+    if meth isa Symbol
+        return any(vsf -> vsf.linfo.def.name === meth, report.vst)
+    elseif meth isa Method
+        return any(vsf -> vsf.linfo.def === meth, report.vst)
+    else # if meth isa Function
+        return any(vsf -> vsf.linfo.def in methods(meth), report.vst)
     end
 end
 @noinline match_report(x::ReportMatcher, @nospecialize(_::InferenceErrorReport)) =
