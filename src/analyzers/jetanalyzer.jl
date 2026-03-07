@@ -795,8 +795,6 @@ end
 # global variable
 # ---------------
 
-# TODO InferenceParams(::JETAnalyzer).assume_bindings_static = true
-
 report_undef_global_var!(::JETAnalyzer, ::InferenceState, ::Core.Binding, ::Core.BindingPartition) = nothing
 report_undef_global_var!(analyzer::BasicJETAnalyzer, sv::InferenceState, binding::Core.Binding, partition::Core.BindingPartition) =
     _report_undef_global_var!(analyzer, sv, binding, partition, false)
