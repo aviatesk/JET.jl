@@ -706,6 +706,61 @@ end
             @test any(r->is_global_undef_var(r, :undefined_var), reports)
         end
     end
+
+    @testset "method-based filtering" begin
+        # LastFrameMethod with Symbol: last frame is `sub_func`
+        let result = @report_call target_modules=(LastFrameMethod(:sub_func),) SubmoduleFiltering.parent_func("42")
+            reports = get_reports_with_test(result)
+            @test !isempty(reports)
+            @test any(r->is_global_undef_var(r, :undefined_var), reports)
+        end
+
+        # LastFrameMethod with Symbol: last frame is NOT `parent_func`
+        let result = @report_call target_modules=(LastFrameMethod(:parent_func),) SubmoduleFiltering.parent_func("42")
+            reports = get_reports_with_test(result)
+            @test isempty(reports)
+        end
+
+        # AnyFrameMethod with Symbol: `parent_func` is in the stack
+        let result = @report_call target_modules=(AnyFrameMethod(:parent_func),) SubmoduleFiltering.parent_func("42")
+            reports = get_reports_with_test(result)
+            @test !isempty(reports)
+            @test any(r->is_global_undef_var(r, :undefined_var), reports)
+        end
+
+        # AnyFrameMethod with Symbol: `sub_func` is also in the stack
+        let result = @report_call target_modules=(AnyFrameMethod(:sub_func),) SubmoduleFiltering.parent_func("42")
+            reports = get_reports_with_test(result)
+            @test !isempty(reports)
+            @test any(r->is_global_undef_var(r, :undefined_var), reports)
+        end
+
+        # LastFrameMethod with Function
+        let result = @report_call target_modules=(LastFrameMethod(SubmoduleFiltering.SubMod.sub_func),) SubmoduleFiltering.parent_func("42")
+            reports = get_reports_with_test(result)
+            @test !isempty(reports)
+            @test any(r->is_global_undef_var(r, :undefined_var), reports)
+        end
+
+        # AnyFrameMethod with Function
+        let result = @report_call target_modules=(AnyFrameMethod(SubmoduleFiltering.parent_func),) SubmoduleFiltering.parent_func("42")
+            reports = get_reports_with_test(result)
+            @test !isempty(reports)
+            @test any(r->is_global_undef_var(r, :undefined_var), reports)
+        end
+
+        # ignored_modules with LastFrameMethod
+        let result = @report_call ignored_modules=(LastFrameMethod(:sub_func),) SubmoduleFiltering.parent_func("42")
+            reports = get_reports_with_test(result)
+            @test isempty(reports)
+        end
+
+        # ignored_modules with AnyFrameMethod
+        let result = @report_call ignored_modules=(AnyFrameMethod(:parent_func),) SubmoduleFiltering.parent_func("42")
+            reports = get_reports_with_test(result)
+            @test isempty(reports)
+        end
+    end
 end
 
 end # module test_typeinfer
