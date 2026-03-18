@@ -878,6 +878,36 @@ function eval_with_err_handling(state::InterpretationState, x::Expr)
     end
 end
 
+# If `x` is a `function`/`=` definition whose signature contains `@main`,
+# rewrite the `@main` macrocall to a plain `main` identifier. This avoids
+# macro expansion failure when multiple standalone files defining `@main`
+# are analyzed in the same session — the second file's virtual module
+# already has `main` imported from the first, causing `@main` expansion
+# to error.
+# Handles both parenthesized (`(@main)(args)`) and bare (`@main(args)`) forms.
+function desugar_main_macrocall(@nospecialize x)
+    x isa Expr || return x
+    (isexpr(x, :function) || isexpr(x, :(=))) && length(x.args) >= 2 || return x
+    sig = x.args[1]
+    sig isa Expr || return x
+    if isexpr(sig, :call) && length(sig.args) >= 1
+        callee = sig.args[1]
+        if isexpr(callee, :macrocall) && length(callee.args) >= 1 && callee.args[1] === Symbol("@main")
+            # Parenthesized: (:call (:macrocall @main LNN) args...) → (:call :main args...)
+            x = Expr(x.head, Expr(:call, :main, sig.args[2:end]...), x.args[2:end]...)
+        end
+    elseif isexpr(sig, :macrocall) && length(sig.args) >= 1 && sig.args[1] === Symbol("@main")
+        # Bare: (:macrocall @main LNN args...) → (:call :main args...)
+        call_args = Any[:main]
+        for i in 2:length(sig.args)
+            sig.args[i] isa LineNumberNode && continue
+            push!(call_args, sig.args[i])
+        end
+        x = Expr(x.head, Expr(:call, call_args...), x.args[2:end]...)
+    end
+    return x
+end
+
 function macroexpand_with_err_handling(state::InterpretationState, x::Expr)
     # `scrub_offset = 2`: `macroexpand` -> kwfunc (`macroexpand`)
     with_err_handling(macro_expansion_err_handler, state; scrub_offset=2) do
@@ -978,6 +1008,8 @@ function _virtual_process!(interp::ConcreteInterpreter,
                 end
             end
         end
+
+        x = desugar_main_macrocall(x)
 
         # although we will lower `x` after special-handling `:toplevel` and `:module` expressions,
         # expand `macrocall`s here because macro can arbitrarily generate those expressions
