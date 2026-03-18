@@ -21,7 +21,8 @@ const exports = Set{Symbol}((
     # optanalyzer
     Symbol("@report_opt"), :report_opt, Symbol("@test_opt"), :test_opt,
     # configurations
-    :ReportMatcher, :LastFrameModule, :AnyFrameModule, :LastFrameModuleExact, :AnyFrameModuleExact
+    :ReportMatcher, :LastFrameModule, :AnyFrameModule, :LastFrameModuleExact, :AnyFrameModuleExact,
+    :LastFrameMethod, :AnyFrameMethod,
 ))
 
 for exported_name in exports
