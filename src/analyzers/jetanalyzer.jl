@@ -1359,6 +1359,14 @@ function handle_invalid_builtins!(analyzer::JETAnalyzer, sv::InferenceState, @no
     return false
 end
 
+function is_binding_partition_builtin(@nospecialize f)::Bool
+    @static if isdefined(Core, :declare_global)
+        return f === Core.declare_global || f === Core.declare_const
+    else
+        return false
+    end
+end
+
 function _report_builtin_error_sound!(analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(rt))
     if isa(f, IntrinsicFunction)
         nothrow = CC.intrinsic_nothrow(f, argtypes)
@@ -1366,6 +1374,7 @@ function _report_builtin_error_sound!(analyzer::JETAnalyzer, sv::InferenceState,
         nothrow = CC.builtin_nothrow(CC.typeinf_lattice(analyzer), f, argtypes, rt)
     end
     nothrow && return false
+    is_binding_partition_builtin(f) && return false
     add_new_report!(analyzer, sv.result, UnsoundBuiltinErrorReport(sv, f, argtypes))
     return true
 end
