@@ -5,18 +5,27 @@ using Test, JET
 using Base.Meta: isexpr
 using MacroTools: @capture, postwalk
 
-# runs `f()` in an isolated testset, so that it doesn't influence the currently running test suite
+function run_with_testset(f, ts::Test.DefaultTestSet)
+    @static if VERSION >= v"1.13.0-"
+        Test.@with_testset ts f()
+    else
+        Test.push_testset(ts)
+        try
+            f()
+        finally
+            Test.pop_testset()
+        end
+    end
+end
+
 function with_isolated_testset(f)
     ts = Test.DefaultTestSet("isolated")
-    Test.push_testset(ts)
-    try
+    run_with_testset(ts) do
         mktemp() do path, io
             redirect_stdout(io) do
                 f()
             end
         end
-    finally
-        Test.pop_testset()
     end
     return ts
 end

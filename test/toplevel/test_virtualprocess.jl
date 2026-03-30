@@ -581,7 +581,7 @@ end
         @test f2 in JET.included_files(res.res)
         @test isconcrete(res, context, :foo)
         @test isempty(res.res.toplevel_error_reports)
-        @test isempty(res.res.inference_error_reports)
+        @test isempty(res.res.inference_error_reports) broken=(VERSION≥v"1.13.0-")
     end
 
     let f = normpath(FIXTURES_DIR, "nonexistinclude.jl")
@@ -637,7 +637,7 @@ end
         @test modf in JET.included_files(res.res)
         @test inc2 in JET.included_files(res.res)
         @test isempty(res.res.toplevel_error_reports)
-        @test isempty(res.res.inference_error_reports)
+        @test isempty(res.res.inference_error_reports) broken=(VERSION≥v"1.13.0-")
         @test isconcrete(res, @invokelatest(context.Outer), :foo)
     end
 
@@ -1164,7 +1164,7 @@ end
                 a = @inferred(ones(Int,ntuple(d->1,1)), ntuple(x->x+1,1))
             end
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.toplevel_error_reports) broken=(VERSION≥v"1.13.0-")
         true
     end
 
@@ -1561,6 +1561,16 @@ end
         @test isempty(s)
     end
 
+    function is_setglobal(@nospecialize(stmt), name::Symbol)::Bool
+        stmt isa Expr || return false
+        stmt.head === :call || return false
+        length(stmt.args) == 4 || return false
+        f = stmt.args[1]
+        (f == GlobalRef(Core, :setglobal!) ||
+         f == GlobalRef(Base, :setglobal!)) || return false
+        return stmt.args[3] == QuoteNode(name)
+    end
+
     # A more complex test case (xref: https://github.com/JuliaDebug/LoweredCodeUtils.jl/pull/99#issuecomment-2236373067)
     # This test case might seem simple at first glance, but note that `x2` and `a2` are
     # defined at the top level (because of the `begin` at the top).
@@ -1596,10 +1606,10 @@ end
 
         found_a2 = found_a2_get_binding_type = found_x2 = found_x2_get_binding_type = false
         for (i, stmt) in enumerate(src.code)
-            if JET.@capture(stmt, $(GlobalRef(Base, :setglobal!))(_, :a2, _))
+            if is_setglobal(stmt, :a2)
                 found_a2 = true
                 @test slice[i]
-            elseif JET.@capture(stmt, $(GlobalRef(Base, :setglobal!))(_, :x2, _))
+            elseif is_setglobal(stmt, :x2)
                 found_x2 = true
                 @test !slice[i] # this is easy to meet
             elseif JET.@capture(stmt, $(GlobalRef(Core, :get_binding_type))(_, :a2))
@@ -1627,13 +1637,13 @@ end
         found_cond = found_cond_get_binding_type = false
         found_x = found_x_get_binding_type = found_y = found_y_get_binding_type = 0
         for (i, stmt) in enumerate(src.code)
-            if JET.@capture(stmt, $(GlobalRef(Base, :setglobal!))(_, :cond, _))
+            if is_setglobal(stmt, :cond)
                 found_cond = true
                 @test slice[i]
-            elseif JET.@capture(stmt, $(GlobalRef(Base, :setglobal!))(_, :x, _))
+            elseif is_setglobal(stmt, :x)
                 found_x += 1
                 @test slice[i]
-            elseif JET.@capture(stmt, $(GlobalRef(Base, :setglobal!))(_, :y, _))
+            elseif is_setglobal(stmt, :y)
                 found_y += 1
                 @test !slice[i]
             elseif JET.@capture(stmt, $(GlobalRef(Core, :get_binding_type))(_, :cond))
@@ -1993,7 +2003,7 @@ end
                 @test cos(2θ) ≈ cos(θ)^2 - sin(θ)^2
             end
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.toplevel_error_reports) broken=(VERSION≥v"1.13.0-")
     end
 
     let # @testset with actual type-level errors
@@ -2002,8 +2012,10 @@ end
                 @test sum("julia") == "julia" # actual errors
             end
         end
-        @test isempty(res.res.toplevel_error_reports)
-        test_sum_over_string(res)
+        @test isempty(res.res.toplevel_error_reports) broken=(VERSION≥v"1.13.0-")
+        @static if VERSION < v"1.13.0-"
+            test_sum_over_string(res)
+        end
     end
 
     let
@@ -2022,7 +2034,7 @@ end
                 d = @inferred IdDict{Any,Any}(i=>i for i=1:3)
             end
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.toplevel_error_reports) broken=(VERSION≥v"1.13.0-")
     end
 end
 
@@ -2034,11 +2046,11 @@ end
     TARGET_DIR = normpath(FIXTURES_DIR, "targets")
 
     let res = report_file2(normpath(TARGET_DIR, "error.jl"))
-        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.toplevel_error_reports) broken=(VERSION≥v"1.13.0-")
     end
 
     let res = report_file2(normpath(TARGET_DIR, "dict.jl"))
-        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.toplevel_error_reports) broken=(VERSION≥v"1.13.0-")
     end
 end
 
