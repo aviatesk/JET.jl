@@ -1424,7 +1424,10 @@ function select_direct_requirement!(concretize, stmts, edges)
             (isexpr(stmt, :call) && length(stmt.args) ≥ 1 && stmt.args[1] == GlobalRef(Core, :_defaultctors)) ||
             ismoduleusage(stmt) || # module usages are handled by `ConcreteInterpreter`
             isexpr(stmt, :globaldecl) ||
-            isexpr(stmt, :latestworld))
+            isexpr(stmt, :latestworld) ||
+            is_known_call(stmt, :declare_global, stmts) ||
+            is_known_call(stmt, :_eval_using, stmts) ||
+            is_known_call(stmt, :_eval_import, stmts))
             concretize[idx] = true
             continue
         end
