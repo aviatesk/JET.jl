@@ -531,7 +531,7 @@ end
         # FIXME syntax: "module" expression not at top level
         @test isempty(res.res.toplevel_error_reports)
         @test isconcrete(res, vmod, :foo)
-        @test isconcrete(res, vmod.foo, :bar)
+        @test isconcrete(res, @invokelatest(vmod.foo), :bar)
 
         vmod, res = @analyze_toplevel2 begin
             """
