@@ -458,12 +458,41 @@ end
 
 function CC.abstract_eval_statement_expr(analyzer::ToplevelAbstractAnalyzer, e::Expr, sstate::StatementState,
                                          sv::InferenceState)::Future{RTEffects}
-    if isexpr(e, :const)
-        if !isconcretized(analyzer, sv) # skip the assignment effect if this has been concretized already
-            return abstract_eval_const_stmt(analyzer, e, sstate, sv)
-        end
+    if !isconcretized(analyzer, sv)
+        isexpr(e, :const) && return abstract_eval_const_stmt(analyzer, e, sstate, sv)
+        is_declare_const_call(e) && return abstract_eval_declare_const(analyzer, e, sstate, sv)
     end
     return @invoke CC.abstract_eval_statement_expr(analyzer::AbstractAnalyzer, e::Expr, sstate::StatementState, sv::InferenceState)
+end
+
+function is_declare_const_call(e::Expr)::Bool
+    isexpr(e, :call) || return false
+    length(e.args) ≥ 3 || return false
+    f = e.args[1]
+    return f isa GlobalRef && f.mod === Core && f.name === :declare_const
+end
+
+# Handle `Core.declare_const(mod, :name, value)` calls (Julia 1.13+)
+# by converting them to the equivalent abstract handling of `:const` expressions
+function abstract_eval_declare_const(analyzer::ToplevelAbstractAnalyzer, stmt::Expr,
+                                     sstate::StatementState, sv::InferenceState)
+    istoplevelframe(sv) || return RTEffects(Union{}, ErrorException, EFFECTS_THROWS)
+    mod_arg = stmt.args[2]
+    name_arg = stmt.args[3]
+    name_arg isa QuoteNode || return RTEffects(Nothing, ErrorException, EFFECTS_THROWS)
+    name = name_arg.value::Symbol
+    mod = mod_arg isa Module ? mod_arg : CC.frame_module(sv)
+    gr = GlobalRef(mod, name)
+    if length(stmt.args) == 4
+        lastargtype = CC.abstract_eval_value(analyzer, stmt.args[4], sstate, sv)
+        if CC.isvarargtype(lastargtype)
+            return RTEffects(Nothing, ErrorException, EFFECTS_THROWS)
+        end
+    else
+        lastargtype = nothing
+    end
+    rt, exct = const_assignment_rt_exct(analyzer, sv, sstate.saw_latestworld, gr, lastargtype)
+    return RTEffects(rt, exct, CC.Effects(EFFECTS_THROWS; nothrow=exct===Union{}))
 end
 
 # XXX Do we need to port this back to Julia base?
