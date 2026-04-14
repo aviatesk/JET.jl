@@ -853,6 +853,15 @@ function push_vnode_stack!(vnodes::Vector{VNode}, node::JS.SyntaxNode, newex::Ex
     return vnodes
 end
 
+function find_module_node(node::JS.SyntaxNode)
+    for i in 1:JS.numchildren(node)
+        child = node[i]
+        JS.kind(child) === K"module" && return child
+        return @something find_module_node(child) continue
+    end
+    nothing
+end
+
 function general_err_handler(@nospecialize(err), st, state::InterpretationState)
     report = ActualErrorWrapped(err, st, state.filename, state.curline)
     add_toplevel_error_report!(state, report)
@@ -940,8 +949,8 @@ function _virtual_process!(interp::ConcreteInterpreter,
                            force_concretize::Bool = false,
                            # HACK allow expanded `Expr` to be analyzed instead of `toplevelnode`
                            overrideex::Union{Nothing,Expr}=nothing) # TODO Remove this after JL integration)
+    toplevelkind = JS.kind(toplevelnode)
     if overrideex === nothing
-        local toplevelkind = JS.kind(toplevelnode)
         (toplevelkind === K"toplevel" || toplevelkind === K"module") ||
             error(lazy"Can't analyze SyntaxNode with $(toplevelkind)")
     else
@@ -953,12 +962,13 @@ function _virtual_process!(interp::ConcreteInterpreter,
     sourcefile = JS.sourcefile(toplevelnode)
     first_line = JS.source_line(sourcefile, JS.first_byte(toplevelnode))
     last_line = JS.source_line(sourcefile, JS.last_byte(toplevelnode))
-    analyzed_file_info = get!(AnalyzedFileInfo, state.res.analyzed_files, state.filename)
-    if sourcefile.code == JS.sourcetext(toplevelnode)
-        # If this `toplevelnode` is the file itself, recognize all ranges as this module context
-        push!(analyzed_file_info.module_range_infos, 1:typemax(Int) => state.context)
-    else
-        push!(analyzed_file_info.module_range_infos, first_line:last_line => state.context)
+    if toplevelkind === K"toplevel" || toplevelkind === K"module"
+        analyzed_file_info = get!(AnalyzedFileInfo, state.res.analyzed_files, state.filename)
+        if sourcefile.code == JS.sourcetext(toplevelnode)
+            push!(analyzed_file_info.module_range_infos, 1:typemax(Int) => state.context)
+        else
+            push!(analyzed_file_info.module_range_infos, first_line:last_line => state.context)
+        end
     end
     state.curline = first_line
     push!(state.files_stack, state.filename)
@@ -1069,7 +1079,8 @@ function _virtual_process!(interp::ConcreteInterpreter,
                                                pkg_mod_depth = state.pkg_mod_depth + 1,
                                                dependencies = Set{Symbol}())
                 newinterp = ConcreteInterpreter(interp, newstate)
-                _virtual_process!(newinterp, node;
+                modnode = something(find_module_node(node), node)
+                _virtual_process!(newinterp, modnode;
                                   force_concretize, overrideex)
             else
                 @assert JS.kind(node) === K"module"

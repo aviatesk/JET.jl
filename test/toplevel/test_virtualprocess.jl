@@ -696,6 +696,14 @@ end
     end
 end
 
+function get_module_context(analyzed_file_info::JET.AnalyzedFileInfo, line::Int)
+    _, idx = findmin(analyzed_file_info.module_range_infos) do (range, mod)
+        line in range || return typemax(Int)
+        return last(range) - first(range)
+    end
+    return last(analyzed_file_info.module_range_infos[idx])
+end
+
 @testset "analyzed_files" begin
     text = """
     #= L1=# module Foo
@@ -745,20 +753,77 @@ end
     @test only(keys(res.res.analyzed_files)) == "test_analyzed_files.jl"
     analyzed_file_info = only(values(res.res.analyzed_files))
 
-    function get_module_context(line)
-        _, idx = findmin(analyzed_file_info.module_range_infos) do (range, mod)
-            line in range || return typemax(Int)
-            return last(range) - first(range)
-        end
-        last(analyzed_file_info.module_range_infos[idx])
-    end
-
-    # NOTE `broken` test cases require aviatesk/JET.jl#709 to be fixed
     for line in lines_Foo
-        @test nameof(get_module_context(line)) == :Foo
+        @test nameof(get_module_context(analyzed_file_info, line)) == :Foo
     end
     for line in lines_Bar
-        @test nameof(get_module_context(line)) == :Bar
+        @test nameof(get_module_context(analyzed_file_info, line)) == :Bar
+    end
+end
+
+@testset "analyzed_files: macro-generated module" begin
+    text = """
+    #= L1=# module Foo
+    #= L2=#     #=cursor Foo=#
+    #= L3=#     macro defmod(name)
+    #= L4=#         esc(Expr(:toplevel, Expr(:module, false, name, Expr(:block))))
+    #= L5=#     end
+    #= L6=#     #=cursor Foo=#
+    #= L7=#     @defmod MyEnum
+    #= L8=#     #=cursor Foo=#
+    #= L9=# end
+    """
+
+    lines = split(text, '\n')
+    lines_Foo = Int[]
+    for (i, line) in enumerate(lines)
+        if occursin(r"#=cursor Foo=#", line)
+            push!(lines_Foo, i)
+        end
+    end
+
+    res = report_text(text, "test_macro_generated_module.jl")
+    analyzed_file_info = only(values(res.res.analyzed_files))
+
+    for line in lines_Foo
+        @test nameof(get_module_context(analyzed_file_info, line)) == :Foo
+    end
+end
+
+@testset "analyzed_files: macro-wrapped module" begin
+    text = """
+    #= L1=# module Outer
+    #= L2=#     #=cursor Outer=#
+    #= L3=#     macro mywrap(ex)
+    #= L4=#         esc(ex)
+    #= L5=#     end
+    #= L6=#     #=cursor Outer=#
+    #= L7=#     @mywrap module Inner
+    #= L8=#         #=cursor Inner=#
+    #= L9=#     end
+    #=L10=#     #=cursor Outer=#
+    #=L11=# end
+    """
+
+    lines = split(text, '\n')
+    lines_Outer = Int[]
+    lines_Inner = Int[]
+    for (i, line) in enumerate(lines)
+        if occursin(r"#=cursor Outer=#", line)
+            push!(lines_Outer, i)
+        elseif occursin(r"#=cursor Inner=#", line)
+            push!(lines_Inner, i)
+        end
+    end
+
+    res = report_text(text, "test_macro_wrapped_module.jl")
+    analyzed_file_info = only(values(res.res.analyzed_files))
+
+    for line in lines_Outer
+        @test nameof(get_module_context(analyzed_file_info, line)) == :Outer
+    end
+    for line in lines_Inner
+        @test nameof(get_module_context(analyzed_file_info, line)) == :Inner
     end
 end
 
