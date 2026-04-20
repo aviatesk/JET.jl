@@ -52,6 +52,8 @@ using JET: Preferences
             @testset "JETAnalyzer" include("analyzers/test_jetanalyzer.jl")
 
             @testset "OptAnalyzer" include("analyzers/test_optanalyzer.jl")
+
+            @testset "GeneratedEffectsAnalyzer" include("analyzers/test_generatedeffectsanalyzer.jl")
         end
 
         @testset "performance" include("performance.jl")

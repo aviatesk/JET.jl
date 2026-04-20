@@ -21,6 +21,8 @@ const exports = Set{Symbol}((
     :watch_file,
     # optanalyzer
     Symbol("@report_opt"), :report_opt, Symbol("@test_opt"), :test_opt,
+    # generatedeffectsanalyzer
+    Symbol("@report_generated_effects"), :report_generated_effects, Symbol("@test_generated_effects"), :test_generated_effects,
     # configurations
     :ReportMatcher, :LastFrameModule, :AnyFrameModule, :LastFrameModuleExact, :AnyFrameModuleExact,
     :LastFrameMethod, :AnyFrameMethod,
