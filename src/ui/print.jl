@@ -258,11 +258,11 @@ function print_frame_sig(io, frame, config)
     else
         if should_limit(config.stacktrace_types_limit)
             s = with_bufferring(colorctx(io), :backtrace=>true, :limit=>true) do io
-                Base.StackTraces.show_spec_sig(io, m, mi.specTypes)
+                @invokelatest Base.StackTraces.show_spec_sig(io, m, mi.specTypes)
             end
             write(io, type_depth_limit(io, s; maxtypedepth=config.stacktrace_types_limit))
         else
-            Base.StackTraces.show_spec_sig(IOContext(io, :backtrace=>true, :limit=>true), m, mi.specTypes)
+            @invokelatest Base.StackTraces.show_spec_sig(IOContext(io, :backtrace=>true, :limit=>true), m, mi.specTypes)
         end
     end
 end
