@@ -77,6 +77,21 @@ func_method_error2(a::AbstractString) = "AbstractString"
 func_onlyint(::Int) = :ok
 func_integer_or_nothing(::Integer) = :ok1
 func_integer_or_nothing(::Nothing) = :ok2
+issue713_bar(::Int, ::Int) = 1
+issue713_bar(::Float64, ::Float64) = 2
+issue713_foo(x::T, y::T) where {T <: Union{Int, Float64}} = issue713_bar(x, y)
+issue713_same_arg(x::Union{Int, Float64}) = issue713_bar(x, x)
+issue713_bad(x::Union{Int, Float64}, y::Union{Int, Float64}) = issue713_bar(x, y)
+issue713_bar5(::Int, ::Int, ::Int, ::Int, ::Int) = 1
+function issue713_foo5(a::T, b::T, c::T, d::T, e::T) where {T <: Union{Int, Float64}}
+    return issue713_bar5(a, b, c, d, e)
+end
+
+function reports_for_first_method(f::F) where {F <: Function}
+    analyzer = JETAnalyzer()
+    result = JET.analyze_method!(analyzer, first(methods(f)))
+    return JET.get_reports(analyzer, result)
+end
 
 @testset "MethodErrorReport" begin
     # report no match case
@@ -103,6 +118,29 @@ func_integer_or_nothing(::Nothing) = :ok2
         report = only(get_reports_with_test(result))
         @test report isa MethodErrorReport
         @test report.t == Any[Tuple{typeof(func_method_error2), Nothing}]
+    end
+
+    let reports = reports_for_first_method(issue713_foo)
+        @test isempty(reports)
+    end
+
+    let reports = reports_for_first_method(issue713_same_arg)
+        @test isempty(reports)
+    end
+
+    let reports = reports_for_first_method(issue713_bad)
+        report = only(reports)
+        @test report isa MethodErrorReport
+        @test report.t == Any[
+            Tuple{typeof(issue713_bar), Int, Float64},
+            Tuple{typeof(issue713_bar), Float64, Int}]
+    end
+
+    let reports = reports_for_first_method(issue713_foo5)
+        report = only(reports)
+        @test report isa MethodErrorReport
+        @test report.t == Any[
+            Tuple{typeof(issue713_bar5), Float64, Float64, Float64, Float64, Float64}]
     end
 
     # report uncovered match
