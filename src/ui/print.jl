@@ -287,11 +287,20 @@ function print_frame_loc(io, frame, config, color)
     end
 end
 
+function _is_basemodule(mod::Module)::Bool
+    while true
+        (mod === Base || mod === Core) && return true
+        parent = parentmodule(mod)
+        parent === mod && return false
+        mod = parent
+    end
+end
+
 function fixed_line_number(frame)
     def = frame.linfo.def
     line = frame.line
     Δline = 0
-    if def isa Method
+    if def isa Method && !_is_basemodule(def.module)
         # revise cached line number if method location has been updated
         newline = CodeTracking.whereis(def)[2]
         if newline != 0
