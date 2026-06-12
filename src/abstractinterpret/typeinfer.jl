@@ -1,6 +1,9 @@
 # inter-procedural
 # ================
 
+const ABSTRACT_CALL_USES_VTYPES = hasmethod(CC.abstract_call_known,
+    Tuple{AbstractInterpreter,Any,ArgInfo,StmtInfo, Union{VarTable,Nothing},InferenceState,Int})
+
 function collect_callee_reports!(analyzer::AbstractAnalyzer, sv::InferenceState)
     reports = get_report_stash(analyzer)
     if !isempty(reports)
@@ -75,10 +78,26 @@ function CC.concrete_eval_call(analyzer::AbstractAnalyzer,
     return ret
 end
 
+@static if ABSTRACT_CALL_USES_VTYPES
+function CC.abstract_call_known(analyzer::AbstractAnalyzer,
+    @nospecialize(f), arginfo::ArgInfo, si::StmtInfo, vtypes::Union{VarTable,Nothing},
+    sv::InferenceState, max_methods::Int)
+    ret = @invoke CC.abstract_call_known(analyzer::AbstractInterpreter,
+        f::Any, arginfo::ArgInfo, si::StmtInfo, vtypes::Union{VarTable,Nothing},
+        sv::InferenceState, max_methods::Int)
+    return postprocess_abstract_call_known!(analyzer, ret, f, arginfo, sv)
+end
+else
 function CC.abstract_call_known(analyzer::AbstractAnalyzer,
     @nospecialize(f), arginfo::ArgInfo, si::StmtInfo, sv::InferenceState, max_methods::Int)
     ret = @invoke CC.abstract_call_known(analyzer::AbstractInterpreter,
         f::Any, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState, max_methods::Int)
+    return postprocess_abstract_call_known!(analyzer, ret, f, arginfo, sv)
+end
+end
+
+function postprocess_abstract_call_known!(analyzer::AbstractAnalyzer, ret::Future,
+    @nospecialize(f), arginfo::ArgInfo, sv::InferenceState)
     f′ = Ref{Any}(f)
     function after_call_known(analyzer′::AbstractAnalyzer, sv′::InferenceState)
         analyze_task_parallel_code!(analyzer′, f′[], arginfo, sv′)
