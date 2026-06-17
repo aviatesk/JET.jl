@@ -394,6 +394,25 @@ function filter_lineages!(analyzer::AbstractAnalyzer, caller::InferenceResult, c
      filter!(!islineage(caller.linfo, current), get_reports(analyzer, caller))
 end
 
+function contains_edge(edges::Vector{Any}, edge::MethodInstance)
+    return any(edges) do existing
+        existing === edge
+    end
+end
+
+function add_report_dependency_edges!(
+        edges::Vector{Any}, caller::MethodInstance,
+        reports::Vector{InferenceErrorReport}
+    )
+    for report in reports, vf in report.vst
+        linfo = vf.linfo
+        linfo === caller && continue
+        linfo.def isa Method || continue
+        contains_edge(edges, linfo) || push!(edges, linfo)
+    end
+    return nothing
+end
+
 function finish_frame!(analyzer::AbstractAnalyzer, frame::InferenceState)
     caller = frame.result
 
@@ -408,6 +427,11 @@ function finish_frame!(analyzer::AbstractAnalyzer, frame::InferenceState)
         stash_reports!(analyzer, reports)
     end
 
+    # Cached reports can be produced by analyzer hooks whose methods appear in
+    # report stacks even when the ordinary inference result for `caller` does
+    # not depend on them. Add those frames as edges before caching reports, so
+    # method redefinitions invalidate diagnostics restored from the cache.
+    add_report_dependency_edges!(frame.edges, caller.linfo, reports)
     cache_reports!(analyzer, caller, reports)
 end
 
