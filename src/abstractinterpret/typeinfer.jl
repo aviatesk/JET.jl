@@ -354,8 +354,11 @@ CC.push!(view::AbstractAnalyzerView, inf_result::InferenceResult) = CC.push!(get
 function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
     parent = CC.frame_parent(frame)
 
-    if is_constant_propagated(frame) && parent !== nothing
-        parent::InferenceState
+    # The parent of a constant-propagated frame is an `InferenceState` when const-prop' is
+    # entered from regular abstract interpretation, but an `IRInterpretationState` when it is
+    # entered from semi-concrete interpretation (IR interpretation). Only the former carries
+    # the `InferenceState`-based report stash that the lineage filtering operates on.
+    if is_constant_propagated(frame) && parent isa InferenceState
         # JET is going to perform the abstract-interpretation with the extended lattice elements:
         # throw-away the error reports that are collected during the previous non-constant abstract-interpretation
         # NOTE that the `linfo` here is the exactly same object as the method instance used
