@@ -20,7 +20,7 @@ using Core: Builtin, IntrinsicFunction, Intrinsics, SimpleVector, svec
 
 using Core.IR
 
-using .CC: @nospecs, AbstractInterpreter, AbstractLattice, ArgInfo, Bottom, CFG,
+using .CC: @nospecs, AbstractInterpreter, AbstractLattice, ArgInfo, Bottom,
     CachedMethodTable, CallMeta, ConstCallInfo, EFFECTS_THROWS, Future, InferenceParams,
     InferenceResult, InferenceState, InvokeCallInfo, MethodCallResult, MethodMatchInfo,
     NOT_FOUND, OptimizationParams, OptimizationState, OverlayMethodTable, RTEffects,
@@ -162,7 +162,7 @@ macro withmixedhash(typedef)
     push!(hash_body.args, :(return h))
     hash_func = :(function Base.hash(x::$name, h::UInt); $hash_body; end)
     eq_body = foldr(fld2typs; init = true) do (fld, typ), x
-        if typ in _EGAL_TYPES
+        if (typ in _EGAL_TYPES)::Bool
             eq_ex = :(x1.$fld === x2.$fld)
         else
             eq_ex = :((x1.$fld == x2.$fld)::Bool)
@@ -235,7 +235,10 @@ get_slotname((sv, _pc)::StateAtPC, slot::Int) = sv.src.slotnames[slot]
 get_slotname(sv::State, slot::Int) = sv.src.slotnames[slot]
 
 # check if we're in a toplevel module
-istoplevelframe(sv::State) = istoplevelframe(CC.frame_instance(sv))
+function istoplevelframe(sv::State)
+    sv isa OptimizationState && error("OptimizationState is not supported at top-level")
+    return istoplevelframe(CC.frame_instance(sv))
+end
 istoplevelframe(mi::MethodInstance) = isa(mi.def, Module)
 
 # we can retrieve program-counter-level slottype during inference
@@ -702,7 +705,7 @@ const JULIA_DIR = let
     ispath(normpath(p1, "base")) ? p1 : p2
 end
 
-struct LazyPrinter; f; end
+struct LazyPrinter; f::Any; end
 Base.show(io::IO, l::LazyPrinter) = l.f(io)
 
 const AnyJETResult = Union{JETCallResult,JETToplevelResult}
@@ -1064,7 +1067,7 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
 
     tasks = map(workitems) do workitem
         (; exinfos, index) = workitem
-        siginfo = exinfos[index]::Revise.SigInfo
+        let siginfo = exinfos[index]::Revise.SigInfo
         Threads.@spawn :default try
             ext = Revise.get_extended_data(siginfo, :JET)
             local reports::Vector{InferenceErrorReport}
@@ -1113,6 +1116,7 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
                     print(io, "Analyzing top-level definitions (progress: $done/$n_sigs)")
                 end
             end
+        end
         end
     end
 
@@ -1261,17 +1265,19 @@ function _watch_file_with_func(func, args...; jetconfigs...)
     interrupted = false
     while !interrupted
         try
+            let included_files=included_files
             Revise.entr(collect(included_files), config.revise_modules;
                         postpone = true, all = config.revise_all) do
                 next_included_files = let res = func(args...; jetconfigs...)
                     show(res) # XXX use `display` here?
                     JET.included_files(res.res)
                 end
-                if any(∉(included_files), next_included_files)
+                if any(∉(included_files), next_included_files)::Bool
                     # refresh watch files
                     throw(InsufficientWatches(next_included_files))
                 end
                 return nothing
+            end
             end
             interrupted = true # `InterruptException` was gracefully handled within `entr`, shutdown watch mode
         catch err
