@@ -1309,7 +1309,7 @@ function fix_self_references!((actualmod, virtualmod)::Actual2Virtual, @nospecia
         return ret
     end
 
-    return postwalk_and_transform!(x) do @nospecialize(xx), scope::Vector{Symbol}
+    return postwalk_and_transform!(x) do @nospecialize(xx), _scope::Vector{Symbol}
         if ismoduleusage(xx)
             return fix_self_reference(xx)
         elseif xx === actualmodsym
@@ -1325,7 +1325,7 @@ function postwalk_and_transform!(f, x, scope = Symbol[])
 end
 function prewalk_and_transform!(f, x, scope::Vector{Symbol} = Symbol[])
     inner(@nospecialize(x)) = prewalk_and_transform!(f, x, scope)
-    outer(@nospecialize(x), scope::Vector{Symbol}) = x
+    outer(@nospecialize(x), _scope::Vector{Symbol}) = x
     return walk_and_transform!(f(x, scope), inner, outer, scope)
 end
 
@@ -1441,7 +1441,7 @@ function select_direct_requirement!(concretize, stmts, edges)
         end
 
         if isexpr(stmt, :(=))
-            lhs, rhs = stmt.args
+            _, rhs = stmt.args
             stmt = rhs
         end
         # `include` calls are special cased
@@ -1656,10 +1656,10 @@ function usemodule_with_err_handling(interp::ConcreteInterpreter, ex::Expr)
                     end
                     require_ex = :(const $dep = Base.require($depid))
                     # TODO better handling of loading errors that may happen here
-                    require_res = with_err_handling(general_err_handler, state; scrub_offset=1) do
+                    require_res = let mod=mod; with_err_handling(general_err_handler, state; scrub_offset=1) do
                         Core.eval(mod, require_ex)
                         true
-                    end
+                    end; end
                     isnothing(require_res) && return nothing
                     push!(dependencies, dep)
                 end
@@ -1679,7 +1679,7 @@ function usemodule_with_err_handling(interp::ConcreteInterpreter, ex::Expr)
             for i = 1:(topmodidx-1)
                 if topmodsym isa Symbol && isdefined(curmod, topmodsym)
                     modpath = modpath[topmodidx:end]
-                    for j = 1:i
+                    for _ = 1:i
                         pushfirst!(modpath, :.)
                     end
                     fixed_module_usage = ModuleUsage(module_usage; modpath)
@@ -1693,10 +1693,10 @@ function usemodule_with_err_handling(interp::ConcreteInterpreter, ex::Expr)
     end
     @label eval_usemodule
     # `scrub_offset = 1`: `Core.eval`
-    with_err_handling(general_err_handler, state; scrub_offset=1) do
+    let mod=mod, ex=ex; with_err_handling(general_err_handler, state; scrub_offset=1) do
         Core.eval(mod, ex)
         true
-    end
+    end; end
 end
 
 function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node), istoplevel::Bool)
@@ -1795,8 +1795,10 @@ end
 # - Ignore C-side function definitions created via `Base._ccallable`. These definitions
 #   are not namespaced in the module and can cause false-positive name conflict errors
 #   when running analysis multiple times (see aviatesk/JET.jl#597).
-function JuliaInterpreter.evaluate_call!(interp::ConcreteInterpreter, frame::Frame, fargs::Vector{Any}, enter_generated::Bool)
-    args = fargs
+function JuliaInterpreter.evaluate_call!(
+        interp::ConcreteInterpreter, _frame::Frame, fargs::Vector{Any},
+        _enter_generated::Bool
+    )
     f = popfirst!(fargs)
     args = fargs # now it's really args
     isinclude(f) && return handle_include(interp, f, args)
@@ -1875,7 +1877,9 @@ function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func)
     nothing
 end
 
-function try_read_file(interp::ConcreteInterpreter, include_context::Module, include_file::AbstractString)
+function try_read_file(
+        interp::ConcreteInterpreter, _include_context::Module, include_file::AbstractString
+    )
     # `scrub_offset = 1`: `f`
     return with_err_handling(general_err_handler, InterpretationState(interp); scrub_offset=1) do
         return read(include_file, String)
@@ -1889,7 +1893,9 @@ const JULIAINTERPRETER_BUILTINS_FILE = let
 end
 
 # handle errors from toplevel user code
-function JuliaInterpreter.handle_err(interp::ConcreteInterpreter, frame::Frame, @nospecialize(err))
+function JuliaInterpreter.handle_err(
+        interp::ConcreteInterpreter, _frame::Frame, @nospecialize(err)
+    )
     # catch stack trace
     bt = catch_backtrace()
     st = stacktrace(bt)
