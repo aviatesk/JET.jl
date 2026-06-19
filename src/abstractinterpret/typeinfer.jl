@@ -37,7 +37,6 @@ function CC.abstract_call_method(analyzer::AbstractAnalyzer,
         method::Method, sig::Any, sparams::SimpleVector,
         hardlimit::Bool, si::StmtInfo, sv::InferenceState)
     function after_call_method(analyzer′::AbstractAnalyzer, sv′::InferenceState)
-        ret′ = ret[]
         collect_callee_reports!(analyzer′, sv′)
         return true
     end
@@ -544,7 +543,7 @@ function const_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::Infere
     new_binding_typ′ = Ref{Any}(new_binding_typ)
     postdomtree = CC.construct_postdomtree(sv.cfg)
     isconditional = !CC.postdominates(postdomtree, sv.currbb, 1)
-    (valid_worlds, ret) = CC.scan_partitions(analyzer, gr, sv.world) do analyzer::ToplevelAbstractAnalyzer, binding::Core.Binding, partition::Core.BindingPartition
+    (valid_worlds, ret) = CC.scan_partitions(analyzer, gr, sv.world) do analyzer::ToplevelAbstractAnalyzer, _binding::Core.Binding, partition::Core.BindingPartition
         rte = const_assignment_binding_rt_exct(analyzer, partition)
         rt, _exct = rte
         if rt !== Union{}
@@ -575,7 +574,7 @@ function const_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::Infere
     return ret
 end
 
-function const_assignment_binding_rt_exct(interp::ToplevelAbstractAnalyzer, partition::Core.BindingPartition)
+function const_assignment_binding_rt_exct(_interp::ToplevelAbstractAnalyzer, partition::Core.BindingPartition)
     kind = CC.binding_kind(partition)
     if CC.is_some_const_binding(kind) && !CC.is_some_imported(kind)
         return Pair{Any,Any}(Nothing, Union{})

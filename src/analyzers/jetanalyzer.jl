@@ -102,7 +102,7 @@ struct IntrinsicErrorCheckLattice{𝕃<:AbstractLattice} <: AbstractLattice
     inner::𝕃
 end
 CC.widenlattice(𝕃::IntrinsicErrorCheckLattice) = 𝕃.inner
-CC.is_valid_lattice_norec(::IntrinsicErrorCheckLattice, @nospecialize(elem)) = false
+CC.is_valid_lattice_norec(::IntrinsicErrorCheckLattice, @nospecialize(_elem)) = false
 @nospecs CC.:⊑(𝕃::IntrinsicErrorCheckLattice, x, y) = ⊑(widenlattice(𝕃), x, y)
 @nospecs CC.tmerge(𝕃::IntrinsicErrorCheckLattice, x, y) = tmerge(widenlattice(𝕃), x, y)
 @nospecs CC.tmeet(𝕃::IntrinsicErrorCheckLattice, x, t::Type) = tmeet(widenlattice(𝕃), x, t)
@@ -757,7 +757,7 @@ function JETInterface.print_report_message(io::IO, report::UnanalyzedCallReport)
     print_callsig(io, report.type)
 end
 
-report_unanalyzed_call!(::JETAnalyzer, ::InferenceState, ::CallMeta, @nospecialize(atype)) = nothing
+report_unanalyzed_call!(::JETAnalyzer, ::InferenceState, ::CallMeta, @nospecialize(_atype)) = nothing
 function report_unanalyzed_call!(analyzer::SoundJETAnalyzer,
     sv::InferenceState, call::CallMeta, @nospecialize(atype))
     if call.info === CC.NoCallInfo()
@@ -781,7 +781,7 @@ function JETInterface.print_report_message(io::IO, (; argtypes)::InvalidInvokeEr
     end
 
     t = argtype_by_index(argtypes, 3)
-    (types, isexact, isconcrete, istype) = instanceof_tfunc(t)
+    (types, _isexact, _isconcrete, _istype) = instanceof_tfunc(t)
     if types === Bottom
         if isa(t, Const)
             type = typeof(t.val)
@@ -1188,12 +1188,12 @@ end
     return ok
 end
 
-@nospecs CC.bitcast_tfunc(𝕃::IntrinsicErrorCheckLattice, t, x) = with_conversion_errorcheck(t, x, #=bitshift=#true)
-@nospecs CC.conversion_tfunc(𝕃::IntrinsicErrorCheckLattice, t, x) = with_conversion_errorcheck(t, x)
-@nospecs CC.math_tfunc(𝕃::IntrinsicErrorCheckLattice, a, bs...) = with_intrinsic_errorcheck(widenconst(a), a, bs...)
-@nospecs CC.shift_tfunc(𝕃::IntrinsicErrorCheckLattice, a, b) = with_intrinsic_errorcheck(widenconst(a), a, b, #=shift=#true)
-@nospecs CC.cmp_tfunc(𝕃::IntrinsicErrorCheckLattice, a, b) = with_intrinsic_errorcheck(Bool, a, b, #=shift=#true)
-@nospecs CC.chk_tfunc(𝕃::IntrinsicErrorCheckLattice, a, b) = with_intrinsic_errorcheck(Tuple{widenconst(a),Bool}, a, b, #=shift=#true)
+@nospecs CC.bitcast_tfunc(::IntrinsicErrorCheckLattice, t, x) = with_conversion_errorcheck(t, x, #=bitshift=#true)
+@nospecs CC.conversion_tfunc(::IntrinsicErrorCheckLattice, t, x) = with_conversion_errorcheck(t, x)
+@nospecs CC.math_tfunc(::IntrinsicErrorCheckLattice, a, bs...) = with_intrinsic_errorcheck(widenconst(a), a, bs...)
+@nospecs CC.shift_tfunc(::IntrinsicErrorCheckLattice, a, b) = with_intrinsic_errorcheck(widenconst(a), a, b, #=shift=#true)
+@nospecs CC.cmp_tfunc(::IntrinsicErrorCheckLattice, a, b) = with_intrinsic_errorcheck(Bool, a, b, #=shift=#true)
+@nospecs CC.chk_tfunc(::IntrinsicErrorCheckLattice, a, b) = with_intrinsic_errorcheck(Tuple{widenconst(a),Bool}, a, b, #=shift=#true)
 
 report_builtin_error!(analyzer::BasicJETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(ret)) =
     _report_builtin_error_basic!(analyzer, sv, f, argtypes, ret)
