@@ -1,10 +1,11 @@
 module JET
 
 using Preferences: Preferences
+using .Preferences: UUID
 
-const JET_DEV_MODE = Preferences.@load_preference("JET_DEV_MODE", false)
+const JET_DEV_MODE = Preferences.load_preference(UUID("c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"), "JET_DEV_MODE", false)
 
-const USE_FIXED_WORLD = Preferences.@load_preference("use_fixed_world", !JET_DEV_MODE)
+const USE_FIXED_WORLD = Preferences.load_preference(UUID("c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"), "use_fixed_world", !JET_DEV_MODE)
 
 const PKG_EVAL = Base.get_bool_env("JULIA_PKGEVAL", false)
 

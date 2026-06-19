@@ -20,21 +20,18 @@ using Core: Builtin, IntrinsicFunction, Intrinsics, SimpleVector, svec
 
 using Core.IR
 
-using .CC: @nospecs, ⊑,
-    AbsIntState, AbstractInterpreter, AbstractLattice, ArgInfo, Bottom, CFG,
-    CachedMethodTable, CallMeta, ConstCallInfo, Effects, EFFECTS_THROWS, Future,
-    InferenceParams, InferenceResult, InferenceState, InternalMethodTable, InvokeCallInfo,
-    MethodCallResult, MethodMatchInfo, MethodMatches, NOT_FOUND, OptimizationState,
-    OptimizationParams, OverlayMethodTable, RTEffects, StatementState, StmtInfo,
-    UnionSplitInfo, UnionSplitMethodMatches, VarState, VarTable, WorldRange, WorldView,
-    argextype, argtype_by_index, argtypes_to_type, compute_basic_blocks,
-    construct_postdomtree, hasintersect, ignorelimited, instanceof_tfunc,
-    nearest_common_dominator, singleton_type, slot_id, specialize_method, tmeet, tmerge,
-    typeinf_lattice, widenconst, widenlattice
+using .CC: @nospecs, AbstractInterpreter, AbstractLattice, ArgInfo, Bottom,
+    CachedMethodTable, CallMeta, ConstCallInfo, EFFECTS_THROWS, Future, InferenceParams,
+    InferenceResult, InferenceState, InvokeCallInfo, MethodCallResult, MethodMatchInfo,
+    NOT_FOUND, OptimizationParams, OptimizationState, OverlayMethodTable, RTEffects,
+    StatementState, StmtInfo, UnionSplitInfo, VarState, VarTable, WorldRange, WorldView,
+    argextype, argtype_by_index, argtypes_to_type, hasintersect, ignorelimited,
+    instanceof_tfunc, singleton_type, slot_id, specialize_method, tmeet, tmerge,
+    typeinf_lattice, widenconst, widenlattice, ⊑
 
-using Base: IdSet, PkgId, get_world_counter, generating_output
+using Base: PkgId, generating_output, get_world_counter
 
-using Base.Meta: ParseError, isexpr, lower
+using Base.Meta: isexpr, lower
 
 using Base.Experimental: @MethodTable, @overlay
 
@@ -45,11 +42,11 @@ using CodeTracking: CodeTracking
 
 using LoweredCodeUtils: LoweredCodeUtils, add_ssa_preds!, callee_matches
 
-using JuliaInterpreter: _INACTIVE_EXCEPTION, Frame, Interpreter, JuliaInterpreter
+using JuliaInterpreter: Frame, Interpreter, JuliaInterpreter, _INACTIVE_EXCEPTION
 
 using MacroTools: @capture, normalise, striplines
 
-using InteractiveUtils: InteractiveUtils, gen_call_with_extracted_types_and_kwargs
+using InteractiveUtils: gen_call_with_extracted_types_and_kwargs
 
 using Pkg: Pkg, TOML
 
@@ -164,7 +161,7 @@ macro withmixedhash(typedef)
     push!(hash_body.args, :(return h))
     hash_func = :(function Base.hash(x::$name, h::UInt); $hash_body; end)
     eq_body = foldr(fld2typs; init = true) do (fld, typ), x
-        if typ in _EGAL_TYPES
+        if (typ in _EGAL_TYPES)::Bool
             eq_ex = :(x1.$fld === x2.$fld)
         else
             eq_ex = :((x1.$fld == x2.$fld)::Bool)
@@ -237,7 +234,10 @@ get_slotname((sv, pc)::StateAtPC, slot::Int) = sv.src.slotnames[slot]
 get_slotname(sv::State, slot::Int) = sv.src.slotnames[slot]
 
 # check if we're in a toplevel module
-istoplevelframe(sv::State) = istoplevelframe(CC.frame_instance(sv))
+function istoplevelframe(sv::State)
+    sv isa OptimizationState && error("OptimizationState is not supported at top-level")
+    return istoplevelframe(CC.frame_instance(sv))
+end
 istoplevelframe(mi::MethodInstance) = isa(mi.def, Module)
 
 # we can retrieve program-counter-level slottype during inference
@@ -667,7 +667,7 @@ const JULIA_DIR = let
     ispath(normpath(p1, "base")) ? p1 : p2
 end
 
-struct LazyPrinter; f; end
+struct LazyPrinter; f::Any; end
 Base.show(io::IO, l::LazyPrinter) = l.f(io)
 
 const AnyJETResult = Union{JETCallResult,JETToplevelResult}

@@ -634,8 +634,9 @@ end
 and constructed as like `MethodErrorReport(sv::InferenceState, atype::Any, 0)`.
 """
 macro jetreport(ex)
-    @assert @capture(ex, struct NewReport_ <: Super_; spec_sigs__; end)
-    @assert Core.eval(__module__, Super) <: InferenceErrorReport
+    isexpected = @capture(ex, struct NewReport_ <: Super_; spec_sigs__; end)
+    @assert isexpected "Unexpected form"
+    @assert Core.eval(__module__, Super) <: InferenceErrorReport "Unexpected super type"
 
     spec_decls = Any[]
     for i in 1:length(spec_sigs)
