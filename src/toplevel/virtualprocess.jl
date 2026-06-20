@@ -1393,8 +1393,7 @@ function select_direct_requirement!(concretize, stmts, edges)
             LoweredCodeUtils.istypedef(stmt) ||   # don't abstract away type definitions
             (isexpr(stmt, :call) && length(stmt.args) ≥ 1 && stmt.args[1] == GlobalRef(Core, :_defaultctors)) ||
             ismoduleusage(stmt) || # module usages are handled by `ConcreteInterpreter`
-            isexpr(stmt, :globaldecl) ||
-            isexpr(stmt, :latestworld))
+            isexpr(stmt, :globaldecl))
             concretize[idx] = true
             continue
         end
@@ -1520,6 +1519,10 @@ function select_dependencies!(concretize::BitVector, src::CodeInfo, edges, cl)
         changed |= add_required_inplace!(concretize, src, edges, cl)
         changed |= add_ssa_preds!(concretize, src, edges, ())
 
+        # `:latestworld` only matters when concrete execution is already needed in the
+        # same block. By itself, it should not activate an otherwise abstract branch.
+        changed |= add_required_latestworld!(concretize, src, cfg)
+
         # Mark necessary control flows.
         changed |= LoweredCodeUtils.add_control_flow!(concretize, src, cfg, postdomtree)
         changed |= add_ssa_preds!(concretize, src, edges, ())
@@ -1531,6 +1534,25 @@ function select_dependencies!(concretize::BitVector, src::CodeInfo, edges, cl)
     LoweredCodeUtils.add_active_gotos!(concretize, src, cfg, postdomtree)
 
     nothing
+end
+
+islatestworld(@nospecialize stmt) = isexpr(stmt, :latestworld)
+
+function add_required_latestworld!(concretize::BitVector, src::CodeInfo, cfg::CC.CFG)
+    changed = false
+    for bb in cfg.blocks
+        stmts = bb.stmts
+        any(stmts) do idx::Int
+            return concretize[idx] && !islatestworld(src.code[idx])
+        end || continue
+        for idx in stmts
+            if islatestworld(src.code[idx]) && !concretize[idx]
+                concretize[idx] = true
+                changed = true
+            end
+        end
+    end
+    return changed
 end
 
 # TODO use proper world age for the lookups
