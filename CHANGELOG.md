@@ -6,7 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 <!-- links start -->
-[Unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.11.3...HEAD
+[Unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.11.4...HEAD
+[0.11.4]: https://github.com/aviatesk/JET.jl/compare/v0.11.3...v0.11.4
 [0.11.3]: https://github.com/aviatesk/JET.jl/compare/v0.11.2...v0.11.3
 [0.11.2]: https://github.com/aviatesk/JET.jl/compare/v0.11.1...v0.11.2
 [0.11.1]: https://github.com/aviatesk/JET.jl/compare/v0.11.0...v0.11.1
@@ -57,8 +58,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Julia v1.12.7 compatibility has been updated for newer Compiler.jl
+  releases.
+
+### Fixed
+- Fixed stale diagnostics that could remain after redefining methods involved
+  in a previous report.
+- Fixed false `MissingConcretizationErrorReport`s for top-level loops whose
+  body contains comprehension code and whose iterator is a top-level `const`
+  value (aviatesk/JETLS.jl#555).
+
+## [0.11.4]
+
 ### Added
-- Add method-matching report filtering via `LastFrameMethod` and `AnyFrameMethod`.
+- Added method-matching report filtering via `LastFrameMethod` and
+  `AnyFrameMethod`.
+
+### Changed
+- `LoweredCodeUtils` compatibility is temporarily restricted to v3.4-v3.5
+  until JET is updated for breaking changes introduced in v3.6.
+
+### Fixed
+- Fixed top-level error report stack traces on Julia v1.12.5.
+- Fixed repeated analysis of multiple standalone files that define `@main` in
+  the same session.
+- Fixed module context information recorded for macro-generated modules, so
+  tooling built on JET resolves macro call sites to the enclosing module.
 
 ## [0.11.3]
 ### Changed
