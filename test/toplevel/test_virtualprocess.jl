@@ -1884,6 +1884,29 @@ end
             @test isconcrete(res, vmod, :isbar)
             @test isconcrete(res, vmod, :isbaz)
         end
+
+        # xref: https://github.com/aviatesk/JETLS.jl/issues/555
+        # An in-loop `:latestworld` (here emitted into the comprehension closure's `for` body)
+        # must not, on its own, force the loop's control flow (and thus `THETA`'s value)
+        # to be concretized. E2E counterpart in test/toplevel/test_toplevel_inference.jl.
+        let src = @src for θ in THETA
+                push!(ys_all, [calc_kite_pos(deg2rad(ta))[2] for ta in turn_angles])
+            end
+            slice = JET.select_statements(@__MODULE__, src)
+            found_def = found_iterate = false
+            for (i, stmt) in enumerate(src.code)
+                rhs = JET.isexpr(stmt, :(=)) ? stmt.args[2] : stmt
+                if JET.LoweredCodeUtils.ismethod(stmt) || JET.LoweredCodeUtils.istypedef(stmt)
+                    found_def = true
+                    @test slice[i]  # closure definition is concretized
+                elseif JET.is_known_call(rhs, :iterate, src.code)
+                    found_iterate = true
+                    @test !slice[i] # loop control flow stays abstract
+                end
+            end
+            @test found_def
+            @test found_iterate
+        end
     end
 
     @testset "concretize inplace operations" begin

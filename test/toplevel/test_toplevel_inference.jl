@@ -289,6 +289,24 @@ let res = @analyze_toplevel begin
     @test isempty(res.res.inference_error_reports)
 end
 
+@testset "top-level closure in abstract loop (aviatesk/JETLS.jl#555)" begin
+    res = @analyze_toplevel begin
+        function calc_kite_pos(turn_angle)
+            return [cos(turn_angle), sin(turn_angle), 0.0]
+        end
+
+        const THETA = [30, 45, 60, 75]
+        turn_angles = 0:1:360
+        ys_all = Vector{Vector{Float64}}()
+
+        for θ in THETA
+            push!(ys_all, [calc_kite_pos(deg2rad(ta))[2] for ta in turn_angles])
+        end
+    end
+    @test isempty(res.res.toplevel_error_reports)
+    @test isempty(res.res.inference_error_reports)
+end
+
 @testset "MissingConcretizationErrorReport" begin
     let res = @analyze_toplevel begin
             RandomType = rand((Bool,Int))
