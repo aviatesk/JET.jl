@@ -1,36 +1,71 @@
 # Formatting
+
+## Code formatting
+
 - When writing Julia code, use _4 whitespaces_ for indentation and try to keep
   the maximum line length under _92 characters_.
-- When writing Markdown text, use _2 whitespaces_ for indentation and try to
-  keep the maximum line length under _80 characters_.
-  - Additionally, prioritize simple text style and limit unnecessary decorations
-    (e.g. `**`) to only truly necessary locations. This is a style that should
-    generally be aimed for, but pay particular attention when writing Markdown.
-  - Headers should use sentence case (only the first word capitalized), not
-    title case. For example:
-    - Good: `## Conclusion and alternative approaches`
-    - Bad: `## Conclusion And Alternative Approaches`
-- When writing commit messages, follow the format `component: Brief summary` for
-  the title. In the body of the commit message, provide a brief prose summary of
-  the purpose of the changes made.
-  Also, ensure that the maximum line length never exceeds 72 characters.
-  When referencing external GitHub PRs or issues, use proper GitHub interlinking
-  format (e.g., `owner/repo#123` for PRs/issues).
-  Finally, if you write code yourself, include a "Written by Claude" footer at
-  the end of the commit message (no emoji nonsense). However, when simply asked
-  to write a commit message, there's no need to add that footer.
+- AI agents must not run automated formatters unless explicitly requested by a
+  human in the current conversation.
+  This includes file-wide or project-wide formatting commands and
+  editor-integrated formatting tools.
+  When editing code, preserve the surrounding formatting and make only minimal
+  local edits. If formatting seems necessary, ask before applying it.
+
+## Markdown formatting
+
+When writing Markdown text, use _2 whitespaces_ for indentation and try to
+keep the maximum line length under _80 characters_.
+- Exception: `CHANGELOG.md` is exempt from line length rules since it is
+  used for GitHub release notes, where hard line breaks disrupt rendering.
+- Additionally, prioritize simple text style and limit unnecessary decorations
+  (e.g. `**`) to only truly necessary locations. This is a style that should
+  generally be aimed for, but pay particular attention when writing Markdown.
+- Headers should use sentence case (only the first word capitalized), not
+  title case. For example:
+  - Good: `## Conclusion and alternative approaches`
+  - Bad: `## Conclusion And Alternative Approaches`
+
+## Commit message formatting
+
+When writing commit messages, follow the format "component: Brief summary" for
+the title.
+
+In the body, write paragraphs in this order:
+
+1. Explain the concrete problem or user-visible limitation being fixed.
+   If appropriate, include a small code example when it makes the issue
+   clearer.
+2. Explain the approach used to fix the problem.
+3. Mention important caveats, follow-up work, performance notes, or test
+   coverage when relevant.
+
+Use backticks for code elements (function names, variables, file paths, etc.)
+to improve readability.
+
+Ensure that the maximum line length never exceeds 72 characters.
+When referencing external GitHub PRs or issues, use proper GitHub interlinking
+format (e.g., "owner/repo#123" for PRs/issues).
+Finally, if you write code yourself, include a co-author trailer at the end
+of the commit message, e.g.: `Co-Authored-By: GPT-5.5 <noreply@openai.com>`
+(adjust the model name as appropriate). However, when simply asked to write
+a commit message, there's no need to add that trailer.
+
+# File names
+
+For file names, use `-` (hyphen) as the word separator by default.
+However, if the file name corresponds directly to Julia code (e.g., a module
+name), use `_` (underscore) instead, since Julia identifiers cannot contain
+hyphens (unless we use `var"..."`). For example, test files like
+`test_virtualprocess.jl` define a module `module test_virtualprocess`,
+so they use underscores.
 
 # Coding rules
-- When writing functions, use the most restrictive signature type possible.
-  This allows JET to easily catch unintended errors.
-  Of course, when prototyping, it's perfectly fine to start with loose type
-  declarations, but for the functions you ultimately commit, it's desirable to
-  use type declarations as much as possible.
-  Especially when AI agents suggest code, please make sure to clearly specify
-  the argument types that functions expect.
-  In situations where there's no particular need to make a function generic, or
-  if you're unsure what to do, submit the function with the most restrictive
-  signature type you can think of.
+
+- When writing functions, use the most restrictive signature type practical so
+  JET can catch unintended errors in itself. Loose signatures are fine while 
+  prototyping, but committed code should specify expected argument types unless 
+  generic behavior is intentional. When unsure, prefer the more restrictive 
+  signature.
 
 - For function calls with keyword arguments, use an explicit `;` for clarity.
   For example, code like this:
@@ -46,15 +81,6 @@
   ...
   ```
 
-- For AI agents: **ONLY INCLUDE COMMENTS WHERE TRULY NECESSARY**.
-  When the function name or implementation clearly indicates its purpose or
-  behavior, redundant comments are unnecessary.
-
-- On the other hand, for general utilities that expected to be used in multiple
-  places in this package, it's fine to use docstrings to clarify their
-  behavior. However, even in these cases, if the function name and behavior are
-  self-explanatory, no special docstring is needed.
-
 - Avoid unnecessary logs:
   Don't clutter the language server log with excessive information.
   If you must use print debugging, generally use `@info`/`@warn` behind the
@@ -64,6 +90,18 @@
       @info ...
   end
   ```
+
+## Comments guideline
+
+Default to no comments. Add comments only when they explain non-obvious
+behavior, constraints, invariants, rationale, or genuine hacks. Do not restate
+implementation flow.
+
+Docstrings are fine for general utilities when they clarify behavior.
+
+The same applies to tests: concise `@testset` descriptions and behavior-level
+comments are fine when they clarify what is being tested. Explain test setup
+only when it encodes a non-obvious constraint or hack.
 
 # Running test code
 Please make sure to test new code when you wrote.
