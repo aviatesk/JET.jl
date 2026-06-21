@@ -142,24 +142,28 @@ end
 function print_report(io::IO, report::MissingConcretizationErrorReport)
     (; isconst, var) = report
     (; mod, name) = var
-    recommended_pattern = isconst ? ":(const $name = x_)" : ":($name = x_)"
-    msg = """
-    `$mod.$name` is not concretized but JET needs to use its actual value in order to define types or methods.
-    """
+    pattern = isconst ? ":(const $name = x_)" : ":($name = x_)"
+    example = "`report_file(\"path/to/file.jl\"; concretization_patterns = [$pattern])`"
+    println(io, "`$mod.$name` is used while JET is processing top-level definitions,")
+    println(io, "so JET needs its concrete value (the actual runtime value).")
+    println(io)
+    println(io, "JET tracked that the binding exists, but it did not actually evaluate")
+    println(io, "the assignment that gives this binding its value.")
+    println(io)
     if !isconst
-        msg *= """
-        - If this binding can be declared as a constant, try to declare it as a constant (i.e. `const $name = ...`).
-        """
+        println(io, "- If `$name` is intended to be a stable configuration value, declare")
+        println(io, "  it as a constant, e.g. `const $name = ...`.")
+        println(io, "- If that is not appropriate, add a `concretization_patterns` entry")
+    else
+        println(io, "- Add a `concretization_patterns` entry")
     end
-    msg *= """- You may need to specify `$recommended_pattern` pattern to the `concretization_patterns`
-      configuration to allow JET to actually evaluate this binding, e.g.,
-      `report_file("path/to/file.jl"; concretization_patterns = [$recommended_pattern])`.
-    """
-    msg *= """- If the above $(isconst ? "approach does" : "approaches do") not work, try `concretization_patterns = [:(x_)]` to
-      concretize all top-level code in the module (recommended as a last resort since it
-      would incur any side effects in your code and may cause the analysis to take longer time).
-    """
-    print(io, msg)
+    println(io, "  for the assignment. This option tells JET to actually evaluate")
+    println(io, "  top-level code that matches the pattern. For example:")
+    println(io, "  ", example)
+    println(io, "  Use a specific pattern when possible, because matching code is executed.")
+    println(io, "- As a last resort, use `concretization_patterns = [:(x_)]` to evaluate")
+    println(io, "  all top-level code in the module. This may run side effects and can")
+    print(io, "  make analysis slower.")
 end
 
 """

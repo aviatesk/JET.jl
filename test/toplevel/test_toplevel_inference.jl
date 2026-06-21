@@ -321,6 +321,13 @@ end
             @test isa(report, MissingConcretizationErrorReport)
             @test report.var.name === :RandomType
             @test !report.isconst
+
+            msg = sprint(JET.print_report, report)
+            @test occursin("JET needs its concrete value", msg)
+            @test occursin("JET tracked that the binding exists", msg)
+            @test occursin("`const RandomType = ...`", msg)
+            @test occursin("concretization_patterns = [:(RandomType = x_)]", msg)
+            @test occursin("because matching code is executed", msg)
         end
     end
 end
