@@ -1013,10 +1013,10 @@ function _virtual_process!(interp::ConcreteInterpreter,
         if !force_concretize
             for pat in state.config.concretization_patterns
                 if @capture(x, $pat)
-                    toplevel_logger(state.config; filter=≥(JET_LOGGER_LEVEL_DEBUG)) do @nospecialize(io::IO)
+                    let x=x; toplevel_logger(state.config; filter=≥(JET_LOGGER_LEVEL_DEBUG)) do @nospecialize(io::IO)
                         x′ = striplines(normalise(x))
                         println(io, "concretization pattern `$pat` matched `$x′` at $(state.filename):$(state.curline)")
-                    end
+                    end; end
                     force_concretize = true
                     break
                 end
