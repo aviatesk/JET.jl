@@ -1397,9 +1397,10 @@ function select_statements(mod::Module, src::CodeInfo, names::Symbol...)
     idxs = findall(src.code) do @nospecialize stmt
         return any(names) do name
             isexpr(stmt, :call) || return false
-            f = stmt.args[1]
-            (f isa GlobalRef && f.name === :setglobal!) || return false
             length(stmt.args) == 4 || return false
+            f = stmt.args[1]
+            f isa GlobalRef || return false
+            f.name === :setglobal! || return false
             arg3 = stmt.args[3]
             if arg3 isa QuoteNode
                 arg3 = arg3.value
