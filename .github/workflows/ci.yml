@@ -39,7 +39,7 @@ jobs:
             os: windows-latest
             arch: x86
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v2
         with:
           version: ${{ matrix.version }}
@@ -65,7 +65,7 @@ jobs:
         use_fixed_world: [true, false]
         precompile_workload: [true, false]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v2
         with:
           version: "1"
@@ -87,7 +87,7 @@ jobs:
     name: JULIA_NUM_THREADS=4,2
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v2
         with:
           version: "1"
@@ -106,7 +106,7 @@ jobs:
   empty-loading-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v2
         with:
           version: "nightly"
