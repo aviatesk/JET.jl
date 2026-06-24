@@ -809,10 +809,9 @@ report_undef_global_var!(analyzer::FromDefinitionJETAnalyzer, sv::InferenceState
 
 function _report_undef_global_var!(analyzer::JETAnalyzer, sv::InferenceState, binding::Core.Binding, partition::Core.BindingPartition, sound::Bool)
     gr = binding.globalref
-    # TODO use `abstract_eval_isdefinedglobal` for respecting world age
-    if @invokelatest isdefinedglobal(gr.mod, gr.name)
-        # HACK/FIXME Concretize `AbstractBindingState`
-        x = @invokelatest getglobal(gr.mod, gr.name)
+    world = sv.world.this
+    if Base.invoke_in_world(world, isdefinedglobal, gr.mod, gr.name)
+        x = Base.invoke_in_world(world, getglobal, gr.mod, gr.name)
         x isa AbstractBindingState || return false
         binding_state = x
     else
@@ -1219,8 +1218,7 @@ function report_getglobal!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::
     2 ≤ length(argtypes) ≤ 3 || return false
     gr = constant_globalref(argtypes)
     gr === nothing && return false
-    if @invokelatest isdefinedglobal(gr.mod, gr.name)
-        # TODO use `abstract_eval_isdefinedglobal` for respecting world age
+    if Base.invoke_in_world(sv.world.this, isdefinedglobal, gr.mod, gr.name)
         return false
     end
     add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, gr, false))
