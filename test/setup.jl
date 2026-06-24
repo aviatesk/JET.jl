@@ -10,7 +10,9 @@ include("interactive_utils.jl")
 function get_reports_with_test(res::JET.AnyJETResult)
     reports = get_reports(res)
     buf = IOBuffer()
-    print_reports(IOContext(buf, :color=>true), reports; res.jetconfigs...)
+    # Use `@invokelatest` to avoid stale world age binding access warnings on Julia >= 1.12
+    # when processing results from `Core.eval`-defined anonymous modules
+    @invokelatest print_reports(IOContext(buf, :color=>true), reports; res.jetconfigs...)
     @test !isempty(String(take!(buf)))
     return reports
 end
@@ -23,7 +25,7 @@ const ERROR_REPORTS_FROM_SUM_OVER_STRING = let
     get_reports_with_test(result)
 end
 
-get_msg(report::JET.InferenceErrorReport) = sprint(JET.print_report, report)
+get_msg(report::JET.InferenceErrorReport) = @invokelatest sprint(JET.print_report, report)
 
 function test_sum_over_string(ers; broken::Bool=false)
     @test !isempty(ers) broken=broken

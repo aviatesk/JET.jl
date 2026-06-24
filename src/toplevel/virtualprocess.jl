@@ -1439,7 +1439,10 @@ function select_direct_requirement!(concretize, stmts, edges)
             LoweredCodeUtils.istypedef(stmt) ||   # don't abstract away type definitions
             (isexpr(stmt, :call) && length(stmt.args) ≥ 1 && stmt.args[1] == GlobalRef(Core, :_defaultctors)) ||
             ismoduleusage(stmt) || # module usages are handled by `ConcreteInterpreter`
-            isexpr(stmt, :globaldecl))
+            isexpr(stmt, :globaldecl) ||
+            is_known_call(stmt, :declare_global, stmts) ||
+            is_known_call(stmt, :_eval_using, stmts) ||
+            is_known_call(stmt, :_eval_import, stmts))
             concretize[idx] = true
             continue
         end
@@ -1577,7 +1580,17 @@ function select_dependencies!(concretize::BitVector, src::CodeInfo, edges, cl)
     end
 
     # now mark the active goto nodes
-    LoweredCodeUtils.add_active_gotos!(concretize, src, cfg, postdomtree)
+    @static if isdefined(LoweredCodeUtils, :SelectiveEvalController)
+        # On LoweredCodeUtils v3.6 and later, `add_active_gotos!` takes a
+        # `SelectiveEvalController` that records the CFG short-cuts of the slice.
+        # JET drives concretization with its own `ConcreteInterpreter` and replays the slice
+        # via `selective_eval_fromstart!`, which uses a default controller, so the controller
+        # here only satisfies the signature and its recorded short-cuts are not used.
+        LoweredCodeUtils.add_active_gotos!(concretize, src, cfg, postdomtree,
+                                           LoweredCodeUtils.SelectiveEvalController())
+    else
+        LoweredCodeUtils.add_active_gotos!(concretize, src, cfg, postdomtree)
+    end
 
     nothing
 end
