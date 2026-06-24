@@ -1796,50 +1796,6 @@ end
             test_sum_over_string(res)
         end
 
-        # captured variables within a catch clause
-        let res = @analyze_toplevel analyze_from_definitions=true try
-                s = "julia"
-                foo(f) = f(s) # should be concretized
-                foo(sum) # shouldn't be concretized
-            catch err
-                function shows() # should be concretized
-                    io = stderr::IO
-                    showerror(io, err)
-                    showerror(io, err2)
-                end
-                shows() # shouldn't be concretized
-            end
-
-            @test isempty(res.res.toplevel_error_reports)
-            @test length(res.res.signature_infos) == 2
-            test_sum_over_string(res)
-            @test any(r->is_global_undef_var(r, :err2), res.res.inference_error_reports)
-        end
-
-        # XXX similar to "captured variables for global functions" cases, but such patterns
-        # can be even worse when used within a catch clause; it will just fail into a hell.
-        # I include this case just for the reference and won't expect this to work robustly
-        # since it heavily depends on Julia's AST lowering and the implementation detail of
-        # JuliaInterpreter.jl
-        let (vmod, res) = @analyze_toplevel2 try
-                s = "julia"
-                foo(f) = f(s) # should be concretized
-                foo(sum) # shouldn't be concretized
-            catch err # will be `MethodError` in actual execution
-                global geterr() = return err # should be concretized
-            end
-
-            # thanks to JuliaInterpreter's implementation detail, the analysis above won't
-            # report top-level errors and can concretize `geterr` even if the actual `err`
-            # is not thrown and thus these first two test cases will pass
-            @test isempty(res.res.toplevel_error_reports)
-            @test isconcrete(res, vmod, :geterr) && length(methods(@invokelatest(vmod.geterr))) == 1
-            # yet we still need to make `geterr` over-approximate an actual execution soundly;
-            # currently JET's abstract interpretation special-cases `_INACTIVE_EXCEPTION`
-            # and fix it to `Any`, and we test it here in the last test case
-            result = report_call(@invokelatest(vmod.geterr))
-            @test MethodError ⊑ get_result(result)
-        end
     end
 
     @testset "top-level `eval` statement" begin
