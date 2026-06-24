@@ -1367,7 +1367,8 @@ Partially interprets statements in `src` using JuliaInterpreter.jl:
 """
 function partially_interpret!(interp::ConcreteInterpreter, concretize::BitVector, mod::Module, src::CodeInfo)
     fill!(resize!(concretize, length(src.code)), false)
-    select_statements!(concretize, mod, src)
+    controller = LoweredCodeUtils.SelectiveEvalController()
+    select_statements!(concretize, mod, src, controller)
 
     toplevel_logger(InterpretationState(interp).config; filter=≥(JET_LOGGER_LEVEL_DEBUG)) do @nospecialize(io::IO)
         println(io, "concretization plan at $(InterpretationState(interp).filename):$(InterpretationState(interp).curline):")
@@ -1377,17 +1378,21 @@ function partially_interpret!(interp::ConcreteInterpreter, concretize::BitVector
     # NOTE if `JuliaInterpreter.optimize!` may modify `src`, `src` and `concretize` can be inconsistent
     # here we create `JuliaInterpreter.Frame` by ourselves disabling the optimization (#277)
     frame = Frame(mod, src; optimize=false)
-    LoweredCodeUtils.selective_eval_fromstart!(interp, frame, concretize, #=istoplevel=#true)
+    LoweredCodeUtils.selective_eval_fromstart!(interp, frame, concretize, controller, #=istoplevel=#true)
 
     return concretize
 end
 
 # select statements that should be concretized, and actually interpreted rather than abstracted
-function select_statements!(concretize::BitVector, mod::Module, src::CodeInfo)
+function select_statements!(
+        concretize::BitVector, mod::Module, src::CodeInfo,
+        controller::LoweredCodeUtils.SelectiveEvalController =
+            LoweredCodeUtils.SelectiveEvalController()
+    )
     cl = LoweredCodeUtils.CodeLinks(mod, src) # make `CodeEdges` hold `CodeLinks`?
     edges = LoweredCodeUtils.CodeEdges(src, cl)
     select_direct_requirement!(concretize, src.code, edges)
-    select_dependencies!(concretize, src, edges, cl)
+    select_dependencies!(concretize, src, edges, cl, controller)
     return concretize
 end
 
@@ -1539,7 +1544,12 @@ end
 # "static program slicing". The basic algorithm implemented here is an extension of the one
 # proposed in https://dl.acm.org/doi/10.5555/800078.802557, which is especially tuned for
 # Julia's intermediate code representation.
-function select_dependencies!(concretize::BitVector, src::CodeInfo, edges, cl)
+function select_dependencies!(
+        concretize::BitVector, src::CodeInfo, edges::LoweredCodeUtils.CodeEdges,
+        cl::LoweredCodeUtils.CodeLinks,
+        controller::LoweredCodeUtils.SelectiveEvalController =
+            LoweredCodeUtils.SelectiveEvalController()
+    )
     typedefs = LoweredCodeUtils.find_typedefs(src)
     cfg = CC.compute_basic_blocks(src.code)
     postdomtree = CC.construct_postdomtree(cfg.blocks)
@@ -1577,7 +1587,8 @@ function select_dependencies!(concretize::BitVector, src::CodeInfo, edges, cl)
     end
 
     # now mark the active goto nodes
-    LoweredCodeUtils.add_active_gotos!(concretize, src, cfg, postdomtree)
+    LoweredCodeUtils.add_active_gotos!(concretize, src, cfg, postdomtree, controller)
+    LoweredCodeUtils.record_termination_points!(controller, concretize, cfg)
 
     nothing
 end
