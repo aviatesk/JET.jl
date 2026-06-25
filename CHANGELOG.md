@@ -6,7 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 <!-- links start -->
-[Unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.11.6...HEAD
+[Unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/aviatesk/JET.jl/compare/v0.11.6...v0.12.0
 [0.11.6]: https://github.com/aviatesk/JET.jl/compare/v0.11.5...v0.11.6
 [0.11.5]: https://github.com/aviatesk/JET.jl/compare/v0.11.4...v0.11.5
 [0.11.4]: https://github.com/aviatesk/JET.jl/compare/v0.11.3...v0.11.4
@@ -59,6 +60,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- links end -->
 
 ## [Unreleased]
+
+## [0.12.0]
+
+### Changed
+- **Breaking**: JET no longer accepts Julia compiler parameter keywords such as
+  `max_methods` and `inlining` as user-facing configuration options for analysis
+  entry points or `.JET.toml`; such keywords now throw `JETConfigError`.
 
 ## [0.11.6]
 

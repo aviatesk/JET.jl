@@ -85,8 +85,6 @@ end
     end
 
     # real-world targets
-    # the `unoptimize_throw_blocks` configuration disables optimizations on "throw blocks" by default,
-    # but `DispatchAnalyzer` ignores problems from them, so we don't get error reports here
     @test_opt sin(10)
 end
 
@@ -195,6 +193,10 @@ function target_modules_compute(x)
 end
 
 @testset "OptAnalyzer configurations" begin
+    @test_throws JET.JETConfigError report_opt(identity, (Any,); max_methods=1)
+    @test_throws JET.JETConfigError report_opt(identity, (Any,); inlining=false)
+    @test_throws JET.JETConfigError JET.OptAnalyzer(; max_methods=1)
+
     @testset "function_filter" begin
         @assert JET.InferenceParams(JET.OptAnalyzer()).max_union_splitting < 5
 
