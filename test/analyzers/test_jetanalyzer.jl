@@ -4,6 +4,9 @@ include("../setup.jl")
 
 @testset "configurations" begin
     @test_throws JET.JETConfigError report_call(function () end; mode=:badmode)
+    @test_throws JET.JETConfigError report_call(function () end; max_methods=1)
+    @test_throws JET.JETConfigError report_call(function () end; inlining=false)
+    @test_throws JET.JETConfigError JETAnalyzer(; max_methods=1)
 
     # cache key should be same for the same configurations
     let cache1 = JET.AnalysisToken(JETAnalyzer()),
@@ -11,15 +14,15 @@ include("../setup.jl")
         @test cache1 === cache2
     end
 
-    # cache key should be different for different configurations
-    let analyzer1 = JETAnalyzer(; max_methods=3),
-        analyzer2 = JETAnalyzer(; max_methods=4)
+    # cache key should be different for analyzer-specific configurations
+    let analyzer1 = JETAnalyzer(; ignore_throws=false),
+        analyzer2 = JETAnalyzer(; ignore_throws=true)
         cache1 = JET.AnalysisToken(analyzer1)
         cache2 = JET.AnalysisToken(analyzer2)
         @test cache1 !== cache2
     end
 
-    # configurations other than `InferenceParams` and analyzer mode
+    # configurations other than analyzer-specific configurations
     # shouldn't affect the cache key identity
     let analyzer1 = JETAnalyzer(; toplevel_logger=nothing),
         analyzer2 = JETAnalyzer(; toplevel_logger=IOBuffer())
@@ -37,37 +40,12 @@ include("../setup.jl")
     end
 
     # end to end test
-    let m = Module()
-        @eval m begin
-            foo(a::Val{1}) = 1
-            foo(a::Val{2}) = 2
-            foo(a::Val{3}) = 3
-            foo(a::Val{4}) = undefvar
-        end
-
-        # run first analysis and cache
-        result = @eval m $report_call((Int,); max_methods=3) do a
-            foo(Val(a))
-        end
-        @test isempty(get_reports_with_test(result))
-
-        # should use the cached result
-        result = @eval m $report_call((Int,); max_methods=3) do a
-            foo(Val(a))
-        end
-        @test isempty(get_reports_with_test(result))
-
-        # should re-run analysis, and should get a report
-        result = @eval m $report_call((Int,); max_methods=4) do a
-            foo(Val(a))
-        end
-        @test any(r->is_global_undef_var(r, :undefvar), get_reports_with_test(result))
-
-        # should run the cached previous result
-        result = @eval m $report_call((Int,); max_methods=4) do a
-            foo(Val(a))
-        end
-        @test any(r->is_global_undef_var(r, :undefvar), get_reports_with_test(result))
+    let result = report_call(()->throw("foo"); ignore_throws=false)
+        @test !isempty(get_reports_with_test(result))
+        @test first(get_reports_with_test(result)) isa UncaughtExceptionReport
+    end
+    let result = report_call(()->throw("foo"); ignore_throws=true)
+        @test isempty(get_reports(result))
     end
 end
 
