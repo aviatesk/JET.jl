@@ -76,7 +76,6 @@ test = [
     "Libdl",
     "Logging",
     "Random",
-    "Revise",
     "StaticArrays",
     "TOML",
     "Test",
