@@ -931,7 +931,7 @@ When found, the configurations specified in the file will be applied.
 
 A configuration file can specify configurations like:
 ```toml
-aggressive_constant_propagation = false # turn off aggressive constant propagation
+analyze_from_definitions = true # analyze methods from their declared signatures
 ... # other configurations
 ```
 
@@ -1511,10 +1511,6 @@ const GENERAL_CONFIGURATIONS = Set{Symbol}((
     :vscode_console_output,
     # watch
     :revise_all, :revise_modules))
-for (Params, Func) = ((InferenceParams, JETInferenceParams),
-                      (OptimizationParams, JETOptimizationParams))
-    push!(GENERAL_CONFIGURATIONS, Base.kwarg_decl(only(methods(Func, (Params,))))...)
-end
 
 # interface
 # =========

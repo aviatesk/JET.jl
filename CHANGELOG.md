@@ -70,6 +70,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [Julia compatibility and versioning policy](README.md#julia-compatibility-and-versioning).
 
 ### Changed
+- **Breaking**: JET no longer accepts Julia compiler parameter keywords such as
+  `max_methods` and `inlining` as user-facing configuration options for analysis
+  entry points or `.JET.toml`; such keywords now throw `JETConfigError`.
 - JET now loads empty stubs on unsupported future Julia versions while
   remaining installable as a test dependency.
 - Improved the implementation of optimization analysis to make it more robust.
