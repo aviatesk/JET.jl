@@ -398,13 +398,24 @@ function CC.abstract_eval_globalref(analyzer::JETAnalyzer, g::GlobalRef, saw_lat
     if saw_latestworld
         return CC.RTEffects(Any, Any, CC.generic_getglobal_effects)
     end
-    (valid_worlds, ret) = CC.scan_leaf_partitions(analyzer, g, sv.world) do analyzer::JETAnalyzer, binding::Core.Binding, partition::Core.BindingPartition
-        if partition.min_world ≤ sv.world.this ≤ partition.max_world # XXX This should probably be fixed on the Julia side
+    @static if hasfield(InferenceState, :world)
+        curworld = sv.world.this
+        worldhint = sv.world
+    else
+        curworld = CC.get_inference_world(analyzer)
+        worldhint = CC.binding_world_hints(curworld, sv)
+    end
+    (valid_worlds, ret) = CC.scan_leaf_partitions(analyzer, g, worldhint) do analyzer::JETAnalyzer, binding::Core.Binding, partition::Core.BindingPartition
+        if partition.min_world ≤ curworld ≤ partition.max_world # XXX This should probably be fixed on the Julia side
             report_undef_global_var!(analyzer, sv, binding, partition)
         end
         CC.abstract_eval_partition_load(analyzer, binding, partition)
     end
-    CC.update_valid_age!(sv, valid_worlds)
+    @static if hasfield(InferenceState, :world)
+        CC.update_valid_age!(sv, valid_worlds)
+    else
+        CC.update_valid_age!(sv, curworld, valid_worlds)
+    end
     return ret
 end
 
