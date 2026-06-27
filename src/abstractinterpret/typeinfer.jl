@@ -709,7 +709,9 @@ end
 
 is_inactive_exception(@nospecialize rt) = isa(rt, Const) && rt.val === _INACTIVE_EXCEPTION()
 
-function CC.cache_result!(analyzer::ToplevelAbstractAnalyzer, caller::InferenceResult, ci::CodeInstance)
-    istoplevelframe(caller.linfo) && return nothing # don't need to cache toplevel frame
-    @invoke CC.cache_result!(analyzer::AbstractAnalyzer, caller::InferenceResult, ci::CodeInstance)
+@static if isdefined(CC, :cache_result!)
+    function CC.cache_result!(analyzer::ToplevelAbstractAnalyzer, caller::InferenceResult, ci::CodeInstance)
+        istoplevelframe(caller.linfo) && return nothing # don't need to cache toplevel frame
+        @invoke CC.cache_result!(analyzer::AbstractAnalyzer, caller::InferenceResult, ci::CodeInstance)
+    end
 end
