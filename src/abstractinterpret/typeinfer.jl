@@ -320,7 +320,7 @@ end
 
 CC.get_inference_cache(analyzer::AbstractAnalyzer) = AbstractAnalyzerView(analyzer)
 
-function CC.cache_lookup(𝕃ᵢ::CC.AbstractLattice, mi::MethodInstance, given_argtypes::Argtypes, view::AbstractAnalyzerView)
+function jet_constprop_cache_lookup(𝕃ᵢ::CC.AbstractLattice, mi::MethodInstance, given_argtypes::Argtypes, view::AbstractAnalyzerView)
     # XXX the very dirty analyzer state observation again
     # this method should only be called from the single context i.e. `abstract_call_method_with_const_args`,
     # and so we should reset the cache target immediately we reach here
@@ -328,7 +328,11 @@ function CC.cache_lookup(𝕃ᵢ::CC.AbstractLattice, mi::MethodInstance, given_
     cache_target = get_cache_target(analyzer)
     set_cache_target!(analyzer, nothing)
 
-    inf_result = CC.cache_lookup(𝕃ᵢ, mi, given_argtypes, get_inf_cache(view.analyzer))
+    inf_result = @static if isdefined(CC, :constprop_cache_lookup)
+        CC.constprop_cache_lookup(𝕃ᵢ, mi, given_argtypes, get_inf_cache(view.analyzer))
+    else
+        CC.cache_lookup(𝕃ᵢ, mi, given_argtypes, get_inf_cache(view.analyzer))
+    end
 
     isa(inf_result, InferenceResult) || return inf_result
 
@@ -354,6 +358,14 @@ function CC.cache_lookup(𝕃ᵢ::CC.AbstractLattice, mi::MethodInstance, given_
             collect_cached_callee_reports!(analyzer, cached_reports, mi)
     end
     return inf_result
+end
+
+@static if isdefined(CC, :constprop_cache_lookup)
+    CC.constprop_cache_lookup(𝕃ᵢ::CC.AbstractLattice, mi::MethodInstance, given_argtypes::Argtypes, view::AbstractAnalyzerView) =
+        jet_constprop_cache_lookup(𝕃ᵢ, mi, given_argtypes, view)
+else
+    CC.cache_lookup(𝕃ᵢ::CC.AbstractLattice, mi::MethodInstance, given_argtypes::Argtypes, view::AbstractAnalyzerView) =
+        jet_constprop_cache_lookup(𝕃ᵢ, mi, given_argtypes, view)
 end
 
 CC.push!(view::AbstractAnalyzerView, inf_result::InferenceResult) = CC.push!(get_inf_cache(view.analyzer), inf_result)
