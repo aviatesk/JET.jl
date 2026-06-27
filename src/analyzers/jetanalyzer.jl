@@ -647,8 +647,10 @@ report_method_error!(analyzer::SoundJETAnalyzer, sv::InferenceState, call::CallM
 function report_method_error!(analyzer::JETAnalyzer,
     sv::InferenceState, call::CallMeta, argtypes::Argtypes, @nospecialize(atype), sound::Bool)
     info = call.info
-    if isa(info, ConstCallInfo)
-        info = info.call
+    @static if isdefined(CC, :ConstCallInfo)
+        if isa(info, ConstCallInfo)
+            info = info.call
+        end
     end
     if !sound
         if isa(info, MethodMatchInfo) || isa(info, UnionSplitInfo)
