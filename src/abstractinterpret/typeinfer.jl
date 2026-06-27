@@ -228,6 +228,15 @@ end
 # global
 # ------
 
+@static if !isdefined(CC, :WorldView)
+    struct WorldView{Cache}
+        cache::Cache
+        worlds::WorldRange
+        WorldView(cache::Cache, worlds::WorldRange) where Cache = new{Cache}(cache, worlds)
+    end
+    WorldView(cache, args...) = WorldView(cache, WorldRange(args...))
+end
+
 CC.cache_owner(analyzer::AbstractAnalyzer) = AnalysisToken(analyzer)
 
 function CC.code_cache(analyzer::AbstractAnalyzer)
@@ -236,8 +245,16 @@ function CC.code_cache(analyzer::AbstractAnalyzer)
     return WorldView(view, worlds)
 end
 
-to_internal_code_cache_view(wvc::WorldView{<:AbstractAnalyzerView}) =
-    WorldView(CC.InternalCodeCache(CC.cache_owner(wvc.cache.analyzer)), wvc.worlds)
+@static if !isdefined(CC, :WorldView)
+    CC.code_cache(analyzer::AbstractAnalyzer, worlds::WorldRange) =
+        WorldView(AbstractAnalyzerView(analyzer), worlds)
+
+    to_internal_code_cache_view(wvc::WorldView{<:AbstractAnalyzerView}) =
+        CC.InternalCodeCache(CC.cache_owner(wvc.cache.analyzer), wvc.worlds)
+else
+    to_internal_code_cache_view(wvc::WorldView{<:AbstractAnalyzerView}) =
+        WorldView(CC.InternalCodeCache(CC.cache_owner(wvc.cache.analyzer)), wvc.worlds)
+end
 
 CC.haskey(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance) = haskey(to_internal_code_cache_view(wvc), mi)
 
@@ -287,8 +304,15 @@ function CC.getindex(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance)
     return codeinst::CodeInstance
 end
 
-function CC.setindex!(wvc::WorldView{<:AbstractAnalyzerView}, codeinst::CodeInstance, mi::MethodInstance)
-    return to_internal_code_cache_view(wvc)[mi] = codeinst
+@static if isdefined(CC, :cache_result!)
+    function CC.setindex!(wvc::WorldView{<:AbstractAnalyzerView}, codeinst::CodeInstance, mi::MethodInstance)
+        return to_internal_code_cache_view(wvc)[mi] = codeinst
+    end
+else
+    function CC.setindex!(wvc::WorldView{<:AbstractAnalyzerView}, codeinst::CodeInstance, mi::MethodInstance)
+        istoplevelframe(mi) && return codeinst
+        return to_internal_code_cache_view(wvc)[mi] = codeinst
+    end
 end
 
 # local
