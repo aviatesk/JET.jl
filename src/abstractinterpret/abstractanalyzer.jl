@@ -130,7 +130,7 @@ mutable struct AnalyzerState
 
     # the temporal stash to keep track of the context of caller inference/optimization and
     # the caller itself, to which reconstructed cached reports will be appended
-    cache_target::Union{Nothing,Pair{Symbol,InferenceState}}
+    cache_target::Union{Nothing,Pair{Symbol,<:InferenceState}}
 
     ## abstract toplevel execution ##
 
@@ -148,7 +148,7 @@ for fld in fieldnames(AnalyzerState)
     getter = Symbol("get_", fld)
     @eval (@__MODULE__) @inline $getter(analyzer::AbstractAnalyzer) = getfield(AnalyzerState(analyzer), $(QuoteNode(fld)))
 end
-set_cache_target!(analyzer::AbstractAnalyzer, target::Union{Nothing,Pair{Symbol,InferenceState}}) = setfield!(AnalyzerState(analyzer), :cache_target, target)
+set_cache_target!(analyzer::AbstractAnalyzer, target::Union{Nothing,Pair{Symbol,<:InferenceState}}) = setfield!(AnalyzerState(analyzer), :cache_target, target)
 set_entry!(analyzer::AbstractAnalyzer, entry::Union{Nothing,MethodInstance}) = setfield!(AnalyzerState(analyzer), :entry, entry)
 
 # The main constructor used at analysis entries
@@ -162,7 +162,7 @@ function AnalyzerState(world::UInt  = get_world_counter();
                          #=opt_params::OptimizationParams=# opt_params,
                          #=analysis_results::IdDict{InferenceResult,AnalysisResult}=# IdDict{InferenceResult,AnalysisResult}(),
                          #=report_stash::Vector{InferenceErrorReport}=# InferenceErrorReport[],
-                         #=cache_target::Union{Nothing,Pair{Symbol,InferenceState}}=# nothing,
+                         #=cache_target::Union{Nothing,Pair{Symbol,<:InferenceState}}=# nothing,
                          #=concretized::BitVector=# non_toplevel_concretized,
                          #=binding_states::AbstractBindings=# AbstractBindings(),
                          #=entry::Union{Nothing,MethodInstance}=# nothing)
