@@ -100,9 +100,9 @@ The mutable object that holds various states that are consumed by all [`Abstract
 If `NewAnalyzer` implements the `AbstractAnalyzer` interface, `NewAnalyzer` should implement
 this `AnalyzerState(analyzer::NewAnalyzer) -> AnalyzerState` interface.
 
-A new `AnalyzerState` is supposed to be constructed using the [general configurations](@ref) passed
-as keyword arguments `jetconfigs` of the [`NewAnalyzer(; jetconfigs...)`](@ref AbstractAnalyzer)
-constructor, and the constructed `AnalyzerState` is usually kept within `NewAnalyzer` itself:
+A new `AnalyzerState` is supposed to be constructed by the
+[`NewAnalyzer(; jetconfigs...)`](@ref AbstractAnalyzer) constructor, and the constructed
+`AnalyzerState` is usually kept within `NewAnalyzer` itself:
 ```julia
 function NewAnalyzer(world::UInt=Base.get_world_counter(); jetconfigs...)
     ...
@@ -152,10 +152,11 @@ set_cache_target!(analyzer::AbstractAnalyzer, target::Union{Nothing,Pair{Symbol,
 set_entry!(analyzer::AbstractAnalyzer, entry::Union{Nothing,MethodInstance}) = setfield!(AnalyzerState(analyzer), :entry, entry)
 
 # The main constructor used at analysis entries
-function AnalyzerState(world::UInt  = get_world_counter();
+function AnalyzerState(world::UInt = get_world_counter();
+                       inf_params::InferenceParams = InferenceParams(),
+                       opt_params::OptimizationParams = OptimizationParams(),
                        jetconfigs...)
-    inf_params = JETInferenceParams(; jetconfigs...)
-    opt_params = JETOptimizationParams(; jetconfigs...)
+    reject_abstract_interpretation_configs(jetconfigs)
     return AnalyzerState(#=world::UInt=# world,
                          #=inf_cache::Vector{InferenceResult}=# InferenceResult[],
                          #=inf_params::InferenceParams=# inf_params,
@@ -197,88 +198,20 @@ end
 # dummies for non-toplevel analysis
 const non_toplevel_concretized  = BitVector()
 
-"""
-Configurations for abstract interpretation performed by JET.
-These configurations will be active for all the entries.
+const ABSTRACT_INTERPRETATION_CONFIGURATIONS = Set{Symbol}((
+    fieldnames(InferenceParams)...,
+    fieldnames(OptimizationParams)...))
 
-You can configure any of the keyword parameters that [`$CC.InferenceParams`](@ref)
-or [`$CC.OptimizationParams`](@ref) can take, e.g. `max_methods`:
-```julia
-julia> methods(==, (Any,Nothing))
-# 3 methods for generic function "==" from Base:
- [1] ==(::Missing, ::Any)
-     @ missing.jl:75
- [2] ==(w::WeakRef, v)
-     @ gcutils.jl:4
- [3] ==(x, y)
-     @ Base.jl:127
-
-julia> report_call((Any,)) do x
-           # when we account for all the possible matching method candidates,
-           # `(::Missing == ::Nothing)::Missing` leads to an `NonBooleanCondErrorReport`
-           x == nothing ? :nothing : :some
-       end
-═════ 1 possible error found ═════
-┌ @ none:4 goto %4 if not x == nothing
-│ non-boolean `Missing` found in boolean context (1/2 union split): goto %4 if not (x::Any == nothing)::Union{Missing, Bool}
-└──────────
-
-julia> report_call((Any,); max_methods=1) do x
-           # since we limit `max_methods=1`, JET gives up analysis on `(x::Any == nothing)`
-           # and thus we won't get any error report
-           x == nothing ? :nothing : :some
-       end
-No errors detected
-```
-
-See also [`$CC.InferenceParams`](@ref) and [`$CC.OptimizationParams`](@ref).
-
-Listed below are selections of those parameters that can have a potent influence on JET analysis.
-
----
-- `ipo_constant_propagation::Bool = true` \\
-  Enables constant propagation in abstract interpretation.
-  It is _**highly**_ recommended that you keep this configuration `true` to get reasonable analysis result,
-  because constant propagation can cut off lots of false positive errorenous code paths and
-  thus produce more accurate and useful analysis results.
----
-- `aggressive_constant_propagation::Bool = true` \\
-  If `true`, JET will try to do constant propagation more "aggressively".
-  It can lead to more accurate analysis as explained above, but also it may incur a performance cost.
-  JET by default enables this configuration to get more accurate analysis result.
----
-"""
-function JETInferenceParams end
-function JETOptimizationParams end
-
-# define wrappers of `InferenceParams(...)` and `OptimizationParams(...)` that can accept JET configurations
-for (Params, Func) = ((InferenceParams, JETInferenceParams),
-                      (OptimizationParams, JETOptimizationParams))
-    params = Params()
-    param = Expr(:kw, Expr(:(::), :params, Params), CC.quoted(params))
-    kwargs = Expr[]
-    parameters = Symbol[]
-    for i = 1:nfields(params)
-        fname, ftype = fieldname(Params, i), fieldtype(Params, i)
-        push!(parameters, fname)
-        arg = Expr(:(::), fname, ftype)
-        default = Expr(:., :params, QuoteNode(fname))
-        push!(kwargs, Expr(:kw, arg, default))
+function reject_abstract_interpretation_configs(jetconfigs)
+    for (key, val) in jetconfigs
+        if key in ABSTRACT_INTERPRETATION_CONFIGURATIONS
+            valrepr = LazyPrinter(io::IO->show(io, val))
+            throw(JETConfigError(
+                lazy"Given unexpected configuration: `$key = $valrepr`", key, val))
+        end
     end
-    sig = Expr(:call, nameof(Func), Expr(:parameters, kwargs..., :(__jetconfigs...)), param)
-    call = Expr(:call, nameof(Params), parameters...)
-    body = Expr(:block, LineNumberNode(@__LINE__, @__FILE__), call)
-    def = Expr(:(=), sig, body)
-    Core.eval(@__MODULE__, def)
+    return nothing
 end
-
-# assert that the wrappers create same objects as the original constructors
-for (Params, Func) = ((InferenceParams, JETInferenceParams),
-                      (OptimizationParams, JETOptimizationParams))
-    @assert Params() == Func()
-end
-@assert JETInferenceParams(InferenceParams(); max_methods=1).max_methods == 1
-@assert !JETOptimizationParams(OptimizationParams(); inlining=false).inlining
 
 Base.show(io::IO, state::AnalyzerState) = print(io, typeof(state), "(...)")
 
@@ -376,15 +309,19 @@ Returns a set of names that are valid as a configuration for `analyzer`.
 `names` should be an iterator of `Symbol`.
 No validations are performed if `nothing` is returned.
 """
-valid_configurations(analyzer::AbstractAnalyzer) = nothing
+valid_configurations(::AbstractAnalyzer) = nothing
 
 function validate_configs(analyzer::AbstractAnalyzer, jetconfigs)
-    valid_keys = valid_configurations(analyzer)
+    return validate_configs(valid_configurations(analyzer), jetconfigs)
+end
+
+function validate_configs(valid_keys, jetconfigs)
     isnothing(valid_keys) && return nothing
     for (key, val) in jetconfigs
         if key ∉ valid_keys
             valrepr = LazyPrinter(io::IO->show(io,val))
-            throw(JETConfigError(lazy"Given unexpected configuration: `$key = $valrepr`", key, val))
+            throw(JETConfigError(
+                lazy"Given unexpected configuration: `$key = $valrepr`", key, val))
         end
     end
     return nothing
