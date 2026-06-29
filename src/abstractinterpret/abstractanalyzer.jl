@@ -466,12 +466,6 @@ function add_new_report!(analyzer::AbstractAnalyzer, result::InferenceResult, @n
     return report
 end
 
-function add_cached_report!(analyzer::AbstractAnalyzer, caller::InferenceResult, @nospecialize(cached::InferenceErrorReport))
-    cached = copy_report_stable(cached)
-    push!(get_reports(analyzer, caller), cached)
-    return cached
-end
-
 stash_report!(analyzer::AbstractAnalyzer, @nospecialize(report::InferenceErrorReport)) = push!(get_report_stash(analyzer), report)
 stash_reports!(analyzer::AbstractAnalyzer, reports::Vector{InferenceErrorReport}) = append!(get_report_stash(analyzer), reports)
 
