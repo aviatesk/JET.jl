@@ -17,15 +17,21 @@ function collect_callee_reports!(analyzer::AbstractAnalyzer, sv::InferenceState)
     return nothing
 end
 
-function collect_cached_callee_reports!(analyzer::AbstractAnalyzer, reports::Vector{InferenceErrorReport},
-                                        caller::InferenceState, origin_mi::MethodInstance)
+# Restore each cached report as a fresh copy — the cached report is shared on the callee's
+# `CodeInstance` and must not be mutated by the re-rooting `pushfirst!` in
+# `collect_callee_reports!` — and stash it. Insertion into the caller's result and re-rooting
+# onto the caller frame both happen there, uniformly with freshly inferred callee reports.
+function collect_cached_callee_reports!(
+        analyzer::AbstractAnalyzer, reports::Vector{InferenceErrorReport},
+        origin_mi::MethodInstance
+    )
     for cached in reports
-        restored = add_cached_report!(analyzer, caller.result, cached)
+        restored = copy_report_stable(cached)
         @static if JET_DEV_MODE
             actual, expected = first(restored.vst).linfo, origin_mi
             @assert actual === expected "invalid local cache restoration, expected $expected but got $actual"
         end
-        stash_report!(analyzer, restored) # should be updated in `abstract_call_method_with_const_args`
+        stash_report!(analyzer, restored)
     end
     return nothing
 end
@@ -258,7 +264,7 @@ function CC.get(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance, defa
     # XXX move this logic into `typeinf_edge`?
     cache_target = get_cache_target(analyzer)
     if cache_target !== nothing
-        context, caller = cache_target
+        context, _ = cache_target
         if context === :typeinf_edge
             if isa(codeinst, CodeInstance)
                 # cache hit, now we need to append cached reports associated with this `MethodInstance`
@@ -266,7 +272,7 @@ function CC.get(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance, defa
                     analysis_result isa CachedAnalysisResult ? analysis_result.reports : nothing
                 end
                 cached_reports !== nothing &&
-                    collect_cached_callee_reports!(analyzer, cached_reports, caller, mi)
+                    collect_cached_callee_reports!(analyzer, cached_reports, mi)
             end
         end
         set_cache_target!(analyzer, nothing)
@@ -321,7 +327,7 @@ function CC.cache_lookup(𝕃ᵢ::CC.AbstractLattice, mi::MethodInstance, given_
             analysis_result isa CachedAnalysisResult ? analysis_result.reports : nothing
         end
         cached_reports !== nothing &&
-            collect_cached_callee_reports!(analyzer, cached_reports, caller, mi)
+            collect_cached_callee_reports!(analyzer, cached_reports, mi)
     end
     return inf_result
 end
