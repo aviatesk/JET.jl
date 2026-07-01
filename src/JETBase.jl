@@ -259,7 +259,11 @@ end
 stmt_types(sv::InferenceState) = StmtTypes(sv)
 function Base.getindex(st::StmtTypes, pc::Int)
     block = CC.block_for_inst(st.sv.cfg, pc)
-    return st.sv.bb_vartables[block]::VarTable
+    @static if isdefined(CC, :BBEntryState)
+        return (st.sv.bb_states[block]::CC.BBEntryState).vartable::VarTable
+    else
+        return st.sv.bb_vartables[block]::VarTable
+    end
 end
 
 function is_compileable_mi(mi::MethodInstance)

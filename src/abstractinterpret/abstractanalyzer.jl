@@ -86,6 +86,14 @@ struct AbstractBindingState
 end
 const AbstractBindings = IdDict{Core.BindingPartition,AbstractBindingState}
 
+@static if isdefined(CC, :InferenceCache)
+    const JETLocalCache = CC.InferenceCache
+    new_local_cache() = CC.InferenceCache()
+else
+    const JETLocalCache = Vector{InferenceResult}
+    new_local_cache() = InferenceResult[]
+end
+
 """
     mutable struct AnalyzerState
         ...
@@ -116,7 +124,7 @@ mutable struct AnalyzerState
     ## AbstractInterpreter ##
 
     const world::UInt
-    const inf_cache::Vector{InferenceResult}
+    const inf_cache::JETLocalCache
     const inf_params::InferenceParams
     const opt_params::OptimizationParams
 
@@ -157,7 +165,7 @@ function AnalyzerState(world::UInt  = get_world_counter();
     inf_params = JETInferenceParams(; jetconfigs...)
     opt_params = JETOptimizationParams(; jetconfigs...)
     return AnalyzerState(#=world::UInt=# world,
-                         #=inf_cache::Vector{InferenceResult}=# InferenceResult[],
+                         #=inf_cache::JETLocalCache=# new_local_cache(),
                          #=inf_params::InferenceParams=# inf_params,
                          #=opt_params::OptimizationParams=# opt_params,
                          #=analysis_results::IdDict{InferenceResult,AnalysisResult}=# IdDict{InferenceResult,AnalysisResult}(),
@@ -177,7 +185,7 @@ function AnalyzerState(state::AnalyzerState, refresh_local_cache::Bool=true;
                        binding_states::AbstractBindings = state.binding_states,
                        entry::Union{Nothing,MethodInstance} = state.entry)
     if refresh_local_cache
-        inf_cache = InferenceResult[]
+        inf_cache = new_local_cache()
         analysis_results = IdDict{InferenceResult,AnalysisResult}()
     else
         (; inf_cache, analysis_results) = state
