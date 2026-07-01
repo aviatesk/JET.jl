@@ -267,6 +267,12 @@ given that the number of matching methods are limited beforehand.
 """
 CC.bail_out_call(::JETAnalyzer, ::CC.InferenceLoopState, ::InferenceState) = false
 
+@static if hasfield(MethodCallResult, :call_result)
+    volatile_inf_result(result::MethodCallResult) = result.call_result
+else
+    volatile_inf_result(result::MethodCallResult) = result.volatile_inf_result
+end
+
 @static if VERSION ≥ v"1.13.0-DEV.1352" || VERSION ≥ v"1.12.2"
 function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
     @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
@@ -275,7 +281,7 @@ function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
     neweffects = CC.Effects(result.effects; nonoverlayed=CC.ALWAYS_TRUE)
     result = MethodCallResult(result.rt, result.exct, neweffects, result.edge,
                               result.edgecycle, result.edgelimited,
-                              result.volatile_inf_result)
+                              volatile_inf_result(result))
     res = @invoke CC.concrete_eval_eligible(analyzer::ToplevelAbstractAnalyzer,
         f::Any, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
     # Ensure that semi-concrete interpretation is definitely disabled to prevent it from occurring
@@ -864,9 +870,15 @@ report_undef_global_var!(analyzer::SoundJETAnalyzer, sv::InferenceState, binding
 report_undef_global_var!(analyzer::TypoJETAnalyzer, sv::InferenceState, binding::Core.Binding, partition::Core.BindingPartition) =
     _report_undef_global_var!(analyzer, sv, binding, partition, false)
 
+@static if hasfield(InferenceState, :world)
+    jet_frame_world(::JETAnalyzer, sv::InferenceState) = sv.world.this
+else
+    jet_frame_world(analyzer::JETAnalyzer, ::InferenceState) = CC.get_inference_world(analyzer)
+end
+
 function _report_undef_global_var!(analyzer::JETAnalyzer, sv::InferenceState, binding::Core.Binding, partition::Core.BindingPartition, _sound::Bool)
     gr = binding.globalref
-    world = sv.world.this
+    world = jet_frame_world(analyzer, sv)
     if Base.invoke_in_world(world, isdefinedglobal, gr.mod, gr.name)
         x = Base.invoke_in_world(world, getglobal, gr.mod, gr.name)
         x isa AbstractBindingState || return false
@@ -1265,7 +1277,7 @@ function report_getglobal!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::
     2 ≤ length(argtypes) ≤ 3 || return false
     gr = constant_globalref(argtypes)
     gr === nothing && return false
-    if Base.invoke_in_world(sv.world.this, isdefinedglobal, gr.mod, gr.name)
+    if Base.invoke_in_world(jet_frame_world(analyzer, sv), isdefinedglobal, gr.mod, gr.name)
         return false
     end
     add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, gr, false))
