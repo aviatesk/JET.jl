@@ -228,6 +228,15 @@ end
 # global
 # ------
 
+@static if !isdefined(CC, :WorldView)
+    struct WorldView{Cache}
+        cache::Cache
+        worlds::WorldRange
+        WorldView(cache::Cache, worlds::WorldRange) where Cache = new{Cache}(cache, worlds)
+    end
+    WorldView(cache, args...) = WorldView(cache, WorldRange(args...))
+end
+
 CC.cache_owner(analyzer::AbstractAnalyzer) = AnalysisToken(analyzer)
 
 function CC.code_cache(analyzer::AbstractAnalyzer)
@@ -236,8 +245,16 @@ function CC.code_cache(analyzer::AbstractAnalyzer)
     return WorldView(view, worlds)
 end
 
-to_internal_code_cache_view(wvc::WorldView{<:AbstractAnalyzerView}) =
-    WorldView(CC.InternalCodeCache(CC.cache_owner(wvc.cache.analyzer)), wvc.worlds)
+@static if !isdefined(CC, :WorldView)
+    CC.code_cache(analyzer::AbstractAnalyzer, worlds::WorldRange) =
+        WorldView(AbstractAnalyzerView(analyzer), worlds)
+
+    to_internal_code_cache_view(wvc::WorldView{<:AbstractAnalyzerView}) =
+        CC.InternalCodeCache(CC.cache_owner(wvc.cache.analyzer), wvc.worlds)
+else
+    to_internal_code_cache_view(wvc::WorldView{<:AbstractAnalyzerView}) =
+        WorldView(CC.InternalCodeCache(CC.cache_owner(wvc.cache.analyzer)), wvc.worlds)
+end
 
 CC.haskey(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance) = haskey(to_internal_code_cache_view(wvc), mi)
 
@@ -287,8 +304,15 @@ function CC.getindex(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance)
     return codeinst::CodeInstance
 end
 
-function CC.setindex!(wvc::WorldView{<:AbstractAnalyzerView}, codeinst::CodeInstance, mi::MethodInstance)
-    return to_internal_code_cache_view(wvc)[mi] = codeinst
+@static if isdefined(CC, :cache_result!)
+    function CC.setindex!(wvc::WorldView{<:AbstractAnalyzerView}, codeinst::CodeInstance, mi::MethodInstance)
+        return to_internal_code_cache_view(wvc)[mi] = codeinst
+    end
+else
+    function CC.setindex!(wvc::WorldView{<:AbstractAnalyzerView}, codeinst::CodeInstance, mi::MethodInstance)
+        istoplevelframe(mi) && return codeinst
+        return to_internal_code_cache_view(wvc)[mi] = codeinst
+    end
 end
 
 # local
@@ -296,7 +320,7 @@ end
 
 CC.get_inference_cache(analyzer::AbstractAnalyzer) = AbstractAnalyzerView(analyzer)
 
-function CC.cache_lookup(𝕃ᵢ::CC.AbstractLattice, mi::MethodInstance, given_argtypes::Argtypes, view::AbstractAnalyzerView)
+function jet_constprop_cache_lookup(𝕃ᵢ::CC.AbstractLattice, mi::MethodInstance, given_argtypes::Argtypes, view::AbstractAnalyzerView)
     # XXX the very dirty analyzer state observation again
     # this method should only be called from the single context i.e. `abstract_call_method_with_const_args`,
     # and so we should reset the cache target immediately we reach here
@@ -304,7 +328,11 @@ function CC.cache_lookup(𝕃ᵢ::CC.AbstractLattice, mi::MethodInstance, given_
     cache_target = get_cache_target(analyzer)
     set_cache_target!(analyzer, nothing)
 
-    inf_result = CC.cache_lookup(𝕃ᵢ, mi, given_argtypes, get_inf_cache(view.analyzer))
+    inf_result = @static if isdefined(CC, :constprop_cache_lookup)
+        CC.constprop_cache_lookup(𝕃ᵢ, mi, given_argtypes, get_inf_cache(view.analyzer))
+    else
+        CC.cache_lookup(𝕃ᵢ, mi, given_argtypes, get_inf_cache(view.analyzer))
+    end
 
     isa(inf_result, InferenceResult) || return inf_result
 
@@ -332,6 +360,14 @@ function CC.cache_lookup(𝕃ᵢ::CC.AbstractLattice, mi::MethodInstance, given_
     return inf_result
 end
 
+@static if isdefined(CC, :constprop_cache_lookup)
+    CC.constprop_cache_lookup(𝕃ᵢ::CC.AbstractLattice, mi::MethodInstance, given_argtypes::Argtypes, view::AbstractAnalyzerView) =
+        jet_constprop_cache_lookup(𝕃ᵢ, mi, given_argtypes, view)
+else
+    CC.cache_lookup(𝕃ᵢ::CC.AbstractLattice, mi::MethodInstance, given_argtypes::Argtypes, view::AbstractAnalyzerView) =
+        jet_constprop_cache_lookup(𝕃ᵢ, mi, given_argtypes, view)
+end
+
 CC.push!(view::AbstractAnalyzerView, inf_result::InferenceResult) = CC.push!(get_inf_cache(view.analyzer), inf_result)
 
 # main driver
@@ -341,8 +377,11 @@ CC.push!(view::AbstractAnalyzerView, inf_result::InferenceResult) = CC.push!(get
 function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
     parent = CC.frame_parent(frame)
 
-    if is_constant_propagated(frame) && parent !== nothing
-        parent::InferenceState
+    # The parent of a constant-propagated frame is an `InferenceState` when const-prop' is
+    # entered from regular abstract interpretation, but an `IRInterpretationState` when it is
+    # entered from semi-concrete interpretation (IR interpretation). Only the former carries
+    # the `InferenceState`-based report stash that the lineage filtering operates on.
+    if is_constant_propagated(frame) && parent isa InferenceState
         # JET is going to perform the abstract-interpretation with the extended lattice elements:
         # throw-away the error reports that are collected during the previous non-constant abstract-interpretation
         # NOTE that the `linfo` here is the exactly same object as the method instance used
@@ -487,7 +526,13 @@ function CC.global_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::In
     isconditional = istoplevelframe(sv) ? let postdomtree = CC.construct_postdomtree(sv.cfg)
         !CC.postdominates(postdomtree, sv.currbb, 1)
     end : true
-    (valid_worlds, ret) = CC.scan_partitions(analyzer, g, sv.world) do analyzer::AbstractAnalyzer, ::Core.Binding, partition::Core.BindingPartition
+    @static if hasfield(InferenceState, :world)
+        worldhint = sv.world
+    else
+        curworld = CC.get_inference_world(analyzer)
+        worldhint = CC.binding_world_hints(curworld, sv)
+    end
+    (valid_worlds, ret) = CC.scan_partitions(analyzer, g, worldhint) do analyzer::AbstractAnalyzer, ::Core.Binding, partition::Core.BindingPartition
         rte = CC.global_assignment_binding_rt_exct(analyzer, partition, newty′[])
         if isconcretized
             # skip the assignment effect if this has been concretized already
@@ -500,18 +545,51 @@ function CC.global_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::In
         end
         return rte
     end
-    CC.update_valid_age!(sv, valid_worlds)
+    @static if hasfield(InferenceState, :world)
+        CC.update_valid_age!(sv, valid_worlds)
+    else
+        CC.update_valid_age!(sv, curworld, valid_worlds)
+    end
     return ret
 end
 
 function CC.abstract_eval_statement_expr(analyzer::ToplevelAbstractAnalyzer, e::Expr, sstate::StatementState,
                                          sv::InferenceState)::Future{RTEffects}
-    if isexpr(e, :const)
-        if !isconcretized(analyzer, sv) # skip the assignment effect if this has been concretized already
-            return abstract_eval_const_stmt(analyzer, e, sstate, sv)
-        end
+    if !isconcretized(analyzer, sv)
+        isexpr(e, :const) && return abstract_eval_const_stmt(analyzer, e, sstate, sv)
+        is_declare_const_call(e) && return abstract_eval_declare_const(analyzer, e, sstate, sv)
     end
     return @invoke CC.abstract_eval_statement_expr(analyzer::AbstractAnalyzer, e::Expr, sstate::StatementState, sv::InferenceState)
+end
+
+function is_declare_const_call(e::Expr)::Bool
+    isexpr(e, :call) || return false
+    length(e.args) ≥ 3 || return false
+    f = e.args[1]
+    return f isa GlobalRef && f.mod === Core && f.name === :declare_const
+end
+
+# Handle `Core.declare_const(mod, :name, value)` calls (Julia 1.13+)
+# by converting them to the equivalent abstract handling of `:const` expressions
+function abstract_eval_declare_const(analyzer::ToplevelAbstractAnalyzer, stmt::Expr,
+                                     sstate::StatementState, sv::InferenceState)
+    istoplevelframe(sv) || return RTEffects(Union{}, ErrorException, EFFECTS_THROWS)
+    mod_arg = stmt.args[2]
+    name_arg = stmt.args[3]
+    name_arg isa QuoteNode || return RTEffects(Nothing, ErrorException, EFFECTS_THROWS)
+    name = name_arg.value::Symbol
+    mod = mod_arg isa Module ? mod_arg : CC.frame_module(sv)
+    gr = GlobalRef(mod, name)
+    if length(stmt.args) == 4
+        lastargtype = CC.abstract_eval_value(analyzer, stmt.args[4], sstate, sv)
+        if CC.isvarargtype(lastargtype)
+            return RTEffects(Nothing, ErrorException, EFFECTS_THROWS)
+        end
+    else
+        lastargtype = nothing
+    end
+    rt, exct = const_assignment_rt_exct(analyzer, sv, sstate.saw_latestworld, gr, lastargtype)
+    return RTEffects(rt, exct, CC.Effects(EFFECTS_THROWS; nothrow=exct===Union{}))
 end
 
 # XXX Do we need to port this back to Julia base?
@@ -549,7 +627,13 @@ function const_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::Infere
     new_binding_typ′ = Ref{Any}(new_binding_typ)
     postdomtree = CC.construct_postdomtree(sv.cfg)
     isconditional = !CC.postdominates(postdomtree, sv.currbb, 1)
-    (valid_worlds, ret) = CC.scan_partitions(analyzer, gr, sv.world) do analyzer::ToplevelAbstractAnalyzer, _binding::Core.Binding, partition::Core.BindingPartition
+    @static if hasfield(InferenceState, :world)
+        worldhint = sv.world
+    else
+        curworld = CC.get_inference_world(analyzer)
+        worldhint = CC.binding_world_hints(curworld, sv)
+    end
+    (valid_worlds, ret) = CC.scan_partitions(analyzer, gr, worldhint) do analyzer::ToplevelAbstractAnalyzer, _binding::Core.Binding, partition::Core.BindingPartition
         rte = const_assignment_binding_rt_exct(analyzer, partition)
         rt, _exct = rte
         if rt !== Union{}
@@ -576,7 +660,11 @@ function const_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::Infere
         end
         return rte
     end
-    CC.update_valid_age!(sv, valid_worlds)
+    @static if hasfield(InferenceState, :world)
+        CC.update_valid_age!(sv, valid_worlds)
+    else
+        CC.update_valid_age!(sv, curworld, valid_worlds)
+    end
     return ret
 end
 
@@ -641,7 +729,9 @@ end
 
 is_inactive_exception(@nospecialize rt) = isa(rt, Const) && rt.val === _INACTIVE_EXCEPTION()
 
-function CC.cache_result!(analyzer::ToplevelAbstractAnalyzer, caller::InferenceResult, ci::CodeInstance)
-    istoplevelframe(caller.linfo) && return nothing # don't need to cache toplevel frame
-    @invoke CC.cache_result!(analyzer::AbstractAnalyzer, caller::InferenceResult, ci::CodeInstance)
+@static if isdefined(CC, :cache_result!)
+    function CC.cache_result!(analyzer::ToplevelAbstractAnalyzer, caller::InferenceResult, ci::CodeInstance)
+        istoplevelframe(caller.linfo) && return nothing # don't need to cache toplevel frame
+        @invoke CC.cache_result!(analyzer::AbstractAnalyzer, caller::InferenceResult, ci::CodeInstance)
+    end
 end

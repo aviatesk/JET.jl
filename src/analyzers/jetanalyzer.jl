@@ -267,6 +267,12 @@ given that the number of matching methods are limited beforehand.
 """
 CC.bail_out_call(::JETAnalyzer, ::CC.InferenceLoopState, ::InferenceState) = false
 
+@static if hasfield(MethodCallResult, :call_result)
+    volatile_inf_result(result::MethodCallResult) = result.call_result
+else
+    volatile_inf_result(result::MethodCallResult) = result.volatile_inf_result
+end
+
 @static if VERSION ≥ v"1.13.0-DEV.1352" || VERSION ≥ v"1.12.2"
 function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
     @nospecialize(f), result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
@@ -275,7 +281,7 @@ function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
     neweffects = CC.Effects(result.effects; nonoverlayed=CC.ALWAYS_TRUE)
     result = MethodCallResult(result.rt, result.exct, neweffects, result.edge,
                               result.edgecycle, result.edgelimited,
-                              result.volatile_inf_result)
+                              volatile_inf_result(result))
     res = @invoke CC.concrete_eval_eligible(analyzer::ToplevelAbstractAnalyzer,
         f::Any, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
     # Ensure that semi-concrete interpretation is definitely disabled to prevent it from occurring
@@ -398,13 +404,24 @@ function CC.abstract_eval_globalref(analyzer::JETAnalyzer, g::GlobalRef, saw_lat
     if saw_latestworld
         return CC.RTEffects(Any, Any, CC.generic_getglobal_effects)
     end
-    (valid_worlds, ret) = CC.scan_leaf_partitions(analyzer, g, sv.world) do analyzer::JETAnalyzer, binding::Core.Binding, partition::Core.BindingPartition
-        if partition.min_world ≤ sv.world.this ≤ partition.max_world # XXX This should probably be fixed on the Julia side
+    @static if hasfield(InferenceState, :world)
+        curworld = sv.world.this
+        worldhint = sv.world
+    else
+        curworld = CC.get_inference_world(analyzer)
+        worldhint = CC.binding_world_hints(curworld, sv)
+    end
+    (valid_worlds, ret) = CC.scan_leaf_partitions(analyzer, g, worldhint) do analyzer::JETAnalyzer, binding::Core.Binding, partition::Core.BindingPartition
+        if partition.min_world ≤ curworld ≤ partition.max_world # XXX This should probably be fixed on the Julia side
             report_undef_global_var!(analyzer, sv, binding, partition)
         end
         CC.abstract_eval_partition_load(analyzer, binding, partition)
     end
-    CC.update_valid_age!(sv, valid_worlds)
+    @static if hasfield(InferenceState, :world)
+        CC.update_valid_age!(sv, valid_worlds)
+    else
+        CC.update_valid_age!(sv, curworld, valid_worlds)
+    end
     return ret
 end
 
@@ -647,8 +664,10 @@ report_method_error!(analyzer::SoundJETAnalyzer, sv::InferenceState, call::CallM
 function report_method_error!(analyzer::JETAnalyzer,
     sv::InferenceState, call::CallMeta, argtypes::Argtypes, @nospecialize(atype), sound::Bool)
     info = call.info
-    if isa(info, ConstCallInfo)
-        info = info.call
+    @static if isdefined(CC, :ConstCallInfo)
+        if isa(info, ConstCallInfo)
+            info = info.call
+        end
     end
     if !sound
         if isa(info, MethodMatchInfo) || isa(info, UnionSplitInfo)
@@ -851,9 +870,15 @@ report_undef_global_var!(analyzer::SoundJETAnalyzer, sv::InferenceState, binding
 report_undef_global_var!(analyzer::TypoJETAnalyzer, sv::InferenceState, binding::Core.Binding, partition::Core.BindingPartition) =
     _report_undef_global_var!(analyzer, sv, binding, partition, false)
 
+@static if hasfield(InferenceState, :world)
+    jet_frame_world(::JETAnalyzer, sv::InferenceState) = sv.world.this
+else
+    jet_frame_world(analyzer::JETAnalyzer, ::InferenceState) = CC.get_inference_world(analyzer)
+end
+
 function _report_undef_global_var!(analyzer::JETAnalyzer, sv::InferenceState, binding::Core.Binding, partition::Core.BindingPartition, _sound::Bool)
     gr = binding.globalref
-    world = sv.world.this
+    world = jet_frame_world(analyzer, sv)
     if Base.invoke_in_world(world, isdefinedglobal, gr.mod, gr.name)
         x = Base.invoke_in_world(world, getglobal, gr.mod, gr.name)
         x isa AbstractBindingState || return false
@@ -1252,7 +1277,7 @@ function report_getglobal!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::
     2 ≤ length(argtypes) ≤ 3 || return false
     gr = constant_globalref(argtypes)
     gr === nothing && return false
-    if Base.invoke_in_world(sv.world.this, isdefinedglobal, gr.mod, gr.name)
+    if Base.invoke_in_world(jet_frame_world(analyzer, sv), isdefinedglobal, gr.mod, gr.name)
         return false
     end
     add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, gr, false))
@@ -1405,6 +1430,14 @@ function handle_invalid_builtins!(analyzer::JETAnalyzer, sv::InferenceState, @no
     return false
 end
 
+function is_binding_partition_builtin(@nospecialize f)::Bool
+    @static if isdefined(Core, :declare_global)
+        return f === Core.declare_global || f === Core.declare_const
+    else
+        return false
+    end
+end
+
 function _report_builtin_error_sound!(analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(rt))
     if isa(f, IntrinsicFunction)
         nothrow = CC.intrinsic_nothrow(f, argtypes)
@@ -1412,6 +1445,7 @@ function _report_builtin_error_sound!(analyzer::JETAnalyzer, sv::InferenceState,
         nothrow = CC.builtin_nothrow(CC.typeinf_lattice(analyzer), f, argtypes, rt)
     end
     nothrow && return false
+    is_binding_partition_builtin(f) && return false
     add_new_report!(analyzer, sv.result, UnsoundBuiltinErrorReport(sv, f, argtypes))
     return true
 end

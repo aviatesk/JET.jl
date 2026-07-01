@@ -86,6 +86,14 @@ struct AbstractBindingState
 end
 const AbstractBindings = IdDict{Core.BindingPartition,AbstractBindingState}
 
+@static if isdefined(CC, :InferenceCache)
+    const JETLocalCache = CC.InferenceCache
+    new_local_cache() = CC.InferenceCache()
+else
+    const JETLocalCache = Vector{InferenceResult}
+    new_local_cache() = InferenceResult[]
+end
+
 """
     mutable struct AnalyzerState
         ...
@@ -116,7 +124,7 @@ mutable struct AnalyzerState
     ## AbstractInterpreter ##
 
     const world::UInt
-    const inf_cache::Vector{InferenceResult}
+    const inf_cache::JETLocalCache
     const inf_params::InferenceParams
     const opt_params::OptimizationParams
 
@@ -130,7 +138,7 @@ mutable struct AnalyzerState
 
     # the temporal stash to keep track of the context of caller inference/optimization and
     # the caller itself, to which reconstructed cached reports will be appended
-    cache_target::Union{Nothing,Pair{Symbol,InferenceState}}
+    cache_target::Union{Nothing,Pair{Symbol,<:InferenceState}}
 
     ## abstract toplevel execution ##
 
@@ -148,7 +156,7 @@ for fld in fieldnames(AnalyzerState)
     getter = Symbol("get_", fld)
     @eval (@__MODULE__) @inline $getter(analyzer::AbstractAnalyzer) = getfield(AnalyzerState(analyzer), $(QuoteNode(fld)))
 end
-set_cache_target!(analyzer::AbstractAnalyzer, target::Union{Nothing,Pair{Symbol,InferenceState}}) = setfield!(AnalyzerState(analyzer), :cache_target, target)
+set_cache_target!(analyzer::AbstractAnalyzer, target::Union{Nothing,Pair{Symbol,<:InferenceState}}) = setfield!(AnalyzerState(analyzer), :cache_target, target)
 set_entry!(analyzer::AbstractAnalyzer, entry::Union{Nothing,MethodInstance}) = setfield!(AnalyzerState(analyzer), :entry, entry)
 
 # The main constructor used at analysis entries
@@ -157,12 +165,12 @@ function AnalyzerState(world::UInt  = get_world_counter();
     inf_params = JETInferenceParams(; jetconfigs...)
     opt_params = JETOptimizationParams(; jetconfigs...)
     return AnalyzerState(#=world::UInt=# world,
-                         #=inf_cache::Vector{InferenceResult}=# InferenceResult[],
+                         #=inf_cache::JETLocalCache=# new_local_cache(),
                          #=inf_params::InferenceParams=# inf_params,
                          #=opt_params::OptimizationParams=# opt_params,
                          #=analysis_results::IdDict{InferenceResult,AnalysisResult}=# IdDict{InferenceResult,AnalysisResult}(),
                          #=report_stash::Vector{InferenceErrorReport}=# InferenceErrorReport[],
-                         #=cache_target::Union{Nothing,Pair{Symbol,InferenceState}}=# nothing,
+                         #=cache_target::Union{Nothing,Pair{Symbol,<:InferenceState}}=# nothing,
                          #=concretized::BitVector=# non_toplevel_concretized,
                          #=binding_states::AbstractBindings=# AbstractBindings(),
                          #=entry::Union{Nothing,MethodInstance}=# nothing)
@@ -177,7 +185,7 @@ function AnalyzerState(state::AnalyzerState, refresh_local_cache::Bool=true;
                        binding_states::AbstractBindings = state.binding_states,
                        entry::Union{Nothing,MethodInstance} = state.entry)
     if refresh_local_cache
-        inf_cache = InferenceResult[]
+        inf_cache = new_local_cache()
         analysis_results = IdDict{InferenceResult,AnalysisResult}()
     else
         (; inf_cache, analysis_results) = state
