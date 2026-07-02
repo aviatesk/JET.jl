@@ -300,6 +300,35 @@ end
         @test any(r->isa(r,MethodErrorReport), get_reports_with_test(result))
     end
 
+    # The `foo(x)` report should survive const-prop filtering for `foo(1)`.
+    # Filtering only by `linfo` would discard reports from both callsites.
+    let result = Core.eval(Module(), quote
+            foo(a) = a < 0 ? a + string(a) : a
+            function bar(x)
+                r1 = foo(x)
+                r2 = foo(1)
+                return r1, r2
+            end
+            $report_call(bar, (Int,))
+        end)
+        reports = get_reports_with_test(result)
+        @test length(reports) === 1
+        report = only(reports)
+        @test report isa MethodErrorReport
+        @test report.t === Tuple{typeof(+), Int, String}
+    end
+
+    # FIXME Same-line callsites of the same callee can't be distinguished by the
+    # (file, line, linfo) key: const-prop filtering for `foo(1)` still discards
+    # the report from `foo(x)` written on the same line.
+    let result = Core.eval(Module(), quote
+            foo(a) = a < 0 ? a + string(a) : a
+            bar(x) = (foo(x), foo(1))
+            $report_call(bar, (Int,))
+        end)
+        @test_broken length(get_reports_with_test(result)) === 1
+    end
+
     let result = Core.eval(Module(), quote
             foo(a) = a<0 ? a+string(a) : a
             function bar(b)
