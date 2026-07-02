@@ -175,7 +175,7 @@ function CC.const_prop_call(analyzer::OptAnalyzer,
     if concrete_eval_result !== nothing
         # HACK disable the whole `OptAnalyzer` analysis as far as the frame has been concretized
         # (otherwise we may end up with useless reports from recursive calls)
-        filter_lineages!(analyzer, sv.result, result.edge.def)
+        filter_lineages!(analyzer, sv, result.edge.def)
     end
     return ret
 end

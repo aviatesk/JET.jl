@@ -78,7 +78,7 @@ function CC.concrete_eval_call(analyzer::AbstractAnalyzer,
     if ret isa ConstCallResult
         # this frame has been concretized, now we throw away reports collected
         # during the previous non-constant, abstract-interpretation
-        filter_lineages!(analyzer, sv.result, result.edge.def)
+        filter_lineages!(analyzer, sv, result.edge.def)
     end
     return ret
 end
@@ -321,7 +321,7 @@ function CC.cache_lookup(𝕃ᵢ::CC.AbstractLattice, mi::MethodInstance, given_
         # with the extended lattice elements, here we should throw-away the error reports
         # that are collected during the previous non-constant abstract-interpretation
         # (see the `CC.typeinf(::AbstractAnalyzer, ::InferenceState)` overload)
-        filter_lineages!(analyzer, caller.result, mi)
+        filter_lineages!(analyzer, caller, mi)
 
         cached_reports = CC.traverse_analysis_results(inf_result) do @nospecialize analysis_result
             analysis_result isa CachedAnalysisResult ? analysis_result.reports : nothing
@@ -347,7 +347,7 @@ function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
         # throw-away the error reports that are collected during the previous non-constant abstract-interpretation
         # NOTE that the `linfo` here is the exactly same object as the method instance used
         # for the previous non-constant abstract-interpretation
-        filter_lineages!(analyzer, parent.result, CC.frame_instance(frame))
+        filter_lineages!(analyzer, parent, CC.frame_instance(frame))
     end
 
     ret = @invoke CC.typeinf(analyzer::AbstractInterpreter, frame::InferenceState)
@@ -356,17 +356,17 @@ function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
 end
 
 """
-    islineage(parent::MethodInstance, current::MethodInstance) ->
+    islineage(parent_frame::VirtualFrame, current::MethodInstance) ->
         (report::InferenceErrorReport) -> Bool
 
 Returns a function that checks if a given `InferenceErrorReport`
 - is generated from `current`, and
-- is "lineage" of `parent` (i.e. entered from it).
+- is "lineage" of `parent_frame` (i.e. entered from it).
 
-This function is supposed to be used when additional analysis with extended lattice information
-happens in order to filter out reports collected from `current` by analysis without
-using that extended information. When a report should be filtered out, the first virtual
-stack frame represents `parent` and the second does `current`.
+This function is supposed to be used when additional analysis with extended lattice
+information happens in order to filter out reports collected from `current` by analysis
+without using that extended information. When a report should be filtered out, the first
+virtual stack frame should match `parent_frame` and the second should represent `current`.
 
 Example:
 ```
@@ -377,26 +377,29 @@ entry
    │  └─ linfo2 (report2: linfo2)
    └─ linfo3′ (~~report2: linfo3->linfo2~~)
 ```
-In the example analysis above, `report2` should be filtered out on re-entering into `linfo3′`
-(i.e. when we're analyzing `linfo3` with constant arguments), nevertheless `report1` shouldn't
-because it is not detected within `linfo3` but within `linfo1` (so it's not a "lineage of `linfo3`"):
-- `islineage(linfo1, linfo3)(report2) === true`
-- `islineage(linfo1, linfo3)(report1) === false`
+In the example analysis above, `report2` should be filtered out on re-entering into
+`linfo3′` (i.e. when we're analyzing `linfo3` with constant arguments), nevertheless
+`report1` shouldn't because it is not detected within `linfo3` but within `linfo1`
+(so it's not a "lineage of `linfo3`"):
+- `islineage(vf1, linfo3)(report2) === true`, where `vf1` is `linfo1`'s frame at
+  the callsite of `linfo3`
+- `islineage(vf1, linfo3)(report1) === false`
 """
-function islineage(parent::MethodInstance, current::MethodInstance)
+function islineage(parent_frame::VirtualFrame, current::MethodInstance)
     function (report::InferenceErrorReport)
         @nospecialize report
-        @inbounds begin
-            vst = report.vst
-            length(vst) > 1 || return false
-            vst[1].linfo === parent || return false
-            return vst[2].linfo === current
-        end
+        vst = report.vst
+        return length(vst) > 1 && vst[1] == parent_frame && vst[2].linfo === current
     end
 end
 
-function filter_lineages!(analyzer::AbstractAnalyzer, caller::InferenceResult, current::MethodInstance)
-     filter!(!islineage(caller.linfo, current), get_reports(analyzer, caller))
+function filter_lineages!(
+        analyzer::AbstractAnalyzer, caller::InferenceState, current::MethodInstance
+    )
+    reports = get_reports(analyzer, caller.result)
+    isempty(reports) && return
+    parent_frame = get_virtual_frame(caller)
+    filter!(!islineage(parent_frame, current), reports)
 end
 
 function contains_edge(edges::Vector{Any}, edge::MethodInstance)
