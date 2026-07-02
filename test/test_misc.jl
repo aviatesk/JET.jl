@@ -2,6 +2,75 @@ module test_misc
 
 using JET, Test
 
+function lineinfo_codelocs(locs::NTuple{3,Int32}...; firstline::Int32=Int32(0))
+    data = Vector{Int32}(undef, 3length(locs))
+    for (i, loc) in pairs(locs)
+        data[3i - 2] = loc[1]
+        data[3i - 1] = loc[2]
+        data[3i] = loc[3]
+    end
+    return ccall(:jl_compress_codelocs, Any,
+        (Int32, Any, Int), firstline, data, length(locs))::String
+end
+lineinfo_loc(line::Int, to::Int=0, pc::Int=0) =
+    (Int32(line), Int32(to), Int32(pc))
+
+function reference_get_lin(mi::Core.MethodInstance, src::Core.CodeInfo, pc::Int)
+    lins = JET.CC.IRShow.buildLineInfoNode(src.debuginfo, mi, pc)
+    if isempty(lins)
+        return JET.CC.IRShow.LineInfoNode(
+            mi, src.debuginfo.def::Symbol, mi.def.line)
+    end
+    return first(lins)
+end
+
+lineinfo_sample(x::Int) = x + 1
+function lineinfo_source(debuginfo::Core.DebugInfo)
+    src = copy(only(code_typed(lineinfo_sample, (Int,); optimize=false))[1])
+    mi = src.parent::Core.MethodInstance
+    src.debuginfo = debuginfo
+    return mi, src
+end
+
+@testset "line info" begin
+    direct = Core.DebugInfo(:direct_file, nothing, Core.svec(),
+        lineinfo_codelocs(lineinfo_loc(10), lineinfo_loc(20)))
+    let (mi, src) = lineinfo_source(direct)
+        @test JET._get_lin(mi, src, 1) == reference_get_lin(mi, src, 1)
+        @test JET._get_lin(mi, src, 2) == reference_get_lin(mi, src, 2)
+    end
+
+    empty = Core.DebugInfo(:empty_file, nothing, Core.svec(),
+        lineinfo_codelocs(lineinfo_loc(0)))
+    let (mi, src) = lineinfo_source(empty)
+        @test JET._get_lin(mi, src, 1) == reference_get_lin(mi, src, 1)
+    end
+
+    linetable = Core.DebugInfo(:linetable_file, nothing, Core.svec(),
+        lineinfo_codelocs(lineinfo_loc(42)))
+    indirect = Core.DebugInfo(:indirect_file, linetable, Core.svec(),
+        lineinfo_codelocs(lineinfo_loc(1)))
+    let (mi, src) = lineinfo_source(indirect)
+        @test JET._get_lin(mi, src, 1) == reference_get_lin(mi, src, 1)
+    end
+
+    edge = Core.DebugInfo(:edge_file, nothing, Core.svec(),
+        lineinfo_codelocs(lineinfo_loc(30)))
+    inlined = Core.DebugInfo(:inlined_file, nothing, Core.svec(edge),
+        lineinfo_codelocs(lineinfo_loc(10, 1, 1)))
+    let (mi, src) = lineinfo_source(inlined)
+        @test JET._get_lin(mi, src, 1) == reference_get_lin(mi, src, 1)
+    end
+
+    invalid_edge = Core.DebugInfo(:invalid_edge_file, nothing, Core.svec(),
+        lineinfo_codelocs(lineinfo_loc(30)))
+    invalid_inlined = Core.DebugInfo(:invalid_inlined_file, nothing,
+        Core.svec(invalid_edge), lineinfo_codelocs(lineinfo_loc(10, 1, 2)))
+    let (mi, src) = lineinfo_source(invalid_inlined)
+        @test JET._get_lin(mi, src, 1) == reference_get_lin(mi, src, 1)
+    end
+end
+
 @testset "report_call entry" begin
     @test_throws ErrorException("Could not find single target method for `sin(::String)`") report_call(sin, (String,))
     @test_throws ErrorException("Could not find single target method for `sin(::String)`") @report_call sin("julia")
