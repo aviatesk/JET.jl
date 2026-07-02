@@ -214,12 +214,54 @@ get_stmt((sv, pc)::StateAtPC) = sv.src.code[pc]
 get_lin((sv, pc)::StateAtPC) = _get_lin(sv, pc)
 _get_lin(sv, pc) = _get_lin(sv.linfo, sv.src, pc)
 function _get_lin(mi::MethodInstance, src::CodeInfo, pc::Int)
-    # TODO optimize the allocation here for un-optimized debuginfo
-    lins = CC.IRShow.buildLineInfoNode(src.debuginfo, mi, pc)
-    if isempty(lins)
-        return LineInfoNode(mi, src.debuginfo.def::Symbol, mi.def.line)
+    lin = _first_lin(src.debuginfo, mi, pc)
+    lin === nothing || return lin
+    return LineInfoNode(mi, src.debuginfo.def::Symbol, mi.def.line)
+end
+function _first_lin(debuginfo::Core.DebugInfo, @nospecialize(def), pc::Int)
+    lin, doupdate = _first_lin_impl(nothing, debuginfo, def, pc)
+    return doupdate ? lin : nothing
+end
+function _first_lin_impl(firstlin::Union{Nothing,LineInfoNode},
+                         debuginfo::Core.DebugInfo, @nospecialize(def), pc::Int)
+    doupdate = true
+    while true
+        debuginfo.def isa Symbol || (def = debuginfo.def)
+        codeloc = CC.getdebugidx(debuginfo, pc)
+        line = Int(codeloc[1])
+        inl_to = Int(codeloc[2])
+        doupdate &= line != 0 || inl_to != 0
+        if debuginfo.linetable === nothing || pc <= 0 || line < 0
+            if line < 0
+                doupdate = false
+                line = 0
+            end
+            if firstlin === nothing
+                firstlin = LineInfoNode(def, _debuginfo_file1(debuginfo), Int32(line))
+            end
+        else
+            firstlin, linetable_update = _first_lin_impl(firstlin,
+                debuginfo.linetable::Core.DebugInfo, def, line)
+            doupdate = linetable_update && doupdate
+        end
+        inl_to == 0 && return firstlin, doupdate
+        def = :var"macro expansion"
+        debuginfo = debuginfo.edges[inl_to]::Core.DebugInfo
+        pc = Int(codeloc[3])
     end
-    return first(lins)
+end
+function _debuginfo_file1(debuginfo::Core.DebugInfo)
+    def = debuginfo.def
+    if def isa MethodInstance
+        def = def.def
+    end
+    if def isa Method
+        def = def.file
+    end
+    if def isa Symbol
+        return def
+    end
+    return :var"<unknown>"
 end
 function get_lins((sv, pc)::StateAtPC)
     return CC.IRShow.buildLineInfoNode(sv.src.debuginfo, sv.linfo, pc)
