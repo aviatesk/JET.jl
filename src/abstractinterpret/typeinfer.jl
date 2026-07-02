@@ -4,13 +4,46 @@
 const ABSTRACT_CALL_USES_VTYPES = hasmethod(CC.abstract_call_known,
     Tuple{AbstractInterpreter,Any,ArgInfo,StmtInfo, Union{VarTable,Nothing},InferenceState,Int})
 
-function collect_callee_reports!(analyzer::AbstractAnalyzer, sv::InferenceState)
+struct MethodCalleeResultInfo
+    method::Method
+    sig::Any
+    sparams::SimpleVector
+    result::MethodCallResult
+    MethodCalleeResultInfo(
+        method::Method,
+        @nospecialize(sig::Any),
+        sparams::SimpleVector,
+        result::MethodCallResult
+    ) = new(method, sig, sparams, result)
+end
+
+struct ConstPropCalleeResultInfo
+    mi::MethodInstance
+    result::ConstCallResult
+end
+
+struct CalleeReportContext
+    callsite_info::Union{Nothing,CC.CallSiteInfo}
+    result_info::Union{MethodCalleeResultInfo,ConstPropCalleeResultInfo}
+end
+
+# Called after `sv` has been prepended to `report.vst`. Analyzer-specific
+# report metadata may be updated here; returning `nothing` drops the report.
+propagated_report(
+    ::AbstractAnalyzer, @nospecialize(report::InferenceErrorReport), ::InferenceState,
+    ::CalleeReportContext) = report
+
+function collect_callee_reports!(
+        analyzer::AbstractAnalyzer, sv::InferenceState, context::CalleeReportContext
+    )
     reports = get_report_stash(analyzer)
     if !isempty(reports)
         vf = get_virtual_frame(sv)
         for report in reports
             pushfirst!(report.vst, vf)
-            add_new_report!(analyzer, sv.result, report)
+            propagated = propagated_report(analyzer, report, sv, context)
+            propagated === nothing && continue
+            add_new_report!(analyzer, sv.result, propagated)
         end
         empty!(reports)
     end
@@ -38,13 +71,21 @@ end
 
 function CC.abstract_call_method(analyzer::AbstractAnalyzer,
     method::Method, @nospecialize(sig), sparams::SimpleVector,
-    hardlimit::Bool, si::StmtInfo, sv::InferenceState)
+    hardlimit::Bool, si::StmtInfo, sv::InferenceState,
+    callsite_info::Union{Nothing,CC.CallSiteInfo}=nothing)
     ret = @invoke CC.abstract_call_method(analyzer::AbstractInterpreter,
         method::Method, sig::Any, sparams::SimpleVector,
-        hardlimit::Bool, si::StmtInfo, sv::InferenceState)
+        hardlimit::Bool, si::StmtInfo, sv::InferenceState,
+        callsite_info::Union{Nothing,CC.CallSiteInfo})
+    sig_ref = Ref{Any}(sig)
+    callsite_info_ref = Ref{Union{Nothing,CC.CallSiteInfo}}(callsite_info)
     function after_call_method(analyzer′::AbstractAnalyzer, sv′::InferenceState)
         ret′ = ret[]
-        collect_callee_reports!(analyzer′, sv′)
+        sig′ = sig_ref[]
+        callsite_info′ = callsite_info_ref[]
+        result_info = MethodCalleeResultInfo(method, sig′, sparams, ret′)
+        context = CalleeReportContext(callsite_info′, result_info)
+        collect_callee_reports!(analyzer′, sv′, context)
         return true
     end
     if isready(ret)
@@ -65,7 +106,10 @@ function CC.const_prop_call(analyzer::AbstractAnalyzer,
     @assert get_cache_target(analyzer) === nothing "invalid JET analysis state"
     if const_result !== nothing
         # successful constant prop', we need to update reports
-        collect_callee_reports!(analyzer, sv)
+        callsite_info = CC.CallSiteInfo(sv.currpc, arginfo)
+        result_info = ConstPropCalleeResultInfo(mi, const_result)
+        context = CalleeReportContext(callsite_info, result_info)
+        collect_callee_reports!(analyzer, sv, context)
     end
     return const_result
 end
