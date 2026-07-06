@@ -540,11 +540,31 @@ function CC.global_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::In
         if isconcretized
             # skip the assignment effect if this has been concretized already
         else
-            # Non-const bindings may be assigned in any call, so it is fundamentally impossible
-            # to track their types precisely.
-            # However, by accurately determining whether a top-level assignment is conditional,
-            # it is possible to track such bindings’ `isdefined` status precisely.
-            get_binding_states(analyzer)[partition] = AbstractBindingState(false, isconditional)
+            # Record the widened join of observed assignment types (best-effort for
+            # script analysis — non-const bindings are reassignable from any call).
+            binding_states = get_binding_states(analyzer)
+            prev = get(binding_states, partition, nothing)
+            maybeundef = isconditional && (prev === nothing || prev.maybeundef)
+            assigned = newty′[]
+            binding_state = if assigned === Union{}
+                AbstractBindingState(false, maybeundef)
+            else
+                typ = CC.widenconst(assigned)
+                if prev !== nothing && isdefined(prev, :typ)
+                    typ = CC.tmerge(CC.typeinf_lattice(analyzer), prev.typ, typ)
+                end
+                AbstractBindingState(false, maybeundef, typ)
+            end
+            binding_states[partition] = binding_state
+            # HACK/FIXME Concretize `AbstractBindingState` (same convention as the
+            # `:const` path above) so later analyses resolve the binding via the module
+            # namespace. Guarded so a value set by `ConcreteInterpreter` is never clobbered.
+            world = Base.get_world_counter()
+            if !Base.invoke_in_world(world, isdefinedglobal, g.mod, g.name) ||
+               Base.invoke_in_world(world, getglobal, g.mod, g.name) isa AbstractBindingState
+                Core.eval(g.mod, Expr(:block, Expr(:global, g.name),
+                    Expr(:(=), g.name, QuoteNode(binding_state))))
+            end
         end
         return rte
     end
