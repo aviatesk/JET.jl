@@ -1025,7 +1025,7 @@ function _virtual_process!(interp::ConcreteInterpreter,
         if JS.kind(toplevelnode) === K"toplevel"
             push_vnode_stack!(vnodes, toplevelnode, force_concretize)
         else
-            local blk = toplevelnode[2]
+            local blk = toplevelnode[end]
             @assert JS.kind(blk) === K"block"
             push_vnode_stack!(vnodes, blk, force_concretize)
         end
@@ -1111,11 +1111,16 @@ function _virtual_process!(interp::ConcreteInterpreter,
         lnn = LineNumberNode(state.curline, state.filename)
 
         if isexpr(x, :module)
+            @static if !isdefinedglobal(Base, :set_syntax_version)
+                if length(x.args) == 4 && x.args[1] isa VersionNumber
+                    deleteat!(x.args, 1)
+                end
+            end
             if isexpanded
-                newblk = x.args[3]
+                newblk = x.args[end]
                 @assert isexpr(newblk, :block)
                 overrideex = Expr(:toplevel, newblk.args...)
-                x.args[3] = Expr(:block, lnn) # empty module's code body
+                x.args[end] = Expr(:block, lnn) # empty module's code body
                 newcontext = eval_with_err_handling(state, x)
                 isnothing(newcontext) && continue # error happened, e.g. duplicated naming
                 newcontext = newcontext::Module
@@ -1129,7 +1134,7 @@ function _virtual_process!(interp::ConcreteInterpreter,
                                   force_concretize, overrideex)
             else
                 @assert JS.kind(node) === K"module"
-                x.args[3] = Expr(:block, lnn) # empty module's code body
+                x.args[end] = Expr(:block, lnn) # empty module's code body
                 newcontext = eval_with_err_handling(state, x)
                 isnothing(newcontext) && continue # error happened, e.g. duplicated naming
                 newcontext = newcontext::Module
