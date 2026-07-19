@@ -558,7 +558,7 @@ function const_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::Infere
         if rt !== Union{}
             # `:const` assignment destructively overrides the binding type
             binding_states = get_binding_states(analyzer)
-            binding_state = @lock binding_states begin
+            binding_state = @lock binding_states.lock begin
                 if !isconditional
                     new_state = AbstractBindingState(true, false, new_binding_typ′[])
                 elseif haskey(binding_states, partition)

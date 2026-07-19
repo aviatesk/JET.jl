@@ -103,10 +103,6 @@ end
     @lock b.lock haskey(b.bindings, partition)
 @inline Base.get(b::AbstractBindings, partition::Core.BindingPartition, @nospecialize(default)) =
     @lock b.lock get(b.bindings, partition, default)
-# Make `AbstractBindings` usable as a lock so callers can perform atomic
-# read-modify-write updates (the wrapper's own accessors re-enter safely).
-Base.lock(b::AbstractBindings) = lock(b.lock)
-Base.unlock(b::AbstractBindings) = unlock(b.lock)
 
 """
     mutable struct AnalyzerState
