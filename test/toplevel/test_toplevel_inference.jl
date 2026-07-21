@@ -307,6 +307,23 @@ end
     @test isempty(res.res.inference_error_reports)
 end
 
+@testset "top-level @eval with spliced generator (aviatesk/JETLS.jl#341)" begin
+    res = @analyze_toplevel begin
+        for n = 1:4
+            func_name = Symbol("fn$n")
+            arg_names = Tuple(Symbol("arg$j") for j in 1:n)
+            @eval function $func_name(
+                    w,
+                    $((:($arg_name::Int) for arg_name in arg_names)...)
+                )
+                return println(w, ($(arg_names...),))
+            end
+        end
+    end
+    @test isempty(res.res.toplevel_error_reports)
+    @test isempty(res.res.inference_error_reports)
+end
+
 @testset "MissingConcretizationErrorReport" begin
     let res = @analyze_toplevel begin
             RandomType = rand((Bool,Int))

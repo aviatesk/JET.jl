@@ -662,18 +662,21 @@ function const_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::Infere
         if rt !== Union{}
             # `:const` assignment destructively overrides the binding type
             binding_states = get_binding_states(analyzer)
-            if !isconditional
-                binding_state = AbstractBindingState(true, false, new_binding_typ′[])
-            elseif haskey(binding_states, partition)
-                old_binding_state = binding_states[partition]
-                @assert old_binding_state.isconst && isdefined(old_binding_state, :typ)
-                newmaybeundef = old_binding_state.maybeundef & isconditional
-                newtyp = old_binding_state.typ ⊔ new_binding_typ′[]
-                binding_state = AbstractBindingState(true, newmaybeundef, newtyp)
-            else
-                binding_state = AbstractBindingState(true, true, new_binding_typ′[])
+            binding_state = @lock binding_states.lock begin
+                if !isconditional
+                    new_state = AbstractBindingState(true, false, new_binding_typ′[])
+                elseif haskey(binding_states, partition)
+                    old_binding_state = binding_states[partition]
+                    @assert old_binding_state.isconst && isdefined(old_binding_state, :typ)
+                    newmaybeundef = old_binding_state.maybeundef & isconditional
+                    newtyp = old_binding_state.typ ⊔ new_binding_typ′[]
+                    new_state = AbstractBindingState(true, newmaybeundef, newtyp)
+                else
+                    new_state = AbstractBindingState(true, true, new_binding_typ′[])
+                end
+                binding_states[partition] = new_state
+                new_state
             end
-            binding_states[partition] = binding_state
             # HACK/FIXME Concretize `AbstractBindingState`
             # For top-level analysis implementation reasons, we actually define this
             # `AbstractBindingState` in the analyzed module’s namespace.
