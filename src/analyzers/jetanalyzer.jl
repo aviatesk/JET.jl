@@ -158,6 +158,11 @@ a package, or improve the accuracy of base abstract interpretation analysis.
 # getting rid of the false positive error from `getindex((), i)`.
 @overlay JET_METHOD_TABLE Base.iterate(::Tuple{}, ::Int) = nothing
 
+# `include` is concretely handled by `ConcreteInterpreter`; analyzing Base's file-loading
+# machinery only adds noise. Keep its unmodeled return value abstract.
+@overlay JET_METHOD_TABLE Base.include(::Module, ::AbstractString) = Base.inferencebarrier(nothing)
+@overlay JET_METHOD_TABLE Base.include(::Function, ::Module, ::AbstractString) = Base.inferencebarrier(nothing)
+
 # analysis injections
 # ===================
 
