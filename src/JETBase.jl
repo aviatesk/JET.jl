@@ -1369,7 +1369,7 @@ function call_test_ex(funcname::Symbol, testname::Symbol, ex0, __module__, __sou
                     testres = Error(:test_unbroken, $orig_expr, nothing, nothing, $(QuoteNode(__source__)))
                 end
             else
-                isa(testres, Pass) || ccall(:jl_breakpoint, Cvoid, (Any,), testres)
+                isa(testres, Pass) || Test.trigger_test_failure_break(testres)
             end
             Test.record(get_testset(), testres)
         end
@@ -1433,7 +1433,7 @@ function func_test(func, testname::Symbol, @nospecialize(args...);
                 testres = Error(:test_unbroken, orig_expr, nothing, nothing, source)
             end
         else
-            isa(testres, Pass) || ccall(:jl_breakpoint, Cvoid, (Any,), testres)
+            isa(testres, Pass) || Test.trigger_test_failure_break(testres)
         end
         Test.record(get_testset(), testres)
     end
@@ -1472,7 +1472,8 @@ function Test.record(ts::DefaultTestSet, t::JETTestFailure)
         println()
     end
     # HACK convert to `Fail` so that test summarization works correctly
-    push!(ts.results, Fail(:test_call, t.orig_expr, nothing, nothing, t.source))
+    fail = Fail(:test_call, t.orig_expr, nothing, nothing, nothing, t.source, false)
+    Test.record(ts, fail; print_result=false)
     return t
 end
 
