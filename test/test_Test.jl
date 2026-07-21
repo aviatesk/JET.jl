@@ -1,22 +1,31 @@
 module test_Test
 
-using Test, JET
+using JET, Test
 
 using Base.Meta: isexpr
 using MacroTools: @capture, postwalk
 
-# runs `f()` in an isolated testset, so that it doesn't influence the currently running test suite
+function run_with_testset(f, ts::Test.DefaultTestSet)
+    @static if VERSION >= v"1.13.0-"
+        Test.@with_testset ts f()
+    else
+        Test.push_testset(ts)
+        try
+            f()
+        finally
+            Test.pop_testset()
+        end
+    end
+end
+
 function with_isolated_testset(f)
     ts = Test.DefaultTestSet("isolated")
-    Test.push_testset(ts)
-    try
-        mktemp() do path, io
+    run_with_testset(ts) do
+        mktemp() do _, io
             redirect_stdout(io) do
                 f()
             end
         end
-    finally
-        Test.pop_testset()
     end
     return ts
 end
@@ -51,7 +60,7 @@ end
 
 # negative case
 # NOTE the following test is line-sensitive !
-badf(var) = undefvar
+badf(_) = undefvar
 let
     ts = with_isolated_testset() do
         @test_call badf(10)
