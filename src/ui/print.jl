@@ -290,15 +290,19 @@ end
 function fixed_line_number(frame)
     def = frame.linfo.def
     line = frame.line
-    Δline = 0
+    Δ = 0
     if def isa Method
-        # revise cached line number if method location has been updated
-        newline = CodeTracking.whereis(def)[2]
-        if newline != 0
-            Δline = newline - Int(def.line)
+        # Avoid source lookup while printing; only apply revisions already cached by Revise.
+        key = CodeTracking.MethodInfoKey(def)
+        locdefs = get(CodeTracking.method_info, key, nothing)
+        if locdefs isa Vector{Tuple{LineNumberNode,Expr}} && !isempty(locdefs)
+            newline = Int(last(locdefs)[1].line)
+            if newline != 0
+                Δ = newline - Int(def.line)
+            end
         end
     end
-    return line + Δline
+    return line + Δ
 end
 
 function print_error_frame(io, report, config, depth)
