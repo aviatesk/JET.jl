@@ -18,8 +18,7 @@ function run_with_testset(f, ts::Test.DefaultTestSet)
     end
 end
 
-function with_isolated_testset(f)
-    ts = Test.DefaultTestSet("isolated")
+function with_isolated_testset(f, ts::Test.DefaultTestSet=Test.DefaultTestSet("isolated"))
     run_with_testset(ts) do
         mktemp() do _, io
             redirect_stdout(io) do
@@ -70,6 +69,17 @@ let
     r = ts.results[1]
     @test isa(r, Test.Fail)
     @test r.source === LineNumberNode((@__LINE__)-6, @__FILE__)
+end
+
+@testset "failfast" begin
+    let ts = Test.DefaultTestSet("isolated"; failfast=true)
+        @test_throws Test.FailFastError begin
+            with_isolated_testset(ts) do
+                @test_call badf(10)
+            end
+        end
+        @test only(ts.results) isa Test.Fail
+    end
 end
 
 # actual error within `@test_call`
