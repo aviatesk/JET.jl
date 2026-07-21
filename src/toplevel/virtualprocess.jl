@@ -1457,7 +1457,7 @@ function select_direct_requirement!(concretize, stmts, edges)
             (isexpr(stmt, :call) && length(stmt.args) ≥ 1 &&
              (stmt.args[1] == GlobalRef(Core, :_defaultctors) ||
               stmt.args[1] == GlobalRef(Core, :declare_global))) ||
-            ismoduleusage(stmt) || # module usages are handled by `ConcreteInterpreter`
+            (ismoduleusage(stmt) || is_lowered_module_usage(stmt)) ||
             isexpr(stmt, :globaldecl))
             concretize[idx] = true
             continue
@@ -1753,9 +1753,10 @@ end
 function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node), istoplevel::Bool)
     @assert istoplevel "ConcreteInterpreter can only work for top-level code"
 
-    if ismoduleusage(node)
+    if ismoduleusage(node) || is_lowered_module_usage(node)
+        moduleusage = ismoduleusage(node) ? node : to_module_usage(node)
         world = frame.world
-        for ex in to_simple_module_usages(node)
+        for ex in to_simple_module_usages(moduleusage)
             if usemodule_with_err_handling(interp, ex, world) === nothing
                 break
             end
@@ -1806,6 +1807,37 @@ function form_method_signature(atype_params::SimpleVector, sparams::SimpleVector
 end
 
 ismoduleusage(@nospecialize(x)) = isexpr(x, (:import, :using, :export, :public))
+
+@static if isdefinedglobal(Core, :_eval_import)
+function is_lowered_module_usage(@nospecialize(x))
+    isexpr(x, :call) || return false
+    f = x.args[1]
+    return (callee_matches(f, Base, :_eval_import) ||
+            callee_matches(f, Base, :_eval_using))
+end
+function to_module_usage(x::Expr)
+    @assert is_lowered_module_usage(x)
+    f = x.args[1]
+    if callee_matches(f, Base, :_eval_using)
+        @assert length(x.args) == 3
+        path = x.args[3]::QuoteNode
+        return Expr(:using, path.value)
+    end
+    @assert callee_matches(f, Base, :_eval_import) && length(x.args) ≥ 5
+    explicit = x.args[2]::Bool
+    from = x.args[4]
+    paths = Any[(x.args[i]::QuoteNode).value for i = 5:length(x.args)]
+    head = explicit ? :import : :using
+    if from === nothing
+        return Expr(head, paths...)
+    end
+    from = (from::QuoteNode).value
+    return Expr(head, Expr(:(:), from, paths...))
+end
+else
+is_lowered_module_usage(@nospecialize(x)) = false
+to_module_usage(x::Expr) = error(lazy"unexpected module usage found: $x")
+end
 
 # assuming `ismoduleusage(x)` holds
 function to_simple_module_usages(x::Expr)

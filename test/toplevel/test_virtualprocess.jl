@@ -111,6 +111,25 @@ end
     end
 end
 
+@static if isdefinedglobal(Core, :_eval_import)
+function get_lowered_module_usage(ex::Expr)
+    lwr = Meta.lower(@__MODULE__, ex)
+    @assert JET.isexpr(lwr, :thunk)
+    src = only(lwr.args)::Core.CodeInfo
+    return only(filter(JET.is_lowered_module_usage, src.code))::Expr
+end
+@testset "to_module_usage" begin
+    for ex in (:(using SomeModule),
+               :(import SomeModule),
+               :(using SomeModule: bar, foo),
+               :(import SomeModule: bar, foo),
+               :(using SomeModule: foo as baz),
+               :(import SomeModule as SM))
+        @test JET.to_module_usage(get_lowered_module_usage(ex)) == ex
+    end
+end
+end
+
 @testset "test to_simple_module_usages" begin
     @test JET.to_simple_module_usages(:(using A, B)) ==
         Expr[:(using A), :(using B)]
