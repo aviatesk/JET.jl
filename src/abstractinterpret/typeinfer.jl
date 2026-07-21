@@ -102,37 +102,50 @@ function CC.abstract_call_known(analyzer::AbstractAnalyzer,
 end
 end
 
+# Early take-in of https://github.com/JuliaLang/julia/pull/57222 for v1.12
+@static if VERSION < v"1.13.0-DEV.21"
+function refine_setfield_callmeta(res::CallMeta, arginfo::ArgInfo, sv::InferenceState)
+    (; argtypes, fargs) = arginfo
+    if res.rt !== Bottom && length(argtypes) == 4 &&
+        isa(argtypes[3], Const) && isa(fargs, Vector{Any})
+        # on successful return, the struct field can no longer be undefined,
+        # so we try to encode that information with a `PartialStruct`
+        farg2 = CC.ssa_def_slot(fargs[2], sv)
+        if farg2 isa SlotNumber
+            refined = CC.form_partially_defined_struct(argtypes[2], argtypes[3])
+            if refined !== nothing
+                refinements = CC.SlotRefinement(farg2, refined)
+                return CallMeta(res.rt, res.exct, res.effects, res.info, refinements)
+            end
+        end
+    end
+    return res
+end
+end
+
 function postprocess_abstract_call_known!(analyzer::AbstractAnalyzer, ret::Future,
     @nospecialize(f), arginfo::ArgInfo, sv::InferenceState)
-    f′ = Ref{Any}(f)
-    function after_call_known(analyzer′::AbstractAnalyzer, sv′::InferenceState)
-        analyze_task_parallel_code!(analyzer′, f′[], arginfo, sv′)
-        return true
-    end
     if isready(ret)
-        after_call_known(analyzer, sv)
+        if f === Task
+            analyze_task_parallel_code!(analyzer, arginfo, sv)
+        end
+        # `setfield!` is handled synchronously by the builtin path in `abstract_call_known`,
+        # so its `ret` is always ready and requires no delayed processing in the branch below.
         @static if VERSION < v"1.13.0-DEV.21"
-            # early take in of https://github.com/JuliaLang/julia/pull/57222 for v1.12
             if f === setfield!
-                (; argtypes, fargs) = arginfo
-                if length(argtypes) == 4 && isa(argtypes[3], Const)
-                    # from there on we know that the struct field will never be undefined,
-                    # so we try to encode that information with a `PartialStruct`
-                    farg2 = CC.ssa_def_slot(fargs[2], sv)
-                    if farg2 isa SlotNumber
-                        refined = CC.form_partially_defined_struct(argtypes[2], argtypes[3])
-                        if refined !== nothing
-                            refinements = CC.SlotRefinement(farg2, refined)
-                            ret = Future(let res = ret[]
-                                CallMeta(res.rt, res.exct, res.effects, res.info, refinements)
-                            end)
-                        end
-                    end
-                end
+                res = ret[]
+                res′ = refine_setfield_callmeta(res, arginfo, sv)
+                return res′ === res ? ret : Future(res′)
             end
         end
     else
-        push!(sv.tasks, after_call_known)
+        if f === Task
+            function after_call_known(analyzer′::AbstractAnalyzer, sv′::InferenceState)
+                analyze_task_parallel_code!(analyzer′, arginfo, sv′)
+                return true
+            end
+            push!(sv.tasks, after_call_known)
+        end
     end
     return ret
 end
@@ -154,14 +167,14 @@ See also: <https://github.com/aviatesk/JET.jl/issues/114>
     track <https://github.com/JuliaLang/julia/pull/39773> for the changes in native abstract
     interpretation routine.
 """
-function analyze_task_parallel_code!(analyzer::AbstractAnalyzer,
-    @nospecialize(f), arginfo::ArgInfo, sv::InferenceState)
+function analyze_task_parallel_code!(
+        analyzer::AbstractAnalyzer, arginfo::ArgInfo, sv::InferenceState
+    )
     # TODO we should analyze a closure wrapped in a `Task` only when it's `schedule`d
     # But the `Task` construction may not happen in the same frame where it's `schedule`d
     # and so we may not be able to access to the closure at that point.
     # As a compromise, here we invoke the additional analysis on `Task` construction,
     # regardless of whether it's really `schedule`d or not.
-    f === Task || return nothing
     argtypes = arginfo.argtypes
     length(argtypes) ≥ 2 || return nothing
     v = argtypes[2]
