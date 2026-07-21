@@ -21,13 +21,20 @@ using Core: Builtin, IntrinsicFunction, Intrinsics, SimpleVector, svec
 using Core.IR
 
 using .CC: @nospecs, AbstractInterpreter, AbstractLattice, ArgInfo, Bottom,
-    CachedMethodTable, CallMeta, ConstCallInfo, EFFECTS_THROWS, Future, InferenceParams,
+    CachedMethodTable, CallMeta, EFFECTS_THROWS, Future, InferenceParams,
     InferenceResult, InferenceState, InvokeCallInfo, MethodCallResult, MethodMatchInfo,
     NOT_FOUND, OptimizationParams, OptimizationState, OverlayMethodTable, RTEffects,
-    StatementState, StmtInfo, UnionSplitInfo, VarState, VarTable, WorldRange, WorldView,
+    StatementState, StmtInfo, UnionSplitInfo, VarState, VarTable, WorldRange,
     argextype, argtype_by_index, argtypes_to_type, hasintersect, ignorelimited,
     instanceof_tfunc, singleton_type, slot_id, specialize_method, tmeet, tmerge,
     typeinf_lattice, widenconst, widenlattice, ⊑
+
+@static if isdefined(CC, :ConstCallInfo)
+    using .CC: ConstCallInfo
+end
+@static if isdefined(CC, :WorldView)
+    using .CC: WorldView
+end
 
 using Base: PkgId, generating_output, get_world_counter
 
@@ -252,7 +259,11 @@ end
 stmt_types(sv::InferenceState) = StmtTypes(sv)
 function Base.getindex(st::StmtTypes, pc::Int)
     block = CC.block_for_inst(st.sv.cfg, pc)
-    return st.sv.bb_vartables[block]::VarTable
+    @static if isdefined(CC, :BBEntryState)
+        return (st.sv.bb_states[block]::CC.BBEntryState).vartable::VarTable
+    else
+        return st.sv.bb_vartables[block]::VarTable
+    end
 end
 
 function is_compileable_mi(mi::MethodInstance)
