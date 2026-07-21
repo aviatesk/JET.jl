@@ -1454,7 +1454,9 @@ function select_direct_requirement!(concretize, stmts, edges)
     for (idx, stmt) in enumerate(stmts)
         if (LoweredCodeUtils.ismethod(stmt) ||    # don't abstract away method definitions
             LoweredCodeUtils.istypedef(stmt) ||   # don't abstract away type definitions
-            (isexpr(stmt, :call) && length(stmt.args) ≥ 1 && stmt.args[1] == GlobalRef(Core, :_defaultctors)) ||
+            (isexpr(stmt, :call) && length(stmt.args) ≥ 1 &&
+             (stmt.args[1] == GlobalRef(Core, :_defaultctors) ||
+              stmt.args[1] == GlobalRef(Core, :declare_global))) ||
             ismoduleusage(stmt) || # module usages are handled by `ConcreteInterpreter`
             isexpr(stmt, :globaldecl))
             concretize[idx] = true
