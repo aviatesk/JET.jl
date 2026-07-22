@@ -72,8 +72,7 @@ const INFERENCE_ERROR_REPORT_FIELD_DECLS = [
 # get location information at the given program counter (or a current counter if not specified)
 function get_virtual_frame(state::StateAtPC)
     file, line = get_file_line(state)
-    linfo = isa(state, MethodInstance) ? state : first(state).linfo
-    return VirtualFrame(file, line, linfo)
+    return VirtualFrame(file, line, get_linfo(first(state)))
 end
 get_virtual_frame(sv::InferenceState) = get_virtual_frame((sv, get_currpc(sv)))
 get_virtual_frame(caller::InferenceResult) = get_virtual_frame(get_linfo(caller))
@@ -318,8 +317,8 @@ end
 function handle_sig_static_parameter!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
     i = first(expr.args)::Int
     sv = first(s)
-    name = sparam_name((sv.linfo.def::Method).sig::UnionAll, i)
-    typ = widenconst(sv.sptypes[i].typ)
+    name = sparam_name((get_linfo(sv).def::Method).sig::UnionAll, i)
+    typ = widenconst(get_sparamtype(sv, i))
     push!(sig, String(name), typ)
     return sig, nothing
 end
@@ -335,8 +334,8 @@ end
 
 function handle_sig!(sig::Vector{Any}, (sv, _)::StateAtPC, ssa::SSAValue)
     newstate = (sv, ssa.id)
-    if isa(sv, OptimizationState)
-        # when working on `OptimizationState`, the SSA traverse could be really long because
+    if !(sv isa InferenceState)
+        # when working on optimized IR, the SSA traverse could be really long because
         # of inlining, so just give up for such a case
         typ = safewidenconst(get_ssavaluetype(newstate))
         push!(sig, ssa, typ)
@@ -421,7 +420,8 @@ function typeof_arg(s::State, @nospecialize(f); callable::Bool=false)
     isa(f, Function) && return Core.Typeof(f)
     isa(f, Type) && return Type{f}
     isa(f, QuoteNode) && return Core.Typeof(f.value)
-    isexpr(f, :static_parameter) && return Core.Typeof(s.sptypes[first(f.args)::Int])
+    isexpr(f, :static_parameter) &&
+        return Core.Typeof(get_sparamtype(s, first(f.args)::Int))
     callable && error("f ", string(f)::String, " with type ", string(typeof(f)), " not supported")   # FIXME self check runtime dispatch
     return typeof(f)
 end

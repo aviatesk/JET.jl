@@ -206,14 +206,21 @@ end
 
 # state
 
-const State     = Union{InferenceState,OptimizationState}
+struct OptimizedIRState
+    opt::OptimizationState
+    ir::CC.IRCode
+end
+
+const State     = Union{InferenceState,OptimizedIRState}
 const StateAtPC = Tuple{State,Int}
 const LineTable = Union{Vector{Any},Vector{LineInfoNode}}
 
-get_stmt((sv, pc)::StateAtPC) = sv.src.code[pc]
+get_stmt((sv, pc)::Tuple{InferenceState,Int}) = sv.src.code[pc]
+get_stmt((sv, pc)::Tuple{OptimizedIRState,Int}) = sv.ir.stmts[pc][:stmt]
 get_lin((sv, pc)::StateAtPC) = _get_lin(sv, pc)
-_get_lin(sv, pc) = _get_lin(sv.linfo, sv.src, pc)
-function _get_lin(mi::MethodInstance, src::CodeInfo, pc::Int)
+_get_lin(sv::InferenceState, pc::Int) = _get_lin(sv.linfo, sv.src, pc)
+_get_lin(sv::OptimizedIRState, pc::Int) = _get_lin(sv.opt.linfo, sv.ir, pc)
+function _get_lin(mi::MethodInstance, src::Union{CodeInfo,CC.IRCode}, pc::Int)
     # TODO optimize the allocation here for un-optimized debuginfo
     lins = CC.IRShow.buildLineInfoNode(src.debuginfo, mi, pc)
     if isempty(lins)
@@ -221,24 +228,35 @@ function _get_lin(mi::MethodInstance, src::CodeInfo, pc::Int)
     end
     return first(lins)
 end
-function get_lins((sv, pc)::StateAtPC)
+function get_lins((sv, pc)::Tuple{InferenceState,Int})
     return CC.IRShow.buildLineInfoNode(sv.src.debuginfo, sv.linfo, pc)
 end
-get_ssavaluetype((sv, pc)::StateAtPC) = (sv.src.ssavaluetypes::Vector{Any})[pc]
+function get_lins((sv, pc)::Tuple{OptimizedIRState,Int})
+    return CC.IRShow.buildLineInfoNode(sv.ir.debuginfo, sv.opt.linfo, pc)
+end
+get_ssavaluetype((sv, pc)::Tuple{InferenceState,Int}) =
+    (sv.src.ssavaluetypes::Vector{Any})[pc]
+get_ssavaluetype((sv, pc)::Tuple{OptimizedIRState,Int}) = sv.ir.stmts[pc][:type]
 
 get_slottype(s::Union{StateAtPC,State}, slot) = get_slottype(s, slot_id(slot))
 get_slottype((sv, _pc)::StateAtPC, slot::Int) = get_slottype(sv, slot)
-get_slottype(sv::State, slot::Int) = sv.slottypes[slot]
+get_slottype(sv::InferenceState, slot::Int) = sv.slottypes[slot]
+get_slottype(sv::OptimizedIRState, slot::Int) = sv.ir.argtypes[slot]
 
 get_slotname(s::Union{StateAtPC,State}, slot) = get_slotname(s, slot_id(slot))
-get_slotname((sv, _pc)::StateAtPC, slot::Int) = sv.src.slotnames[slot]
-get_slotname(sv::State, slot::Int) = sv.src.slotnames[slot]
+get_slotname((sv, _pc)::StateAtPC, slot::Int) = get_slotname(sv, slot)
+get_slotname(sv::InferenceState, slot::Int) = sv.src.slotnames[slot]
+get_slotname(sv::OptimizedIRState, slot::Int) = sv.opt.src.slotnames[slot]
+
+get_sparamtype(sv::InferenceState, i::Int) = sv.sptypes[i].typ
+get_sparamtype(sv::OptimizedIRState, i::Int) = sv.ir.sptypes[i].typ
 
 # check if we're in a toplevel module
-function istoplevelframe(sv::State)
-    sv isa OptimizationState && error("OptimizationState is not supported at top-level")
+function istoplevelframe(sv::InferenceState)
     return istoplevelframe(CC.frame_instance(sv))
 end
+istoplevelframe(::OptimizedIRState) =
+    error("OptimizedIRState is not supported at top-level")
 istoplevelframe(mi::MethodInstance) = isa(mi.def, Module)
 
 # we can retrieve program-counter-level slottype during inference
@@ -261,7 +279,8 @@ function is_compileable_mi(mi::MethodInstance)
     return CC.get_compileable_sig(def, mi.specTypes, mi.sparam_vals) !== nothing
 end
 
-get_linfo(sv::State) = sv.linfo
+get_linfo(sv::InferenceState) = sv.linfo
+get_linfo(sv::OptimizedIRState) = sv.opt.linfo
 get_linfo(result::InferenceResult) = result.linfo
 get_linfo(linfo::MethodInstance) = linfo
 
