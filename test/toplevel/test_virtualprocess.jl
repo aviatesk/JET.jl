@@ -111,6 +111,25 @@ end
     end
 end
 
+@static if isdefinedglobal(Core, :_eval_import)
+function get_lowered_module_usage(ex::Expr)
+    lwr = Meta.lower(@__MODULE__, ex)
+    @assert JET.isexpr(lwr, :thunk)
+    src = only(lwr.args)::Core.CodeInfo
+    return only(filter(JET.is_lowered_module_usage, src.code))::Expr
+end
+@testset "to_module_usage" begin
+    for ex in (:(using SomeModule),
+               :(import SomeModule),
+               :(using SomeModule: bar, foo),
+               :(import SomeModule: bar, foo),
+               :(using SomeModule: foo as baz),
+               :(import SomeModule as SM))
+        @test JET.to_module_usage(get_lowered_module_usage(ex)) == ex
+    end
+end
+end
+
 @testset "test to_simple_module_usages" begin
     @test JET.to_simple_module_usages(:(using A, B)) ==
         Expr[:(using A), :(using B)]
@@ -1682,16 +1701,20 @@ end
 
         found_a2 = found_a2_get_binding_type = found_x2 = found_x2_get_binding_type = false
         for (i, stmt) in enumerate(src.code)
-            if JET.@capture(stmt, $(GlobalRef(Base, :setglobal!))(_, :a2, _))
+            if (JET.@capture(stmt, f_(_, :a2, _)) &&
+                f isa GlobalRef && f.name === :setglobal!)
                 found_a2 = true
                 @test slice[i]
-            elseif JET.@capture(stmt, $(GlobalRef(Base, :setglobal!))(_, :x2, _))
+            elseif (JET.@capture(stmt, f_(_, :x2, _)) &&
+                    f isa GlobalRef && f.name === :setglobal!)
                 found_x2 = true
                 @test !slice[i] # this is easy to meet
-            elseif JET.@capture(stmt, $(GlobalRef(Core, :get_binding_type))(_, :a2))
+            elseif (JET.@capture(stmt, f_(_, :a2)) &&
+                    f isa GlobalRef && f.name === :get_binding_type)
                 found_a2_get_binding_type = true
                 @test slice[i]
-            elseif JET.@capture(stmt, $(GlobalRef(Core, :get_binding_type))(_, :x2))
+            elseif (JET.@capture(stmt, f_(_, :x2)) &&
+                    f isa GlobalRef && f.name === :get_binding_type)
                 found_x2_get_binding_type = true
                 @test !slice[i] # this is difficult to meet
             end
@@ -1713,22 +1736,28 @@ end
         found_cond = found_cond_get_binding_type = false
         found_x = found_x_get_binding_type = found_y = found_y_get_binding_type = 0
         for (i, stmt) in enumerate(src.code)
-            if JET.@capture(stmt, $(GlobalRef(Base, :setglobal!))(_, :cond, _))
+            if (JET.@capture(stmt, f_(_, :cond, _)) &&
+                f isa GlobalRef && f.name === :setglobal!)
                 found_cond = true
                 @test slice[i]
-            elseif JET.@capture(stmt, $(GlobalRef(Base, :setglobal!))(_, :x, _))
+            elseif (JET.@capture(stmt, f_(_, :x, _)) &&
+                    f isa GlobalRef && f.name === :setglobal!)
                 found_x += 1
                 @test slice[i]
-            elseif JET.@capture(stmt, $(GlobalRef(Base, :setglobal!))(_, :y, _))
+            elseif (JET.@capture(stmt, f_(_, :y, _)) &&
+                    f isa GlobalRef && f.name === :setglobal!)
                 found_y += 1
                 @test !slice[i]
-            elseif JET.@capture(stmt, $(GlobalRef(Core, :get_binding_type))(_, :cond))
+            elseif (JET.@capture(stmt, f_(_, :cond)) &&
+                    f isa GlobalRef && f.name === :get_binding_type)
                 found_cond_get_binding_type = true
                 @test slice[i]
-            elseif JET.@capture(stmt, $(GlobalRef(Core, :get_binding_type))(_, :x))
+            elseif (JET.@capture(stmt, f_(_, :x)) &&
+                    f isa GlobalRef && f.name === :get_binding_type)
                 found_x_get_binding_type += 1
                 @test slice[i]
-            elseif JET.@capture(stmt, $(GlobalRef(Core, :get_binding_type))(_, :y))
+            elseif (JET.@capture(stmt, f_(_, :y)) &&
+                    f isa GlobalRef && f.name === :get_binding_type)
                 found_y_get_binding_type += 1
                 @test !slice[i]
             end

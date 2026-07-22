@@ -355,8 +355,7 @@ CC.push!(view::AbstractAnalyzerView, inf_result::InferenceResult) = CC.push!(get
 function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
     parent = CC.frame_parent(frame)
 
-    if is_constant_propagated(frame) && parent !== nothing
-        parent::InferenceState
+    if is_constant_propagated(frame) && parent isa InferenceState
         # JET is going to perform the abstract-interpretation with the extended lattice elements:
         # throw-away the error reports that are collected during the previous non-constant abstract-interpretation
         # NOTE that the `linfo` here is the exactly same object as the method instance used
@@ -524,6 +523,56 @@ function CC.global_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::In
     return ret
 end
 
+@static if isdefinedglobal(Core, :declare_const)
+
+function abstract_eval_declare_const(
+        analyzer::ToplevelAbstractAnalyzer, arginfo::ArgInfo, si::StmtInfo,
+        sv::InferenceState
+    )
+    istoplevelframe(sv) || return nothing
+    isconcretized(analyzer, sv) && return nothing
+    argtypes = arginfo.argtypes
+    length(argtypes) in (3, 4) || return nothing
+    CC.isvarargtype(argtypes[end]) && return nothing
+    mod, name = argtypes[2], argtypes[3]
+    mod isa Const && mod.val isa Module || return nothing
+    name isa Const && name.val isa Symbol || return nothing
+    gr = GlobalRef(mod.val, name.val)
+    new_binding_typ = length(argtypes) == 4 ? argtypes[4] : nothing
+    rt, exct = const_assignment_rt_exct(analyzer, sv, si.saw_latestworld, gr, new_binding_typ)
+    if rt !== Union{}
+        rt = length(argtypes) == 4 ? new_binding_typ : Nothing
+    end
+    effects = CC.Effects(EFFECTS_THROWS; nothrow=exct===Union{})
+    return Future(CallMeta(rt, exct, effects, CC.NoCallInfo()))
+end
+
+@static if ABSTRACT_CALL_USES_VTYPES
+function CC.abstract_call_known(analyzer::ToplevelAbstractAnalyzer,
+    @nospecialize(f), arginfo::ArgInfo, si::StmtInfo, vtypes::Union{VarTable,Nothing},
+    sv::InferenceState, max_methods::Int)
+    if f === Core.declare_const
+        ret = abstract_eval_declare_const(analyzer, arginfo, si, sv)
+        ret === nothing || return ret
+    end
+    return @invoke CC.abstract_call_known(analyzer::AbstractAnalyzer,
+        f::Any, arginfo::ArgInfo, si::StmtInfo, vtypes::Union{VarTable,Nothing},
+        sv::InferenceState, max_methods::Int)
+end
+else
+function CC.abstract_call_known(analyzer::ToplevelAbstractAnalyzer,
+    @nospecialize(f), arginfo::ArgInfo, si::StmtInfo, sv::InferenceState, max_methods::Int)
+    if f === Core.declare_const
+        ret = abstract_eval_declare_const(analyzer, arginfo, si, sv)
+        ret === nothing || return ret
+    end
+    return @invoke CC.abstract_call_known(analyzer::AbstractAnalyzer,
+        f::Any, arginfo::ArgInfo, si::StmtInfo, sv::InferenceState, max_methods::Int)
+end
+end # @static if ABSTRACT_CALL_USES_VTYPES
+
+else # @static if isdefinedglobal(Core, :declare_const)
+
 function CC.abstract_eval_statement_expr(analyzer::ToplevelAbstractAnalyzer, e::Expr, sstate::StatementState,
                                          sv::InferenceState)::Future{RTEffects}
     if isexpr(e, :const)
@@ -560,6 +609,8 @@ function abstract_eval_const_stmt(analyzer::ToplevelAbstractAnalyzer, stmt::Expr
     end
 end
 
+end # @static if isdefinedglobal(Core, :declare_const)
+
 function const_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::InferenceState, saw_latestworld::Bool, gr::GlobalRef,
                                   @nospecialize(new_binding_typ))
     if saw_latestworld
@@ -573,29 +624,33 @@ function const_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::Infere
         rte = const_assignment_binding_rt_exct(analyzer, partition)
         rt, exct = rte
         if rt !== Union{}
-            # `:const` assignment destructively overrides the binding type
-            binding_states = get_binding_states(analyzer)
-            binding_state = @lock binding_states.lock begin
-                if !isconditional
-                    new_state = AbstractBindingState(true, false, new_binding_typ′[])
-                elseif haskey(binding_states, partition)
-                    old_binding_state = binding_states[partition]
-                    @assert old_binding_state.isconst && isdefined(old_binding_state, :typ)
-                    newmaybeundef = old_binding_state.maybeundef & isconditional
-                    newtyp = old_binding_state.typ ⊔ new_binding_typ′[]
-                    new_state = AbstractBindingState(true, newmaybeundef, newtyp)
-                else
-                    new_state = AbstractBindingState(true, true, new_binding_typ′[])
+            if new_binding_typ′[] === nothing
+                Core.eval(gr.mod, Expr(:const, gr.name))
+            else
+                # `:const` assignment destructively overrides the binding type
+                binding_states = get_binding_states(analyzer)
+                binding_state = @lock binding_states.lock begin
+                    if !isconditional
+                        new_state = AbstractBindingState(true, false, new_binding_typ′[])
+                    elseif haskey(binding_states, partition)
+                        old_binding_state = binding_states[partition]
+                        @assert old_binding_state.isconst && isdefined(old_binding_state, :typ)
+                        newmaybeundef = old_binding_state.maybeundef & isconditional
+                        newtyp = old_binding_state.typ ⊔ new_binding_typ′[]
+                        new_state = AbstractBindingState(true, newmaybeundef, newtyp)
+                    else
+                        new_state = AbstractBindingState(true, true, new_binding_typ′[])
+                    end
+                    binding_states[partition] = new_state
+                    new_state
                 end
-                binding_states[partition] = new_state
-                new_state
+                # HACK/FIXME Concretize `AbstractBindingState`
+                # For top-level analysis implementation reasons, we actually define this
+                # `AbstractBindingState` in the analyzed module’s namespace.
+                # This is necessary because binding resolution cannot be accurately tracked
+                # when using `export`/`using`.
+                Core.eval(gr.mod, Expr(:const, gr.name, binding_state))
             end
-            # HACK/FIXME Concretize `AbstractBindingState`
-            # For top-level analysis implementation reasons, we actually define this
-            # `AbstractBindingState` in the analyzed module’s namespace.
-            # This is necessary because binding resolution cannot be accurately tracked
-            # when using `export`/`using`.
-            Core.eval(gr.mod, Expr(:const, gr.name, binding_state))
         end
         return rte
     end
