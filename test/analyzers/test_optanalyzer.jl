@@ -35,7 +35,7 @@ end
 
 tuple_or_bottom(xs::Vector{Any}) = Base.TupleOrBottom(xs[1], xs[2])
 @testset "constant propagation from IR interpretation" begin
-    @test report_opt(tuple_or_bottom, (Vector{Any},)) isa JET.JETCallResult
+    test_opt(tuple_or_bottom, (Vector{Any},))
 end
 
 @testset "runtime dispatch" begin
