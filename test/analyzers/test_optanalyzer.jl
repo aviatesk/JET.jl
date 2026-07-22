@@ -33,6 +33,11 @@ function isType2(@nospecialize x)
     end
 end
 
+tuple_or_bottom(xs::Vector{Any}) = Base.TupleOrBottom(xs[1], xs[2])
+@testset "constant propagation from IR interpretation" begin
+    @test report_opt(tuple_or_bottom, (Vector{Any},)) isa JET.JETCallResult
+end
+
 @testset "runtime dispatch" begin
     test_opt((Int, Vector{Any}, String,)) do a, b, c
         return (

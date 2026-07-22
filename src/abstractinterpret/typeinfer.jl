@@ -354,8 +354,7 @@ CC.push!(view::AbstractAnalyzerView, inf_result::InferenceResult) = CC.push!(get
 function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
     parent = CC.frame_parent(frame)
 
-    if is_constant_propagated(frame) && parent !== nothing
-        parent::InferenceState
+    if is_constant_propagated(frame) && parent isa InferenceState
         # JET is going to perform the abstract-interpretation with the extended lattice elements:
         # throw-away the error reports that are collected during the previous non-constant abstract-interpretation
         # NOTE that the `linfo` here is the exactly same object as the method instance used
