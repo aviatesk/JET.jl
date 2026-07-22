@@ -133,18 +133,6 @@ struct OptAnalyzer{FF} <: AbstractAnalyzer
     analysis_token::AnalysisToken
     function_filter::FF
     skip_noncompileable_calls::Bool
-    __analyze_frame::BitVector # temporary stash to keep per-frame analysis-skip configuration
-
-    function OptAnalyzer(state::AnalyzerState,
-                         analysis_token::AnalysisToken,
-                         function_filter::FF,
-                         skip_noncompileable_calls::Bool) where {FF}
-        return new{FF}(state,
-                       analysis_token,
-                       function_filter,
-                       skip_noncompileable_calls,
-                       #=__analyze_frame=# BitVector())
-    end
 end
 
 # AbstractAnalyzer API requirements
@@ -209,95 +197,83 @@ function CC.finishinfer!(frame::InferenceState, analyzer::OptAnalyzer, cycleid::
 end
 end
 
+function is_analysis_target(analyzer::OptAnalyzer, caller::InferenceResult)
+    analyzer.skip_noncompileable_calls || return true
+    mi = caller.linfo
+    return is_compileable_mi(mi) || is_entry(analyzer, mi)
+end
+
+function should_analyze_initial(analyzer::OptAnalyzer, caller::InferenceResult)
+    is_analysis_target(analyzer, caller) || return false
+    return !CC.is_result_constabi_eligible(caller)
+end
+
 function finishinfer!_overload(frame::InferenceState, analyzer::OptAnalyzer)
-    analyze = true
-    if analyzer.skip_noncompileable_calls
-        mi = frame.linfo
-        if !(is_compileable_mi(mi) || is_entry(analyzer, mi))
-            analyze = false
-        end
-    end
-    if analyze && CC.is_result_constabi_eligible(frame.result)
-        analyze = false
+    caller = frame.result
+    is_analysis_target(analyzer, caller) || return nothing
+    if CC.is_result_constabi_eligible(caller)
         # turn off optimization for this frame in order to achieve a minor perf gain,
         # similar to the effect of setting `may_discard_trees(::OptAnalyzer) = true`
-        frame.result.src = nothing
-    end
-
-    push!(analyzer.__analyze_frame, analyze)
-    if analyze
-        # report pass for captured variables
+        caller.src = nothing
+    else
         report_captured_variable!(analyzer, frame)
     end
+    return nothing
 end
 
 # analysis injections
 # ===================
+
+function optimized_ir(opt::OptimizationState)
+    @static if isdefinedglobal(CC, :compute_inlining_cost)
+        return (opt.optresult::CC.OptimizationResult).ir
+    else
+        return opt.ir::CC.IRCode
+    end
+end
+
+function is_inlineable_optimized(
+        analyzer::OptAnalyzer, caller::InferenceResult, opt::OptimizationState
+    )
+    @static if isdefinedglobal(CC, :compute_inlining_cost)
+        optresult = opt.optresult::CC.OptimizationResult
+        return CC.compute_inlining_cost(analyzer, caller, optresult) != CC.MAX_INLINE_COST
+    else
+        return CC.is_inlineable(opt.src)
+    end
+end
+
+function should_analyze_optimized(
+        analyzer::OptAnalyzer, caller::InferenceResult, opt::OptimizationState
+    )
+    CC.is_result_constabi_eligible(caller) && return false
+    is_analysis_target(analyzer, caller) && return true
+    return is_inlineable_optimized(analyzer, caller, opt)
+end
+
+function CC.optimize(
+        analyzer::OptAnalyzer, opt::OptimizationState, caller::InferenceResult
+    )
+    ret = @invoke CC.optimize(
+        analyzer::AbstractInterpreter, opt::OptimizationState, caller::InferenceResult)
+    if should_analyze_optimized(analyzer, caller, opt)
+        state = OptimizedIRState(opt, optimized_ir(opt))
+        report_runtime_dispatch!(analyzer, caller, state)
+    end
+    return ret
+end
 
 function CC.finish!(
         analyzer::OptAnalyzer, frame::InferenceState, validation_world::UInt,
         time_before::UInt64
     )
     caller = frame.result
-
-    # get the source before running `finish!` to keep the reference to `OptimizationState`
-    analyze = popfirst!(analyzer.__analyze_frame)
-    src = caller.src
-    inlining_cost = nothing
-    if src isa OptimizationState
-        @static if isdefinedglobal(CC, :compute_inlining_cost)
-            inlining_cost = CC.compute_inlining_cost(analyzer, caller)
-        end
-        # allow the following analysis passes to see the optimized `CodeInfo`
-        caller.src = CC.ir_to_codeinf!(src)
-        @static if isdefinedglobal(CC, :compute_inlining_cost)
-            caller.src.inlining_cost = inlining_cost
-        end
-        frame.edges = collect(Any, caller.src.edges)
-
-        if !analyze
-            # if this inferred source is not "compileable" but still is going to be inlined,
-            # we should add report runtime dispatches within it
-            analyze = CC.is_inlineable(src.src)
-        end
-    end
-
-    if analyze
+    if should_analyze_initial(analyzer, caller)
         report_optimization_failure!(analyzer, caller)
-
-        if src isa OptimizationState
-            report_runtime_dispatch!(analyzer, caller, src)
-        elseif (@static JET_DEV_MODE ? true : false)
-            if src === nothing # the optimization didn't happen
-            else # and this pass should never happen
-                # NOTE `src` never be `CodeInfo` since `CC.may_discard_trees(::OptAnalyzer) === false`
-                Core.eval(@__MODULE__, :(src = $src))
-                throw("unexpected state happened, inspect `$(@__MODULE__).src`")
-            end
-        end
     end
-
-    # Restore the cost that upstream `finish!` cannot compute from a `CodeInfo`.
-    ret = @invoke CC.finish!(
+    return @invoke CC.finish!(
         analyzer::AbstractAnalyzer, frame::InferenceState, validation_world::UInt,
-        time_before::UInt64
-    )
-    @static if isdefinedglobal(CC, :compute_inlining_cost)
-        if inlining_cost !== nothing && caller.src isa CodeInfo
-            caller.src.inlining_cost = inlining_cost
-        end
-    end
-    return ret
-end
-
-# Upstream asks for the inlining cost again after `OptAnalyzer.finish!` has converted
-# the `OptimizationState` to `CodeInfo`. Return the cost already stored in the
-# `CodeInfo`, since upstream can no longer recompute it from the optimized IR.
-@static if isdefinedglobal(CC, :compute_inlining_cost)
-function CC.compute_inlining_cost(analyzer::OptAnalyzer, result::InferenceResult)
-    result.src isa CodeInfo && return result.src.inlining_cost
-    return @invoke CC.compute_inlining_cost(analyzer::AbstractAnalyzer, result::InferenceResult)
-end
+        time_before::UInt64)
 end
 
 # analysis
@@ -352,27 +328,29 @@ end
 function JETInterface.print_report_message(io::IO, ::RuntimeDispatchReport)
     print(io, "runtime dispatch detected")
 end
-function report_runtime_dispatch!(analyzer::OptAnalyzer, caller::InferenceResult, opt::OptimizationState)
-    (; src, sptypes, slottypes) = opt
-
-    # TODO better to work on `opt.ir::IRCode` (with some updates on `handle_sig!`)
+function report_runtime_dispatch!(
+        analyzer::OptAnalyzer, caller::InferenceResult, state::OptimizedIRState
+    )
+    ir = state.ir
     local reported = false
-    for (pc, x) in enumerate(src.code)
-        if isexpr(x, :call)
-            ft = argextype(first(x.args), src, sptypes, slottypes)
+    for (pc, inst) in enumerate(ir.stmts)
+        stmt = inst[:stmt]
+        if isexpr(stmt, :call)
+            ft = argextype(first(stmt.args), ir)
             f = singleton_type(ft)
             if f !== nothing
                 f isa Builtin && continue # ignore `:call`s of language intrinsics
-                (isnothing(analyzer.function_filter) || @invokelatest(analyzer.function_filter(f))) || continue # ignore user-specified functions
+                isnothing(analyzer.function_filter) ||
+                    @invokelatest(analyzer.function_filter(f)) || continue
             end
-            lins = get_lins((opt, pc))
+            lins = get_lins((state, pc))
             isempty(lins) && continue # dead statement, just ignore it
             if length(lins) > 1
                 # this statement has been inlined, so ignore it as any problems within
                 # that callee should already have been reported
                 continue
             end
-            add_new_report!(analyzer, caller, RuntimeDispatchReport((opt, pc)))
+            add_new_report!(analyzer, caller, RuntimeDispatchReport((state, pc)))
             reported |= true
         end
     end
