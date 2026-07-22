@@ -44,58 +44,65 @@
 # we will inspect the optimized IR and look for `:call` expressions. `:call` expressions are
 # such calls that were not resolved statically and will be dispatched at runtime (as opposed
 # to [`:invoke`](https://docs.julialang.org/en/v1/devdocs/ast/#Expr-types) expressions, that
-# represent staticall resolved generic function calls).
+# represent statically resolved generic function calls).
 #
-# We will define `DispatchAnalyzer <: AbstractAnalyzer`, and overload some of `Base.Compiler` methods with it:
-# - `CC.finish(frame::CC.InferenceState, analyzer::DispatchAnalyzer)` to check if optimization will happen or not (the case 1.)
-# - `CC.finish!(analyzer::DispatchAnalyzer, caller::CC.InferenceResult)` to inspect an optimized IR (the case 2.)
+# We will define `DispatchAnalyzer <: AbstractAnalyzer` and overload two Julia
+# compiler methods:
+# - `CC.optimize` to inspect the final optimized IR (case 2)
+# - `CC.finish!` to check whether optimization happened (case 1)
 
 using JET.JETInterface
-using JET: JET, CC
+using JET: CC, JET
 
 struct DispatchAnalyzer{T} <: AbstractAnalyzer
     state::AnalyzerState
     analysis_token::AnalysisToken
-    opts::BitVector
-    frame_filter::T # a predicate, which takes `CC.InfernceState` and returns whether we want to analyze the call or not
+    frame_filter::T # a predicate over `Core.MethodInstance`
 end
 
 ## AbstractAnalyzer API requirements
 JETInterface.AnalyzerState(analyzer::DispatchAnalyzer) = analyzer.state
-JETInterface.AbstractAnalyzer(analyzer::DispatchAnalyzer, state::AnalyzerState) = DispatchAnalyzer(state, analyzer.analysis_token, analyzer.opts, analyzer.frame_filter)
+function JETInterface.AbstractAnalyzer(
+        analyzer::DispatchAnalyzer, state::AnalyzerState
+    )
+    return DispatchAnalyzer(state, analyzer.analysis_token, analyzer.frame_filter)
+end
 JETInterface.AnalysisToken(analyzer::DispatchAnalyzer) = analyzer.analysis_token
 
-function CC.finish!(analyzer::DispatchAnalyzer, frame::CC.InferenceState, validation_world::UInt, time_before::UInt64)
+function CC.optimize(
+        analyzer::DispatchAnalyzer, opt::CC.OptimizationState,
+        caller::CC.InferenceResult
+    )
+    ret = @invoke CC.optimize(
+        analyzer::CC.AbstractInterpreter, opt::CC.OptimizationState,
+        caller::CC.InferenceResult)
+    if analyzer.frame_filter(caller.linfo)
+        state = JET.OptimizedIRState(opt, JET.optimized_ir(opt))
+        report_runtime_dispatch!(analyzer, caller, state)
+    end
+    return ret
+end
+
+function CC.finish!(
+        analyzer::DispatchAnalyzer, frame::CC.InferenceState,
+        validation_world::UInt, time_before::UInt64
+    )
     caller = frame.result
-
-    ## get the source before running `finish!` to keep the reference to `OptimizationState`
-    src = caller.src
-    if src isa CC.OptimizationState
-        ## allow the following analysis passes to see the optimized `CodeInfo`
-        caller.src = CC.ir_to_codeinf!(src)
-        frame.edges = collect(Any, caller.src.edges)
+    if caller.src === nothing && analyzer.frame_filter(caller.linfo)
+        report_optimization_failure!(analyzer, caller)
     end
-
-    if analyzer.frame_filter(frame.linfo)
-        if isa(src, Core.Const) # the optimization was very successful, nothing to report
-        elseif isnothing(src) # means, compiler decides not to do optimization
-            report_optimization_failure!(analyzer, caller, src)
-        elseif isa(src, CC.OptimizationState) # the compiler optimized it, analyze it
-            report_runtime_dispatch!(analyzer, caller, src)
-        else # and thus this pass should never happen
-            ## as we should already report `OptimizationFailureReport` for this case
-            throw("got $src, unexpected source found")
-        end
-    end
-
-    return @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::CC.InferenceState, validation_world::UInt, time_before::UInt64)
+    return @invoke CC.finish!(
+        analyzer::AbstractAnalyzer, frame::CC.InferenceState,
+        validation_world::UInt, time_before::UInt64)
 end
 
 @jetreport struct OptimizationFailureReport <: InferenceErrorReport end
 function JETInterface.print_report_message(io::IO, ::OptimizationFailureReport)
     print(io, "failed to optimize due to recursion")
 end
-function report_optimization_failure!(analyzer::DispatchAnalyzer, result::CC.InferenceResult, src)
+function report_optimization_failure!(
+        analyzer::DispatchAnalyzer, result::CC.InferenceResult
+    )
     add_new_report!(analyzer, result, OptimizationFailureReport(result.linfo))
 end
 
@@ -104,13 +111,17 @@ function JETInterface.print_report_message(io::IO, ::RuntimeDispatchReport)
     print(io, "runtime dispatch detected")
 end
 
-function report_runtime_dispatch!(analyzer::DispatchAnalyzer, caller::CC.InferenceResult, opt::CC.OptimizationState)
-    (; sptypes, slottypes) = opt
-    for (pc, x) in enumerate(opt.src.code)
-        if Base.Meta.isexpr(x, :call)
-            ft = CC.widenconst(CC.argextype(first(x.args), opt.src, sptypes, slottypes))
+function report_runtime_dispatch!(
+        analyzer::DispatchAnalyzer, caller::CC.InferenceResult,
+        state::JET.OptimizedIRState
+    )
+    ir = state.ir
+    for (pc, inst) in enumerate(ir.stmts)
+        stmt = inst[:stmt]
+        if Base.Meta.isexpr(stmt, :call)
+            ft = CC.widenconst(CC.argextype(first(stmt.args), ir))
             ft <: Core.Builtin && continue # ignore `:call`s of the builtin intrinsics
-            add_new_report!(analyzer, caller, RuntimeDispatchReport((opt, pc)))
+            add_new_report!(analyzer, caller, RuntimeDispatchReport((state, pc)))
         end
     end
 end
@@ -127,11 +138,11 @@ const global_analysis_token = AnalysisToken()
 ## the constructor for creating a new configured `DispatchAnalyzer` instance
 function DispatchAnalyzer(world::UInt = Base.get_world_counter();
     analysis_token::AnalysisToken = global_analysis_token,
-    frame_filter = x::Core.MethodInstance->true,
+    frame_filter = ::Core.MethodInstance->true,
     jetconfigs...)
     state = AnalyzerState(world; jetconfigs...)
     ## just for the sake of simplicity, create a fresh code cache for each `DispatchAnalyzer` instance (i.e. don't globalize the cache)
-    return DispatchAnalyzer(state, analysis_token, BitVector(), frame_filter)
+    return DispatchAnalyzer(state, analysis_token, frame_filter)
 end
 function report_dispatch(args...; jetconfigs...)
     @nospecialize args jetconfigs

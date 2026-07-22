@@ -51,43 +51,55 @@ JETInterface.AnalysisToken(analyzer::UnstableAPIAnalyzer) = analyzer.analysis_to
 
 const UNSTABLE_API_ANALYZER_CACHE = Dict{UInt, AnalysisToken}()
 
-# Next, we overload some of `Base.Compiler`'s [abstract interpretation](@ref abstractinterpret) methods.
+# Next, we overload some of the Julia compiler's
+# [abstract interpretation](@ref abstractinterpret) methods.
 # In this analysis, we are interested in whether a binding that appears in a target code is
 # an "unstable API" or not, and we can simply check if each abstract element appeared during
 # abstract interpretation meets our criteria of "unstable API".
-# For that purpose, it's suffice to overload `CC.abstract_eval_special_value`
-# and `CC.builtin_tfunction`.
+# For that purpose, it is sufficient to overload `CC.abstract_eval_special_value`
+# and `CC.abstract_eval_getglobal`.
 
-function CC.abstract_eval_special_value(analyzer::UnstableAPIAnalyzer, @nospecialize(e), vtypes::CC.VarTable, sv::CC.InferenceState)
+function CC.abstract_eval_special_value(
+        analyzer::UnstableAPIAnalyzer, @nospecialize(e), sstate::CC.StatementState,
+        sv::CC.InferenceState
+    )
     if analyzer.is_target_module(sv.mod) # we care only about what we wrote
         report_unstable_api!(analyzer, sv, e)
     end
 
     ## recurse into JET's default abstract interpretation routine
-    return @invoke CC.abstract_eval_special_value(analyzer::ToplevelAbstractAnalyzer, e, vtypes::CC.VarTable, sv::CC.InferenceState)
+    return @invoke CC.abstract_eval_special_value(
+        analyzer::ToplevelAbstractAnalyzer, e::Any, sstate::CC.StatementState,
+        sv::CC.InferenceState)
 end
 
-function CC.builtin_tfunction(analyzer::UnstableAPIAnalyzer, @nospecialize(f), argtypes::Vector{Any}, sv::CC.InferenceState)
-    if f === getfield
-        if length(argtypes) ≥ 2
-            a1, a2 = argtypes[1:2]
-            if isa(a1, Core.Const) && (v1 = a1.val; isa(v1, Module))
-                if isa(a2, Core.Const) && (v2 = a2.val; isa(v2, Symbol))
-                    if analyzer.is_target_module(sv.mod) || # we care only about what we wrote, but with relaxed filter
-                       (parent = sv.parent; isa(parent, CC.InferenceState) && analyzer.is_target_module(parent.mod))
-                        report_unstable_api!(analyzer, sv, GlobalRef(v1, v2))
-                    end
+function CC.abstract_eval_getglobal(
+        analyzer::UnstableAPIAnalyzer, sv::CC.InferenceState,
+        saw_latestworld::Bool, argtypes::Vector{Any}
+    )
+    if length(argtypes) ≥ 3
+        a1, a2 = argtypes[2:3]
+        if isa(a1, Core.Const) && (v1 = a1.val; isa(v1, Module))
+            if isa(a2, Core.Const) && (v2 = a2.val; isa(v2, Symbol))
+                if analyzer.is_target_module(sv.mod) || # relaxed filter
+                   (parent = CC.frame_parent(sv);
+                    parent isa CC.InferenceState &&
+                    analyzer.is_target_module(parent.mod))
+                    report_unstable_api!(analyzer, sv, GlobalRef(v1, v2))
                 end
             end
         end
     end
 
     ## recurse into JET's default abstract interpretation routine
-    return @invoke CC.builtin_tfunction(analyzer::ToplevelAbstractAnalyzer, f, argtypes::Vector{Any}, sv::CC.InferenceState)
+    return @invoke CC.abstract_eval_getglobal(
+        analyzer::ToplevelAbstractAnalyzer, sv::CC.InferenceState,
+        saw_latestworld::Bool, argtypes::Vector{Any})
 end
 
-# Additionally, we can cut off the performance cost involved with Julia's native compiler's optimizations passes:
-CC.may_optimize(analyzer::UnstableAPIAnalyzer) = false
+# Additionally, we can avoid the performance cost of Julia compiler optimization
+# passes:
+CC.may_optimize(::UnstableAPIAnalyzer) = false
 
 # Now we implement the body of our analysis.
 # We define "unstable API"s such that they're:
@@ -115,6 +127,7 @@ function report_unstable_api!(analyzer::UnstableAPIAnalyzer, sv, @nospecialize(e
         isdefined(mod, name) || return false # this global reference falls into the category 1, should be caught by `UndefVarErrorReport` instead
 
         mod = Base.binding_module(mod, name)
+        isdefinedglobal(mod, name) || return false
         analyzer.is_target_module(mod) && return # we don't care about what we defined ourselves
 
         if isunstable(mod, name)
