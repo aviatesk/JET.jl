@@ -17,6 +17,29 @@ include("../setup.jl")
         end
     end
 
+    @static if isdefinedglobal(Core, :declare_const)
+        let vmod = gen_virtual_module()
+            ex = Expr(:block,
+                Expr(:const, :undefined_const),
+                :(println(undefined_const)))
+            lnn = LineNumberNode(@__LINE__, Symbol(@__FILE__))
+            res = analyze_toplevel(ex, lnn; context=vmod, virtualize=false)
+            @test !isdefinedglobal(vmod, :undefined_const)
+            @test isempty(res.res.toplevel_error_reports)
+            let report = only(res.res.inference_error_reports)
+                @test report isa UndefVarErrorReport
+                @test report.var.name === :undefined_const
+                @test !report.maybeundef
+            end
+
+            res = analyze_toplevel(:(const undefined_const = 1), lnn;
+                context=vmod, virtualize=false)
+            @test @invokelatest(isdefinedglobal(vmod, :undefined_const))
+            @test isempty(res.res.toplevel_error_reports)
+            @test isempty(res.res.inference_error_reports)
+        end
+    end
+
     let res = @analyze_toplevel begin
             const a = 0
             sin(a)

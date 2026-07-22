@@ -234,15 +234,25 @@ end
 # analysis injections
 # ===================
 
-function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState, validation_world::UInt, time_before::UInt64)
+function CC.finish!(
+        analyzer::OptAnalyzer, frame::InferenceState, validation_world::UInt,
+        time_before::UInt64
+    )
     caller = frame.result
 
     # get the source before running `finish!` to keep the reference to `OptimizationState`
     analyze = popfirst!(analyzer.__analyze_frame)
     src = caller.src
+    inlining_cost = nothing
     if src isa OptimizationState
+        @static if isdefinedglobal(CC, :compute_inlining_cost)
+            inlining_cost = CC.compute_inlining_cost(analyzer, caller)
+        end
         # allow the following analysis passes to see the optimized `CodeInfo`
         caller.src = CC.ir_to_codeinf!(src)
+        @static if isdefinedglobal(CC, :compute_inlining_cost)
+            caller.src.inlining_cost = inlining_cost
+        end
         frame.edges = collect(Any, caller.src.edges)
 
         if !analyze
@@ -267,7 +277,27 @@ function CC.finish!(analyzer::OptAnalyzer, frame::InferenceState, validation_wor
         end
     end
 
-    return @invoke CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState, validation_world::UInt, time_before::UInt64)
+    # Restore the cost that upstream `finish!` cannot compute from a `CodeInfo`.
+    ret = @invoke CC.finish!(
+        analyzer::AbstractAnalyzer, frame::InferenceState, validation_world::UInt,
+        time_before::UInt64
+    )
+    @static if isdefinedglobal(CC, :compute_inlining_cost)
+        if inlining_cost !== nothing && caller.src isa CodeInfo
+            caller.src.inlining_cost = inlining_cost
+        end
+    end
+    return ret
+end
+
+# Upstream asks for the inlining cost again after `OptAnalyzer.finish!` has converted
+# the `OptimizationState` to `CodeInfo`. Return the cost already stored in the
+# `CodeInfo`, since upstream can no longer recompute it from the optimized IR.
+@static if isdefinedglobal(CC, :compute_inlining_cost)
+function CC.compute_inlining_cost(analyzer::OptAnalyzer, result::InferenceResult)
+    result.src isa CodeInfo && return result.src.inlining_cost
+    return @invoke CC.compute_inlining_cost(analyzer::AbstractAnalyzer, result::InferenceResult)
+end
 end
 
 # analysis

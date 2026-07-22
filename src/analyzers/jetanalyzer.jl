@@ -158,6 +158,11 @@ a package, or improve the accuracy of base abstract interpretation analysis.
 # getting rid of the false positive error from `getindex((), i)`.
 @overlay JET_METHOD_TABLE Base.iterate(::Tuple{}, ::Int) = nothing
 
+# `include` is concretely handled by `ConcreteInterpreter`; analyzing Base's file-loading
+# machinery only adds noise. Keep its unmodeled return value abstract.
+@overlay JET_METHOD_TABLE Base.include(::Module, ::AbstractString) = Base.inferencebarrier(nothing)
+@overlay JET_METHOD_TABLE Base.include(::Function, ::Module, ::AbstractString) = Base.inferencebarrier(nothing)
+
 # analysis injections
 # ===================
 
@@ -1406,6 +1411,11 @@ function handle_invalid_builtins!(analyzer::JETAnalyzer, sv::InferenceState, @no
 end
 
 function _report_builtin_error_sound!(analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(rt))
+    @static if isdefinedglobal(Core, :declare_global)
+        # `Core.declare_global` is always concretized, so any failure has already been
+        # reported by `ConcreteInterpreter`.
+        f === Core.declare_global && isconcretized(analyzer, sv) && return false
+    end
     if isa(f, IntrinsicFunction)
         nothrow = CC.intrinsic_nothrow(f, argtypes)
     else
