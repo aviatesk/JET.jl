@@ -1,10 +1,9 @@
-# Empty stubs for the exported functions/macros of JET.jl, to provide a more informative
-# error message when JET.jl is used with a pre-release version of Julia.
+# Empty stubs for the exported functions and macros of JET.jl.
 
 const empty_loading_message = """
-    JET.jl does not guarantee compatibility with nightly versions of Julia and,
-    it will not be loaded on nightly versions by default.
-    If you want to load JET on a nightly version, set the `JET_DEV_MODE` Preferences.jl
+    Full JET functionality is not available on Julia $VERSION.
+    JET was loaded with empty stubs so that this environment remains usable.
+    To try JET on this Julia version, set the `JET_DEV_MODE` Preferences.jl
     configuration to `true` and reload it.
     """ |> strip
 function __init__()
@@ -12,19 +11,15 @@ function __init__()
 end
 
 const empty_stub_message = strip("""
-    JET.jl does not guarantee compatibility with pre-release versions of Julia and
-    is not be loaded on this versions by default.
-        Julia VERSION = $VERSION
-    We recommend using a stable version of Julia in order to use JET.jl.
-    Or to try JET with this pre-release Julia version use Preferences.jl to enable
-    `JET_DEV_MODE`, and then reload JET. For example create a file named
-    `LocalPreferences.toml` which contains the section:
+    Full JET functionality is not available on Julia $VERSION.
+    To try JET on this Julia version, use Preferences.jl to enable `JET_DEV_MODE` and
+    reload JET. For example, create a `LocalPreferences.toml` file containing:
         ```toml
         [JET]
         JET_DEV_MODE = true
         ```
-    Note that JET.jl may not function properly with a pre-release versions of Julia
-    even with `JET_DEV_MODE` enabled.
+    JET may not function correctly on unsupported Julia versions even with
+    `JET_DEV_MODE` enabled.
     """)
 
 for exported_func in exports

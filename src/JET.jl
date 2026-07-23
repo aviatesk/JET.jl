@@ -9,7 +9,25 @@ const USE_FIXED_WORLD = Preferences.load_preference(UUID("c3a54625-cd67-489e-a8e
 
 const PKG_EVAL = Base.get_bool_env("JULIA_PKGEVAL", false)
 
-const JET_LOADABLE = JET_DEV_MODE || PKG_EVAL || (get(VERSION.prerelease, 1, "") != "DEV")
+const MINIMUM_JULIA_VERSION = v"1.12.0-beta1.11"
+const FIRST_UNSUPPORTED_JULIA_VERSION = v"1.14.0-DEV"
+
+_is_supported_julia(version::VersionNumber) =
+    MINIMUM_JULIA_VERSION ≤ version < FIRST_UNSUPPORTED_JULIA_VERSION
+
+# PkgEval must exercise full JET functionality on pre-release Julia versions so that
+# compiler incompatibilities are detected instead of being hidden by empty stubs.
+"""
+    JET_AVAILABLE::Bool
+
+Whether full JET functionality is available in the current process.
+
+This is `true` on supported Julia versions, when `JET_DEV_MODE` is enabled, or under
+PkgEval. When `false`, JET is loaded with empty stubs so test suites can skip JET-specific
+checks while keeping their test environments usable.
+"""
+const JET_AVAILABLE = JET_DEV_MODE || PKG_EVAL || _is_supported_julia(VERSION)
+export JET_AVAILABLE
 
 # exports
 # =======
@@ -30,26 +48,11 @@ for exported_name in exports
     Core.eval(@__MODULE__, Expr(:export, exported_name))
 end
 
-using Compiler: Compiler as CC
-
-# Pre-release Julia versions are not supported, and we don't expect JET to even
-# precompile in pre-release versions. So, instead of having JET fail to precompile, we
-# simply make JET an empty module so that failure is delayed until the first time JET is
-# actually used. This means packages with a test dependency on JET don't fail to
-# precompile when their tests are run, instead there will be test failures when JET is
-# used (but potentially other tests can at least run).
-@static if JET_LOADABLE
-    @static if VERSION ≥ v"1.12.0-beta1.11"
-        include("JETBase.jl")
-    else
-        function __init__()
-            @warn """
-            The latest version of JET is incompatible with Julia versions earlier than `v"1.12.0-beta1.11"`.
-            To build a compatible Julia version, follow the instructions at
-            https://github.com/aviatesk/JET.jl/blob/master/CHANGELOG.md#0103.
-            """
-        end
-    end
+# Keep JET installable on unsupported future Julia versions so that packages with JET
+# as a test dependency can instantiate their test environments. Full functionality is
+# only loaded on supported Julia versions unless explicitly enabled with `JET_DEV_MODE`.
+@static if JET_AVAILABLE
+    include("JETBase.jl")
 else
     include("JETEmpty.jl")
 end

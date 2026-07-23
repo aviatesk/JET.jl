@@ -1,7 +1,7 @@
 module JETCthulhuExt
 
-using JET: JET_LOADABLE
-@static if JET_LOADABLE
+using JET: JET_AVAILABLE
+@static if JET_AVAILABLE
     include("JETCthulhuExtBase.jl")
 end
 

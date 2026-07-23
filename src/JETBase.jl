@@ -16,6 +16,8 @@ Base.Experimental.@optlevel 1
 # usings
 # ======
 
+using Compiler: Compiler as CC
+
 using Core: Builtin, IntrinsicFunction, Intrinsics, SimpleVector, svec
 
 using Core.IR
