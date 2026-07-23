@@ -46,11 +46,7 @@ JET.PrintConfig
 JET.VSCode.VSCodeConfig
 ```
 
-## [Watch Configurations](@id watch-config)
 
-```@docs
-JET.WatchConfig
-```
 
 ## [Configuration File](@id config-file)
 

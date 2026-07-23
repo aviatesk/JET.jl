@@ -865,9 +865,9 @@ configuration file support.
 This means you can use `$CONFIG_FILE_NAME` configuration file to specify any of configurations
 explained above and share that with others.
 
-When [`report_file`](@ref) or [`watch_file`](@ref) is called, it will look for
-`$CONFIG_FILE_NAME` in the directory of the given file, and search _up_ the file tree until
-a JET configuration file is (or isn't) found.
+When [`report_file`](@ref) is called, it will look for `$CONFIG_FILE_NAME` in the directory
+of the given file, and search _up_ the file tree until a JET configuration file is
+(or isn't) found.
 When found, the configurations specified in the file will be applied.
 
 A configuration file can specify configurations like:
@@ -1047,59 +1047,6 @@ function analyze_and_report_expr!(interp::ConcreteInterpreter, x::Union{JS.Synta
     return JETToplevelResult(analyzer, res, source; jetconfigs...)
 end
 
-"""
-Configurations for "watch" mode.
-The configurations will only be active when used with [`watch_file`](@ref).
-
----
-- `revise_all::Bool = true` \\
-  Redirected to [`Revise.entr`](https://timholy.github.io/Revise.jl/stable/user_reference/#Revise.entr)'s `all` keyword argument.
-  When set to `true`, JET will retrigger analysis as soon as code updates are detected in
-  any module tracked by Revise.
-  Currently when encountering `import/using` statements, JET won't perform analysis, but
-  rather will just load the modules as usual execution (this also means Revise will track
-  those modules).
-  So if you're editing both files analyzed by JET and modules that are used within the files,
-  this configuration should be enabled.
----
-- `revise_modules = nothing` \\
-  Redirected to [`Revise.entr`](https://timholy.github.io/Revise.jl/stable/user_reference/#Revise.entr)'s `modules` positional argument.
-  If a iterator of `Module` is given, JET will retrigger analysis whenever code in `modules` updates.
-
-  !!! tip
-      This configuration is useful when your're also editing files that are not tracked by Revise,
-      e.g. editing functions defined in `Base`:
-      ```julia-repl
-      # re-perform analysis when you make a change to `Base`
-      julia> watch_file(yourfile; revise_modules = [Base])
-      ```
----
-"""
-struct WatchConfig
-    # Revise configurations
-    revise_all::Bool
-    revise_modules
-    function WatchConfig(; revise_all::Bool = true,
-                           revise_modules = nothing,
-                           __jetconfigs...)
-        return new(revise_all, revise_modules)
-    end
-end
-
-function watch_file_with_func(func, args...; jetconfigs...)
-    try
-        return _watch_file_with_func(func, args...; jetconfigs...)
-    catch err
-        if !(err isa MethodError && err.f === _watch_file_with_func)
-            rethrow(err)
-        end
-        error("Revise.jl is not loaded; load Revise and try again.")
-    end
-end
-
-# Stub to be filled out by loading the Revise extension
-function _watch_file_with_func end
-
 # Test.jl integration
 # -------------------
 
@@ -1271,9 +1218,7 @@ const GENERAL_CONFIGURATIONS = Set{Symbol}((
     :context, :analyze_from_definitions, :concretization_patterns, :virtualize, :toplevel_logger,
     # ui
     :print_toplevel_success, :print_inference_success, :fullpath, :sourceinfo, :stacktrace_types_limit,
-    :vscode_console_output,
-    # watch
-    :revise_all, :revise_modules))
+    :vscode_console_output))
 
 # interface
 # =========
