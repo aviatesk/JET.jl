@@ -253,19 +253,19 @@ end #hide
 
 # ```
 # ═════ 59 possible errors found ═════
-# ┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:39 Core.kwfunc(IRTools.Inner.invoke_meta)(Core.apply_type(Core.NamedTuple, (:world,))(Core.tuple(world)), IRTools.Inner.invoke_meta, T)
-# │┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:69 IRTools.Inner.#invoke_meta#6(world, _3, T)
-# ││┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:74 Core.kwfunc(IRTools.Inner.meta)(Core.apply_type(Core.NamedTuple, (:types, :world))(Core.tuple(S, world)), IRTools.Inner.meta, T)
-# │││┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:38 IRTools.Inner.#meta#1(types, world, _3, T)
-# ││││┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:43 Base._methods_by_ftype
+# ┌ @ ~.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:39 Core.kwfunc(IRTools.Inner.invoke_meta)(Core.apply_type(Core.NamedTuple, (:world,))(Core.tuple(world)), IRTools.Inner.invoke_meta, T)
+# │┌ @ ~.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:69 IRTools.Inner.#invoke_meta#6(world, _3, T)
+# ││┌ @ ~.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:74 Core.kwfunc(IRTools.Inner.meta)(Core.apply_type(Core.NamedTuple, (:types, :world))(Core.tuple(S, world)), IRTools.Inner.meta, T)
+# │││┌ @ ~.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:38 IRTools.Inner.#meta#1(types, world, _3, T)
+# ││││┌ @ ~.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:43 Base._methods_by_ftype
 # │││││ usage of unstable API `Base._methods_by_ftype` found
 # ││││└─────────────────────────────────────────────────────────────────────────────────
-# ││││┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:49 Base.isgenerated
+# ││││┌ @ ~.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:49 Base.isgenerated
 # │││││ usage of unstable API `Base.isgenerated` found
 # ││││└─────────────────────────────────────────────────────────────────────────────────
-# ││││┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:49 Base.uncompressed_ast
+# ││││┌ @ ~.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:49 Base.uncompressed_ast
 # │││││ usage of unstable API `Base.uncompressed_ast` found
 # ││││└─────────────────────────────────────────────────────────────────────────────────
-# ││││┌ @ /Users/aviatesk/.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:54
+# ││││┌ @ ~.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:54
 # ... # many other "unstable API"s detected
 # ```
