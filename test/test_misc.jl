@@ -31,7 +31,11 @@ macro toml_str(s); TOML.parse(TOML.Parser(s)); end
 @testset "`process_config_dict`" begin
     let config_dict = toml"""
         # usual
-        analyze_from_definitions = true
+        analyze_from_definitions = "main"
+        mode = "typo"
+        sourceinfo = "compact"
+        target_modules = ["Foo"]
+        ignored_modules = ["Bar"]
 
         # will be `parse`d or `eval`ed
         context = "Base"
@@ -40,7 +44,11 @@ macro toml_str(s); TOML.parse(TOML.Parser(s)); end
         """
 
         config = process_config_dict(config_dict)
-        @test (:analyze_from_definitions => true) in config
+        @test (:analyze_from_definitions => :main) in config
+        @test (:mode => :typo) in config
+        @test (:sourceinfo => :compact) in config
+        @test (:target_modules => [:Foo]) in config
+        @test (:ignored_modules => [:Bar]) in config
         @test (:context => Base) in config
         @test (:concretization_patterns => [:(const x_ = y_)]) in config
         @test (:toplevel_logger => stdout) in config
@@ -70,6 +78,42 @@ macro toml_str(s); TOML.parse(TOML.Parser(s)); end
         """
         config = process_config_dict(config_dict)
         @test (:concretization_patterns => [:(const x_ = y_)]) in config
+    end
+end
+
+@testset "configuration file selection" begin
+    mktempdir() do dir
+        config_file = normpath(dir, JET.CONFIG_FILE_NAME)
+        write(config_file, "mode = \"typo\"\nignore_throws = true\n")
+        child = mkpath(normpath(dir, "child"))
+
+        cd(dir) do
+            result = report_call(()->throw("foo"))
+            @test result.analyzer isa JET.TypoJETAnalyzer
+            @test isempty(JET.get_reports(result))
+        end
+
+        cd(child) do
+            result = report_call(()->throw("foo"))
+            @test result.analyzer isa JET.BasicJETAnalyzer
+            @test !isempty(JET.get_reports(result))
+
+            result = report_call(()->throw("foo"); config_file)
+            @test result.analyzer isa JET.TypoJETAnalyzer
+            @test isempty(JET.get_reports(result))
+
+            result = report_call(()->throw("foo");
+                config_file, mode=:basic, ignore_throws=false)
+            @test result.analyzer isa JET.BasicJETAnalyzer
+            @test !isempty(JET.get_reports(result))
+
+            result = report_call(()->throw("foo"); config_file=nothing)
+            @test result.analyzer isa JET.BasicJETAnalyzer
+            @test !isempty(JET.get_reports(result))
+        end
+
+        missing = normpath(dir, "missing.toml")
+        @test_throws ArgumentError report_call(identity, (Any,); config_file=missing)
     end
 end
 

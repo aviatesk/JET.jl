@@ -193,6 +193,18 @@ function target_modules_compute(x)
 end
 
 @testset "OptAnalyzer configurations" begin
+    mktemp() do path, io
+        write(io, "skip_noncompileable_calls = false\n")
+        flush(io)
+
+        result = report_opt(identity, (Any,); config_file=path)
+        @test !result.analyzer.skip_noncompileable_calls
+
+        result = report_opt(identity, (Any,);
+            config_file=path, skip_noncompileable_calls=true)
+        @test result.analyzer.skip_noncompileable_calls
+    end
+
     @testset "function_filter" begin
         @assert JET.InferenceParams(JET.OptAnalyzer()).max_union_splitting < 5
 

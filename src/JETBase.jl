@@ -64,6 +64,10 @@ const Argtypes = Vector{Any}
 
 const CONFIG_FILE_NAME = ".JET.toml"
 
+struct DefaultConfigFile end
+const DEFAULT_CONFIG_FILE = DefaultConfigFile()
+const ConfigFile = Union{DefaultConfigFile,Nothing,AbstractString}
+
 # TODO define all interface functions in JETInterface?
 
 function copy_report end
@@ -313,6 +317,7 @@ const JET_LOGGER_LEVELS_DESC = let
     join(descs, ", ")
 end
 jet_logger_level(@nospecialize io::IO) = get(io, JET_LOGGER_LEVEL, DEFAULT_LOGGER_LEVEL)::Int
+default_toplevel_logger() = IOContext(stdout, JET_LOGGER_LEVEL => DEFAULT_LOGGER_LEVEL)
 
 # analysis core
 # =============
@@ -873,23 +878,56 @@ General users should use high-level entry points like [`report_file`](@ref).
 function analyze_and_report_file!(interp::ConcreteInterpreter, filename::AbstractString,
                                   pkgid::Union{Nothing,PkgId} = nothing;
                                   jetconfigs...)
-    jetconfigs = apply_file_config(jetconfigs, filename)
+    isfile(filename) || throw(ArgumentError("$filename doesn't exist"))
+    jetconfigs = set_if_missing(jetconfigs, :toplevel_logger, default_toplevel_logger())
     entrytext = read(filename, String)
     return analyze_and_report_text!(interp, entrytext, filename, pkgid; jetconfigs...)
 end
 
-function apply_file_config(jetconfigs, filename::AbstractString)
-    isfile(filename) || throw(ArgumentError("$filename doesn't exist"))
-    jetconfigs = set_if_missing(jetconfigs, :toplevel_logger, IOContext(stdout, JET_LOGGER_LEVEL => DEFAULT_LOGGER_LEVEL))
-    configfile = find_config_file(dirname(abspath(filename)))
-    if !isnothing(configfile)
-        config = parse_config_file(configfile)
-        merge!(jetconfigs, config) # overwrite configurations
-        toplevel_logger(get(jetconfigs, :toplevel_logger, nothing); filter=≥(JET_LOGGER_LEVEL_INFO)) do @nospecialize(io::IO)
-            println(io, lazy"applied configurations in $configfile")
+function default_config_file()
+    return normpath(pwd(), CONFIG_FILE_NAME)
+end
+
+function default_config_file(filename::AbstractString)
+    return normpath(dirname(abspath(filename)), CONFIG_FILE_NAME)
+end
+
+function default_config_file(pkgmod::Module)
+    dir = pkgdir(pkgmod)
+    isnothing(dir) && throw(ArgumentError("package directory for $pkgmod is not available"))
+    return normpath(dir, CONFIG_FILE_NAME)
+end
+
+function resolve_config_file(::DefaultConfigFile, default_file::AbstractString)
+    default_file = abspath(default_file)
+    return isfile(default_file) ? default_file : nothing
+end
+
+resolve_config_file(::Nothing, ::AbstractString) = nothing
+
+function resolve_config_file(config_file::AbstractString, ::AbstractString)
+    config_file = abspath(config_file)
+    isfile(config_file) ||
+        throw(ArgumentError("configuration file $config_file doesn't exist"))
+    return config_file
+end
+
+function apply_config_file(jetconfigs, config_file::ConfigFile,
+                           default_file::AbstractString; defaults=())
+    configs = kwargs_dict(defaults)
+    overrides = kwargs_dict(jetconfigs)
+    config_file = resolve_config_file(config_file, default_file)
+    if !isnothing(config_file)
+        merge!(configs, parse_config_file(config_file, keys(overrides)))
+    end
+    merge!(configs, overrides)
+    if !isnothing(config_file)
+        logger = get(configs, :toplevel_logger, nothing)
+        toplevel_logger(logger; filter=≥(JET_LOGGER_LEVEL_INFO)) do @nospecialize(io::IO)
+            println(io, lazy"applied configurations in $config_file")
         end
     end
-    return jetconfigs
+    return configs
 end
 
 set_if_missing(configs, args...) = (@nospecialize; set_if_missing!(kwargs_dict(configs), args...))
@@ -902,32 +940,24 @@ end
 
 function kwargs_dict(@nospecialize configs)
     dict = Dict{Symbol,Any}()
-    for (key, val) in configs
+    for (key, val) in pairs(configs)
         dict[Symbol(key)] = val
     end
     return dict
 end
 
-function find_config_file(dir::AbstractString)
-    next_dir = dirname(dir)
-    if (next_dir == dir || # ensure to escape infinite recursion
-        isempty(dir))      # reached to the system root
-        return nothing
-    end
-    path = normpath(dir, CONFIG_FILE_NAME)
-    return isfile(path) ? path : find_config_file(next_dir)
-end
-
 """
-JET.jl offers [`.prettierrc` style](https://prettier.io/docs/en/configuration.html)
-configuration file support.
-This means you can use `$CONFIG_FILE_NAME` configuration file to specify any of configurations
-explained above and share that with others.
+JET.jl supports `$CONFIG_FILE_NAME` configuration files for sharing analysis
+configurations.
 
-When [`report_file`](@ref) is called, it will look for `$CONFIG_FILE_NAME` in the directory
-of the given file, and search _up_ the file tree until a JET configuration file is
-(or isn't) found.
-When found, the configurations specified in the file will be applied.
+Each high-level analysis entry point selects at most one configuration file. By default,
+[`report_file`](@ref) uses `$CONFIG_FILE_NAME` in the root script directory,
+[`report_package`](@ref) uses the package root, and call/text entry points use the
+current working directory. JET does not search parent directories.
+
+Specify `config_file::AbstractString` to use an exact configuration file, or
+`config_file = nothing` to disable configuration file loading. An explicitly specified
+file must exist. Configuration files at default locations are optional.
 
 A configuration file can specify configurations like:
 ```toml
@@ -935,11 +965,19 @@ analyze_from_definitions = true # analyze methods from their declared signatures
 ... # other configurations
 ```
 
-Note that the following configurations should be string(s) of valid Julia code:
-- `context`: string of Julia code, which can be `parse`d and `eval`uated into `Module`
-- `concretization_patterns`: vector of string of Julia code, which can be `parse`d into a
-  Julia expression pattern expected by [`MacroTools.@capture` macro](https://fluxml.ai/MacroTools.jl/stable/pattern-matching/).
-- `toplevel_logger`: string of Julia code, which can be `parse`d and `eval`uated into `Union{IO,Nothing}`
+The following configurations use strings in TOML:
+- `mode` and `sourceinfo`: strings converted to `Symbol`s
+- `analyze_from_definitions`: a boolean or a string converted to `Symbol`
+- `target_modules` and `ignored_modules`: arrays of module-name strings converted to
+  `Symbol`s
+- `context`: Julia code parsed and evaluated into a `Module`
+- `concretization_patterns`: an array of Julia expression-pattern strings parsed for
+  [`MacroTools.@capture`](https://fluxml.ai/MacroTools.jl/stable/pattern-matching/)
+- `toplevel_logger`: Julia code parsed and evaluated into `Union{IO,Nothing}`
+
+!!! warning
+    `context` and `toplevel_logger` are evaluated as Julia code. Only load configuration
+    files from trusted projects.
 
 E.g. the configurations below are equivalent:
 - configurations via keyword arguments
@@ -960,11 +998,43 @@ E.g. the configurations below are equivalent:
     Configurations specified as keyword arguments have precedence over those specified
     via a configuration file.
 """
-parse_config_file(path::AbstractString) = process_config_dict(TOML.parsefile(path))
+parse_config_file(path::AbstractString) = parse_config_file(path, ())
+
+function parse_config_file(path::AbstractString, overridden_keys)
+    config_dict = kwargs_dict(TOML.parsefile(path))
+    for key in overridden_keys
+        delete!(config_dict, key)
+    end
+    return process_config_dict!(config_dict)
+end
 
 process_config_dict(configs) = process_config_dict!(kwargs_dict(configs))
 
 function process_config_dict!(config_dict::Dict{Symbol,Any})
+    for key in (:mode, :sourceinfo)
+        value = get(config_dict, key, nothing)
+        if !isnothing(value)
+            isa(value, String) || throw(JETConfigError(
+                "`$key` should be string", key, value))
+            config_dict[key] = Symbol(value)
+        end
+    end
+    analyze_from_definitions = get(config_dict, :analyze_from_definitions, nothing)
+    if analyze_from_definitions isa String
+        config_dict[:analyze_from_definitions] = Symbol(analyze_from_definitions)
+    elseif !(isnothing(analyze_from_definitions) || analyze_from_definitions isa Bool)
+        throw(JETConfigError(
+            "`analyze_from_definitions` should be bool or string",
+            :analyze_from_definitions, analyze_from_definitions))
+    end
+    for key in (:target_modules, :ignored_modules)
+        value = get(config_dict, key, nothing)
+        if !isnothing(value)
+            isa(value, Vector{String}) || throw(JETConfigError(
+                "`$key` should be array of string", key, value))
+            config_dict[key] = Symbol.(value)
+        end
+    end
     context = get(config_dict, :context, nothing)
     if !isnothing(context)
         isa(context, String) || throw(JETConfigError(
@@ -1087,7 +1157,7 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
 
     start = time()
     res = VirtualProcessResult(nothing)
-    jetconfigs = set_if_missing(jetconfigs, :toplevel_logger, IOContext(stdout, JET_LOGGER_LEVEL => DEFAULT_LOGGER_LEVEL))
+    jetconfigs = set_if_missing(jetconfigs, :toplevel_logger, default_toplevel_logger())
     config = ToplevelConfig(; jetconfigs...)
 
     # Revise's signature population may execute code, which can increment the world age,

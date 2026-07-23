@@ -1362,37 +1362,54 @@ end
 @testset "configuration file" begin
     mktempdir() do dir
         analysis_target = normpath(dir, "concretization_patterns.jl")
-        config_target   = normpath(dir, JET.CONFIG_FILE_NAME)
+        config_target = normpath(dir, JET.CONFIG_FILE_NAME)
+        nested_dir = mkpath(normpath(dir, "nested"))
+        nested_target = normpath(nested_dir, "concretization_patterns.jl")
 
-        back = pwd()
-        try # in order to check the functionality, fixtures/..JET.toml logs toplevel analysis
-            # into toplevel.txt (relative to the current working directory)
-            # and so let's `cd` into the temporary directory to not pollute this directory
-            cd(dir)
-
-            open(CONCRETIZATION_PATTERNS_FILE) do f
-                write(analysis_target, f)
+        cd(dir) do
+            for target in (analysis_target, nested_target)
+                open(CONCRETIZATION_PATTERNS_FILE) do f
+                    write(target, f)
+                end
             end
 
-            # no configuration, thus top-level analysis should fail
             let res = report_file2(analysis_target)
-                nreported = print_reports(IOBuffer(), res)
-                @test !iszero(nreported)
+                @test !iszero(print_reports(IOBuffer(), res))
             end
 
-            # setup a configuration file
             open(CONCRETIZATION_PATTERNS_CONFIG) do f
                 write(config_target, f)
             end
 
-            # now any top-level analysis failure shouldn't happen
-            let res = report_file2(analysis_target)
-                nreported = print_reports(IOBuffer(), res)
-                @test iszero(nreported) # no error happened
-                @test isfile("toplevel.txt") # not closed yet
+            let res = report_file(analysis_target)
+                @test iszero(print_reports(IOBuffer(), res))
+                @test isfile("toplevel.txt")
             end
-        finally
-            cd(back)
+
+            let res = report_file2(nested_target)
+                @test !iszero(print_reports(IOBuffer(), res))
+            end
+            let res = report_file2(nested_target; config_file=config_target)
+                @test iszero(print_reports(IOBuffer(), res))
+            end
+
+            let text = read(analysis_target, String)
+                res = report_text(text, analysis_target;
+                    config_file=config_target, toplevel_logger=nothing)
+                @test iszero(print_reports(IOBuffer(), res))
+            end
+
+            let res = report_file2(analysis_target;
+                    concretization_patterns=Any[])
+                @test !iszero(print_reports(IOBuffer(), res))
+            end
+            let res = report_file2(analysis_target; config_file=nothing)
+                @test !iszero(print_reports(IOBuffer(), res))
+            end
+
+            missing = normpath(dir, "missing.toml")
+            @test_throws ArgumentError report_file2(
+                analysis_target; config_file=missing)
         end
     end
 end

@@ -388,9 +388,9 @@ const OPT_ANALYZER_VALID_CONFIGURATIONS =
 JETInterface.valid_configurations(::OptAnalyzer) = OPT_ANALYZER_VALID_CONFIGURATIONS
 
 """
-    report_opt(f, [types]; jetconfigs...) -> JETCallResult
-    report_opt(tt::Type{<:Tuple}; jetconfigs...) -> JETCallResult
-    report_opt(mi::Core.MethodInstance; jetconfigs...) -> JETCallResult
+    report_opt(f, [types]; config_file, jetconfigs...) -> JETCallResult
+    report_opt(tt::Type{<:Tuple}; config_file, jetconfigs...) -> JETCallResult
+    report_opt(mi::Core.MethodInstance; config_file, jetconfigs...) -> JETCallResult
 
 Analyzes a function call with the given type signature to detect optimization failures and
 unresolved method dispatches.
@@ -398,9 +398,13 @@ unresolved method dispatches.
 The [general configurations](@ref) and [the optimization analysis specific configurations](@ref optanalysis-config)
 can be specified as a keyword argument.
 
+By default, this function uses `$CONFIG_FILE_NAME` in the current working directory.
 See [the documentation of the optimization analysis](@ref optanalysis) for more details.
 """
-function report_opt(args...; jetconfigs...)
+function report_opt(args...;
+                    config_file::ConfigFile=DEFAULT_CONFIG_FILE,
+                    jetconfigs...)
+    jetconfigs = apply_config_file(jetconfigs, config_file, default_config_file())
     analyzer = OptAnalyzer(; jetconfigs...)
     return analyze_and_report_call!(analyzer, args...; jetconfigs...)
 end

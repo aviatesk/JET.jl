@@ -1477,19 +1477,23 @@ JETInterface.valid_configurations(::JETAnalyzer) = JET_ANALYZER_VALID_CONFIGURAT
 # -----------
 
 """
-    report_call(f, [types]; jetconfigs...) -> JETCallResult
-    report_call(tt::Type{<:Tuple}; jetconfigs...) -> JETCallResult
-    report_call(mi::Core.MethodInstance; jetconfigs...) -> JETCallResult
+    report_call(f, [types]; config_file, jetconfigs...) -> JETCallResult
+    report_call(tt::Type{<:Tuple}; config_file, jetconfigs...) -> JETCallResult
+    report_call(mi::Core.MethodInstance; config_file, jetconfigs...) -> JETCallResult
 
 Analyzes a function call with the given type signature to find type-level errors
 and returns back detected problems.
 
 The [general configurations](@ref) and [the error analysis specific configurations](@ref jetanalysis-config)
-can be specified as a keyword argument.
+can be specified as a keyword argument. By default, this function uses
+`$CONFIG_FILE_NAME` in the current working directory.
 
 See [the documentation of the error analysis](@ref jetanalysis) for more details.
 """
-function report_call(args...; jetconfigs...)
+function report_call(args...;
+                     config_file::ConfigFile=DEFAULT_CONFIG_FILE,
+                     jetconfigs...)
+    jetconfigs = apply_config_file(jetconfigs, config_file, default_config_file())
     analyzer = JETAnalyzer(; jetconfigs...)
     return analyze_and_report_call!(analyzer, args...; jetconfigs...)
 end
@@ -1607,14 +1611,13 @@ end
 # ---------
 
 """
-    report_file(file::AbstractString; jetconfigs...) -> JETToplevelResult
+    report_file(file::AbstractString; config_file, jetconfigs...) -> JETToplevelResult
 
 Analyzes `file` to find type-level errors and returns back detected problems.
 
-This function looks for `$CONFIG_FILE_NAME` configuration file in the directory of `file`,
-and searches _upward_ in the file tree until a `$CONFIG_FILE_NAME` is (or isn't) found.
-When found, the configurations specified in the file are applied.
-See [JET's configuration file specification](@ref config-file) for more details.
+By default, this function uses `$CONFIG_FILE_NAME` in the directory of the root
+`file`. See [JET's configuration file specification](@ref config-file) for details
+and explicit `config_file` selection.
 
 The [general configurations](@ref) and [the error analysis specific configurations](@ref jetanalysis-config)
 can be specified as a keyword argument, and if given, they are preferred over the configurations
@@ -1642,10 +1645,16 @@ specified by a `$CONFIG_FILE_NAME` configuration file.
     ```
     See [JET's top-level analysis configurations](@ref toplevel-config) for more details.
 """
-function report_file(args...; jetconfigs...)
-    # TODO read a configuration file and apply it here?
+function report_file(filename::AbstractString,
+                     pkgid::Union{Nothing,PkgId}=nothing;
+                     config_file::ConfigFile=DEFAULT_CONFIG_FILE,
+                     jetconfigs...)
+    isfile(filename) || throw(ArgumentError("$filename doesn't exist"))
+    defaults = (; toplevel_logger=default_toplevel_logger())
+    jetconfigs = apply_config_file(
+        jetconfigs, config_file, default_config_file(filename); defaults)
     interp = JETConcreteInterpreter(JETAnalyzer(; jetconfigs...))
-    return analyze_and_report_file!(interp, args...; jetconfigs...)
+    return analyze_and_report_file!(interp, filename, pkgid; jetconfigs...)
 end
 
 """
@@ -1666,7 +1675,7 @@ function test_file(args...; jetconfigs...)
 end
 
 """
-    report_package(package::Module; jetconfigs...) -> JETToplevelResult
+    report_package(package::Module; config_file, jetconfigs...) -> JETToplevelResult
 
 Analyzes `package` and returns back type-level errors.
 
@@ -1674,6 +1683,10 @@ This function uses [Revise.jl](https://github.com/timholy/Revise.jl) to collect 
 signatures defined in the package and analyzes each method based on its signature.
 This approach allows JET to analyze a package without requiring top-level call sites or
 actual usage examples.
+
+By default, this function uses `$CONFIG_FILE_NAME` in the package root. See
+[JET's configuration file specification](@ref config-file) for details and explicit
+`config_file` selection.
 
 This analysis is performed incrementally. This means that when the same package is analyzed
 multiple times, changes that Revise can handle are dynamically reflected and change the
@@ -1725,22 +1738,33 @@ configurations. By default, `report_package` enables the following configuration
         Please use `target_modules` instead, which allows for more flexible filtering.
 """
 function report_package(pkgmod::Module;
-                        ignore_missing_comparison::Bool=true,
-                        ignore_throws::Bool=true,
-                        target_defined_modules::Union{Nothing,Bool}=nothing, # TODO remove this handling from v0.12
+                        ignore_missing_comparison::Union{Missing,Bool}=missing,
+                        ignore_throws::Union{Missing,Bool}=missing,
+                        target_defined_modules::Union{Nothing,Bool}=nothing,
+                        config_file::ConfigFile=DEFAULT_CONFIG_FILE,
                         jetconfigs...)
-    # TODO read a configuration file and apply it here?
-    if isnothing(target_defined_modules)
-        target_modules = nothing
-    else
+    overrides = kwargs_dict(jetconfigs)
+    if !ismissing(ignore_missing_comparison)
+        overrides[:ignore_missing_comparison] = ignore_missing_comparison
+    end
+    if !ismissing(ignore_throws)
+        overrides[:ignore_throws] = ignore_throws
+    end
+    defaults = (;
+        ignore_missing_comparison=true,
+        ignore_throws=true,
+        toplevel_logger=default_toplevel_logger())
+    jetconfigs = apply_config_file(
+        overrides, config_file, default_config_file(pkgmod); defaults)
+    if !isnothing(target_defined_modules)
         @warn """
         `target_defined_modules::Bool` configuration is deprecated.
         Please use `target_modules` instead and specify the modules you want to target with e.g. `target_modules=(pkgmod,)`
         """
-        target_modules = (pkgmod,)
+        jetconfigs[:target_modules] = (pkgmod,)
     end
-    analyzer = JETAnalyzer(; ignore_missing_comparison, ignore_throws, target_modules, jetconfigs...)
-    return analyze_and_report_package!(analyzer, pkgmod; target_modules, jetconfigs...)
+    analyzer = JETAnalyzer(; jetconfigs...)
+    return analyze_and_report_package!(analyzer, pkgmod; jetconfigs...)
 end
 
 """
@@ -1805,12 +1829,17 @@ function test_package(args...; toplevel_logger=nothing, jetconfigs...)
 end
 
 """
-    report_text(text::AbstractString; jetconfigs...) -> JETToplevelResult
-    report_text(text::AbstractString, filename::AbstractString; jetconfigs...) -> JETToplevelResult
+    report_text(text::AbstractString; config_file, jetconfigs...) -> JETToplevelResult
+    report_text(text::AbstractString, filename::AbstractString;
+                config_file, jetconfigs...) -> JETToplevelResult
 
-Analyzes top-level `text` and returns back type-level errors.
+Analyzes top-level `text` and returns back type-level errors. By default, this
+function uses `$CONFIG_FILE_NAME` in the current working directory.
 """
-function report_text(args...; jetconfigs...)
+function report_text(args...;
+                     config_file::ConfigFile=DEFAULT_CONFIG_FILE,
+                     jetconfigs...)
+    jetconfigs = apply_config_file(jetconfigs, config_file, default_config_file())
     interp = JETConcreteInterpreter(JETAnalyzer(; jetconfigs...))
     return analyze_and_report_text!(interp, args...; jetconfigs...)
 end

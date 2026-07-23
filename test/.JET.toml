@@ -1,1 +1,1 @@
-# we put an empty JET configuration here, to make sure the JET configuration file at the repository root doesn't affect the whole test suite
+# Empty default configuration for analyses whose root script is in this directory.
