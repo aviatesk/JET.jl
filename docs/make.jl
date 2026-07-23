@@ -121,14 +121,16 @@ function generate_api_doc(examples_pages)
         $contents
 
         JET offers an infrastructure to implement a "plugin" code analyzer.
-        Actually, [JET's default error analyzer](@ref jetanalysis) is one specific instance
-        of such a plugin analyzer built on top of the framework.
+        Actually, [JET's default error analyzer](@ref jetanalysis) is one
+        specific instance of such a plugin analyzer built on top of the
+        framework.
 
-        In this documentation we will try to elaborate the framework APIs and showcase example analyzers.
+        This documentation elaborates on the framework APIs and showcases
+        example analyzers.
 
         !!! warning
-            The APIs described in this page is _very_ experimental and subject to changes.
-            And this documentation is also very WIP.
+            The APIs described on this page are highly experimental and subject
+            to change. This documentation is also a work in progress.
 
         ## Interfaces
 
@@ -150,7 +152,7 @@ end
 let
     DocMeta.setdocmeta!(JET, :DocTestSetup, :(using JET); recursive=true)
     examples = generate_example_docs!()
-    makedocs(; modules = [JET, Base.Compiler], # TODO use the Compiler stdlib wiht the full implementation?
+    makedocs(; modules = [JET],
                sitename = "JET.jl",
                pages = Any[
                     "README" => generate_index!(),
