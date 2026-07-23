@@ -11,22 +11,27 @@ the [`sourceinfo`](@ref print-config) configuration set to `:full`:
 ```julia
 @report_call sourceinfo=:full sum("julia")
 ```
-or equivalently:
+
+Or equivalently:
+
 ```julia
 report_call(sum, (String,); sourceinfo=:full)
 ```
 
-You can also analyze a top-level script `path/to/file.jl` while specifying the [`target_modules` configuration](@ref result-config):
+You can also analyze a top-level script `path/to/file.jl` while specifying the
+[`target_modules` configuration](@ref result-config):
+
 ```julia
 report_file("path/to/file.jl";
             target_modules = (Main,))
 ```
 
 !!! note
-    The documented objects listed below (such as "`JET.configured_reports`") represent internal configuration structures.
-    While you won't interact with these objects directly, their documentation describes the available configuration options
-    that you can pass as keyword arguments to JET's analysis functions.
-
+    The documented objects listed below (such as
+    "`JET.configured_reports`") represent internal configuration structures.
+    While you won't interact with these objects directly, their documentation
+    describes the available configuration options that you can pass as keyword
+    arguments to JET's analysis functions.
 
 ## [Configurations for analysis result](@id result-config)
 

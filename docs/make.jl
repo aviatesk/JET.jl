@@ -1,9 +1,11 @@
-using JET, Documenter, Literate, Markdown
+using Documenter, JET, Literate, Markdown
 
 const DOC_SRC_DIR          = normpath(@__DIR__, "src")
 const INDEX_FILENAME       = normpath(DOC_SRC_DIR, "index.md")
 const PLUGIN_API_FILENAME  = normpath(DOC_SRC_DIR, "generated-plugin-api.md")
 const PLUGIN_EXAMPLES_DIRS = (normpath(@__DIR__, "..", "examples"), normpath(DOC_SRC_DIR, "generated-plugin-examples"))
+# JET's exported API, plus the unexported names that `generate_index!` documents in index.md.
+const DOC_LINKABLE_NAMES   = push!(Set(String.(names(JET))), "JET_DEV_MODE")
 
 writeln(io, xs...) = write(io, xs..., '\n')
 
@@ -19,13 +21,6 @@ function generate_index!()
         README = string(@doc JET)
         incode = false
         for line in split(README, '\n')
-            if line == "## Quickstart"
-                writeln(io, """
-                ```@docs
-                JET.JET_AVAILABLE
-                ```
-                """)
-            end
             if startswith(line, "```julia-repl") && !endswith(line, "noeval")
                 incode = true
                 writeln(io, "```@repl index")
@@ -42,14 +37,16 @@ function generate_index!()
                 end
                 continue
             end
+            # Link code spans that name a documented JET API. Match the whole span
+            # (optionally `JET.`-qualified) rather than a substring, so that spans like
+            # `report_package(AbstractTrees)` are not turned into links.
             line_ref = replace(line,
                 r"`(.+?)`" => function (word)
-                    if any(names(JET)) do name
-                            occursin(String(name), word)
-                        end
-                        return "[$word](@ref)"
-                    end
-                    return word
+                    name = replace(word, '`' => "", "JET." => "")
+                    name in DOC_LINKABLE_NAMES || return word
+                    # Always resolve against `JET`: an unqualified `@ref` resolves in the
+                    # page's own context, which only sees JET's exported names.
+                    return "[$word](@ref JET.$name)"
                 end)
             writeln(io, line_ref)
         end
@@ -116,19 +113,21 @@ function generate_api_doc(examples_pages)
         examples_contents = codeblock("Pages = $(repr(examples_pages))", "@contents")
 
         s = md"""
-        # [`AbstractAnalyzer` framework](@id AbstractAnalyzer-Framework)
+        # [`AbstractAnalyzer` framework](@id AbstractAnalyzer-framework)
 
         $contents
 
         JET offers an infrastructure to implement a "plugin" code analyzer.
-        Actually, [JET's default error analyzer](@ref jetanalysis) is one specific instance
-        of such a plugin analyzer built on top of the framework.
+        Actually, [JET's default error analyzer](@ref jetanalysis) is one
+        specific instance of such a plugin analyzer built on top of the
+        framework.
 
-        In this documentation we will try to elaborate the framework APIs and showcase example analyzers.
+        This documentation elaborates on the framework APIs and showcases
+        example analyzers.
 
         !!! warning
-            The APIs described in this page is _very_ experimental and subject to changes.
-            And this documentation is also very WIP.
+            The APIs described on this page are highly experimental and subject
+            to change. This documentation is also a work in progress.
 
         ## Interfaces
 
@@ -150,7 +149,7 @@ end
 let
     DocMeta.setdocmeta!(JET, :DocTestSetup, :(using JET); recursive=true)
     examples = generate_example_docs!()
-    makedocs(; modules = [JET, Base.Compiler], # TODO use the Compiler stdlib wiht the full implementation?
+    makedocs(; modules = [JET],
                sitename = "JET.jl",
                pages = Any[
                     "README" => generate_index!(),

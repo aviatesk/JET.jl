@@ -75,6 +75,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   entry points; such keywords now throw `JETConfigError`.
 - JET now loads empty stubs on unsupported future Julia versions while
   remaining installable as a test dependency.
+- Overhauled JET's documentation across the project.
 - Improved the implementation of optimization analysis to make it more robust.
 
 ### Removed
@@ -391,7 +392,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   their own customized interpretation logic (aviatesk/JET.jl#721).
 ### Added (Internal)
 - Added the ability for external users of JET to customize virtualprocess.jl.
-  Similar to the design of `JuliaInterpreter.Interpreter` and `Base.Compiler.AbstractInterpreter`,
+  Similar to the design of `JuliaInterpreter.Interpreter` and `Compiler.AbstractInterpreter`,
   the new `JET.ConcreteInterpreter <: JuliaInterpreter.Interpreter` interface is designed,
   allowing external packages to subtype it and customize the behavior of `virtual_process(interp::JET.ConcreteInterpreter, ...)`.
   Please note that this is still undocumented and is a highly experimental interface.
