@@ -1036,6 +1036,19 @@ struct SigWorkItem
     index::Int
 end
 
+function cache_sig_analysis!(
+        workitem::SigWorkItem, siginfo::Revise.SigInfo, result::SigAnalysisResult)
+    @lock Revise.revise_lock begin
+        current = workitem.exinfos[workitem.index]
+        if (current isa Revise.SigInfo &&
+            current.mt === siginfo.mt && current.sig === siginfo.sig)
+            workitem.exinfos[workitem.index] =
+                Revise.replace_extended_data(current, :JET, result)
+        end
+    end
+    return nothing
+end
+
 """
     analyze_and_report_package!(analyzer::AbstractAnalyzer, package::Module; jetconfigs...) -> JETToplevelResult
 
@@ -1046,16 +1059,30 @@ General users should use high-level entry points like [`report_package`](@ref).
 """
 function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module; jetconfigs...)
     pkgid = Base.PkgId(pkgmod)
-    haskey(Revise.pkgdatas, pkgid) || Revise.watch_package(pkgid)
-    if !haskey(Revise.pkgdatas, pkgid)
+    pkgdata = (@something Revise.getpkgdata(pkgid) Revise.watch_package(pkgid) begin
         error(lazy"Package $pkgmod is not analyzable.")
-    end
+    end)::Revise.PkgData
 
-    # If Revise hasn't instantiated signatures yet, populate that cache here
-    pkgdata = Revise.pkgdatas[pkgid]
-    for file in Revise.srcfiles(pkgdata)
-        fi = Revise.maybe_parse_from_cache!(pkgdata, file)
-        Revise.maybe_extract_sigs!(fi)
+    workitems, world = @lock Revise.revise_lock let
+        # If Revise hasn't instantiated signatures yet, populate that cache here
+        for (file, fi) in zip(Revise.srcfiles(pkgdata), pkgdata.fileinfos)
+            Revise.maybe_parse_from_cache!(pkgdata, file, fi)
+            Revise.maybe_extract_sigs!(fi)
+        end
+
+        workitems = SigWorkItem[]
+        world = Base.get_world_counter()
+        for fi in pkgdata.fileinfos
+            for (_, exs_infos) in fi.mod_exs_infos, (_, exinfos) in exs_infos
+                isnothing(exinfos) && continue
+                for (i, exinfo) in enumerate(exinfos)
+                    if exinfo isa Revise.SigInfo
+                        push!(workitems, SigWorkItem(exinfos, i))
+                    end
+                end
+            end
+        end
+        workitems, world
     end
 
     start = time()
@@ -1064,19 +1091,9 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
     config = ToplevelConfig(; jetconfigs...)
 
     # Revise's signature population may execute code, which can increment the world age,
-    # so we update to the latest world age here
-    newstate = AnalyzerState(AnalyzerState(analyzer); world=Base.get_world_counter())
+    # so we update to the captured world age here
+    newstate = AnalyzerState(AnalyzerState(analyzer); world)
     analyzer = AbstractAnalyzer(analyzer, newstate)
-
-    workitems = SigWorkItem[]
-    for fi in pkgdata.fileinfos, (_, exs_infos) in fi.mod_exs_infos, (_, exinfos) in exs_infos
-        isnothing(exinfos) && continue
-        for (i, exinfo) in enumerate(exinfos)
-            if exinfo isa Revise.SigInfo
-                push!(workitems, SigWorkItem(exinfos, i))
-            end
-        end
-    end
 
     n_sigs = length(workitems)
     progress = PackageAnalysisProgress(n_sigs)
@@ -1087,8 +1104,7 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
     end
 
     tasks = map(workitems) do workitem
-        (; exinfos, index) = workitem
-        let siginfo = exinfos[index]::Revise.SigInfo
+        siginfo = @lock Revise.revise_lock workitem.exinfos[workitem.index]::Revise.SigInfo
         Threads.@spawn :default try
             ext = Revise.get_extended_data(siginfo, :JET)
             local reports::Vector{InferenceErrorReport}
@@ -1114,12 +1130,15 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
                     match.method, match.spec_types, match.sparams)
                 @atomic progress.analyzed += 1
                 reports = get_reports(task_analyzer, result)
-                exinfos[index] = Revise.replace_extended_data(siginfo, :JET, SigAnalysisResult(reports, result.ci))
+                cache_sig_analysis!(
+                    workitem, siginfo, SigAnalysisResult(reports, result.ci))
             else
-                toplevel_logger(config; pre=println) do @nospecialize(io::IO)
-                    print(io, "Couldn't find a single matching method for the signature `")
-                    Base.show_tuple_as_call(io, Symbol(""), siginfo.sig)
-                    println(io, "`")
+                let siginfo=siginfo
+                    toplevel_logger(config; pre=println) do @nospecialize(io::IO)
+                        print(io, "Couldn't find a single matching method for the signature `")
+                        Base.show_tuple_as_call(io, Symbol(""), siginfo.sig)
+                        println(io, "`")
+                    end
                 end
                 reports = InferenceErrorReport[]
             end
@@ -1137,7 +1156,6 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
                     print(io, "Analyzing top-level definitions (progress: $done/$n_sigs)")
                 end
             end
-        end
         end
     end
 

@@ -85,7 +85,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Fixed a data race in shared top-level binding state (aviatesk/JET.jl#840,
   thanks [@PatrickHaecker](https://github.com/PatrickHaecker)).
-- Fixed world-age issues in analysis and report printing.
+- Fixed `report_package` to analyze definitions from source files included into
+  multiple modules.
+- Fixed races between `report_package` and concurrent Revise package tracking or
+  revision.
 
 ## [0.11.6]
 
