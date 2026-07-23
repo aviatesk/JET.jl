@@ -6,7 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 <!-- links start -->
-[Unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.11.5...HEAD
+[Unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.11.6...HEAD
+[0.11.6]: https://github.com/aviatesk/JET.jl/compare/v0.11.5...v0.11.6
 [0.11.5]: https://github.com/aviatesk/JET.jl/compare/v0.11.4...v0.11.5
 [0.11.4]: https://github.com/aviatesk/JET.jl/compare/v0.11.3...v0.11.4
 [0.11.3]: https://github.com/aviatesk/JET.jl/compare/v0.11.2...v0.11.3
@@ -58,6 +59,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- links end -->
 
 ## [Unreleased]
+
+## [0.11.6]
+
+### Added
+- Added support for syntax-versioned top-level script.
+
+### Fixed
+- Fixed virtual-process world tracking with newer JuliaInterpreter releases.
+- Respected the active inference world when analyzing global bindings.
 
 ## [0.11.5]
 
