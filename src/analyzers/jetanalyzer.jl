@@ -1435,14 +1435,16 @@ function JETAnalyzer(world::UInt = Base.get_world_counter();
                      __cache_hash__::Any = nothing,
                      jetconfigs...)
     jetconfigs = kwargs_dict(jetconfigs)
-    set_if_missing!(jetconfigs, :aggressive_constant_propagation, true)
+    validate_configs(JET_ANALYZER_VALID_CONFIGURATIONS, jetconfigs)
     # Enable the `assume_bindings_static` option to terminate analysis a bit earlier when
     # there are undefined bindings detected. Note that this option will cause inference
     # cache inconsistency until JuliaLang/julia#40399 is merged. But the analysis cache of
     # JETAnalyzer has the same problem already anyway, so enabling this option does not
     # make the situation worse.
-    jetconfigs[:assume_bindings_static] = true
-    state = AnalyzerState(world; jetconfigs...)
+    inf_params = InferenceParams(;
+        aggressive_constant_propagation = true,
+        assume_bindings_static = true)
+    state = AnalyzerState(world; inf_params)
     config = JETAnalyzerConfig(; jetconfigs...)
     method_table = CachedMethodTable(OverlayMethodTable(state.world, JET_METHOD_TABLE))
 
@@ -1466,10 +1468,10 @@ end
 
 const JET_ANALYZER_CONFIGURATIONS = Set{Symbol}((
     :mode, :ignore_missing_comparison, :ignore_throws, :__cache_hash__))
+const JET_ANALYZER_VALID_CONFIGURATIONS =
+    GENERAL_CONFIGURATIONS ∪ JET_ANALYZER_CONFIGURATIONS
 
-let valid_keys = GENERAL_CONFIGURATIONS ∪ JET_ANALYZER_CONFIGURATIONS
-    @eval JETInterface.valid_configurations(::JETAnalyzer) = $valid_keys
-end
+JETInterface.valid_configurations(::JETAnalyzer) = JET_ANALYZER_VALID_CONFIGURATIONS
 
 # interactive
 # -----------

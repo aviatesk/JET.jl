@@ -36,14 +36,6 @@ JET.configured_reports
 JET.ToplevelConfig
 ```
 
-## [Configurations for Abstract Interpretation](@id abstractinterpret-config)
-
-```@docs
-JET.JETInferenceParams
-JET.CC.InferenceParams
-JET.CC.OptimizationParams
-```
-
 ## [Print Configurations](@id print-config)
 
 ```@docs

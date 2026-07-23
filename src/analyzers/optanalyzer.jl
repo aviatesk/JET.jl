@@ -366,7 +366,9 @@ function OptAnalyzer(world::UInt = Base.get_world_counter();
     skip_noncompileable_calls::Bool = true,
     __cache_hash__::Any = nothing,
     jetconfigs...)
-    state = AnalyzerState(world; jetconfigs...)
+    jetconfigs = kwargs_dict(jetconfigs)
+    validate_configs(OPT_ANALYZER_VALID_CONFIGURATIONS, jetconfigs)
+    state = AnalyzerState(world)
     cache_key = compute_hash(state.inf_params, state.opt_params, OptAnalyzer,
                              skip_noncompileable_calls, __cache_hash__)
     cache_key = @invoke hash(function_filter::Any, cache_key::UInt) # HACK avoid dynamic dispatch
@@ -380,10 +382,10 @@ end
 
 const OPT_ANALYZER_CONFIGURATIONS = Set{Symbol}((
     :function_filter, :skip_noncompileable_calls, :__cache_hash__))
+const OPT_ANALYZER_VALID_CONFIGURATIONS =
+    GENERAL_CONFIGURATIONS ∪ OPT_ANALYZER_CONFIGURATIONS
 
-let valid_keys = GENERAL_CONFIGURATIONS ∪ OPT_ANALYZER_CONFIGURATIONS
-    @eval JETInterface.valid_configurations(::OptAnalyzer) = $valid_keys
-end
+JETInterface.valid_configurations(::OptAnalyzer) = OPT_ANALYZER_VALID_CONFIGURATIONS
 
 """
     report_opt(f, [types]; jetconfigs...) -> JETCallResult
