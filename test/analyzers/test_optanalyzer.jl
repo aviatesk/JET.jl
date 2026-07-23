@@ -85,8 +85,6 @@ end
     end
 
     # real-world targets
-    # the `unoptimize_throw_blocks` configuration disables optimizations on "throw blocks" by default,
-    # but `DispatchAnalyzer` ignores problems from them, so we don't get error reports here
     @test_opt sin(10)
 end
 

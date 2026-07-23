@@ -239,9 +239,6 @@ end
 # heuristic to intentionally _disable_ inference (and so succeeding optimizations too) in
 # order to ease [the latency problem, a.k.a. "first-time-to-plot"](https://julialang.org/blog/2020/08/invalidations/).
 # The report trace certainly suggests a dispatch was detected where `ArgumentError` can be thrown.
-# We can turn off the heuristic by turning off [the `unoptimize_throw_blocks::Bool` configuration](@ref abstractinterpret-config),
-# and this time any runtime dispatch won't be reported:
-@report_dispatch unoptimize_throw_blocks=false rand(1:1000) # nothing should be reported
 
 # Finally, let's see an example of very "type-instable" code maintained within `Base`.
 # Typically, anything involving I/O is written in a very dynamic way for good reasons,
