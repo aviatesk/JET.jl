@@ -4,30 +4,33 @@
 """
     abstract type AbstractAnalyzer <: AbstractInterpreter end
 
-An interface type of analyzers that are built on top of [JET's analyzer framework](@ref AbstractAnalyzer-Framework).
+An interface type for analyzers built on
+[JET's `AbstractAnalyzer` framework](@ref AbstractAnalyzer-framework).
 
-When a new type `NewAnalyzer` implements the `AbstractAnalyzer` interface, it should be declared
-as subtype of `AbstractAnalyzer`, and is expected to implement the following interfaces:
+To implement the `AbstractAnalyzer` interface, declare `NewAnalyzer` as a
+subtype of `AbstractAnalyzer` and implement the following methods:
 
 ## Required interfaces
 
-1. **`JETInterface.AnalyzerState(analyzer::NewAnalyzer) -> AnalyzerState`**:
-   Returns the [`AnalyzerState`](@ref) for `analyzer::NewAnalyzer`.
+1. **`JETInterface.AnalyzerState(::NewAnalyzer) -> AnalyzerState`**
+  Return the [`AnalyzerState`](@ref) associated with the analyzer.
 
-2. **`JETInterface.AbstractAnalyzer(analyzer::NewAnalyzer, state::AnalyzerState) -> NewAnalyzer`**:
-   Constructs a new `NewAnalyzer` instance in the middle of JET's [top-level analysis](@ref toplevel)
-   or [abstract interpretation](@ref abstractinterpret), given the previous
-   `analyzer::NewAnalyzer` and [`state::AnalyzerState`](@ref AnalyzerState).
+2. **`JETInterface.AbstractAnalyzer(::NewAnalyzer, ::AnalyzerState) -> NewAnalyzer`**
+  Construct a new `NewAnalyzer` from an existing analyzer and a replacement
+  state. JET calls this method when it recreates an analyzer during
+  [top-level analysis](@ref toplevel) or
+  [abstract interpretation](@ref abstractinterpret).
 
-3. **`JETInterface.AnalysisToken(analyzer::NewAnalyzer) -> AnalysisToken`**:
-   Returns a unique `AnalysisToken` object used for `analyzer::NewAnalyzer`.
+3. **`JETInterface.AnalysisToken(::NewAnalyzer) -> AnalysisToken`**
+  Return the [`AnalysisToken`](@ref) that identifies analyzer instances whose
+  cached analysis results may be shared.
 
 See also [`AnalyzerState`](@ref) and [`AnalysisToken`](@ref).
 
 # Example
 
-JET.jl defines its default error analyzer `BasicJETAnalyzer <: AbstractAnalyzer` as the following
-(modified a bit for the sake of simplicity):
+JET.jl's default error analyzer, `BasicJETAnalyzer <: AbstractAnalyzer`, can be
+represented by the following simplified definition:
 ```julia
 # the default error analyzer for JET.jl
 struct BasicJETAnalyzer <: AbstractAnalyzer
@@ -38,8 +41,9 @@ end
 
 # AbstractAnalyzer API requirements
 JETInterface.AnalyzerState(analyzer::BasicJETAnalyzer) = analyzer.state
-JETInterface.AbstractAnalyzer(analyzer::BasicJETAnalyzer, state::AnalyzerState) =
-    BasicJETAnalyzer(state, analyzer.analysis_token, ...)
+JETInterface.AbstractAnalyzer(
+    analyzer::BasicJETAnalyzer, state::AnalyzerState) =
+        BasicJETAnalyzer(state, analyzer.analysis_token, ...)
 JETInterface.AnalysisToken(analyzer::BasicJETAnalyzer) = analyzer.analysis_token
 ```
 """
@@ -66,12 +70,14 @@ end
 """
     CachedAnalysisResult
 
-Cached version of [`AnalysisResult`](@ref) stored in the global analyzer cache.
+A cached collection of reports associated with an [`AnalysisResult`](@ref).
 
-When an [`AnalysisResult`](@ref) is cached into the global cache maintained by
-`AbstractAnalyzer`, it's transformed into this type. That is, when
-`codeinf::CodeInstance = $CC.code_cache(analyzer::AbstractAnalyzer)[mi::MethodInstance]`,
-the `codeinf.inferred` field will contain a `CachedAnalysisResult` instance.
+JET copies reports into this container and stacks it directly on the
+corresponding `InferenceResult` with `CC.stack_analysis_result!`. When that
+inference result is cached as a `CodeInstance`, the metadata is retained.
+Global cache lookup recovers the reports by traversing the `CodeInstance` with
+`CC.traverse_analysis_results`; local cache lookup can traverse the
+`InferenceResult` directly.
 """
 struct CachedAnalysisResult
     reports::Vector{InferenceErrorReport}
@@ -109,20 +115,20 @@ end
         ...
     end
 
-The mutable object that holds various states that are consumed by all [`AbstractAnalyzer`](@ref)s.
+Mutable storage for the state used by an [`AbstractAnalyzer`](@ref).
 
 ---
 
     JETInterface.AnalyzerState(analyzer::AbstractAnalyzer) -> AnalyzerState
 
-If `NewAnalyzer` implements the `AbstractAnalyzer` interface, `NewAnalyzer` should implement
-this `AnalyzerState(analyzer::NewAnalyzer) -> AnalyzerState` interface.
+Every `NewAnalyzer` subtype must implement this method to return its
+`AnalyzerState`.
 
-A new `AnalyzerState` is supposed to be constructed by the
-[`NewAnalyzer(; jetconfigs...)`](@ref AbstractAnalyzer) constructor, and the constructed
-`AnalyzerState` is usually kept within `NewAnalyzer` itself:
+A new `AnalyzerState` is normally constructed by the
+[`NewAnalyzer(; jetconfigs...)`](@ref AbstractAnalyzer) constructor and stored
+in the analyzer itself:
 ```julia
-function NewAnalyzer(world::UInt=Base.get_world_counter(); jetconfigs...)
+function NewAnalyzer(world::UInt = Base.get_world_counter(); jetconfigs...)
     ...
     state = AnalyzerState(world; jetconfigs...)
     return NewAnalyzer(..., state)
@@ -271,11 +277,11 @@ end
         AnalysisToken() = new()
     end
 
-A unique token object used to identify and separate caches of analysis results.
+An identity token used as the compiler cache owner for an [`AbstractAnalyzer`](@ref).
 
-Each `AbstractAnalyzer` implementation should use a consistent token to enable
-proper caching behavior. The identity of the token determines whether cached analysis
-results can be reused between analyzer instances.
+The token's object identity determines which analyzer instances can reuse
+cached inference and report results. Reuse the same token object only for
+analyzers with cache-compatible behavior; use distinct objects otherwise.
 """
 mutable struct AnalysisToken
     AnalysisToken() = new()
@@ -284,12 +290,12 @@ end
 """
     JETInterface.AnalysisToken(analyzer::AbstractAnalyzer) -> AnalysisToken
 
-Returns [`AnalysisToken`](@ref) for the given `analyzer::AbstractAnalyzer`.
-`AbstractAnalyzer` instances can share the same cache if they perform the same analysis,
-otherwise their cache should be separated.
+Return the [`AnalysisToken`](@ref) used as the cache owner for `analyzer`.
 
-If `NewAnalyzer` implements the `AbstractAnalyzer` interface, it must implement this
-function to return a consistent token for instances that should share the same cache.
+Every `NewAnalyzer` subtype must implement this method. Instances that can
+safely reuse cached inference and report results must return the same token
+object. Instances whose analysis behavior or configuration can produce
+incompatible results must return distinct token objects.
 """
 @noinline function AnalysisToken(analyzer::AbstractAnalyzer)
     AnalyzerType = nameof(typeof(analyzer))
@@ -323,9 +329,8 @@ typeinf_world(::AbstractAnalyzer) = nothing
 """
     JETInterface.valid_configurations(analyzer::AbstractAnalyzer) -> names or nothing
 
-Returns a set of names that are valid as a configuration for `analyzer`.
-`names` should be an iterator of `Symbol`.
-No validations are performed if `nothing` is returned.
+Return an iterable of `Symbol`s naming the configurations accepted by
+`analyzer`. Return `nothing` to skip configuration-name validation.
 """
 valid_configurations(::AbstractAnalyzer) = nothing
 
@@ -346,27 +351,25 @@ function validate_configs(valid_keys, jetconfigs)
 end
 
 """
-    JETInterface.aggregation_policy(analyzer::AbstractAnalyzer)
+    JETInterface.aggregation_policy(analyzer::AbstractAnalyzer) -> key_function
 
-Defines how `analyzer` aggregates [`InferenceErrorReport`](@ref)s.
-This policy determines how duplicate or similar reports are identified and grouped.
-Defaults to `default_aggregation_policy`.
+Return a callable that maps each [`InferenceErrorReport`](@ref) to the key used
+to deduplicate reports. The default is `default_aggregation_policy`.
 
 ---
 
     default_aggregation_policy(report::InferenceErrorReport) -> DefaultReportIdentity
 
-Returns the default identity of `report::InferenceErrorReport` using `DefaultReportIdentity`,
-which aggregates reports based on their "error location".
+Return the default deduplication key for a report. Two reports have the same
+key when they have:
 
-`DefaultReportIdentity` aggregates `InferenceErrorReport`s by creating an identity based on:
-1. The report type
-2. The signature of the method where the error was found
-3. The file and line number where the error occurred
+1. The same concrete report type
+2. Equal expression [`Signature`](@ref)s
+3. The same file and line in their final [`VirtualFrame`](@ref)s
 
-This approach ignores the specific `MethodInstance` identity, allowing errors to be
-aggregated if they occur at the same file and line, under the assumption that errors
-at the same location are likely duplicates even if in different method specializations.
+`Signature` equality compares only the `_sig` elements, using `===`, and ignores
+`tt`. The stack-trace component uses only the final frame's file and line; it
+omits that frame's `MethodInstance` and all preceding frames.
 """
 aggregation_policy(::AbstractAnalyzer) = default_aggregation_policy
 const default_aggregation_policy = function (report::InferenceErrorReport)
@@ -407,14 +410,9 @@ get_reports(analyzer::AbstractAnalyzer, result::InferenceResult) = (analyzer[res
 """
     add_new_report!(analyzer::AbstractAnalyzer, result::InferenceResult, report::InferenceErrorReport)
 
-Adds a new error report to the analyzer's collection for a specific inference result.
-
-This function associates an [`InferenceErrorReport`](@ref) with its corresponding
-`result::InferenceResult` in the analyzer's internal storage. The report becomes
-part of the analysis results that can be retrieved later using `get_reports(analyzer, result)`.
-
-Reports are stored in the order they are added, which can be important for maintaining
-the logical sequence of errors discovered during analysis.
+Append `report` to the reports associated with `result` in `analyzer`, then
+return `report`. Retrieve the collection with `get_reports(analyzer, result)`.
+Reports remain in insertion order.
 """
 function add_new_report!(analyzer::AbstractAnalyzer, result::InferenceResult, @nospecialize(report::InferenceErrorReport))
     push!(get_reports(analyzer, result), report)
@@ -444,57 +442,53 @@ CC.may_discard_trees(::AbstractAnalyzer) = false
 """
     abstract type ToplevelAbstractAnalyzer <: AbstractAnalyzer end
 
-A specialized interface type for analyzers that perform top-level analysis of Julia code.
+An interface type for analyzers that support top-level analysis of Julia code.
 
-`ToplevelAbstractAnalyzer` extends [`AbstractAnalyzer`](@ref) to provide clear separation
-between analyzers that support top-level analysis and those that don't, offering several
-key architectural benefits:
-- _Type Safety_: Only analyzers that explicitly extend `ToplevelAbstractAnalyzer` can be
-  used with JET's `virtual_process` system, making it clear at compile time which analyzers
-  support top-level analysis capabilities.
-- _Responsibility Separation_: Analyzers like `OptAnalyzer` that don't perform top-level
-  analysis are no longer required to handle top-level specific code paths, reducing
-  complexity and improving performance.
+`ToplevelAbstractAnalyzer` is a subtype of [`AbstractAnalyzer`](@ref).
+Methods specialized for this type provide top-level-specific inference behavior
+and distinguish these analyzers from analyzers such as `OptAnalyzer`, which do
+not support top-level analysis.
 
-## Top-Level Analysis Capabilities
+## Top-level analysis capabilities
 
-`ToplevelAbstractAnalyzer` provides specialized functionality for analyzing top-level
-Julia constructs such as:
+Together with a [`ConcreteInterpreter`](@ref), a `ToplevelAbstractAnalyzer`
+supports analysis of top-level constructs such as:
+
 - Global variable assignments
 - Constant declarations (`const` statements)
 - Module definitions and imports
 - Method definitions at the top level
 - Package-level code execution
 
-This analyzer type is used in [`virtual_process`](@ref) system to analyze Julia code
-as it would be executed at the top level, handling both concrete interpretation of some
-statements and abstract interpretation of others.
+The [`virtual_process`](@ref) system uses the concrete interpreter and analyzer
+to process Julia code as it would execute at the top level. Some statements are
+interpreted concretely, while others are analyzed abstractly.
 
 ## Usage
 
 `ToplevelAbstractAnalyzer` is typically used through JET's virtual process system:
 
 ```julia
-# Create a concrete interpreter with a toplevel analyzer
-interp = JETConcreteInterpreter(JETAnalyzer(...))
+# Create a concrete interpreter with a top-level analyzer
+interp = JETConcreteInterpreter(JETAnalyzer())
 analyzer = ToplevelAbstractAnalyzer(interp)
 
 # Analyze top-level code
 result = analyze_and_report_text!(interp, "x = 1; y = x + 1")
 ```
 
-## Implementation Requirements
+## Implementation requirements
 
-Concrete subtypes of `ToplevelAbstractAnalyzer` must implement all the interfaces required
-by [`AbstractAnalyzer`](@ref), and will automatically inherit the specialized top-level
-analysis behaviors provided by this type.
+Concrete subtypes of `ToplevelAbstractAnalyzer` must implement all interfaces
+required by [`AbstractAnalyzer`](@ref). Methods specialized for this interface
+then provide the top-level-specific abstract interpretation behavior.
 
-## See Also
+## See also
 
-- [`AbstractAnalyzer`](@ref): The base analyzer interface
-- [`JETAnalyzer`](@ref): JET's default error analyzer that implements this interface
-- [`virtual_process`](@ref): The main function that uses this analyzer type
-- [`ConcreteInterpreter`](@ref): The concrete interpreter that works with this analyzer
+- [`AbstractAnalyzer`](@ref): the base analyzer interface
+- [`JETAnalyzer`](@ref): JET's default error analyzer for this interface
+- [`virtual_process`](@ref): the top-level processing entry point
+- [`ConcreteInterpreter`](@ref): the corresponding concrete interpreter
 """
 abstract type ToplevelAbstractAnalyzer <: AbstractAnalyzer end
 

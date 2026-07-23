@@ -1,62 +1,77 @@
 """
-Every [entry point of optimization analysis](@ref optanalysis-entry) can accept
-any of the [general configurations](@ref) as well as the following additional configurations
-that are specific to the optimization analysis.
+Every [entry point of optimization analysis](@ref optanalysis-entry) accepts
+any of the [general configurations](@ref general-configurations), together with
+the following configurations specific to optimization analysis.
 
 ---
 - `skip_noncompileable_calls::Bool = true`:\\
-  Julia's runtime dispatch is "powerful" because it can always compile code with concrete
-  runtime arguments so that [a "kernel" function](https://docs.julialang.org/en/v1/manual/performance-tips/#kernel-functions)
-  runs very effectively even if it's called from a type-instable call site.
-  This means, we (really) often accept that some parts of our code are not inferred statically,
-  and rather we want to just rely on information that is only available at runtime.
-  To model this programming style, the optimization analyzer by default does NOT report any
-  optimization failures or runtime dispatches detected within non-concrete calls
-  (more correctly, "non-compileable" calls are ignored: see also the note below).
-  We can turn off this `skip_noncompileable_calls` configuration to get type-instabilities
-  within those calls.
+  A call with an abstract inferred signature may not be compileable as-is, but
+  this does not necessarily make its downstream code inefficient. At runtime,
+  Julia dispatches using concrete argument types and can compile specialized
+  code for a
+  ["kernel" function](https://docs.julialang.org/en/v1/manual/performance-tips/#kernel-functions).
+  The kernel can therefore run efficiently even when reached from a
+  type-unstable call site. Idiomatic Julia code may intentionally use such
+  boundaries, relying on information available only at runtime rather than
+  requiring inference to continue through them.
+
+  To model this programming style, `OptAnalyzer` does not, by default, report
+  optimization failures or runtime dispatches found inside calls that Julia
+  would not compile for their inferred signatures. Such calls are often
+  non-concrete, although the more precise criterion is whether a call is
+  compileable; see the note below. The entry call itself is always analyzed.
+  Set `skip_noncompileable_calls=false` to include reports from inside those
+  calls.
+
+  The following example is adapted from Julia's
+  [kernel-function documentation](https://docs.julialang.org/en/v1/manual/performance-tips/#kernel-functions):
   ```julia-repl
-  # the following examples are adapted from https://docs.julialang.org/en/v1/manual/performance-tips/#kernel-functions
   julia> function fill_twos!(a)
              for i = eachindex(a)
                  a[i] = 2
              end
          end;
 
-  julia> function strange_twos(n)
-             a = Vector{rand(Bool) ? Int64 : Float64}(undef, n)
+  julia> function strange_twos(a::Vector)
              fill_twos!(a)
              return a
          end;
 
-  # by default, only type-instabilities within concrete call (i.e. `strange_twos(3)`) are reported
-  # and those within non-concrete calls (`fill_twos!(a)`) are not reported
-  julia> @report_opt strange_twos(3)
-  ═════ 2 possible errors found ═════
-  ┌ strange_twos(n::Int64) @ Main ./REPL[23]:2
-  │ runtime dispatch detected: %33::Type{Vector{_A}} where _A(undef, n::Int64)::Vector
-  └────────────────────
-  ┌ strange_twos(n::Int64) @ Main ./REPL[23]:3
-  │ runtime dispatch detected: fill_twos!(%34::Vector)::Any
+  # Analyze `strange_twos` with the abstract `Vector` entry signature.
+  julia> report_opt(strange_twos, (Vector,))
+  ═════ 1 possible error found ═════
+  ┌ strange_twos(a::Vector) @ Main ./REPL[2]:2
+  │ runtime dispatch detected: fill_twos!(a::Vector)::Any
   └────────────────────
 
-  # we can get reports from non-concrete calls with `skip_noncompileable_calls=false`
-  julia> @report_opt skip_noncompileable_calls=false strange_twos(3)
-  ┌ strange_twos(n::Int64) @ Main ./REPL[23]:3
-  │┌ fill_twos!(a::Vector) @ Main ./REPL[22]:3
-  ││┌ setindex!(A::Vector, x::Int64, i1::Int64) @ Base ./array.jl:1014
+  # Also include reports from inside non-compileable calls.
+  julia> report_opt(strange_twos, (Vector,);
+                    skip_noncompileable_calls=false)
+  ═════ 5 possible errors found ═════
+  ┌ strange_twos(a::Vector) @ Main ./REPL[2]:2
+  │┌ fill_twos!(a::Vector) @ Main ./REPL[1]:3
+  ││┌ setindex!(A::Vector, x::Int64, i::Int64) @ Base ./array.jl:986
+  │││┌ _setindex!(A::Vector{T}, x::Any, i::Int64) where T @ Base ./array.jl:990
+  ││││ runtime dispatch detected: Base.throw_boundserror(A::Vector, %12::Tuple{Int64})
+  │││└────────────────────
+  ││┌ setindex!(A::Vector, x::Int64, i::Int64) @ Base ./array.jl:985
   │││ runtime dispatch detected: convert(%5::Any, x::Int64)::Any
   ││└────────────────────
-  │┌ fill_twos!(a::Vector) @ Main ./REPL[22]:3
+  ││┌ setindex!(A::Vector, x::Int64, i::Int64) @ Base ./array.jl:986
+  │││ runtime dispatch detected: Base._setindex!(A::Vector, %9::Any, i::Int64)::Vector
+  ││└────────────────────
+  │┌ fill_twos!(a::Vector) @ Main ./REPL[1]:3
   ││ runtime dispatch detected: ((a::Vector)[%13::Int64] = 2::Any)
   │└────────────────────
-  ┌ strange_twos(n::Int64) @ Main ./REPL[23]:2
-  │ runtime dispatch detected: %33::Type{Vector{_A}} where _A(undef, n::Int64)::Vector
-  └────────────────────
-  ┌ strange_twos(n::Int64) @ Main ./REPL[23]:3
-  │ runtime dispatch detected: fill_twos!(%34::Vector)::Any
+  ┌ strange_twos(a::Vector) @ Main ./REPL[2]:2
+  │ runtime dispatch detected: fill_twos!(a::Vector)::Any
   └────────────────────
   ```
+
+  With the default setting, JET reports the runtime dispatch from the entry
+  call to `fill_twos!(::Vector)` but omits reports from inside `fill_twos!`.
+  With `skip_noncompileable_calls=false`, JET also reports runtime dispatches
+  encountered while analyzing the body of `fill_twos!(::Vector)`.
 
   !!! note "Non-compileable calls"
       Julia runtime system sometimes generate and execute native code of an abstract call.
@@ -120,8 +135,8 @@ that are specific to the optimization analysis.
   program uses a function that is intentionally designed to use runtime dispatch.
 
   ```julia-repl
-  # ignore `$CC.widenconst` calls (since it's designed to be runtime-dispatched):
-  julia> function_filter(@nospecialize f) = f !== $CC.widenconst;
+  # Ignore `Compiler.widenconst`, which intentionally uses runtime dispatch.
+  julia> function_filter(@nospecialize f) = f !== Compiler.widenconst;
 
   julia> @test_opt function_filter=function_filter f(args...)
   ...
@@ -392,13 +407,15 @@ JETInterface.valid_configurations(::OptAnalyzer) = OPT_ANALYZER_VALID_CONFIGURAT
     report_opt(tt::Type{<:Tuple}; jetconfigs...) -> JETCallResult
     report_opt(mi::Core.MethodInstance; jetconfigs...) -> JETCallResult
 
-Analyzes a function call with the given type signature to detect optimization failures and
+Analyzes a function call with the given type signature and returns a
+[`JETCallResult`](@ref) containing detected optimization failures and
 unresolved method dispatches.
 
-The [general configurations](@ref) and [the optimization analysis specific configurations](@ref optanalysis-config)
-can be specified as a keyword argument.
+The [general configurations](@ref general-configurations) and
+[optimization-analysis-specific configurations](@ref optanalysis-config) can be
+supplied as keyword arguments.
 
-See [the documentation of the optimization analysis](@ref optanalysis) for more details.
+See [the documentation of the optimization analysis](@ref optanalysis) for details.
 """
 function report_opt(args...; jetconfigs...)
     analyzer = OptAnalyzer(; jetconfigs...)
@@ -408,11 +425,12 @@ end
 """
     @report_opt [jetconfigs...] f(args...)
 
-Evaluates the arguments to a function call, determines their types, and then calls
-[`report_opt`](@ref) on the resulting expression.
+Evaluates the function and its arguments, determines their types, and calls
+[`report_opt`](@ref) with the resulting function and argument-type signature.
 
-The [general configurations](@ref) and [the optimization analysis specific configurations](@ref optanalysis-config)
-can be specified as an optional argument.
+The [general configurations](@ref general-configurations) and
+[optimization-analysis-specific configurations](@ref optanalysis-config) can be
+supplied as optional leading configuration arguments.
 """
 macro report_opt(ex0...)
     return InteractiveUtils.gen_call_with_extracted_types_and_kwargs(__module__, :report_opt, ex0)
@@ -421,31 +439,29 @@ end
 """
     @test_opt [jetconfigs...] [broken=false] [skip=false] f(args...)
 
-Runs [`@report_opt jetconfigs... f(args...)`](@ref @report_opt) and tests that the function
-call `f(args...)` is free from optimization failures and unresolved method dispatches that
-`@report_opt` can detect.
+Runs [`@report_opt jetconfigs... f(args...)`](@ref @report_opt) and records a
+test that passes when the call is free from optimization failures and
+unresolved method dispatches that `@report_opt` can detect.
 
-As with [`@report_opt`](@ref), the [general configurations](@ref) and
-[optimization analysis specific configurations](@ref optanalysis-config)
-can be specified as an optional argument:
+As with [`@report_opt`](@ref), the [general configurations](@ref general-configurations) and
+[optimization-analysis-specific configurations](@ref optanalysis-config) can be supplied as
+optional leading configuration arguments:
 ```julia-repl
 julia> function f(n)
-            r = sincos(n)
-            # `println` is full of runtime dispatches,
-            # but we can ignore the corresponding reports from `Base`
-            # with the `target_modules` configuration
-            println(r)
-            return r
+           r = sincos(n)
+           # Ignore runtime dispatch reports from the `println` implementation.
+           println(r)
+           return r
        end;
 
-julia> @test_opt target_modules=(@__MODULE__,) f(10)
+julia> @test_opt ignored_modules=(Base,) f(10)
 Test Passed
-  Expression: #= REPL[3]:1 =# JET.@test_call analyzer = JET.OptAnalyzer target_modules = (#= REPL[3]:1 =# @__MODULE__(),) f(10)
+  Expression: #= REPL[3]:1 =# JET.@test_opt ignored_modules = (Base,) f(10)
 ```
 
-Like [`@test_call`](@ref), `@test_opt` is fully integrated with the
+Like [`@test_call`](@ref), `@test_opt` integrates with the
 [`Test` standard library](https://docs.julialang.org/en/v1/stdlib/Test/).
-See [`@test_call`](@ref) for the details.
+See [`@test_call`](@ref) for details.
 """
 macro test_opt(ex0...)
     return call_test_ex(:report_opt, Symbol("@test_opt"), ex0, __module__, __source__)
@@ -455,10 +471,10 @@ end
     test_opt(f, [types]; broken::Bool = false, skip::Bool = false, jetconfigs...)
     test_opt(tt::Type{<:Tuple}; broken::Bool = false, skip::Bool = false, jetconfigs...)
 
-Runs [`report_opt`](@ref) on a function call with the given type signature and tests that
-it is free from optimization failures and unresolved method dispatches that `report_opt` can detect.
-Except that it takes a type signature rather than a call expression, this function works
-in the same way as [`@test_opt`](@ref).
+Runs [`report_opt`](@ref) on a function call with the given type signature and
+tests that it is free from optimization failures and unresolved method
+dispatches that `report_opt` can detect. It behaves like [`@test_opt`](@ref),
+but accepts a type signature rather than a call expression.
 """
 function test_opt(@nospecialize(args...); jetconfigs...)
     return func_test(report_opt, :test_opt, args...; jetconfigs...)

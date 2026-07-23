@@ -1,49 +1,47 @@
 
 """
-Every [entry point of error analysis](@ref jetanalysis-entry) can accept
-any of the [general configurations](@ref) as well as the following additional configurations
-that are specific to the error analysis.
+Every [entry point of error analysis](@ref jetanalysis-entry) accepts any of
+[the general configurations](@ref general-configurations), together with the
+following configurations specific to error analysis.
 
 ---
 - `mode::Symbol = :basic`:\\
-  Switches the error analysis pass. Each analysis pass reports errors according to their
-  own "error" definition.
-  JET by default offers the following modes:
-  - `mode = :basic`: the default error analysis pass.
-    This analysis pass is tuned to be useful for general Julia development by reporting common
-    problems, but also note that it is not enough strict to guarantee that your program never
-    throws runtime errors.\\
-  - `mode = :sound`: the sound error analysis pass.
-    If this pass doesn't report any errors, then your program is assured to run without
-    any runtime errors (unless JET's error definition is not accurate and/or there is an
-    implementation flaw).\\
-  - `mode = :typo`: a typo detection pass
-    A simple analysis pass to detect "typo"s in your program.
-    This analysis pass is essentially a subset of the default basic pass,
-    and it only reports undefined global reference and undefined field access.
-    This might be useful especially for a very complex code base, because even the basic pass
-    tends to be too noisy (spammed with too many errors) for such a case.
+  Selects the error-analysis mode. Each mode reports problems according to its
+  own definition of an error. JET provides the following modes:
+  - `mode = :basic`: the default error-analysis mode.
+    This mode reports common problems and is tuned for general Julia development,
+    but it is not strict enough to guarantee error-free execution.\\
+  - `mode = :sound`: the sound error-analysis mode.
+    If this mode reports no errors, the analyzed code is guaranteed not to encounter
+    a runtime error covered by JET's error model, assuming that the model and
+    implementation are actually sound.\\
+  - `mode = :typo`: the typo-detection mode.
+    This mode is a subset of the default basic mode and reports a focused set of
+    likely typo-related errors. These include undefined global, local, and
+    static-parameter references; incompatible global assignments; and invalid
+    field accesses or assignments. It can be useful for large or complex
+    codebases where even the basic mode produces too many reports.
 
   !!! note
-      You can also set up your own analysis using JET's [`AbstractAnalyzer`-Framework](@ref).
+      You can also set up your own analysis using JET's
+      [`AbstractAnalyzer` framework](@ref AbstractAnalyzer-framework).
 ---
 - `ignore_missing_comparison::Bool = false`:\\
-  If `true`, JET will ignores the possibility of a poorly-inferred comparison operator call
-  (e.g. `==`) returning `missing` in order to hide the error reports from branching on the
-  potential `missing` return value of such a comparison operator call.
-  This is turned off by default, because a comparison call results in a
-  `Union{Bool,Missing}` possibility, it likely signifies an inferrability issue or the
-  `missing` possibility should be handled someway. But this is useful to reduce the noisy
-  error reports in the situations where specific input arguments type is not available at
-  the beginning of the analysis like [`report_package`](@ref).
+  If `true`, JET widens any inferred call result that is exactly
+  `Union{Bool,Missing}` to `Any`. This suppresses reports caused by branching on
+  a possible `missing` result from a poorly inferred comparison operator such
+  as `==`. This is disabled by default because `Union{Bool,Missing}` can indicate
+  imprecise inference or a case where `missing` should be handled explicitly.
+  It can nevertheless reduce noise when precise input argument types are
+  unavailable at the analysis entry point, as with [`report_package`](@ref).
 ---
 - `ignore_throws::Bool = false`:\\
-  If `true`, JET will not report errors from `throw` calls and exceptions that may propagate
-  to callers. This is turned off by default, but is useful when analyzing package-level
-  definitions where `throw` calls are often intentional (e.g., interface function definitions
-  that throw errors by default) and not indicative of actual problems.
-  This configuration is enabled by default in [`report_package`](@ref)
-  to reduce noise from such intentional throws.
+  If `true`, JET does not report errors from `throw` calls or exceptions that
+  may propagate to callers. This is disabled by default, but is useful when
+  analyzing package-level definitions where `throw` calls are often
+  intentional, such as interface functions that throw errors by default.
+  [`report_package`](@ref) enables this configuration by default to reduce
+  noise from such intentional throws.
 ---
 """
 struct JETAnalyzerConfig
@@ -1481,13 +1479,14 @@ JETInterface.valid_configurations(::JETAnalyzer) = JET_ANALYZER_VALID_CONFIGURAT
     report_call(tt::Type{<:Tuple}; jetconfigs...) -> JETCallResult
     report_call(mi::Core.MethodInstance; jetconfigs...) -> JETCallResult
 
-Analyzes a function call with the given type signature to find type-level errors
-and returns back detected problems.
+Analyzes a function call with the given type signature and returns a
+[`JETCallResult`](@ref) containing the detected type-level problems.
 
-The [general configurations](@ref) and [the error analysis specific configurations](@ref jetanalysis-config)
-can be specified as a keyword argument.
+The [general configurations](@ref general-configurations) and
+[error-analysis-specific configurations](@ref jetanalysis-config) can be
+supplied as keyword arguments.
 
-See [the documentation of the error analysis](@ref jetanalysis) for more details.
+See [the documentation of the error analysis](@ref jetanalysis) for details.
 """
 function report_call(args...; jetconfigs...)
     analyzer = JETAnalyzer(; jetconfigs...)
@@ -1497,12 +1496,13 @@ end
 """
     @report_call [jetconfigs...] f(args...)
 
-Evaluates the arguments to a function call, determines their types, and then calls
-[`report_call`](@ref) on the resulting expression.
-This macro works in a similar way as the `@code_typed` macro.
+Evaluates the function and its arguments, determines their types, and calls
+[`report_call`](@ref) with the resulting function and argument-type signature.
+This macro works similarly to the `@code_typed` macro.
 
-The [general configurations](@ref) and [the error analysis specific configurations](@ref jetanalysis-config)
-can be specified as an optional argument.
+The [general configurations](@ref general-configurations) and
+[error-analysis-specific configurations](@ref jetanalysis-config) can be
+supplied as optional leading configuration arguments.
 """
 macro report_call(ex0...)
     return InteractiveUtils.gen_call_with_extracted_types_and_kwargs(__module__, :report_call, ex0)
@@ -1514,20 +1514,21 @@ end
 """
     @test_call [jetconfigs...] [broken=false] [skip=false] f(args...)
 
-Runs [`@report_call jetconfigs... f(args...)`](@ref @report_call) and tests that the function
-call `f(args...)` is free from problems that `@report_call` can detect.
-Returns a `Pass` result if the test is successful, a `Fail` result if any problems are detected,
-or an `Error` result if the test encounters an unexpected error.
-When the test `Fail`s, abstract call stack to each problem location will be printed to `stdout`.
+Runs [`@report_call jetconfigs... f(args...)`](@ref @report_call) and records
+its result in the current test set. It records a `Test.Pass` when the call
+is free from detectable problems, a `Test.Fail` when problems are detected,
+and a `Test.Error` when analysis throws an unexpected error. When a failure
+is displayed, JET prints an abstract call stack for each reported problem.
 ```julia-repl
 julia> @test_call sincos(10)
 Test Passed
   Expression: #= none:1 =# JET.@test_call sincos(10)
 ```
 
-As with [`@report_call`](@ref), the [general configurations](@ref) and
-[the error analysis specific configurations](@ref jetanalysis-config)
-can be specified as an optional argument:
+As with [`@report_call`](@ref), the [general configurations](@ref general-configurations)
+and [error-analysis-specific configurations](@ref jetanalysis-config) can be
+supplied as optional leading configuration arguments. Nondeterministic RNG
+output from `Test` is omitted below.
 ```julia-repl
 julia> cond = false
 
@@ -1535,9 +1536,9 @@ julia> function f(n)
            # `cond` is untyped, and will be reported by the sound analysis pass,
            # while JET's default analysis pass will ignore it
            if cond
-               return sin(n)
+               return n
            else
-               return cos(n)
+               return -n
            end
        end;
 
@@ -1545,34 +1546,36 @@ julia> @test_call f(10)
 Test Passed
   Expression: #= none:1 =# JET.@test_call f(10)
 
-julia> @test_call mode=:sound f(10)
+julia> @test_call ignored_modules=(Base,) mode=:sound f(10)
 JET-test failed at none:1
-  Expression: #= none:1 =# JET.@test_call mode = :sound f(10)
+  Expression: #= none:1 =# JET.@test_call ignored_modules = (Base,) mode = :sound f(10)
   ═════ 1 possible error found ═════
-  ┌ @ none:2 goto %4 if not cond
-  │ non-boolean (Any) used in boolean context: goto %4 if not cond
-  └──────────
+  ┌ f(n::Int64) @ Main ./none:2
+  │ non-boolean `Any` may be used in boolean context: goto %5 if not cond
+  └────────────────────
 
 ERROR: There was an error during testing
 ```
 
-`@test_call` is fully integrated with [`Test` standard library](https://docs.julialang.org/en/v1/stdlib/Test/)'s unit-testing infrastructure.
-This means that the result of `@test_call` will be included in a final `@testset` summary
-and it supports `skip` and `broken` annotations, just like the `@test` macro:
+`@test_call` integrates with the unit-testing infrastructure of the
+[`Test` standard library](https://docs.julialang.org/en/v1/stdlib/Test/).
+Its result is included in the enclosing `@testset` summary, and it supports
+`skip` and `broken` annotations like the `@test` macro:
 ```julia-repl
 julia> using JET, Test
 
-# Julia can't propagate the type constraint `ref[]::Number` to `sin(ref[])`, JET will report `NoMethodError`
+# Julia can't propagate the type constraint `ref[]::Number` to `sin(ref[])`,
+# so JET reports a possible `MethodError`.
 julia> f(ref) = isa(ref[], Number) ? sin(ref[]) : nothing;
 
-# we can make it type-stable if we extract `ref[]` into a local variable `x`
+# Extracting `ref[]` into a local variable `x` makes the call type-stable.
 julia> g(ref) = (x = ref[]; isa(x, Number) ? sin(x) : nothing);
 
 julia> @testset "check errors" begin
            ref = Ref{Union{Nothing,Int}}(0)
            @test_call f(ref)             # fail
-           @test_call g(ref)             # fail
-           @test_call broken=true f(ref) # annotated as broken, thus still "pass"
+           @test_call g(ref)             # pass
+           @test_call broken=true f(ref) # broken; does not fail the test set
        end
 check errors: JET-test failed at REPL[21]:3
   Expression: #= REPL[21]:3 =# JET.@test_call f(ref)
@@ -1594,10 +1597,10 @@ end
     test_call(f, [types]; broken::Bool = false, skip::Bool = false, jetconfigs...)
     test_call(tt::Type{<:Tuple}; broken::Bool = false, skip::Bool = false, jetconfigs...)
 
-Runs [`report_call`](@ref) on a function call with the given type signature and tests that
-it is free from problems that `report_call` can detect.
-Except that it takes a type signature rather than a call expression, this function works
-in the same way as [`@test_call`](@ref).
+Runs [`report_call`](@ref) on a function call with the given type signature and
+tests that it is free from problems that `report_call` can detect. It behaves
+like [`@test_call`](@ref), but accepts a type signature rather than a call
+expression.
 """
 function test_call(args...; jetconfigs...)
     return func_test(report_call, :test_call, args...; jetconfigs...)
@@ -1609,26 +1612,28 @@ end
 """
     report_file(file::AbstractString; jetconfigs...) -> JETToplevelResult
 
-Analyzes `file` to find type-level errors and returns back detected problems.
+Analyzes `file` and returns a [`JETToplevelResult`](@ref) containing the
+detected type-level problems.
 
-The [general configurations](@ref) and [the error analysis specific configurations](@ref jetanalysis-config)
-can be specified as a keyword argument.
+The [general configurations](@ref general-configurations) and
+[error-analysis-specific configurations](@ref jetanalysis-config) can be
+supplied as keyword arguments.
 
 !!! tip
-    When you want to analyze your package but no files that actually use its functions are
-    available, [the `analyze_from_definitions` option](@ref toplevel-config) may be useful
-    since it allows JET to analyze methods based on their declared signatures.
-    For example, JET can analyze JET itself in this way:
+    When no files that call your package's functions are available,
+    [the `analyze_from_definitions` option](@ref toplevel-config) can be useful
+    because it lets JET analyze methods from their declared signatures.
+    For example, JET can analyze itself this way:
     ```julia-repl
-    # from the root directory of JET.jl
+    # From the root directory of JET.jl
     julia> report_file("src/JET.jl";
                        analyze_from_definitions = true)
     ```
     See also [`report_package`](@ref).
 
 !!! note
-    This function enables the `toplevel_logger` configuration with the default logging level
-    by default. You can still explicitly specify and configure it:
+    This function enables `toplevel_logger` at the default logging level.
+    You can override or disable it explicitly:
     ```julia
     report_file(args...;
                 toplevel_logger = nothing, # suppress the toplevel logger
@@ -1642,17 +1647,17 @@ function report_file(args...; jetconfigs...)
 end
 
 """
-    test_file(file::AbstractString; jetconfigs...)
+    test_file(file::AbstractString; broken::Bool = false, skip::Bool = false, jetconfigs...)
 
 Runs [`report_file`](@ref) and tests that there are no problems detected.
 
-As with [`report_file`](@ref), the [general configurations](@ref) and
-[the error analysis specific configurations](@ref jetanalysis-config)
-can be specified as an optional argument.
+As with [`report_file`](@ref), the [general configurations](@ref general-configurations)
+and [error-analysis-specific configurations](@ref jetanalysis-config) can be supplied as
+keyword arguments.
 
-Like [`@test_call`](@ref), `test_file` is fully integrated with the
+Like [`@test_call`](@ref), `test_file` integrates with the
 [`Test` standard library](https://docs.julialang.org/en/v1/stdlib/Test/).
-See [`@test_call`](@ref) for the details.
+See [`@test_call`](@ref) for details.
 """
 function test_file(args...; jetconfigs...)
     return func_test(report_file, :test_file, args...; jetconfigs...)
@@ -1661,35 +1666,32 @@ end
 """
     report_package(package::Module; jetconfigs...) -> JETToplevelResult
 
-Analyzes `package` and returns back type-level errors.
+Analyzes `package` and returns a [`JETToplevelResult`](@ref) containing the
+detected type-level problems.
 
 This function uses [Revise.jl](https://github.com/timholy/Revise.jl) to collect method
-signatures defined in the package and analyzes each method based on its signature.
-This approach allows JET to analyze a package without requiring top-level call sites or
-actual usage examples.
+signatures defined in the package and analyzes each method from its signature. This
+allows JET to analyze a package without requiring top-level call sites or usage examples.
 
-This analysis is performed incrementally. This means that when the same package is analyzed
-multiple times, changes that Revise can handle are dynamically reflected and change the
-analysis results, while unaffected results from the initial analysis are reused as-is.
-Therefore, subsequent analyses often finish very quickly
-(depending on the scale of invalidations that occur).
+The analysis is incremental. When the same package is analyzed multiple times,
+changes that Revise can handle are reflected in the results, while unaffected
+results from the initial analysis are reused. Subsequent analyses therefore
+often finish quickly, depending on the extent of invalidation.
 
-Any [general configurations](@ref) and [`JETAnalyzer` specific configurations](@ref jetanalysis-config)
-can be specified as a keyword argument, and if given, they are preferred over the default
-configurations. By default, `report_package` enables the following configurations:
-- `ignore_missing_comparison = true`: JET ignores the possibility of a poorly-inferred
-  comparison operator call (e.g. `==`) returning `missing`. This is useful because
-  `report_package` often relies on poor input argument type information at the beginning of
-  analysis, leading to noisy error reports from branching on the potential `missing` return
-  value of such a comparison operator call. If a target package needs to handle `missing`,
-  this configuration should be turned off since it hides the possibility of errors that
-  may actually occur at runtime.
-- `ignore_throws = true`: JET will not report errors from `throw` calls and exceptions
-  that may propagate to callers. This is useful because package-level definitions often
-  include intentional error-throwing interface functions (e.g.,
-  `@noinline interface_func(::T) = error("Interface not implemented")`), which are not
-  indicative of actual problems. If you want to analyze exception handling in your package,
-  this configuration should be turned off.
+The [general configurations](@ref general-configurations) and
+[`JETAnalyzer`-specific configurations](@ref jetanalysis-config) can be
+supplied as keyword arguments. Supplied values override the defaults below:
+- `ignore_missing_comparison = true`: JET widens any inferred call result that
+  is exactly `Union{Bool,Missing}` to `Any`. This reduces noise because
+  `report_package` often begins analysis with imprecise argument types. Disable
+  this configuration when the package intentionally handles `missing`, because
+  it can hide errors that may occur at runtime.
+- `ignore_throws = true`: JET does not report errors from `throw` calls or
+  exceptions that may propagate to callers. Package-level definitions often
+  include intentional error-throwing interface functions, such as
+  `@noinline interface_func(::T) = error("Interface not implemented")`, that do
+  not indicate actual problems. Disable this configuration to analyze exception
+  handling in the package.
 
 !!! tip "About `target_modules` configuration"
     One of the most common issues of this analysis is that the results of `report_package(pkg)`
@@ -1711,11 +1713,10 @@ configurations. By default, `report_package` enables the following configuration
     ```
 
     !!! warning "About `target_defined_modules` configuration"
-        In JET versions up to v0.10, due to implementation details of `report_package`,
-        it was necessary to use the `target_defined_modules` configuration to perform the
-        equivalent configuration as described above, but this configuration has been
-        deprecated since JET v0.11.
-        Please use `target_modules` instead, which allows for more flexible filtering.
+        In JET versions through v0.10, implementation details of
+        `report_package` required `target_defined_modules` to obtain equivalent
+        filtering. This configuration has been deprecated since JET v0.11.
+        Use `target_modules` instead for more flexible filtering.
 """
 function report_package(pkgmod::Module;
                         ignore_missing_comparison::Bool=true,
@@ -1741,9 +1742,8 @@ end
 Finds and analyzes the loaded package corresponding to `package::AbstractString`.
 
 !!! warning "Deprecated"
-    This entry point has been deprecated since v0.11.
-    Please load the target package in advance and use `report_package(::Module)` to pass
-    the package module directly.
+    This entry point has been deprecated since v0.11. Load the target package
+    first and pass its module directly to `report_package(::Module)`.
 """
 function report_package(pkgname::AbstractString; jetconfigs...)
     @warn("`report_package(package::AbstractString)` is deprecated. " *
@@ -1754,12 +1754,11 @@ end
 """
     report_package(; jetconfigs...) -> JETToplevelResult
 
-Like above but analyzes the package of the current project.
+Finds and analyzes the package represented by the active project.
 
 !!! warning "Deprecated"
-    This entry point has been deprecated since v0.11.
-    Please load the target package in advance and use `report_package(::Module)` to pass
-    the package module directly.
+    This entry point has been deprecated since v0.11. Load the target package
+    first and pass its module directly to `report_package(::Module)`.
 """
 function report_package(::Nothing=nothing; jetconfigs...)
     @warn("`report_package(package::AbstractString)` is deprecated. " *
@@ -1768,21 +1767,31 @@ function report_package(::Nothing=nothing; jetconfigs...)
 end
 
 """
-    test_package(package::Module; jetconfigs...)
-    test_package(package::AbstractString; jetconfigs...)
-    test_package(; jetconfigs...)
+    test_package(package::Module;
+                 broken::Bool = false, skip::Bool = false,
+                 toplevel_logger = nothing, jetconfigs...)
+    test_package(package::AbstractString;
+                 broken::Bool = false, skip::Bool = false,
+                 toplevel_logger = nothing, jetconfigs...)
+    test_package(;
+                 broken::Bool = false, skip::Bool = false,
+                 toplevel_logger = nothing, jetconfigs...)
 
 Runs [`report_package`](@ref) and tests that there are no problems detected.
 
-As with [`report_package`](@ref), the [general configurations](@ref) and
-[the error analysis specific configurations](@ref jetanalysis-config)
-can be specified as an optional argument.
+As with [`report_package`](@ref), the [general configurations](@ref general-configurations)
+and [error-analysis-specific configurations](@ref jetanalysis-config) can be supplied as
+keyword arguments.
 
-Like [`@test_call`](@ref), `test_package` is fully integrated with the
+Like [`@test_call`](@ref), `test_package` integrates with the
 [`Test` standard library](https://docs.julialang.org/en/v1/stdlib/Test/).
-See [`@test_call`](@ref) for the details.
+See [`@test_call`](@ref) for details.
 
-```julia
+!!! warning "Deprecated forms"
+    `test_package(::AbstractString)` and `test_package()` are deprecated. Load
+    the target package and pass its module directly instead.
+
+```julia-repl
 julia> using Example
 
 julia> @testset "test_package" begin
@@ -1798,9 +1807,11 @@ end
 
 """
     report_text(text::AbstractString; jetconfigs...) -> JETToplevelResult
-    report_text(text::AbstractString, filename::AbstractString; jetconfigs...) -> JETToplevelResult
+    report_text(text::AbstractString, filename::AbstractString;
+                jetconfigs...) -> JETToplevelResult
 
-Analyzes top-level `text` and returns back type-level errors.
+Analyzes the top-level code in `text` and returns a
+[`JETToplevelResult`](@ref) containing the detected type-level problems.
 """
 function report_text(args...; jetconfigs...)
     interp = JETConcreteInterpreter(JETAnalyzer(; jetconfigs...))
@@ -1808,18 +1819,20 @@ function report_text(args...; jetconfigs...)
 end
 
 """
-    test_text(text::AbstractString; jetconfigs...)
-    test_text(text::AbstractString, filename::AbstractString; jetconfigs...)
+    test_text(text::AbstractString;
+              broken::Bool = false, skip::Bool = false, jetconfigs...)
+    test_text(text::AbstractString, filename::AbstractString;
+              broken::Bool = false, skip::Bool = false, jetconfigs...)
 
 Runs [`report_text`](@ref) and tests that there are no problems detected.
 
-As with [`report_text`](@ref), the [general configurations](@ref) and
-[the error analysis specific configurations](@ref jetanalysis-config)
-can be specified as an optional argument.
+As with [`report_text`](@ref), the [general configurations](@ref general-configurations) and
+[error-analysis-specific configurations](@ref jetanalysis-config) can be supplied as
+keyword arguments.
 
-Like [`@test_call`](@ref), `test_text` is fully integrated with the
+Like [`@test_call`](@ref), `test_text` integrates with the
 [`Test` standard library](https://docs.julialang.org/en/v1/stdlib/Test/).
-See [`@test_call`](@ref) for the details.
+See [`@test_call`](@ref) for details.
 """
 function test_text(args...; jetconfigs...)
     return func_test(report_text, :test_text, args...; jetconfigs...)

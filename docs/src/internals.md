@@ -3,18 +3,23 @@
 ## [Abstract interpretation](@id abstractinterpret)
 
 In order to perform type-level program analysis, JET.jl uses
-[`Base.Compiler.AbstractInterpreter` interface](https://github.com/JuliaLang/julia/blob/master/base/compiler/types.jl),
-and customizes its abstract interpretation by overloading a subset of `Base.Compiler` functions, that are originally
-developed for Julia compiler's type inference and optimizations that aim at generating efficient native code for CPU execution.
+`Compiler.AbstractInterpreter` interface, and customizes its abstract
+interpretation by overloading a subset of `Compiler` functions, that are
+originally developed for Julia compiler's type inference and optimizations that
+aim at generating efficient native code for CPU execution.
 
-[`JET.AbstractAnalyzer`](@ref) overloads a set of `Base.Compiler` functions to implement the "core" functionalities
-of JET's analysis, including inter-procedural error report propagation and caching of the analysis result.
-And each plugin analyzer (e.g. [`JET.JETAnalyzer`](@ref)) will overload more `Base.Compiler` functions so that it can
-perform its own program analysis on top of the core `AbstractAnalyzer` infrastructure.
+[`JET.AbstractAnalyzer`](@ref) overloads a subset of `Compiler` methods to
+implement JET's core functionality, including interprocedural propagation of
+error reports and caching of analysis results. Each plugin analyzer, such as
+[`JET.JETAnalyzer`](@ref), overloads additional `Compiler` methods to
+implement its own analysis on top of the `AbstractAnalyzer` infrastructure.
 
-Most overloads use the [`invoke`](https://docs.julialang.org/en/v1/base/base/#Core.invoke) reflection, which allows
-`AbstractAnalyzer` to dispatch to the original `AbstractInterpreter`'s abstract interpretation methods while still
-passing `AbstractAnalyzer` to the subsequent (maybe overloaded) callees.
+Most of these overloads use
+[`invoke`](https://docs.julialang.org/en/v1/base/base/#Core.invoke)
+to call the corresponding methods for `AbstractInterpreter`. The actual
+`AbstractAnalyzer` instance is still passed as the interpreter argument, so
+calls made from within those original methods can dispatch back to
+analyzer-specific overloads.
 
 ### How `AbstractAnalyzer` manages caches
 
@@ -43,7 +48,9 @@ JET.JETCallResult
 
 ### [Splitting and filtering reports](@id optanalysis-splitting)
 
-Both `JETToplevelResult` and `JETCallResult` can be split into individual failures for integration with tools like Cthulhu:
+Both `JETToplevelResult` and `JETCallResult` can be split into individual
+failures for integration with tools like Cthulhu:
+
 ```@docs
 JET.get_reports
 JET.reportkey

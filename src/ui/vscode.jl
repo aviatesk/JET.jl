@@ -32,15 +32,16 @@ vscode_diagnostics_order(analyzer::AbstractAnalyzer) = true
 # =============
 
 """
-Configurations for the VSCode integration.
-These configurations are active only when used in [the integrated Julia REPL](https://www.julia-vscode.org/docs/dev/userguide/runningcode/).
+Configurations for the VS Code integration.
+These configurations are active only when used in
+[the integrated Julia REPL](https://www.julia-vscode.org/docs/dev/userguide/runningcode/).
 
 ---
-- `vscode_console_output::Union{Nothing,IO} = stdout` \\
-  JET will show analysis result in VSCode's "PROBLEMS" pane and inline annotations.
-  If `vscode_console_output::IO` is specified, JET will also print the result into the
-  specified output stream in addition to showing the result in the integrated views.
-  When `nothing`, the result will be only shown in the integrated views.
+- `vscode_console_output::Union{Nothing,IO} = nothing` \\
+  JET shows the analysis result in VS Code's "PROBLEMS" pane and inline
+  annotations. If an `IO` object is supplied, JET also prints the result to that
+  stream. When this option is `nothing`, the result appears only in the
+  integrated views.
 ---
 """
 struct VSCodeConfig end
