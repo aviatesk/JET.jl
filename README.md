@@ -7,8 +7,8 @@
 JET employs Julia's type inference system to detect potential bugs and type instabilities.
 
 > [!NOTE]
-> **The current latest version, v0.11 series, is only compatible with
-> [Julia v1.12](https://julialang.org/downloads/#current_stable_release) only**.
+> **The current latest version, v0.12 series, supports full JET functionality
+> on Julia v1.12 and v1.13 only.**
 >
 > The JET version that works with v1.11 is the [v0.9 series](https://github.com/aviatesk/JET.jl/tree/release-0.9),
 > but please note that bug fixes and new features added in the subsequent series may not necessarily be available.
@@ -19,12 +19,42 @@ JET employs Julia's type inference system to detect potential bugs and type inst
 > Additionally, the implementation of the `Base` module and standard libraries bundled with
 > Julia can also affect the results.
 >
-> Moreover, the Julia compiler's plugin system is still unstable and its interface changes
-> frequently, so each version of JET is compatible with only limited versions of Julia.
-> The Julia package manager will automatically select and install the latest version of JET
-> that is compatible with your Julia version. However, if you are using the nightly version
-> of Julia, please note that a compatible version of JET may not have been released yet,
-> and JET installed via the Julia package manager may not function properly.
+> Moreover, Julia's compiler plugin system is unstable and changes frequently.
+> Each JET release therefore supports full functionality on only a limited set
+> of Julia versions. JET may remain installable on newer Julia versions, but
+> loads empty stubs by default when full functionality is unavailable.
+
+## Julia compatibility and versioning
+
+JET distinguishes installation compatibility from functional compatibility.
+
+- The latest JET series keeps its Julia upper compat bound open. This allows
+  packages with JET as a test dependency to instantiate on Julia pre-releases
+  and nightly.
+- Full JET functionality is loaded only on explicitly supported Julia
+  versions. On unsupported future Julia versions, JET loads empty stubs and
+  its analysis APIs throw an explanatory error.
+- JET minor versions are bumped for ordinary semantic-versioning reasons and
+  may also mark a new Julia compatibility generation. Patch releases normally
+  stay within the same compatibility generation.
+- When support for a new Julia minor is released, older JET releases are
+  capped in the official [General](https://github.com/JuliaRegistries/General)
+  registry at the last Julia minor they support. This prevents package
+  resolution and lower-bound testing from selecting an old, incompatible JET.
+
+Test suites can remain instantiable on unsupported Julia versions and skip their
+JET-specific tests at runtime using the `JET_AVAILABLE` constant:
+
+```julia
+using JET
+
+if JET.JET_AVAILABLE
+    include("jet_tests.jl")
+end
+```
+
+Setting the `JET_DEV_MODE` preference to `true` forces JET to try loading
+full functionality on an unsupported Julia version.
 
 ## Quickstart
 See more commands, options and explanations in [the documentation](https://aviatesk.github.io/JET.jl/dev/).
@@ -41,14 +71,16 @@ julia> using JET
 ```
 
 > [!IMPORTANT]
-> The package manager will install the latest version of JET available for your Julia version.
-> However, depending on the versions of dependency packages already installed
-> in your environment, a working version of JET may not be installed.
+> The package manager installs a JET version allowed by registry metadata and
+> the compatibility constraints of your environment. This does not necessarily
+> mean full JET functionality is supported on your Julia version; check
+> `JET.JET_AVAILABLE` after loading JET.
 >
+> Existing dependencies may also prevent a working JET version from being
+> installed.
 > This can particularly occur when the version of [JuliaInterpreter.jl](https://github.com/JuliaDebug/JuliaInterpreter.jl)
 > is incompatible with JET, since JuliaInterpreter is also a dependency of the
 > very commonly used package [Revise.jl](https://github.com/timholy/Revise.jl).
->
 > In such cases, the most reliable way to install and use a working JET is to
 > set up a temporary environment (e.g., `Pkg.temp()`) and use JET there.
 

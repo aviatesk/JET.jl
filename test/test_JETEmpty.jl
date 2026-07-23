@@ -1,4 +1,6 @@
-using Test, JET
+using JET, Test
+
+@test !JET.JET_AVAILABLE
 
 for line in filter(!isempty, split(JET.empty_loading_message, '\n'))
     @test occursin(line, errmsg)

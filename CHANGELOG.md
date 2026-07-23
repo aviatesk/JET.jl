@@ -6,7 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 <!-- links start -->
-[Unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.11.6...HEAD
+[Unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/aviatesk/JET.jl/compare/v0.11.6...v0.12.0
 [0.11.6]: https://github.com/aviatesk/JET.jl/compare/v0.11.5...v0.11.6
 [0.11.5]: https://github.com/aviatesk/JET.jl/compare/v0.11.4...v0.11.5
 [0.11.4]: https://github.com/aviatesk/JET.jl/compare/v0.11.3...v0.11.4
@@ -59,6 +60,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- links end -->
 
 ## [Unreleased]
+
+## [0.12.0]
+
+### Added
+- Added support for Julia v1.13.
+- Added `JET.JET_AVAILABLE` so test suites can skip JET checks when only
+  empty stubs are available. See the new
+  [Julia compatibility and versioning policy](README.md#julia-compatibility-and-versioning).
+
+### Changed
+- JET now loads empty stubs on unsupported future Julia versions while
+  remaining installable as a test dependency.
+- Improved the implementation of optimization analysis to make it more robust.
+
+### Fixed
+- Fixed a data race in shared top-level binding state (aviatesk/JET.jl#840,
+  thanks [@PatrickHaecker](https://github.com/PatrickHaecker)).
+- Fixed world-age issues in analysis and report printing.
 
 ## [0.11.6]
 
@@ -544,7 +563,7 @@ process, JET v0.10.0 was released despite its limitations:
 
 ## [0.9.3]
 ### Added
-- A simple logo badge for JET.jl is now available (thanks to @MilesCranmer!).
+- A simple logo badge for JET.jl is now available (thanks [@MilesCranmer](https://github.com/MilesCranmer)).
   You can add the line `[![](https://img.shields.io/badge/%F0%9F%9B%A9%EF%B8%8F_tested_with-JET.jl-233f9a)](https://github.com/aviatesk/JET.jl)`
   to your package's README to display the logo image [![](https://img.shields.io/badge/%F0%9F%9B%A9%EF%B8%8F_tested_with-JET.jl-233f9a)](https://github.com/aviatesk/JET.jl)
   that shows your package uses JET.jl for code quality checks (aviatesk/JET.jl#635).

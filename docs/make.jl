@@ -19,6 +19,13 @@ function generate_index!()
         README = string(@doc JET)
         incode = false
         for line in split(README, '\n')
+            if line == "## Quickstart"
+                writeln(io, """
+                ```@docs
+                JET.JET_AVAILABLE
+                ```
+                """)
+            end
             if startswith(line, "```julia-repl") && !endswith(line, "noeval")
                 incode = true
                 writeln(io, "```@repl index")
