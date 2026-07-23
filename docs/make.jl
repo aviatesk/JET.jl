@@ -116,7 +116,7 @@ function generate_api_doc(examples_pages)
         examples_contents = codeblock("Pages = $(repr(examples_pages))", "@contents")
 
         s = md"""
-        # [`AbstractAnalyzer` Framework](@id AbstractAnalyzer-Framework)
+        # [`AbstractAnalyzer` framework](@id AbstractAnalyzer-Framework)
 
         $contents
 

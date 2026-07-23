@@ -1,4 +1,4 @@
-# [Error Analysis](@id jetanalysis)
+# [Error analysis](@id jetanalysis)
 
 Julia's type system is quite expressive and its type inference is strong enough to generate
 fairly optimized code from a highly generic program written in a concise syntax.
@@ -29,7 +29,7 @@ errors statically, without requiring any additional setups like scattering type 
 just for the sake of analysis but preserving original polymorphism and composability of
 the program, as effectively as the Julia compiler can optimize your Julia program.
 
-## [Quick Start](@id jetanalysis-quick-start)
+## [Quick start](@id jetanalysis-quick-start)
 
 ```@repl quickstart
 using JET
@@ -392,9 +392,9 @@ using JET # hide
 @report_call mode=:sound f()
 ```
 
-## [Entry Points](@id jetanalysis-entry)
+## [Entry points](@id jetanalysis-entry)
 
-### [Interactive Entry Points](@id jetanalysis-interactive-entry)
+### [Interactive entry points](@id jetanalysis-interactive-entry)
 
 JET offers interactive analysis entry points that can be used similarly to
 [`code_typed`](https://docs.julialang.org/en/v1/base/base/#Base.code_typed) and its family:
@@ -403,7 +403,7 @@ JET.@report_call
 JET.report_call
 ```
 
-### [Top-level Entry Points](@id jetanalysis-toplevel-entry)
+### [Top-level entry points](@id jetanalysis-toplevel-entry)
 
 JET can also analyze your "top-level" program: it can just take your Julia script or package
 and will report possible errors.
@@ -427,7 +427,7 @@ JET.report_package
 JET.report_text
 ```
 
-### [`Test` Integration](@id jetanalysis-test-integration)
+### [`Test` integration](@id jetanalysis-test-integration)
 
 JET also exports entries that are fully integrated with [`Test` standard library](https://docs.julialang.org/en/v1/stdlib/Test/)'s unit-testing infrastructure.
 It can be used in your test suite to assert your program is free from errors that JET can detect:

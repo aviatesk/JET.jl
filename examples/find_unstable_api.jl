@@ -1,4 +1,4 @@
-# # "Unstable API" Analysis
+# # "Unstable API" analysis
 #
 # ```@meta
 # CurrentModule = JET

@@ -1,4 +1,4 @@
-# [General Configurations](@id general-configurations)
+# [General configurations](@id general-configurations)
 
 JET offers extensive customization options through its configuration system.
 All entry points covered in [JET's default error analysis](@ref jetanalysis-entry) and [the optimization analysis](@ref optanalysis-entry)
@@ -24,25 +24,25 @@ report_file("path/to/file.jl";
     that you can pass as keyword arguments to JET's analysis functions.
 
 
-## [Configurations for Analysis Result](@id result-config)
+## [Configurations for analysis result](@id result-config)
 
 ```@docs
 JET.configured_reports
 ```
 
-## [Configurations for Top-level Analysis](@id toplevel-config)
+## [Configurations for top-level analysis](@id toplevel-config)
 
 ```@docs
 JET.ToplevelConfig
 ```
 
-## [Print Configurations](@id print-config)
+## [Print configurations](@id print-config)
 
 ```@docs
 JET.PrintConfig
 ```
 
-## [Configurations for VSCode Integration](@id vscode-config)
+## [Configurations for VSCode integration](@id vscode-config)
 
 ```@docs
 JET.VSCode.VSCodeConfig
@@ -50,7 +50,7 @@ JET.VSCode.VSCodeConfig
 
 
 
-## [Configuration File](@id config-file)
+## [Configuration file](@id config-file)
 
 ```@docs
 JET.parse_config_file

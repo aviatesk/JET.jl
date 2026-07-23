@@ -122,11 +122,11 @@ julia> report_package(BioSymbols)
 Note that `report_package` is less precise than `@report_call`, because method signatures of idiomatic Julia code are often very generic, so there is less type information in the signature itself than there is when given concrete argument types.
 
 ## Usage tips
-#### Use `@report_opt` before `@report_call`
+### Use `@report_opt` before `@report_call`
 JET works best on type-stable code.
 Iron out type instabilities using `@report_opt` before using `@report_call`
 
-#### Filtering away false positives
+### Filtering away false positives
 It is common to find that JET finds lots of errors in your functions, which all derive from type instability and type issues in your dependencies.
 In fact, type issues from dependencies are often so plentiful they flood your analysis with false positives, which can make working with JET harder.
 
@@ -164,7 +164,7 @@ Similarly, the error would be retained if `target_modules` would have been `AnyF
 Beware that this filtering may filter away legitimate problems in your package. In the example above, if your code calls `f(nothing)`, the error may originate from Base, but it's clearly an error in your own code to call `f(nothing)`.
 So it is recommended to only filter away modules if they produce so many false positives that it makes using JET difficult.
 
-#### Analyze scripts and apps by using a `main` function
+### Analyze scripts and apps by using a `main` function
 Scripts and apps called from the command line have a single logical entry point. If you wrap the logic in a `main` function, JET can analyse the entire script.
 
 For example, suppose you made this command-line script which added two numbers from the command line:
@@ -196,7 +196,7 @@ julia> report_file("my_script.jl")
 
 , which will be equivalent to checking `@report_call main()`, if the script contains a `main()` call at top level.
 
-#### Analyze packages using a representative workload
+### Analyze packages using a representative workload
 As shown above, packages can be analysed with `report_package`.
 However, generic type signatures often used in packages lead to imprecise inference and thus imprecise analysis.
 

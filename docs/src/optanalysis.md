@@ -1,4 +1,4 @@
-# [Optimization Analysis](@id optanalysis)
+# [Optimization analysis](@id optanalysis)
 
 Successful type inference and optimization are key to high-performing Julia programs.
 But as mentioned in [the performance tips](https://docs.julialang.org/en/v1/manual/performance-tips/), there are some
@@ -29,7 +29,7 @@ runtime dispatch will happen, and where Julia gives up the optimization work due
 
 [SnoopCompile also detects inference failures](https://timholy.github.io/SnoopCompile.jl/stable/tutorials/snoop_inference_analysis/), but JET and SnoopCompile use different mechanisms: JET performs *static* analysis of a particular call, while SnoopCompile performs *dynamic* analysis of new inference. As a consequence, JET's detection of inference failures is reproducible (you can run the same analysis repeatedly and get the same result) but terminates at any non-inferable node of the call graph: you will miss runtime dispatch in any non-inferable callees. Conversely, SnoopCompile's detection of inference failures can explore the entire callgraph, but only for those portions that have not been previously inferred, and the analysis cannot be repeated in the same session.
 
-## [Quick Start](@id optanalysis-quick-start)
+## [Quick start](@id optanalysis-quick-start)
 
 ```@repl quickstart
 using JET
@@ -218,9 +218,9 @@ with red highlighting to indicate the non-inferable arguments.
 
 For more information, you're encouraged to read Cthulhu's documentation, which includes a video tutorial better-suited to this interactive tool.
 
-## [Entry Points](@id optanalysis-entry)
+## [Entry points](@id optanalysis-entry)
 
-### [Interactive Entry Points](@id optanalysis-interactive-entry)
+### [Interactive entry points](@id optanalysis-interactive-entry)
 
 The optimization analysis offers interactive entry points that can be used in the same way as [`@report_call`](@ref) and [`report_call`](@ref):
 ```@docs
@@ -228,7 +228,7 @@ JET.@report_opt
 JET.report_opt
 ```
 
-### [`Test` Integration](@id optanalysis-test-integration)
+### [`Test` integration](@id optanalysis-test-integration)
 
 As with [the default error analysis](@ref jetanalysis), the optimization analysis also offers the integration with
 [`Test` standard library](https://docs.julialang.org/en/v1/stdlib/Test/):
@@ -237,7 +237,7 @@ JET.@test_opt
 JET.test_opt
 ```
 
-### [Top-level Entry Points](@id optanalysis-toplevel-entry)
+### [Top-level entry points](@id optanalysis-toplevel-entry)
 
 By default, JET doesn't offer top-level entry points for the optimization analysis, because it's usually used for only a
 selective portion of your program.

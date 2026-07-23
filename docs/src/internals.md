@@ -1,6 +1,6 @@
 # Internals of JET.jl
 
-## [Abstract Interpretation](@id abstractinterpret)
+## [Abstract interpretation](@id abstractinterpret)
 
 In order to perform type-level program analysis, JET.jl uses
 [`Base.Compiler.AbstractInterpreter` interface](https://github.com/JuliaLang/julia/blob/master/base/compiler/types.jl),
@@ -24,7 +24,7 @@ JET.CachedAnalysisResult
 JET.AnalysisToken
 ```
 
-## [Top-level Analysis](@id toplevel)
+## [Top-level analysis](@id toplevel)
 
 ```@docs
 JET.virtual_process
@@ -34,7 +34,7 @@ JET.ConcreteInterpreter
 JET.partially_interpret!
 ```
 
-## [Analysis Result](@id analysis-result)
+## [Analysis result](@id analysis-result)
 
 ```@docs
 JET.JETToplevelResult
@@ -49,7 +49,7 @@ JET.get_reports
 JET.reportkey
 ```
 
-## Error Report Interface
+## Error report interface
 
 ```@docs
 JET.VirtualFrame

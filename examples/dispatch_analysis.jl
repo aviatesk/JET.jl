@@ -1,4 +1,4 @@
-# # Dispatch Analysis
+# # Dispatch analysis
 #
 # ```@meta
 # CurrentModule = JET
