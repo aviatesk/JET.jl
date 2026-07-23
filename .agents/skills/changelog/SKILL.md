@@ -12,16 +12,6 @@ description: >-
 
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## Line length
-
-`CHANGELOG.md` is exempt from the 80-character Markdown line length rule
-because it is used for GitHub release notes, where hard line breaks disrupt
-rendering.
-
-Do not put everything on a single line unconditionally. Break long entries at
-natural points, such as sentence boundaries. Short, single-sentence entries
-are fine as one line.
-
 ## Section structure
 
 Add new entries under `## [Unreleased]`. Do not edit a released section unless

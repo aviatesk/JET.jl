@@ -15,8 +15,6 @@
 
 When writing Markdown text, use _2 whitespaces_ for indentation and try to
 keep the maximum line length under _80 characters_.
-- Exception: `CHANGELOG.md` is exempt from line length rules since it is
-  used for GitHub release notes, where hard line breaks disrupt rendering.
 - Additionally, prioritize simple text style and limit unnecessary decorations
   (e.g. `**`) to only truly necessary locations. This is a style that should
   generally be aimed for, but pay particular attention when writing Markdown.
