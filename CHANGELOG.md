@@ -77,6 +77,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   remaining installable as a test dependency.
 - Improved the implementation of optimization analysis to make it more robust.
 
+### Removed
+- **Breaking**: Removed the experimental `watch_file` entry point.
+  Use [JETLS.jl](https://github.com/aviatesk/JETLS.jl) for interactive
+  diagnostics.
+
 ### Fixed
 - Fixed a data race in shared top-level binding state (aviatesk/JET.jl#840,
   thanks [@PatrickHaecker](https://github.com/PatrickHaecker)).

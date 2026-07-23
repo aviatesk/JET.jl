@@ -924,9 +924,9 @@ configuration file support.
 This means you can use `$CONFIG_FILE_NAME` configuration file to specify any of configurations
 explained above and share that with others.
 
-When [`report_file`](@ref) or [`watch_file`](@ref) is called, it will look for
-`$CONFIG_FILE_NAME` in the directory of the given file, and search _up_ the file tree until
-a JET configuration file is (or isn't) found.
+When [`report_file`](@ref) is called, it will look for `$CONFIG_FILE_NAME` in the directory
+of the given file, and search _up_ the file tree until a JET configuration file is
+(or isn't) found.
 When found, the configurations specified in the file will be applied.
 
 A configuration file can specify configurations like:
@@ -1219,124 +1219,6 @@ function analyze_and_report_expr!(interp::ConcreteInterpreter, x::Union{JS.Synta
     return JETToplevelResult(analyzer, res, source; jetconfigs...)
 end
 
-"""
-Configurations for "watch" mode.
-The configurations will only be active when used with [`watch_file`](@ref).
-
----
-- `revise_all::Bool = true` \\
-  Redirected to [`Revise.entr`](https://timholy.github.io/Revise.jl/stable/user_reference/#Revise.entr)'s `all` keyword argument.
-  When set to `true`, JET will retrigger analysis as soon as code updates are detected in
-  any module tracked by Revise.
-  Currently when encountering `import/using` statements, JET won't perform analysis, but
-  rather will just load the modules as usual execution (this also means Revise will track
-  those modules).
-  So if you're editing both files analyzed by JET and modules that are used within the files,
-  this configuration should be enabled.
----
-- `revise_modules = nothing` \\
-  Redirected to [`Revise.entr`](https://timholy.github.io/Revise.jl/stable/user_reference/#Revise.entr)'s `modules` positional argument.
-  If a iterator of `Module` is given, JET will retrigger analysis whenever code in `modules` updates.
-
-  !!! tip
-      This configuration is useful when your're also editing files that are not tracked by Revise,
-      e.g. editing functions defined in `Base`:
-      ```julia-repl
-      # re-perform analysis when you make a change to `Base`
-      julia> watch_file(yourfile; revise_modules = [Base])
-      ```
----
-"""
-struct WatchConfig
-    # Revise configurations
-    revise_all::Bool
-    revise_modules
-    function WatchConfig(; revise_all::Bool = true,
-                           revise_modules = nothing,
-                           __jetconfigs...)
-        return new(revise_all, revise_modules)
-    end
-end
-
-function watch_file_with_func(func, args...; jetconfigs...)
-    try
-        return _watch_file_with_func(func, args...; jetconfigs...)
-    catch err
-        if !(err isa MethodError && err.f === _watch_file_with_func)
-            rethrow(err)
-        end
-        error("Revise.jl is not loaded; load Revise and try again.")
-    end
-end
-
-struct InsufficientWatches <: Exception
-    included_files::Set{String}
-end
-
-function _watch_file_with_func(func, args...; jetconfigs...)
-    local included_files::Set{String}
-
-    config = WatchConfig(; jetconfigs...)
-
-    included_files = let res = func(args...; jetconfigs...)
-        show(res) # XXX use `display` here?
-        JET.included_files(res.res)
-    end
-
-    interrupted = false
-    while !interrupted
-        try
-            let included_files=included_files
-            Revise.entr(collect(included_files), config.revise_modules;
-                        postpone = true, all = config.revise_all) do
-                next_included_files = let res = func(args...; jetconfigs...)
-                    show(res) # XXX use `display` here?
-                    JET.included_files(res.res)
-                end
-                if any(∉(included_files), next_included_files)::Bool
-                    # refresh watch files
-                    throw(InsufficientWatches(next_included_files))
-                end
-                return nothing
-            end
-            end
-            interrupted = true # `InterruptException` was gracefully handled within `entr`, shutdown watch mode
-        catch err
-            # handle "expected" errors, keep running
-
-            if isa(err, InsufficientWatches)
-                included_files = err.included_files
-                continue
-            elseif (isa(err, LoadError) ||
-                    (isa(err, ErrorException) && startswith(err.msg, "lowering returned an error")) ||
-                    isa(err, Revise.ReviseEvalException))
-                continue
-
-            # async errors
-            elseif isa(err, CompositeException)
-                errs = err.exceptions
-                i = findfirst(@nospecialize(e)->isa(e, TaskFailedException), errs)
-                if !isnothing(i)
-                    tfe = errs[i]::TaskFailedException
-                    let res = tfe.task.result
-                        if isa(res, InsufficientWatches)
-                            included_files = res.included_files
-                            continue
-                        elseif (isa(res, LoadError) ||
-                                (isa(res, ErrorException) && startswith(res.msg, "lowering returned an error")) ||
-                                isa(res, Revise.ReviseEvalException))
-                            continue
-                        end
-                    end
-                end
-            end
-
-            # fatal uncaught error happened in Revise.jl
-            rethrow(err)
-        end
-    end
-end
-
 # Test.jl integration
 # -------------------
 
@@ -1508,9 +1390,7 @@ const GENERAL_CONFIGURATIONS = Set{Symbol}((
     :context, :analyze_from_definitions, :concretization_patterns, :virtualize, :toplevel_logger,
     # ui
     :print_toplevel_success, :print_inference_success, :fullpath, :sourceinfo, :stacktrace_types_limit,
-    :vscode_console_output,
-    # watch
-    :revise_all, :revise_modules))
+    :vscode_console_output))
 
 # interface
 # =========
