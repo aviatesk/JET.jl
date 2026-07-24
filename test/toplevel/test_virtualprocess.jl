@@ -2204,6 +2204,8 @@ function test_report_package(test_func, module_ex;
                                 Pkg.precompile(; io=devnull)
                              end,
                              additional_setup=()->nothing,
+                             additional_sources::Vector{Pair{String,String}}=
+                                Pair{String,String}[],
                              jetconfigs...)
     Meta.isexpr(module_ex, :module) || throw(ArgumentError("Expected :module expression"))
     pkgname = String(module_ex.args[2]::Symbol)
@@ -2222,6 +2224,9 @@ function test_report_package(test_func, module_ex;
 
             pkgfile = normpath(pkgpath, "src", "$pkgname.jl")
             write(pkgfile, string(pkgcode))
+            for (file, source) in additional_sources
+                write(normpath(pkgpath, "src", file), source)
+            end
             Pkg.precompile(; io=devnull)
 
             pkgid, _ = JET.find_pkg(pkgname)
@@ -2397,6 +2402,21 @@ end
         @test isempty(res.res.toplevel_error_reports)
         r = only(res.res.inference_error_reports)
         @test isa(r, UndefVarErrorReport) && r.var.name === :xxx
+    end
+
+    test_report_package(:(module MultiModuleInclude
+            module A
+            include("shared.jl")
+            end
+            module B
+            include("shared.jl")
+            end
+        end);
+        base_setup=Returns(nothing),
+        additional_sources=["shared.jl" => "shared() = shared_missing\n"]) do res
+        @test isempty(res.res.toplevel_error_reports)
+        reports = res.res.inference_error_reports
+        @test count(r -> is_global_undef_var(r, :shared_missing), reports) == 2
     end
 
     # `report_package` cannot analyze unloadable packages since v0.11
