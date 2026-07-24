@@ -87,6 +87,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking**: Removed the experimental `watch_file` entry point.
   Use [JETLS.jl](https://github.com/aviatesk/JETLS.jl) for interactive
   diagnostics.
+- **Breaking**: Removed the `report_package(::AbstractString)` and
+  `report_package()` entry points (and the corresponding `test_package`
+  forms), which had been deprecated since v0.11. Load the target package
+  first and pass its module directly, e.g. `report_package(PkgModule)`.
+- **Breaking**: Removed the `target_defined_modules` configuration, which had
+  been deprecated since v0.11. Use the more flexible `target_modules`
+  configuration instead, e.g. `target_modules=(PkgModule,)`.
+- **Breaking**: Removed the `fullpath` printing configuration, which had been
+  deprecated since v0.11. Use `sourceinfo=:full` instead.
 
 ### Fixed
 - Fixed a data race in shared top-level binding state (aviatesk/JET.jl#840,

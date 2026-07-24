@@ -35,9 +35,6 @@ The configurations below will be active whenever `show`ing [JET's analysis resul
   - `:none` - Omit location information entirely (no `@ Module path:line`).
      For toplevel errors, treated as `:compact` since location is essential.
 ---
-- `fullpath::Bool = false` \\
-  **Deprecated**: Use `sourceinfo` instead. `fullpath=true` is equivalent to `sourceinfo=:full`.
----
 - `print_toplevel_success::Bool = false` \\
   If `true`, prints a message when there is no toplevel errors found.
 ---
@@ -60,12 +57,6 @@ struct PrintConfig
                            sourceinfo::Symbol = :default,
                            stacktrace_types_limit::Union{Nothing,Int} = nothing,
                            jetconfigs...)
-        if haskey(jetconfigs, :fullpath)
-            @warn "`fullpath` option is deprecated. Use `sourceinfo` instead." maxlog=1
-            if get(jetconfigs, :fullpath, false)::Bool
-                sourceinfo = :full
-            end
-        end
         if sourceinfo ∉ (:full, :default, :compact, :minimal, :none)
             throw(ArgumentError("Invalid sourceinfo: $sourceinfo. Must be one of :full, :default, :compact, :minimal, :none"))
         end

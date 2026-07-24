@@ -1709,68 +1709,19 @@ configurations. By default, `report_package` enables the following configuration
     ═════ 2 possible errors found ═════
     ...
     ```
-
-    !!! warning "About `target_defined_modules` configuration"
-        In JET versions up to v0.10, due to implementation details of `report_package`,
-        it was necessary to use the `target_defined_modules` configuration to perform the
-        equivalent configuration as described above, but this configuration has been
-        deprecated since JET v0.11.
-        Please use `target_modules` instead, which allows for more flexible filtering.
 """
 function report_package(pkgmod::Module;
                         ignore_missing_comparison::Bool=true,
                         ignore_throws::Bool=true,
-                        target_defined_modules::Union{Nothing,Bool}=nothing, # TODO remove this handling from v0.12
                         jetconfigs...)
-    if isnothing(target_defined_modules)
-        target_modules = nothing
-    else
-        @warn """
-        `target_defined_modules::Bool` configuration is deprecated.
-        Please use `target_modules` instead and specify the modules you want to target with e.g. `target_modules=(pkgmod,)`
-        """
-        target_modules = (pkgmod,)
-    end
-    analyzer = JETAnalyzer(; ignore_missing_comparison, ignore_throws, target_modules, jetconfigs...)
-    return analyze_and_report_package!(analyzer, pkgmod; target_modules, jetconfigs...)
+    analyzer = JETAnalyzer(; ignore_missing_comparison, ignore_throws, jetconfigs...)
+    return analyze_and_report_package!(analyzer, pkgmod; jetconfigs...)
 end
 
 """
-    report_package(package::AbstractString; jetconfigs...) -> JETToplevelResult
-
-Finds and analyzes the loaded package corresponding to `package::AbstractString`.
-
-!!! warning "Deprecated"
-    This entry point has been deprecated since v0.11.
-    Please load the target package in advance and use `report_package(::Module)` to pass
-    the package module directly.
-"""
-function report_package(pkgname::AbstractString; jetconfigs...)
-    @warn("`report_package(package::AbstractString)` is deprecated. " *
-          "Load the target package in advance and use `report_package(::Module)` instead.")
-    return report_package(find_pkgmod(pkgname); jetconfigs...)
-end
-
-"""
-    report_package(; jetconfigs...) -> JETToplevelResult
-
-Like above but analyzes the package of the current project.
-
-!!! warning "Deprecated"
-    This entry point has been deprecated since v0.11.
-    Please load the target package in advance and use `report_package(::Module)` to pass
-    the package module directly.
-"""
-function report_package(::Nothing=nothing; jetconfigs...)
-    @warn("`report_package(package::AbstractString)` is deprecated. " *
-          "Load the target package in advance and use `report_package(::Module)` instead.")
-    return report_package(find_pkgmod(nothing); jetconfigs...)
-end
-
-"""
-    test_package(package::Module; jetconfigs...)
-    test_package(package::AbstractString; jetconfigs...)
-    test_package(; jetconfigs...)
+    test_package(package::Module;
+                 broken::Bool = false, skip::Bool = false,
+                 toplevel_logger = nothing, jetconfigs...)
 
 Runs [`report_package`](@ref) and tests that there are no problems detected.
 
@@ -1782,7 +1733,7 @@ Like [`@test_call`](@ref), `test_package` is fully integrated with the
 [`Test` standard library](https://docs.julialang.org/en/v1/stdlib/Test/).
 See [`@test_call`](@ref) for the details.
 
-```julia
+```julia-repl
 julia> using Example
 
 julia> @testset "test_package" begin

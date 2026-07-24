@@ -49,8 +49,6 @@ using MacroTools: @capture, normalise, striplines
 
 using InteractiveUtils: InteractiveUtils
 
-using Pkg: Pkg
-
 using Revise
 
 using Test:
@@ -944,25 +942,6 @@ function kwargs_dict(@nospecialize configs)
     return dict
 end
 
-function find_pkgmod(pkg)
-    pkgid, _ = find_pkg(pkg)
-    pkgmod = get(Base.loaded_modules, pkgid, nothing)
-    isnothing(pkgmod) && error(lazy"Package $(pkgid.name) is not loaded.")
-    return pkgmod
-end
-
-function find_pkg(pkgname::AbstractString)
-    pkgenv = @lock Base.require_lock Base.identify_package_env(pkgname)
-    isnothing(pkgenv) && error(lazy"Unknown package $pkgname.")
-    return pkgenv
-end
-
-function find_pkg(::Nothing)
-    project = Pkg.project()
-    project.ispackage || error(lazy"Active project at $(project.path) is not a package.")
-    return find_pkg(project.name)
-end
-
 struct SigAnalysisResult
     reports::Vector{InferenceErrorReport}
     codeinst::CodeInstance
@@ -1363,7 +1342,7 @@ const GENERAL_CONFIGURATIONS = Set{Symbol}((
     # toplevel
     :context, :analyze_from_definitions, :concretization_patterns, :virtualize, :toplevel_logger,
     # ui
-    :print_toplevel_success, :print_inference_success, :fullpath, :sourceinfo, :stacktrace_types_limit,
+    :print_toplevel_success, :print_inference_success, :sourceinfo, :stacktrace_types_limit,
     :vscode_console_output))
 
 # interface

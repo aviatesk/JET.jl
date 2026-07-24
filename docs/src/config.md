@@ -1,15 +1,19 @@
 # [General configurations](@id general-configurations)
 
 JET offers extensive customization options through its configuration system.
-All entry points covered in [JET's default error analysis](@ref jetanalysis-entry) and [the optimization analysis](@ref optanalysis-entry)
-accept the configuration parameters outlined below as keyword arguments (or optional parameters for interactive macros).
-For instance, you can analyze the call `sum("julia")` with the [`fullpath`](@ref print-config) configuration enabled:
+All entry points covered in
+[JET's default error analysis](@ref jetanalysis-entry) and
+[the optimization analysis](@ref optanalysis-entry) accept the configuration
+parameters outlined below as keyword arguments (or optional parameters for
+interactive macros). For instance, you can analyze the call `sum("julia")` with
+the [`sourceinfo`](@ref print-config) configuration set to `:full`:
+
 ```julia
-@report_call fullpath=true sum("julia")
+@report_call sourceinfo=:full sum("julia")
 ```
 or equivalently:
 ```julia
-report_call(sum, (String,); fullpath=true)
+report_call(sum, (String,); sourceinfo=:full)
 ```
 
 You can also analyze a top-level script `path/to/file.jl` while specifying the [`target_modules` configuration](@ref result-config):
