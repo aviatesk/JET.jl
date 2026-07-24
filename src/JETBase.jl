@@ -49,7 +49,7 @@ using MacroTools: @capture, normalise, striplines
 
 using InteractiveUtils: InteractiveUtils
 
-using Pkg: Pkg, TOML
+using Pkg: Pkg
 
 using Revise
 
@@ -61,8 +61,6 @@ using Test:
 # ======
 
 const Argtypes = Vector{Any}
-
-const CONFIG_FILE_NAME = ".JET.toml"
 
 # TODO define all interface functions in JETInterface?
 
@@ -873,23 +871,10 @@ General users should use high-level entry points like [`report_file`](@ref).
 function analyze_and_report_file!(interp::ConcreteInterpreter, filename::AbstractString,
                                   pkgid::Union{Nothing,PkgId} = nothing;
                                   jetconfigs...)
-    jetconfigs = apply_file_config(jetconfigs, filename)
-    entrytext = read(filename, String)
-    return analyze_and_report_text!(interp, entrytext, filename, pkgid; jetconfigs...)
-end
-
-function apply_file_config(jetconfigs, filename::AbstractString)
     isfile(filename) || throw(ArgumentError("$filename doesn't exist"))
     jetconfigs = set_if_missing(jetconfigs, :toplevel_logger, IOContext(stdout, JET_LOGGER_LEVEL => DEFAULT_LOGGER_LEVEL))
-    configfile = find_config_file(dirname(abspath(filename)))
-    if !isnothing(configfile)
-        config = parse_config_file(configfile)
-        merge!(jetconfigs, config) # overwrite configurations
-        toplevel_logger(get(jetconfigs, :toplevel_logger, nothing); filter=≥(JET_LOGGER_LEVEL_INFO)) do @nospecialize(io::IO)
-            println(io, lazy"applied configurations in $configfile")
-        end
-    end
-    return jetconfigs
+    entrytext = read(filename, String)
+    return analyze_and_report_text!(interp, entrytext, filename, pkgid; jetconfigs...)
 end
 
 set_if_missing(configs, args...) = (@nospecialize; set_if_missing!(kwargs_dict(configs), args...))
@@ -906,105 +891,6 @@ function kwargs_dict(@nospecialize configs)
         dict[Symbol(key)] = val
     end
     return dict
-end
-
-function find_config_file(dir::AbstractString)
-    next_dir = dirname(dir)
-    if (next_dir == dir || # ensure to escape infinite recursion
-        isempty(dir))      # reached to the system root
-        return nothing
-    end
-    path = normpath(dir, CONFIG_FILE_NAME)
-    return isfile(path) ? path : find_config_file(next_dir)
-end
-
-"""
-JET.jl offers [`.prettierrc` style](https://prettier.io/docs/en/configuration.html)
-configuration file support.
-This means you can use `$CONFIG_FILE_NAME` configuration file to specify any of configurations
-explained above and share that with others.
-
-When [`report_file`](@ref) is called, it will look for `$CONFIG_FILE_NAME` in the directory
-of the given file, and search _up_ the file tree until a JET configuration file is
-(or isn't) found.
-When found, the configurations specified in the file will be applied.
-
-A configuration file can specify configurations like:
-```toml
-analyze_from_definitions = true # analyze methods from their declared signatures
-... # other configurations
-```
-
-Note that the following configurations should be string(s) of valid Julia code:
-- `context`: string of Julia code, which can be `parse`d and `eval`uated into `Module`
-- `concretization_patterns`: vector of string of Julia code, which can be `parse`d into a
-  Julia expression pattern expected by [`MacroTools.@capture` macro](https://fluxml.ai/MacroTools.jl/stable/pattern-matching/).
-- `toplevel_logger`: string of Julia code, which can be `parse`d and `eval`uated into `Union{IO,Nothing}`
-
-E.g. the configurations below are equivalent:
-- configurations via keyword arguments
-  ```julia
-  report_file(somefile;
-              concretization_patterns = [:(const GLOBAL_CODE_STORE = x_)],
-              toplevel_logger = IOContext(open("toplevel.txt", "w"), :JET_LOGGER_LEVEL => 1))
-  ```
-- configurations via a configuration file
-  $(let
-      text = read(normpath(@__DIR__, "..", "test", "fixtures", "..JET.toml"), String)
-      lines = split(text, '\n')
-      pushfirst!(lines, "```toml"); push!(lines, "```")
-      join(lines, "\n  ")
-  end)
-
-!!! note
-    Configurations specified as keyword arguments have precedence over those specified
-    via a configuration file.
-"""
-parse_config_file(path::AbstractString) = process_config_dict(TOML.parsefile(path))
-
-process_config_dict(configs) = process_config_dict!(kwargs_dict(configs))
-
-function process_config_dict!(config_dict::Dict{Symbol,Any})
-    context = get(config_dict, :context, nothing)
-    if !isnothing(context)
-        isa(context, String) || throw(JETConfigError(
-            "`context` should be string of Julia code", :context, context))
-        context = Core.eval(Main, trymetaparse(context, :context))
-        config_dict[:context] = context
-    end
-    concretization_patterns = get(config_dict, :concretization_patterns, nothing)
-    if !isnothing(concretization_patterns)
-        isa(concretization_patterns, Vector{String}) || throw(JETConfigError(
-            "`concretization_patterns` should be array of string of Julia expression",
-            :concretization_patterns, concretization_patterns))
-        concretization_patterns = Any[
-            trymetaparse(pat, :concretization_patterns)
-            for pat in concretization_patterns]
-        config_dict[:concretization_patterns] = concretization_patterns
-    end
-    toplevel_logger = get(config_dict, :toplevel_logger, nothing)
-    if !isnothing(toplevel_logger)
-        isa(toplevel_logger, String) || throw(JETConfigError(
-            "`toplevel_logger` should be string of Julia code",
-            :toplevel_logger, toplevel_logger))
-        toplevel_logger = Core.eval(Main, trymetaparse(toplevel_logger, :toplevel_logger))
-        config_dict[:toplevel_logger] = toplevel_logger
-    end
-    return config_dict
-end
-
-function trymetaparse(s::String, name::Symbol)
-    s = strip(s)
-    ret = Meta.parse(s; raise=false)
-    if isexpr(ret, :error) || isexpr(ret, :incomplete)
-        err = ret.args[1]
-        msg = lazy"""Failed to parse configuration string.
-          ∘ given: `$s`
-          ∘ error: $err
-        """
-        throw(JETConfigError(msg, name, s))
-    end
-    return ret
 end
 
 function find_pkgmod(pkg)

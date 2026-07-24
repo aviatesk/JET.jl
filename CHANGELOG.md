@@ -72,12 +72,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Breaking**: JET no longer accepts Julia compiler parameter keywords such as
   `max_methods` and `inlining` as user-facing configuration options for analysis
-  entry points or `.JET.toml`; such keywords now throw `JETConfigError`.
+  entry points; such keywords now throw `JETConfigError`.
 - JET now loads empty stubs on unsupported future Julia versions while
   remaining installable as a test dependency.
 - Improved the implementation of optimization analysis to make it more robust.
 
 ### Removed
+- **Breaking**: Removed support for `.JET.toml` configuration files, including
+  the parent-directory file lookup that `report_file` performed. A single
+  configuration file could not be shared between analyzers that accept
+  different configuration sets, and some configurations could not even be
+  specified through the file at all. All analysis configurations are now
+  specified via keyword arguments of each entry point.
 - **Breaking**: Removed the experimental `watch_file` entry point.
   Use [JETLS.jl](https://github.com/aviatesk/JETLS.jl) for interactive
   diagnostics.
