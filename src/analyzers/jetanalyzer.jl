@@ -1611,14 +1611,8 @@ end
 
 Analyzes `file` to find type-level errors and returns back detected problems.
 
-This function looks for `$CONFIG_FILE_NAME` configuration file in the directory of `file`,
-and searches _upward_ in the file tree until a `$CONFIG_FILE_NAME` is (or isn't) found.
-When found, the configurations specified in the file are applied.
-See [JET's configuration file specification](@ref config-file) for more details.
-
 The [general configurations](@ref) and [the error analysis specific configurations](@ref jetanalysis-config)
-can be specified as a keyword argument, and if given, they are preferred over the configurations
-specified by a `$CONFIG_FILE_NAME` configuration file.
+can be specified as a keyword argument.
 
 !!! tip
     When you want to analyze your package but no files that actually use its functions are
@@ -1643,7 +1637,6 @@ specified by a `$CONFIG_FILE_NAME` configuration file.
     See [JET's top-level analysis configurations](@ref toplevel-config) for more details.
 """
 function report_file(args...; jetconfigs...)
-    # TODO read a configuration file and apply it here?
     interp = JETConcreteInterpreter(JETAnalyzer(; jetconfigs...))
     return analyze_and_report_file!(interp, args...; jetconfigs...)
 end
@@ -1729,7 +1722,6 @@ function report_package(pkgmod::Module;
                         ignore_throws::Bool=true,
                         target_defined_modules::Union{Nothing,Bool}=nothing, # TODO remove this handling from v0.12
                         jetconfigs...)
-    # TODO read a configuration file and apply it here?
     if isnothing(target_defined_modules)
         target_modules = nothing
     else
