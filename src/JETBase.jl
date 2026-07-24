@@ -71,7 +71,8 @@ function print_signature end
 """
     JETInterface
 
-This `baremodule` exports names that form the APIs of [`AbstractAnalyzer` Framework](@ref AbstractAnalyzer-Framework).
+This `baremodule` exports names that form the APIs of
+[`AbstractAnalyzer` framework](@ref AbstractAnalyzer-framework).
 `using JET.JETInterface` loads all names that are necessary to define a plugin analysis.
 """
 baremodule JETInterface end
@@ -367,14 +368,20 @@ include("toplevel/virtualprocess.jl")
 """
     res::JETToplevelResult
 
-Represents the result of JET's analysis on a top-level script.
-- `res.analyzer::AbstractAnalyzer`: [`AbstractAnalyzer`](@ref) used for this analysis
-- `res.res::VirtualProcessResult`: [`VirtualProcessResult`](@ref) collected from this analysis
-- `res.source::AbstractString`: the identity key of this analysis
-- `res.jetconfigs`: configurations used for this analysis
+Represents the result of analyzing top-level code, including files, packages, and text.
 
-`JETToplevelResult` implements `show` methods for each different frontend.
-An appropriate `show` method will be automatically chosen and render the analysis result.
+- `res.analyzer::AbstractAnalyzer`: the [`AbstractAnalyzer`](@ref) used for the
+  analysis
+- `res.res::VirtualProcessResult`: the [`VirtualProcessResult`](@ref) produced
+  by the analysis
+- `res.source::AbstractString`: a description of the analysis target that also
+  serves as the identity key of the analysis; e.g. the VS Code integration uses
+  it to replace superseded diagnostics
+- `res.jetconfigs`: the configurations associated with the analysis
+
+`JETToplevelResult` implements `Base.show` methods for JET's supported front ends.
+Julia's display system selects the appropriate method when rendering the
+analysis result.
 """
 struct JETToplevelResult{Analyzer<:AbstractAnalyzer,JETConfigs}
     analyzer::Analyzer
@@ -401,14 +408,19 @@ end
 """
     res::JETCallResult
 
-Represents the result of JET's analysis on a function call.
-- `res.result::InferenceResult`: the result of this analysis
-- `res.analyzer::AbstractAnalyzer`: [`AbstractAnalyzer`](@ref) used for this analysis
-- `res.source::AbstractString`: the identity key of this analysis
-- `res.jetconfigs`: configurations used for this analysis
+Represents the result of analyzing a function call.
 
-`JETCallResult` implements `show` methods for each different frontend.
-An appropriate `show` method will be automatically chosen and render the analysis result.
+- `res.result::InferenceResult`: the `InferenceResult` produced by the analysis
+- `res.analyzer::AbstractAnalyzer`: the [`AbstractAnalyzer`](@ref) used for the
+  analysis
+- `res.source::AbstractString`: a description of the analysis target that also
+  serves as the identity key of the analysis; e.g. the VS Code integration uses
+  it to replace superseded diagnostics
+- `res.jetconfigs`: the configurations associated with the analysis
+
+`JETCallResult` implements `Base.show` methods for JET's supported front ends.
+Julia's display system selects the appropriate method when rendering the
+analysis result.
 """
 struct JETCallResult{Analyzer<:AbstractAnalyzer,JETConfigs}
     result::InferenceResult
@@ -430,9 +442,15 @@ function get_result(result::JETCallResult)
 end
 
 """
-    rpts = JET.get_reports(result::JETCallResult)
+    reports = JET.get_reports(result::JETCallResult)
+    reports = JET.get_reports(result::JETToplevelResult)
 
-Split `result` into a vector of reports, one per issue.
+Return the reports represented by `result`, one per detected issue.
+
+For a [`JETCallResult`](@ref), this returns the inference reports after applying
+report configuration. For a [`JETToplevelResult`](@ref), top-level errors take
+precedence: if any top-level errors were collected, only those errors are
+returned. Otherwise, this returns the configured inference reports.
 """
 function get_reports(result::JETCallResult)
     reports = get_reports(result.analyzer, result.result)
@@ -441,51 +459,57 @@ end
 
 """
 Configurations for [JET's analysis results](@ref analysis-result).
-These configurations are always active.
+
+The `target_modules` and `ignored_modules` values must be `nothing` or an
+iterator whose elements are any of the following matchers for a
+[`report::InferenceErrorReport`](@ref InferenceErrorReport):
+
+- `m::Module` or `JET.LastFrameModule(m::Module)`: matches when the module of
+  the report's innermost stack frame is `m` or one of its submodules
+- `name::Symbol` or `JET.LastFrameModule(name::Symbol)`: matches when the
+  module of the report's innermost stack frame, or one of that module's
+  parents, is named `name`
+- `JET.AnyFrameModule(m::Module)`: matches when the module of any stack frame
+  is `m` or one of its submodules
+- `JET.AnyFrameModule(name::Symbol)`: matches when the module of any stack
+  frame, or one of that module's parents, is named `name`
+- `JET.LastFrameModuleExact(m::Module)`: matches when the module of the
+  innermost stack frame is exactly `m`
+- `JET.LastFrameModuleExact(name::Symbol)`: matches when the module of the
+  innermost stack frame is named exactly `name`
+- `JET.AnyFrameModuleExact(m::Module)`: matches when the module of any stack
+  frame is exactly `m`
+- `JET.AnyFrameModuleExact(name::Symbol)`: matches when the module of any
+  stack frame is named exactly `name`
+- `JET.LastFrameMethod(meth)`, where `meth` is a `Function`, `Method`, or
+  `Symbol`: matches when the innermost stack frame belongs to the function,
+  is the exact method, or has the method name, respectively
+- `JET.AnyFrameMethod(meth)`, where `meth` is a `Function`, `Method`, or
+  `Symbol`: matches when any stack frame belongs to the function, is the exact
+  method, or has the method name, respectively
+- a user-defined `T <: JET.ReportMatcher`: matches according to an extension
+  of `JET.match_report(::T, report::InferenceErrorReport)`
 
 ---
 - `target_modules = nothing` \\
-  A configuration to filter out reports by specifying module contexts where problems should be reported.
-
-  By default (`target_modules = nothing`), JET reports all detected problems.
-  If specified, a problem is reported if its module context matches any of `target_modules`
-  settings and hidden otherwise. `target_modules` should be an iterator of whose element is
-  either of the data types below that match [`report::InferenceErrorReport`](@ref InferenceErrorReport)'s
-  context module as follows:
-  - `m::Module` or `JET.LastFrameModule(m::Module)`: matches if the module context of `report`'s innermost stack frame is `m` or any of its submodules
-  - `name::Symbol` or `JET.LastFrameModule(name::Symbol)`: matches if the module name of `report`'s innermost stack frame is `name` or any of its parent modules is named `name`
-  - `JET.AnyFrameModule(m::Module)`: matches if the module context of any of `report`'s stack frames is `m` or any of its submodules
-  - `JET.AnyFrameModule(name::Symbol)`: matches if the module name of any of `report`'s stack frames is `name` or any of its parent modules is named `name`
-  - `JET.LastFrameModuleExact(m::Module)`: matches if the module context of `report`'s innermost stack frame is exactly `m`, excluding submodules
-  - `JET.LastFrameModuleExact(name::Symbol)`: matches if the module name of `report`'s innermost stack frame is exactly `name`
-  - `JET.AnyFrameModuleExact(m::Module)`: matches if the module context of any of `report`'s stack frames is exactly `m`, excluding submodules
-  - `JET.AnyFrameModuleExact(name::Symbol)`: matches if the module name of any of `report`'s stack frames is exactly `name`
-  - user-type `T <: JET.ReportMatcher`: matches according to user-definition overload `match_report(::T, report::InferenceErrorReport)`
+  Filters reports by the contexts in which problems should be reported.
+  By default, JET retains all detected problems. When an iterator is supplied,
+  JET retains a report only when at least one matcher matches it.
 ---
 - `ignored_modules = nothing` \\
-  A configuration to filter out reports by specifying module contexts where problems should be ignored.
-
-  By default (`ignored_modules = nothing`), JET reports all detected problems.
-  If specified, a problem is hidden if its module context matches any of `ignored_modules`
-  settings and reported otherwise. `ignored_modules` should be an iterator of whose element is
-  either of the data types below that match [`report::InferenceErrorReport`](@ref InferenceErrorReport)'s
-  context module as follows:
-  - `m::Module` or `JET.LastFrameModule(m::Module)`: matches if the module context of `report`'s innermost stack frame is `m` or any of its submodules
-  - `name::Symbol` or `JET.LastFrameModule(name::Symbol)`: matches if the module name of `report`'s innermost stack frame is `name` or any of its parent modules is named `name`
-  - `JET.AnyFrameModule(m::Module)`: matches if the module context of any of `report`'s stack frames is `m` or any of its submodules
-  - `JET.AnyFrameModule(name::Symbol)`: matches if the module name of any of `report`'s stack frames is `name` or any of its parent modules is named `name`
-  - `JET.LastFrameModuleExact(m::Module)`: matches if the module context of `report`'s innermost stack frame is exactly `m`, excluding submodules
-  - `JET.LastFrameModuleExact(name::Symbol)`: matches if the module name of `report`'s innermost stack frame is exactly `name`
-  - `JET.AnyFrameModuleExact(m::Module)`: matches if the module context of any of `report`'s stack frames is exactly `m`, excluding submodules
-  - `JET.AnyFrameModuleExact(name::Symbol)`: matches if the module name of any of `report`'s stack frames is exactly `name`
-  - user-type `T <: JET.ReportMatcher`: matches according to user-definition overload `match_report(::T, report::InferenceErrorReport)`
+  Filters reports by the contexts in which problems should be ignored.
+  By default, JET ignores no detected problems. When an iterator is supplied,
+  JET removes a report when at least one matcher matches it. This filter is
+  applied after `target_modules`.
 ---
 - `report_config = nothing` \\
-  Additional configuration layer to filter out reports with user-specified strategies.
-  By default (`report_config = nothing`), JET will use the module context based configurations
-  elaborated above and below. If user-type `T` is given, then JET will report problems based
-  on the logic according to an user-overload `configured_reports(::T, reports::Vector{InferenceErrorReport})`,
-  and the `target_modules` and `ignored_modules` configurations are not really active.
+  Selects the report-filtering strategy. With the default `nothing`, JET builds
+  its standard configuration from `target_modules` and `ignored_modules`.
+  With any other value, JET instead calls
+  `JET.configured_reports(report_config, reports)` directly. This completely
+  bypasses `target_modules` and `ignored_modules`, even when they are supplied.
+  Custom configuration types must extend
+  `JET.configured_reports(::T, ::Vector{InferenceErrorReport})`.
 ---
 
 # Examples
@@ -497,7 +521,7 @@ julia> function foo(a)
            return r1, r2
        end;
 
-# by default, JET will print all the collected reports:
+# By default, JET prints all collected reports:
 julia> @report_call foo("julia")
 ═════ 3 possible errors found ═════
 ┌ foo(a::String) @ Main ./REPL[14]:2
@@ -528,21 +552,21 @@ julia> @report_call foo("julia")
 │ `Main.undefsum` is not defined: r2 = undefsum(a::String)
 └────────────────────
 
-# with `target_modules=(@__MODULE__,)`, JET will only report the problems detected within the `@__MODULE__` module:
+# With `target_modules=(@__MODULE__,)`, JET reports only problems detected in the `@__MODULE__` module:
 julia> @report_call target_modules=(@__MODULE__,) foo("julia")
 ═════ 1 possible error found ═════
 ┌ foo(a::String) @ Main ./REPL[14]:3
 │ `Main.undefsum` is not defined: r2 = undefsum(a::String)
 └────────────────────
 
-# with `ignored_modules=(Base,)`, JET will ignore the errors detected within the `Base` module:
+# With `ignored_modules=(Base,)`, JET ignores errors detected in `Base`:
 julia> @report_call ignored_modules=(Base,) foo("julia")
 ═════ 1 possible error found ═════
 ┌ foo(a::String) @ Main ./REPL[14]:3
 │ `Main.undefsum` is not defined: r2 = undefsum(a::String)
 └────────────────────
 
-# alternatively, you can use Symbol to specify the module name without requiring it as a dependency:
+# Alternatively, use a Symbol to specify the module by name:
 julia> @report_call ignored_modules=(:Base,) foo("julia")
 ═════ 1 possible error found ═════
 ┌ foo(a::String) @ Main ./REPL[14]:3
@@ -741,14 +765,20 @@ include("ui/vscode.jl")
 # -----------
 
 """
-    analyze_and_report_call!(analyzer::AbstractAnalyzer, f, [types]; jetconfigs...) -> JETCallResult
-    analyze_and_report_call!(analyzer::AbstractAnalyzer, tt::Type{<:Tuple}; jetconfigs...) -> JETCallResult
-    analyze_and_report_call!(analyzer::AbstractAnalyzer, mi::MethodInstance; jetconfigs...) -> JETCallResult
+    analyze_and_report_call!(analyzer::AbstractAnalyzer, f,
+                             types = Base.default_tt(f);
+                             jetconfigs...) -> JETCallResult
+    analyze_and_report_call!(analyzer::AbstractAnalyzer,
+                             tt::Type{<:Tuple};
+                             jetconfigs...) -> JETCallResult
+    analyze_and_report_call!(analyzer::AbstractAnalyzer,
+                             mi::MethodInstance;
+                             jetconfigs...) -> JETCallResult
 
-A generic entry point to analyze a function call with `AbstractAnalyzer`.
-Finally returns the analysis result as [`JETCallResult`](@ref).
-Note that this is intended to be used by developers of `AbstractAnalyzer` only.
-General users should use high-level entry points like [`report_call`](@ref) and [`report_opt`](@ref).
+Analyze a function call with `analyzer` and return the analysis result as a
+[`JETCallResult`](@ref). This generic entry point is intended only for
+developers of `AbstractAnalyzer`. General users should use high-level entry
+points such as [`report_call`](@ref) and [`report_opt`](@ref).
 """
 function analyze_and_report_call!(analyzer::AbstractAnalyzer, @nospecialize(f), @nospecialize(types = Base.default_tt(f));
                                   jetconfigs...)
@@ -860,13 +890,15 @@ is_entry(analyzer::AbstractAnalyzer, mi::MethodInstance) = get_entry(analyzer) =
 # ---------
 
 """
-    analyze_and_report_file!(interp::ConcreteInterpreter, filename::AbstractString; jetconfigs...) -> JETToplevelResult
+    analyze_and_report_file!(interp::ConcreteInterpreter,
+                             filename::AbstractString,
+                             pkgid::Union{Nothing,PkgId} = nothing;
+                             jetconfigs...) -> JETToplevelResult
 
-A generic entry point to analyze a file with `interp::ConcreteInterpreter`.
-Finally returns the analysis result as [`JETToplevelResult`](@ref).
-Note that this is intended to be used by developers of `AbstractAnalyzer` and
-`ConcreteInterpreter` only.
-General users should use high-level entry points like [`report_file`](@ref).
+Analyze a file with `interp` and return the analysis result as a
+[`JETToplevelResult`](@ref). This generic entry point is intended only for
+developers of `AbstractAnalyzer` and `ConcreteInterpreter`. General users
+should use high-level entry points such as [`report_file`](@ref).
 """
 function analyze_and_report_file!(interp::ConcreteInterpreter, filename::AbstractString,
                                   pkgid::Union{Nothing,PkgId} = nothing;
@@ -936,12 +968,13 @@ function cache_sig_analysis!(
 end
 
 """
-    analyze_and_report_package!(analyzer::AbstractAnalyzer, package::Module; jetconfigs...) -> JETToplevelResult
+    analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
+                                jetconfigs...) -> JETToplevelResult
 
-A generic entry point to analyze a package with `analyzer::AbstractAnalyzer`.
-Finally returns the analysis result as [`JETToplevelResult`](@ref).
-Note that this is intended to be used by developers of `AbstractAnalyzer` only.
-General users should use high-level entry points like [`report_package`](@ref).
+Analyze the package module `pkgmod` with `analyzer` and return the analysis
+result as a [`JETToplevelResult`](@ref). This generic entry point is intended
+only for developers of `AbstractAnalyzer`. General users should use high-level
+entry points such as [`report_package`](@ref).
 """
 function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module; jetconfigs...)
     pkgid = Base.PkgId(pkgmod)
@@ -1069,15 +1102,16 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
 end
 
 """
-    analyze_and_report_text!(interp::ConcreteInterpreter, text::AbstractString,
-                             filename::AbstractString = "top-level";
+    analyze_and_report_text!(interp::ConcreteInterpreter,
+                             text::AbstractString,
+                             filename::AbstractString = "top-level",
+                             pkgid::Union{Nothing,PkgId} = nothing;
                              jetconfigs...) -> JETToplevelResult
 
-A generic entry point to analyze a top-level code with `interp::ConcreteInterpreter`.
-Finally returns the analysis result as [`JETToplevelResult`](@ref).
-Note that this is intended to be used by developers of `AbstractAnalyzer` and
-`ConcreteInterpreter` only.
-General users should use high-level entry points like [`report_text`](@ref).
+Analyze top-level `text` with `interp` and return the analysis result as a
+[`JETToplevelResult`](@ref). This generic entry point is intended only for
+developers of `AbstractAnalyzer` and `ConcreteInterpreter`. General users
+should use high-level entry points such as [`report_text`](@ref).
 """
 function analyze_and_report_text!(interp::ConcreteInterpreter, text::AbstractString,
                                   filename::AbstractString = "top-level",
@@ -1202,10 +1236,9 @@ function _call_test_ex(funcname::Symbol, testname::Symbol, ex0, __module__, __so
 end
 
 """
-    func_test(func, testname::Symbol, args...; jetconfigs...)
+    func_test(func, testname::Symbol, args...; broken::Bool = false, skip::Bool = false, jetconfigs...)
 
-An internal utility function to implement a `test_call`-like function.
-See the implementation of [`test_call`](@ref).
+An internal utility for implementing functions similar to [`test_call`](@ref).
 """
 function func_test(func, testname::Symbol, @nospecialize(args...);
     broken::Bool = false, skip::Bool = false,

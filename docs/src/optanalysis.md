@@ -1,33 +1,59 @@
 # [Optimization analysis](@id optanalysis)
 
-Successful type inference and optimization are key to high-performing Julia programs.
-But as mentioned in [the performance tips](https://docs.julialang.org/en/v1/manual/performance-tips/), there are some
-chances where Julia can not infer the types of your program very well and can not optimize it well accordingly.
+Successful type inference and optimization are key to high-performing Julia
+programs. But as mentioned in
+[the performance tips](https://docs.julialang.org/en/v1/manual/performance-tips/),
+there are cases where Julia cannot infer the types of your program well and
+consequently cannot optimize it well either.
 
-While there are many possibilities of "type-instabilities", like usage of non-constant global variable most notably,
-probably the most tricky one would be ["captured variable"](https://docs.julialang.org/en/v1/manual/performance-tips/#man-performance-captured)
-– Julia can not really well infer the type of variable that is observed and modified by both inner function and enclosing one.
-And such type instabilities can lead to various optimization failures. One of the most common barriers to performance
-is known as "runtime dispatch", which happens when a matching method can't be resolved by the compiler due to the lack
-of type information and it is looked up at runtime instead. Since runtime dispatch is caused by poor type information,
-it often indicates the compiler could not do other optimizations including inlining and scalar replacements of aggregates.
+There are many possible causes of such "type instabilities". The most common is
+the use of non-constant global variables, while probably the trickiest is the
+["captured variable"](https://docs.julialang.org/en/v1/manual/performance-tips/#man-performance-captured):
+Julia cannot infer the type of a variable well when it is observed and modified
+both by an inner function and by its enclosing one. Type instabilities like
+these can lead to various optimization failures. One of the most common
+barriers to performance is known as "runtime dispatch", which happens when the
+compiler cannot resolve a matching method due to the lack of type information
+and the method must be looked up at runtime instead. Since runtime dispatch is
+caused by poor type information, it often indicates that the compiler also
+could not apply other optimizations, including inlining and scalar replacement
+of aggregates.
 
-In order to avoid such problems, we usually inspect the output of [`code_typed`](https://docs.julialang.org/en/v1/base/base/#Base.code_typed)
-or its family, and check if there is anywhere type is not well inferred and optimization was not successful.
-But the problem is that one needs to have enough knowledge about inference and optimization in order to interpret
-the output. Another problem is that they can only present the "final" output of the inference and optimization, and we
-can not inspect the entire call graph and may miss finding where a problem actually happened and how the type-instability
-has been propagated.
-There is a nice package called [Cthulhu.jl](https://github.com/JuliaDebug/Cthulhu.jl), which allows us to look at
-the outputs of `code_typed` by _descending_ into a call tree, recursively and interactively. The workflow with Cthulhu
-is much more efficient and powerful, but still, it requires much familiarity with the Julia compiler and it tends to be tedious.
+To avoid such problems, we usually inspect the output of
+[`code_typed`](https://docs.julialang.org/en/v1/base/base/#Base.code_typed)
+or its family and check whether any types are not well inferred and any
+optimizations were unsuccessful. One problem with this workflow is that it
+requires enough knowledge about inference and optimization to interpret the
+output. Another is that these tools present only the "final" output of
+inference and optimization: we cannot inspect the entire call graph, so we may
+miss the place where a problem actually happens and how the type instability
+propagates from there.
+
+There is a nice package called
+[Cthulhu.jl](https://github.com/JuliaDebug/Cthulhu.jl), which allows us to look
+at the outputs of `code_typed` by descending into a call tree, recursively and
+interactively. The workflow with Cthulhu is much more efficient and powerful,
+but it still requires familiarity with the Julia compiler, and it tends to be
+tedious.
 
 So, why not automate it?
-JET implements such an analyzer that investigates the optimized representation of your program and _automatically_ detects
-anywhere the compiler failed in optimization. Especially, it can find where Julia creates captured variables, where
-runtime dispatch will happen, and where Julia gives up the optimization work due to unresolvable recursive function call.
 
-[SnoopCompile also detects inference failures](https://timholy.github.io/SnoopCompile.jl/stable/tutorials/snoop_inference_analysis/), but JET and SnoopCompile use different mechanisms: JET performs *static* analysis of a particular call, while SnoopCompile performs *dynamic* analysis of new inference. As a consequence, JET's detection of inference failures is reproducible (you can run the same analysis repeatedly and get the same result) but terminates at any non-inferable node of the call graph: you will miss runtime dispatch in any non-inferable callees. Conversely, SnoopCompile's detection of inference failures can explore the entire callgraph, but only for those portions that have not been previously inferred, and the analysis cannot be repeated in the same session.
+JET implements such an analyzer: it investigates the optimized representation
+of your program and automatically detects places where the compiler failed to
+optimize. In particular, it can find where Julia creates captured variables,
+where runtime dispatch happens, and where Julia gives up optimization because
+of an unresolvable recursive function call.
+
+[SnoopCompile also detects inference failures](https://timholy.github.io/SnoopCompile.jl/stable/tutorials/snoop_inference_analysis/),
+but JET and SnoopCompile use different mechanisms: JET performs _static_
+analysis of a particular call, while SnoopCompile performs _dynamic_ analysis of
+new inference. As a consequence, JET's detection of inference failures is
+reproducible (you can run the same analysis repeatedly and get the same result)
+but terminates at any non-inferable node of the call graph: you will miss
+runtime dispatch in any non-inferable callees. Conversely, SnoopCompile's
+detection of inference failures can explore the entire callgraph, but only for
+those portions that have not been previously inferred, and the analysis cannot
+be repeated in the same session.
 
 ## [Quick start](@id optanalysis-quick-start)
 
@@ -35,10 +61,12 @@ runtime dispatch will happen, and where Julia gives up the optimization work due
 using JET
 ```
 
-JET exports [`@report_opt`](@ref), which analyzes the entire call graph of a given generic function call,
-and then reports detected performance pitfalls.
+JET exports [`@report_opt`](@ref), which analyzes the entire call graph of a
+given generic function call, and then reports detected performance pitfalls.
 
-As a first example, let's see how we can find and fix runtime dispatches using JET:
+As a first example, let's see how we can find and fix runtime dispatches using
+JET:
+
 ```@repl quickstart
 n = rand(Int); # non-constant global variable
 make_vals(n) = n ≥ 0 ? (zero(n):n) : (n:zero(n));
@@ -55,10 +83,13 @@ end;
 @report_opt sumup(sin) # runtime dispatches will be reported
 ```
 
-JET's analysis result will be dynamically updated when we (re-)define functions[^1], and we can "hot-fix" the runtime
-dispatches within the same running Julia session like this:
+JET's analysis result will be dynamically updated when we (re-)define
+functions[^1], and we can "hot-fix" the runtime dispatches within the same
+running Julia session like this:
+
 ```@repl quickstart
-# we can pass parameters as a function argument instead, and then everything will be type-stable
+# we can pass parameters as a function argument instead, and then
+# everything will be type-stable
 function sumup(f, n)
     vals = make_vals(n)
     s = zero(eltype(vals))
@@ -72,10 +103,13 @@ end;
 
 @report_opt sumup(sin, rand(Int)) # now runtime dispatch free !
 ```
-[^1]: Technically, it's fully integrated with [Julia's method invalidation system](https://julialang.org/blog/2020/08/invalidations/).
 
-`@report_opt` can also report the existence of captured variables, which are really better to be eliminated within
-performance-sensitive context:
+[^1]: Technically, it's fully integrated with
+    [Julia's method invalidation system](https://julialang.org/blog/2020/08/invalidations/).
+
+`@report_opt` can also report the existence of captured variables, which are
+really better to be eliminated within performance-sensitive context:
+
 ```@repl quickstart
 # the examples below are all adapted from https://docs.julialang.org/en/v1/manual/performance-tips/#man-performance-captured
 function abmult(r::Int)
@@ -114,10 +148,11 @@ end;
 @report_opt abmult(42)
 ```
 
-With the [`target_modules`](@ref result-config) configuration, we can easily limit the analysis scope to a specific module context:
+With the [`target_modules`](@ref result-config) configuration, we can easily
+limit the analysis scope to a specific module context:
+
 ```@repl quickstart
-# problem: when ∑1/n exceeds `x` ?
-function compute(x)
+function compute(x)  # problem: when ∑1/n exceeds `x` ?
     r = 1
     s = 0.0
     n = 1
@@ -135,16 +170,20 @@ function compute(x)
     return n, s
 end
 
-@report_opt compute(30) # bunch of reports will be reported from the `println` call
+@report_opt compute(30)  # bunch of reports will be reported from the `println` call
 
-@report_opt target_modules=(@__MODULE__,) compute(30) # focus on what we wrote, and no error should be reported
+@report_opt target_modules=(@__MODULE__,) compute(30)  # focus on what we wrote, and no error should be reported
 ```
 
-There is also [`function_filter`](@ref optanalysis-config), which can ignore specific function calls.
+There is also [`function_filter`](@ref optanalysis-config), which can ignore
+specific function calls.
 
-[`@test_opt`](@ref) can be used to assert that a given function call is free from performance pitfalls.
-It is fully integrated with [`Test` standard library](https://docs.julialang.org/en/v1/stdlib/Test/)'s unit-testing infrastructure,
-and we can use it like other `Test` macros e.g. `@test`:
+[`@test_opt`](@ref) can be used to assert that a given function call is free
+from performance pitfalls. It is fully integrated with
+[`Test` standard library](https://docs.julialang.org/en/v1/stdlib/Test/)'s
+unit-testing infrastructure, and we can use it like other `Test` macros e.g.
+`@test`:
+
 ```@repl quickstart
 @test_opt sumup(cos)
 
@@ -166,9 +205,11 @@ end
 
 ## [Integration with Cthulhu](@id cthulhu-integration)
 
-If you identify inference problems, you may want to fix them. Cthulhu can be a useful tool for gaining more insight, and JET integrates nicely with Cthulhu.
+If you identify inference problems, you may want to fix them. Cthulhu can be a
+useful tool for gaining more insight, and JET integrates nicely with Cthulhu.
 
-To exploit Cthulhu, you first need to split the overall report into individual inference failures:
+To exploit Cthulhu, you first need to split the overall report into individual
+inference failures:
 
 ```@repl quickstart
 report = @report_opt sumup(sin);
@@ -176,8 +217,8 @@ rpts = JET.get_reports(report)
 ```
 
 !!! tip
-    If `rpts` is a long list, consider using `urpts = unique(reportkey, rpts)` to trim it.
-    See [`reportkey`](@ref).
+    If `rpts` is a long list, consider using
+    `urpts = unique(reportkey, rpts)` to trim it. See [`reportkey`](@ref).
 
 Now you can `ascend` individual reports:
 
@@ -196,7 +237,16 @@ or browse typed code:
    Browse typed code
 ```
 
-`ascend` will show the full call-chain to reach a particular runtime dispatch; in this case, it was our entry point, but in other cases it may be deeper in the call graph. In this case, we've interactively moved the selector `>` down to the `sumup` call (you cannot descend into the `"runtime dispatch to..."` as there is no known code associated with it) and hit `<Enter>`, at which point Cthulhu showed us that the call to `make_vals(::Any)` occured only on line 4 of the definition of `sumup` (which we entered at the REPL). Cthulhu is now prompting us to either open the code in an editor (which will fail in this case, since there is no associated file!) or view the type-annoted code. If we select the "Browse typed code" option we see
+`ascend` will show the full call-chain to reach a particular runtime dispatch;
+in this case, it was our entry point, but in other cases it may be deeper in the
+call graph. In this case, we've interactively moved the selector `>` down to the
+`sumup` call (you cannot descend into the `"runtime dispatch to..."` as there is
+no known code associated with it) and hit `<Enter>`, at which point Cthulhu
+showed us that the call to `make_vals(::Any)` occured only on line 4 of the
+definition of `sumup` (which we entered at the REPL). Cthulhu is now prompting
+us to either open the code in an editor (which will fail in this case, since
+there is no associated file!) or view the type-annoted code. If we select the
+"Browse typed code" option we see
 
 ```
 sumup(f) @ Main REPL[7]:1
@@ -216,13 +266,16 @@ Select a call to descend into or ↩ to ascend. [q]uit. [b]ookmark.
 
 with red highlighting to indicate the non-inferable arguments.
 
-For more information, you're encouraged to read Cthulhu's documentation, which includes a video tutorial better-suited to this interactive tool.
+For more information, you're encouraged to read Cthulhu's documentation, which
+includes a video tutorial better-suited to this interactive tool.
 
 ## [Entry points](@id optanalysis-entry)
 
 ### [Interactive entry points](@id optanalysis-interactive-entry)
 
-The optimization analysis offers interactive entry points that can be used in the same way as [`@report_call`](@ref) and [`report_call`](@ref):
+The optimization analysis offers interactive entry points that can be used in
+the same way as [`@report_call`](@ref) and [`report_call`](@ref):
+
 ```@docs
 JET.@report_opt
 JET.report_opt
@@ -230,8 +283,10 @@ JET.report_opt
 
 ### [`Test` integration](@id optanalysis-test-integration)
 
-As with [the default error analysis](@ref jetanalysis), the optimization analysis also offers the integration with
+As with [the default error analysis](@ref jetanalysis), the optimization
+analysis also offers the integration with
 [`Test` standard library](https://docs.julialang.org/en/v1/stdlib/Test/):
+
 ```@docs
 JET.@test_opt
 JET.test_opt
@@ -239,16 +294,18 @@ JET.test_opt
 
 ### [Top-level entry points](@id optanalysis-toplevel-entry)
 
-By default, JET doesn't offer top-level entry points for the optimization analysis, because it's usually used for only a
-selective portion of your program.
-But if you want you can just use [`report_file`](@ref) or similar top-level entry points with specifying
-`analyzer = OptAnalyzer` configuration in order to apply the optimization analysis on a top-level script,
-e.g. `report_file("path/to/file.jl"; analyzer = OptAnalyzer)`.
-
+By default, JET doesn't offer top-level entry points for the optimization
+analysis, because it's usually used for only a selective portion of your
+program. But if you want you can just use [`report_file`](@ref) or similar
+top-level entry points with specifying `analyzer = OptAnalyzer` configuration
+in order to apply the optimization analysis on a top-level script, e.g.
+`report_file("path/to/file.jl"; analyzer = OptAnalyzer)`.
 
 ## [Configurations](@id optanalysis-config)
 
-In addition to the [general configurations](@ref), the optimization analysis can take the following specific configurations:
+In addition to the [general configurations](@ref general-configurations), the
+optimization analysis can take the following specific configurations:
+
 ```@docs
 JET.OptAnalyzer
 ```

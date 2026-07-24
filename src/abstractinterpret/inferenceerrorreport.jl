@@ -7,8 +7,14 @@
 """
     Signature
 
-Represents an expression signature.
-`print_signature` implements a frontend functionality to show this type.
+Represents the expression signature associated with an error point.
+
+- `_sig::Vector{Any}`: components used to render the expression
+- `tt::Union{Type,Nothing}`: the call tuple type, when available
+
+Equality compares only the elements of `_sig`, using `===`, and ignores `tt`.
+Hashing likewise uses only `_sig`. [`print_signature`](@ref) renders a
+`Signature` for display.
 """
 struct Signature
     _sig::Vector{Any}
@@ -39,14 +45,14 @@ Base.lastindex(sig::Signature, args...) = lastindex(sig._sig, args...)
 """
     VirtualFrame
 
-Stack information representing virtual execution context:
-- `file::Symbol`: the path to the file containing the virtual execution context
-- `line::Int`: the line number in the file containing the virtual execution context
-- [`sig::Signature`](@ref Signature): a signature of this frame
-- `linfo::MethodInstance`: The `MethodInstance` containing the execution context
+Stack information representing a virtual execution context:
 
-This type is very similar to `Base.StackTraces.StackFrame`, but its execution context is
-collected during abstract interpration, not collected from actual execution.
+- `file::Symbol`: the source file containing the execution context
+- `line::Int`: the source line containing the execution context
+- `linfo::MethodInstance`: the `MethodInstance` containing the context
+
+This type is similar to `Base.StackTraces.StackFrame`, but its context is
+collected during abstract interpretation rather than runtime execution.
 """
 @withmixedhash struct VirtualFrame
     file::Symbol
@@ -57,10 +63,9 @@ end
 """
     VirtualStackTrace
 
-Represents a virtual stack trace in the form of a vector of `VirtualFrame`.
-The vector holds `VirtualFrame`s in order of "from entry call site to error point", i.e.
-the first element is the `VirtualFrame` of the entry call site, and the last element is that
-contains the error.
+A vector of [`VirtualFrame`](@ref)s ordered from the analysis entry point to the
+error point. The first element represents the entry frame, and the last element
+represents the frame where the error was detected.
 """
 const VirtualStackTrace = Vector{VirtualFrame}
 
@@ -443,53 +448,66 @@ end
 """
     abstract type InferenceErrorReport end
 
-An interface type of error reports collected by JET's abstract interpretation based analysis.
-All `InferenceErrorReport`s have the following fields,
-which explains _where_ and _how_ this error is reported:
-- [`vst::VirtualStackTrace`](@ref VirtualStackTrace): a virtual stack trace of the error
-- [`sig::Signature`](@ref Signature): a signature of the error point
+An interface type for error reports collected during JET's abstract interpretation.
 
-Note that some `InferenceErrorReport` may have additional fields other than `vst` and `sig`
-to explain _why_ they are reported.
+Every concrete subtype provides the following fields:
+
+- [`vst::VirtualStackTrace`](@ref VirtualStackTrace): the virtual stack trace
+  from the analysis entry point to the error point
+- [`sig::Signature`](@ref Signature): the expression signature at the error
+  point
+
+A subtype may provide additional fields to explain why the error was reported.
 """
 abstract type InferenceErrorReport end
 
 """
-    InferenceErrorReport
+    InferenceErrorReport()
 
-In order for `Report <: InferenceErrorReport` to implement the interface,
-it should satisfy the following requirements:
+A concrete `Report <: InferenceErrorReport` must satisfy the following
+requirements.
 
-- **Required fields** \\
-  `Report` should have the following fields,
-  which explains _where_ and _how_ this error is reported:
-  * `vst::VirtualStackTrace`: a virtual stack trace of the error
-  * [`sig::Signature`](@ref Signature): a signature of the error point
+## Required fields
 
-  Note that `Report` can have additional fields other than `vst` and `sig` to explain
-  _why_ this error is reported (mostly used for [`print_report_message`](@ref)).
+- `vst::VirtualStackTrace`: the virtual stack trace from the analysis entry
+  point to the error point
+- [`sig::Signature`](@ref Signature): the expression signature at the error point
 
-- **Required overloads** \\
+A report may have additional fields used by
+[`print_report_message`](@ref) to explain why it was emitted.
 
-  * [`JETInterface.copy_report(report::Report) -> new::Report`](@ref copy_report)
-  * [`JETInterface.print_report_message(io::IO, report::Report)`](@ref print_report_message)
+## Required methods
 
-- **Optional overloads** \\
+- [`JETInterface.copy_report(report::Report) -> new::Report`](@ref copy_report)
+- [`JETInterface.print_report_message(io::IO, report::Report)`](@ref print_report_message)
 
-  * [`JETInterface.print_signature(::Report) -> Bool`](@ref print_signature)
-  * [`JETInterface.report_color(::Report) -> Symbol`](@ref report_color)
+## Optional methods
 
-`Report <: InferenceErrorReport` is supposed to be constructed using the following constructor
+- [`JETInterface.print_signature(report::Report) -> Bool`](@ref print_signature)
+- [`JETInterface.report_color(report::Report) -> Symbol`](@ref report_color)
 
-    Report(::AbstractAnalyzer, state, spec_args...) -> Report
+## Construction
 
-where `state` can be either of:
-- `state::$StateAtPC`: a state with the current program counter specified
-- `state::InferenceState`: a state with the current program counter set to `state.currpc`
-- `state::InferenceResult`: a state with the current program counter unknown
-- `state::MethodInstance`: a state with the current program counter unknown
+JET provides the following generic constructor:
 
-See also: [`@jetreport`](@ref), [`VirtualStackTrace`](@ref), [`VirtualFrame`](@ref)
+    Report(state, spec_args...) -> Report
+
+`state` may be any of:
+
+- `state::StateAtPC`: a state with an explicitly specified program counter
+- `state::InferenceState`: a state using `state.currpc` as the program counter
+- `state::InferenceResult`: a state whose program counter is unknown
+- `state::MethodInstance`: a state whose program counter is unknown
+
+The generic constructor derives `vst` and `sig`, then calls this storage
+constructor:
+
+    Report(vst::VirtualStackTrace, sig::Signature, spec_args...) -> Report
+
+A manually defined report type must provide the storage constructor.
+[`@jetreport`](@ref) generates it automatically.
+
+See also [`VirtualStackTrace`](@ref) and [`VirtualFrame`](@ref).
 """
 function InferenceErrorReport() end
 
@@ -499,9 +517,9 @@ function InferenceErrorReport() end
 """
     JETInterface.copy_report(orig::Report) where Report<:InferenceErrorReport -> new::Report
 
-Returns new `new::Report`, that should be identical to the original `orig::Report`, except
-that `new.vst` is copied from `orig.vst` so that the further modification on `orig.vst`
-that may happen in later abstract interpretation doesn't affect `new.vst`.
+Return a new `Report` equivalent to `orig`. Preserve every field except `vst`,
+which must contain the same frames as `orig.vst` in a distinct vector. Mutating
+either stack trace must not affect the other report.
 """
 @noinline copy_report(report::InferenceErrorReport) = (@nospecialize;
     error(lazy"`copy_report(::$(typeof(report)))` is not implemented"))
@@ -509,7 +527,7 @@ that may happen in later abstract interpretation doesn't affect `new.vst`.
 """
     JETInterface.print_report_message(io::IO, report::Report) where Report<:InferenceErrorReport
 
-Prints to `io` and describes _why_ `report` is reported.
+Print to `io` a message explaining why `report` was emitted.
 """
 @noinline print_report_message(io::IO, report::InferenceErrorReport) = (@nospecialize;
     error(lazy"`print_report_message(::IO, ::$(typeof(report)))` is not implemented"))
@@ -517,14 +535,14 @@ Prints to `io` and describes _why_ `report` is reported.
 """
     JETInterface.print_signature(::Report) where Report<:InferenceErrorReport -> Bool
 
-Configures whether or not to print the report signature when printing `Report` (defaults to `true`).
+Return whether to print the report's signature. The default is `true`.
 """
 print_signature(::InferenceErrorReport) = true
 
 """
     JETInterface.report_color(::Report) where Report<:InferenceErrorReport -> Symbol
 
-Configures the color for `Report` (defaults to `:red`).
+Return the color used to print the report. The default is `ERROR_COLOR` (`:light_red`).
 """
 report_color(::InferenceErrorReport) = ERROR_COLOR
 
@@ -588,10 +606,13 @@ end
 """
     reportkey(report::InferenceErrorReport)
 
-Returns an identifier for the runtime-dispatched call site of `report`.
+Return `(report.sig.tt, last(report.vst).linfo)`. The first component is the
+reported call tuple type, or `nothing` when no call tuple type is available. The
+second component is the `MethodInstance` of the final virtual frame.
 
-If you have a long list of reports to analyze, `urpts = unique(reportkey, rpts)` may remove "duplicates"
-that arrive at the same runtime dispatch from different entry points.
+For a collection of reports, `unique(reportkey, reports)` deduplicates reports
+with the same two components, even when they were reached from different
+analysis entry points.
 """
 reportkey(report::InferenceErrorReport) = (report.sig.tt, report.vst[end].linfo)
 
@@ -602,18 +623,22 @@ reportkey(report::InferenceErrorReport) = (report.sig.tt, report.vst[end].linfo)
         ...
     end
 
-A utility macro to define [`InferenceErrorReport`](@ref).
-It can be very tedious to manually satisfy the `InferenceErrorReport` interfaces.
-JET internally uses this `@jetreport` utility macro, which takes a `struct` definition of
-`InferenceErrorReport` without the required fields specified, and automatically defines
-the `struct` as well as constructor definitions.
-If the report `NewReport <: InferenceErrorReport` is defined using `@jetreport`,
-then `NewReport` just needs to implement the `print_report_message` interface.
+Define an [`InferenceErrorReport`](@ref) subtype from its report-specific fields.
+The macro adds:
 
-For example, [`JETAnalyzer`](@ref)'s `MethodErrorReport` is defined as follows:
+- the required `vst::VirtualStackTrace` and `sig::Signature` fields
+- a storage constructor accepting `vst`, `sig`, and the report-specific fields
+- a [`copy_report`](@ref) method that copies `vst` and preserves the other fields
+
+The generic `NewReport(state, spec_args...)` constructor initializes `vst` and `sig`.
+A report defined with `@jetreport` only needs to implement the
+[`print_report_message`](@ref) interface; it may also override the optional report interfaces.
+
+The following is a simplified version of [`JETAnalyzer`](@ref)'s `MethodErrorReport`;
+the actual definition has additional behavior:
 ```julia
 @jetreport struct MethodErrorReport <: InferenceErrorReport
-    @nospecialize t # ::Union{Type, Vector{Type}}
+    @nospecialize t # ::Union{Type,Vector{Any}}
     union_split::Int
 end
 function print_report_message(io::IO, (; t, union_split)::MethodErrorReport)
@@ -631,7 +656,9 @@ function print_report_message(io::IO, (; t, union_split)::MethodErrorReport)
     end
 end
 ```
-and constructed as like `MethodErrorReport(sv::InferenceState, atype::Any, 0)`.
+
+Given `sv::InferenceState` and `atype`, construct this simplified report with
+`MethodErrorReport(sv, atype, 0)`.
 """
 macro jetreport(ex)
     isexpected = @capture(ex, struct NewReport_ <: Super_; spec_sigs__; end)

@@ -23,7 +23,8 @@ end
 
 """
 Configurations for report printing.
-The configurations below will be active whenever `show`ing [JET's analysis result](@ref analysis-result) within REPL.
+These configurations apply when [JET's analysis results](@ref analysis-result)
+are displayed in the REPL.
 
 ---
 - `sourceinfo::Symbol = :default` \\
@@ -31,23 +32,28 @@ The configurations below will be active whenever `show`ing [JET's analysis resul
   - `:full` - Expand all file paths to absolute paths
   - `:default` - Show paths as-is, prefixing `./` only for relative paths
   - `:compact` - Show basename only for absolute paths, relative paths unchanged
-  - `:minimal` - Show only module information, omit file paths (no `path:line`)
-  - `:none` - Omit location information entirely (no `@ Module path:line`).
-     For toplevel errors, treated as `:compact` since location is essential.
+  - `:minimal` - For inference reports, show only `@ Module`, without a file
+    path or line number. For top-level reports, treat this as `:compact`.
+  - `:none` - For inference reports, omit the entire `@ Module path:line`
+    location. For top-level reports, treat this as `:compact` because the source
+    location is essential.
 ---
 - `fullpath::Bool = false` \\
-  **Deprecated**: Use `sourceinfo` instead. `fullpath=true` is equivalent to `sourceinfo=:full`.
+  **Deprecated**: Use `sourceinfo` instead. `fullpath=true` is equivalent to
+  `sourceinfo=:full`.
 ---
 - `print_toplevel_success::Bool = false` \\
-  If `true`, prints a message when there is no toplevel errors found.
+  If `true`, print a message when no top-level errors are found.
 ---
 - `print_inference_success::Bool = true` \\
-  If `true`, print a message when there is no errors found in abstract interpretation based analysis pass.
+  If `true`, print a message when no errors are found by an
+  abstract-interpretation-based analysis pass.
 ---
 - `stacktrace_types_limit::Union{Nothing, Int} = nothing` \\
-  If `nothing`, limit type-depth printing of argument types in stack traces based on the display size.
-  If a positive `Int`, limit type-depth printing to given depth.
-  If a non-positive `Int`, do not limit type-depth printing.
+  If `nothing`, limit the type depth of argument types in stack traces based on
+  the display size.
+  If a positive `Int`, limit the type depth to the given depth.
+  If a non-positive `Int`, do not limit the type depth.
 ---
 """
 struct PrintConfig
