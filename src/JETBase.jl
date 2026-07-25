@@ -918,16 +918,21 @@ struct SigAnalysisResult
 end
 
 struct SigWorkItem
+    siginfo::Revise.SigInfo
     exinfos::Vector{Union{Revise.SigInfo,Revise.TypeInfo}}
     index::Int
 end
 
-function cache_sig_analysis!(
-        workitem::SigWorkItem, siginfo::Revise.SigInfo, result::SigAnalysisResult)
+function cache_sig_analysis!(workitem::SigWorkItem, result::SigAnalysisResult)
     @lock Revise.revise_lock begin
+        checkbounds(Bool, workitem.exinfos, workitem.index) || return nothing
         current = workitem.exinfos[workitem.index]
+        # Make sure the entry still holds the analyzed signature: attaching the result to a
+        # different signature's entry would let it be reused for the wrong signature, which
+        # the read-side validation cannot detect. On the other hand a stale result for the
+        # same signature is fine since the read-side world range validation rejects it.
         if (current isa Revise.SigInfo &&
-            current.mt === siginfo.mt && current.sig === siginfo.sig)
+            current.mt === workitem.siginfo.mt && current.sig === workitem.siginfo.sig)
             workitem.exinfos[workitem.index] =
                 Revise.replace_extended_data(current, :JET, result)
         end
@@ -945,30 +950,31 @@ General users should use high-level entry points like [`report_package`](@ref).
 """
 function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module; jetconfigs...)
     pkgid = Base.PkgId(pkgmod)
-    pkgdata = (@something Revise.getpkgdata(pkgid) Revise.watch_package(pkgid) begin
+    pkgdata = @something Revise.getpkgdata(pkgid) Revise.watch_package(pkgid) begin
         error(lazy"Package $pkgmod is not analyzable.")
-    end)::Revise.PkgData
+    end
 
-    workitems, world = @lock Revise.revise_lock let
+    local world, workitems
+    @lock Revise.revise_lock begin
         # If Revise hasn't instantiated signatures yet, populate that cache here
         for (file, fi) in zip(Revise.srcfiles(pkgdata), pkgdata.fileinfos)
             Revise.maybe_parse_from_cache!(pkgdata, file, fi)
             Revise.maybe_extract_sigs!(fi)
         end
+        # Signature extraction may advance the world age, so capture it afterward
+        world = Base.get_world_counter()
 
         workitems = SigWorkItem[]
-        world = Base.get_world_counter()
         for fi in pkgdata.fileinfos
             for (_, exs_infos) in fi.mod_exs_infos, (_, exinfos) in exs_infos
                 isnothing(exinfos) && continue
                 for (i, exinfo) in enumerate(exinfos)
                     if exinfo isa Revise.SigInfo
-                        push!(workitems, SigWorkItem(exinfos, i))
+                        push!(workitems, SigWorkItem(exinfo, exinfos, i))
                     end
                 end
             end
         end
-        workitems, world
     end
 
     start = time()
@@ -976,8 +982,6 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
     jetconfigs = set_if_missing(jetconfigs, :toplevel_logger, IOContext(stdout, JET_LOGGER_LEVEL => DEFAULT_LOGGER_LEVEL))
     config = ToplevelConfig(; jetconfigs...)
 
-    # Revise's signature population may execute code, which can increment the world age,
-    # so we update to the captured world age here
     newstate = AnalyzerState(AnalyzerState(analyzer); world)
     analyzer = AbstractAnalyzer(analyzer, newstate)
 
@@ -990,7 +994,7 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
     end
 
     tasks = map(workitems) do workitem
-        siginfo = @lock Revise.revise_lock workitem.exinfos[workitem.index]::Revise.SigInfo
+        siginfo = workitem.siginfo
         Threads.@spawn :default try
             ext = Revise.get_extended_data(siginfo, :JET)
             local reports::Vector{InferenceErrorReport}
@@ -1016,8 +1020,7 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
                     match.method, match.spec_types, match.sparams)
                 @atomic progress.analyzed += 1
                 reports = get_reports(task_analyzer, result)
-                cache_sig_analysis!(
-                    workitem, siginfo, SigAnalysisResult(reports, result.ci))
+                cache_sig_analysis!(workitem, SigAnalysisResult(reports, result.ci))
             else
                 let siginfo=siginfo
                     toplevel_logger(config; pre=println) do @nospecialize(io::IO)
