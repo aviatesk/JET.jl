@@ -83,7 +83,7 @@ const INIT_HOOKS = Function[]
 push_inithook!(f) = push!(INIT_HOOKS, f)
 __init__() = foreach(@nospecialize(f)->f(), INIT_HOOKS)
 
-global debug_toplevel_logger::IO
+global debug_toplevel_logger::IO = devnull
 push_inithook!() do
     global debug_toplevel_logger = IOContext(stderr, JET_LOGGER_LEVEL=>1)
 end
