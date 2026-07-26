@@ -950,12 +950,11 @@ General users should use high-level entry points like [`report_package`](@ref).
 """
 function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module; jetconfigs...)
     pkgid = Base.PkgId(pkgmod)
-    pkgdata = @something Revise.getpkgdata(pkgid) Revise.watch_package(pkgid) begin
-        error(lazy"Package $pkgmod is not analyzable.")
-    end
+    Revise.getpkgdata(pkgid) === nothing && Revise.watch_package(pkgid)
 
     local world, workitems
     @lock Revise.revise_lock begin
+        pkgdata = @something Revise.getpkgdata(pkgid) error(lazy"Package $pkgmod is not analyzable.")
         # If Revise hasn't instantiated signatures yet, populate that cache here
         for (file, fi) in zip(Revise.srcfiles(pkgdata), pkgdata.fileinfos)
             Revise.maybe_parse_from_cache!(pkgdata, file, fi)
