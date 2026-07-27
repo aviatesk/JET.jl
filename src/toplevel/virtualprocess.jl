@@ -748,13 +748,66 @@ const VIRTUAL_MODULE_NAME = :JETVirtualModule
 gen_virtual_module(parent::Module = Main; name = VIRTUAL_MODULE_NAME) =
     Core.eval(parent, :(module $(gensym(name)) end))::Module
 
+struct VirtualSignatureAnalysisJob{Interpreter<:ConcreteInterpreter} <: AbstractSignatureAnalysisJob
+    interp::Interpreter
+    res::VirtualProcessResult
+    progress::PackageAnalysisProgress
+    index::Int
+    config::ToplevelConfig
+    n_sigs::Int
+    completion::Base.Event
+end
+
 # NOTE when `@generated` function has been defined, signatures of both its entry and
 # generator should have been collected, and we will just analyze them separately
 # if code generation has failed given the entry method signature, the overload of
 # `InferenceState(..., ::AbstractAnalyzer)` will collect `GeneratorErrorReport`
+function (job::VirtualSignatureAnalysisJob)()
+    (; interp, res, progress, index, config, n_sigs) = job
+    (; tt) = res.signature_infos[index]
+    try
+        # Create a new analyzer with fresh local caches (`inf_cache` and `analysis_results`)
+        # to avoid data races between concurrent signature analysis tasks
+        analyzer = ToplevelAbstractAnalyzer(interp, non_toplevel_concretized)
+        inf_world = CC.get_inference_world(analyzer)
+        match = Base._which(tt;
+            # NOTE use the latest world counter with `method_table(analyzer)` unwrapped,
+            # otherwise it may use a world counter when this method isn't defined yet
+            method_table = CC.method_table(analyzer),
+            world = inf_world,
+            raise = false)
+        entrypoint = config.analyze_from_definitions
+        if (match !== nothing &&
+            (!(entrypoint isa Symbol) || # implies `analyze_from_definitions===true`
+             match.method.name === entrypoint))
+            @atomic progress.analyzed += 1
+            result = analyze_method_signature!(
+                analyzer, match.method, match.spec_types, match.sparams)
+            reports = get_reports(analyzer, result)
+            isempty(reports) || @lock progress.reports_lock append!(progress.reports, reports)
+        else
+            toplevel_logger(config; pre=clearline) do @nospecialize(io::IO)
+                println(io, "couldn't find a single method matching the signature `", tt, "`")
+            end
+        end
+    catch err
+        @error "Error analyzing method signature" tt
+        Base.showerror(stderr, err, catch_backtrace())
+    finally
+        done = (@atomic progress.done += 1)
+        current_next = @atomic progress.next_interval
+        if done >= current_next
+            @atomicreplace progress.next_interval current_next => current_next + progress.interval
+            toplevel_logger(config; pre=clearline) do @nospecialize(io::IO)
+                analyzed = @atomic progress.analyzed
+                print(io, "analyzing from top-level definitions ($analyzed/$n_sigs)")
+            end
+        end
+    end
+end
+
 function analyze_from_definitions!(interp::ConcreteInterpreter, config::ToplevelConfig)
     start = time()
-    entrypoint = config.analyze_from_definitions
     res = InterpretationState(interp).res
     n_sigs = length(res.signature_infos)
     n_sigs == 0 && return nothing
@@ -765,45 +818,13 @@ function analyze_from_definitions!(interp::ConcreteInterpreter, config::Toplevel
         print(io, "analyzing from top-level definitions (0/$n_sigs)")
     end
 
-    tasks = map(1:n_sigs) do i
-        Threads.@spawn begin
-            (; tt) = res.signature_infos[i]
-            # Create a new analyzer with fresh local caches (`inf_cache` and `analysis_results`)
-            # to avoid data races between concurrent signature analysis tasks
-            analyzer = ToplevelAbstractAnalyzer(interp, non_toplevel_concretized)
-            match = Base._which(tt;
-                # NOTE use the latest world counter with `method_table(analyzer)` unwrapped,
-                # otherwise it may use a world counter when this method isn't defined yet
-                method_table = CC.method_table(analyzer),
-                world = CC.get_inference_world(analyzer),
-                raise = false)
-            if (match !== nothing &&
-                (!(entrypoint isa Symbol) || # implies `analyze_from_definitions===true`
-                 match.method.name === entrypoint))
-                @atomic progress.analyzed += 1
-                result = analyze_method_signature!(analyzer,
-                    match.method, match.spec_types, match.sparams)
-                reports = get_reports(analyzer, result)
-                isempty(reports) || @lock progress.reports_lock append!(progress.reports, reports)
-            else
-                # something went wrong
-                toplevel_logger(config; pre=clearline) do @nospecialize(io::IO)
-                    println(io, "couldn't find a single method matching the signature `", tt, "`")
-                end
-            end
-            done = (@atomic progress.done += 1)
-            current_next = @atomic progress.next_interval
-            if done >= current_next
-                @atomicreplace progress.next_interval current_next => current_next + progress.interval
-                toplevel_logger(config; pre=clearline) do @nospecialize(io::IO)
-                    analyzed = @atomic progress.analyzed
-                    print(io, "analyzing from top-level definitions ($analyzed/$n_sigs)")
-                end
-            end
-        end
+    jobs = VirtualSignatureAnalysisJob[]
+    sizehint!(jobs, n_sigs)
+    for i = 1:n_sigs
+        push!(jobs, VirtualSignatureAnalysisJob(
+            interp, res, progress, i, config, n_sigs, Base.Event()))
     end
-
-    waitall(tasks)
+    run_signature_analysis_jobs!(jobs)
 
     append!(res.inference_error_reports, progress.reports)
 

@@ -359,6 +359,57 @@ mutable struct PackageAnalysisProgress
     end
 end
 
+abstract type AbstractSignatureAnalysisJob end
+signature_analysis_completion(job::AbstractSignatureAnalysisJob) =
+    getfield(job, :completion)::Base.Event
+
+function signature_analysis_worker(
+        queue::Channel{Union{Nothing,AbstractSignatureAnalysisJob}}
+    )
+    # HACK: Compiler engine reservations are owned by OS thread ID.
+    # Prevent migration only while this job may run inference. This assumes jobs don't
+    # leave sticky child tasks running: stickiness isn't reference-counted, so restoring
+    # it could erase stickiness propagated by a child scheduled during the job.
+    while true
+        job = take!(queue)
+        job === nothing && break
+        task = current_task()
+        was_sticky = task.sticky
+        task.sticky = true
+        try
+            job()
+        finally
+            task.sticky = was_sticky
+            notify(signature_analysis_completion(job))
+        end
+        yield()
+    end
+end
+
+function run_signature_analysis_jobs!(
+        jobs::Vector{<:AbstractSignatureAnalysisJob}
+    )
+    isempty(jobs) && return nothing
+    queue = Channel{Union{Nothing,AbstractSignatureAnalysisJob}}(Inf)
+    n_workers = min(length(jobs), max(1, Threads.threadpoolsize(:default)))
+    worker_tasks = Task[]
+    sizehint!(worker_tasks, n_workers)
+    for _ = 1:n_workers
+        worker = Threads.@spawn :default signature_analysis_worker(queue)
+        push!(worker_tasks, worker)
+    end
+    try
+        foreach(job -> put!(queue, job), jobs)
+        foreach(job -> wait(signature_analysis_completion(job)), jobs)
+    finally
+        for _ in worker_tasks
+            put!(queue, nothing)
+        end
+        foreach(wait, worker_tasks)
+    end
+    return nothing
+end
+
 include("toplevel/virtualprocess.jl")
 
 # results
@@ -940,6 +991,72 @@ function cache_sig_analysis!(workitem::SigWorkItem, result::SigAnalysisResult)
     return nothing
 end
 
+struct ReviseSignatureAnalysisJob{Analyzer<:AbstractAnalyzer} <: AbstractSignatureAnalysisJob
+    workitem::SigWorkItem
+    analyzer::Analyzer
+    progress::PackageAnalysisProgress
+    inf_world::UInt
+    config::ToplevelConfig
+    n_sigs::Int
+    completion::Base.Event
+end
+
+function (job::ReviseSignatureAnalysisJob)()
+    (; workitem, analyzer, progress, inf_world, config) = job
+    siginfo = workitem.siginfo
+    try
+        ext = Revise.get_extended_data(siginfo, :JET)
+        local reports::Vector{InferenceErrorReport}
+        if ext !== nothing && ext.data isa SigAnalysisResult
+            prev_result = ext.data::SigAnalysisResult
+            if (CC.cache_owner(analyzer) === prev_result.codeinst.owner &&
+                prev_result.codeinst.max_world ≥ inf_world ≥ prev_result.codeinst.min_world)
+                @atomic progress.cached += 1
+                reports = prev_result.reports
+                @goto gotreports
+            end
+        end
+        # Create a new analyzer with fresh local caches (`inf_cache` and `analysis_results`)
+        # to avoid data races between concurrent signature analysis tasks
+        task_analyzer = AbstractAnalyzer(analyzer,
+            AnalyzerState(AnalyzerState(analyzer), #=refresh_local_cache=#true))
+        match = Base._which(siginfo.sig;
+            method_table = CC.method_table(task_analyzer),
+            world = inf_world,
+            raise = false)
+        if match !== nothing
+            result = analyze_method_signature!(
+                task_analyzer, match.method, match.spec_types, match.sparams)
+            @atomic progress.analyzed += 1
+            reports = get_reports(task_analyzer, result)
+            cache_sig_analysis!(workitem, SigAnalysisResult(reports, result.ci))
+        else
+            let siginfo=siginfo
+                toplevel_logger(config; pre=println) do @nospecialize(io::IO)
+                    print(io, "Couldn't find a single matching method for the signature `")
+                    Base.show_tuple_as_call(io, Symbol(""), siginfo.sig)
+                    println(io, "`")
+                end
+            end
+            reports = InferenceErrorReport[]
+        end
+        @label gotreports
+        isempty(reports) || @lock progress.reports_lock append!(progress.reports, reports)
+    catch err
+        @error "Error analyzing method signature" siginfo.sig
+        Base.showerror(stderr, err, catch_backtrace())
+    finally
+        done = (@atomic progress.done += 1)
+        current_next = @atomic progress.next_interval
+        if done >= current_next
+            @atomicreplace progress.next_interval current_next => current_next + progress.interval
+            toplevel_logger(config; pre=clearline) do @nospecialize(io::IO)
+                print(io, "Analyzing top-level definitions (progress: $done/$(job.n_sigs))")
+            end
+        end
+    end
+end
+
 """
     analyze_and_report_package!(analyzer::AbstractAnalyzer, package::Module; jetconfigs...) -> JETToplevelResult
 
@@ -992,62 +1109,13 @@ function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
         print(io, "Analyzing top-level definitions (progress: 0/$n_sigs | interval: $(progress.interval))")
     end
 
-    tasks = map(workitems) do workitem
-        siginfo = workitem.siginfo
-        Threads.@spawn :default try
-            ext = Revise.get_extended_data(siginfo, :JET)
-            local reports::Vector{InferenceErrorReport}
-            if ext !== nothing && ext.data isa SigAnalysisResult
-                prev_result = ext.data::SigAnalysisResult
-                if (CC.cache_owner(analyzer) === prev_result.codeinst.owner &&
-                    prev_result.codeinst.max_world ≥ inf_world ≥ prev_result.codeinst.min_world)
-                    @atomic progress.cached += 1
-                    reports = prev_result.reports
-                    @goto gotreports
-                end
-            end
-            # Create a new analyzer with fresh local caches (`inf_cache` and `analysis_results`)
-            # to avoid data races between concurrent signature analysis tasks
-            task_analyzer = AbstractAnalyzer(analyzer,
-                AnalyzerState(AnalyzerState(analyzer), #=refresh_local_cache=#true))
-            match = Base._which(siginfo.sig;
-                method_table = CC.method_table(task_analyzer),
-                world = inf_world,
-                raise = false)
-            if match !== nothing
-                result = analyze_method_signature!(task_analyzer,
-                    match.method, match.spec_types, match.sparams)
-                @atomic progress.analyzed += 1
-                reports = get_reports(task_analyzer, result)
-                cache_sig_analysis!(workitem, SigAnalysisResult(reports, result.ci))
-            else
-                let siginfo=siginfo
-                    toplevel_logger(config; pre=println) do @nospecialize(io::IO)
-                        print(io, "Couldn't find a single matching method for the signature `")
-                        Base.show_tuple_as_call(io, Symbol(""), siginfo.sig)
-                        println(io, "`")
-                    end
-                end
-                reports = InferenceErrorReport[]
-            end
-            @label gotreports
-            isempty(reports) || @lock progress.reports_lock append!(progress.reports, reports)
-        catch err
-            @error "Error analyzing method signature" siginfo.sig
-            Base.showerror(stderr, err, catch_backtrace())
-        finally
-            done = (@atomic progress.done += 1)
-            current_next = @atomic progress.next_interval
-            if done >= current_next
-                @atomicreplace progress.next_interval current_next => current_next + progress.interval
-                toplevel_logger(config; pre=clearline) do @nospecialize(io::IO)
-                    print(io, "Analyzing top-level definitions (progress: $done/$n_sigs)")
-                end
-            end
-        end
+    jobs = ReviseSignatureAnalysisJob[]
+    sizehint!(jobs, n_sigs)
+    for workitem in workitems
+        push!(jobs, ReviseSignatureAnalysisJob(
+            workitem, analyzer, progress, inf_world, config, n_sigs, Base.Event()))
     end
-
-    waitall(tasks)
+    run_signature_analysis_jobs!(jobs)
 
     append!(res.inference_error_reports, progress.reports)
 
