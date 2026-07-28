@@ -3,45 +3,79 @@ name: performance tracking
 on:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   benchmark:
     runs-on: ubuntu-latest
     steps:
       # setup
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - uses: julia-actions/setup-julia@latest
         with:
-          version: "1.12-nightly" # next release
-      - uses: julia-actions/julia-buildpkg@latest
+          version: "1"
       - name: install dependencies
-        run: julia -e 'using Pkg; pkg"add PkgBenchmark BenchmarkCI@0.1"'
+        run: |
+          julia --startup-file=no --project="$RUNNER_TEMP/benchmark-runner" -e '
+          using Pkg
+          Pkg.add(PackageSpec(; name="PkgBenchmark", version=v"0.2.15"))
+          '
 
-      # run the benchmark suite
+      # run the benchmark suite and record the result as markdown
       - name: run benchmarks
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          JULIA_LOAD_PATH: "@:${{ github.workspace }}/benchmark:@stdlib"
         run: |
-          julia -e '
-            using BenchmarkCI
-            BenchmarkCI.judge()
-            BenchmarkCI.displayjudgement()
-            '
+          julia --startup-file=no --project="$RUNNER_TEMP/benchmark-runner" -e '
+          using PkgBenchmark
 
-      # generate and record the benchmark result as markdown
-      - name: generate benchmark result
-        run: |
-          body=$(julia -e '
-          using BenchmarkCI
+          let pkgdir = abspath(pwd())
+              mktempdir() do workspace
+                  script = joinpath(workspace, "benchmarks.jl")
+                  open(script, "w") do io
+                      project = joinpath(pkgdir, "benchmark")
+                      benchmark = joinpath(project, "benchmarks.jl")
+                      println(io, "using Pkg")
+                      println(io, "Pkg.activate(", repr(project), ")")
+                      println(io, "Pkg.instantiate()")
+                      println(io, "include(", repr(benchmark), ")")
+                  end
 
-          let
-              judgement = BenchmarkCI._loadjudge(BenchmarkCI.DEFAULT_WORKSPACE)
-              title = "JET Benchmark Result"
-              ciresult = BenchmarkCI.CIResult(; judgement, title)
-              BenchmarkCI.printcommentmd(stdout::IO, ciresult)
+                  judgement = PkgBenchmark.judge(
+                      pkgdir,
+                      ENV["BASE_SHA"];
+                      script,
+                  )
+                  open("benchmark-result.artifact", "w") do io
+                      println(io, "<details>")
+                      println(io, "<summary>JET Benchmark Result</summary>")
+                      println(io)
+                      println(io, "# Judge result")
+                      PkgBenchmark.export_markdown(io, judgement)
+                      println(io, "\n---\n")
+                      println(io, "# Target result")
+                      PkgBenchmark.export_markdown(
+                          io,
+                          PkgBenchmark.target_result(judgement),
+                      )
+                      println(io, "\n---\n")
+                      println(io, "# Baseline result")
+                      PkgBenchmark.export_markdown(
+                          io,
+                          PkgBenchmark.baseline_result(judgement),
+                      )
+                      println(io)
+                      println(io)
+                      println(io, "</details>")
+                  end
+              end
           end
-          ')
-          body="${body//'%'/'%25'}"
-          body="${body//$'\n'/'%0A'}"
-          body="${body//$'\r'/'%0D'}"
-          echo $body > ./benchmark-result.artifact
+          '
 
       # record the pull request number
       - name: record pull request number
