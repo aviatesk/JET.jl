@@ -15,29 +15,28 @@ on:
     types:
       - completed
 
+permissions:
+  actions: read
+  contents: read
+  pull-requests: write
+
 jobs:
   comment:
     runs-on: ubuntu-latest
-    if: >
-      ${{ github.event.workflow_run.event == 'pull_request' &&
-          github.event.workflow_run.conclusion == 'success' }}
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success'
     steps:
-      - uses: actions/checkout@v7
-
       # restore records from the artifacts
       - uses: dawidd6/action-download-artifact@v21
         with:
-          workflow: benchmark.yml
+          run_id: ${{ github.event.workflow_run.id }}
           name: performance-tracking
-          workflow_conclusion: success
-      - name: output benchmark result
-        id: output-result-markdown
-        run: |
-          echo ::set-output name=body::$(cat ./benchmark-result.artifact)
       - name: output pull request number
         id: output-pull-request-number
         run: |
-          echo ::set-output name=body::$(cat ./pull-request-number.artifact)
+          number=$(cat ./pull-request-number.artifact)
+          echo "body=$number" >> "$GITHUB_OUTPUT"
 
       # check if the previous comment exists
       - name: find comment
@@ -54,10 +53,11 @@ jobs:
         uses: peter-evans/create-or-update-comment@v5
         with:
           issue-number: ${{ steps.output-pull-request-number.outputs.body }}
-          body: ${{ steps.output-result-markdown.outputs.body }}
+          body-path: ./benchmark-result.artifact
       - name: update comment
         if: ${{ steps.fc.outputs.comment-id != 0 }}
         uses: peter-evans/create-or-update-comment@v5
         with:
           comment-id: ${{ steps.fc.outputs.comment-id }}
-          body: ${{ steps.output-result-markdown.outputs.body }}
+          body-path: ./benchmark-result.artifact
+          edit-mode: replace
