@@ -1734,7 +1734,7 @@ supplied as keyword arguments. Supplied values override the defaults below:
 !!! tip "About `target_modules` configuration"
     One of the most common issues of this analysis is that the results of `report_package(pkg)`
     can be overwhelmed by errors within `pkg`'s dependency packages.
-    In such cases, it is recommended to use the [`target_modules` configuration](@ref result-config)
+    In such cases, use the [`target_modules` configuration](@ref result-config)
     to narrow down the error scope to `pkg`'s module context:
     ```julia
     julia> report_package(JET)

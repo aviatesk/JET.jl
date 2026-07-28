@@ -148,8 +148,8 @@ end;
 @report_opt abmult(42)
 ```
 
-With the [`target_modules`](@ref result-config) configuration, we can easily
-limit the analysis scope to a specific module context:
+With the [`target_modules`](@ref result-config) configuration, we can limit
+the analysis scope to a specific module context:
 
 ```@repl quickstart
 function compute(x)  # problem: when ∑1/n exceeds `x` ?

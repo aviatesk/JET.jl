@@ -197,8 +197,9 @@ derive from type instability and type issues in your dependencies.
 In fact, type issues from dependencies are often so plentiful they flood your
 analysis with false positives, which can make working with JET harder.
 
-To reduce false positives, you can use the keywords `ignored_modules` and
-`target_modules`. Both take an iterable of modules.
+To reduce false positives, you can use the
+[`ignored_modules` and `target_modules`](@ref result-config) configuration
+keywords. Both take an iterable of modules.
 
 The former removes any errors that originate from any of the given modules,
 while the latter removes any errors _except_ ones originating from these
@@ -235,12 +236,12 @@ away as well:
 ```
 
 To match a single module without its submodules, wrap it in
-`JET.LastFrameModuleExact`.
+[`LastFrameModuleExact`](@ref result-config).
 
-The `AnyFrameModule` construct can be used to filter for (or against) any error
-where _any_ of the function calls in the callchain originates from the given
-module. For example, in the example above, the function call begins in `Main`
-and ends in `Base`, so the callchain includes both modules. Ignoring
+The [`AnyFrameModule`](@ref result-config) construct can filter for (or against)
+any error where _any_ of the function calls in the callchain originates from the
+given module. For example, in the example above, the function call begins in
+`Main` and ends in `Base`, so the callchain includes both modules. Ignoring
 `AnyFrameModule(Base)` _or_ `AnyFrameModule(Main)` will then ignore the error:
 
 ```@repl tutorial
