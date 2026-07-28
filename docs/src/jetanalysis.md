@@ -89,21 +89,32 @@ add a new `bar(::AbstractString)` definition.
 
 As for the second error, let's assume that, for some reason, we are not
 interested in fixing it and want to ignore errors that may happen within
-`Base`. We can use the [`target_modules`](@ref result-config) configuration to
-limit the analysis scope to the current module context and ignore the possible
-error that may happen within `sum(a)`[^1].
+`Base`. We can use the [`ignored_modules`](@ref result-config) configuration to
+exclude `Base` from the analysis scope and ignore the possible error that may
+happen within `sum(a)`[^1].
 
-[^1]: We used `target_modules` just for the sake of demonstration. To make it
+[^1]: We used `ignored_modules` just for the sake of demonstration. To make it
     more idiomatic, we should initialize `a` as a typed vector, `a = Int[]`, and
     then we will not get any problems from `sum(a)` even without the
-    `target_modules` configuration.
+    `ignored_modules` configuration.
 
 ```@repl quickstart
 # hot-fix the definition of `bar`
 bar(s::AbstractString) = parse(Int, s)
 
 # now no errors should be reported!
-@report_call target_modules=(@__MODULE__,) foo("1 2 3")
+@report_call ignored_modules=(Base,) foo("1 2 3")
+```
+
+The complementary [`target_modules`](@ref result-config) configuration keeps
+only the reports that match. A module given to these configurations matches
+that module *and its submodules*, where the matching stops at namespace roots:
+`Base` and package root modules do not count as submodules of `Main`. Since
+code defined interactively in the REPL lives in `Main`, we can get the same
+effect by retaining `Main` only:
+
+```@repl quickstart
+@report_call target_modules=(Main,) foo("1 2 3")
 ```
 
 So far, we have used the default error analysis mode, which collects problems
@@ -153,13 +164,13 @@ with the unit-testing infrastructure of Julia's
 [`Test` standard library](https://docs.julialang.org/en/v1/stdlib/Test/):
 
 ```@repl quickstart
-@test_call target_modules=(@__MODULE__,) foo("1 2 3")
+@test_call ignored_modules=(Base,) foo("1 2 3")
 
 using Test
 
 # we can get a nice summary using `@testset`!
 @testset "JET testset" begin
-    @test_call target_modules=(@__MODULE__,) foo("1 2 3") # should pass
+    @test_call ignored_modules=(Base,) foo("1 2 3") # should pass
 
     test_call(myifelse, (Integer, Int, Int); mode=:sound)
 

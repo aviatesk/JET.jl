@@ -704,6 +704,22 @@ end
         end
     end
 
+    @testset "namespace root filtering" begin
+        # `target_modules = (Main,)` should cover interactively-defined code
+        # without letting reports from `Base` through
+        m = Core.eval(Main, :(module $(gensym(:NamespaceRootFiltering))
+            foo(a) = (sum(a), undefsum(a))
+        end))
+        let result = report_call(m.foo, (String,); target_modules=(Main,))
+            r = only(get_reports_with_test(result))
+            @test is_global_undef_var(r, :undefsum)
+        end
+        let result = report_call(m.foo, (String,); ignored_modules=(Main,))
+            test_sum_over_string(result)
+            @test !any(r->is_global_undef_var(r, :undefsum), get_reports_with_test(result))
+        end
+    end
+
     @testset "Symbol-based filtering" begin
         let result = @report_call target_modules=(:BasicFiltering,) BasicFiltering.foo([1,2,3])
             reports = get_reports_with_test(result)

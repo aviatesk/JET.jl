@@ -172,7 +172,7 @@ end
 
 @report_opt compute(30)  # bunch of reports will be reported from the `println` call
 
-@report_opt target_modules=(@__MODULE__,) compute(30)  # focus on what we wrote, and no error should be reported
+@report_opt target_modules=(Main,) compute(30)  # focus on what we wrote, and no error should be reported
 ```
 
 There is also [`function_filter`](@ref optanalysis-config), which can ignore
@@ -187,7 +187,7 @@ unit-testing infrastructure, and we can use it like other `Test` macros e.g.
 ```@repl quickstart
 @test_opt sumup(cos)
 
-@test_opt target_modules=(@__MODULE__,) compute(30)
+@test_opt target_modules=(Main,) compute(30)
 
 using Test
 
@@ -197,7 +197,7 @@ using Test
     n = rand(Int)
     @test_opt sumup(cos, n) # should pass
 
-    @test_opt target_modules=(@__MODULE__,) compute(30) # should pass
+    @test_opt target_modules=(Main,) compute(30) # should pass
 
     @test_opt broken=true compute(30) # should pass with the "broken" annotation
 end

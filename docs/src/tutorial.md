@@ -217,25 +217,35 @@ This throws in a `Base` function if we pass `nothing` into it:
 ```
 
 Since the error originates from `Base`, we can filter the error away by ignoring
-`Base`, or equivalently, we may retain only the ones from `Main`. Note that we
-pass `(Base,)` as a 1-element Tuple of modules:
+`Base`. Note that we pass `(Base,)` as a 1-element Tuple of modules:
 
 ```@repl tutorial
 @report_call ignored_modules=(Base,) g(nothing)
-@report_call target_modules=(@__MODULE__,) g(nothing)
 ```
+
+Equivalently, we may retain only the reports from our own code with
+`target_modules`. A module given to these keywords matches that module *and
+its submodules*, where the matching stops at namespace roots: `Base` and
+package root modules do not count as submodules of `Main`. Since code defined
+interactively in the REPL lives in `Main`, retaining `Main` filters the error
+away as well:
+
+```@repl tutorial
+@report_call target_modules=(Main,) g(nothing)
+```
+
+To match a single module without its submodules, wrap it in
+`JET.LastFrameModuleExact`.
 
 The `AnyFrameModule` construct can be used to filter for (or against) any error
 where _any_ of the function calls in the callchain originates from the given
-module.
-For example, in the example above, the function call begins in `Main` and ends
-in `Base`, so the callchain includes both modules.
-Ignoring `AnyFrameModule(Base)` _or_ `AnyFrameModule(Main)` will then ignore the
-error:
+module. For example, in the example above, the function call begins in `Main`
+and ends in `Base`, so the callchain includes both modules. Ignoring
+`AnyFrameModule(Base)` _or_ `AnyFrameModule(Main)` will then ignore the error:
 
 ```@repl tutorial
 @report_call ignored_modules=(AnyFrameModule(Base),) g(nothing)
-@report_call ignored_modules=(AnyFrameModule(@__MODULE__),) g(nothing)
+@report_call ignored_modules=(AnyFrameModule(Main),) g(nothing)
 ```
 
 Similarly, the error would be retained if `target_modules` would have been
