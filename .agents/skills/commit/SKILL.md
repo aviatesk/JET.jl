@@ -48,6 +48,16 @@ Use backticks for code elements such as function names, variables, and paths.
 ## Line length
 
 Ensure the maximum line length never exceeds 72 characters.
+Never rely on Git or an editor to wrap the message automatically.
+
+Before every commit, write the complete message to a uniquely named temporary
+file with explicit line breaks, then commit with
+`GIT_EDITOR=true git -c core.hooksPath=.githooks commit -F <message-file>`.
+Do not use repeated `git commit -m` arguments for a multi-paragraph message.
+
+The command-local `core.hooksPath` setting automatically runs the tracked
+`commit-msg` hook and rejects lines longer than 72 characters.
+Never use `--no-verify` to bypass it.
 
 ## GitHub references
 
@@ -106,10 +116,6 @@ argument. This change supports both legacy and versioned module layouts.
 ```
 
 # Safety guidelines
-
-Before committing user-facing changes, use the
-[`changelog`](../changelog/SKILL.md) skill to decide whether `CHANGELOG.md`
-needs an entry.
 
 See the ["Git operations" section in AGENTS.md][git-operations].
 

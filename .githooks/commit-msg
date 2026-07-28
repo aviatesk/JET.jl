@@ -1,0 +1,17 @@
+#!/bin/sh
+
+set -eu
+
+message_file=${1:?"usage: commit-msg <message-file>"}
+
+awk '
+    /^#/ { next }
+    length($0) > 72 {
+        printf "%s:%d: commit message line has %d characters; maximum is 72\n",
+            ARGV[1], NR, length($0) > "/dev/stderr"
+        failed = 1
+    }
+    END {
+        exit failed ? 1 : 0
+    }
+' "$message_file"
