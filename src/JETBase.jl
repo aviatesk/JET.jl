@@ -542,6 +542,14 @@ iterator whose elements are any of the following matchers for a
 - a user-defined `T <: JET.ReportMatcher`: matches according to an extension
   of `JET.match_report(::T, report::InferenceErrorReport)`
 
+!!! note "Module containment stops at namespace roots"
+    The non-`Exact` matchers accept a module *and its submodules*, where
+    containment follows lexical nesting but stops at namespace roots: `Base`,
+    `Core`, and package root modules are not considered submodules of `Main`.
+    `target_modules = (Main,)` therefore matches only code defined
+    interactively in the REPL or in an analyzed script, without also matching
+    reports from `Base`.
+
 ---
 - `target_modules = nothing` \\
   Filters reports by the contexts in which problems should be reported.
@@ -569,7 +577,7 @@ iterator whose elements are any of the following matchers for a
 ```julia-repl
 julia> function foo(a)
            r1 = sum(a)       # => Base: MethodError(+(::Char, ::Char)), MethodError(zero(::Type{Char}))
-           r2 = undefsum(a)  # => @__MODULE__: UndefVarError(:undefsum)
+           r2 = undefsum(a)  # => Main: UndefVarError(:undefsum)
            return r1, r2
        end;
 
@@ -604,9 +612,9 @@ julia> @report_call foo("julia")
 │ `Main.undefsum` is not defined: undefsum
 └────────────────────
 
-# With `target_modules=(JET.LastFrameModuleExact(@__MODULE__),)`, JET reports only
-# problems detected in the `@__MODULE__` module itself:
-julia> @report_call target_modules=(JET.LastFrameModuleExact(@__MODULE__),) foo("julia")
+# With `target_modules=(Main,)`, JET reports only problems detected in code
+# defined interactively in the REPL:
+julia> @report_call target_modules=(Main,) foo("julia")
 ═════ 1 possible error found ═════
 ┌ foo(a::String) @ Main ./REPL[14]:3
 │ `Main.undefsum` is not defined: undefsum
@@ -664,8 +672,12 @@ struct AnyFrameMethod <: ReportMatcher
     meth::Union{Function,Method,Symbol}
 end
 
+# Module containment follows lexical nesting but stops at namespace roots
+# (`Base.moduleroot` semantics): in particular `Base` is not a submodule of `Main`,
+# so matchers given `Main` only cover interactively- or script-defined code.
 function issubmodule(child::Module, parent::Module)
     child === parent && return true
+    Base.is_root_module(child) && return false
     pm = parentmodule(child)
     pm === child && return false
     return issubmodule(pm, parent)
@@ -673,6 +685,7 @@ end
 
 function issubmoduleof(mod::Module, name::Symbol)
     nameof(mod) === name && return true
+    Base.is_root_module(mod) && return false
     pm = parentmodule(mod)
     pm === mod && return false
     return issubmoduleof(pm, name)

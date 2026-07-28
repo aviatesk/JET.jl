@@ -73,6 +73,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking**: JET no longer accepts Julia compiler parameter keywords such as
   `max_methods` and `inlining` as user-facing configuration options for analysis
   entry points; such keywords now throw `JETConfigError`.
+- Module matchers for the `target_modules`/`ignored_modules` configurations now
+  follow lexical module nesting that stops at namespace roots: `Base` is no
+  longer considered a submodule of `Main`. `target_modules = (Main,)` therefore
+  matches only code defined interactively in the REPL or in an analyzed script,
+  instead of also matching every report from `Base`.
 - JET now loads empty stubs on unsupported future Julia versions while
   remaining installable as a test dependency.
 - Overhauled JET's documentation across the project.
