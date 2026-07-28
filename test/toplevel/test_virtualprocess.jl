@@ -2187,7 +2187,7 @@ function test_report_package(test_func, module_ex;
             end
             Pkg.precompile(; io=devnull)
 
-            pkgid, _ = JET.find_pkg(pkgname)
+            pkgid = Base.identify_package(pkgname)::Base.PkgId
             pkgmod = Base.require(pkgid)
 
             res = report_package(pkgmod; toplevel_logger=nothing, jetconfigs...)
