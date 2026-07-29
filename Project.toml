@@ -20,15 +20,12 @@ Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [weakdeps]
-# Cthulhu = "f68482b8-f384-11e8-15f7-abe071a5a75f"
 
 [extensions]
-# JETCthulhuExt = "Cthulhu"
 
 [compat]
 CodeTracking = "3"
 Compiler = "0.1"
-# Cthulhu = "2.17"
 InteractiveUtils = "1.10"
 JuliaInterpreter = "0.11.4"
 JuliaSyntax = "1, 2"
