@@ -583,6 +583,18 @@ ToplevelAbstractAnalyzer(interp::JETConcreteInterpreter) = interp.analyzer
 interpret_world(::JETConcreteInterpreter) = JET_INTERPRET_WORLD[]
 
 """
+    concretization_patterns(interp::ConcreteInterpreter, filename::AbstractString)
+
+Return an iterable of surface-syntax expression patterns to use while processing
+`filename`. The returned patterns are normalized before matching.
+
+This optional interface defaults to the patterns configured in the current
+`ToplevelConfig`.
+"""
+concretization_patterns(interp::ConcreteInterpreter, ::AbstractString) =
+    InterpretationState(interp).config.concretization_patterns
+
+"""
     virtual_process(interp::ConcreteInterpreter,
                     x::Union{AbstractString,JS.SyntaxNode},
                     filename::AbstractString,
@@ -1046,6 +1058,10 @@ function _virtual_process!(interp::ConcreteInterpreter,
     state.curline = first_line
     push!(state.files_stack, state.filename)
 
+    file_concretization_patterns = Any[
+        striplines(normalise(pattern))
+        for pattern in concretization_patterns(interp, state.filename)]
+
     # transform, and then analyze sequentially
     # IDEA the following code has some of duplicated work with `JuliaInterpreter.ExprSpliter` and we may want to factor them out
     vnodes = VNode[]
@@ -1081,7 +1097,7 @@ function _virtual_process!(interp::ConcreteInterpreter,
         # since patterns are expected to work on surface level AST, we should configure it
         # here before macro expansion and lowering
         if !force_concretize
-            for pat in state.config.concretization_patterns
+            for pat in file_concretization_patterns
                 if @capture(x, $pat)
                     let x=x; toplevel_logger(state.config; filter=≥(JET_LOGGER_LEVEL_DEBUG)) do @nospecialize(io::IO)
                         x′ = striplines(normalise(x))
