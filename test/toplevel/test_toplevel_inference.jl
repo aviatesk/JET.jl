@@ -366,6 +366,8 @@ end
             @test occursin("JET needs its concrete value", msg)
             @test occursin("JET tracked that the binding exists", msg)
             @test occursin("`const RandomType = ...`", msg)
+            @test occursin("This helps only when JET can infer the concrete value", msg)
+            @test occursin("if JET still cannot determine the value", msg)
             @test occursin("concretization_patterns = [:(RandomType = x_)]", msg)
             @test occursin("because matching code is executed", msg)
         end
