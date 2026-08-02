@@ -1293,11 +1293,8 @@ end
     end
 end
 
-# will be used in the following two testsets
-let fixtures_dir = normpath(pkgdir(JET), "test", "fixtures")
-    global const CONCRETIZATION_PATTERNS_FILE   = normpath(fixtures_dir, "concretization_patterns.jl")
-    global const CONCRETIZATION_PATTERNS_CONFIG = normpath(fixtures_dir, "..JET.toml")
-end
+const CONCRETIZATION_PATTERNS_FILE =
+    normpath(pkgdir(JET), "test", "fixtures", "concretization_patterns.jl")
 
 @testset "custom concretization pattern" begin
     # custom concretization pattern should work on AST level
@@ -1355,45 +1352,6 @@ end
             const foo = Dict()
         end concretization_patterns = [:(const foo = Dict())]
         @test isconcrete(res, vmod, :foo)
-    end
-end
-
-# NOTE better to be in test_misc.jl, but here it is since this test is only valid when the testset above gets passed
-@testset "configuration file" begin
-    mktempdir() do dir
-        analysis_target = normpath(dir, "concretization_patterns.jl")
-        config_target   = normpath(dir, JET.CONFIG_FILE_NAME)
-
-        back = pwd()
-        try # in order to check the functionality, fixtures/..JET.toml logs toplevel analysis
-            # into toplevel.txt (relative to the current working directory)
-            # and so let's `cd` into the temporary directory to not pollute this directory
-            cd(dir)
-
-            open(CONCRETIZATION_PATTERNS_FILE) do f
-                write(analysis_target, f)
-            end
-
-            # no configuration, thus top-level analysis should fail
-            let res = report_file2(analysis_target)
-                nreported = print_reports(IOBuffer(), res)
-                @test !iszero(nreported)
-            end
-
-            # setup a configuration file
-            open(CONCRETIZATION_PATTERNS_CONFIG) do f
-                write(config_target, f)
-            end
-
-            # now any top-level analysis failure shouldn't happen
-            let res = report_file2(analysis_target)
-                nreported = print_reports(IOBuffer(), res)
-                @test iszero(nreported) # no error happened
-                @test isfile("toplevel.txt") # not closed yet
-            end
-        finally
-            cd(back)
-        end
     end
 end
 

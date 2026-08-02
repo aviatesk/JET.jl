@@ -45,11 +45,3 @@ JET.PrintConfig
 ```@docs
 JET.VSCode.VSCodeConfig
 ```
-
-
-
-## [Configuration File](@id config-file)
-
-```@docs
-JET.parse_config_file
-```
