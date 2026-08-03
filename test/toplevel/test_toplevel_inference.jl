@@ -347,6 +347,31 @@ end
     @test isempty(res.res.inference_error_reports)
 end
 
+@testset "`concretization_pattern`" begin
+    @test JET.concretization_pattern(:(A = rand(Int))) == :(A = x_)
+    @test JET.concretization_pattern(:(A::DataType = rand(Int))) == :(A::DataType = x_)
+    @test JET.concretization_pattern(:(global A = rand(Int))) == :(global A = x_)
+    @test JET.concretization_pattern(:(const A = rand(Int))) == :(const A = x_)
+    @test JET.concretization_pattern(:(A = B = rand(Int))) == :(A = B = x_)
+    @test JET.concretization_pattern(:((A, B) = rand(Int, 2))) == :((A, B) = x_)
+    # short-form function definitions never give a global binding its value
+    @test JET.concretization_pattern(:(f(x) = 2x)) === nothing
+    @test JET.concretization_pattern(:(f(x::T) where T = 2x)) === nothing
+    @test JET.concretization_pattern(:(A + B)) === nothing
+    @test JET.concretization_pattern(:A) === nothing
+    # a nested assignment would need a pattern covering the whole top-level statement,
+    # which is left to the user to write
+    @test JET.concretization_pattern(:(let; global A = rand(Int); end)) === nothing
+    @test JET.concretization_pattern(:(if c; A = 1; else; A = 2; end)) === nothing
+
+    # the statement is located regardless of whether a pattern could be derived
+    let assignment = JET.toplevel_assignment(:(let; global A = rand(Int); end), "f.jl", 2)
+        @test assignment.pattern === nothing
+        @test assignment.file == "f.jl"
+        @test assignment.line == 2
+    end
+end
+
 @testset "MissingConcretizationErrorReport" begin
     let res = @analyze_toplevel begin
             RandomType = rand((Bool,Int))
@@ -361,6 +386,8 @@ end
             @test isa(report, MissingConcretizationErrorReport)
             @test report.var.name === :RandomType
             @test !report.isconst
+            @test report.assignment isa JET.ToplevelAssignment
+            @test report.assignment.pattern == :(RandomType = x_)
 
             msg = sprint(JET.print_report, report)
             @test occursin("JET needs its concrete value", msg)
@@ -370,7 +397,93 @@ end
             @test occursin("if JET still cannot determine the value", msg)
             @test occursin("concretization_patterns = [:(RandomType = x_)]", msg)
             @test occursin("because matching code is executed", msg)
+            @test occursin("the assignment at $(report.assignment.file):$(report.assignment.line)", msg)
         end
+    end
+
+    let res = @analyze_toplevel begin
+            TypedRandomType::DataType = rand((Bool, Int))
+            struct TypedStruct
+                field::TypedRandomType
+            end
+        end
+        report = only(res.res.toplevel_error_reports)
+        @test report isa MissingConcretizationErrorReport
+        @test report.assignment isa JET.ToplevelAssignment
+        @test report.assignment.pattern == :(TypedRandomType::DataType = x_)
+    end
+
+    let res = @analyze_toplevel concretization_patterns = [:(TypedRandomType::DataType = x_)] begin
+            TypedRandomType::DataType = rand((Bool, Int))
+            struct TypedStruct
+                field::TypedRandomType
+            end
+        end
+        @test isempty(res.res.toplevel_error_reports)
+    end
+
+    let res = @analyze_toplevel begin
+            global GlobalRandomType = rand((Bool, Int))
+            struct GlobalStruct
+                field::GlobalRandomType
+            end
+        end
+        report = only(res.res.toplevel_error_reports)
+        @test report isa MissingConcretizationErrorReport
+        @test report.assignment isa JET.ToplevelAssignment
+        @test report.assignment.pattern == :(global GlobalRandomType = x_)
+    end
+
+    let res = @analyze_toplevel concretization_patterns = [:(global GlobalRandomType = x_)] begin
+            global GlobalRandomType = rand((Bool, Int))
+            struct GlobalStruct
+                field::GlobalRandomType
+            end
+        end
+        @test isempty(res.res.toplevel_error_reports)
+    end
+
+    mktempdir() do dir
+        main_file = joinpath(dir, "main.jl")
+        assignment_file = joinpath(dir, "config.jl")
+        use_file = joinpath(dir, "use.jl")
+        write(main_file, "include(\"config.jl\")\ninclude(\"use.jl\")\n")
+        write(assignment_file, "IncludedRandomType::DataType = rand((Bool, Int))\n")
+        write(use_file, "struct IncludedStruct\n    field::IncludedRandomType\nend\n")
+
+        res = report_file2(main_file)
+        report = only(res.res.toplevel_error_reports)
+        @test report isa MissingConcretizationErrorReport
+        @test report.file == use_file
+        @test report.assignment isa JET.ToplevelAssignment
+        @test report.assignment.file == assignment_file
+        @test report.assignment.pattern == :(IncludedRandomType::DataType = x_)
+        # the report is anchored at the use site, so the message needs to point elsewhere
+        @test occursin("the assignment at $assignment_file:1", sprint(JET.print_report, report))
+    end
+
+    # a pattern covering the enclosing statement is left to the user to write, so JET must
+    # not suggest one; `:(NestedRandomType = x_)` in particular would never match here.
+    # The statement is still located, which is what the user needs to write the pattern.
+    @testset "nested assignment statement" begin
+        res = JET.report_text("""
+            let
+                global NestedRandomType = rand((Bool, Int))
+            end
+            struct NestedStruct
+                field::NestedRandomType
+            end
+            """)
+        report = only(res.res.toplevel_error_reports)
+        @test report isa MissingConcretizationErrorReport
+        @test report.assignment isa JET.ToplevelAssignment
+        @test report.assignment.pattern === nothing
+        @test report.assignment.line == 1 # the `let` statement, not the use site
+        @test report.line == 4
+        msg = sprint(JET.print_report, report)
+        @test occursin("the assignment at $(report.assignment.file):1", msg)
+        @test occursin("could not derive one from the statement holding that", msg)
+        @test !occursin("concretization_patterns = [:(NestedRandomType = x_)]", msg)
     end
 end
 

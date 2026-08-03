@@ -132,24 +132,29 @@ end
 struct MissingConcretizationError <: Exception
     isconst::Bool
     var::GlobalRef
+    assignment::Union{Nothing,ToplevelAssignment}
 end
 
 struct MissingConcretizationErrorReport <: ToplevelErrorReport
     isconst::Bool
     var::GlobalRef
+    assignment::Union{Nothing,ToplevelAssignment}
     file::String
     line::Int
 end
 function print_report(io::IO, report::MissingConcretizationErrorReport)
-    (; isconst, var) = report
+    (; isconst, var, assignment) = report
     (; mod, name) = var
-    pattern = isconst ? ":(const $name = x_)" : ":($name = x_)"
-    example = "`report_file(\"path/to/file.jl\"; concretization_patterns = [$pattern])`"
     println(io, "`$mod.$name` is used while JET is processing top-level definitions,")
     println(io, "so JET needs its concrete value (the actual runtime value).")
     println(io)
     println(io, "JET tracked that the binding exists, but it did not actually evaluate")
-    println(io, "the assignment that gives this binding its value.")
+    if assignment === nothing
+        println(io, "the assignment that gives this binding its value.")
+    else
+        println(io, "the assignment at $(assignment.file):$(assignment.line) that gives")
+        println(io, "this binding its value.")
+    end
     println(io)
     if !isconst
         println(io, "- If `$name` is intended to be a stable configuration value,")
@@ -162,9 +167,23 @@ function print_report(io::IO, report::MissingConcretizationErrorReport)
         println(io, "- Add a `concretization_patterns` entry for the assignment.")
     end
     println(io, "  This tells JET to actually evaluate top-level code that matches the")
-    println(io, "  pattern. For example:")
-    println(io, "  ", example)
-    println(io, "  Use a specific pattern when possible, because matching code is executed.")
+    patternex = assignment === nothing ? nothing : assignment.pattern
+    if patternex !== nothing
+        pattern = sprint(Base.show_unquoted, patternex)
+        println(io, "  pattern. For example:")
+        println(io, "  `report_file(\"path/to/file.jl\"; concretization_patterns = [:($pattern)])`")
+        println(io, "  Use a specific pattern when possible, because matching code is executed.")
+    elseif assignment !== nothing
+        println(io, "  pattern. Patterns are matched against whole top-level statements,")
+        println(io, "  and JET could not derive one from the statement holding that")
+        println(io, "  assignment, so the pattern has to be written by hand to match the")
+        println(io, "  statement as it appears in the source.")
+    else
+        println(io, "  pattern. Patterns are matched against whole top-level statements,")
+        println(io, "  and JET could not identify the statement that assigns this binding,")
+        println(io, "  so the pattern has to be written by hand to match that statement as")
+        println(io, "  it appears in the source.")
+    end
     println(io, "- As a last resort, use `concretization_patterns = [:(x_)]` to evaluate")
     println(io, "  all top-level code in the module. This may run side effects and can")
     print(io, "  make analysis slower.")
@@ -919,6 +938,34 @@ function bail_out_concretized(concretized::BitVector, src::CodeInfo)
     return false
 end
 
+"""
+    concretization_pattern(@nospecialize x) -> pattern::Union{Nothing,Expr}
+
+Build a `concretization_patterns` entry matching the top-level assignment statement `x`,
+by replacing its innermost right-hand side with the `MacroTools` wildcard `x_`.
+Only the assignment spine is copied, so the right-hand side, which can be arbitrarily
+large, is neither copied nor retained.
+
+Returns `nothing` when `x` is not itself a top-level assignment, e.g. when the assignment
+is nested within a `let` block. Since patterns are matched against whole top-level
+statements, no useful pattern can be derived from the assignment alone in that case.
+Short-form function definitions are rejected too: they never give a global binding its
+value, and `:(f(x) = x_)` would concretize every definition of `f`.
+"""
+function concretization_pattern(@nospecialize(x))
+    if isexpr(x, (:global, :const), 1)
+        inner = concretization_pattern(only((x::Expr).args))
+        return inner === nothing ? nothing : Expr((x::Expr).head, inner)
+    elseif isexpr(x, :(=), 2) && !Base.is_short_function_def(x)
+        lhs, rhs = (x::Expr).args
+        return Expr(:(=), deepcopy(lhs), @something concretization_pattern(rhs) :x_)
+    end
+    return nothing
+end
+
+toplevel_assignment(@nospecialize(x), file::String, line::Int) =
+    ToplevelAssignment(concretization_pattern(x), file, line)
+
 struct VNode
     force_concretize::Bool
     node::JS.SyntaxNode
@@ -1203,6 +1250,7 @@ function _virtual_process!(interp::ConcreteInterpreter,
             continue
         end
 
+        current_toplevel_assignment = toplevel_assignment(x, state.filename, state.curline)
         blk = Expr(:block, lnn, x) # attach current line number info
         lwr = lower_with_err_handling(interp, node, blk)
 
@@ -1227,7 +1275,7 @@ function _virtual_process!(interp::ConcreteInterpreter,
             continue
         end
 
-        analyzer = ToplevelAbstractAnalyzer(interp, concretized)
+        analyzer = ToplevelAbstractAnalyzer(interp, concretized; current_toplevel_assignment)
 
         result = analyze_toplevel!(analyzer, src, state.context)
 
@@ -1691,7 +1739,7 @@ function JuliaInterpreter.lookup(interp::ConcreteInterpreter, frame::Frame, @nos
                         return typ.val
                     end
                 end
-                throw(MissingConcretizationError(val.isconst, node))
+                throw(MissingConcretizationError(val.isconst, node, val.assignment))
             end
             return val
         else
@@ -1704,7 +1752,6 @@ function JuliaInterpreter.lookup(interp::ConcreteInterpreter, frame::Frame, @nos
                 else
                     # allow ConcreteInterpreter to use actual concrete values that have been
                     # figured out by the abstract analyzer
-                    raise = true
                     if isdefined(binding_state, :typ)
                         typ = binding_state.typ
                         if typ isa Const
@@ -1713,7 +1760,7 @@ function JuliaInterpreter.lookup(interp::ConcreteInterpreter, frame::Frame, @nos
                     end
                     # if this binding is not concrete, then propagate this error type so that
                     # it can be handled by `handle_err`
-                    raise && throw(MissingConcretizationError(binding_state.isconst, node))
+                    throw(MissingConcretizationError(binding_state.isconst, node, binding_state.assignment))
                 end
             end
         end
@@ -2069,7 +2116,7 @@ function JuliaInterpreter.handle_err(
 
     state = InterpretationState(interp)
     if err isa MissingConcretizationError
-        report = MissingConcretizationErrorReport(err.isconst, err.var, state.filename, state.curline)
+        report = MissingConcretizationErrorReport(err.isconst, err.var, err.assignment, state.filename, state.curline)
     else
         report = ActualErrorWrapped(err, st, state.filename, state.curline)
     end
