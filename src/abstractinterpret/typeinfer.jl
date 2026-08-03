@@ -499,7 +499,9 @@ function CC.global_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::In
     end
     isconcretized = JET.isconcretized(analyzer, sv) # this statement has been analyzed by `ConcreteInterpreter`
     newty′ = Ref{Any}(newty)
-    isconditional = istoplevelframe(sv) ? let postdomtree = CC.construct_postdomtree(sv.cfg)
+    istoplevel = istoplevelframe(sv)
+    assignment = istoplevel ? get_current_toplevel_assignment(analyzer) : nothing
+    isconditional = istoplevel ? let postdomtree = CC.construct_postdomtree(sv.cfg)
         !CC.postdominates(postdomtree, sv.currbb, 1)
     end : true
     (valid_worlds, ret) = CC.scan_partitions(analyzer, g, sv.world) do analyzer::AbstractAnalyzer, ::Core.Binding, partition::Core.BindingPartition
@@ -511,7 +513,7 @@ function CC.global_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::In
             # to track their types precisely.
             # However, by accurately determining whether a top-level assignment is conditional,
             # it is possible to track such bindings’ `isdefined` status precisely.
-            get_binding_states(analyzer)[partition] = AbstractBindingState(false, isconditional)
+            get_binding_states(analyzer)[partition] = AbstractBindingState(false, isconditional; assignment)
         end
         return rte
     end
@@ -609,6 +611,7 @@ end # @static if isdefinedglobal(Core, :declare_const)
 
 function const_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::InferenceState, saw_latestworld::Bool, gr::GlobalRef,
                                   @nospecialize(new_binding_typ))
+    @assert istoplevelframe(sv)
     if saw_latestworld
         return Pair{Any,Any}(Nothing, ErrorException)
     end
@@ -616,6 +619,7 @@ function const_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::Infere
     new_binding_typ′ = Ref{Any}(new_binding_typ)
     postdomtree = CC.construct_postdomtree(sv.cfg)
     isconditional = !CC.postdominates(postdomtree, sv.currbb, 1)
+    assignment = get_current_toplevel_assignment(analyzer)
     (valid_worlds, ret) = CC.scan_partitions(analyzer, gr, sv.world) do analyzer::ToplevelAbstractAnalyzer, _binding::Core.Binding, partition::Core.BindingPartition
         rte = const_assignment_binding_rt_exct(analyzer, partition)
         rt, _exct = rte
@@ -627,15 +631,20 @@ function const_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::Infere
                 binding_states = get_binding_states(analyzer)
                 binding_state = @lock binding_states.lock begin
                     if !isconditional
-                        new_state = AbstractBindingState(true, false, new_binding_typ′[])
+                        new_state = AbstractBindingState(true, false, new_binding_typ′[]; assignment)
                     elseif haskey(binding_states, partition)
                         old_binding_state = binding_states[partition]
                         @assert old_binding_state.isconst && isdefined(old_binding_state, :typ)
                         newmaybeundef = old_binding_state.maybeundef & isconditional
                         newtyp = old_binding_state.typ ⊔ new_binding_typ′[]
-                        new_state = AbstractBindingState(true, newmaybeundef, newtyp)
+                        # each top-level statement builds its own `ToplevelAssignment`, so
+                        # `===` here means "the same statement"; keep it only then, since
+                        # no single pattern can stand for two conflicting statements
+                        same_statement = old_binding_state.assignment === assignment
+                        merged_assignment = same_statement ? assignment : nothing
+                        new_state = AbstractBindingState(true, newmaybeundef, newtyp; assignment=merged_assignment)
                     else
-                        new_state = AbstractBindingState(true, true, new_binding_typ′[])
+                        new_state = AbstractBindingState(true, true, new_binding_typ′[]; assignment)
                     end
                     binding_states[partition] = new_state
                     new_state
