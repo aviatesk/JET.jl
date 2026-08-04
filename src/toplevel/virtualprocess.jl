@@ -1102,6 +1102,184 @@ function lower_with_err_handling(interp::ConcreteInterpreter, ::JS.SyntaxNode, x
     end
 end
 
+const TEST_MACRO_NAMES = Set{Symbol}((
+    Symbol("@test"),
+    Symbol("@test_broken"),
+    Symbol("@test_skip"),
+    Symbol("@test_throws"),
+    Symbol("@test_logs"),
+    Symbol("@test_warn"),
+    Symbol("@test_nowarn"),
+    Symbol("@test_deprecated"),
+    Symbol("@inferred"),
+    Symbol("@testset"),
+))
+
+function test_macro_name(mod::Module, @nospecialize(mac))
+    if mac isa GlobalRef
+        mac.mod === Test || return nothing
+        return mac.name
+    elseif mac isa Symbol
+        @invokelatest(isdefinedglobal(mod, mac)) || return nothing
+        isdefinedglobal(Test, mac) || return nothing
+        @invokelatest(getglobal(mod, mac)) === getglobal(Test, mac) || return nothing
+        return mac
+    elseif isexpr(mac, :., 2)
+        modname, name = mac.args
+        name isa QuoteNode || return nothing
+        name = name.value
+        name isa Symbol || return nothing
+        modname isa Symbol || return nothing
+        @invokelatest(isdefinedglobal(mod, modname)) || return nothing
+        @invokelatest(getglobal(mod, modname)) === Test || return nothing
+        return name
+    end
+    return nothing
+end
+
+# Prevent the synthetic result of a Test macro replacement from affecting the
+# surrounding inference result while preserving its runtime value.
+hide_test_replacement_value(@nospecialize(value)) =
+    Expr(:call, GlobalRef(Base, :inferencebarrier), value)
+
+function discard_test_expression_value(@nospecialize(ex))
+    ret = quote
+        try
+            $ex
+        catch
+        end
+        $(hide_test_replacement_value(nothing))
+    end
+    return Base.remove_linenums!(ret)
+end
+
+function preserve_test_expression_value(@nospecialize(exs...))
+    value = gensym(:test_value)
+    ret = quote
+        let $value = nothing
+            try
+                $(exs[1:end-1]...)
+                $value = $(last(exs))
+            catch
+            end
+            $(hide_test_replacement_value(value))
+        end
+    end
+    return Base.remove_linenums!(ret)
+end
+
+macro_argument_value(@nospecialize(ex)) = isexpr(ex, :(=), 2) ? last(ex.args) : ex
+
+function replace_test(@nospecialize(ex), kws::Vector{Any})
+    broken = Any[kw.args[2] for kw in kws if isexpr(kw, :(=), 2) && kw.args[1] === :broken]
+    skip = Any[kw.args[2] for kw in kws if isexpr(kw, :(=), 2) && kw.args[1] === :skip]
+    kws = Any[kw for kw in kws if !(isexpr(kw, :(=), 2) && kw.args[1] ∈ (:skip, :broken))]
+    length(broken) ≤ 1 || return nothing
+    length(skip) ≤ 1 || return nothing
+    isempty(skip) || isempty(broken) || return nothing
+    try
+        Test.test_expr!("@test", ex, kws...)
+    catch
+        return nothing
+    end
+    test_expr = discard_test_expression_value(ex)
+    if !isempty(skip)
+        ret = quote
+            if $(only(skip))
+                $(hide_test_replacement_value(nothing))
+            else
+                $test_expr
+            end
+        end
+        return Base.remove_linenums!(ret)
+    elseif !isempty(broken)
+        return Expr(:block, only(broken), test_expr)
+    end
+    return test_expr
+end
+
+function replace_test_macrocall(name::Symbol, args::Vector{Any})
+    exs = args[3:end]
+    if name === Symbol("@test")
+        isempty(exs) && return nothing
+        return replace_test(first(exs), Any[exs[2:end]...])
+    elseif name === Symbol("@test_broken")
+        isempty(exs) && return nothing
+        ex, kws = first(exs), exs[2:end]
+        try
+            Test.test_expr!("@test_broken", ex, kws...)
+        catch
+            return nothing
+        end
+        return discard_test_expression_value(ex)
+    elseif name === Symbol("@test_skip")
+        isempty(exs) && return nothing
+        ex, kws = first(exs), exs[2:end]
+        try
+            Test.test_expr!("@test_skip", ex, kws...)
+        catch
+            return nothing
+        end
+        return hide_test_replacement_value(nothing)
+    elseif name === Symbol("@test_throws")
+        length(exs) == 2 || return nothing
+        return discard_test_expression_value(Expr(:block, exs...))
+    elseif name === Symbol("@test_logs")
+        isempty(exs) && return nothing
+        values = Any[macro_argument_value(ex) for ex in exs[1:end-1]]
+        push!(values, last(exs))
+        return preserve_test_expression_value(values...)
+    elseif name === Symbol("@test_warn")
+        length(exs) == 2 || return nothing
+        return preserve_test_expression_value(exs...)
+    elseif name === Symbol("@test_nowarn")
+        length(exs) == 1 || return nothing
+        return preserve_test_expression_value(exs...)
+    elseif name === Symbol("@test_deprecated")
+        1 ≤ length(exs) ≤ 2 || return nothing
+        return preserve_test_expression_value(exs...)
+    elseif name === Symbol("@inferred")
+        1 ≤ length(exs) ≤ 2 || return nothing
+        return preserve_test_expression_value(exs...)
+    elseif name === Symbol("@testset")
+        isempty(exs) && return nothing
+        values = Any[macro_argument_value(ex) for ex in exs[1:end-1]]
+        body = last(exs)
+        if isexpr(body, :for, 2)
+            body = copy(body)
+            body.args[2] = Expr(:block, values..., body.args[2])
+            empty!(values)
+        end
+        ret = quote
+            let
+                try
+                    $(values...)
+                    $body
+                catch
+                end
+                $(hide_test_replacement_value(nothing))
+            end
+        end
+        return Base.remove_linenums!(ret)
+    end
+    return nothing
+end
+
+function replace_test_macrocalls(@nospecialize(x), mod::Module)
+    x isa Expr || return x
+    isexpr(x, (:quote, :inert)) && return x
+    if isexpr(x, :macrocall)
+        name = test_macro_name(mod, first(x.args))
+        name ∈ TEST_MACRO_NAMES || return x
+        replaced = Expr(:macrocall, x.args[1], x.args[2],
+            map(@nospecialize(arg) -> replace_test_macrocalls(arg, mod), x.args[3:end])...)
+        replacement = replace_test_macrocall(name, replaced.args)
+        return @something replacement replaced
+    end
+    return Expr(x.head,
+        map(@nospecialize(arg) -> replace_test_macrocalls(arg, mod), x.args)...)
+end
+
 function _virtual_process!(interp::ConcreteInterpreter,
                            toplevelnode::JS.SyntaxNode;
                            force_concretize::Bool = false,
@@ -1183,14 +1361,16 @@ function _virtual_process!(interp::ConcreteInterpreter,
         end
 
         x = desugar_main_macrocall(x)
+        x = replace_test_macrocalls(x, state.context)
 
         # although we will lower `x` after special-handling `:toplevel` and `:module` expressions,
         # expand `macrocall`s here because macro can arbitrarily generate those expressions
-        if isexpr(x, :macrocall) ||
+        if (isexpr(x, :macrocall) ||
             # This kind of code occurs when a macro returns a `:toplevel` expression.
             # This expression contains information about the macro expansion position and module context,
             # but for now we just ignore that.
-            isexpr(x, :var"hygienic-scope")
+            isexpr(x, :var"hygienic-scope"))
+
             newx = macroexpand_with_err_handling(state, x)
 
             # if any error happened during macro expansion, bail out now and continue
