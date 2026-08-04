@@ -61,6 +61,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `MissingConcretizationErrorReport` now identifies the assignment requiring a
+  concrete value and, when safe, suggests a ready-to-use
+  `concretization_patterns` entry. Its guidance also clarifies when `const` is
+  insufficient and avoids patterns that could match unrelated assignments.
+
 ## [0.12.0]
 
 ### Added
