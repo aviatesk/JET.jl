@@ -1431,9 +1431,9 @@ end
         end
         @test length(res.res.inference_error_reports) ≥ 1
         @test_broken any(res.res.inference_error_reports) do r # report analyzed from `foo`
-            is_global_undef_var(r, :b) && length(err.vst) == 1
+            is_global_undef_var(r, :b) && length(r.vst) == 1
         end &&       any(res.res.inference_error_reports) do r # report analyzed from `bar`
-            is_global_undef_var(r, :b) && length(err.vst) == 2
+            is_global_undef_var(r, :b) && length(r.vst) == 2
         end
     end
 

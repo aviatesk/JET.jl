@@ -11,7 +11,8 @@ using JET:
 
 using Base.Meta: isexpr
 
-let ts = Type[]
+function load_report_types()
+    ts = Type[]
     function subtypes_recursive!(t)
         push!(ts, t)
         if isabstracttype(t)
@@ -31,6 +32,7 @@ let ts = Type[]
         Core.eval(@__MODULE__, ex)
     end
 end
+load_report_types()
 
 iskwarg(@nospecialize(x)) = isexpr(x, :(=))
 
