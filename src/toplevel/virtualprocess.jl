@@ -172,6 +172,11 @@ function print_report(io::IO, report::MissingConcretizationErrorReport)
         println(io, "  pattern. For example:")
         println(io, "  `report_file(\"path/to/file.jl\"; concretization_patterns = [:($pattern)])`")
         println(io, "  Use a specific pattern when possible, because matching code is executed.")
+    elseif contains_macrotools_metavariable(name)
+        println(io, "  pattern. However, `MacroTools.@capture` treats `$name` itself")
+        println(io, "  as a catchall that matches any expression, so a pattern like")
+        println(io, "  `:($name = x_)` would match every assignment, not just this one.")
+        println(io, "  Consider renaming the binding first.")
     elseif assignment !== nothing
         println(io, "  pattern. Patterns are matched against whole top-level statements,")
         println(io, "  and JET could not derive one from the statement holding that")
@@ -871,6 +876,18 @@ function bail_out_concretized(concretized::BitVector, src::CodeInfo)
     return false
 end
 
+function contains_macrotools_metavariable(@nospecialize(x))
+    if x isa Symbol
+        return x === :_ || x === :__ || occursin(r"[^_]_(?:_|_str)?$", String(x))
+    elseif x isa Expr
+        return contains_macrotools_metavariable(x.head) ||
+            any(contains_macrotools_metavariable, x.args)
+    elseif x isa QuoteNode
+        return contains_macrotools_metavariable(x.value)
+    end
+    return false
+end
+
 """
     concretization_pattern(@nospecialize x) -> pattern::Union{Nothing,Expr}
 
@@ -884,6 +901,11 @@ is nested within a `let` block. Since patterns are matched against whole top-lev
 statements, no useful pattern can be derived from the assignment alone in that case.
 Short-form function definitions are rejected too: they never give a global binding its
 value, and `:(f(x) = x_)` would concretize every definition of `f`.
+
+A pattern is also rejected when its retained left-hand side contains a symbol that
+MacroTools would interpret as a metavariable. Julia allows bindings such as `CONFIG_`,
+but MacroTools provides no syntax for matching such symbols literally, so a generated
+`:(CONFIG_ = x_)` pattern would match unrelated assignments.
 """
 function concretization_pattern(@nospecialize(x))
     if isexpr(x, (:global, :const), 1)
@@ -891,6 +913,7 @@ function concretization_pattern(@nospecialize(x))
         return inner === nothing ? nothing : Expr((x::Expr).head, inner)
     elseif isexpr(x, :(=), 2) && !Base.is_short_function_def(x)
         lhs, rhs = (x::Expr).args
+        contains_macrotools_metavariable(lhs) && return nothing
         return Expr(:(=), deepcopy(lhs), @something concretization_pattern(rhs) :x_)
     end
     return nothing
