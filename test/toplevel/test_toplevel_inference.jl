@@ -354,6 +354,16 @@ end
     @test JET.concretization_pattern(:(const A = rand(Int))) == :(const A = x_)
     @test JET.concretization_pattern(:(A = B = rand(Int))) == :(A = B = x_)
     @test JET.concretization_pattern(:((A, B) = rand(Int, 2))) == :((A, B) = x_)
+    for name in (:_, :__, :A_, :A__, :A__str)
+        @test JET.concretization_pattern(Expr(:(=), name, :(rand(Int)))) === nothing
+    end
+    @test JET.concretization_pattern(:(A::DataType_ = rand(Int))) === nothing
+    @test JET.concretization_pattern(:((A, B_) = rand(Int, 2))) === nothing
+    @test JET.concretization_pattern(:(A = B_ = rand(Int))) == :(A = x_)
+    # names that MacroTools matches literally are kept as-is
+    for name in (:A_b, :USE_PULSE, :A_str, :A___, :_A)
+        @test JET.concretization_pattern(Expr(:(=), name, :(rand(Int)))) == Expr(:(=), name, :x_)
+    end
     # short-form function definitions never give a global binding its value
     @test JET.concretization_pattern(:(f(x) = 2x)) === nothing
     @test JET.concretization_pattern(:(f(x::T) where T = 2x)) === nothing
@@ -399,6 +409,23 @@ end
             @test occursin("because matching code is executed", msg)
             @test occursin("the assignment at $(report.assignment.file):$(report.assignment.line)", msg)
         end
+    end
+
+    let res = @analyze_toplevel begin
+            CONFIG_ = rand((Bool, Int))
+            struct UnderscoredBindingStruct
+                field::CONFIG_
+            end
+        end
+        report = only(res.res.toplevel_error_reports)
+        @test report isa MissingConcretizationErrorReport
+        @test report.assignment isa JET.ToplevelAssignment
+        @test report.assignment.pattern === nothing
+        msg = sprint(JET.print_report, report)
+        @test occursin("treats `CONFIG_` itself", msg)
+        @test occursin("match every assignment", msg)
+        @test occursin("Consider renaming the binding", msg)
+        @test !occursin("concretization_patterns = [:(CONFIG_ = x_)]", msg)
     end
 
     let res = @analyze_toplevel begin
