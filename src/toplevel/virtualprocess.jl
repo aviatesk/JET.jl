@@ -1075,6 +1075,112 @@ end
 hide_test_replacement_value(@nospecialize(value)) =
     Expr(:call, GlobalRef(Base, :inferencebarrier), value)
 
+function is_anonymous_test_function(@nospecialize(ex))
+    isexpr(ex, :->, 2) && return true
+    isexpr(ex, :function, 2) || return false
+    sig = first(ex.args)
+    while isexpr(sig, (:(::), :where)) && !isempty(sig.args)
+        sig = first(sig.args)
+    end
+    return isexpr(sig, :tuple)
+end
+
+# Calls and access syntax preserve their operands through ordinary closure capture.
+const THUNK_SAFE_TEST_CALL_HEADS = (:call, :ref, :., :parameters, :kw, :...)
+
+# These heads do not introduce bindings by themselves and are safe when all children are safe.
+const THUNK_SAFE_TEST_CONTROL_HEADS = (:block, :&&, :||, :if, :comparison)
+
+# Literal construction does not observe or modify the enclosing lexical scope.
+const THUNK_SAFE_TEST_LITERAL_HEADS = (
+    :tuple, :vect, :vcat, :hcat, :ncat, :typed_vcat, :typed_hcat, :typed_ncat,
+    :row, :nrow, :string,
+)
+
+# `where` binds type variables only within its type expression; these heads do not define
+# names in the surrounding scope.
+const THUNK_SAFE_TEST_TYPE_HEADS = (:curly, :(::), :where)
+
+# Virtual processing concretizes top-level closure definitions so that later inference can
+# use their methods. When a closure is defined in a conditional branch of a test expression,
+# realizing that definition also selects the preceding condition for concrete execution.
+# Outlining the test expression into a zero-argument function instead leaves its nested
+# closures inside an ordinary method body, where inference can analyze the control flow
+# without concretely executing the condition.
+#
+# Introducing a function scope is only safe for expression forms whose enclosing-scope
+# behavior is implemented by closure capture. In particular, bindings, named definitions,
+# control transfers, and unknown macro syntax must remain inline, so this is intentionally a
+# positive list of reads, calls, expression-level control flow, and anonymous functions.
+function is_test_expression_thunk_safe(@nospecialize(ex))
+    ex isa Expr || return true
+    isexpr(ex, (:quote, :inert)) && return true
+    is_anonymous_test_function(ex) && return true
+    if isexpr(ex, :do, 2)
+        call, closure = ex.args
+        return is_test_expression_thunk_safe(call) &&
+            is_anonymous_test_function(closure)
+    end
+    (ex.head ∈ THUNK_SAFE_TEST_CALL_HEADS ||
+     ex.head ∈ THUNK_SAFE_TEST_CONTROL_HEADS ||
+     ex.head ∈ THUNK_SAFE_TEST_LITERAL_HEADS ||
+     ex.head ∈ THUNK_SAFE_TEST_TYPE_HEADS) || return false
+    return all(is_test_expression_thunk_safe, ex.args)
+end
+
+# Unconditional anonymous functions do not force unrelated control flow to be concretized,
+# so only detect definitions nested under short-circuit or branch semantics.
+function has_conditionally_defined_test_function(
+        @nospecialize(ex), conditional::Bool = false)
+    ex isa Expr || return false
+    isexpr(ex, (:quote, :inert)) && return false
+    is_anonymous_test_function(ex) && return conditional
+    if isexpr(ex, :do, 2)
+        call, closure = ex.args
+        return has_conditionally_defined_test_function(call, conditional) ||
+            conditional && is_anonymous_test_function(closure)
+    elseif isexpr(ex, (:&&, :||), 2)
+        return has_conditionally_defined_test_function(first(ex.args), conditional) ||
+            has_conditionally_defined_test_function(last(ex.args), true)
+    elseif isexpr(ex, :if)
+        isempty(ex.args) && return false
+        has_conditionally_defined_test_function(first(ex.args), conditional) && return true
+        return any(ex.args[2:end]) do @nospecialize(branch)
+            has_conditionally_defined_test_function(branch, true)
+        end
+    elseif isexpr(ex, :comparison)
+        for (i, arg) in enumerate(ex.args)
+            has_conditionally_defined_test_function(arg, conditional || i ≥ 5) &&
+                return true
+        end
+        return false
+    end
+    return any(arg -> has_conditionally_defined_test_function(arg, conditional), ex.args)
+end
+
+# `conditionally_evaluated` accounts for control flow introduced by the replacement itself,
+# such as the `if skip` surrounding the tested expression for `@test skip=...`.
+function should_wrap_test_expression_in_thunk(
+        @nospecialize(ex); conditionally_evaluated::Bool = false)
+    return is_test_expression_thunk_safe(ex) &&
+        has_conditionally_defined_test_function(ex, conditionally_evaluated)
+end
+
+function wrap_test_expression_in_thunk(@nospecialize(ex))
+    thunk = gensym(:test_expression)
+    ret = quote
+        let $thunk = () -> $ex
+            $thunk()
+        end
+    end
+    return Base.remove_linenums!(ret)
+end
+
+function maybe_wrap_test_expression_in_thunk(@nospecialize(ex))
+    should_wrap_test_expression_in_thunk(ex) || return ex
+    return wrap_test_expression_in_thunk(ex)
+end
+
 function discard_test_expression_value(@nospecialize(ex))
     ret = quote
         try
@@ -1115,17 +1221,34 @@ function replace_test(@nospecialize(ex), kws::Vector{Any})
     catch
         return nothing
     end
-    test_expr = discard_test_expression_value(ex)
     if !isempty(skip)
-        ret = quote
-            if $(only(skip))
-                $(hide_test_replacement_value(nothing))
-            else
-                $test_expr
+        skip = only(skip)
+        if should_wrap_test_expression_in_thunk(ex; conditionally_evaluated = true)
+            thunk = gensym(:test_expression)
+            test_expr = discard_test_expression_value(Expr(:call, thunk))
+            ret = quote
+                let $thunk = () -> $ex
+                    if $skip
+                        $(hide_test_replacement_value(nothing))
+                    else
+                        $test_expr
+                    end
+                end
+            end
+        else
+            test_expr = discard_test_expression_value(ex)
+            ret = quote
+                if $skip
+                    $(hide_test_replacement_value(nothing))
+                else
+                    $test_expr
+                end
             end
         end
         return Base.remove_linenums!(ret)
-    elseif !isempty(broken)
+    end
+    test_expr = discard_test_expression_value(maybe_wrap_test_expression_in_thunk(ex))
+    if !isempty(broken)
         return Expr(:block, only(broken), test_expr)
     end
     return test_expr
@@ -1144,7 +1267,7 @@ function replace_test_macrocall(name::Symbol, args::Vector{Any})
         catch
             return nothing
         end
-        return discard_test_expression_value(ex)
+        return discard_test_expression_value(maybe_wrap_test_expression_in_thunk(ex))
     elseif name === Symbol("@test_skip")
         isempty(exs) && return nothing
         ex, kws = first(exs), exs[2:end]
@@ -1156,23 +1279,31 @@ function replace_test_macrocall(name::Symbol, args::Vector{Any})
         return hide_test_replacement_value(nothing)
     elseif name === Symbol("@test_throws")
         length(exs) == 2 || return nothing
-        return discard_test_expression_value(Expr(:block, exs...))
+        ex = maybe_wrap_test_expression_in_thunk(Expr(:block, exs...))
+        return discard_test_expression_value(ex)
     elseif name === Symbol("@test_logs")
         isempty(exs) && return nothing
         values = Any[macro_argument_value(ex) for ex in exs[1:end-1]]
-        push!(values, last(exs))
+        push!(values, maybe_wrap_test_expression_in_thunk(last(exs)))
         return preserve_test_expression_value(values...)
     elseif name === Symbol("@test_warn")
         length(exs) == 2 || return nothing
+        exs = Any[exs...]
+        exs[end] = maybe_wrap_test_expression_in_thunk(last(exs))
         return preserve_test_expression_value(exs...)
     elseif name === Symbol("@test_nowarn")
         length(exs) == 1 || return nothing
-        return preserve_test_expression_value(exs...)
+        return preserve_test_expression_value(
+            maybe_wrap_test_expression_in_thunk(only(exs)))
     elseif name === Symbol("@test_deprecated")
         1 ≤ length(exs) ≤ 2 || return nothing
+        exs = Any[exs...]
+        exs[end] = maybe_wrap_test_expression_in_thunk(last(exs))
         return preserve_test_expression_value(exs...)
     elseif name === Symbol("@inferred")
         1 ≤ length(exs) ≤ 2 || return nothing
+        exs = Any[exs...]
+        exs[end] = maybe_wrap_test_expression_in_thunk(last(exs))
         return preserve_test_expression_value(exs...)
     elseif name === Symbol("@testset")
         isempty(exs) && return nothing
@@ -1675,6 +1806,13 @@ function select_statements(mod::Module, src::CodeInfo, idxs::Int...)
     return concretize
 end
 
+# TODO: Compiler-generated closure setup is selected here like user-visible definitions.
+# For a branch-local closure, control-dependency selection can therefore execute preceding
+# user conditions merely to materialize its type and method for inference. A general fix
+# should distinguish definition-only materialization from runtime concretization: materialize
+# closure setup without selecting enclosing control flow when its signature and setup have no
+# runtime-value dependencies, and retain the current control-sensitive behavior otherwise.
+# `maybe_wrap_test_expression_in_thunk` is a Test-specific mitigation until then.
 function select_direct_requirement!(concretize, stmts, edges)
     for (idx, stmt) in enumerate(stmts)
         if (LoweredCodeUtils.ismethod(stmt) ||    # don't abstract away method definitions
