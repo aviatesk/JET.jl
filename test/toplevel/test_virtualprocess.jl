@@ -1977,6 +1977,46 @@ end
             @test eval_replaced_test_macro(mod, :(@test true broken=true)) === nothing
             @test eval_replaced_test_macro(mod, :(@test false broken=true)) === nothing
 
+            Core.eval(mod, :(const conditional_closure_calls = Ref(0)))
+            conditional_closure_calls = @invokelatest getglobal(mod, :conditional_closure_calls)
+            conditional_closure = quote
+                @test true && any((1,)) do _
+                    conditional_closure_calls[] += 1
+                    true
+                end
+            end
+            @test eval_replaced_test_macro(mod, conditional_closure) === nothing
+            @test conditional_closure_calls[] == 1
+
+            for (skip, expected_calls) in ((true, 0), (false, 1))
+                conditional_closure_calls[] = 0
+                conditional_closure = quote
+                    @test any((1,)) do _
+                        conditional_closure_calls[] += 1
+                        true
+                    end skip=$skip
+                end
+                @test eval_replaced_test_macro(mod, conditional_closure) === nothing
+                @test conditional_closure_calls[] == expected_calls
+            end
+
+            # Keep this expression inline so `return` still targets the enclosing function,
+            # even though its conditional closure would otherwise make it a thunk candidate.
+            control_transfer = quote
+                function return_from_test()
+                    @test begin
+                        true && any((1,)) do _
+                            true
+                        end
+                        return 42
+                    end
+                    return 0
+                end
+            end
+            Core.eval(mod, JET.replace_test_macrocalls(control_transfer, mod))
+            return_from_test = @invokelatest getglobal(mod, :return_from_test)
+            @test @invokelatest(return_from_test()) == 42
+
             Core.eval(mod, :(const test_ran = Ref(false)))
             skipped = eval_replaced_test_macro(mod, :(@test (test_ran[] = true) skip=true))
             @test skipped === nothing
@@ -2032,6 +2072,74 @@ end
             @test loop_values == [1, 2]
         end
 
+        let ex = :(pred(x) && any(items) do item
+                    check(item, x)
+                end)
+            @test JET.is_test_expression_thunk_safe(ex)
+            @test JET.should_wrap_test_expression_in_thunk(ex)
+        end
+
+        let ex = :(any(items) do item
+                    check(item)
+                end)
+            @test JET.is_test_expression_thunk_safe(ex)
+            @test !JET.should_wrap_test_expression_in_thunk(ex)
+        end
+
+        let ex = :(pred() && function (value)
+                    assigned_in_function = compute_value(value)
+                    return assigned_in_function
+                end)
+            @test JET.is_test_expression_thunk_safe(ex)
+            @test JET.should_wrap_test_expression_in_thunk(ex)
+        end
+
+        for ex in (:(pred() || any(items) do item
+                            check(item)
+                        end),
+                   :(if pred()
+                        any(items) do item
+                            check(item)
+                        end
+                    else
+                        false
+                    end),
+                   :(lower() < middle() < (any(items) do item
+                            check(item)
+                        end)),
+                   :(pred(Tuple{T} where T) && any(items) do item
+                            check(item)
+                        end))
+            @test JET.is_test_expression_thunk_safe(ex)
+            @test JET.has_conditionally_defined_test_function(ex)
+            @test JET.should_wrap_test_expression_in_thunk(ex)
+        end
+
+        for ex in (:(begin
+                        value = compute_value()
+                        pred() && any(items) do item
+                            check(item, value)
+                        end
+                    end),
+                   :(begin
+                        @unknown_test_helper check(value)
+                        pred() && any(items) do item
+                            check(item)
+                        end
+                    end),
+                   :(begin
+                        function check(value)
+                            return value
+                        end
+                        pred() && any(items) do item
+                            check(item)
+                        end
+                    end))
+            @test JET.has_conditionally_defined_test_function(ex)
+            @test !JET.is_test_expression_thunk_safe(ex)
+            @test !JET.should_wrap_test_expression_in_thunk(ex)
+        end
+
         let mod = Module()
             Core.eval(mod, :(using Test))
             ex = JET.replace_test_macrocalls(quote
@@ -2059,6 +2167,22 @@ end
             preserved = Core.eval(mod, ex)
             @test preserved isa Expr
             @test preserved.head === :macrocall
+        end
+    end
+
+    @testset "conditional closures" begin
+        let res = @analyze_toplevel context = vmod virtualize = false begin
+                test_macro_items = [1]
+                @test_broken any(test_macro_items) do _
+                    undefined_in_broken_test
+                end && any(test_macro_items) do _
+                    false
+                end
+            end
+            @test isempty(res.res.toplevel_error_reports)
+            @test any(res.res.inference_error_reports) do report
+                is_global_undef_var(report, :undefined_in_broken_test)
+            end
         end
     end
 
