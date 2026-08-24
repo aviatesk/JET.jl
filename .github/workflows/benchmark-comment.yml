@@ -28,7 +28,7 @@ jobs:
       github.event.workflow_run.conclusion == 'success'
     steps:
       # restore records from the artifacts
-      - uses: dawidd6/action-download-artifact@v21
+      - uses: dawidd6/action-download-artifact@v24
         with:
           run_id: ${{ github.event.workflow_run.id }}
           name: performance-tracking
