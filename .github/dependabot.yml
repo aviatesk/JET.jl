@@ -8,3 +8,12 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+  - package-ecosystem: "julia"
+    directories:
+      - "/benchmark"
+      - "/examples"
+    schedule:
+      interval: "weekly"
+    ignore:
+      - dependency-name: "JET"
+      - dependency-name: "IRTools"
