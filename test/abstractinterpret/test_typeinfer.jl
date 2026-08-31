@@ -15,6 +15,25 @@ badgetpropertycall() = _badgetpropertycall(nothing)
     @test only(get_reports_with_test(result)) isa BuiltinErrorReport
 end
 
+# this call is concrete-eval eligible (`:foldable`) and always throws at runtime,
+# while its generic return type stays non-`Bottom` (inference does not fold the loop)
+Base.@assume_effects :foldable function always_throwing_foldable()
+    for i = 1:3
+        i == 3 && return sin("42")
+    end
+    return nothing
+end
+
+@testset "reports survive erroring concretization" begin
+    # the report from the generic edge must not be thrown away on the erroring
+    # concretization: the constant propagation fallback that would re-derive it is
+    # refused here since the argument list carries no constant information
+    result = report_call() do
+        always_throwing_foldable()
+    end
+    @test only(get_reports_with_test(result)) isa MethodErrorReport
+end
+
 @testset "invalidation" begin; let M = Module()
     # renew a definition and re-analyze it
     @eval M foo(a, b) = (sum(a), b)

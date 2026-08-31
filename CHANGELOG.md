@@ -62,6 +62,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Fixed error reports being dropped when concrete evaluation proves the
+  reported call always throws.
+
 ## [0.12.1]
 
 ### Changed

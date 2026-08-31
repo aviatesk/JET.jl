@@ -75,9 +75,16 @@ function CC.concrete_eval_call(analyzer::AbstractAnalyzer,
     ret = @invoke CC.concrete_eval_call(analyzer::AbstractInterpreter,
         f::Any, result::MethodCallResult, arginfo::ArgInfo,
         sv::InferenceState, invokecall::Union{Nothing,CC.InvokeCall})
-    if ret isa ConstCallResult
-        # this frame has been concretized, now we throw away reports collected
-        # during the previous non-constant, abstract-interpretation
+    if ret isa ConstCallResult && ret.rt !== Bottom
+        # This frame has been concretized without erroring, invalidating the reports
+        # collected during the previous non-constant abstract-interpretation:
+        # throw them away.
+        # When concretization instead proves the call always throws (`ret.rt === Bottom`),
+        # keep the generic reports: analyzers may discard such a result to fall back to
+        # constant propagation for precise error reporting, but that fallback is not
+        # guaranteed to run (e.g. `const_prop_argument_heuristic` may refuse it), and
+        # when it does run, its own lineage filtering (see the `CC.typeinf` and
+        # `CC.cache_lookup` overloads) replaces the generic reports at that point.
         filter_lineages!(analyzer, sv, result.edge.def)
     end
     return ret
