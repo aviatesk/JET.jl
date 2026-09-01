@@ -76,6 +76,8 @@ const exports = Set{Symbol}((
     :report_file, :test_file, :report_package, :test_package, :report_text, :reportkey, :test_text,
     # optanalyzer
     Symbol("@report_opt"), :report_opt, Symbol("@test_opt"), :test_opt,
+    # trimanalyzer
+    Symbol("@report_trim"), :report_trim, Symbol("@test_trim"), :test_trim,
     # configurations
     :ReportMatcher, :LastFrameModule, :AnyFrameModule, :LastFrameModuleExact, :AnyFrameModuleExact,
     :LastFrameMethod, :AnyFrameMethod,
