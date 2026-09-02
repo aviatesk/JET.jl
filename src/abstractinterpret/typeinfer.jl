@@ -85,7 +85,10 @@ function CC.concrete_eval_call(analyzer::AbstractAnalyzer,
         # guaranteed to run (e.g. `const_prop_argument_heuristic` may refuse it), and
         # when it does run, its own lineage filtering (see the `CC.typeinf` and
         # `CC.cache_lookup` overloads) replaces the generic reports at that point.
-        filter_lineages!(analyzer, sv, result.edge.def)
+        edge = result.edge
+        if edge isa CodeInstance
+            filter_lineages!(analyzer, sv, edge.def)
+        end
     end
     return ret
 end
