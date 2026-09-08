@@ -481,6 +481,24 @@ end
     end
 end
 
+@testset "concretized call reports" begin
+    for _ in 1:2
+        let res = @analyze_toplevel analyze_from_definitions = true begin
+                struct A{T}
+                    x::T
+                    A{T}(x) where T = new{T}(x)
+                end
+            end
+            @test isempty(res.res.toplevel_error_reports)
+            @test isempty(res.res.inference_error_reports)
+        end
+        # Suppressing the top-level call must not erase the cached callee reports.
+        let res = report_call((x, name) -> getproperty(x, name), (Bool, Symbol))
+            @test only(get_reports_with_test(res)) isa BuiltinErrorReport
+        end
+    end
+end
+
 @testset "macro expansions" begin
     let
         vmod, res = @analyze_toplevel2 begin

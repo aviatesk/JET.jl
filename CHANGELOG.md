@@ -65,6 +65,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Fixed error reports being dropped when concrete evaluation proves the
   reported call always throws.
+- Fixed spurious field-access errors when analyzing parametric type
+  definitions with inner constructors.
 
 ## [0.12.1]
 

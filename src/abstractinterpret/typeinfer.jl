@@ -7,6 +7,12 @@ const ABSTRACT_CALL_USES_VTYPES = hasmethod(CC.abstract_call_known,
 function collect_callee_reports!(analyzer::AbstractAnalyzer, sv::InferenceState)
     reports = get_report_stash(analyzer)
     if !isempty(reports)
+        if analyzer isa ToplevelAbstractAnalyzer && isconcretized(analyzer, sv)
+            # Concrete execution owns diagnostics for this call, but the callee cache
+            # must retain its reports for non-concretized callers.
+            empty!(reports)
+            return nothing
+        end
         vf = get_virtual_frame(sv)
         for report in reports
             pushfirst!(report.vst, vf)
