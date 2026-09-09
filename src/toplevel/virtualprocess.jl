@@ -592,6 +592,8 @@ end
     JETConcreteInterpreter
 
 The default implementation of ConcreteInterpreter used by JET's virtual process.
+With a built-in analyzer, interpretation can run in JET's fixed world. Custom
+analyzers use the calling world so their interface methods remain visible.
 """
 struct JETConcreteInterpreter{Analyzer<:ToplevelAbstractAnalyzer} <: ConcreteInterpreter
     analyzer::Analyzer
@@ -606,7 +608,10 @@ ConcreteInterpreter(interp::JETConcreteInterpreter, state::InterpretationState) 
 ToplevelAbstractAnalyzer(interp::JETConcreteInterpreter) = interp.analyzer
 
 # `ConcreteInterpreter` optional interface
-interpret_world(::JETConcreteInterpreter) = JET_INTERPRET_WORLD[]
+interpret_world(interp::JETConcreteInterpreter) =
+    (interp.analyzer isa BasicJETAnalyzer ||
+     interp.analyzer isa SoundJETAnalyzer ||
+     interp.analyzer isa TypoJETAnalyzer) ? JET_INTERPRET_WORLD[] : nothing
 
 """
     concretization_patterns(interp::ConcreteInterpreter, filename::AbstractString)
