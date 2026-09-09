@@ -67,6 +67,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reported call always throws.
 - Fixed spurious field-access errors when analyzing parametric type
   definitions with inner constructors.
+- Fixed missing analyzer-interface errors when using custom analyzers with
+  `JETConcreteInterpreter` and `use_fixed_world = true`.
 
 ## [0.12.1]
 
