@@ -195,7 +195,8 @@ function CC.const_prop_call(analyzer::OptAnalyzer,
 end
 
 # TODO better to work only with `CC.finish!`
-@static if VERSION ≥ v"1.13.0-DEV.565"
+@static if hasmethod(CC.finishinfer!,
+    Tuple{InferenceState,AbstractInterpreter,Int,IdDict{MethodInstance,CodeInstance}})
 function CC.finishinfer!(frame::InferenceState, analyzer::OptAnalyzer, cycleid::Int,
                          opt_cache::IdDict{MethodInstance, CodeInstance})
     ret = @invoke CC.finishinfer!(frame::InferenceState, analyzer::AbstractAnalyzer, cycleid::Int,
