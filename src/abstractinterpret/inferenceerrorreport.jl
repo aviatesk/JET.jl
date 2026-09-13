@@ -279,7 +279,7 @@ function handle_sig_call!(sig::Vector{Any}, s::StateAtPC, @nospecialize(f), args
     splat::Bool = false)
     handle_sig!(sig, s, f)
     push!(sig, '(')
-    typs = Any[typeof_arg(s, f; callable=true)]
+    typs = Any[typeof_arg(s, f)]
     nargs = length(args)
     for (i, arg) in enumerate(args)
         push!(typs, typeof_arg(s, arg))
@@ -419,18 +419,18 @@ handle_sig!(sig::Vector{Any}, ::StateAtPC, x::String) = (push!(sig, Repr(x)); re
 # fallback: GlobalRef, literals...
 handle_sig!(sig::Vector{Any}, ::StateAtPC, @nospecialize(x)) = (push!(sig, x); return sig, nothing)
 
-function typeof_arg(s::State, @nospecialize(f); callable::Bool=false)
+function typeof_arg(s::State, @nospecialize(f))
     isa(f, GlobalRef) && return isdefined(f.mod, f.name) ? Core.Typeof(getglobal(f.mod, f.name)) : Any
     isa(f, SSAValue) && return safewidenconst(get_ssavaluetype((s, f.id)))
-    isa(f, Function) && return Core.Typeof(f)
-    isa(f, Type) && return Type{f}
     isa(f, QuoteNode) && return Core.Typeof(f.value)
     isexpr(f, :static_parameter) &&
         return Core.Typeof(get_sparamtype(s, first(f.args)::Int))
-    callable && error("f ", string(f)::String, " with type ", string(typeof(f)), " not supported")   # FIXME self check runtime dispatch
-    return typeof(f)
+    # Any other literal value embedded in the IR: functions, types, and arbitrary
+    # (possibly callable) objects such as `Base.BottomRF`, which Julia ≥ 1.13
+    # embeds directly without wrapping in `QuoteNode`.
+    return Core.Typeof(f)
 end
-function typeof_arg(s::StateAtPC, @nospecialize(f); kwargs...)
+function typeof_arg(s::StateAtPC, @nospecialize(f))
     if isa(f, SlotNumber)
         ret = safewidenconst(get_slottype(s, f))
         ret === Union{} || return ret
@@ -439,7 +439,7 @@ function typeof_arg(s::StateAtPC, @nospecialize(f); kwargs...)
         return TypeUnassigned  # One can't create Tuple{typeof(f), Union{}} so we use a placeholder
     end
     isa(f, Core.Argument) && return safewidenconst(get_slottype(s, f))
-    return typeof_arg(first(s), f; kwargs...)
+    return typeof_arg(first(s), f)
 end
 
 # new report

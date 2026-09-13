@@ -420,4 +420,31 @@ let res = report_opt(JSON3.read, (String,Type{PointArray}))
     @test true
 end
 
+# https://github.com/aviatesk/JET.jl/issues/863
+struct Issue863Callable{F}
+    f::F
+end
+# define more methods than `max_methods` so that the call stays a dynamic `:call`
+(c::Issue863Callable)(x) = c.f(x)
+(c::Issue863Callable)(x::Int) = c.f(x)
+(c::Issue863Callable)(x::String) = c.f(x)
+(c::Issue863Callable)(::Nothing) = nothing
+issue863_callable(xs) = Issue863Callable(identity)(xs[1])
+issue863_mapfoldl(xs) = mapfoldl(last, *, xs)
+@testset "callable object literals in optimized IR" begin
+    # Julia ≥ 1.13 embeds constant callee objects directly in the IR without `QuoteNode`
+    let reports = get_reports_with_test(report_opt(issue863_callable, (Vector{Any},)))
+        @test any(reports) do r
+            r isa JET.RuntimeDispatchReport &&
+            r.sig.tt === Tuple{Issue863Callable{typeof(identity)}, Any}
+        end
+    end
+    let reports = get_reports_with_test(report_opt(issue863_mapfoldl, (Vector{Any},)))
+        @test any(reports) do r
+            r isa JET.RuntimeDispatchReport &&
+            r.sig.tt === Tuple{Base.BottomRF{typeof(*)}, Any, Any}
+        end
+    end
+end
+
 end # module test_optanalyzer

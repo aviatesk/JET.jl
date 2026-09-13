@@ -71,6 +71,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   global variable.
 - Fixed missing analyzer-interface errors when using custom analyzers with
   `JETConcreteInterpreter` and `use_fixed_world = true`.
+- Fixed `@report_opt` crashing when optimized code dynamically calls a callable
+  object literal such as `Base.BottomRF` (aviatesk/JET.jl#863).
 
 ## [0.12.1]
 
