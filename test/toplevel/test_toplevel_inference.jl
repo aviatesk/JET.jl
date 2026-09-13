@@ -171,6 +171,15 @@ end
         end
     end
     let res = @analyze_toplevel begin
+            global s::Vector{Int} = Int[]
+            if rand(Bool)
+                global s = rand(Int, 10)
+            end
+            sum(s)
+        end
+        @test isempty(res.res.inference_error_reports)
+    end
+    let res = @analyze_toplevel begin
             if rand(Bool)
                 const s = "julia"
             end
