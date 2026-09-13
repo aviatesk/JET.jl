@@ -529,7 +529,25 @@ function CC.global_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::In
             # to track their types precisely.
             # However, by accurately determining whether a top-level assignment is conditional,
             # it is possible to track such bindings’ `isdefined` status precisely.
-            get_binding_states(analyzer)[partition] = AbstractBindingState(false, isconditional; assignment)
+            binding_states = get_binding_states(analyzer)
+            @lock binding_states.lock begin
+                new_state = if haskey(binding_states, partition)
+                    old_state = binding_states[partition]
+                    if old_state.isconst
+                        # Ordinary assignments to constants throw; `const` redefinitions use
+                        # `const_assignment_rt_exct` instead.
+                        old_state
+                    else
+                        maybeundef = old_state.maybeundef & isconditional
+                        same_statement = old_state.assignment === assignment
+                        merged_assignment = same_statement ? assignment : nothing
+                        AbstractBindingState(false, maybeundef; assignment = merged_assignment)
+                    end
+                else
+                    AbstractBindingState(false, isconditional; assignment)
+                end
+                binding_states[partition] = new_state
+            end
         end
         return rte
     end
