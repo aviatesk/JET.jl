@@ -1,0 +1,11 @@
+[[initialization_options.analysis_overrides]]
+path = "benchmark/**/*.jl"
+full_analysis = false
+
+[[initialization_options.analysis_overrides]]
+path = "examples/**/*.jl"
+full_analysis = false
+
+[[initialization_options.analysis_overrides]]
+path = "test/**/*.jl"
+full_analysis = false
