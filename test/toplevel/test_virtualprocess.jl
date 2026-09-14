@@ -1642,6 +1642,140 @@ end
         @test isempty(s)
     end
 
+    @testset "untyped global declarations" begin
+        isdecl(stmt, stmts) = JET.isexpr(stmt, :globaldecl, 1) ||
+            JET.is_known_call(stmt, :declare_global, stmts)
+
+        # declarations under control flow are materialized, hoisted ones are selected
+        let mod = Module()
+            Core.eval(mod, :(global nums::Vector{String}))
+            src = only(Meta.lower(mod, quote
+                while true
+                    global nums = String[]
+                end
+            end).args)::CodeInfo
+            plan = JET.ConcretizationPlan()
+            JET.select_statements!(plan, mod, src)
+            cfg = JET.CC.compute_basic_blocks(src.code)
+            postdomtree = JET.CC.construct_postdomtree(cfg.blocks)
+            unconditional(i) = JET.CC.postdominates(postdomtree, JET.CC.block_for_inst(cfg, i), 1)
+            found_decl = found_latestworld = false
+            for (i, stmt) in enumerate(src.code)
+                if isdecl(stmt, src.code)
+                    found_decl = true
+                    @test plan.selected[i] == unconditional(i)
+                    @test plan.materialized[i] == !unconditional(i)
+                elseif JET.islatestworld(stmt)
+                    found_latestworld = true
+                    @test plan.selected[i] == unconditional(i)
+                    @test plan.materialized[i] == !unconditional(i)
+                elseif stmt isa Core.GotoNode || stmt isa Core.GotoIfNot
+                    @test !plan.concretized[i]
+                end
+            end
+            @test found_decl
+            @test found_latestworld
+            @test !any(i -> plan.selected[i] && !unconditional(i), eachindex(src.code))
+        end
+        @analyze_toplevel begin # this should terminate
+            global nums::Vector{String}
+            while true
+                global nums = String[]
+            end
+        end
+        let (vmod, res) = @analyze_toplevel2 begin # this should terminate
+                while true
+                    global nums = String[]
+                end
+            end
+            @test isempty(res.res.toplevel_error_reports)
+            gr = GlobalRef(vmod, :nums)
+            partition = Base.lookup_binding_partition(Base.get_world_counter(), gr)
+            @test Base.binding_kind(partition) != Base.PARTITION_KIND_GUARD
+        end
+        let res = report_text("""
+            begin
+                global nums::Vector{String}
+                while true
+                    global nums = String[]
+                end
+            end
+            """, "declared_in_block.jl")
+            @test isempty(res.res.toplevel_error_reports)
+        end
+
+        # the enclosing condition is not concretized for the declaration
+        let mod = Module()
+            Core.eval(mod, :(global s::Vector{Int}))
+            src = only(Meta.lower(mod, quote
+                if rand(Bool)
+                    global s = rand(Int, 10)
+                end
+            end).args)::CodeInfo
+            plan = JET.ConcretizationPlan()
+            JET.select_statements!(plan, mod, src)
+            @test !any(plan.selected)
+            @test any(eachindex(src.code)) do i
+                plan.materialized[i] && isdecl(src.code[i], src.code)
+            end
+        end
+        let res = @analyze_toplevel begin
+                global s::Vector{Int} = Int[]
+                n = 3
+                if n > 2
+                    global s = rand(Int, 10)
+                end
+            end
+            @test isempty(res.res.toplevel_error_reports)
+        end
+        let res = @analyze_toplevel begin
+                xs = [1, 2, 3]
+                for x in xs
+                    global acc = x
+                end
+            end
+            @test isempty(res.res.toplevel_error_reports)
+        end
+        # the weak form leaves a later typed declaration intact
+        let res = @analyze_toplevel begin
+                n = 1
+                if n > 2
+                    global x = 1
+                end
+                global x::Int
+            end
+            @test isempty(res.res.toplevel_error_reports)
+        end
+
+        # unconditional and typed declarations keep the concrete processing
+        let mod = Module()
+            src = only(Meta.lower(mod, :(global value = 1)).args)::CodeInfo
+            slice = JET.select_statements(mod, src)
+            idxs = findall(stmt -> isdecl(stmt, src.code), src.code)
+            @test !isempty(idxs)
+            @test all(slice[idxs])
+        end
+        let res = @analyze_toplevel begin
+                global x
+                x = 1
+                global x::Int # errors: `x` is already a global
+            end
+            @test length(res.res.toplevel_error_reports) == 1
+        end
+        let mod = Module()
+            Core.eval(mod, :(global value::Int))
+            src = only(Meta.lower(mod, :(global value::String)).args)::CodeInfo
+            slice = JET.select_statements(mod, src)
+            idx = findfirst(src.code) do stmt
+                return JET.isexpr(stmt, :globaldecl, 2) ||
+                    (JET.is_known_call(stmt, :declare_global, src.code) &&
+                     length(stmt.args) == 5)
+            end
+            @test idx isa Int
+            idx isa Int && @test slice[idx]
+        end
+    end
+
     # A more complex test case (xref: https://github.com/JuliaDebug/LoweredCodeUtils.jl/pull/99#issuecomment-2236373067)
     # This test case might seem simple at first glance, but note that `x2` and `a2` are
     # defined at the top level (because of the `begin` at the top).

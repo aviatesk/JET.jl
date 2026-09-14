@@ -67,6 +67,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reported call always throws.
 - Fixed spurious field-access errors when analyzing parametric type
   definitions with inner constructors.
+- Fixed `report_file` hanging when a nonterminating top-level loop assigns to a
+  global variable. Global declarations emitted by assignments under control
+  flow no longer pull the enclosing loop or branch condition into concrete
+  execution.
 - Fixed false `UndefVarErrorReport`s after conditionally reassigning an initialized
   global variable.
 - Fixed missing analyzer-interface errors when using custom analyzers with
