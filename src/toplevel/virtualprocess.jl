@@ -287,7 +287,9 @@ These options apply to all entry points described in the
   `toplevel_logger` to `$JET_LOGGER_LEVEL_DEBUG` ("debug"). Debug output shows:
   - which blocks match `concretization_patterns` and are concretely executed
   - which statements JET selects by default, where `t` marks concretely
-    interpreted statements and `f` marks abstractly analyzed statements
+    interpreted statements, `m` marks global declarations materialized without
+    concretizing the enclosing control flow, and `f` marks abstractly analyzed
+    statements
   ```julia-repl
   julia> report_file("test/fixtures/concretization_patterns.jl";
                      concretization_patterns = [:(const GLOBAL_CODE_STORE = Dict())],
@@ -936,6 +938,39 @@ function _virtual_process!(interp::ConcreteInterpreter,
     return state.res
 end
 
+struct ConcretizationPlan
+    # statements selected for concrete execution together with their data and control
+    # dependencies; the control flow of the concrete pass is computed from these alone
+    selected::BitVector
+    # untyped global declarations under control flow, evaluated in their weak form in
+    # program order without selecting the enclosing control flow, and the `:latestworld`s
+    # they make redundant
+    materialized::BitVector
+    # `selected .| materialized`: the statements evaluated by the concrete pass, whose
+    # effects the abstract analysis then treats as already in place
+    concretized::BitVector
+end
+ConcretizationPlan() = ConcretizationPlan(falses(0), falses(0), falses(0))
+
+# Print `src` marking each statement `t` (selected), `m` (materialized) or `f` (abstract).
+function print_concretization_plan(io::IO, src::CodeInfo, plan::ConcretizationPlan)
+    nd = ndigits(length(src.code))
+    preprint(::IO) = nothing
+    function preprint(io::IO, idx::Int)
+        if plan.selected[idx]
+            mark, color = "t ", :cyan
+        elseif plan.materialized[idx]
+            mark, color = "m ", :yellow
+        else
+            mark, color = "f ", :plain
+        end
+        printstyled(io, lpad(idx, nd), ' ', mark; color)
+    end
+    postprint(::IO) = nothing
+    postprint(::IO, ::Int, ::Bool) = nothing
+    LoweredCodeUtils.print_with_code(preprint, postprint, io, src)
+end
+
 # check if all statements of `src` have been concretized
 function bail_out_concretized(concretized::BitVector, src::CodeInfo)
     if all(concretized)
@@ -1463,7 +1498,7 @@ function _virtual_process!(interp::ConcreteInterpreter,
     else
         push_vnode_stack!(vnodes, toplevelnode, overrideex, force_concretize)
     end
-    concretized = falses(0)
+    concretization = ConcretizationPlan()
     while !isempty(vnodes)
         local ex = pop!(vnodes)
         (; node, force_concretize) = ex
@@ -1605,16 +1640,17 @@ function _virtual_process!(interp::ConcreteInterpreter,
             JuliaInterpreter.finish!(interp, Frame(state.context, src; world=state.world), true)
             continue
         end
-        partially_interpret!(interp, concretized, state.context, src)
+        partially_interpret!(interp, concretization, state.context, src)
 
-        if bail_out_concretized(concretized, src)
+        if bail_out_concretized(concretization.concretized, src)
             # bail out if nothing to analyze (just a performance optimization)
             continue
         elseif state.isfailed
             continue
         end
 
-        analyzer = ToplevelAbstractAnalyzer(interp, concretized; current_toplevel_assignment)
+        analyzer = ToplevelAbstractAnalyzer(interp, concretization.concretized;
+                                            current_toplevel_assignment)
 
         result = analyze_toplevel!(analyzer, src, state.context)
 
@@ -1795,12 +1831,11 @@ function walk_and_transform!(@nospecialize(x), inner, outer, scope::Vector{Symbo
 end
 
 """
-    partially_interpret!(interp::ConcreteInterpreter, concretize::BitVector,
-                         mod::Module, src::CodeInfo) -> concretize::BitVector
+    partially_interpret!(interp::ConcreteInterpreter, plan::ConcretizationPlan,
+                         mod::Module, src::CodeInfo) -> plan::ConcretizationPlan
 
-Resize and fill `concretize` with one entry for each statement in `src`; `true`
-marks a statement selected for concrete interpretation. Evaluate the selected
-statements using JuliaInterpreter.jl and return the same selection mask.
+Fill `plan` with one entry per statement of `src` (see `ConcretizationPlan`), evaluate
+`plan.concretized` using JuliaInterpreter.jl, and return `plan`.
 
 The selection includes:
 - Top-level definitions, including `:method`, `:struct_type`, `:abstract_type`,
@@ -1810,36 +1845,81 @@ The selection includes:
   recursively analyzed.
 - `include` calls, which cause top-level analysis to recursively enter the
   included file.
+- Untyped global declarations emitted by assignments; ones under control flow
+  are materialized rather than selected.
 """
-function partially_interpret!(interp::ConcreteInterpreter, concretize::BitVector, mod::Module, src::CodeInfo)
+function partially_interpret!(
+        interp::ConcreteInterpreter, plan::ConcretizationPlan, mod::Module, src::CodeInfo
+    )
     state = InterpretationState(interp)
-    fill!(resize!(concretize, length(src.code)), false)
     controller = LoweredCodeUtils.SelectiveEvalController()
-    select_statements!(concretize, mod, src, controller)
+    select_statements!(plan, mod, src, controller)
 
     toplevel_logger(state.config; filter=≥(JET_LOGGER_LEVEL_DEBUG)) do @nospecialize(io::IO)
         println(io, "concretization plan at $(state.filename):$(state.curline):")
-        LoweredCodeUtils.print_with_code(io, src, concretize)
+        print_concretization_plan(io, src, plan)
     end
 
-    # NOTE if `JuliaInterpreter.optimize!` may modify `src`, `src` and `concretize` can be inconsistent
-    # here we create `JuliaInterpreter.Frame` by ourselves disabling the optimization (#277)
-    frame = Frame(mod, src; optimize=false, world=state.world)
-    LoweredCodeUtils.selective_eval_fromstart!(interp, frame, concretize, controller, #=istoplevel=#true)
+    # rewrite the materialized declarations into their weak form in a copy of `src`,
+    # keeping the original for abstract analysis
+    src′ = src
+    for idx in eachindex(src.code)
+        plan.materialized[idx] || continue
+        stmt = src.code[idx]
+        untyped_global_declaration(stmt) === nothing && continue
+        if src′ === src
+            src′ = copy(src)
+        end
+        src′.code[idx] = weak_global_declaration(stmt)
+    end
 
-    return concretize
+    # NOTE if `JuliaInterpreter.optimize!` may modify `src′`, `src′` and `plan` can be
+    # inconsistent; create the frame without optimization (#277).
+    frame = Frame(mod, src′; optimize=false, world=state.world)
+    # The controller's gotos and shortcuts come from `plan.selected` alone, so the loops
+    # and branches enclosing materialized declarations fall through and each declaration
+    # is evaluated once in program order.
+    LoweredCodeUtils.selective_eval_fromstart!(
+        interp, frame, plan.concretized, controller, #=istoplevel=#true)
+
+    return plan
 end
 
 # select statements that should be concretized, and actually interpreted rather than abstracted
+function select_statements!(
+        plan::ConcretizationPlan, mod::Module, src::CodeInfo,
+        controller::LoweredCodeUtils.SelectiveEvalController =
+            LoweredCodeUtils.SelectiveEvalController()
+    )
+    # the plan is always computed from scratch, so callers need not clear it beforehand
+    nstmts = length(src.code)
+    fill!(resize!(plan.selected, nstmts), false)
+    fill!(resize!(plan.materialized, nstmts), false)
+    resize!(plan.concretized, nstmts)
+    cl = LoweredCodeUtils.CodeLinks(mod, src) # make `CodeEdges` hold `CodeLinks`?
+    edges = LoweredCodeUtils.CodeEdges(src, cl)
+    cfg = CC.compute_basic_blocks(src.code)
+    postdomtree = CC.construct_postdomtree(cfg.blocks)
+    select_direct_requirement!(plan, mod, src, edges, cfg, postdomtree)
+    if any(plan.materialized)
+        add_required_latestworld!(plan.materialized, src, cfg)
+    end
+    select_dependencies!(plan.selected, src, edges, cl, cfg, postdomtree, controller)
+    plan.concretized .= plan.selected .| plan.materialized
+    # the termination points must cover the materialized statements too
+    empty!(controller.termination_points)
+    LoweredCodeUtils.record_termination_points!(controller, plan.concretized, cfg)
+    return plan
+end
+
 function select_statements!(
         concretize::BitVector, mod::Module, src::CodeInfo,
         controller::LoweredCodeUtils.SelectiveEvalController =
             LoweredCodeUtils.SelectiveEvalController()
     )
-    cl = LoweredCodeUtils.CodeLinks(mod, src) # make `CodeEdges` hold `CodeLinks`?
-    edges = LoweredCodeUtils.CodeEdges(src, cl)
-    select_direct_requirement!(concretize, src.code, edges)
-    select_dependencies!(concretize, src, edges, cl, controller)
+    n = length(src.code)
+    plan = ConcretizationPlan(concretize, falses(n), falses(n))
+    select_statements!(plan, mod, src, controller)
     return concretize
 end
 
@@ -1871,7 +1951,9 @@ function select_statements(mod::Module, src::CodeInfo, slots::SlotNumber...)
             concretize[d] = true
         end
     end
-    select_dependencies!(concretize, src, edges, cl)
+    cfg = CC.compute_basic_blocks(src.code)
+    postdomtree = CC.construct_postdomtree(cfg.blocks)
+    select_dependencies!(concretize, src, edges, cl, cfg, postdomtree)
     return concretize
 end
 function select_statements(mod::Module, src::CodeInfo, idxs::Int...)
@@ -1881,8 +1963,44 @@ function select_statements(mod::Module, src::CodeInfo, idxs::Int...)
     for idx = idxs
         concretize[idx] |= true
     end
-    select_dependencies!(concretize, src, edges, cl)
+    cfg = CC.compute_basic_blocks(src.code)
+    postdomtree = CC.construct_postdomtree(cfg.blocks)
+    select_dependencies!(concretize, src, edges, cl, cfg, postdomtree)
     return concretize
+end
+
+is_declare_global_call(@nospecialize(stmt)) =
+    isexpr(stmt, :call) && length(stmt.args) ≥ 1 &&
+    stmt.args[1] == GlobalRef(Core, :declare_global)
+
+# Returns the `GlobalRef` declared by an untyped global declaration statement, i.e.
+# `Expr(:globaldecl, gr)` (Julia 1.12) or `Core.declare_global(mod, name, strong)`
+# (Julia 1.13 and later), and `nothing` for typed or unrecognized declarations.
+function untyped_global_declaration(@nospecialize(stmt))
+    if isexpr(stmt, :globaldecl, 1)
+        gr = only(stmt.args)
+        gr isa GlobalRef && return gr
+    elseif is_declare_global_call(stmt) && length(stmt.args) == 4
+        mod, name, strong = stmt.args[2], stmt.args[3], stmt.args[4]
+        if mod isa Module && name isa QuoteNode && name.value isa Symbol && strong isa Bool
+            return GlobalRef(mod, name.value)
+        end
+    end
+    return nothing
+end
+
+# The weak form declares the binding without committing to a strong global, so that a
+# materialized declaration in a branch that would not run at runtime leaves later typed
+# or constant declarations of the same binding intact.
+function weak_global_declaration(@nospecialize(stmt))
+    if isexpr(stmt, :globaldecl, 1)
+        gr = only(stmt.args)::GlobalRef
+        return Expr(:global, gr.name)
+    else
+        @assert is_declare_global_call(stmt) && length(stmt.args) == 4
+        mod, name = stmt.args[2], stmt.args[3]
+        return Expr(:call, GlobalRef(Core, :declare_global), mod, name, false)
+    end
 end
 
 # TODO: Compiler-generated closure setup is selected here like user-visible definitions.
@@ -1892,16 +2010,33 @@ end
 # closure setup without selecting enclosing control flow when its signature and setup have no
 # runtime-value dependencies, and retain the current control-sensitive behavior otherwise.
 # `maybe_wrap_test_expression_in_thunk` is a Test-specific mitigation until then.
-function select_direct_requirement!(concretize, stmts, edges)
+function select_direct_requirement!(
+        plan::ConcretizationPlan, mod::Module, src::CodeInfo,
+        edges::LoweredCodeUtils.CodeEdges, cfg::CC.CFG, postdomtree::CC.PostDomTree
+    )
+    (; selected, materialized) = plan
+    stmts = src.code
     for (idx, stmt) in enumerate(stmts)
+        if isexpr(stmt, :globaldecl) || is_declare_global_call(stmt)
+            # An untyped declaration has no data dependencies, so selecting it would only
+            # pull in the enclosing control flow (possibly a nonterminating loop); under
+            # control flow it is materialized instead.
+            gr = untyped_global_declaration(stmt)
+            if (gr !== nothing && gr.mod === mod &&
+                !CC.postdominates(postdomtree, CC.block_for_inst(cfg, idx), 1))
+                materialized[idx] = true
+            else
+                selected[idx] = true
+            end
+            continue
+        end
+
         if (LoweredCodeUtils.ismethod(stmt) ||    # don't abstract away method definitions
             LoweredCodeUtils.istypedef(stmt) ||   # don't abstract away type definitions
             (isexpr(stmt, :call) && length(stmt.args) ≥ 1 &&
-             (stmt.args[1] == GlobalRef(Core, :_defaultctors) ||
-              stmt.args[1] == GlobalRef(Core, :declare_global))) ||
-            (ismoduleusage(stmt) || is_lowered_module_usage(stmt)) ||
-            isexpr(stmt, :globaldecl))
-            concretize[idx] = true
+             stmt.args[1] == GlobalRef(Core, :_defaultctors)) ||
+            (ismoduleusage(stmt) || is_lowered_module_usage(stmt)))
+            selected[idx] = true
             continue
         end
 
@@ -1911,7 +2046,7 @@ function select_direct_requirement!(concretize, stmts, edges)
         end
         # `include` calls are special cased
         if is_known_call(stmt, :include, stmts)
-            concretize[idx] = true
+            selected[idx] = true
         elseif is_known_getproperty(stmt, :include, stmts)
             # this is something like:
             # ```
@@ -1920,15 +2055,15 @@ function select_direct_requirement!(concretize, stmts, edges)
             # %x = Expr(:call, %1, ...)
             # ```
             # so require `%x` too
-            concretize[idx] = true
-            concretize[edges.succs[idx]] .= true
+            selected[idx] = true
+            selected[edges.succs[idx]] .= true
         # `eval` calls are difficult to analyze, but since they may contain toplevel
         # definitions, JET just concretizes them always
         elseif is_known_call(stmt, :eval, stmts)
-            concretize[idx] = true
+            selected[idx] = true
         elseif is_known_getproperty(stmt, :eval, stmts)
-            concretize[idx] = true
-            concretize[edges.succs[idx]] .= true
+            selected[idx] = true
+            selected[edges.succs[idx]] .= true
         end
     end
 end
@@ -1963,7 +2098,10 @@ function is_known_getproperty(@nospecialize(stmt), func::Symbol, stmts::Vector{A
     return false
 end
 
-function add_required_inplace!(concretize::BitVector, src::CodeInfo, edges, cl)
+function add_required_inplace!(
+        concretize::BitVector, src::CodeInfo, edges::LoweredCodeUtils.CodeEdges,
+        cl::LoweredCodeUtils.CodeLinks
+    )
     changed = false
     for i = 1:length(src.code)
         stmt = src.code[i]
@@ -1984,7 +2122,10 @@ function add_required_inplace!(concretize::BitVector, src::CodeInfo, edges, cl)
     return changed
 end
 # check if the first argument is requested to be concretized
-function is_arg_requested(@nospecialize(arg), concretize, edges, cl)
+function is_arg_requested(
+        @nospecialize(arg), concretize::BitVector, edges::LoweredCodeUtils.CodeEdges,
+        cl::LoweredCodeUtils.CodeLinks
+    )
     if arg isa SSAValue
         return concretize[arg.id] || any(@view concretize[edges.preds[arg.id]])
     elseif arg isa SlotNumber
@@ -2002,13 +2143,11 @@ end
 # Julia's intermediate code representation.
 function select_dependencies!(
         concretize::BitVector, src::CodeInfo, edges::LoweredCodeUtils.CodeEdges,
-        cl::LoweredCodeUtils.CodeLinks,
+        cl::LoweredCodeUtils.CodeLinks, cfg::CC.CFG, postdomtree::CC.PostDomTree,
         controller::LoweredCodeUtils.SelectiveEvalController =
             LoweredCodeUtils.SelectiveEvalController()
     )
     typedefs = LoweredCodeUtils.find_typedefs(src)
-    cfg = CC.compute_basic_blocks(src.code)
-    postdomtree = CC.construct_postdomtree(cfg.blocks)
 
     while true
         changed = false
