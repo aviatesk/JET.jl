@@ -1448,8 +1448,9 @@ end
 
 function _report_builtin_error_sound!(analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), argtypes::Argtypes, @nospecialize(rt))
     @static if isdefinedglobal(Core, :declare_global)
-        # `Core.declare_global` is always concretized, so any failure has already been
-        # reported by `ConcreteInterpreter`.
+        # `Core.declare_global` is either concretely executed, in which case any failure has
+        # already been reported by `ConcreteInterpreter`, or materialized as a weak
+        # declaration, which cannot fail.
         f === Core.declare_global && isconcretized(analyzer, sv) && return false
     end
     if isa(f, IntrinsicFunction)
