@@ -70,20 +70,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of hanging on nonterminating loops that contain definitions or `@eval` calls.
 
 ### Fixed
-- Fixed error reports being dropped when concrete evaluation proves the
-  reported call always throws.
-- Fixed spurious field-access errors when analyzing parametric type
-  definitions with inner constructors.
+
 - Fixed `report_file` hanging when a nonterminating top-level loop assigns to a
   global variable. Global declarations emitted by assignments under control
   flow no longer pull the enclosing loop or branch condition into concrete
   execution.
-- Fixed false `UndefVarErrorReport`s after conditionally reassigning an initialized
-  global variable.
-- Fixed missing analyzer-interface errors when using custom analyzers with
-  `JETConcreteInterpreter` and `use_fixed_world = true`.
+
 - Fixed `@report_opt` crashing when optimized code dynamically calls a callable
   object literal such as `Base.BottomRF` (aviatesk/JET.jl#863).
+
+- Fixed error reports being dropped when concrete evaluation proves the
+  reported call always throws.
+
+- Fixed spurious field-access errors when analyzing parametric type
+  definitions with inner constructors.
+
+- Fixed false `UndefVarErrorReport`s after conditionally reassigning an
+  initialized global variable.
+
+- Fixed missing analyzer-interface errors when using custom analyzers with
+  `JETConcreteInterpreter` and `use_fixed_world = true`.
 
 ## [0.12.1]
 
