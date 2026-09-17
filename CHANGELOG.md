@@ -62,6 +62,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added the `concretization_timeout` configuration (60 seconds by default),
+  which bounds the time JET spends concretely executing a single top-level
+  statement. Exceeding it produces a `ConcretizationTimeoutErrorReport` instead
+  of hanging on nonterminating loops that contain definitions or `@eval` calls.
+
 ### Fixed
 - Fixed error reports being dropped when concrete evaluation proves the
   reported call always throws.
