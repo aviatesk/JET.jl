@@ -2064,6 +2064,11 @@ function select_direct_requirement!(
     (; selected, materialized) = plan
     stmts = src.code
     for (idx, stmt) in enumerate(stmts)
+        if isexpr(stmt, :global, 1) && only(stmt.args) isa Symbol
+            # Julia 1.12's weak declarations need no control-flow dependencies.
+            materialized[idx] = true
+            continue
+        end
         if isexpr(stmt, :globaldecl) || is_declare_global_call(stmt)
             # An untyped declaration has no data dependencies, so selecting it would only
             # pull in the enclosing control flow (possibly a nonterminating loop); under

@@ -85,6 +85,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed spurious field-access errors when analyzing parametric type
   definitions with inner constructors.
 
+- Fixed missed error reports after `global x` declarations inside control flow
+  on Julia 1.12.
+
 - Fixed false `UndefVarErrorReport`s after conditionally reassigning an
   initialized global variable.
 
