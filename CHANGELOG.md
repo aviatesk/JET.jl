@@ -85,6 +85,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed spurious field-access errors when analyzing parametric type
   definitions with inner constructors.
 
+- Fixed `concretization_patterns` not matching global assignments with
+  docstrings on Julia 1.13, and false `UndefVarErrorReport`s for documented
+  global variables.
+
 - Fixed `report_text` crashing instead of reporting an error when declaring an
   existing non-constant global variable as `const`, as in `x = 1; const x = 2`.
   Invalid declarations of non-constant globals or explicitly imported bindings

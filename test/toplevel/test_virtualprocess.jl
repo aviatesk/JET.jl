@@ -1165,6 +1165,30 @@ end
             @test sf.func === Symbol("@badmacro")
         end
 
+        @testset "documented macro expansion errors" begin
+            for source in (raw"""
+                    macro badmacro(s) throw(s) end
+                    "doc"
+                    @badmacro "hi"
+                    """, raw"""
+                    macro badmacro(s) throw(s) end
+                    "$(@badmacro "hi")"
+                    f() = nothing
+                    """)
+                mktemp() do filename, io
+                    res = report_text(source, filename)
+                    er = only(res.res.toplevel_error_reports)
+                    @test er isa MacroExpansionErrorReport
+                    @test er.err == "hi"
+                    @test er.file == filename && er.line == 2
+                    @test length(er.st) == 1
+                    sf = only(er.st)
+                    @test sf.file === Symbol(filename) && sf.line == 1
+                    @test sf.func === Symbol("@badmacro")
+                end
+            end
+        end
+
         # TODO add test for `eval_with_err_handling` and `lower_with_err_handling`
 
         # scrub all the internal frame when errors happens in `maybe_evaluate_builtin`
@@ -1258,6 +1282,125 @@ end
         r = only(res.res.inference_error_reports)
         @test r isa UndefVarErrorReport
         @test r.var isa GlobalRef && r.var.name === :foo
+    end
+
+    # Julia 1.13 wraps documented definitions in `if true ... end`, which must neither
+    # make them look conditional nor hide them from `concretization_patterns`
+    let res = @analyze_toplevel begin
+            "doc for x"
+            x = 1
+            "doc for getx"
+            getx() = x
+            getx()
+        end
+        @test isempty(res.res.toplevel_error_reports)
+        # Ignore the unrelated false positive from Base.active_module().
+        reports = filter(res.res.inference_error_reports) do r
+            !is_global_undef_var(r, Base, :active_repl)
+        end
+        @test isempty(reports)
+    end
+
+    @testset "documented binding concretization" begin
+        vmod, res = @analyze_toplevel2 concretization_patterns = [:(const foo = Dict())] begin
+            "doc for foo"
+            const foo = Dict()
+        end
+        @test isempty(res.res.toplevel_error_reports)
+        @test isconcrete(res, vmod, :foo)
+        foo = @invokelatest vmod.foo
+        @test foo isa Dict
+        foo[:key] = 42
+        @test foo[:key] == 42
+    end
+
+    @testset "macro-generated field documentation" begin
+        vmod = gen_virtual_module()
+        res = report_text(raw"""
+            macro make_type()
+                quote
+                    if true
+                        val = "field documentation"
+                    end
+                    Core.@__doc__ struct $(esc(:S))
+                        "$val"
+                        x
+                    end
+                end
+            end
+            "doc for S"
+            @make_type
+            """; context=vmod, virtualize=false, concretization_patterns=[:x_])
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
+        @test isconcrete(res, vmod, :S)
+        docs = @invokelatest Base.Docs.meta(vmod)
+        doc = docs[Base.Docs.Binding(vmod, :S)].docs[Union{}]
+        @test only(doc.text) == "doc for S"
+        @test doc.data[:fields][:x] == "field documentation"
+    end
+
+    @testset "documented macros expand once" begin
+        vmod, res = @analyze_toplevel2 concretization_patterns = [:x_] begin
+            const outer_expansions = Ref(0)
+            const inner_expansions = Ref(0)
+            macro decorate(ex::Expr)
+                outer_expansions[] += 1
+                return esc(ex)
+            end
+            macro body()
+                inner_expansions[] += 1
+                return :(42)
+            end
+            "doc for f"
+            @decorate f() = @body
+        end
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
+        @test (@invokelatest vmod.outer_expansions[]) == 1
+        @test (@invokelatest vmod.inner_expansions[]) == 1
+        @test (@invokelatest vmod.f()) == 42
+        docs = @invokelatest Base.Docs.meta(vmod)
+        doc = docs[Base.Docs.Binding(vmod, :f)].docs[Tuple{}]
+        @test only(doc.text) == "doc for f"
+    end
+
+    @testset "documented macro literals" begin
+        vmod, res = @analyze_toplevel2 concretization_patterns = [:x_] begin
+            "doc for owner"
+            owner() = @__MODULE__
+            "doc for mod"
+            const mod = @__MODULE__
+        end
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
+        @test (@invokelatest vmod.owner()) === vmod
+        @test (@invokelatest vmod.mod) === vmod
+    end
+
+    @testset "documented macro returning nothing" begin
+        vmod = gen_virtual_module()
+        Core.eval(vmod, :(macro no_definition(); nothing; end))
+        ex = Meta.parse("\"doc\"\n@no_definition")
+        expanded = @invokelatest JET.macroexpand_doc(vmod, ex)
+        expected = @invokelatest macroexpand(vmod, ex)
+        @test expanded !== nothing
+        @test expanded == expected
+    end
+
+    @testset "documentation-only method signature" begin
+        vmod, res = @analyze_toplevel2 concretization_patterns = [:x_] begin
+            const calls = Ref(0)
+            f() = (calls[] += 1; nothing)
+            "doc for f"
+            f()
+        end
+        @test isempty(res.res.toplevel_error_reports)
+        @test isempty(res.res.inference_error_reports)
+        @test (@invokelatest vmod.calls[]) == 0
+        docs = @invokelatest Base.Docs.meta(vmod)
+        doc = docs[Base.Docs.Binding(vmod, :f)].docs[Tuple{}]
+        @test only(doc.text) == "doc for f"
     end
 end
 
