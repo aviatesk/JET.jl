@@ -457,6 +457,19 @@ function CC.abstract_eval_setglobal!(analyzer::JETAnalyzer, sv::InferenceState, 
     return ret
 end
 
+function const_assignment_rt_exct(
+        analyzer::SoundBasicAnalyzer, sv::InferenceState, saw_latestworld::Bool,
+        gr::GlobalRef, @nospecialize(new_binding_typ)
+    )
+    ret, isimported = @invoke const_assignment_rt_exct(
+        analyzer::ToplevelAbstractAnalyzer, sv::InferenceState,
+        saw_latestworld::Bool, gr::GlobalRef, new_binding_typ::Any)
+    if first(ret) === Bottom
+        add_new_report!(analyzer, sv.result, InvalidConstantDeclarationReport(sv, gr, isimported))
+    end
+    return ret, isimported
+end
+
 function CC.abstract_eval_value(analyzer::JETAnalyzer, @nospecialize(e), sstate::StatementState, sv::InferenceState)
     ret = @invoke CC.abstract_eval_value(analyzer::ToplevelAbstractAnalyzer, e::Any, sstate::StatementState, sv::InferenceState)
 
@@ -980,6 +993,20 @@ function _report_undef_local_var!(analyzer::JETAnalyzer, sv::CC.InferenceState, 
     maybeundef = vtype.typ !== Union{}
     add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, name, maybeundef))
     return true
+end
+
+@jetreport struct InvalidConstantDeclarationReport <: InferenceErrorReport
+    var::GlobalRef
+    isimported::Bool
+end
+function JETInterface.print_report_message(io::IO, report::InvalidConstantDeclarationReport)
+    (; var, isimported) = report
+    print(io, "cannot declare `", var.mod, '.', var.name, "` constant; ")
+    if isimported
+        print(io, "it was already declared as an import")
+    else
+        print(io, "it was already declared global")
+    end
 end
 
 @jetreport struct IncompatibleGlobalAssignmentError <: InferenceErrorReport
