@@ -104,10 +104,18 @@ ask for clarification.
 
 # Git operations
 
-Only perform Git operations when the user explicitly requests them. Before
-creating any commit, use the [`commit`](./.agents/skills/commit/SKILL.md) skill.
+Read-only Git operations (e.g. `git status`, `git diff`, and `git log`) may be
+used as needed without an explicit user request or a pause after each command.
 
-After any Git operation, wait for explicit follow-up instructions before doing
-more. If the user provides feedback on a commit, do not automatically amend it
-or create a fixup commit. Explain what could change and wait for explicit
-instruction.
+Git operations that change repository state require an explicit user request.
+You may perform the sequence of operations needed to complete that request
+without pausing after each command (e.g. staging and committing the relevant
+changes when asked to commit). Keep the sequence within the requested scope;
+a request to commit does not authorize pushing. Before creating any commit,
+use the [`commit`](./.agents/skills/commit/SKILL.md) skill.
+
+After completing the requested state-changing Git task, report the result and
+wait for explicit follow-up instructions before doing more. If the user
+provides feedback on a commit, do not automatically make further changes,
+amend it, or create a fixup commit. Explain what could change and wait for
+explicit instruction.
