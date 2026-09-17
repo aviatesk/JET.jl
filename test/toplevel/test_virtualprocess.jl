@@ -1776,6 +1776,59 @@ end
         end
     end
 
+    # These tests use finite loops whose iterations explicitly sleep longer than the
+    # timeout, so that they terminate even if the timeout does not work.
+    @testset "concretization timeout" begin
+        let res = @analyze_toplevel concretization_timeout=0.1 begin
+                for i in 1:3
+                    @eval begin
+                        sleep(0.2)
+                        f(::Val{$i}) = $i
+                    end
+                end
+            end
+            report = only(res.res.toplevel_error_reports)
+            @test report isa JET.ConcretizationTimeoutErrorReport
+            @test report.timeout == 0.1
+            msg = @invokelatest sprint(JET.print_report, report)
+            @test occursin("concretization_timeout", msg)
+        end
+        # loops that terminate within the timeout are unaffected
+        let (vmod, res) = @analyze_toplevel2 begin
+                for i in 1:3
+                    @eval g(::Val{$i}) = $i
+                end
+            end
+            @test isempty(res.res.toplevel_error_reports)
+            g = @invokelatest getglobal(vmod, :g)
+            @test length(methods(g)) == 3
+        end
+        # loop-free code is stopped between its statements too
+        let res = @analyze_toplevel concretization_timeout=0.1 begin
+                begin # a single top-level statement
+                    @eval sleep(0.2)
+                    @eval h() = 1
+                end
+            end
+            report = only(res.res.toplevel_error_reports)
+            @test report isa JET.ConcretizationTimeoutErrorReport
+        end
+        # The time spent in `include`d files does not count: each included statement stays
+        # within the timeout, while the included file as a whole exceeds it.
+        mktempdir() do dir
+            write(joinpath(dir, "included.jl"), "@eval sleep(0.6)\n@eval sleep(0.6)\n")
+            main = joinpath(dir, "main.jl")
+            write(main, """
+                for i in 1:2
+                    i == 1 && include("included.jl")
+                end
+                """)
+            res = report_file2(main; concretization_timeout = 1.0)
+            @test isempty(res.res.toplevel_error_reports)
+        end
+        @test_throws ArgumentError JET.ToplevelConfig(; concretization_timeout=0)
+    end
+
     # A more complex test case (xref: https://github.com/JuliaDebug/LoweredCodeUtils.jl/pull/99#issuecomment-2236373067)
     # This test case might seem simple at first glance, but note that `x2` and `a2` are
     # defined at the top level (because of the `begin` at the top).

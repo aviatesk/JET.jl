@@ -128,6 +128,30 @@ function print_report(io::IO, report::RecursiveIncludeErrorReport)
     println(io, " ⚈  included files: ", join(report.files, ' '))
 end
 
+# thrown by `JuliaInterpreter.step_expr!(::ConcreteInterpreter, ...)` when the concrete
+# execution of a single top-level statement exceeds `concretization_timeout`
+struct ConcretizationTimeoutError <: Exception
+    timeout::Float64
+end
+
+struct ConcretizationTimeoutErrorReport <: ToplevelErrorReport
+    timeout::Float64
+    file::String
+    line::Int
+end
+function print_report(io::IO, report::ConcretizationTimeoutErrorReport)
+    print(io, """
+JET stopped the concrete execution of this top-level statement after $(report.timeout) seconds (`concretization_timeout`).
+
+JET executes top-level code concretely when it contains `function` or `struct` definitions,
+`@eval` calls, or in-place updates of concretized values, and such code may run for a long
+time or, within a loop, never terminate.
+
+- Move the definitions out of the loop or the slow code if possible.
+- If the code is expected to run this long, raise `concretization_timeout`.
+""")
+end
+
 # a special exception type that is supposed to be thrown only by `JuliaInterpreter.lookup(::ConcreteInterpreter)`
 struct MissingConcretizationError <: Exception
     isconst::Bool
@@ -193,6 +217,8 @@ function print_report(io::IO, report::MissingConcretizationErrorReport)
     println(io, "  all top-level code in the module. This may run side effects and can")
     print(io, "  make analysis slower.")
 end
+
+const DEFAULT_CONCRETIZATION_TIMEOUT = 60.0
 
 """
 Configuration options for top-level analysis.
@@ -342,6 +368,17 @@ These options apply to all entry points described in the
 
   Also see: the `toplevel_logger` section below and [`virtual_process`](@ref).
 ---
+- `concretization_timeout::Real = $(DEFAULT_CONCRETIZATION_TIMEOUT)` \\
+  The time in seconds that JET allows for concretely executing a single
+  top-level statement. JET executes top-level code concretely when it contains
+  `function` or `struct` definitions, `@eval` calls or in-place updates of
+  concretized values, and such code may run for a long time or, within a loop,
+  never terminate. When the execution is still running after the timeout, JET
+  stops it between two statements, reports a `ConcretizationTimeoutErrorReport`
+  and skips the abstract analysis of that top-level statement. The time spent
+  in `include`d files and in loading modules is not counted.
+  Set `Inf` to disable the timeout.
+---
 - `toplevel_logger::Union{Nothing,IO} = nothing` \\
   If an `IO` object is provided, JET writes top-level analysis logs to it.
   Set the logging level with the `$(repr(JET_LOGGER_LEVEL))` `IO` property.
@@ -374,6 +411,7 @@ struct ToplevelConfig
     context::Module
     analyze_from_definitions::Union{Bool,Symbol}
     concretization_patterns::Vector{Any}
+    concretization_timeout::Float64
     virtualize::Bool
     toplevel_logger # ::Union{Nothing,IO}
     function ToplevelConfig(
@@ -381,9 +419,12 @@ struct ToplevelConfig
         context::Module = Main,
         analyze_from_definitions::Union{Bool,Symbol} = false,
         concretization_patterns = Any[],
+        concretization_timeout::Real = DEFAULT_CONCRETIZATION_TIMEOUT,
         virtualize::Bool = true,
         toplevel_logger::Union{Nothing,IO} = nothing,
         __jetconfigs...)
+        concretization_timeout > 0 || throw(ArgumentError(
+            "`concretization_timeout` must be positive, got $concretization_timeout"))
         concretization_patterns = Any[striplines(normalise(x)) for x in concretization_patterns]
         for pat in default_concretization_patterns()
             push!(concretization_patterns, striplines(normalise(pat)))
@@ -396,6 +437,7 @@ struct ToplevelConfig
             context,
             analyze_from_definitions,
             concretization_patterns,
+            Float64(concretization_timeout),
             virtualize,
             toplevel_logger)
     end
@@ -523,6 +565,7 @@ mutable struct InterpretationState
     const pkg_mod_depth::Int
     const files_stack::Vector{String}
     isfailed::Bool
+    concretization_deadline::UInt64 # in `time_ns()`, for the current top-level statement
 end
 function InterpretationState(
         state::InterpretationState;
@@ -538,6 +581,7 @@ function InterpretationState(
     res::VirtualProcessResult = state.res
     files_stack::Vector{String} = state.files_stack
     isfailed = false
+    concretization_deadline = typemax(UInt64)
     return InterpretationState(
         filename,
         curline,
@@ -548,7 +592,8 @@ function InterpretationState(
         res,
         pkg_mod_depth,
         files_stack,
-        isfailed)
+        isfailed,
+        concretization_deadline)
 end
 
 """
@@ -713,7 +758,8 @@ function virtual_process(interp::ConcreteInterpreter,
     world = Base.get_world_counter()
     state = InterpretationState(
         filename, #=curline=#0, world, #=dependencies=#Set{Symbol}(), context, config,
-        res, #=pkg_mod_depth=#0, #=files_stack=#String[], #=isfailed=#false)
+        res, #=pkg_mod_depth=#0, #=files_stack=#String[], #=isfailed=#false,
+        #=concretization_deadline=#typemax(UInt64))
     interp = ConcreteInterpreter(interp, state)
     try
         virtual_process!(interp, x, overrideex)
@@ -1636,6 +1682,7 @@ function _virtual_process!(interp::ConcreteInterpreter,
         fix_self_references!(state.res.actual2virtual, src)
 
         state.isfailed = false
+        start_concretization_timeout!(state)
         if force_concretize
             JuliaInterpreter.finish!(interp, Frame(state.context, src; world=state.world), true)
             continue
@@ -2330,15 +2377,52 @@ function usemodule_with_err_handling(interp::ConcreteInterpreter, ex::Expr, worl
     end; end
 end
 
+function start_concretization_timeout!(state::InterpretationState)
+    timeout_ns = state.config.concretization_timeout * 1e9
+    now = time_ns()
+    state.concretization_deadline = timeout_ns < typemax(UInt64) - now ?
+        now + round(UInt64, timeout_ns) : typemax(UInt64)
+    return state
+end
+
+# Runs `f` without counting its time against `concretization_timeout`. This is for work
+# that belongs to other code than the current top-level statement: `include`d files,
+# whose statements have their own timeouts, and module loading.
+function pause_concretization_timeout(f, state::InterpretationState)
+    t0 = time_ns()
+    try
+        return f()
+    finally
+        deadline = state.concretization_deadline
+        elapsed = time_ns() - t0
+        if deadline < typemax(UInt64) - elapsed
+            state.concretization_deadline = deadline + elapsed
+        end
+    end
+end
+
 function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node), istoplevel::Bool)
     @assert istoplevel "ConcreteInterpreter can only work for top-level code"
+
+    state = InterpretationState(interp)
+    if time_ns() > state.concretization_deadline
+        # the generic `step_expr!` catches errors only around its own evaluation, so route
+        # this one through `handle_err` here (which needs a caught backtrace)
+        try
+            throw(ConcretizationTimeoutError(state.config.concretization_timeout))
+        catch err
+            return JuliaInterpreter.handle_err(interp, frame, err)
+        end
+    end
 
     if ismoduleusage(node) || is_lowered_module_usage(node)
         moduleusage = ismoduleusage(node) ? node : to_module_usage(node)
         world = frame.world
-        for ex in to_simple_module_usages(moduleusage)
-            if usemodule_with_err_handling(interp, ex, world) === nothing
-                break
+        pause_concretization_timeout(state) do
+            for ex in to_simple_module_usages(moduleusage)
+                if usemodule_with_err_handling(interp, ex, world) === nothing
+                    break
+                end
             end
         end
         return frame.pc += 1
@@ -2535,7 +2619,9 @@ function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func)
                                    curline = 0,
                                    context = include_context)
     newinterp = ConcreteInterpreter(interp, newstate)
-    virtual_process!(newinterp, included)
+    pause_concretization_timeout(state) do
+        virtual_process!(newinterp, included)
+    end
 
     # TODO: actually, here we need to try to get the lastly analyzed result of the `_virtual_process!` call above
     nothing
@@ -2602,6 +2688,8 @@ function JuliaInterpreter.handle_err(
     state = InterpretationState(interp)
     if err isa MissingConcretizationError
         report = MissingConcretizationErrorReport(err.isconst, err.var, err.assignment, state.filename, state.curline)
+    elseif err isa ConcretizationTimeoutError
+        report = ConcretizationTimeoutErrorReport(err.timeout, state.filename, state.curline)
     else
         report = ActualErrorWrapped(err, st, state.filename, state.curline)
     end
