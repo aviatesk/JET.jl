@@ -1171,6 +1171,33 @@ function macroexpand_with_err_handling(state::InterpretationState, x::Expr)
     end
 end
 
+function macroexpand_doc_with_err_handling(state::InterpretationState, x::Expr)
+    # `scrub_offset = 3`: `macroexpand_doc` -> `macroexpand` -> kwfunc (`macroexpand`)
+    with_err_handling(macro_expansion_err_handler, state; scrub_offset=3) do
+        Base.invoke_in_world(state.world, macroexpand_doc, state.context, x)
+    end
+end
+
+function macroexpand_doc(mod::Module, x::Expr)
+    # Reuse the expanded target so that user macros run only once, including when
+    # falling back to ordinary `@doc` expansion for macro-generated blocks.
+    target = macroexpand(mod, x.args[4]; recursive=true)
+    split = isexpr(target, (:(=), :const, :global, :function, :macro, :struct, :abstract, :primitive))
+    doccall = Expr(:macrocall, x.args[1], x.args[2], x.args[3], split ? copy(target) : target)
+    if split
+        # Base's `define=false` mode registers documentation without redefining the
+        # target or introducing the conditional value wrapper used since Julia 1.13.
+        # Keep modules and `@__doc__` blocks intact to preserve documentation scope.
+        push!(doccall.args, false)
+    end
+    expanded = macroexpand(mod, doccall; recursive=true)
+    if split
+        @assert isexpr(expanded, :block)
+        return Expr(:block, target, expanded.args...)
+    end
+    return expanded
+end
+
 function lower_with_err_handling(interp::ConcreteInterpreter, ::JS.SyntaxNode, xblk::Expr)
     # `scrub_offset = 1`: `lower`
     state = InterpretationState(interp)
@@ -1588,7 +1615,12 @@ function _virtual_process!(interp::ConcreteInterpreter,
             # but for now we just ignore that.
             isexpr(x, :var"hygienic-scope"))
 
-            newx = macroexpand_with_err_handling(state, x)
+            isdoc = first(x.args) === GlobalRef(Core, Symbol("@doc"))
+            newx = if isdoc && isexpr(x, :macrocall, 4)
+                macroexpand_doc_with_err_handling(state, x)
+            else
+                macroexpand_with_err_handling(state, x)
+            end
 
             # if any error happened during macro expansion, bail out now and continue
             isnothing(newx) && continue
@@ -1596,7 +1628,7 @@ function _virtual_process!(interp::ConcreteInterpreter,
             # special case and flatten the resulting expression expanded from `@doc` macro
             # the macro expands to a block expression and so it makes it difficult to specify
             # concretization pattern correctly since `@doc` macro is attached implicitly
-            if first(x.args) === GlobalRef(Core, Symbol("@doc"))
+            if isdoc
                 # `@doc` macro usually produces :block expression, but may also produce :toplevel
                 # one when attached to a module expression
                 @assert isexpr(newx, :block) || isexpr(newx, :toplevel)
