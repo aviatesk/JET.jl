@@ -94,6 +94,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Invalid declarations of non-constant globals or explicitly imported bindings
   now produce an `InvalidConstantDeclarationReport`.
 
+- Fixed `mode = :typo` reporting `IncompatibleGlobalAssignmentError` for
+  incompatible assignments to global variables. These errors remain reported
+  in `:basic` and `:sound` modes.
+
 - Fixed missed error reports after `global x` declarations inside control flow
   on Julia 1.12.
 
