@@ -154,6 +154,121 @@ end
     end
 end
 
+@testset "invalid constant declaration" begin
+    let (vmod, res) = @analyze_toplevel2 begin
+            x = 1
+            const x = 2
+        end
+        @test isempty(res.res.toplevel_error_reports)
+        report = only(res.res.inference_error_reports)
+        @test report isa InvalidConstantDeclarationReport
+        @test report.var === GlobalRef(vmod, :x)
+        @test !report.isimported
+    end
+    let res = @analyze_toplevel begin
+            global x
+            x = 1
+            const x = 2
+        end
+        @test isempty(res.res.toplevel_error_reports)
+        @test only(res.res.inference_error_reports) isa InvalidConstantDeclarationReport
+    end
+    for source in ("x = 1\nconst x = 2", "global x\nx = 1\nconst x = 2")
+        res = report_text(source, "const-declaration.jl")
+        @test isempty(res.res.toplevel_error_reports)
+        @test only(get_reports_with_test(res)) isa InvalidConstantDeclarationReport
+    end
+    let (vmod, res) = @analyze_toplevel2 begin
+            module Exporter
+                const x = 1
+            end
+            import .Exporter: x
+            const x = 2
+        end
+        @test isempty(res.res.toplevel_error_reports)
+        report = only(res.res.inference_error_reports)
+        @test report isa InvalidConstantDeclarationReport
+        @test report.var === GlobalRef(vmod, :x)
+        @test report.isimported
+    end
+    let res = report_text("x = 1\nglobal x::Int", "global-declaration.jl")
+        @test only(res.res.toplevel_error_reports) isa ActualErrorWrapped
+        @test isempty(res.res.inference_error_reports)
+    end
+    for mode in (:basic, :sound)
+        let res = @analyze_toplevel mode=mode ignore_throws=true begin
+                x = 1
+                const x = 2
+            end
+            @test isempty(res.res.toplevel_error_reports)
+            @test only(res.res.inference_error_reports) isa InvalidConstantDeclarationReport
+        end
+        let res = @analyze_toplevel mode=mode ignore_throws=true begin
+                x = 1
+                if rand(Bool)
+                    const x = 2
+                end
+            end
+            @test isempty(res.res.toplevel_error_reports)
+            @test only(res.res.inference_error_reports) isa InvalidConstantDeclarationReport
+        end
+        let res = @analyze_toplevel mode=mode ignore_throws=true begin
+                x = 1
+                try
+                    global x
+                    const x = 2
+                catch
+                end
+            end
+            @test isempty(res.res.toplevel_error_reports)
+            @test only(res.res.inference_error_reports) isa InvalidConstantDeclarationReport
+        end
+    end
+    let res = @analyze_toplevel begin
+            x = 1
+            if false
+                const x = 2
+            end
+        end
+        @test isempty(get_reports(res))
+    end
+    let res = @analyze_toplevel mode=:typo begin
+            x = 1
+            const x = 2
+        end
+        @test isempty(get_reports(res))
+    end
+end
+
+@testset "global assignment partition state" begin
+    for value in (1, "bad")
+        m = gen_virtual_module()
+        g = GlobalRef(m, :x)
+        guard = Base.lookup_binding_partition(Base.get_world_counter(), g)
+        Core.eval(m, :(global x::Int))
+        current = Base.lookup_binding_partition(Base.get_world_counter(), g)
+        declared = Base.lookup_binding_partition(current.min_world - UInt(1), g)
+        @test CC.binding_kind(declared) == CC.PARTITION_KIND_DECLARED
+
+        # Assignment syntax queries the binding type first, narrowing the scan's world range.
+        ex = :(Core.setglobal!(@__MODULE__, :x, $value))
+        lnn = LineNumberNode(@__LINE__, Symbol(@__FILE__))
+        res = analyze_toplevel(ex, lnn; context=m, virtualize=false)
+        states = JET.get_binding_states(res.analyzer)
+        @test isempty(res.res.toplevel_error_reports)
+        @test !haskey(states, guard)
+        @test !haskey(states, declared)
+        if value isa Int
+            @test isempty(res.res.inference_error_reports)
+            @test !states[current].isconst
+            @test !states[current].maybeundef
+        else
+            @test only(res.res.inference_error_reports) isa IncompatibleGlobalAssignmentError
+            @test !haskey(states, current)
+        end
+    end
+end
+
 @testset "conditional assignment" begin
     let res = @analyze_toplevel begin
             if rand(Bool)

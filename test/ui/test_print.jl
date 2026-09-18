@@ -64,6 +64,28 @@ end
     end
 end
 
+@testset "invalid constant declaration messages" begin
+    let res = @analyze_toplevel begin
+            x = 1
+            const x = 2
+        end
+        report = only(res.res.inference_error_reports)
+        @test report isa InvalidConstantDeclarationReport
+        @test occursin("cannot declare `$(report.var.mod).x` constant; it was already declared global", get_msg(report))
+    end
+    let res = @analyze_toplevel begin
+            module Exporter
+                const x = 1
+            end
+            import .Exporter: x
+            const x = 2
+        end
+        report = only(res.res.inference_error_reports)
+        @test report isa InvalidConstantDeclarationReport
+        @test occursin("cannot declare `$(report.var.mod).x` constant; it was already declared as an import", get_msg(report))
+    end
+end
+
 @testset "repr" begin
     let result = report_call((Regex,)) do r
             getfield(r, :nonexist)
