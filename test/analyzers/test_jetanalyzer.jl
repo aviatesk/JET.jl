@@ -351,13 +351,21 @@ func_undefvar(a) = _func_undefvar(a)
 end
 
 global __int_globalvar__::Int
-let result = report_call((Nothing,)) do x
-        setglobal!(@__MODULE__, :__int_globalvar__, x)
+@testset "global assignment" begin
+    for mode in (:basic, :sound, :typo)
+        result = report_call((Nothing,); mode) do x
+            setglobal!(@__MODULE__, :__int_globalvar__, x)
+        end
+        reports = get_reports_with_test(result)
+        if mode === :typo
+            @test isempty(reports)
+        else
+            report = only(reports)
+            @test report isa IncompatibleGlobalAssignmentError
+            @test report.mod === @__MODULE__
+            @test report.name === :__int_globalvar__
+        end
     end
-    report = only(get_reports_with_test(result))
-    @test report isa IncompatibleGlobalAssignmentError
-    @test report.mod === @__MODULE__
-    @test report.name === :__int_globalvar__
 end
 
 @testset "report non-boolean condition error" begin

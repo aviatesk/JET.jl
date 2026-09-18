@@ -1021,8 +1021,6 @@ report_global_assignment!(analyzer::BasicJETAnalyzer, sv::InferenceState, ret::C
     _report_global_assignment!(analyzer, sv, ret, M, s, v, false)
 report_global_assignment!(analyzer::SoundJETAnalyzer, sv::InferenceState, ret::CallMeta, @nospecialize(M), @nospecialize(s), @nospecialize(v)) =
     _report_global_assignment!(analyzer, sv, ret, M, s, v, true)
-report_global_assignment!(analyzer::TypoJETAnalyzer, sv::InferenceState, ret::CallMeta, @nospecialize(M), @nospecialize(s), @nospecialize(v)) =
-    _report_global_assignment!(analyzer, sv, ret, M, s, v, false)
 
 function _report_global_assignment!(analyzer::JETAnalyzer, sv::InferenceState, ret::CallMeta,
                                     @nospecialize(M), @nospecialize(s), @nospecialize(_v),
