@@ -2,8 +2,10 @@
 
 ## Code formatting
 
-- When writing Julia code, use _4 whitespaces_ for indentation and try to keep
-  the maximum line length under _92 characters_.
+- For Julia code, default to _4-space_ indentation and a soft line-length target
+  of _92 characters_. These defaults are secondary to the surrounding style.
+- Prioritize consistency with the surrounding code's style and line wrapping.
+  Do not introduce unnecessary line breaks solely to meet a line-length target.
 - AI agents must not run automated formatters unless explicitly requested by a
   human in the current conversation.
   This includes file-wide or project-wide formatting commands and
