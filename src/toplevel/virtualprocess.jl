@@ -136,20 +136,41 @@ end
 
 struct ConcretizationTimeoutErrorReport <: ToplevelErrorReport
     timeout::Float64
+    st::Base.StackTraces.StackTrace # interpreted calls that were running, innermost first
     file::String
     line::Int
 end
 function print_report(io::IO, report::ConcretizationTimeoutErrorReport)
-    print(io, """
-JET stopped the concrete execution of this top-level statement after $(report.timeout) seconds (`concretization_timeout`).
+    print(io, "JET stopped the concrete execution of this top-level statement after")
+    println(io, " $(report.timeout) seconds (`concretization_timeout`).")
+    if !isempty(report.st)
+        Base.show_backtrace(io, report.st) # adds a `Stacktrace:` heading
+        println(io)
+    end
+    println(io)
+    println(io, "JET executes top-level code concretely when it contains `function` or")
+    println(io, "`struct` definitions, `@eval` calls, in-place updates of concretized")
+    println(io, "values, or code matching `concretization_patterns`. This statement took")
+    println(io, "longer than that, or it does not terminate. The rest of the statement")
+    println(io, "was not executed, so the definitions it would have made are missing from")
+    println(io, "the rest of the analysis, and the statement itself was not analyzed.")
+    println(io)
+    println(io, "- Move the definitions or `@eval` calls out of the long-running code, so")
+    println(io, "  that JET analyzes the code instead of executing it.")
+    println(io, "- If the code is expected to run this long, raise `concretization_timeout`.")
+end
 
-JET executes top-level code concretely when it contains `function` or `struct` definitions,
-`@eval` calls, or in-place updates of concretized values, and such code may run for a long
-time or, within a loop, never terminate.
-
-- Move the definitions out of the loop or the slow code if possible.
-- If the code is expected to run this long, raise `concretization_timeout`.
-""")
+# An error raised in an interpreted callee frame, with the native backtrace of the throw
+# and the interpreted stack at that point. Both are recorded at the innermost frame: the
+# frames are recycled while the error unwinds toward the top-level frame, and a rethrow
+# from an interpreted handler replaces the native backtrace. The backtrace is kept raw and
+# symbolized only when reported, since interpreted code may catch errors in a loop.
+struct CalleeError
+    err
+    bt::Vector{Union{Ptr{Nothing},Base.InterpreterIP}}
+    st::Base.StackTraces.StackTrace
+    CalleeError(@nospecialize(err), bt::Vector{Union{Ptr{Nothing},Base.InterpreterIP}},
+                st::Base.StackTraces.StackTrace) = new(err, bt, st)
 end
 
 # a special exception type that is supposed to be thrown only by `JuliaInterpreter.lookup(::ConcreteInterpreter)`
@@ -375,9 +396,12 @@ These options apply to all entry points described in the
   `function` or `struct` definitions, `@eval` calls or in-place updates of
   concretized values, and such code may run for a long time or, within a loop,
   never terminate. When the execution is still running after the timeout, JET
-  stops it between two statements, reports a `ConcretizationTimeoutErrorReport`
-  and skips the abstract analysis of that top-level statement. The time spent
-  in `include`d files and in module-loading statements handled by JET is not
+  stops it at the next interpreted statement, including statements of functions
+  called from the top-level code, reports a `ConcretizationTimeoutErrorReport`
+  showing the calls that were running, and skips the abstract analysis of that
+  top-level statement. Code that runs natively, such as `ccall`s, builtins and
+  code evaluated by `Core.eval`, cannot be interrupted. The time spent in
+  `include`d files and in module-loading statements handled by JET is not
   counted.
   Set `Inf` to disable the timeout.
 ---
@@ -568,6 +592,11 @@ mutable struct InterpretationState
     const files_stack::Vector{String}
     isfailed::Bool
     concretization_deadline::UInt64 # in `time_ns()`, for the current top-level statement
+    callee_error::Union{Nothing,CalleeError} # currently unwinding
+    # The interpreted stacks of the errors caught in each frame, parallel to the frame's
+    # active exceptions. JuliaInterpreter pools frames for reuse, so an entry must be
+    # removed whenever its frame exits, whether by returning or by unwinding.
+    const caught_callee_errors::IdDict{Frame,Vector{CalleeError}}
 end
 function InterpretationState(
         state::InterpretationState;
@@ -595,7 +624,9 @@ function InterpretationState(
         pkg_mod_depth,
         files_stack,
         isfailed,
-        concretization_deadline)
+        concretization_deadline,
+        #=callee_error=#nothing,
+        #=caught_callee_errors=#IdDict{Frame,Vector{CalleeError}}())
 end
 
 """
@@ -761,7 +792,8 @@ function virtual_process(interp::ConcreteInterpreter,
     state = InterpretationState(
         filename, #=curline=#0, world, #=dependencies=#Set{Symbol}(), context, config,
         res, #=pkg_mod_depth=#0, #=files_stack=#String[], #=isfailed=#false,
-        #=concretization_deadline=#typemax(UInt64))
+        #=concretization_deadline=#typemax(UInt64), #=callee_error=#nothing,
+        #=caught_callee_errors=#IdDict{Frame,Vector{CalleeError}}())
     interp = ConcreteInterpreter(interp, state)
     try
         virtual_process!(interp, x, overrideex)
@@ -1716,6 +1748,8 @@ function _virtual_process!(interp::ConcreteInterpreter,
         fix_self_references!(state.res.actual2virtual, src)
 
         state.isfailed = false
+        state.callee_error = nothing
+        empty!(state.caught_callee_errors)
         if force_concretize
             frame = Frame(state.context, src; world=state.world)
             start_concretization_timeout!(state)
@@ -2445,9 +2479,9 @@ function pause_concretization_timeout(f, state::InterpretationState)
     end
 end
 
+# This runs for every statement of the top-level frame and of the frames of interpreted
+# callees, so the timeout also stops loops inside functions called from top-level code.
 function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node), istoplevel::Bool)
-    @assert istoplevel "ConcreteInterpreter can only work for top-level code"
-
     state = InterpretationState(interp)
     if time_ns() > state.concretization_deadline
         # the generic `step_expr!` catches errors only around its own evaluation, so route
@@ -2459,7 +2493,7 @@ function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, 
         end
     end
 
-    if ismoduleusage(node) || is_lowered_module_usage(node)
+    if istoplevel && (ismoduleusage(node) || is_lowered_module_usage(node))
         moduleusage = ismoduleusage(node) ? node : to_module_usage(node)
         world = frame.world
         pause_concretization_timeout(state) do
@@ -2474,7 +2508,20 @@ function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, 
 
     res = @invoke JuliaInterpreter.step_expr!(interp::Interpreter, frame::Frame, node::Any, istoplevel::Bool)
 
-    should_analyze_from_definitions(InterpretationState(interp).config) && collect_toplevel_signature!(interp, frame, node)
+    if node isa ReturnNode
+        delete!(state.caught_callee_errors, frame)
+    elseif isexpr(node, :pop_exception)
+        caught = get(state.caught_callee_errors, frame, nothing)
+        if caught !== nothing
+            n = length(frame.framedata.exceptions)
+            length(caught) > n && resize!(caught, n)
+            isempty(caught) && delete!(state.caught_callee_errors, frame)
+        end
+    end
+
+    if istoplevel && should_analyze_from_definitions(state.config)
+        collect_toplevel_signature!(interp, frame, node)
+    end
 
     return res
 end
@@ -2580,30 +2627,33 @@ function _to_simple_module_usages(x::Expr)
     end
 end
 
-# This overload performs almost the same work as
-# `JuliaInterpreter.evaluate_call!(::JuliaInterpreter.NonRecursiveInterpreter, ...)`
-# but includes a few important adjustments specific to JET's virtual process:
+# Calls are interpreted recursively (JuliaInterpreter's default), so that
+# `concretization_timeout` also stops loops inside callees. This overload adds a few
+# adjustments specific to JET's virtual process:
 # - Special handling for `include` calls: recursively apply JET analysis to included files.
 # - Ignore C-side function definitions created via `Base._ccallable`. These definitions
 #   are not namespaced in the module and can cause false-positive name conflict errors
 #   when running analysis multiple times (see aviatesk/JET.jl#597).
 function JuliaInterpreter.evaluate_call!(
-        interp::ConcreteInterpreter, frame::Frame, fargs::Vector{Any},
-        _enter_generated::Bool
+        interp::ConcreteInterpreter, frame::Frame, fargs::Vector{Any}, enter_generated::Bool
     )
-    f = popfirst!(fargs)
-    args = fargs # now it's really args
-    isinclude(f) && return handle_include(interp, f, args)
-    if f === Base._ccallable
-        # skip concrete-interpretation of `jl_extern_c`
-        if length(args) == 2 && args[1] isa Type && args[2] isa Type
-            # ignore only if the method dispatch is successful
+    f = fargs[1]
+    if isinclude(f)
+        popfirst!(fargs)
+        return handle_include(interp, f, fargs)
+    elseif f === Base._ccallable
+        # skip concrete-interpretation of `jl_extern_c`, but only when the method dispatch
+        # would succeed; otherwise the call goes through and raises the `MethodError`
+        if length(fargs) == 3 && fargs[2] isa Type && fargs[3] isa Type
             return nothing
-        else
-            # otherwise just call it to trigger a method error
         end
     end
-    return Base.invoke_in_world(frame.world, f, args...)
+    state = InterpretationState(interp)
+    if f === Base.rethrow
+        restore_callee_error!(state, frame, fargs)
+    end
+    return @invoke JuliaInterpreter.evaluate_call!(
+        interp::Interpreter, frame::Frame, fargs::Vector{Any}, enter_generated::Bool)
 end
 
 isinclude(@nospecialize f) = f isa Base.IncludeInto || (isa(f, Function) && nameof(f) === :include)
@@ -2681,15 +2731,37 @@ function try_read_file(
 end
 
 const JET_VIRTUALPROCESS_FILE = Symbol(@__FILE__)
-const JULIAINTERPRETER_BUILTINS_FILE = let
-    jlfile = pathof(JuliaInterpreter)::String
-    Symbol(normpath(jlfile, "..", "builtins.jl"))
+const INTERPRETER_SRC_DIRS = (
+    normpath(@__DIR__, ".."), # JET
+    dirname(pathof(JuliaInterpreter)::String),
+    dirname(pathof(LoweredCodeUtils)::String))
+
+# Frames of JET's own concrete interpretation or of the interpreter packages; the frames of
+# user code executed natively (e.g. by `Core.eval` or builtins) come before the first of
+# these. The module identifies frames of code cached in a package image, which may carry
+# no source location, and the file identifies inlined frames, which may carry no method.
+function is_interpreter_frame(frame::Base.StackTraces.StackFrame)
+    mod = Base.parentmodule(frame)
+    if mod !== nothing
+        root = Base.moduleroot(mod)
+        if root === JET || root === JuliaInterpreter || root === LoweredCodeUtils
+            return true
+        end
+    end
+    file = String(frame.file)
+    return any(dir -> startswith(file, dir), INTERPRETER_SRC_DIRS)
 end
 
-# handle errors from toplevel user code
+# handle errors from user code
 function JuliaInterpreter.handle_err(
-        interp::ConcreteInterpreter, _frame::Frame, @nospecialize(err)
+        interp::ConcreteInterpreter, frame::Frame, @nospecialize(err)
     )
+    state = InterpretationState(interp)
+    # only the top-level frame of a statement has no caller
+    if frame.caller !== nothing
+        return handle_callee_err(interp, state, frame, err)
+    end
+
     # catch stack trace
     bt = catch_backtrace()
     st = stacktrace(bt)
@@ -2700,46 +2772,100 @@ function JuliaInterpreter.handle_err(
         rethrow(err)
     end
 
-    # scrub the original stacktrace so that it only contains frames from user code
-    i = 0
-    for (j, frame) in enumerate(st)
-        # if errors happen in `JuliaInterpreter.maybe_evaluate_builtin`, we just discard all
-        # the stacktrace assuming they are enough self-explanatory (corresponding to the last logic below)
-        if frame.file === JULIAINTERPRETER_BUILTINS_FILE && frame.func === :maybe_evaluate_builtin
-            break # keep `i = 0`
-        end
-
-        # if errors happen in `JuliaInterpreter.lookup`, we just discard all the stacktrace
-        # and report `MissingConcretizationErrorReport`
-        if frame.file === JET_VIRTUALPROCESS_FILE && frame.func === :lookup
-            break # keep `i = 0`
-        end
-
-        # find an error frame that happened at `Base.invoke_in_world(frame.world, f, args...)`
-        # in the overload `JuliaInterpreter.evaluate_call!(::ConcreteInterpreter, ::Frame, ...)`
-        if frame.file === JET_VIRTUALPROCESS_FILE && frame.func === :evaluate_call!
-            i = j - 1 # offset: `evaluate_call!`
-            break
-        end
-
-        # other general errors may happen at `JuliaInterpreter.collect_args`, etc.
-        # we don't show any stacktrace for those errors (by keeping the original `i = 0`)
-        # since they are hopefully self-explanatory
-        continue
+    # the record made while `err` unwound through callee frames, if any
+    callee_error = state.callee_error
+    if callee_error !== nothing && callee_error.err !== err
+        callee_error = nothing
     end
-    st = st[1:i]
 
-    state = InterpretationState(interp)
     if err isa MissingConcretizationError
         report = MissingConcretizationErrorReport(err.isconst, err.var, err.assignment, state.filename, state.curline)
     elseif err isa ConcretizationTimeoutError
-        report = ConcretizationTimeoutErrorReport(err.timeout, state.filename, state.curline)
+        # raised by `step_expr!` itself, so no natively executed user code is involved
+        callee_st = callee_error === nothing ? Base.StackTraces.StackFrame[] : callee_error.st
+        report = ConcretizationTimeoutErrorReport(err.timeout, callee_st, state.filename, state.curline)
+    elseif callee_error === nothing
+        st = native_user_stacktrace(bt)
+        report = ActualErrorWrapped(err, st, state.filename, state.curline)
     else
+        # the native frames come from the original throw, which the record preserves
+        # across the handlers of interpreted callees
+        st = native_user_stacktrace(callee_error.bt)
+        append!(st, callee_error.st)
         report = ActualErrorWrapped(err, st, state.filename, state.curline)
     end
     add_toplevel_error_report!(state, report)
 
     return nothing # stop further interpretation
+end
+
+# The frames of natively executed user code in `bt`: those before the first frame of the
+# interpreter. Errors raised directly by builtins keep none, since they are hopefully
+# self-explanatory, and so does a backtrace whose interpreter frames cannot be identified.
+function native_user_stacktrace(bt::Vector{Union{Ptr{Nothing},Base.InterpreterIP}})
+    st = stacktrace(bt)
+    i = @something(findfirst(is_interpreter_frame, st), 1) - 1
+    return st[1:i]
+end
+
+# Errors in interpreted callees follow JuliaInterpreter's own handling, so `try`/`catch` in
+# user code works as usual. JET's own signals are the exception: they must not be caught by
+# user code, so they unwind frame by frame up to the top-level frame.
+function handle_callee_err(
+        interp::ConcreteInterpreter, state::InterpretationState, frame::Frame,
+        @nospecialize(err)
+    )
+    callee_error = state.callee_error
+    if callee_error === nothing || callee_error.err !== err
+        callee_error = state.callee_error =
+            CalleeError(err, catch_backtrace(), callee_stacktrace(frame))
+    end
+    if err isa ConcretizationTimeoutError || err isa MissingConcretizationError
+        delete!(state.caught_callee_errors, frame)
+        JuliaInterpreter.return_from(frame)
+        rethrow(err)
+    end
+    if isempty(frame.framedata.exception_frames)
+        delete!(state.caught_callee_errors, frame)
+    end
+    res = @invoke JuliaInterpreter.handle_err(interp::Interpreter, frame::Frame, err::Any)
+    if res isa Int
+        # Keep caught stacks parallel to JuliaInterpreter's active exceptions. A fresh
+        # throw must not reuse them, even when its value is identical to a caught error.
+        caught = get!(Vector{CalleeError}, state.caught_callee_errors, frame)
+        resize!(caught, length(frame.framedata.exceptions))
+        caught[end] = callee_error
+        state.callee_error = nothing
+    end
+    return res
+end
+
+function restore_callee_error!(state::InterpretationState, frame::Frame, fargs::Vector{Any})
+    while true
+        exceptions = frame.framedata.exceptions
+        if !isempty(exceptions)
+            caught = get(state.caught_callee_errors, frame, nothing)
+            # without a recorded stack, the rethrow is reported like a fresh throw
+            if caught === nothing || !isassigned(caught, lastindex(caught))
+                return nothing
+            end
+            err = length(fargs) > 1 ? fargs[2] : exceptions[end]
+            recorded = caught[end]
+            state.callee_error = CalleeError(err, recorded.bt, recorded.st)
+            return nothing
+        end
+        frame = @something frame.caller return nothing
+    end
+end
+
+function callee_stacktrace(frame::Frame)
+    st = Base.StackTraces.StackFrame[]
+    while true
+        caller = @something frame.caller break # the top-level frame is not part of the stack
+        push!(st, Base.StackTraces.StackFrame(frame))
+        frame = caller
+    end
+    return st
 end
 
 @noinline function with_err_handling(f, err_handler, handler_args...; scrub_offset::Int)
