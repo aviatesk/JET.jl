@@ -69,6 +69,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   statement. Exceeding it produces a `ConcretizationTimeoutErrorReport` instead
   of hanging on nonterminating loops that contain top-level definitions.
 
+### Changed
+
+- Concrete execution of top-level statements now interprets function calls
+  recursively with JuliaInterpreter instead of running them natively. This
+  lets `concretization_timeout` stop nonterminating loops inside functions
+  called from top-level code, and error reports from such calls now include
+  the interpreted stack frames. `ConcretizationTimeoutErrorReport` likewise
+  shows the calls that were running when the timeout hit. Code that runs
+  natively, such as `ccall`s and code evaluated by `Core.eval`, still cannot
+  be interrupted.
+
 ### Fixed
 
 - Fixed `report_file` hanging when a nonterminating top-level loop assigns to a

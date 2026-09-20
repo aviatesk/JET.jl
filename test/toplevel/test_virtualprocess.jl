@@ -1149,6 +1149,24 @@ end
         @test er.file == filename && er.line == 1 # L1
     end
 
+    # JET's own signals are not caught by `try`/`catch` in interpreted callees
+    let context = gen_virtual_module()
+        res = report_text("""
+            x = rand(Int)
+            function g()
+                try
+                    return x
+                catch
+                    return 0
+                end
+            end
+            const y = g()
+            """; context, virtualize=false, concretization_patterns=[:(const y = g())])
+        report = only(res.res.toplevel_error_reports)
+        @test report isa MissingConcretizationErrorReport
+        @test !(@invokelatest isdefinedglobal(context, :y))
+    end
+
     @testset "stacktrace scrubbing" begin
         # scrub internal frames until (errored) user macro
         mktemp() do filename, io
@@ -1205,8 +1223,7 @@ end
             @test isempty(er.st)
         end
 
-        # errors from user functions (i.e. those from `Base.invoke_in_world(frame.world, f, args...)`
-        # in `JuliaInterpreter.evaluate_call!(::ConcreteInterpreter, ::Frame, ...)`)
+        # errors from interpreted user functions carry the interpreted frames
         mktemp() do filename, io
             res = report_text("""
                 foo() = throw("don't call me, pal") # L1
@@ -1218,7 +1235,295 @@ end
             @test er.err == "don't call me, pal"
             @test er.file == filename && er.line == 2
             sf = only(er.st)
+            @test sf.func === :foo
             @test sf.file === Symbol(filename) && sf.line == 1
+        end
+        mktemp() do filename, io
+            res = report_text("""
+                inner() = throw("deep")  # L1
+                outer() = inner()        # L2
+                struct A <: outer() end  # L3
+            """, filename)
+            er = only(res.res.toplevel_error_reports)
+            @test er isa ActualErrorWrapped
+            @test er.err == "deep"
+            @test er.file == filename && er.line == 3
+            @test length(er.st) == 2
+            @test er.st[1].func === :inner && er.st[1].line == 1
+            @test er.st[2].func === :outer && er.st[2].line == 2
+            @test all(sf -> sf.file === Symbol(filename), er.st)
+        end
+
+        @testset "captured exception stack lifecycle" begin
+            mktemp() do filename, io
+                res = report_text("""
+                    firstcall() = throw(DivideError())
+                    secondcall() = throw(DivideError())
+                    function f()
+                        try
+                            firstcall()
+                        catch
+                        end
+                        secondcall()
+                    end
+                    struct A <: f() end
+                    """, filename)
+                er = only(res.res.toplevel_error_reports)
+                @test er isa ActualErrorWrapped
+                @test er.err isa DivideError
+                @test er.file == filename && er.line == 10
+                @test [(sf.func, sf.line) for sf in er.st] == [(:secondcall, 2), (:f, 8)]
+                @test all(sf -> sf.file === Symbol(filename), er.st)
+            end
+
+            @testset "throw from catch: $action" for (action, errtype, stack) in (
+                    ("throw(err)", DivideError, [(:f, 7)]),
+                    ("rethrow()", DivideError, [(:firstcall, 1), (:f, 5)]),
+                    ("propagate()", DivideError, [(:firstcall, 1), (:f, 5)]),
+                    ("rethrow(ArgumentError(\"replacement\"))", ArgumentError, [(:firstcall, 1), (:f, 5)]),
+                )
+                mktemp() do filename, _
+                    res = report_text("""
+                        firstcall() = throw(DivideError())
+                        propagate() = rethrow()
+                        function f()
+                            try
+                                firstcall()
+                            catch err
+                                $action
+                            end
+                        end
+                        struct A <: f() end
+                        """, filename)
+                    er = only(res.res.toplevel_error_reports)
+                    @test er isa ActualErrorWrapped
+                    @test er.err isa errtype
+                    @test er.file == filename && er.line == 10
+                    @test [(sf.func, sf.line) for sf in er.st] == stack
+                    @test all(sf -> sf.file === Symbol(filename), er.st)
+                end
+            end
+
+            @testset "nested catch: $inner_error" for inner_error in (
+                    "DivideError()",
+                    "ArgumentError(\"inner\")",
+                )
+                mktemp() do filename, _
+                    res = report_text("""
+                        firstcall() = throw(DivideError())
+                        secondcall() = throw($inner_error)
+                        function f()
+                            try
+                                firstcall()
+                            catch
+                                try
+                                    secondcall()
+                                catch
+                                end
+                                rethrow()
+                            end
+                        end
+                        struct A <: f() end
+                        """, filename)
+                    er = only(res.res.toplevel_error_reports)
+                    @test er isa ActualErrorWrapped
+                    @test er.err isa DivideError
+                    @test er.file == filename && er.line == 14
+                    @test [(sf.func, sf.line) for sf in er.st] == [(:firstcall, 1), (:f, 5)]
+                    @test all(sf -> sf.file === Symbol(filename), er.st)
+                end
+            end
+
+            @testset "helper-caught rethrow preserves outer origin" begin
+                mktemp() do filename, _
+                    res = report_text("""
+                        firstcall() = throw(DivideError())
+                        secondcall() = throw(DivideError())
+                        function consume_rethrow()
+                            try
+                                rethrow()
+                            catch
+                            end
+                        end
+                        function f()
+                            try
+                                firstcall()
+                            catch
+                                consume_rethrow()
+                                try
+                                    secondcall()
+                                catch
+                                end
+                                rethrow()
+                            end
+                        end
+                        struct A <: f() end
+                        """, filename)
+                    er = only(res.res.toplevel_error_reports)
+                    @test er isa ActualErrorWrapped
+                    @test er.err isa DivideError
+                    @test er.file == filename && er.line == 21
+                    @test [(sf.func, sf.line) for sf in er.st] == [(:firstcall, 1), (:f, 11)]
+                    @test all(sf -> sf.file === Symbol(filename), er.st)
+                end
+            end
+
+            @testset "return from catch before frame reuse" begin
+                mktemp() do filename, _
+                    res = report_text("""
+                        firstcall() = throw(DivideError())
+                        secondcall() = throw(DivideError())
+                        function swallow()
+                            try
+                                firstcall()
+                            catch
+                                return nothing
+                            end
+                        end
+                        function f()
+                            swallow()
+                            secondcall()
+                        end
+                        struct A <: f() end
+                        """, filename)
+                    er = only(res.res.toplevel_error_reports)
+                    @test er isa ActualErrorWrapped
+                    @test er.err isa DivideError
+                    @test er.file == filename && er.line == 14
+                    @test [(sf.func, sf.line) for sf in er.st] == [(:secondcall, 2), (:f, 12)]
+                    @test all(sf -> sf.file === Symbol(filename), er.st)
+                end
+            end
+
+            @testset "finally" begin
+                # an error passing through `finally` keeps its origin
+                mktemp() do filename, _
+                    res = report_text("""
+                        firstcall() = throw(DivideError())  # L1
+                        function f()
+                            try
+                                firstcall()                  # L4
+                            finally
+                                nothing
+                            end
+                        end
+                        struct A <: f() end                  # L9
+                        """, filename)
+                    er = only(res.res.toplevel_error_reports)
+                    @test er isa ActualErrorWrapped
+                    @test er.err isa DivideError
+                    @test er.file == filename && er.line == 9
+                    @test [(sf.func, sf.line) for sf in er.st] == [(:firstcall, 1), (:f, 4)]
+                    @test all(sf -> sf.file === Symbol(filename), er.st)
+                end
+                # a throw inside `finally` replaces the error
+                mktemp() do filename, _
+                    res = report_text("""
+                        firstcall() = throw(DivideError())
+                        function f()
+                            try
+                                firstcall()
+                            finally
+                                throw(ArgumentError("from finally"))  # L6
+                            end
+                        end
+                        struct A <: f() end                           # L9
+                        """, filename)
+                    er = only(res.res.toplevel_error_reports)
+                    @test er isa ActualErrorWrapped
+                    @test er.err isa ArgumentError
+                    @test er.file == filename && er.line == 9
+                    @test [(sf.func, sf.line) for sf in er.st] == [(:f, 6)]
+                end
+                # the do-block resource pattern; closure names vary across Julia versions
+                mktemp() do filename, _
+                    res = report_text("""
+                        firstcall() = throw(DivideError())  # L1
+                        function withresource(g)
+                            r = Ref(0)
+                            try
+                                return g(r)                  # L5
+                            finally
+                                r[] = -1
+                            end
+                        end
+                        function f()
+                            withresource() do r              # L11
+                                firstcall()                  # L12
+                            end
+                        end
+                        struct A <: f() end                  # L15
+                        """, filename)
+                    er = only(res.res.toplevel_error_reports)
+                    @test er isa ActualErrorWrapped
+                    @test er.err isa DivideError
+                    @test er.file == filename && er.line == 15
+                    st = [(sf.func, sf.line) for sf in er.st]
+                    @test length(st) == 4
+                    @test st[1] == (:firstcall, 1)
+                    @test st[2][2] == 12
+                    @test st[3] == (:withresource, 5)
+                    @test st[4] == (:f, 11)
+                    @test all(sf -> sf.file === Symbol(filename), er.st)
+                end
+            end
+        end
+
+        # frames of natively executed user code come before the interpreted frames
+        mktemp() do filename, io
+            res = report_text("""
+                bad() = throw("native")           # L1
+                run_native() = invokelatest(bad)  # L2
+                struct A <: run_native() end      # L3
+            """, filename)
+            er = only(res.res.toplevel_error_reports)
+            @test er isa ActualErrorWrapped
+            @test er.err == "native"
+            @test er.file == filename && er.line == 3
+            @test er.st[1].func === :bad && er.st[1].line == 1
+            @test er.st[end].func === :run_native && er.st[end].line == 2
+        end
+
+        # the native origin survives the handlers of interpreted callees, whose re-raise
+        # replaces the native backtrace
+        @testset "native origin through $kind" for (kind, handler) in (
+                ("finally", "finally\n nothing"),
+                ("rethrow", "catch\n rethrow()"),
+            )
+            mktemp() do filename, _
+                res = report_text("""
+                    nativebad() = throw(DivideError())              # L1
+                    function f()
+                        try
+                            Core.eval(@__MODULE__, :(nativebad()))  # L4
+                        $handler
+                        end
+                    end
+                    struct A <: f() end
+                    """, filename)
+                er = only(res.res.toplevel_error_reports)
+                @test er isa ActualErrorWrapped
+                @test er.err isa DivideError
+                st = [(sf.func, sf.line) for sf in er.st]
+                @test st[1] == (:nativebad, 1)
+                @test st[end] == (:f, 4)
+                @test er.st[1].file === Symbol(filename)
+                @test er.st[end].file === Symbol(filename)
+            end
+        end
+
+        # `try`/`catch` in interpreted callees works as usual
+        let res = @analyze_toplevel begin
+                function guarded()
+                    try
+                        error("boom")
+                    catch
+                        return Integer
+                    end
+                end
+                struct A <: guarded() end
+            end
+            @test isempty(res.res.toplevel_error_reports)
         end
     end
 end
@@ -1981,6 +2286,7 @@ end
                 """; concretization_timeout=0.1, concretization_patterns)
             report = only(res.res.toplevel_error_reports)
             @test report isa JET.ConcretizationTimeoutErrorReport
+            @test isempty(report.st) # stopped in the top-level frame itself
         end
         # The time spent in `include`d files does not count: each included statement stays
         # within the timeout, while the included file as a whole exceeds it.
@@ -2012,6 +2318,50 @@ end
             @test report isa JET.ConcretizationTimeoutErrorReport
             @test report.file == main
             @test !(@invokelatest isdefinedglobal(context, :finished))
+        end
+        @testset "loops inside callees are stopped" begin
+            context = gen_virtual_module()
+            # The loop body makes no calls, so the timeout always fires in `spin` itself;
+            # otherwise the interpreted frames of callees such as `+` would lead the stack.
+            res = report_text("""
+                function spin()
+                    while true
+                    end
+                end
+                drive() = spin()
+                begin
+                    drive()
+                    after = 1
+                end
+                """; context, virtualize=false, concretization_patterns=[:x_],
+                concretization_timeout=0.1)
+            report = only(res.res.toplevel_error_reports)
+            @test report isa JET.ConcretizationTimeoutErrorReport
+            @test report.line == 6
+            @test !(@invokelatest isdefinedglobal(context, :after))
+            # the report shows the interpreted calls that were running, innermost first
+            @test length(report.st) == 2
+            @test report.st[1].func === :spin && 2 ≤ report.st[1].line ≤ 3
+            @test report.st[2].func === :drive && report.st[2].line == 5
+            @test occursin("spin()", sprint(JET.print_report, report))
+        end
+        @testset "the timeout bypasses `try`/`catch` in callees" begin
+            context = gen_virtual_module()
+            res = report_text("""
+                function spin_guarded()
+                    try
+                        while true end
+                    catch
+                        return :caught
+                    end
+                end
+                const result = spin_guarded()
+                """; context, virtualize=false, concretization_patterns=[:x_],
+                concretization_timeout=0.1)
+            report = only(res.res.toplevel_error_reports)
+            @test report isa JET.ConcretizationTimeoutErrorReport
+            @test only(report.st).func === :spin_guarded
+            @test !(@invokelatest isdefinedglobal(context, :result))
         end
         @test_throws ArgumentError JET.ToplevelConfig(; concretization_timeout=0)
     end
