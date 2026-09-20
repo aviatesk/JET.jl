@@ -1160,11 +1160,11 @@ end
                     return 0
                 end
             end
-            const y = g()
-            """; context, virtualize=false, concretization_patterns=[:(const y = g())])
+            struct S <: g() end
+            """; context, virtualize=false)
         report = only(res.res.toplevel_error_reports)
         @test report isa MissingConcretizationErrorReport
-        @test !(@invokelatest isdefinedglobal(context, :y))
+        @test !(@invokelatest isdefinedglobal(context, :S))
     end
 
     @testset "stacktrace scrubbing" begin
@@ -1510,6 +1510,22 @@ end
                 @test er.st[1].file === Symbol(filename)
                 @test er.st[end].file === Symbol(filename)
             end
+        end
+
+        # callees of statements selected by `concretization_patterns` run natively, so
+        # their errors carry native frames (which have an instruction pointer)
+        mktemp() do filename, io
+            res = report_text("""
+                bad() = throw("native")  # L1
+                struct A <: bad() end    # L2
+            """, filename; concretization_patterns=[:x_])
+            er = only(res.res.toplevel_error_reports)
+            @test er isa ActualErrorWrapped
+            @test er.err == "native"
+            @test er.file == filename && er.line == 2
+            sf = only(er.st)
+            @test sf.func === :bad && sf.file === Symbol(filename) && sf.line == 1
+            @test sf.pointer != 0
         end
 
         # `try`/`catch` in interpreted callees works as usual
@@ -2329,16 +2345,12 @@ end
                     end
                 end
                 drive() = spin()
-                begin
-                    drive()
-                    after = 1
-                end
-                """; context, virtualize=false, concretization_patterns=[:x_],
-                concretization_timeout=0.1)
+                struct A <: drive() end
+                """; context, virtualize=false, concretization_timeout=0.1)
             report = only(res.res.toplevel_error_reports)
             @test report isa JET.ConcretizationTimeoutErrorReport
             @test report.line == 6
-            @test !(@invokelatest isdefinedglobal(context, :after))
+            @test !(@invokelatest isdefinedglobal(context, :A))
             # the report shows the interpreted calls that were running, innermost first
             @test length(report.st) == 2
             @test report.st[1].func === :spin && 2 ≤ report.st[1].line ≤ 3
@@ -2355,13 +2367,28 @@ end
                         return :caught
                     end
                 end
-                const result = spin_guarded()
-                """; context, virtualize=false, concretization_patterns=[:x_],
-                concretization_timeout=0.1)
+                struct B <: spin_guarded() end
+                """; context, virtualize=false, concretization_timeout=0.1)
             report = only(res.res.toplevel_error_reports)
             @test report isa JET.ConcretizationTimeoutErrorReport
             @test only(report.st).func === :spin_guarded
-            @test !(@invokelatest isdefinedglobal(context, :result))
+            @test !(@invokelatest isdefinedglobal(context, :B))
+        end
+        @testset "code selected by `concretization_patterns` runs natively" begin
+            context = gen_virtual_module()
+            # interpreting this loop would take far longer than the timeout
+            res = report_text("""
+                function fillup!(v)
+                    for i in 1:100_000
+                        push!(v, i)
+                    end
+                    return v
+                end
+                const V = fillup!(Int[])
+                """; context, virtualize=false, concretization_timeout=1.0,
+                concretization_patterns=[:(const V = fillup!(Int[]))])
+            @test isempty(res.res.toplevel_error_reports)
+            @test length(@invokelatest getglobal(context, :V)) == 100_000
         end
         @test_throws ArgumentError JET.ToplevelConfig(; concretization_timeout=0)
     end

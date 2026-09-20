@@ -320,7 +320,9 @@ These options apply to all entry points described in the
   `concretization_patterns`. Before macro expansion and lowering, JET matches
   each top-level block against these patterns. When a pattern matches, JET
   concretely executes the entire block, overriding its default per-statement
-  selection.
+  selection. The calls made by such a block run natively rather than in the
+  interpreter, so they execute at full speed, but `concretization_timeout` can
+  then stop the block only between its own statements.
 
   JET uses MacroTools.jl [expression patterns](https://fluxml.ai/MacroTools.jl/stable/pattern-matching/),
   so any pattern accepted by `MacroTools.@capture` can be used. For example:
@@ -399,8 +401,9 @@ These options apply to all entry points described in the
   stops it at the next interpreted statement, including statements of functions
   called from the top-level code, reports a `ConcretizationTimeoutErrorReport`
   showing the calls that were running, and skips the abstract analysis of that
-  top-level statement. Code that runs natively, such as `ccall`s, builtins and
-  code evaluated by `Core.eval`, cannot be interrupted. The time spent in
+  top-level statement. Code that runs natively, such as `ccall`s, builtins,
+  code evaluated by `Core.eval` and the calls of blocks selected by
+  `concretization_patterns`, cannot be interrupted. The time spent in
   `include`d files and in module-loading statements handled by JET is not
   counted.
   Set `Inf` to disable the timeout.
@@ -597,6 +600,7 @@ mutable struct InterpretationState
     # active exceptions. JuliaInterpreter pools frames for reuse, so an entry must be
     # removed whenever its frame exits, whether by returning or by unwinding.
     const caught_callee_errors::IdDict{Frame,Vector{CalleeError}}
+    native_calls::Bool # the current statement was selected by `concretization_patterns`
 end
 function InterpretationState(
         state::InterpretationState;
@@ -626,7 +630,8 @@ function InterpretationState(
         isfailed,
         concretization_deadline,
         #=callee_error=#nothing,
-        #=caught_callee_errors=#IdDict{Frame,Vector{CalleeError}}())
+        #=caught_callee_errors=#IdDict{Frame,Vector{CalleeError}}(),
+        #=native_calls=#false)
 end
 
 """
@@ -793,7 +798,7 @@ function virtual_process(interp::ConcreteInterpreter,
         filename, #=curline=#0, world, #=dependencies=#Set{Symbol}(), context, config,
         res, #=pkg_mod_depth=#0, #=files_stack=#String[], #=isfailed=#false,
         #=concretization_deadline=#typemax(UInt64), #=callee_error=#nothing,
-        #=caught_callee_errors=#IdDict{Frame,Vector{CalleeError}}())
+        #=caught_callee_errors=#IdDict{Frame,Vector{CalleeError}}(), #=native_calls=#false)
     interp = ConcreteInterpreter(interp, state)
     try
         virtual_process!(interp, x, overrideex)
@@ -1750,6 +1755,7 @@ function _virtual_process!(interp::ConcreteInterpreter,
         state.isfailed = false
         state.callee_error = nothing
         empty!(state.caught_callee_errors)
+        state.native_calls = force_concretize
         if force_concretize
             frame = Frame(state.context, src; world=state.world)
             start_concretization_timeout!(state)
@@ -2628,8 +2634,11 @@ function _to_simple_module_usages(x::Expr)
 end
 
 # Calls are interpreted recursively (JuliaInterpreter's default), so that
-# `concretization_timeout` also stops loops inside callees. This overload adds a few
-# adjustments specific to JET's virtual process:
+# `concretization_timeout` also stops loops inside callees. Statements selected by
+# `concretization_patterns` are the exception: the user asked for them to be executed, so
+# their calls run natively at full speed, with the timeout checked only between the
+# statements of the top-level frame. This overload also adds a few adjustments specific
+# to JET's virtual process:
 # - Special handling for `include` calls: recursively apply JET analysis to included files.
 # - Ignore C-side function definitions created via `Base._ccallable`. These definitions
 #   are not namespaced in the module and can cause false-positive name conflict errors
@@ -2649,6 +2658,10 @@ function JuliaInterpreter.evaluate_call!(
         end
     end
     state = InterpretationState(interp)
+    if InterpretationState(interp).native_calls
+        popfirst!(fargs)
+        return Base.invoke_in_world(frame.world, f, fargs...)
+    end
     if f === Base.rethrow
         restore_callee_error!(state, frame, fargs)
     end
