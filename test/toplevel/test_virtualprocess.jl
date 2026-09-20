@@ -1699,6 +1699,17 @@ end
     end # @static if
 end
 
+mutable struct ConcretizationDelayLogger <: IO
+    delayed::Bool
+end
+function Base.unsafe_write(io::ConcretizationDelayLogger, p::Ptr{UInt8}, n::UInt)
+    if occursin("concretization plan", unsafe_string(p, n))
+        sleep(2.0)
+        io.delayed = true
+    end
+    return n
+end
+
 @testset "top-level statement selection" begin
     # simplest example
     let # global function
@@ -1919,9 +1930,24 @@ end
         end
     end
 
-    # These tests use finite loops whose iterations explicitly sleep longer than the
-    # timeout, so that they terminate even if the timeout does not work.
     @testset "concretization timeout" begin
+        @test JET.ToplevelConfig().concretization_timeout == 10.0
+
+        @testset "preparation time is excluded" begin
+            logger = ConcretizationDelayLogger(false)
+            context = gen_virtual_module()
+            config = JET.ToplevelConfig(; context, virtualize=false,
+                concretization_timeout=1.0,
+                toplevel_logger=IOContext(logger, :JET_LOGGER_LEVEL=>1))
+            interp = JETConcreteInterpreter(JETAnalyzer())
+            # Use the current world so the test logger's IO method is visible.
+            res = JET.virtual_process(interp, "f() = nothing", "top-level", config)
+            @test logger.delayed
+            @test isempty(res.toplevel_error_reports)
+            @test (@invokelatest isdefinedglobal(context, :f))
+        end
+
+        # Finite loops terminate even if the timeout does not work.
         let res = @analyze_toplevel concretization_timeout=0.1 begin
                 for i in 1:3
                     @eval begin
@@ -1946,13 +1972,13 @@ end
             g = @invokelatest getglobal(vmod, :g)
             @test length(methods(g)) == 3
         end
-        # loop-free code is stopped between its statements too
-        let res = @analyze_toplevel concretization_timeout=0.1 begin
-                begin # a single top-level statement
+        @testset "runtime still times out" for concretization_patterns in (Any[], [:x_])
+            res = report_text("""
+                begin
                     @eval sleep(0.2)
                     @eval h() = 1
                 end
-            end
+                """; concretization_timeout=0.1, concretization_patterns)
             report = only(res.res.toplevel_error_reports)
             @test report isa JET.ConcretizationTimeoutErrorReport
         end
@@ -1968,6 +1994,24 @@ end
                 """)
             res = report_file2(main; concretization_timeout = 1.0)
             @test isempty(res.res.toplevel_error_reports)
+        end
+        # The statement's own runtime still counts after the pause for an `include`.
+        mktempdir() do dir
+            write(joinpath(dir, "included.jl"), "@eval sleep(0.6)\n@eval sleep(0.6)\n")
+            main = joinpath(dir, "main.jl")
+            write(main, """
+                for i in 1:1
+                    include("included.jl")
+                    @eval sleep(1.2)
+                    @eval finished = true
+                end
+                """)
+            context = gen_virtual_module()
+            res = report_file2(main; context, virtualize=false, concretization_timeout=1.0)
+            report = only(res.res.toplevel_error_reports)
+            @test report isa JET.ConcretizationTimeoutErrorReport
+            @test report.file == main
+            @test !(@invokelatest isdefinedglobal(context, :finished))
         end
         @test_throws ArgumentError JET.ToplevelConfig(; concretization_timeout=0)
     end

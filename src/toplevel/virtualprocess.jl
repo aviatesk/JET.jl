@@ -218,7 +218,7 @@ function print_report(io::IO, report::MissingConcretizationErrorReport)
     print(io, "  make analysis slower.")
 end
 
-const DEFAULT_CONCRETIZATION_TIMEOUT = 60.0
+const DEFAULT_CONCRETIZATION_TIMEOUT = 10.0
 
 """
 Configuration options for top-level analysis.
@@ -370,13 +370,15 @@ These options apply to all entry points described in the
 ---
 - `concretization_timeout::Real = $(DEFAULT_CONCRETIZATION_TIMEOUT)` \\
   The time in seconds that JET allows for concretely executing a single
-  top-level statement. JET executes top-level code concretely when it contains
+  top-level statement, excluding statement selection and interpreter setup.
+  JET executes top-level code concretely when it contains
   `function` or `struct` definitions, `@eval` calls or in-place updates of
   concretized values, and such code may run for a long time or, within a loop,
   never terminate. When the execution is still running after the timeout, JET
   stops it between two statements, reports a `ConcretizationTimeoutErrorReport`
   and skips the abstract analysis of that top-level statement. The time spent
-  in `include`d files and in loading modules is not counted.
+  in `include`d files and in module-loading statements handled by JET is not
+  counted.
   Set `Inf` to disable the timeout.
 ---
 - `toplevel_logger::Union{Nothing,IO} = nothing` \\
@@ -1714,9 +1716,10 @@ function _virtual_process!(interp::ConcreteInterpreter,
         fix_self_references!(state.res.actual2virtual, src)
 
         state.isfailed = false
-        start_concretization_timeout!(state)
         if force_concretize
-            JuliaInterpreter.finish!(interp, Frame(state.context, src; world=state.world), true)
+            frame = Frame(state.context, src; world=state.world)
+            start_concretization_timeout!(state)
+            JuliaInterpreter.finish!(interp, frame, true)
             continue
         end
         partially_interpret!(interp, concretization, state.context, src)
@@ -1958,6 +1961,7 @@ function partially_interpret!(
     # The controller's gotos and shortcuts come from `plan.selected` alone, so the loops
     # and branches enclosing materialized declarations fall through and each declaration
     # is evaluated once in program order.
+    start_concretization_timeout!(state)
     LoweredCodeUtils.selective_eval_fromstart!(
         interp, frame, plan.concretized, controller, #=istoplevel=#true)
 
@@ -2422,6 +2426,13 @@ function start_concretization_timeout!(state::InterpretationState)
     return state
 end
 
+function extend_concretization_deadline!(state::InterpretationState, elapsed::UInt64)
+    deadline = state.concretization_deadline
+    state.concretization_deadline =
+        deadline < typemax(UInt64) - elapsed ? deadline + elapsed : typemax(UInt64)
+    return state
+end
+
 # Runs `f` without counting its time against `concretization_timeout`. This is for work
 # that belongs to other code than the current top-level statement: `include`d files,
 # whose statements have their own timeouts, and module loading.
@@ -2430,11 +2441,7 @@ function pause_concretization_timeout(f, state::InterpretationState)
     try
         return f()
     finally
-        deadline = state.concretization_deadline
-        elapsed = time_ns() - t0
-        if deadline < typemax(UInt64) - elapsed
-            state.concretization_deadline = deadline + elapsed
-        end
+        extend_concretization_deadline!(state, time_ns() - t0)
     end
 end
 
