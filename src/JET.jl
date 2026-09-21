@@ -80,6 +80,8 @@ const exports = Set{Symbol}((
     :ReportMatcher, :LastFrameModule, :AnyFrameModule, :LastFrameModuleExact, :AnyFrameModuleExact,
     :LastFrameMethod, :AnyFrameMethod,
 ))
+delete!(exports, :report_package)
+delete!(exports, :test_package)
 
 for exported_name in exports
     Core.eval(@__MODULE__, Expr(:export, exported_name))
