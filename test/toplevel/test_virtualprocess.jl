@@ -2303,6 +2303,9 @@ end
             report = only(res.res.toplevel_error_reports)
             @test report isa JET.ConcretizationTimeoutErrorReport
             @test isempty(report.st) # stopped in the top-level frame itself
+            msg = sprint(JET.print_report, report)
+            @test !occursin("Stacktrace:", msg)
+            @test sprint(JET.print_report, report; context=:markdown_rendering=>true) == msg
         end
         # The time spent in `include`d files does not count: each included statement stays
         # within the timeout, while the included file as a whole exceeds it.
@@ -2355,7 +2358,13 @@ end
             @test length(report.st) == 2
             @test report.st[1].func === :spin && 2 ≤ report.st[1].line ≤ 3
             @test report.st[2].func === :drive && report.st[2].line == 5
-            @test occursin("spin()", sprint(JET.print_report, report))
+            msg = sprint(JET.print_report, report)
+            @test occursin("spin()", msg)
+            @test occursin(r"raise `concretization_timeout`\.\s+Stacktrace:", msg)
+            @test !occursin("```", msg)
+            msg_md = sprint(JET.print_report, report; context=:markdown_rendering=>true)
+            @test occursin("raise `concretization_timeout`.\n\n```\nStacktrace:", msg_md)
+            @test endswith(msg_md, "\n```\n")
         end
         @testset "the timeout bypasses `try`/`catch` in callees" begin
             context = gen_virtual_module()

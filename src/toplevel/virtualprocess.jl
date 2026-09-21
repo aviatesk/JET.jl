@@ -143,10 +143,6 @@ end
 function print_report(io::IO, report::ConcretizationTimeoutErrorReport)
     print(io, "JET stopped the concrete execution of this top-level statement after")
     println(io, " $(report.timeout) seconds (`concretization_timeout`).")
-    if !isempty(report.st)
-        Base.show_backtrace(io, report.st) # adds a `Stacktrace:` heading
-        println(io)
-    end
     println(io)
     println(io, "JET executes top-level code concretely when it contains `function` or")
     println(io, "`struct` definitions, `@eval` calls, in-place updates of concretized")
@@ -158,6 +154,12 @@ function print_report(io::IO, report::ConcretizationTimeoutErrorReport)
     println(io, "- Move the definitions or `@eval` calls out of the long-running code, so")
     println(io, "  that JET analyzes the code instead of executing it.")
     println(io, "- If the code is expected to run this long, raise `concretization_timeout`.")
+    if !isempty(report.st)
+        markdown_rendering = get(io, :markdown_rendering, false)::Bool
+        markdown_rendering && (println(io); print(io, "```"))
+        Base.show_backtrace(io, report.st) # adds a `Stacktrace:` heading
+        markdown_rendering && println(io, "\n```")
+    end
 end
 
 # An error raised in an interpreted callee frame, with the native backtrace of the throw
