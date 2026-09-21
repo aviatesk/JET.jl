@@ -3191,15 +3191,17 @@ end
 end
 
 using Pkg
-function test_report_package(test_func, module_ex;
-                             base_setup=function ()
-                                Pkg.develop(; path=normpath(FIXTURES_DIR, "PkgAnalysisDep"), io=devnull)
-                                Pkg.precompile(; io=devnull)
-                             end,
-                             additional_setup=()->nothing,
-                             additional_sources::Vector{Pair{String,String}}=
-                                Pair{String,String}[],
-                             jetconfigs...)
+function test_package_file(test_func::Function, module_ex::Expr;
+                           base_setup=function ()
+                               Pkg.develop(; path=normpath(FIXTURES_DIR, "PkgAnalysisDep"), io=devnull)
+                               Pkg.precompile(; io=devnull)
+                           end,
+                           additional_setup=()->nothing,
+                           additional_sources::Vector{Pair{String,String}}=
+                               Pair{String,String}[],
+                           ignore_missing_comparison::Bool=true,
+                           ignore_throws::Bool=true,
+                           jetconfigs...)
     Meta.isexpr(module_ex, :module) || throw(ArgumentError("Expected :module expression"))
     pkgname = String(module_ex.args[2]::Symbol)
     old = Pkg.project().path
@@ -3220,12 +3222,12 @@ function test_report_package(test_func, module_ex;
             for (file, source) in additional_sources
                 write(normpath(pkgpath, "src", file), source)
             end
-            Pkg.precompile(; io=devnull)
-
             pkgid = Base.identify_package(pkgname)::Base.PkgId
-            pkgmod = Base.require(pkgid)
-
-            res = report_package(pkgmod; toplevel_logger=nothing, jetconfigs...)
+            interp = JETConcreteInterpreter(JETAnalyzer(;
+                ignore_missing_comparison, ignore_throws, jetconfigs...))
+            res = JET.analyze_and_report_file!(interp, pkgfile, pkgid;
+                analyze_from_definitions=true, concretization_patterns=[:(x_)],
+                toplevel_logger=nothing, jetconfigs...)
 
             @eval @testset $pkgname $test_func($res)
 
@@ -3237,14 +3239,14 @@ function test_report_package(test_func, module_ex;
 end
 
 @testset "package dependency" begin
-    test_report_package(:(module UsingCore
+    test_package_file(:(module UsingCore
             using Core: Box
             makebox() = Core.Box()
         end)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
-    test_report_package(:(module ImportBase
+    test_package_file(:(module ImportBase
             import Base: show
             struct XXX end
             show(io::IO, ::XXX) = xxx
@@ -3254,7 +3256,7 @@ end
         @test isa(r, UndefVarErrorReport) && r.var.name === :xxx
     end
 
-    test_report_package(:(module UsingSimple
+    test_package_file(:(module UsingSimple
             using PkgAnalysisDep
             callfunc1() = func1()
             callfunc3() = func3()
@@ -3263,21 +3265,21 @@ end
         r = only(res.res.inference_error_reports)
         @test isa(r, UndefVarErrorReport) && r.var.name === :func3
     end
-    test_report_package(:(module UsingSpecific
+    test_package_file(:(module UsingSpecific
             using PkgAnalysisDep: func1
             callfunc1() = func1()
         end)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
-    test_report_package(:(module UsingAlias
+    test_package_file(:(module UsingAlias
             using PkgAnalysisDep: func1 as func
             callfunc1() = func()
         end)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
-    test_report_package(:(module UsingInner
+    test_package_file(:(module UsingInner
             using PkgAnalysisDep.Inner
             callfunc1() = func1()
             callfunc3() = func3()
@@ -3286,7 +3288,7 @@ end
         r = only(res.res.inference_error_reports)
         @test isa(r, UndefVarErrorReport) && r.var.name === :func1
     end
-    test_report_package(:(module UsingBlock
+    test_package_file(:(module UsingBlock
             begin
                 using PkgAnalysisDep
                 callfunc1() = func1()
@@ -3297,7 +3299,7 @@ end
         r = only(res.res.inference_error_reports)
         @test isa(r, UndefVarErrorReport) && r.var.name === :func3
     end
-    test_report_package(:(module UsingBlock
+    test_package_file(:(module UsingBlock
             global truecond::Bool = true
             if truecond
                 using PkgAnalysisDep
@@ -3310,42 +3312,42 @@ end
         @test isa(r, UndefVarErrorReport) && r.var.name === :func3
     end
 
-    test_report_package(:(module ImportSimple
+    test_package_file(:(module ImportSimple
             import PkgAnalysisDep
             callfunc1() = PkgAnalysisDep.func1()
         end)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
-    test_report_package(:(module ImportAlias
+    test_package_file(:(module ImportAlias
             import PkgAnalysisDep as PAD
             callfunc1() = PAD.func1()
         end)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
-    test_report_package(:(module ImportInnerAlias
+    test_package_file(:(module ImportInnerAlias
             import PkgAnalysisDep.Inner as PADI
             callfunc3() = PADI.func3()
         end)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
-    test_report_package(:(module ImportSpecific
+    test_package_file(:(module ImportSpecific
             import PkgAnalysisDep: func1
             callfunc1() = func1()
         end)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
-    test_report_package(:(module ImportAlias
+    test_package_file(:(module ImportAlias
             import PkgAnalysisDep: func1 as func
             callfunc1() = func()
         end)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
-    test_report_package(:(module ImportInner
+    test_package_file(:(module ImportInner
             import PkgAnalysisDep.Inner
             callfunc1() = Inner.func1()
             callfunc3() = Inner.func3()
@@ -3354,7 +3356,7 @@ end
         r = only(res.res.inference_error_reports)
         @test isa(r, UndefVarErrorReport) && r.var.name === :func1
     end
-    test_report_package(:(module ImportBlock
+    test_package_file(:(module ImportBlock
             begin
                 import PkgAnalysisDep
                 callfunc1() = PkgAnalysisDep.func1()
@@ -3363,7 +3365,7 @@ end
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
-    test_report_package(:(module ImportBlock
+    test_package_file(:(module ImportBlock
             global truecond::Bool = true
             if truecond
                 import PkgAnalysisDep
@@ -3374,7 +3376,7 @@ end
         @test isempty(res.res.inference_error_reports)
     end
 
-    test_report_package(:(module RelativeDependency
+    test_package_file(:(module RelativeDependency
             import PkgAnalysisDep
             using .PkgAnalysisDep: func2
             callfunc1() = func1()
@@ -3384,7 +3386,7 @@ end
         r = only(res.res.inference_error_reports)
         @test isa(r, UndefVarErrorReport) && r.var.name === :func1
     end
-    test_report_package(:(module RelativeInner
+    test_package_file(:(module RelativeInner
             module Inner
             struct XXX end
             export XXX
@@ -3397,7 +3399,7 @@ end
         @test isa(r, UndefVarErrorReport) && r.var.name === :xxx
     end
 
-    test_report_package(:(module MultiModuleInclude
+    test_package_file(:(module MultiModuleInclude
             module A
             include("shared.jl")
             end
@@ -3412,22 +3414,21 @@ end
         @test count(r -> is_global_undef_var(r, :shared_missing), reports) == 2
     end
 
-    # `report_package` cannot analyze unloadable packages since v0.11
-    # test_report_package(:(module BadRelativeInner
-    #         module Inner end
-    #         using Inner # should be `using .Inner`
-    #     end)) do res
-    #     r = only(res.res.toplevel_error_reports)
-    #     @test isa(r, DependencyError) && r.pkg == "BadRelativeInner" && r.dep == "Inner"
-    # end
-    # test_report_package(:(module UninstalledDependency
-    #         using UninstalledDep
-    #     end)) do res
-    #     r = only(res.res.toplevel_error_reports)
-    #     @test isa(r, DependencyError) && r.pkg == "UninstalledDependency" && r.dep == "UninstalledDep"
-    # end
+    test_package_file(:(module BadRelativeInner
+            module Inner end
+            using Inner # should be `using .Inner`
+        end)) do res
+        r = only(res.res.toplevel_error_reports)
+        @test isa(r, DependencyError) && r.pkg == "BadRelativeInner" && r.dep == "Inner"
+    end
+    test_package_file(:(module UninstalledDependency
+            using UninstalledDep
+        end)) do res
+        r = only(res.res.toplevel_error_reports)
+        @test isa(r, DependencyError) && r.pkg == "UninstalledDependency" && r.dep == "UninstalledDep"
+    end
 
-    test_report_package(:(module LoadPreferences
+    test_package_file(:(module LoadPreferences
             using Preferences
 
             @load_preference("LoadRootConfig", false)
@@ -3446,7 +3447,7 @@ end
         @test isempty(res.res.inference_error_reports)
     end
 
-    test_report_package(:(module SelfImport1
+    test_package_file(:(module SelfImport1
             function overload end
             module SubModule
             using SelfImport1
@@ -3459,7 +3460,7 @@ end
         @test isempty(res.res.inference_error_reports)
     end
 
-    test_report_package(:(module SelfImport2
+    test_package_file(:(module SelfImport2
             function overload end
             module SubModule
             using SelfImport2
@@ -3477,7 +3478,7 @@ end
         @test isempty(res.res.inference_error_reports)
     end
 
-    test_report_package(:(module SelfImport5
+    test_package_file(:(module SelfImport5
             function overload end
             module SubModule
             module SubSubModule
@@ -3498,8 +3499,8 @@ end
         @test isempty(res.res.inference_error_reports)
     end
 
-    # ignore_missing_comparison should be turned on by default for `report_package`
-    test_report_package(:(module Issue542_1
+    # Suppress noisy `missing` comparisons when analyzing from broad signatures.
+    test_package_file(:(module Issue542_1
             struct Issue542Typ end
             isa542(x) = x == Issue542Typ() ? true : false
         end);
@@ -3507,7 +3508,7 @@ end
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
-    test_report_package(:(module Issue542_2
+    test_package_file(:(module Issue542_2
             struct Issue542Typ end
             isa542(x) = x == Issue542Typ() ? true : false
         end);
@@ -3518,7 +3519,7 @@ end
     end
 
     # special cases for `reduce_empty` and `mapreduce_empty`
-    test_report_package(:(module ReduceEmpty
+    test_package_file(:(module ReduceEmpty
             reducer(a::Vector{String}) = maximum(length, a)
         end);
         base_setup=Returns(nothing)) do res
@@ -3526,35 +3527,35 @@ end
         @test isempty(res.res.inference_error_reports)
     end
 
-    test_report_package(:(module Issue554_1
+    test_package_file(:(module Issue554_1
             using PkgAnalysisDep: Inner.func3
             callfunc3() = func3()
         end)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
-    test_report_package(:(module Issue554_2
+    test_package_file(:(module Issue554_2
             using PkgAnalysisDep: Inner.func3 as func
             callfunc() = func()
         end)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
-    test_report_package(:(module Issue554_3
+    test_package_file(:(module Issue554_3
             import PkgAnalysisDep: Inner.func3
             callfunc3() = func3()
         end)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
-    test_report_package(:(module Issue554_4
+    test_package_file(:(module Issue554_4
             import PkgAnalysisDep: Inner.func3 as func
             callfunc() = func()
         end)) do res
         @test isempty(res.res.toplevel_error_reports)
         @test isempty(res.res.inference_error_reports)
     end
-    test_report_package(:(module Issue554
+    test_package_file(:(module Issue554
             using LinearAlgebra: BLAS.BlasFloat
             issue554(x::BlasFloat) = x
         end);
@@ -3566,7 +3567,7 @@ end
     end
 
     # aviatesk/JET.jl#619: allow relative module that is overly deep in a package loading
-    test_report_package(:(module Issue619
+    test_package_file(:(module Issue619
             module Inner
             abstract type AbstractType619 end
             end # module Inner
@@ -3595,7 +3596,8 @@ end
 end
 
 # aviatesk/JET.jl#597: don't try to concrete-interpret `:jl_extern_c`
-let old = Pkg.project().path
+@testset "repeated @ccallable analysis" begin
+    old = Pkg.project().path
     try
         Pkg.activate(; temp=true, io=devnull)
         Pkg.develop(; path=normpath(FIXTURES_DIR, "JET597"), io=devnull)
@@ -3603,11 +3605,16 @@ let old = Pkg.project().path
 
         using JET597
 
-        res = report_package(JET597; toplevel_logger=nothing)
-        @test isempty(res.res.toplevel_error_reports)
-
-        res = report_package(JET597; toplevel_logger=nothing)
-        @test isempty(res.res.toplevel_error_reports)
+        filename = pathof(JET597)::String
+        pkgid = Base.PkgId(JET597)
+        for _ in 1:2
+            interp = JETConcreteInterpreter(JETAnalyzer(;
+                ignore_missing_comparison=true, ignore_throws=true))
+            res = JET.analyze_and_report_file!(interp, filename, pkgid;
+                analyze_from_definitions=true, concretization_patterns=[:(x_)],
+                toplevel_logger=nothing)
+            @test isempty(res.res.toplevel_error_reports)
+        end
     finally
         Pkg.activate(old; io=devnull)
     end
