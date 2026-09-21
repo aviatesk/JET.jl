@@ -2305,7 +2305,7 @@ end
             @test isempty(report.st) # stopped in the top-level frame itself
             msg = sprint(JET.print_report, report)
             @test !occursin("Stacktrace:", msg)
-            @test sprint(JET.print_report, report; context=:markdown_rendering=>true) == msg
+            @test occursin("**0.1** seconds", sprint(JET.print_report, report; context=:markdown_rendering=>true))
         end
         # The time spent in `include`d files does not count: each included statement stays
         # within the timeout, while the included file as a whole exceeds it.
