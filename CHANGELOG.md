@@ -63,7 +63,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Code passed to `Core.eval`, as by `@eval`, is now concretely interpreted
+  like other top-level code and the functions it calls, so
+  `concretization_timeout` and the stack traces of error reports extend into
+  it, and `analyze_from_definitions` also analyzes the methods defined by it.
+  Module usages in code evaluated from a function run natively, in the module
+  evaluated into, and so do the `__init__` functions of the modules it
+  evaluates, which `concretization_timeout` cannot interrupt.
+
 ### Fixed
+
+- `include` calls of another module, as in code evaluated into that module,
+  now analyze the included file in that module.
 
 - Fixed spurious reports, such as `NonBooleanCondErrorReport`s, for reductions
   like `all(f, x)` over imprecisely typed vectors when SparseArrays is loaded,

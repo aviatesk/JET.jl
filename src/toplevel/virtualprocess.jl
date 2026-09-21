@@ -422,11 +422,12 @@ These options apply to all entry points described in the
   stops it at the next interpreted statement, including statements of functions
   called from the top-level code, reports a `ConcretizationTimeoutErrorReport`
   showing the calls that were running, and skips the abstract analysis of that
-  top-level statement. Code that runs natively, such as `ccall`s, builtins,
-  code evaluated by `Core.eval` and the calls of blocks selected by
-  `concretization_patterns`, cannot be interrupted. The time spent in
-  `include`d files and in module-loading statements handled by JET is not
-  counted.
+  top-level statement. Code passed to `Core.eval`, as by `@eval`, is
+  interpreted as well. Code that runs natively, such as `ccall`s, builtins,
+  the `__init__` functions of modules evaluated by `Core.eval` and the calls of
+  blocks selected by `concretization_patterns`, cannot be interrupted.
+  The time spent in `include`d files and in module-loading statements handled
+  by JET is not counted.
   Set `Inf` to disable the timeout.
 ---
 - `toplevel_logger::Union{Nothing,IO} = nothing` \\
@@ -2522,7 +2523,10 @@ function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, 
         end
     end
 
-    if istoplevel && (ismoduleusage(node) || is_lowered_module_usage(node))
+    # Module usages in code that a method evaluates with `Core.eval` are left to the generic
+    # `step_expr!`, which evaluates them natively as actual execution does: in the module
+    # evaluated into, and raising errors to the calling code.
+    if istoplevel && (ismoduleusage(node) || is_lowered_module_usage(node)) && !is_evaled_frame(frame)
         moduleusage = ismoduleusage(node) ? node : to_module_usage(node)
         world = frame.world
         pause_concretization_timeout(state) do
@@ -2548,11 +2552,25 @@ function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, 
         end
     end
 
-    if istoplevel && should_analyze_from_definitions(state.config)
+    return res
+end
+
+# Whether `frame` runs code that a method evaluates with `Core.eval`, rather than the
+# top-level code being analyzed.
+function is_evaled_frame(frame::Frame)
+    while true
+        frame = @something frame.caller return false
+        JuliaInterpreter.scopeof(frame) isa Method && return true
+    end
+end
+
+function JuliaInterpreter.evaluate_methoddef(interp::ConcreteInterpreter, frame::Frame, node::Expr)
+    # A failed definition may be caught by `step_expr!`; collect only after success.
+    ret = @invoke JuliaInterpreter.evaluate_methoddef(interp::Interpreter, frame::Frame, node::Expr)
+    if should_analyze_from_definitions(InterpretationState(interp).config)
         collect_toplevel_signature!(interp, frame, node)
     end
-
-    return res
+    return ret
 end
 
 function collect_toplevel_signature!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node))
@@ -2698,7 +2716,8 @@ function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func)
     state = InterpretationState(interp)
     filename = state.filename
     line = state.curline
-    include_context = state.context
+    # `include` of another module, e.g. called in code evaluated into that module
+    include_context = include_func isa Base.IncludeInto ? include_func.m : state.context
 
     function add_actual_method_error_report!(args::Vector{Any})
         err = MethodError(include_func, args)
@@ -2898,7 +2917,19 @@ function callee_stacktrace(frame::Frame)
     st = Base.StackTraces.StackFrame[]
     while true
         caller = @something frame.caller break # the top-level frame is not part of the stack
-        push!(st, Base.StackTraces.StackFrame(frame))
+        framecode = frame.framecode
+        if framecode.is_toplevel_surface
+            # JuliaInterpreter's driver frames for `Core.eval`ed code run each statement
+            # in a child frame, which carries the location
+        else
+            sf = Base.StackTraces.StackFrame(frame)
+            if framecode.scope isa Module
+                # the thunk of `Core.eval`ed code, named as in native stack traces
+                sf = Base.StackTraces.StackFrame(Symbol("top-level scope"),
+                    sf.file, sf.line, sf.linfo, sf.from_c, sf.inlined, sf.pointer)
+            end
+            push!(st, sf)
+        end
         frame = caller
     end
     return st
