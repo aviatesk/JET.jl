@@ -8,6 +8,13 @@ JET employs Julia's type inference system to detect potential bugs and type
 instabilities.
 
 > [!NOTE]
+> This is a JETLS-specific branch of JET based on `master`.
+> The Revise-based package analysis APIs (`report_package`, `test_package`,
+> and `analyze_and_report_package!`) are not available, and JET does not depend
+> on Revise in this branch. File, text, and call analysis and the core analyzer
+> functionality remain available.
+
+> [!NOTE]
 > **The latest release series, v0.12, supports full JET functionality
 > on Julia v1.12 and v1.13 only.**
 >
