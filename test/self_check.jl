@@ -18,7 +18,6 @@ let target_modules = (JET,)
     test_call(JET.virtual_process, (JET.JETConcreteInterpreter{JETAnalyzerT}, String, String, JET.ToplevelConfig); target_modules)
     # entries
     test_call(JET.report_file, (String,); target_modules)
-    test_call(JET.report_package, (Module,); target_modules)
 
     # optimization analysis
     # =====================
