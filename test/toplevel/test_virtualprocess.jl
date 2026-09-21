@@ -1544,6 +1544,145 @@ end
     end
 end
 
+# JuliaInterpreter interprets the code passed to `Core.eval` from this feature on, so the
+# timeout, error reports and definition analysis extend into `@eval`ed code
+@testset "`Core.eval`ed code is interpreted" begin
+    if !isdefined(JET.JuliaInterpreter, :evaluate_eval!)
+        @test_skip false
+    else
+        let res = report_text("@eval while true end\n"; concretization_timeout=0.1)
+            report = only(res.res.toplevel_error_reports)
+            @test report isa JET.ConcretizationTimeoutErrorReport
+            @test any(sf -> sf.func === Symbol("top-level scope"), report.st)
+        end
+        let res = report_text("""
+                @eval f(x::Int) = x + "a"
+                g(x::Int) = x + "b"
+                """; analyze_from_definitions=true)
+            @test length(res.res.inference_error_reports) == 2
+        end
+        let context = gen_virtual_module()
+            res = report_text("""
+                @eval using Base.Iterators: flatten
+                @eval import Base.Iterators
+                struct A
+                    f::typeof(flatten)
+                    g::typeof(Iterators.flatten)
+                end
+                """; context, virtualize=false)
+            @test isempty(res.res.toplevel_error_reports)
+            @test (@invokelatest isdefinedglobal(context, :A))
+        end
+        let res = @analyze_toplevel begin
+                function guarded()
+                    try
+                        @eval error("boom")
+                    catch
+                        return Integer
+                    end
+                end
+                struct B <: guarded() end
+            end
+            @test isempty(res.res.toplevel_error_reports)
+        end
+        mktemp() do filename, _
+            res = report_text("""
+                bad() = throw("in eval")                    # L1
+                function h()
+                    Core.eval(@__MODULE__, :(bad()))        # L3
+                end
+                struct C <: h() end                         # L5
+                """, filename)
+            er = only(res.res.toplevel_error_reports)
+            @test er isa ActualErrorWrapped
+            @test er.err == "in eval"
+            st = [(sf.func, sf.line) for sf in er.st]
+            @test st[1] == (:bad, 1)
+            @test any(sf -> sf.func === Symbol("top-level scope"), er.st)
+            @test st[end] == (:h, 3)
+        end
+        mktempdir() do dir
+            write(joinpath(dir, "included.jl"), "included_f() = 1\n")
+            main = joinpath(dir, "main.jl")
+            write(main, """
+                @eval include("included.jl")
+                struct D <: (included_f() == 1 ? Integer : Real) end
+                """)
+            res = report_file2(main)
+            @test isempty(res.res.toplevel_error_reports)
+            @test any(endswith("included.jl"), keys(res.res.analyzed_files))
+        end
+        # Module usages and `include`s in code evaluated into another module apply to it.
+        let context = gen_virtual_module()
+            res = report_text("""
+                module M end
+                @eval M using Base.Iterators: flatten
+                struct E
+                    f::typeof(M.flatten)
+                end
+                """; context, virtualize=false)
+            @test isempty(res.res.toplevel_error_reports)
+            M = @invokelatest getglobal(context, :M)
+            @test (@invokelatest isdefinedglobal(M, :flatten))
+            @test !(@invokelatest isdefinedglobal(context, :flatten))
+        end
+        mktempdir() do dir
+            write(joinpath(dir, "included_into.jl"), "included_g() = 2\n")
+            main = joinpath(dir, "main.jl")
+            write(main, """
+                module M2 end
+                Core.eval(M2, :(include("included_into.jl")))
+                struct G <: (M2.included_g() == 2 ? Integer : Real) end
+                """)
+            res = report_file2(main)
+            @test isempty(res.res.toplevel_error_reports)
+        end
+        # A failing module usage in evaluated code reaches the caller's `catch`.
+        let res = @analyze_toplevel begin
+                function guarded_using()
+                    try
+                        @eval using JETNonexistentPackage
+                    catch
+                        return Integer
+                    end
+                end
+                struct F <: guarded_using() end
+            end
+            @test isempty(res.res.toplevel_error_reports)
+        end
+        # Module expressions are evaluated as natively: each evaluation creates a fresh
+        # module, runs its `__init__` and evaluates to the module.
+        let context = gen_virtual_module()
+            res = report_text("""
+                @eval module EvalMod
+                    const initialized = Ref(false)
+                    __init__() = initialized[] = true
+                end
+                @eval const OldEvalMod = EvalMod
+                evalmod() = @eval module EvalMod end
+                struct H <: (evalmod() isa Module ? Integer : Real) end
+                """; context, virtualize=false)
+            @test isempty(res.res.toplevel_error_reports)
+            old = @invokelatest getglobal(context, :OldEvalMod)
+            new = @invokelatest getglobal(context, :EvalMod)
+            @test old !== new
+            @test (@invokelatest getglobal(old, :initialized))[]
+            @test !(@invokelatest isdefinedglobal(new, :initialized))
+            @test supertype(@invokelatest getglobal(context, :H)) === Integer
+        end
+        let res = report_text("""
+                @eval module EvalInitError
+                    __init__() = error("init failed")
+                end
+                """)
+            er = only(res.res.toplevel_error_reports)
+            @test er isa ActualErrorWrapped
+            @test er.err isa InitError && er.err.mod === :EvalInitError
+            @test any(sf -> sf.func === :__init__, er.st)
+        end
+    end
+end
+
 @testset "getglobal with abstract global variable" begin
     # nested module access will be resolved as a direct call of `getfield`
     let res = @analyze_toplevel begin
@@ -1888,6 +2027,36 @@ end
     @test !isempty(res.res.signature_infos)
     @test all(res.res.signature_infos) do (; tt)
         !Base.has_free_typevars(tt)
+    end
+end
+
+@testset "failed method definition signatures" begin
+    @testset "caught: $analyze_from_definitions" for analyze_from_definitions in (true, false, :g, :f)
+        context = gen_virtual_module()
+        res = report_text("""
+            @eval begin
+                try
+                    f(x::Union{}) = x
+                catch
+                end
+                g(x::Int) = undefined_after_catch
+            end
+            """; context, virtualize=false, analyze_from_definitions)
+        @test isempty(res.res.toplevel_error_reports)
+        @test (@invokelatest isdefinedglobal(context, :g))
+        should_analyze_g = analyze_from_definitions === true || analyze_from_definitions === :g
+        @test length(res.res.signature_infos) == (should_analyze_g ? 1 : 0)
+        if should_analyze_g
+            @test is_global_undef_var(only(res.res.inference_error_reports), :undefined_after_catch)
+        else
+            @test isempty(res.res.inference_error_reports)
+        end
+    end
+    let res = report_text("@eval f(x::Union{}) = x"; analyze_from_definitions=true)
+        report = only(res.res.toplevel_error_reports)
+        @test report isa ActualErrorWrapped
+        @test report.err isa ErrorException
+        @test isempty(res.res.signature_infos)
     end
 end
 
@@ -2302,10 +2471,17 @@ end
                 """; concretization_timeout=0.1, concretization_patterns)
             report = only(res.res.toplevel_error_reports)
             @test report isa JET.ConcretizationTimeoutErrorReport
-            @test isempty(report.st) # stopped in the top-level frame itself
             msg = sprint(JET.print_report, report)
-            @test !occursin("Stacktrace:", msg)
-            @test sprint(JET.print_report, report; context=:markdown_rendering=>true) == msg
+            if isempty(concretization_patterns)
+                # the code passed to `Core.eval` is interpreted, so the timeout stops `sleep`
+                @test any(sf -> sf.func === :sleep, report.st)
+                @test any(sf -> sf.func === Symbol("top-level scope"), report.st)
+                @test occursin("Stacktrace:", msg)
+            else
+                @test isempty(report.st) # stopped in the top-level frame itself
+                @test !occursin("Stacktrace:", msg)
+                @test sprint(JET.print_report, report; context=:markdown_rendering=>true) == msg
+            end
         end
         # The time spent in `include`d files does not count: each included statement stays
         # within the timeout, while the included file as a whole exceeds it.
