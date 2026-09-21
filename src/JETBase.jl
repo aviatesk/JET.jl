@@ -55,8 +55,6 @@ using MacroTools: @capture, normalise, striplines
 
 using InteractiveUtils: InteractiveUtils
 
-using Revise
-
 using Test:
     Broken, DefaultTestSet, Error, Fail, FallbackTestSet, FallbackTestSetException, Pass,
     Result, TESTSET_PRINT_ENABLE, Test, get_testset
@@ -993,181 +991,6 @@ function kwargs_dict(@nospecialize configs)
     return dict
 end
 
-struct SigAnalysisResult
-    reports::Vector{InferenceErrorReport}
-    codeinst::CodeInstance
-end
-
-struct SigWorkItem
-    siginfo::Revise.SigInfo
-    exinfos::Vector{Union{Revise.SigInfo,Revise.TypeInfo}}
-    index::Int
-end
-
-function cache_sig_analysis!(workitem::SigWorkItem, result::SigAnalysisResult)
-    @lock Revise.revise_lock begin
-        checkbounds(Bool, workitem.exinfos, workitem.index) || return nothing
-        current = workitem.exinfos[workitem.index]
-        # Make sure the entry still holds the analyzed signature: attaching the result to a
-        # different signature's entry would let it be reused for the wrong signature, which
-        # the read-side validation cannot detect. On the other hand a stale result for the
-        # same signature is fine since the read-side world range validation rejects it.
-        if (current isa Revise.SigInfo &&
-            current.mt === workitem.siginfo.mt && current.sig === workitem.siginfo.sig)
-            workitem.exinfos[workitem.index] =
-                Revise.replace_extended_data(current, :JET, result)
-        end
-    end
-    return nothing
-end
-
-struct ReviseSignatureAnalysisJob{Analyzer<:AbstractAnalyzer} <: AbstractSignatureAnalysisJob
-    workitem::SigWorkItem
-    analyzer::Analyzer
-    progress::PackageAnalysisProgress
-    inf_world::UInt
-    config::ToplevelConfig
-    n_sigs::Int
-    completion::Base.Event
-end
-
-function (job::ReviseSignatureAnalysisJob)()
-    (; workitem, analyzer, progress, inf_world, config) = job
-    siginfo = workitem.siginfo
-    try
-        ext = Revise.get_extended_data(siginfo, :JET)
-        local reports::Vector{InferenceErrorReport}
-        if ext !== nothing && ext.data isa SigAnalysisResult
-            prev_result = ext.data::SigAnalysisResult
-            if (CC.cache_owner(analyzer) === prev_result.codeinst.owner &&
-                prev_result.codeinst.max_world ≥ inf_world ≥ prev_result.codeinst.min_world)
-                @atomic progress.cached += 1
-                reports = prev_result.reports
-                @goto gotreports
-            end
-        end
-        # Create a new analyzer with fresh local caches (`inf_cache` and `analysis_results`)
-        # to avoid data races between concurrent signature analysis tasks
-        task_analyzer = AbstractAnalyzer(analyzer,
-            AnalyzerState(AnalyzerState(analyzer), #=refresh_local_cache=#true))
-        match = Base._which(siginfo.sig;
-            method_table = CC.method_table(task_analyzer),
-            world = inf_world,
-            raise = false)
-        if match !== nothing
-            result = analyze_method_signature!(
-                task_analyzer, match.method, match.spec_types, match.sparams)
-            @atomic progress.analyzed += 1
-            reports = get_reports(task_analyzer, result)
-            cache_sig_analysis!(workitem, SigAnalysisResult(reports, result.ci))
-        else
-            let siginfo=siginfo
-                toplevel_logger(config; pre=println) do @nospecialize(io::IO)
-                    print(io, "Couldn't find a single matching method for the signature `")
-                    Base.show_tuple_as_call(io, Symbol(""), siginfo.sig)
-                    println(io, "`")
-                end
-            end
-            reports = InferenceErrorReport[]
-        end
-        @label gotreports
-        isempty(reports) || @lock progress.reports_lock append!(progress.reports, reports)
-    catch err
-        @error "Error analyzing method signature" siginfo.sig
-        Base.showerror(stderr, err, catch_backtrace())
-    finally
-        done = (@atomic progress.done += 1)
-        current_next = @atomic progress.next_interval
-        if done >= current_next
-            @atomicreplace progress.next_interval current_next => current_next + progress.interval
-            toplevel_logger(config; pre=clearline) do @nospecialize(io::IO)
-                print(io, "Analyzing top-level definitions (progress: $done/$(job.n_sigs))")
-            end
-        end
-    end
-end
-
-"""
-    analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module;
-                                jetconfigs...) -> JETToplevelResult
-
-Analyze the package module `pkgmod` with `analyzer` and return the analysis
-result as a [`JETToplevelResult`](@ref). This generic entry point is intended
-only for developers of `AbstractAnalyzer`. General users should use high-level
-entry points such as [`report_package`](@ref).
-"""
-function analyze_and_report_package!(analyzer::AbstractAnalyzer, pkgmod::Module; jetconfigs...)
-    pkgid = Base.PkgId(pkgmod)
-    Revise.getpkgdata(pkgid) === nothing && Revise.watch_package(pkgid)
-
-    local world, workitems
-    @lock Revise.revise_lock begin
-        pkgdata = @something Revise.getpkgdata(pkgid) error(lazy"Package $pkgmod is not analyzable.")
-        # If Revise hasn't instantiated signatures yet, populate that cache here
-        for (file, fi) in zip(Revise.srcfiles(pkgdata), pkgdata.fileinfos)
-            Revise.maybe_parse_from_cache!(pkgdata, file, fi)
-            Revise.maybe_extract_sigs!(fi)
-        end
-        # Signature extraction may advance the world age, so capture it afterward
-        world = Base.get_world_counter()
-
-        workitems = SigWorkItem[]
-        for fi in pkgdata.fileinfos
-            for (_, exs_infos) in fi.mod_exs_infos, (_, exinfos) in exs_infos
-                isnothing(exinfos) && continue
-                for (i, exinfo) in enumerate(exinfos)
-                    if exinfo isa Revise.SigInfo
-                        push!(workitems, SigWorkItem(exinfo, exinfos, i))
-                    end
-                end
-            end
-        end
-    end
-
-    start = time()
-    res = VirtualProcessResult(nothing)
-    jetconfigs = set_if_missing(jetconfigs, :toplevel_logger, IOContext(stdout, JET_LOGGER_LEVEL => DEFAULT_LOGGER_LEVEL))
-    config = ToplevelConfig(; jetconfigs...)
-
-    newstate = AnalyzerState(AnalyzerState(analyzer); world)
-    analyzer = AbstractAnalyzer(analyzer, newstate)
-
-    n_sigs = length(workitems)
-    progress = PackageAnalysisProgress(n_sigs)
-    inf_world = CC.get_inference_world(analyzer)
-
-    toplevel_logger(config) do @nospecialize(io::IO)
-        print(io, "Analyzing top-level definitions (progress: 0/$n_sigs | interval: $(progress.interval))")
-    end
-
-    jobs = ReviseSignatureAnalysisJob[]
-    sizehint!(jobs, n_sigs)
-    for workitem in workitems
-        push!(jobs, ReviseSignatureAnalysisJob(
-            workitem, analyzer, progress, inf_world, config, n_sigs, Base.Event()))
-    end
-    run_signature_analysis_jobs!(jobs)
-
-    append!(res.inference_error_reports, progress.reports)
-
-    toplevel_logger(config; pre=clearline) do @nospecialize(io::IO)
-        done = @atomic progress.done
-        print(io, "Analyzing top-level definitions (progress: $done/$n_sigs)")
-    end
-    toplevel_logger(config; pre=println) do @nospecialize(io::IO)
-        sec = round(time() - start; digits = 3)
-        analyzed = @atomic progress.analyzed
-        cached = @atomic progress.cached
-        println(io, "Analyzed all top-level definitions (all: $n_sigs | analyzed: $analyzed | cached: $cached | took: $sec sec)")
-    end
-
-    unique!(aggregation_policy(analyzer), res.inference_error_reports)
-
-    analyzername = nameof(typeof(analyzer))
-    pkgname = String(nameof(pkgmod))
-    source = lazy"$analyzername: $pkgname"
-    return JETToplevelResult(analyzer, res, source; jetconfigs...)
-end
 
 """
     analyze_and_report_text!(interp::ConcreteInterpreter,
@@ -1430,7 +1253,7 @@ reexport_as_api!(JETInterface,
     print_report_message, print_signature, report_color,
     # generic entry points,
     analyze_and_report_call!, call_test_ex, func_test,
-    analyze_and_report_file!, analyze_and_report_package!, analyze_and_report_text!,
+    analyze_and_report_file!, analyze_and_report_text!,
     # development utilities
     add_new_report!, var"@jetreport")
 
