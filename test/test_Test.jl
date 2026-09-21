@@ -191,7 +191,9 @@ end
 # https://github.com/aviatesk/JET.jl/issues/490
 using Example
 let ts = with_isolated_testset() do
-        test_package(Example)
+        test_file(pathof(Example), Base.PkgId(Example);
+            analyze_from_definitions=true, concretization_patterns=[:(x_)],
+            ignore_missing_comparison=true, ignore_throws=true, toplevel_logger=nothing)
     end
     @test ts.n_passed == 1
 end
