@@ -152,13 +152,8 @@ struct ConcretizationTimeoutErrorReport <: ToplevelErrorReport
     line::Int
 end
 function print_report(io::IO, report::ConcretizationTimeoutErrorReport)
-    markdown_rendering = get(io, :markdown_rendering, false)::Bool
     print(io, "JET stopped the concrete execution of this top-level statement after")
-    if markdown_rendering
-    println(io, " **$(report.timeout)** seconds (`concretization_timeout`).")
-    else
     println(io, " $(report.timeout) seconds (`concretization_timeout`).")
-    end
     println(io)
     println(io, "JET executes top-level code concretely when it contains `function` or")
     println(io, "`struct` definitions, `@eval` calls, in-place updates of concretized")
@@ -171,6 +166,7 @@ function print_report(io::IO, report::ConcretizationTimeoutErrorReport)
     println(io, "  that JET analyzes the code instead of executing it.")
     println(io, "- If the code is expected to run this long, raise `concretization_timeout`.")
     if !isempty(report.st)
+        markdown_rendering = get(io, :markdown_rendering, false)::Bool
         markdown_rendering && (println(io); print(io, "```"))
         Base.show_backtrace(io, report.st) # adds a `Stacktrace:` heading
         markdown_rendering && println(io, "\n```")
