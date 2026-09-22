@@ -94,7 +94,18 @@ struct ActualErrorWrapped <: ToplevelErrorReport
     end
 end
 # TODO: add context information
-print_report(io::IO, report::ActualErrorWrapped) = showerror(io, report.err, report.st)
+function print_report(io::IO, report::ActualErrorWrapped)
+    if get(io, :markdown_rendering, false)::Bool
+        msg = sprint(showerror, report.err, report.st; context=io)
+        parts = split(msg, "\nStacktrace:"; limit=2)
+        print(io, first(parts))
+        if length(parts) == 2
+            println(io, "\n\n```\nStacktrace:", last(parts), "\n```")
+        end
+    else
+        showerror(io, report.err, report.st)
+    end
+end
 
 struct DependencyError <: ToplevelErrorReport
     pkg::String

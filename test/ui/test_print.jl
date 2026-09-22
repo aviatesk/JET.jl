@@ -36,6 +36,33 @@ end
     end
 end
 
+@testset "actual error stacktrace rendering" begin
+    @testset "with stacktrace" for err in (
+            ErrorException("execution failed"),
+            LoadError("example.jl", 1, ErrorException("execution failed")),
+            InitError(:Example, ErrorException("execution failed")))
+        st = [Base.StackTraces.StackFrame(:example, Symbol("example.jl"), 1)]
+        report = ActualErrorWrapped(err, st, "example.jl", 1)
+        for color in (false, true)
+            msg = sprint(showerror, err, st; context=:color=>color)
+            @test sprint(JET.print_report, report; context=:color=>color) == msg
+            @test sprint(JET.print_report, report; context=(:color=>color, :markdown_rendering=>false)) == msg
+            msg_md = sprint(JET.print_report, report; context=(:color=>color, :markdown_rendering=>true))
+            @test occursin("execution failed\n\n```\nStacktrace:", msg_md)
+            @test endswith(msg_md, "\n```\n")
+            @test msg_md == replace(msg, "\nStacktrace:"=>"\n\n```\nStacktrace:"; count=1) * "\n```\n"
+        end
+    end
+    @testset "without stacktrace" begin
+        err = ErrorException("execution failed")
+        report = ActualErrorWrapped(err, Base.StackTraces.StackFrame[], "example.jl", 1)
+        msg = sprint(showerror, err, report.st)
+        @test sprint(JET.print_report, report) == msg
+        @test sprint(JET.print_report, report; context=:markdown_rendering=>true) == msg
+        @test !occursin("```", msg)
+    end
+end
+
 @testset "print inference errors" begin
     mktemp() do filename, io
         res = report_text("""
