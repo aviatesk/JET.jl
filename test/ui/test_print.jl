@@ -63,6 +63,29 @@ end
     end
 end
 
+@testset "concretization timeout guidance" for with_stacktrace in (false, true),
+                                               markdown_rendering in (false, true)
+    st = with_stacktrace ?
+        Base.StackTraces.StackFrame[
+            Base.StackTraces.StackFrame(:example, Symbol("example.jl"), 1)
+        ] : Base.StackTraces.StackFrame[]
+    report = JET.ConcretizationTimeoutErrorReport(0.1, st, "example.jl", 1)
+    msg = sprint(JET.print_report, report; context=:markdown_rendering=>markdown_rendering)
+    @test occursin("possibly due to interpretation overhead", msg)
+    @test occursin("raise `concretization_timeout`", msg)
+    for guidance in (
+            "If the stacktrace shows code that normally finishes quickly",
+            "Add a `concretization_patterns` entry",
+            "matching the enclosing top-level block",
+            "run its function calls natively",
+            "entire matching block, including any side effects",
+            "`concretization_timeout` cannot interrupt those native calls")
+        @test occursin(guidance, msg) == with_stacktrace
+    end
+    @test occursin("Stacktrace:", msg) == with_stacktrace
+    @test occursin("```", msg) == (with_stacktrace && markdown_rendering)
+end
+
 @testset "print inference errors" begin
     mktemp() do filename, io
         res = report_text("""
