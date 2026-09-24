@@ -210,7 +210,6 @@ function CC.InferenceState(result::InferenceResult, cache_mode::UInt8, analyzer:
     return frame
 end
 
-
 let base_ntuple_int_method = which(Base.ntuple, Tuple{Any,Int})
     ntuple_with_unknown_length(f::F, n::Int) where F = Base._ntuple(f, n)
     ntuple_with_unknown_length_source = only(code_lowered(ntuple_with_unknown_length, Tuple{Any,Int}))
