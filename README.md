@@ -237,6 +237,12 @@ See [SnoopCompile's JET-integration documentation](https://timholy.github.io/Sno
 for further details.
 -->
 
+## Badge
+If you are using JET to test your package, you may want to include a badge in your README.md by pasting this markdown snippet:
+```markdown
+[![](https://img.shields.io/badge/%F0%9F%9B%A9%EF%B8%8F_tested_with-JET.jl-233f9a)](https://github.com/aviatesk/JET.jl)
+```
+
 ## Acknowledgements
 This project started as my undergraduate thesis at Kyoto University,
 supervised by Prof. Takashi Sakuragawa.
