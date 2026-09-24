@@ -210,6 +210,31 @@ function CC.InferenceState(result::InferenceResult, cache_mode::UInt8, analyzer:
     return frame
 end
 
+
+let base_ntuple_int_method = which(Base.ntuple, Tuple{Any,Int})
+    ntuple_with_unknown_length(f::F, n::Int) where F = Base._ntuple(f, n)
+    ntuple_with_unknown_length_source = only(code_lowered(ntuple_with_unknown_length, Tuple{Any,Int}))
+
+    global function CC.InferenceState(
+            result::InferenceResult, src::CodeInfo, cache_mode::UInt8,
+            analyzer::JETAnalyzer
+        )
+        # Base's small-n unrolling produces false positives when n is unknown (aviatesk/JET.jl#678).
+        # Keep the original source for constant n, preserving tuple lengths and callback
+        # indices, and retain the original MI so constprop replaces the generic reports.
+        if result.linfo.def === base_ntuple_int_method && !(result.argtypes[3] isa Const)
+            inlining = src.inlining
+            src = copy(ntuple_with_unknown_length_source)
+            src.parent = result.linfo
+            src.inlining = inlining
+            CC.maybe_validate_code(result.linfo, src, "lowered")
+        end
+        return @invoke CC.InferenceState(
+            result::InferenceResult, src::CodeInfo, cache_mode::UInt8,
+            analyzer::AbstractInterpreter)
+    end
+end
+
 function CC.finish!(analyzer::JETAnalyzer, caller::InferenceState, validation_world::UInt, time_before::UInt64)
     src = caller.result.src
 

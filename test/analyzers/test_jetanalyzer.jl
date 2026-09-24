@@ -1073,4 +1073,76 @@ test_call((Union{PR60857A,PR60857B},)) do ab
 end
 end
 
+ntuple678(nt::Tuple, n::Integer) = ntuple(i->nt[i], n)
+ntuple678(nt::Tuple, ::Val{N}) where N = ntuple678(nt, N)
+ntuple_bounds678(x::Int, ::Val{N}) where N = ntuple(i->x, N)[N+1]
+
+struct NTupleOverride678 end
+(::NTupleOverride678)(i::Int) = i
+Base.ntuple(::NTupleOverride678, ::Int) = sin("custom ntuple")
+
+@testset "ntuple" begin
+    @testset "unknown length" begin
+        # aviatesk/JET.jl#678: do not analyze impossible manually unrolled indices.
+        test_call(ntuple678, (NTuple{4,Float64},Int64))
+        test_call(ntuple678, (NTuple{4,Float64},Int32))
+        # Constant propagation of f alone must still use the unknown-length source.
+        test_call((Float64,Int)) do x, n
+            nt = (x, 1.0, 2.0, 3.0)
+            ntuple(i->nt[i], n)
+        end
+        let res = report_call((String,Int)) do x, n
+                ntuple(_->sin(x), n)
+            end
+            @test any(r->r isa MethodErrorReport, get_reports_with_test(res))
+        end
+    end
+
+    @testset "constant length" begin
+        for n in (0, 1, 2, 10)
+            @test Base.infer_return_type(ntuple678, (NTuple{10,Float64},Val{n}); interp=JETAnalyzer()) === NTuple{n,Float64}
+        end
+        let res = report_call() do
+                ntuple(identity,2)[3]
+            end
+            r = only(get_reports_with_test(res))
+            @test r isa BuiltinErrorReport && r.f === getfield
+        end
+        for n in (0, 2)
+            let res = report_call(ntuple_bounds678, (Int,Val{n}))
+                r = only(get_reports_with_test(res))
+                @test r isa BuiltinErrorReport && r.f === getfield
+            end
+        end
+        let res = report_call((Int,)) do x
+                ntuple(_->x, -1)
+            end
+            @test only(get_reports_with_test(res)) isa UncaughtExceptionReport
+        end
+        test_call((NTuple{4,Float64},)) do nt
+            ntuple(i->nt[i], Val(4))
+        end
+    end
+
+    @testset "dispatch and caching" begin
+        let res = report_call((Int,)) do n
+                ntuple(NTupleOverride678(), n)
+            end
+            @test only(get_reports_with_test(res)) isa MethodErrorReport
+        end
+        for _ in 1:2
+            test_call(ntuple678, (NTuple{4,Float64},Int))
+            test_call(ntuple678, (NTuple{4,Float64},Val{4}))
+            let res = report_call(ntuple678, (NTuple{4,Float64},Val{5}))
+                r = only(get_reports_with_test(res))
+                @test r isa BuiltinErrorReport && r.f === getfield
+            end
+            test_call(ntuple678, (NTuple{4,Float64},Val{4}))
+        end
+        test_call((NTuple{4,Float64},)) do nt
+            ntuple678(nt, 4), ntuple678(nt, 4)
+        end
+    end
+end
+
 end # module test_jetanalyzer
