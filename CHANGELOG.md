@@ -91,6 +91,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Improved analysis accuracy for code that uses `Libdl.dlsym`.
 
+- Fixed spurious `MethodError` reports for expressions such as
+  `complex(a, b) / 2` with imprecisely inferred inputs, and improved inference
+  for `IndexStyle` and related Base traits.
+
 - Fixed `report_file` hanging when a nonterminating top-level loop assigns to a
   global variable. Global declarations emitted by assignments under control
   flow no longer pull the enclosing loop or branch condition into concrete

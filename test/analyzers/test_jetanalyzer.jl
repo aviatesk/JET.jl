@@ -990,6 +990,98 @@ complex_divide(a, b) = complex(a, b) / 2
             Ptr{Ptr{Float64}}(Libdl.dlsym(hnd, name))
         end
     end
+
+    @testset "`Type{Union{}}` arities (JuliaLang/julia#63338)" begin
+        @testset "$f $argtypes" for (f, argtypes, expected) in (
+                (complex, (Type{Union{}},), Union{}),
+                (real, (Type{Union{}},), Union{}),
+                (float, (Type{Union{}},), Union{}),
+                (Base.IndexStyle, (Type{Union{}},), IndexLinear()),
+                (Base.BroadcastStyle, (Type{Union{}},), Base.Broadcast.Unknown()),
+                (Base.OrderStyle, (Type{Union{}},), Base.Ordered()),
+                (Base.ArithmeticStyle, (Type{Union{}},), Base.ArithmeticUnknown()),
+                (Base.RangeStepStyle, (Type{Union{}},), Base.RangeStepIrregular()),
+                (Base.elsize, (Type{Union{}},), 0),
+                (Base.typeinfo_eltype, (Type{Union{}},), nothing),
+                (Base.Iterators.flatten_iteratorsize, (Base.HasLength,Type{Union{}}), Base.HasLength()),
+                (Base.Iterators.flatten_iteratorsize, (Base.HasShape{1},Type{Union{}}), Base.HasLength()),
+                (Base.Iterators.flatten_length, (Any,Type{Union{}}), 0),
+            )
+            let result = report_call(f, argtypes)
+                @test get_result(result) === CC.Const(expected)
+                @test isempty(get_reports_with_test(result))
+            end
+            for extras in ((Any,), (Any,Any))
+                result = report_call(f, (argtypes...,extras...))
+                @test get_result(result) === Bottom
+                @test widenconst(result.result.exc_result) === MethodError
+            end
+        end
+    end
+
+    @testset "numeric bottom guards" begin
+        @test Base.infer_return_type(complex, (Any,Any); interp=JETAnalyzer()) === Complex
+        test_call(complex_divide, (Any,Any))
+        for f in (real, float)
+            @test Base.infer_return_type(f, (Any,Any); interp=JETAnalyzer()) === Bottom
+        end
+        for T in (Float32, Float64)
+            @test Base.infer_return_type(complex, (T,T); interp=JETAnalyzer()) === Complex{T}
+            test_call((StridedVector{T},)) do x
+                complex_divide(x[1], x[2])
+            end
+            test_call(complex, (StridedVector{T},))
+            test_call((StridedVector{T},StridedVector{T})) do a, b
+                complex_divide.(a, b)
+            end
+        end
+
+        @testset "$f" for (f, T, R) in (
+                (complex, Int, Complex{Int}),
+                (real, ComplexF64, Float64),
+                (float, Int, Float64),
+            )
+            for (argtype, expected) in (
+                    (Type{T}, R),
+                    (Type{Missing}, Missing),
+                    (Type{Union{T,Missing}}, f(Union{T,Missing})),
+                    (Missing, missing),
+                )
+                result = report_call(f, (argtype,))
+                @test get_result(result) === CC.Const(expected)
+                @test isempty(get_reports_with_test(result))
+            end
+            @test Base.infer_return_type(f, (T,); interp=JETAnalyzer()) === R
+            @test Base.infer_return_type(f, (Union{T,Missing},); interp=JETAnalyzer()) === Union{R,Missing}
+        end
+    end
+
+    @testset "trait combinators and empty flatten" begin
+        @test Base.infer_return_type(Base.IndexStyle, (Any,IndexCartesian); interp=JETAnalyzer()) === IndexCartesian
+        for (f, argtypes, expected) in (
+                (Base.IndexStyle, (IndexLinear,IndexLinear), IndexLinear),
+                (Base.IndexStyle, (IndexLinear,IndexCartesian), IndexCartesian),
+                (Base.IndexStyle, (IndexCartesian,IndexLinear), IndexCartesian),
+                (Base.BroadcastStyle, (Base.Broadcast.DefaultArrayStyle{1},Base.Broadcast.Unknown), Base.Broadcast.DefaultArrayStyle{1}),
+                (Base.BroadcastStyle, (Base.Broadcast.DefaultArrayStyle{1},Base.Broadcast.DefaultArrayStyle{2}), Base.Broadcast.DefaultArrayStyle{2}),
+                (Base.Iterators.flatten_iteratorsize, (Base.HasLength,Type{Tuple{Int,Int}}), Base.HasLength),
+                (Base.Iterators.flatten_iteratorsize, (Base.HasShape{1},Type{Int}), Base.HasLength),
+            )
+            @test Base.infer_return_type(f, argtypes; interp=JETAnalyzer()) === expected
+            test_call(f, argtypes)
+        end
+        for I in (Tuple{}, Vector{Union{}})
+            T = Base.Iterators.Flatten{I}
+            let result = report_call(Base.IteratorSize, (Type{T},))
+                @test get_result(result) === CC.Const(Base.HasLength())
+                @test isempty(get_reports_with_test(result))
+            end
+            let result = report_call(length, (T,))
+                @test get_result(result) === CC.Const(0)
+                @test isempty(get_reports_with_test(result))
+            end
+        end
+    end
 end
 
 @testset "intrinsic errors" begin

@@ -199,6 +199,31 @@ a package, or improve the accuracy of base abstract interpretation analysis.
 @overlay JET_METHOD_TABLE Base.include(::Module, ::AbstractString) = Base.inferencebarrier(nothing)
 @overlay JET_METHOD_TABLE Base.include(::Function, ::Module, ::AbstractString) = Base.inferencebarrier(nothing)
 
+# Early take-in of JuliaLang/julia#63338. Keep the variadic signatures for bottom-type
+# lookup pruning, but do not let invalid arities contribute successful return types.
+for (f, result) in (
+        (:(Base.complex), :(Union{})),
+        (:(Base.real), :(Union{})),
+        (:(Base.float), :(Union{})),
+        (:(Base.IndexStyle), :(Base.IndexLinear())),
+        (:(Base.BroadcastStyle), :(Base.Broadcast.Unknown())),
+        (:(Base.OrderStyle), :(Base.Ordered())),
+        (:(Base.ArithmeticStyle), :(Base.ArithmeticUnknown())),
+        (:(Base.RangeStepStyle), :(Base.RangeStepIrregular())),
+        (:(Base.elsize), 0),
+        (:(Base.typeinfo_eltype), nothing),
+    )
+    @eval begin
+        @overlay JET_METHOD_TABLE $f(::Type{Union{}}) = $result
+        @overlay JET_METHOD_TABLE $f(::Type{Union{}}, slurp...) = throw(MethodError($f, (Union{}, slurp...)))
+    end
+end
+
+@overlay JET_METHOD_TABLE Base.Iterators.flatten_iteratorsize(::Union{Base.HasShape,Base.HasLength}, ::Type{Union{}}) = Base.HasLength()
+@overlay JET_METHOD_TABLE Base.Iterators.flatten_iteratorsize(sz::Union{Base.HasShape,Base.HasLength}, ::Type{Union{}}, slurp...) = throw(MethodError(Base.Iterators.flatten_iteratorsize, (sz, Union{}, slurp...)))
+@overlay JET_METHOD_TABLE Base.Iterators.flatten_length(f, ::Type{Union{}}) = 0
+@overlay JET_METHOD_TABLE Base.Iterators.flatten_length(f, ::Type{Union{}}, slurp...) = throw(MethodError(Base.Iterators.flatten_length, (f, Union{}, slurp...)))
+
 # Early take-in of JuliaLang/julia#63332. The C call already throws on failure when
 # throw_error=true, but inference needs the redundant Julia-side check to exclude nothing.
 @overlay JET_METHOD_TABLE function Libdl.dlsym(
