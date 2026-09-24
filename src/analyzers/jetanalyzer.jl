@@ -199,6 +199,38 @@ a package, or improve the accuracy of base abstract interpretation analysis.
 @overlay JET_METHOD_TABLE Base.include(::Module, ::AbstractString) = Base.inferencebarrier(nothing)
 @overlay JET_METHOD_TABLE Base.include(::Function, ::Module, ::AbstractString) = Base.inferencebarrier(nothing)
 
+# Early take-in of JuliaLang/julia#63332. The C call already throws on failure when
+# throw_error=true, but inference needs the redundant Julia-side check to exclude nothing.
+@overlay JET_METHOD_TABLE function Libdl.dlsym(
+        hnd::Ptr, s::Union{Symbol,AbstractString}; throw_error::Bool = true
+    )
+    hnd == C_NULL && throw(ArgumentError("NULL library handle"))
+    val = Ref(Ptr{Cvoid}(0))
+    symbol_found = @static if VERSION < v"1.13.0-DEV.1119" # JuliaLang/julia#58815
+        @ccall jl_dlsym(hnd::Ptr{Cvoid}, s::Cstring, val::Ref{Ptr{Cvoid}}, throw_error::Cint)::Cint
+    else
+        @ccall jl_dlsym(hnd::Ptr{Cvoid}, s::Cstring, val::Ref{Ptr{Cvoid}}, throw_error::Cint, 1::Cint)::Cint
+    end
+    if symbol_found == 0 && !throw_error
+        return nothing
+    end
+    return val[]
+end
+
+@static if VERSION < v"1.14.0-DEV.2024"
+# Backport JuliaLang/julia#61526
+@overlay JET_METHOD_TABLE Base.in(x, itr::Tuple) = _in_tuple(x, itr)
+function _in_tuple(x, @nospecialize(itr::Tuple), result = false)
+    @inline
+    isempty(itr) && return result
+    v = (itr[1] == x)
+    if v === true
+        return true
+    end
+    return _in_tuple(x, Base.tail(itr), result | v)
+end
+end
+
 # analysis injections
 # ===================
 

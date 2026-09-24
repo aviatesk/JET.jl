@@ -960,7 +960,37 @@ function issue_404(c::Bool)
         println(v)
     end
 end
-test_call(issue_404, (Bool,))
+
+using Libdl: Libdl
+
+complex_divide(a, b) = complex(a, b) / 2
+
+@testset "JET_METHOD_TABLE overlays" begin
+    @testset "`iterate(::Tuple{}, ::Int)`" begin
+        test_call(issue_404, (Bool,))
+    end
+
+    @testset "`include`" begin
+        test_call(Base.include, (Module,String))
+        test_call(Base.include, (typeof(identity),Module,String))
+    end
+
+    @testset "`in(x, ::Tuple)`" begin
+        test_call((Any,)) do x
+            x in (1, 2) ? 1 : 2
+        end
+    end
+
+    @testset "`Libdl.dlsym`" begin
+        @test Base.infer_return_type(Libdl.dlsym, (Ptr{Cvoid},Symbol); interp=JETAnalyzer()) === Ptr{Cvoid}
+        @test Base.infer_return_type((Ptr{Cvoid},Symbol); interp=JETAnalyzer()) do hnd, name
+            Libdl.dlsym(hnd, name; throw_error=false)
+        end === Union{Nothing,Ptr{Cvoid}}
+        test_call((Ptr{Cvoid},Symbol)) do hnd, name
+            Ptr{Ptr{Float64}}(Libdl.dlsym(hnd, name))
+        end
+    end
+end
 
 @testset "intrinsic errors" begin
     let result = report_call((Int32,Int64)) do x, y
