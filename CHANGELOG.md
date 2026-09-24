@@ -63,6 +63,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.2]
+
 ### Added
 
 - Added the `concretization_timeout` configuration (10 seconds by default),
