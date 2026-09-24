@@ -41,6 +41,8 @@ using Base.Meta: isexpr, lower
 
 using Base.Experimental: @MethodTable, @overlay
 
+using Libdl: Libdl
+
 using JuliaSyntax: @K_str, JuliaSyntax as JS
 
 using CodeTracking: CodeTracking

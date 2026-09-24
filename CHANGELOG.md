@@ -86,6 +86,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed spurious `BoundsError` reports when analyzing `ntuple` calls with an
   unknown length (aviatesk/JET.jl#678).
 
+- Fixed spurious `NonBooleanCondErrorReport`s when branching on `in` checks
+  against tuples, as in `x in (1, 2) ? a : b`, on Julia 1.12 and 1.13.
+
+- Improved analysis accuracy for code that uses `Libdl.dlsym`.
+
 - Fixed `report_file` hanging when a nonterminating top-level loop assigns to a
   global variable. Global declarations emitted by assignments under control
   flow no longer pull the enclosing loop or branch condition into concrete
