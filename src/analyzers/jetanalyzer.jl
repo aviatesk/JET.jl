@@ -201,6 +201,7 @@ a package, or improve the accuracy of base abstract interpretation analysis.
 
 # Early take-in of JuliaLang/julia#63338. Keep the variadic signatures for bottom-type
 # lookup pruning, but do not let invalid arities contribute successful return types.
+@static if VERSION < v"1.14.0-DEV.3358"
 for (f, result) in (
         (:(Base.complex), :(Union{})),
         (:(Base.real), :(Union{})),
@@ -223,9 +224,11 @@ end
 @overlay JET_METHOD_TABLE Base.Iterators.flatten_iteratorsize(sz::Union{Base.HasShape,Base.HasLength}, ::Type{Union{}}, slurp...) = throw(MethodError(Base.Iterators.flatten_iteratorsize, (sz, Union{}, slurp...)))
 @overlay JET_METHOD_TABLE Base.Iterators.flatten_length(f, ::Type{Union{}}) = 0
 @overlay JET_METHOD_TABLE Base.Iterators.flatten_length(f, ::Type{Union{}}, slurp...) = throw(MethodError(Base.Iterators.flatten_length, (f, Union{}, slurp...)))
+end # @static if VERSION < v"1.14.0-DEV.3358"
 
 # Early take-in of JuliaLang/julia#63332. The C call already throws on failure when
 # throw_error=true, but inference needs the redundant Julia-side check to exclude nothing.
+@static if VERSION < v"1.14.0-DEV.3357"
 @overlay JET_METHOD_TABLE function Libdl.dlsym(
         hnd::Ptr, s::Union{Symbol,AbstractString}; throw_error::Bool = true
     )
@@ -240,6 +243,7 @@ end
         return nothing
     end
     return val[]
+end
 end
 
 @static if VERSION < v"1.14.0-DEV.2024"
