@@ -981,6 +981,23 @@ complex_divide(a, b) = complex(a, b) / 2
         end
     end
 
+    @testset "`mapreduce_impl(f, op, ::SkipMissing, ...)` (JuliaLang/julia#63353)" begin
+        # an array argument inferred as `Any` shouldn't pick up the `Union{Nothing,Some}`
+        # results of the `SkipMissing` methods
+        @test Base.infer_return_type((Any,Int); interp=JETAnalyzer()) do A, n
+            Base.mapreduce_impl(x -> x isa Pair, &, A, 1, n)
+        end === Bool
+        test_call((Any,Int)) do A, n
+            Base.mapreduce_impl(x -> x isa Pair, &, A, 1, n) ? 1 : 2
+        end
+        @test Base.infer_return_type((Vector{Union{Missing,Int}},); interp=JETAnalyzer()) do x
+            sum(skipmissing(x))
+        end === Int
+        test_call((Vector{Union{Missing,Int}},)) do x
+            sum(skipmissing(x))
+        end
+    end
+
     @testset "`Libdl.dlsym`" begin
         @test Base.infer_return_type(Libdl.dlsym, (Ptr{Cvoid},Symbol); interp=JETAnalyzer()) === Ptr{Cvoid}
         @test Base.infer_return_type((Ptr{Cvoid},Symbol); interp=JETAnalyzer()) do hnd, name
