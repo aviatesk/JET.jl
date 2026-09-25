@@ -260,6 +260,15 @@ function _in_tuple(x, @nospecialize(itr::Tuple), result = false)
 end
 end
 
+# Early take-in of JuliaLang/julia#63353. Unlike its other methods, the `SkipMissing` methods
+# of `mapreduce_impl` return `nothing` or `Some(x)`, which calls with an array argument
+# inferred as `Any` would otherwise include in their results. Base only calls this method
+# from `_mapreduce`, which unwraps its result with `something` and ensures it isn't `nothing`.
+@static if !isdefined(Base, :_mapreduce_impl_skipmissing)
+@overlay JET_METHOD_TABLE Base.mapreduce_impl(f, op, A::Base.SkipMissing, ifirst::Integer, ilast::Integer) =
+    something(Base.mapreduce_impl(f, op, A, ifirst, ilast, Base.pairwise_blocksize(f, op)))
+end
+
 # analysis injections
 # ===================
 

@@ -63,6 +63,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed spurious reports, such as `NonBooleanCondErrorReport`s, for reductions
+  like `all(f, x)` over imprecisely typed vectors when SparseArrays is loaded,
+  as in `all(p -> p isa Pair, x) ? a : b` for `x::AbstractVector`.
+
 ## [0.12.2]
 
 ### Added
