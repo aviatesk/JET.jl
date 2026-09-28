@@ -27,10 +27,10 @@ using Core: Builtin, IntrinsicFunction, Intrinsics, SimpleVector, svec
 using Core.IR
 
 using .CC: @nospecs, AbstractInterpreter, AbstractLattice, ArgInfo, Bottom,
-    CachedMethodTable, CallMeta, ConstCallInfo, EFFECTS_THROWS, Future, InferenceParams,
+    CachedMethodTable, CallMeta, EFFECTS_THROWS, Future, InferenceParams,
     InferenceResult, InferenceState, InvokeCallInfo, MethodCallResult, MethodMatchInfo,
     NOT_FOUND, OptimizationParams, OptimizationState, OverlayMethodTable, RTEffects,
-    StatementState, StmtInfo, UnionSplitInfo, VarState, VarTable, WorldRange, WorldView,
+    StatementState, StmtInfo, UnionSplitInfo, VarState, VarTable, WorldRange,
     argextype, argtype_by_index, argtypes_to_type, hasintersect, ignorelimited,
     instanceof_tfunc, singleton_type, slot_id, specialize_method, tmeet, tmerge,
     typeinf_lattice, widenconst, widenlattice, ⊑
@@ -98,6 +98,19 @@ end
 
 using .CC.IRShow: LineInfoNode
 using .CC: ConstCallResult
+
+const HAS_INFERENCE_CACHE = isdefined(CC, :InferenceCache)
+const HAS_TASK_BODY_ANALYSIS = isdefined(Core, :PartialTask)
+@static if HAS_INFERENCE_CACHE
+    const LocalInferenceCache = CC.InferenceCache
+    new_inference_cache() = CC.InferenceCache()
+    get_inferred_call_result(result::MethodCallResult) = result.call_result
+else
+    const LocalInferenceCache = Vector{InferenceResult}
+    new_inference_cache() = InferenceResult[]
+    get_inferred_call_result(result::MethodCallResult) = result.volatile_inf_result
+end
+
 # FIXME do this automatically when loading non-fallback version of the Compiler stdlib
 # push_inithook!() do
 #     @eval InteractiveUtils.@activate Compiler
@@ -275,7 +288,12 @@ end
 stmt_types(sv::InferenceState) = StmtTypes(sv)
 function Base.getindex(st::StmtTypes, pc::Int)
     block = CC.block_for_inst(st.sv.cfg, pc)
-    return st.sv.bb_vartables[block]::VarTable
+    @static if HAS_INFERENCE_CACHE
+        bbstate = st.sv.bb_states[block]::CC.BBEntryState
+        return bbstate.vartable
+    else
+        return st.sv.bb_vartables[block]::VarTable
+    end
 end
 
 function is_compileable_mi(mi::MethodInstance)

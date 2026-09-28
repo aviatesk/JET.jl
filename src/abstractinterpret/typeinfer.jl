@@ -63,11 +63,15 @@ end
 function CC.const_prop_call(analyzer::AbstractAnalyzer,
     mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
     concrete_eval_result::Union{Nothing,ConstCallResult})
-    set_cache_target!(analyzer, :const_prop_call => sv)
+    @static if !HAS_INFERENCE_CACHE
+        set_cache_target!(analyzer, :const_prop_call => sv)
+    end
     const_result = @invoke CC.const_prop_call(analyzer::AbstractInterpreter,
         mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
         concrete_eval_result::Union{Nothing,ConstCallResult})
-    @assert get_cache_target(analyzer) === nothing "invalid JET analysis state"
+    @static if !HAS_INFERENCE_CACHE
+        @assert get_cache_target(analyzer) === nothing "invalid JET analysis state"
+    end
     if const_result !== nothing
         # successful constant prop', we need to update reports
         collect_callee_reports!(analyzer, sv)
@@ -141,8 +145,10 @@ end
 function postprocess_abstract_call_known!(analyzer::AbstractAnalyzer, ret::Future,
     @nospecialize(f), arginfo::ArgInfo, sv::InferenceState)
     if isready(ret)
-        if f === Task
-            analyze_task_parallel_code!(analyzer, arginfo, sv)
+        @static if !HAS_TASK_BODY_ANALYSIS
+            if f === Task
+                analyze_task_parallel_code!(analyzer, arginfo, sv)
+            end
         end
         # `setfield!` is handled synchronously by the builtin path in `abstract_call_known`,
         # so its `ret` is always ready and requires no delayed processing in the branch below.
@@ -154,16 +160,20 @@ function postprocess_abstract_call_known!(analyzer::AbstractAnalyzer, ret::Futur
             end
         end
     else
-        if f === Task
-            function after_call_known(analyzer′::AbstractAnalyzer, sv′::InferenceState)
-                analyze_task_parallel_code!(analyzer′, arginfo, sv′)
-                return true
+        @static if !HAS_TASK_BODY_ANALYSIS
+            if f === Task
+                function after_call_known(analyzer′::AbstractAnalyzer, sv′::InferenceState)
+                    analyze_task_parallel_code!(analyzer′, arginfo, sv′)
+                    return true
+                end
+                push!(sv.tasks, after_call_known)
             end
-            push!(sv.tasks, after_call_known)
         end
     end
     return ret
 end
+
+@static if !HAS_TASK_BODY_ANALYSIS
 
 """
     analyze_task_parallel_code!(analyzer::AbstractAnalyzer, arginfo::ArgInfo, sv::InferenceState)
@@ -228,6 +238,8 @@ function analyze_additional_pass_by_type!(analyzer::AbstractAnalyzer, @nospecial
     return nothing
 end
 
+end # @static if !HAS_TASK_BODY_ANALYSIS
+
 # `return_type_tfunc` internally uses `abstract_call` to model `$CC.return_type`
 # and here we should NOT catch error reports detected within the virtualized call
 # because it is not abstraction of actual execution
@@ -250,25 +262,84 @@ end
 cache_report!(cache::Vector{InferenceErrorReport}, @nospecialize report::InferenceErrorReport) =
     push!(cache, copy_report_stable(report))
 
-struct AbstractAnalyzerView{Analyzer<:AbstractAnalyzer}
-    analyzer::Analyzer
-end
-
 # global
 # ------
 
 CC.cache_owner(analyzer::AbstractAnalyzer) = AnalysisToken(analyzer)
 
+@static if HAS_INFERENCE_CACHE
+
+function restore_cached_callee_reports!(
+        analyzer::AbstractAnalyzer, cached::Union{InferenceResult,CodeInstance},
+        origin_mi::MethodInstance
+    )
+    reports = CC.traverse_analysis_results(cached) do @nospecialize analysis_result
+        analysis_result isa CachedAnalysisResult ? analysis_result.reports : nothing
+    end
+    # `return_cached_result` synthesizes local results for cached sources without the
+    # analysis results, which remain on the `CodeInstance`
+    if reports === nothing && cached isa InferenceResult && isdefined(cached, :ci)
+        reports = CC.traverse_analysis_results(cached.ci) do @nospecialize analysis_result
+            analysis_result isa CachedAnalysisResult ? analysis_result.reports : nothing
+        end
+    end
+    reports !== nothing && collect_cached_callee_reports!(analyzer, reports, origin_mi)
+    return nothing
+end
+
+function CC.return_cached_result(analyzer::AbstractAnalyzer, method::Method,
+    codeinst::CodeInstance, @nospecialize(src), caller::InferenceState,
+    edgecycle::Bool, edgelimited::Bool, edgerecursed::Bool)
+    restore_cached_callee_reports!(analyzer, codeinst, codeinst.def)
+    return @invoke CC.return_cached_result(analyzer::AbstractInterpreter, method::Method,
+        codeinst::CodeInstance, src::Any, caller::InferenceState,
+        edgecycle::Bool, edgelimited::Bool, edgerecursed::Bool)
+end
+
+function CC.return_cached_result(analyzer::AbstractAnalyzer, method::Method,
+    local_result::CC.LocalInferenceResult, codeinst::Union{Nothing,CodeInstance},
+    caller::InferenceState, edgecycle::Bool, edgelimited::Bool, edgerecursed::Bool)
+    inf_result = local_result.result
+    restore_cached_callee_reports!(analyzer, inf_result, inf_result.linfo)
+    return @invoke CC.return_cached_result(analyzer::AbstractInterpreter, method::Method,
+        local_result::CC.LocalInferenceResult, codeinst::Union{Nothing,CodeInstance},
+        caller::InferenceState, edgecycle::Bool, edgelimited::Bool, edgerecursed::Bool)
+end
+
+# local
+# -----
+
+CC.get_inference_cache(analyzer::AbstractAnalyzer) = get_inf_cache(analyzer)
+
+function CC.return_localcache_result(analyzer::AbstractAnalyzer,
+    local_result::CC.LocalInferenceResult, caller::InferenceState)
+    inf_result = local_result.result
+    # as the analyzer uses the reports that are cached by the abstract-interpretation
+    # with the extended lattice elements, here we should throw-away the error reports
+    # that are collected during the previous non-constant abstract-interpretation
+    # (see the `CC.typeinf(::AbstractAnalyzer, ::InferenceState)` overload)
+    filter_lineages!(analyzer, caller, inf_result.linfo)
+    restore_cached_callee_reports!(analyzer, inf_result, inf_result.linfo)
+    return @invoke CC.return_localcache_result(analyzer::AbstractInterpreter,
+        local_result::CC.LocalInferenceResult, caller::InferenceState)
+end
+
+else # @static if HAS_INFERENCE_CACHE
+
+struct AbstractAnalyzerView{Analyzer<:AbstractAnalyzer}
+    analyzer::Analyzer
+end
+
 function CC.code_cache(analyzer::AbstractAnalyzer)
     view = AbstractAnalyzerView(analyzer)
     worlds = WorldRange(CC.get_inference_world(analyzer))
-    return WorldView(view, worlds)
+    return CC.WorldView(view, worlds)
 end
 
-to_internal_code_cache_view(wvc::WorldView{<:AbstractAnalyzerView}) =
-    WorldView(CC.InternalCodeCache(CC.cache_owner(wvc.cache.analyzer)), wvc.worlds)
+to_internal_code_cache_view(wvc::CC.WorldView{<:AbstractAnalyzerView}) =
+    CC.WorldView(CC.InternalCodeCache(CC.cache_owner(wvc.cache.analyzer)), wvc.worlds)
 
-CC.haskey(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance) = haskey(to_internal_code_cache_view(wvc), mi)
+CC.haskey(wvc::CC.WorldView{<:AbstractAnalyzerView}, mi::MethodInstance) = haskey(to_internal_code_cache_view(wvc), mi)
 
 function CC.typeinf_edge(analyzer::AbstractAnalyzer, method::Method, @nospecialize(atype), sparams::SimpleVector, caller::InferenceState,
                          edgecycle::Bool, edgelimited::Bool)
@@ -279,7 +350,7 @@ function CC.typeinf_edge(analyzer::AbstractAnalyzer, method::Method, @nospeciali
     return ret
 end
 
-function CC.get(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance, default)
+function CC.get(wvc::CC.WorldView{<:AbstractAnalyzerView}, mi::MethodInstance, default)
     codeinst = get(to_internal_code_cache_view(wvc), mi, default)
 
     analyzer = wvc.cache.analyzer
@@ -310,13 +381,13 @@ function CC.get(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance, defa
     return codeinst
 end
 
-function CC.getindex(wvc::WorldView{<:AbstractAnalyzerView}, mi::MethodInstance)
+function CC.getindex(wvc::CC.WorldView{<:AbstractAnalyzerView}, mi::MethodInstance)
     codeinst = CC.get(wvc, mi, nothing)
     codeinst === nothing && throw(KeyError(mi))
     return codeinst::CodeInstance
 end
 
-function CC.setindex!(wvc::WorldView{<:AbstractAnalyzerView}, codeinst::CodeInstance, mi::MethodInstance)
+function CC.setindex!(wvc::CC.WorldView{<:AbstractAnalyzerView}, codeinst::CodeInstance, mi::MethodInstance)
     return to_internal_code_cache_view(wvc)[mi] = codeinst
 end
 
@@ -362,6 +433,32 @@ function CC.cache_lookup(𝕃ᵢ::CC.AbstractLattice, mi::MethodInstance, given_
 end
 
 CC.push!(view::AbstractAnalyzerView, inf_result::InferenceResult) = CC.push!(get_inf_cache(view.analyzer), inf_result)
+
+end # @static if HAS_INFERENCE_CACHE
+
+# Resolve the binding partition accessed by `g` and narrow `sv`'s valid worlds accordingly.
+# `leaf=true` follows imports to the partition that a load resolves to.
+@static if isdefinedglobal(CC, :binding_access_range)
+function scan_binding_partitions(query::F, analyzer::AbstractAnalyzer, g::GlobalRef,
+                                 sv::InferenceState, leaf::Bool) where F
+    world = CC.get_inference_world(analyzer)
+    valid_worlds, (binding, partition) = CC.binding_access_range(g,
+        CC.binding_world_hints(world, sv), #=write=#!leaf)
+    CC.update_valid_age!(sv, world, valid_worlds)
+    return query(analyzer, binding, partition)
+end
+else
+function scan_binding_partitions(query::F, analyzer::AbstractAnalyzer, g::GlobalRef,
+                                 sv::InferenceState, leaf::Bool) where F
+    if leaf
+        valid_worlds, ret = CC.scan_leaf_partitions(query, analyzer, g, sv.world)
+    else
+        valid_worlds, ret = CC.scan_partitions(query, analyzer, g, sv.world)
+    end
+    CC.update_valid_age!(sv, valid_worlds)
+    return ret
+end
+end
 
 # main driver
 # ===========
@@ -520,14 +617,13 @@ function CC.global_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::In
     isconditional = istoplevel ? let postdomtree = CC.construct_postdomtree(sv.cfg)
         !CC.postdominates(postdomtree, sv.currbb, 1)
     end : true
-    (valid_worlds, ret) = CC.scan_partitions(analyzer, g, sv.world) do analyzer::AbstractAnalyzer, ::Core.Binding, partition::Core.BindingPartition
+    ret = scan_binding_partitions(analyzer, g, sv, #=leaf=#false) do analyzer::AbstractAnalyzer, ::Core.Binding, partition::Core.BindingPartition
         return CC.global_assignment_binding_rt_exct(analyzer, partition, newty′[])
     end
-    CC.update_valid_age!(sv, valid_worlds)
     rt, _exct = ret
     if !isconcretized && rt !== Union{}
         # Historical queries must not update the inference world's binding state.
-        partition = Base.lookup_binding_partition(sv.world.this, g)
+        partition = Base.lookup_binding_partition(CC.get_inference_world(analyzer), g)
         # Non-const bindings may be assigned in any call, so it is fundamentally impossible
         # to track their types precisely.
         # However, by accurately determining whether a top-level assignment is conditional,
@@ -649,14 +745,13 @@ function const_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::Infere
     if saw_latestworld
         return Pair{Any,Any}(Nothing, ErrorException), false
     end
-    (valid_worlds, (ret, isimported)) = CC.scan_partitions(analyzer, gr, sv.world) do analyzer::ToplevelAbstractAnalyzer, _binding::Core.Binding, partition::Core.BindingPartition
+    (ret, isimported) = scan_binding_partitions(analyzer, gr, sv, #=leaf=#false) do analyzer::ToplevelAbstractAnalyzer, _binding::Core.Binding, partition::Core.BindingPartition
         return const_assignment_binding_rt_exct(analyzer, partition)
     end
-    CC.update_valid_age!(sv, valid_worlds)
     rt, _exct = ret
     if rt !== Union{}
         # Historical partitions queried by the scan must not trigger constant declarations.
-        partition = Base.lookup_binding_partition(sv.world.this, gr)
+        partition = Base.lookup_binding_partition(CC.get_inference_world(analyzer), gr)
         if new_binding_typ === nothing
             Core.eval(gr.mod, Expr(:const, gr.name))
         else
@@ -739,6 +834,17 @@ function CC.abstract_eval_partition_load(analyzer::ToplevelAbstractAnalyzer, bin
     return res
 end
 
+@static if isdefinedglobal(CC, :use_concrete_eval_result)
+# Constant propagation can make a call concretely evaluable (JuliaLang/julia#61677), and
+# the concrete evaluation then observes the `AbstractBindingState` placeholders defined in
+# the analyzed module. Keep the constant propagation result, which concretizes them.
+function CC.use_concrete_eval_result(analyzer::ToplevelAbstractAnalyzer, result::ConstCallResult)
+    rt = result.rt
+    rt isa Const && rt.val isa AbstractBindingState && return false
+    return @invoke CC.use_concrete_eval_result(analyzer::AbstractInterpreter, result::ConstCallResult)
+end
+end
+
 function CC.abstract_eval_value(analyzer::ToplevelAbstractAnalyzer, @nospecialize(e), sstate::StatementState, sv::InferenceState)
     ret = @invoke CC.abstract_eval_value(analyzer::AbstractAnalyzer, e::Any, sstate::StatementState, sv::InferenceState)
 
@@ -758,7 +864,16 @@ end
 
 is_inactive_exception(@nospecialize rt) = isa(rt, Const) && rt.val === _INACTIVE_EXCEPTION()
 
+@static if HAS_INFERENCE_CACHE
+function CC.promotecache!(analyzer::ToplevelAbstractAnalyzer, caller::InferenceState)
+    if istoplevelframe(caller.linfo) # don't need to cache toplevel frame
+        caller.cache_mode &= ~CC.CACHE_MODE_GLOBAL
+    end
+    return @invoke CC.promotecache!(analyzer::AbstractAnalyzer, caller::InferenceState)
+end
+else
 function CC.cache_result!(analyzer::ToplevelAbstractAnalyzer, caller::InferenceResult, ci::CodeInstance)
     istoplevelframe(caller.linfo) && return nothing # don't need to cache toplevel frame
     @invoke CC.cache_result!(analyzer::AbstractAnalyzer, caller::InferenceResult, ci::CodeInstance)
+end
 end

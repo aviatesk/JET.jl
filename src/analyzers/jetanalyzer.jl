@@ -269,6 +269,35 @@ end
     something(Base.mapreduce_impl(f, op, A, ifirst, ilast, Base.pairwise_blocksize(f, op)))
 end
 
+# `Core.cancellation_point!(nothing)` reports at most a preemption request, so without a
+# cancellation source `handle_cancellation!` only yields and never reaches its
+# `src::CancellationTokenSource` assertion, which inference cannot prove.
+@static if isdefined(Base, :handle_cancellation!)
+@overlay JET_METHOD_TABLE function Base.handle_cancellation!(::Nothing, ::UInt8)
+    Base.yield()
+    return nothing
+end
+end
+
+# `notify` skips wait entries with `!(t isa Task && claim_wait(t, w))`, from which inference
+# cannot narrow `t` for the following `schedule(t, ...)` call. Split the condition instead.
+@static if isdefined(Base, :claim_wait)
+@overlay JET_METHOD_TABLE function Base.notify(c::Base.GenericCondition, @nospecialize(arg), all, error)
+    Base.assert_havelock(c)
+    cnt = 0
+    while !isempty(c.waitq)
+        w = popfirst!(Base.waitqueue(c))
+        t = @atomic :monotonic w.task
+        t isa Task || continue
+        Base.claim_wait(t, w) || continue
+        schedule(t, arg, error=error)
+        cnt += 1
+        all || break
+    end
+    return cnt
+end
+end
+
 # analysis injections
 # ===================
 
@@ -410,7 +439,7 @@ function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
     neweffects = CC.Effects(result.effects; nonoverlayed=CC.ALWAYS_TRUE)
     result = MethodCallResult(result.rt, result.exct, neweffects, result.edge,
                               result.edgecycle, result.edgelimited,
-                              result.volatile_inf_result)
+                              get_inferred_call_result(result))
     res = @invoke CC.concrete_eval_eligible(analyzer::ToplevelAbstractAnalyzer,
         f::Any, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
     # Ensure that semi-concrete interpretation is definitely disabled to prevent it from occurring
@@ -427,6 +456,14 @@ function CC.concrete_eval_call(analyzer::JETAnalyzer,
         invokecall::Union{CC.InvokeCall,Nothing})
     return res.rt === Bottom ? nothing : res
 end
+@static if isdefinedglobal(CC, :use_concrete_eval_result)
+# Constant propagation can also lead to concrete evaluation (JuliaLang/julia#61677)
+# without going through the `concrete_eval_call` overload above
+function CC.use_concrete_eval_result(analyzer::JETAnalyzer, result::ConstCallResult)
+    result.rt === Bottom && return false
+    return @invoke CC.use_concrete_eval_result(analyzer::ToplevelAbstractAnalyzer, result::ConstCallResult)
+end
+end
 
 else # @static if VERSION ≥ v"1.13.0-DEV.1350" || VERSION ≥ v"1.12.2"
 # For now JETAnalyzer allows the regular constant-prop' only,
@@ -437,7 +474,7 @@ function CC.concrete_eval_eligible(analyzer::JETAnalyzer,
         neweffects = CC.Effects(result.effects; nonoverlayed=CC.ALWAYS_TRUE)
         newresult = MethodCallResult(result.rt, result.exct, neweffects, result.edge,
                                      result.edgecycle, result.edgelimited,
-                                     result.volatile_inf_result)
+                                     get_inferred_call_result(result))
         res = @invoke CC.concrete_eval_eligible(analyzer::ToplevelAbstractAnalyzer,
             f::Any, newresult::MethodCallResult, arginfo::ArgInfo, sv::InferenceState)
         if res === :concrete_eval
@@ -533,14 +570,24 @@ function CC.abstract_eval_globalref(analyzer::JETAnalyzer, g::GlobalRef, saw_lat
     if saw_latestworld
         return CC.RTEffects(Any, Any, CC.generic_getglobal_effects)
     end
-    (valid_worlds, ret) = CC.scan_leaf_partitions(analyzer, g, sv.world) do analyzer::JETAnalyzer, binding::Core.Binding, partition::Core.BindingPartition
-        if partition.min_world ≤ sv.world.this ≤ partition.max_world # XXX This should probably be fixed on the Julia side
-            report_undef_global_var!(analyzer, sv, binding, partition)
+    world = CC.get_inference_world(analyzer)
+    @static if isdefinedglobal(CC, :binding_access_range)
+        # `binding_access_range` may return a partition from another world with the same
+        # access behavior, but binding states are tracked per partition of this world.
+        binding = convert(Core.Binding, g)
+        _, (binding, partition) = CC.walk_binding_partition(binding,
+            Base.lookup_binding_partition(world, binding), world, #=write=#false)
+        report_undef_global_var!(analyzer, sv, binding, partition)
+    end
+    return scan_binding_partitions(analyzer, g, sv, #=leaf=#true) do analyzer::JETAnalyzer, binding::Core.Binding, partition::Core.BindingPartition
+        @static if !isdefinedglobal(CC, :binding_access_range)
+            # XXX This should probably be fixed on the Julia side
+            if partition.min_world ≤ world ≤ partition.max_world
+                report_undef_global_var!(analyzer, sv, binding, partition)
+            end
         end
         CC.abstract_eval_partition_load(analyzer, binding, partition)
     end
-    CC.update_valid_age!(sv, valid_worlds)
-    return ret
 end
 
 function CC.abstract_eval_setglobal!(analyzer::JETAnalyzer, sv::InferenceState, saw_latestworld::Bool,
@@ -795,8 +842,10 @@ report_method_error!(analyzer::SoundJETAnalyzer, sv::InferenceState, call::CallM
 function report_method_error!(analyzer::JETAnalyzer,
     sv::InferenceState, call::CallMeta, argtypes::Argtypes, @nospecialize(atype), sound::Bool)
     info = call.info
-    if isa(info, ConstCallInfo)
-        info = info.call
+    @static if isdefinedglobal(CC, :ConstCallInfo)
+        if isa(info, CC.ConstCallInfo)
+            info = info.call
+        end
     end
     if !sound
         if isa(info, MethodMatchInfo) || isa(info, UnionSplitInfo)
@@ -958,7 +1007,7 @@ function _report_invalid_invoke!(analyzer::JETAnalyzer, sv::InferenceState, ret:
         # here we report error that happens at the call of `invoke` itself.
         # if the error type (`Bottom`) is propagated from the `invoke`d call, the error has
         # already been reported within `typeinf_edge`, so ignore that case
-        if !isa(ret.info, InvokeCallInfo)
+        if !isa(ret.info, Union{InvokeCallInfo,CC.InvokeCICallInfo})
             add_new_report!(analyzer, sv.result, InvalidInvokeErrorReport(sv, argtypes))
             return true
         end
@@ -1001,7 +1050,7 @@ report_undef_global_var!(analyzer::TypoJETAnalyzer, sv::InferenceState, binding:
 
 function _report_undef_global_var!(analyzer::JETAnalyzer, sv::InferenceState, binding::Core.Binding, partition::Core.BindingPartition, _sound::Bool)
     gr = binding.globalref
-    world = sv.world.this
+    world = CC.get_inference_world(analyzer)
     if Base.invoke_in_world(world, isdefinedglobal, gr.mod, gr.name)
         x = Base.invoke_in_world(world, getglobal, gr.mod, gr.name)
         x isa AbstractBindingState || return false
@@ -1039,7 +1088,7 @@ function _report_undef_static_param!(analyzer::JETAnalyzer, sv::InferenceState, 
     end
     mi = sv.linfo
     if sv.sptypes[n].undef && (sound || is_compileable_mi(mi))
-        tv = mi.sparam_vals[n]::TypeVar
+        tv = sparam_typevar((mi.def::Method).sig::UnionAll, n)
         add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, tv, false))
         return true
     end
@@ -1303,8 +1352,14 @@ end
             return IntrinsicError("value is not a primitive type")
         end
         if bitshift && isconcrete
-            if Core.sizeof(ty) !== Core.sizeof(xty)
-                return IntrinsicError("argument size does not match size of target type")
+            @static if isdefinedglobal(Core, :bitsizeof) # JuliaLang/julia#61359
+                if Core.bitsizeof(ty) !== Core.bitsizeof(xty)
+                    return IntrinsicError("argument bitsize does not match bitsize of target type")
+                end
+            else
+                if Core.sizeof(ty) !== Core.sizeof(xty)
+                    return IntrinsicError("argument size does not match size of target type")
+                end
             end
         end
     end
@@ -1412,7 +1467,7 @@ function report_getglobal!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::
     2 ≤ length(argtypes) ≤ 3 || return false
     gr = constant_globalref(argtypes)
     gr === nothing && return false
-    if Base.invoke_in_world(sv.world.this, isdefinedglobal, gr.mod, gr.name)
+    if Base.invoke_in_world(CC.get_inference_world(analyzer), isdefinedglobal, gr.mod, gr.name)
         return false
     end
     add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, gr, false))
@@ -1554,7 +1609,30 @@ function report_divide_error!(analyzer::JETAnalyzer, sv::InferenceState, @nospec
     return false
 end
 
-function handle_invalid_builtins!(analyzer::JETAnalyzer, sv::InferenceState, @nospecialize(f), ::Argtypes, @nospecialize(ret))
+@static if isdefinedglobal(Core, :task_result_type)
+# `fetch(t::Task)` asserts the task result against `Core.task_result_type(t)`, which is
+# `Union{}` when the task body always throws. The failed task makes the preceding `wait(t)`
+# throw, so the assertion is unreachable, which inference cannot prove.
+function is_bottom_task_result_assertion(sv::InferenceState, @nospecialize(f), argtypes::Argtypes)
+    f === typeassert && length(argtypes) == 2 || return false
+    CC.singleton_type(argtypes[2]) === Bottom || return false
+    stmt = sv.src.code[sv.currpc]
+    isexpr(stmt, :(=)) && (stmt = stmt.args[2])
+    isexpr(stmt, :call) && length(stmt.args) == 3 || return false
+    typ = stmt.args[3]
+    typ isa SSAValue || return false
+    typdef = sv.src.code[typ.id]
+    isexpr(typdef, :call) || return false
+    callee = CC.argextype(typdef.args[1], sv.src, sv.sptypes)
+    return CC.singleton_type(callee) === Core.task_result_type
+end
+end
+
+function handle_invalid_builtins!(analyzer::JETAnalyzer, sv::InferenceState,
+    @nospecialize(f), argtypes::Argtypes, @nospecialize(ret))
+    @static if isdefinedglobal(Core, :task_result_type)
+        ret === Bottom && is_bottom_task_result_assertion(sv, f, argtypes) && return false
+    end
     # we don't bail out using `basic_filter` here because the native tfuncs are already very permissive
     if ret === Bottom
         msg = GENERAL_BUILTIN_ERROR_MSG
@@ -1571,6 +1649,11 @@ function _report_builtin_error_sound!(analyzer::JETAnalyzer, sv::InferenceState,
         # already been reported by `ConcreteInterpreter`, or materialized as a weak
         # declaration, which cannot fail.
         f === Core.declare_global && isconcretized(analyzer, sv) && return false
+    end
+    @static if isdefinedglobal(Core, :define_method)
+        # Method definitions are always concretized, and `ConcreteInterpreter` has already
+        # reported any failure.
+        f === Core.define_method && isconcretized(analyzer, sv) && return false
     end
     if isa(f, IntrinsicFunction)
         nothrow = CC.intrinsic_nothrow(f, argtypes)

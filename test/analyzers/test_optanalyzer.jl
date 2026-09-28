@@ -10,7 +10,7 @@ getsomething(::Missing) = throw(ArgumentError("too philosophical"))
 # bad: will lead to excessive specializations via runtime dispatch
 function isType1(x)
     if isa(x, DataType)
-        return isa(x, DataType) && x.name === Type.body.name
+        return Base.isType(x)
     elseif isa(x, Union)
         return isType1(x.a) && isType1(x.b)
     elseif isa(x, UnionAll)
@@ -23,7 +23,7 @@ end
 # good: will be statically dispatched
 function isType2(@nospecialize x)
     if isa(x, DataType)
-        return isa(x, DataType) && x.name === Type.body.name
+        return Base.isType(x)
     elseif isa(x, Union)
         return isType2(x.a) && isType2(x.b)
     elseif isa(x, UnionAll)
@@ -392,6 +392,37 @@ no_optimization(::Int) = nothing
     end
 
     @test isempty(get_reports(report_opt(no_optimization, (Int,))))
+end
+
+function cached_report_callee(@nospecialize x)
+    return sin(x)
+end
+cached_report_warmup(xs::Vector{Any}) = cached_report_callee(xs[1])
+cached_report_global_hit(xs::Vector{Any}) = Base.@inline cached_report_callee(xs[1])
+cached_report_local_hit(xs::Vector{Any}) = Base.@inline cached_report_callee(xs[1])
+
+@static if JET.HAS_INFERENCE_CACHE
+@testset "report cache restoration from synthesized inference results" begin
+    analyzer = JET.OptAnalyzer(; __cache_hash__=gensym(:synthesized_inference_result))
+
+    let result = JET.analyze_and_report_call!(
+            analyzer, cached_report_warmup, (Vector{Any},))
+        reports = get_reports_with_test(result)
+        @test typeof.(reports) == [RuntimeDispatchReport]
+    end
+
+    let result = JET.analyze_and_report_call!(
+            analyzer, cached_report_global_hit, (Vector{Any},))
+        reports = get_reports_with_test(result)
+        @test typeof.(reports) == [RuntimeDispatchReport]
+    end
+
+    let result = JET.analyze_and_report_call!(
+            analyzer, cached_report_local_hit, (Vector{Any},))
+        reports = get_reports_with_test(result)
+        @test typeof.(reports) == [RuntimeDispatchReport]
+    end
+end
 end
 
 using StaticArrays

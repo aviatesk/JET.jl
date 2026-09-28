@@ -333,9 +333,14 @@ func_undefvar(a) = _func_undefvar(a)
             end
         end
         @test_call issue586(Int, Int)
-        let result = @report_call issue586(Int, String)
-            r = only(get_reports_with_test(result))
-            @test r isa UndefVarErrorReport && r.var isa TypeVar && r.var.name == :T
+        # Julia 1.14 determines `T` as `Union{Int,String}` for this call
+        if (try; issue586(Int, String); true; catch; false; end)
+            @test_call issue586(Int, String)
+        else
+            let result = @report_call issue586(Int, String)
+                r = only(get_reports_with_test(result))
+                @test r isa UndefVarErrorReport && r.var isa TypeVar && r.var.name == :T
+            end
         end
         test_call((Vector{Type},)) do ts
             issue586(ts...)
@@ -560,6 +565,14 @@ end
 end
 
 abstract_invoke1(i::Integer) = throw(string(i))
+abstract_invoke_ci_target() = error("x")
+const ABSTRACT_INVOKE_CI = let
+    method = only(methods(abstract_invoke_ci_target))
+    mi = CC.specialize_method(method, Tuple{typeof(abstract_invoke_ci_target)}, Core.svec())
+    CC.typeinf_ext(
+        CC.NativeInterpreter(), mi, CC.SOURCE_MODE_NOT_REQUIRED)::Core.CodeInstance
+end
+abstract_invoke_ci() = Core.invoke(abstract_invoke_ci_target, ABSTRACT_INVOKE_CI)
 #== LINE SENSITIVITY START ===#
 const _ABSTRACT_INVOKE2_LINE = (@__LINE__) + 2
 const ABSTRACT_INVOKE2_LINE = (@__LINE__) + 4
@@ -613,6 +626,9 @@ end
         end || return false
         return true
     end
+
+    result = report_call(abstract_invoke_ci)
+    @test !any(r -> r isa InvalidInvokeErrorReport, get_reports(result))
 end
 
 @generated function staged_func(a)
@@ -1058,10 +1074,11 @@ complex_divide(a, b) = complex(a, b) / 2
                 (real, ComplexF64, Float64),
                 (float, Int, Float64),
             )
+            # `Type{T}` no longer implies a constant type since JuliaLang/julia#62263
             for (argtype, expected) in (
-                    (Type{T}, R),
-                    (Type{Missing}, Missing),
-                    (Type{Union{T,Missing}}, f(Union{T,Missing})),
+                    (Core.Typeof(T), R),
+                    (Core.Typeof(Missing), Missing),
+                    (Core.Typeof(Union{T,Missing}), f(Union{T,Missing})),
                     (Missing, missing),
                 )
                 result = report_call(f, (argtype,))

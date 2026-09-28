@@ -174,6 +174,11 @@ end; end
     end
 end
 
+cached_argtypes(entry::CC.InferenceResult) = entry.argtypes
+@static if isdefined(CC, :LocalInferenceResult)
+    cached_argtypes(entry::CC.LocalInferenceResult) = entry.result.argtypes
+end
+
 @testset "integration with local code cache" begin
     let m = Module()
         result = Core.eval(m, quote
@@ -188,7 +193,7 @@ end
         @test !isempty(get_reports_with_test(result))
         @test !isempty(JET.get_inf_cache(result.analyzer))
         @test any(JET.get_inf_cache(result.analyzer)) do analysis_result
-            analysis_result.argtypes==Any[Const(getproperty),m.Foo{Int},Const(:baz)]
+            cached_argtypes(analysis_result)==Any[Const(getproperty),m.Foo{Int},Const(:baz)]
         end
     end
 
@@ -207,10 +212,10 @@ end
         # there should be local cache for each erroneous constant analysis
         @test !isempty(get_reports_with_test(result))
         @test any(JET.get_inf_cache(result.analyzer)) do analysis_result
-            analysis_result.argtypes==Any[Const(m.getter),m.Foo{Int},Const(:baz)]
+            cached_argtypes(analysis_result)==Any[Const(m.getter),m.Foo{Int},Const(:baz)]
         end
         @test any(JET.get_inf_cache(result.analyzer)) do analysis_result
-            analysis_result.argtypes==Any[Const(m.getter),m.Foo{Int},Const(:qux)]
+            cached_argtypes(analysis_result)==Any[Const(m.getter),m.Foo{Int},Const(:qux)]
         end
     end
 end
@@ -278,7 +283,7 @@ end
         @test length(get_reports_with_test(result)) === 1
         er = first(get_reports_with_test(result))
         @test er isa MethodErrorReport
-        @test er.t === Tuple{typeof(convert), Type{String}, Int}
+        @test er.t === Tuple{typeof(convert), Core.Typeof(String), Int}
     end
 
     # constant prop should narrow down union-split no method error to single no method matching error
@@ -301,7 +306,7 @@ end
         @test !isempty(get_reports_with_test(result))
         @test any(get_reports_with_test(result)) do report
             report isa MethodErrorReport &&
-            report.t === Tuple{typeof(convert), Type{Int}, String}
+            report.t === Tuple{typeof(convert), Core.Typeof(Int), String}
         end
         # NOTE:
         # report for `convert(Base.fieldtype(Base.typeof(x::P)::Type{P}, f::Symbol)::Type{String}, v::Int)`
@@ -461,7 +466,7 @@ end
     end
 end
 
-@testset "additional analysis pass for task parallelism code" begin
+@testset "task parallelism code" begin
     # general case with `schedule(::Task)` pattern
     report_call() do
         t = Task() do
@@ -491,7 +496,7 @@ end
     @test !isempty(get_reports_with_test(result))
     @test any(get_reports_with_test(result)) do r
         isa(r, MethodErrorReport) &&
-        r.t === Tuple{typeof(convert), Type{String}, Int}
+        r.t === Tuple{typeof(convert), Core.Typeof(String), Int}
     end
 
     # multiple tasks in the same frame
@@ -541,12 +546,23 @@ end
     end
 
     # report uncaught exception happened in a task
-    # TODO currently uncaught exceptions are erased by return type check at caller `Task(::Function)`
     result = report_call() do
         fetch(Threads.@spawn throw("foo"))
     end
-    @test_broken length(get_reports_with_test(result)) == 1
-    @test_broken isa(first(get_reports_with_test(result)), UncaughtExceptionReport)
+    @static if JET.HAS_TASK_BODY_ANALYSIS
+        # A failed task throws from `wait(t)`, so `fetch`'s result assertion is unreachable.
+        @test isempty(get_reports(result))
+    else
+        # TODO currently uncaught exceptions are erased by return type check at caller
+        # `Task(::Function)`
+        @test_broken length(get_reports_with_test(result)) == 1
+        @test_broken isa(first(get_reports_with_test(result)), UncaughtExceptionReport)
+    end
+
+    # Only ignore the internal result assertion in `fetch(::Task)`.
+    assert_bottom(x) = x::Union{}
+    result = report_call(assert_bottom, (Any,))
+    @test only(get_reports_with_test(result)) isa BuiltinErrorReport
 
     # don't fail into infinite loop (rather, don't spoil inference termination)
     m = @fixturedef begin

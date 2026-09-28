@@ -322,19 +322,19 @@ end
 function handle_sig_static_parameter!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
     i = first(expr.args)::Int
     sv = first(s)
-    name = sparam_name((get_linfo(sv).def::Method).sig::UnionAll, i)
+    tv = sparam_typevar((get_linfo(sv).def::Method).sig::UnionAll, i)
     typ = widenconst(get_sparamtype(sv, i))
-    push!(sig, String(name), typ)
+    push!(sig, String(tv.name), typ)
     return sig, nothing
 end
 
-function sparam_name(u::UnionAll, i::Int)
+function sparam_typevar(u::UnionAll, i::Int)
     while true
         i == 1 && break
         u = u.body::UnionAll
         i -= 1
     end
-    return u.var.name
+    return u.var
 end
 
 function handle_sig!(sig::Vector{Any}, (sv, _)::StateAtPC, ssa::SSAValue)
