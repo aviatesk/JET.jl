@@ -26,7 +26,7 @@ tovscodepath(path::AbstractString) = isuntitled(path) ? path : tofullpath(path)
 If `true` (default) a diagnostic will be reported at entry site.
 Otherwise it's reported at error point.
 """
-vscode_diagnostics_order(analyzer::AbstractAnalyzer) = true
+vscode_diagnostics_order(::AbstractAnalyzer) = true
 
 # configuration
 # =============
@@ -56,7 +56,7 @@ end
 # =========
 
 Base.showable(::MIME"application/vnd.julia-vscode.diagnostics", ::JETToplevelResult) = true
-function Base.show(io::IO, ::MIME"application/vnd.julia-vscode.diagnostics",
+function Base.show(::IO, ::MIME"application/vnd.julia-vscode.diagnostics",
                    res::JETToplevelResult)
     forward_to_console_output(res; res.jetconfigs...)
     config = PrintConfig(; res.jetconfigs...)
@@ -70,7 +70,7 @@ end
 function vscode_diagnostics(analyzer::Analyzer,
                             reports::Vector{ToplevelErrorReport},
                             source::AbstractString,
-                            config::PrintConfig=PrintConfig();
+                            _config::PrintConfig=PrintConfig();
                             postprocessor::PostProcessor = PostProcessor()) where {Analyzer<:AbstractAnalyzer}
     return (; source = String(source),
               items = map(reports) do report
@@ -85,7 +85,7 @@ end
 # =========
 
 Base.showable(::MIME"application/vnd.julia-vscode.diagnostics", ::JETCallResult) = true
-function Base.show(io::IO, ::MIME"application/vnd.julia-vscode.diagnostics",
+function Base.show(::IO, ::MIME"application/vnd.julia-vscode.diagnostics",
                    res::JETCallResult)
     forward_to_console_output(res; res.jetconfigs...)
     config = PrintConfig(; res.jetconfigs...)

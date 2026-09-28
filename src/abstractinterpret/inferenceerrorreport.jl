@@ -529,7 +529,7 @@ either stack trace must not affect the other report.
 
 Print to `io` a message explaining why `report` was emitted.
 """
-@noinline print_report_message(io::IO, report::InferenceErrorReport) = (@nospecialize;
+@noinline print_report_message(::IO, report::InferenceErrorReport) = (@nospecialize;
     error(lazy"`print_report_message(::IO, ::$(typeof(report)))` is not implemented"))
 
 """

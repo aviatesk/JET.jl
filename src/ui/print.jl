@@ -61,7 +61,7 @@ struct PrintConfig
                            print_inference_success::Bool = true,
                            sourceinfo::Symbol = :default,
                            stacktrace_types_limit::Union{Nothing,Int} = nothing,
-                           jetconfigs...)
+                           _jetconfigs...)
         if sourceinfo ∉ (:full, :default, :compact, :minimal, :none)
             throw(ArgumentError("Invalid sourceinfo: $sourceinfo. Must be one of :full, :default, :compact, :minimal, :none"))
         end
@@ -125,7 +125,7 @@ end
 
 colorctx(io::IO) = :color => get(io, :color, false)
 
-should_limit(stacktrace_types_limit::Nothing) = true
+should_limit(::Nothing) = true
 should_limit(stacktrace_types_limit::Int) = stacktrace_types_limit > 0
 function type_depth_limit(io::IO, s::String; maxtypedepth::Union{Nothing,Int})
     sz = get(io, :displaysize, displaysize(io))::Tuple{Int, Int}
