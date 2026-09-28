@@ -143,6 +143,16 @@ end
 @inline Base.get(b::AbstractBindings, partition::Core.BindingPartition, @nospecialize(default)) =
     @lock b.lock get(b.bindings, partition, default)
 
+# How `handoff_cycle_member_reports!` hands the reports of the members of a call cycle over:
+# `order` lists the member frame ids visited breadth-first from the cycle top, `callsites`
+# maps each of them to the caller frame id and the call site, and `untracked` lists the
+# members whose calls are not tracked.
+struct CycleHandoff
+    order::Vector{Int}
+    callsites::Dict{Int,Tuple{Int,VirtualFrame}}
+    untracked::Vector{Int}
+end
+
 """
     mutable struct AnalyzerState
         ...
@@ -185,6 +195,10 @@ mutable struct AnalyzerState
     # they will be appended to the caller when returning back to the caller inference/optimization
     const report_stash::Vector{InferenceErrorReport}
 
+    # the plans to hand the reports of call cycle members over, prepared when the cycles have
+    # converged (see `prepare_cycle_handoff!`)
+    const cycle_handoffs::IdDict{InferenceState,CycleHandoff}
+
     # the temporal stash to keep track of the context of caller inference/optimization and
     # the caller itself, to which reconstructed cached reports will be appended
     cache_target::Union{Nothing,Pair{Symbol,InferenceState}}
@@ -221,6 +235,7 @@ function AnalyzerState(world::UInt = get_world_counter();
                          #=opt_params::OptimizationParams=# opt_params,
                          #=analysis_results::IdDict{InferenceResult,AnalysisResult}=# IdDict{InferenceResult,AnalysisResult}(),
                          #=report_stash::Vector{InferenceErrorReport}=# InferenceErrorReport[],
+                         #=cycle_handoffs::IdDict{InferenceState,CycleHandoff}=# IdDict{InferenceState,CycleHandoff}(),
                          #=cache_target::Union{Nothing,Pair{Symbol,InferenceState}}=# nothing,
                          #=concretized::BitVector=# non_toplevel_concretized,
                          #=current_toplevel_assignment=# nothing,
@@ -249,6 +264,7 @@ function AnalyzerState(state::AnalyzerState, refresh_local_cache::Bool=true;
                          opt_params,
                          analysis_results,
                          #=report_stash=# InferenceErrorReport[],
+                         #=cycle_handoffs=# IdDict{InferenceState,CycleHandoff}(),
                          #=cache_target=# nothing,
                          concretized,
                          current_toplevel_assignment,

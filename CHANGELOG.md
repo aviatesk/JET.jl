@@ -69,6 +69,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   like `all(f, x)` over imprecisely typed vectors when SparseArrays is loaded,
   as in `all(p -> p isa Pair, x) ? a : b` for `x::AbstractVector`.
 
+- Fixed error reports from mutually recursive calls omitting intermediate
+  frames from their stack traces. This also fixes spurious reports from such
+  calls that constant propagation should have discarded, and missing reports
+  when a later analysis reuses the cached results of such calls.
+
+- Fixed spurious `OptimizationFailureReport`s for calls reaching `notify`
+  (aviatesk/JET.jl#868). Reports found without constant propagation are now kept
+  when constant propagation gives up, instead of being replaced with leaked
+  reports that show wrong call stacks.
+
 ## [0.12.2]
 
 ### Added
