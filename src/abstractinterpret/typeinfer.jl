@@ -534,8 +534,9 @@ function CC.global_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::In
         # it is possible to track such bindings’ `isdefined` status precisely.
         binding_states = get_binding_states(analyzer)
         @lock binding_states.lock begin
-            new_state = if haskey(binding_states, partition)
-                old_state = binding_states[partition]
+            bindings = binding_states.bindings
+            new_state = if haskey(bindings, partition)
+                old_state = bindings[partition]
                 if old_state.isconst
                     # Ordinary assignments to constants throw; `const` redefinitions use
                     # `const_assignment_rt_exct` instead.
@@ -549,7 +550,7 @@ function CC.global_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::In
             else
                 AbstractBindingState(false, isconditional; assignment)
             end
-            binding_states[partition] = new_state
+            bindings[partition] = new_state
         end
     end
     return ret
@@ -667,10 +668,11 @@ function const_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::Infere
             # `:const` assignment destructively overrides the binding type
             binding_states = get_binding_states(analyzer)
             binding_state = @lock binding_states.lock begin
+                bindings = binding_states.bindings
                 if !isconditional
                     new_state = AbstractBindingState(true, false, new_binding_typ; assignment)
-                elseif haskey(binding_states, partition)
-                    old_binding_state = binding_states[partition]
+                elseif haskey(bindings, partition)
+                    old_binding_state = bindings[partition]
                     @assert old_binding_state.isconst && isdefined(old_binding_state, :typ)
                     newmaybeundef = old_binding_state.maybeundef & isconditional
                     newtyp = old_binding_state.typ ⊔ new_binding_typ
@@ -683,7 +685,7 @@ function const_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::Infere
                 else
                     new_state = AbstractBindingState(true, true, new_binding_typ; assignment)
                 end
-                binding_states[partition] = new_state
+                bindings[partition] = new_state
                 new_state
             end
             # HACK/FIXME Concretize `AbstractBindingState`
@@ -729,12 +731,9 @@ function CC.abstract_eval_partition_load(analyzer::ToplevelAbstractAnalyzer, bin
         end
         return RTEffects(Any, res.exct, res.effects)
     end
-    binding_states = get_binding_states(analyzer)
-    if haskey(binding_states, partition)
-        binding_state = binding_states[partition]
-        if isdefined(binding_state, :typ)
-            return RTEffects(binding_state.typ, res.exct, res.effects)
-        end
+    binding_state = get(get_binding_states(analyzer), partition, nothing)
+    if binding_state !== nothing && isdefined(binding_state, :typ)
+        return RTEffects(binding_state.typ, res.exct, res.effects)
     end
     return res
 end

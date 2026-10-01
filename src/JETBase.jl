@@ -371,20 +371,12 @@ signature_analysis_completion(job::AbstractSignatureAnalysisJob) =
 function signature_analysis_worker(
         queue::Channel{Union{Nothing,AbstractSignatureAnalysisJob}}
     )
-    # HACK: Compiler engine reservations are owned by OS thread ID.
-    # Prevent migration only while this job may run inference. This assumes jobs don't
-    # leave sticky child tasks running: stickiness isn't reference-counted, so restoring
-    # it could erase stickiness propagated by a child scheduled during the job.
     while true
         job = take!(queue)
         job === nothing && break
-        task = current_task()
-        was_sticky = task.sticky
-        task.sticky = true
         try
             job()
         finally
-            task.sticky = was_sticky
             notify(signature_analysis_completion(job))
         end
         yield()
