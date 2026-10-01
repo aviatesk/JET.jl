@@ -129,10 +129,15 @@ end
 # a lock so concurrent `setindex!`/rehash cannot corrupt it; the accesses are infrequent
 # (only on global binding assignments and binding-partition lookups), so the uncontended lock
 # cost is negligible.
+# The lock is taken during inference, while Compiler engine reservations owned by the current
+# OS thread may be held. Waiting on a `ReentrantLock` may yield and resume the task on another
+# thread, so use a non-yielding `SpinLock` instead. Critical sections must stay short and free
+# of yield points, and must not re-acquire the lock since `SpinLock` is not reentrant
+# (access `b.bindings` directly instead).
 struct AbstractBindings
     bindings::IdDict{Core.BindingPartition,AbstractBindingState}
-    lock::ReentrantLock
-    AbstractBindings() = new(IdDict{Core.BindingPartition,AbstractBindingState}(), ReentrantLock())
+    lock::Threads.SpinLock
+    AbstractBindings() = new(IdDict{Core.BindingPartition,AbstractBindingState}(), Threads.SpinLock())
 end
 @inline Base.getindex(b::AbstractBindings, partition::Core.BindingPartition) =
     @lock b.lock b.bindings[partition]
