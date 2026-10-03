@@ -198,6 +198,7 @@ mutable struct AnalyzerState
 
     # will be used in toplevel analysis (skip inference on actually interpreted statements)
     const concretized::BitVector
+    const include_results::Dict{Int,Any}
 
     const current_toplevel_assignment::Union{Nothing,ToplevelAssignment}
     const binding_states::AbstractBindings # TODO Make this globally maintained?
@@ -228,6 +229,7 @@ function AnalyzerState(world::UInt = get_world_counter();
                          #=report_stash::Vector{InferenceErrorReport}=# InferenceErrorReport[],
                          #=cache_target::Union{Nothing,Pair{Symbol,InferenceState}}=# nothing,
                          #=concretized::BitVector=# non_toplevel_concretized,
+                         #=include_results=# Dict{Int,Any}(),
                          #=current_toplevel_assignment=# nothing,
                          #=binding_states::AbstractBindings=# AbstractBindings(),
                          #=entry::Union{Nothing,MethodInstance}=# nothing)
@@ -239,6 +241,7 @@ function AnalyzerState(state::AnalyzerState, refresh_local_cache::Bool=true;
                        inf_params::InferenceParams = state.inf_params,
                        opt_params::OptimizationParams = state.opt_params,
                        concretized::BitVector = state.concretized,
+                       include_results::Dict{Int,Any} = state.include_results,
                        current_toplevel_assignment::Union{Nothing,ToplevelAssignment} = state.current_toplevel_assignment,
                        binding_states::AbstractBindings = state.binding_states,
                        entry::Union{Nothing,MethodInstance} = state.entry)
@@ -256,6 +259,7 @@ function AnalyzerState(state::AnalyzerState, refresh_local_cache::Bool=true;
                          #=report_stash=# InferenceErrorReport[],
                          #=cache_target=# nothing,
                          concretized,
+                         include_results,
                          current_toplevel_assignment,
                          binding_states,
                          entry)
@@ -537,12 +541,14 @@ abstract type ToplevelAbstractAnalyzer <: AbstractAnalyzer end
 # constructor for sequential toplevel JET analysis
 function ToplevelAbstractAnalyzer(
         interp::ConcreteInterpreter, concretized::BitVector;
-        current_toplevel_assignment::Union{Nothing,ToplevelAssignment} = nothing
+        current_toplevel_assignment::Union{Nothing,ToplevelAssignment} = nothing,
+        include_results::Dict{Int,Any} = Dict{Int,Any}()
     )
     # use the latest world age to take in newly added methods defined by `ConcreteInterpreter`
     world = get_world_counter()
     analyzer = ToplevelAbstractAnalyzer(interp)
     state = AnalyzerState(analyzer)
-    newstate = AnalyzerState(state; world, concretized, current_toplevel_assignment)
+    newstate = AnalyzerState(state; world, concretized, current_toplevel_assignment,
+                             include_results)
     return AbstractAnalyzer(analyzer, newstate)
 end

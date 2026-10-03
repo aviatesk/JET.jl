@@ -499,6 +499,13 @@ end
 
 function CC.abstract_eval_basic_statement(analyzer::ToplevelAbstractAnalyzer, @nospecialize(stmt),
     sstate::StatementState, frame::InferenceState, result::Union{Nothing,Future{RTEffects}})
+    if istoplevelframe(frame)
+        results = get_include_results(analyzer)
+        if haskey(results, frame.currpc)
+            # Reuse the RHS without replaying include, but retain assignment handling below.
+            result = Future(RTEffects(results[frame.currpc], Bottom, CC.EFFECTS_TOTAL))
+        end
+    end
     if isexpr(stmt, :latestworld)
         if isconcretized(analyzer, frame)
             # ignore the effect of `:latestworld` if its effect took in place by `ConcreteInterpreter`
