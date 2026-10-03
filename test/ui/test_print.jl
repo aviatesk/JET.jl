@@ -9,30 +9,121 @@ function result_string(result)
 end
 
 @testset "print toplevel errors" begin
-    let io = IOBuffer()
-        src = """
+    for (src, msg) in (("""
             a = begin
                 b =
             end
-            """
-
-        res = report_text(src, @__FILE__)
-        print_reports(io, res.res.toplevel_error_reports)
-        let s = String(take!(io))
-            @test occursin("2 toplevel errors found", s)
-            @test occursin(Regex("@ $(@__FILE__):\\d"), s)
-            @test occursin("invalid identifier", s)
-            @test occursin("Expected `end`", s)
+            """, "invalid identifier"),
+            ("begin\n    a = 1\n", "Expected `end`"))
+        for filename in (@__FILE__, "foo")
+            io = IOBuffer()
+            res = report_text(src, filename)
+            print_reports(io, ToplevelErrorReport[res.res.toplevel_error_report])
+            s = String(take!(io))
+            @test occursin("Top-level analysis failed", s)
+            @test occursin("@ $filename:$(res.res.toplevel_error_report.line)", s)
+            @test occursin(msg, s)
         end
+    end
+end
 
-        res = report_text(src, "foo")
-        print_reports(io, res.res.toplevel_error_reports)
-        let s = String(take!(io))
-            @test occursin("2 toplevel errors found", s)
-            @test occursin(r"@ foo:\d", s)
-            @test occursin("invalid identifier", s)
-            @test occursin("Expected `end`", s)
+@testset "fatal analysis status" begin
+    for report in (
+            ActualErrorWrapped(ErrorException("execution failed"),
+                Base.StackTraces.StackFrame[], "example.jl", 7),
+            MacroExpansionErrorReport(ErrorException("expansion failed"),
+                Base.StackTraces.StackFrame[], "example.jl", 7),
+            LoweringErrorReport("lowering failed", "example.jl", 7),
+            JET.ConcretizationTimeoutErrorReport(0.1,
+                Base.StackTraces.StackFrame[], "example.jl", 7))
+        io = IOBuffer()
+        @test print_reports(io, ToplevelErrorReport[report]) == 1
+        s = String(take!(io))
+        @test startswith(s, """
+            ═════ Top-level analysis failed ═════
+            JET stopped before completing the analysis.
+            Fix the error below and rerun the analysis.
+            ┌ @ ./example.jl:7""")
+        lines = split(s, '\n'; keepempty=false)
+        @test textwidth(last(lines)) == textwidth(first(lines))
+        @test !occursin("1 toplevel error found", s)
+        @test !occursin("No errors detected", s)
+    end
+    @test isempty(sprint(print_reports, ToplevelErrorReport[]))
+end
+
+@testset "print toplevel warnings" begin
+    @test isempty(sprint(print_reports, JET.ToplevelWarningReport[]))
+    @test isempty(@test_deprecated r"print_toplevel_success" sprint(io ->
+        print_reports(io, JET.ToplevelWarningReport[]; print_toplevel_success=true)))
+    let report = JET.UnsupportedFeatureReport("unsupported test feature", @__FILE__, 7)
+        reports = JET.ToplevelWarningReport[report]
+        for sourceinfo in (:default, :full, :compact, :minimal, :none)
+            io = IOBuffer()
+            @test print_reports(io, reports; sourceinfo) == 1
+            s = String(take!(io))
+            filename = sourceinfo in (:compact, :minimal, :none) ? basename(@__FILE__) : @__FILE__
+            @test occursin("1 toplevel warning found", s)
+            @test occursin("@ $filename:7", s)
+            @test occursin("unsupported test feature", s)
+            @test !occursin("error", s)
         end
+        s = sprint(print_reports, reports; context=:color=>true)
+        rail = sprint(io -> printstyled(io, "│ "; color=:yellow); context=:color=>true)
+        @test occursin(rail, s)
+        s = sprint(print_reports, JET.ToplevelWarningReport[report, report])
+        @test occursin("2 toplevel warnings found", s)
+        lines = split(s, '\n'; keepempty=false)
+        bottoms = filter(startswith("└"), lines)
+        @test length(bottoms) == 2
+        @test all(l -> textwidth(l) == textwidth(first(lines)), bottoms)
+    end
+    let res = @test_logs report_text("x = 1e-1000\n", @__FILE__)
+        reports = get_reports(res)
+        @test only(reports) isa JET.ParseWarningReport
+        s = result_string(res)
+        @test occursin("1 toplevel warning found", s)
+        @test occursin("@ $(@__FILE__):1", s)
+        @test !occursin("No errors", s)
+        @test !occursin("possible error", s)
+        @test !occursin("Top-level analysis failed", s)
+        @test !occursin("rerun the analysis", s)
+        @test s == sprint(print_reports, res.res.toplevel_warning_reports)
+    end
+    let res = @test_logs report_text("x = 1e-1000\nundefined_warning_test", @__FILE__)
+        reports = get_reports(res)
+        @test length(reports) == 2
+        @test first(reports) isa JET.ParseWarningReport
+        @test last(reports) isa InferenceErrorReport
+        postprocessor = JET.PostProcessor(res.res.actual2virtual)
+        s = result_string(res)
+        @test occursin("1 toplevel warning found", s)
+        @test occursin("1 possible error found", s)
+        @test occursin("undefined_warning_test", s)
+        @test !occursin("No errors", s)
+        @test s == sprint(print_reports, res.res.toplevel_warning_reports, postprocessor) *
+                   sprint(print_reports, res.res.inference_error_reports, postprocessor)
+        io = IOBuffer()
+        @test print_reports(io, reports, postprocessor) == 2
+    end
+    let report = JET.UnsupportedFeatureReport("$(@__MODULE__).unsupported", "warning.jl", 2)
+        postprocessor = JET.PostProcessor(Main => @__MODULE__)
+        reports = Union{JET.ToplevelWarningReport,InferenceErrorReport}[report]
+        s = sprint(print_reports, reports, postprocessor)
+        @test occursin("│ unsupported", s)
+        @test !occursin(string(@__MODULE__), s)
+        @test !occursin("No errors", s)
+    end
+    let res = report_text("""
+            x = 1e-1000
+            @eval error("fatal warning test")
+            """)
+        @test !isempty(res.res.toplevel_warning_reports)
+        @test only(get_reports(res)) isa ToplevelErrorReport
+        s = result_string(res)
+        @test occursin("Top-level analysis failed", s)
+        @test occursin("fatal warning test", s)
+        @test !occursin("toplevel warning", s)
     end
 end
 

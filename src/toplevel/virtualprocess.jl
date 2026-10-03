@@ -28,8 +28,19 @@ it should satisfy the following requirements:
 """
 ToplevelErrorReport()
 
-# `ToplevelErrorReport` interface
-function Base.getproperty(er::ToplevelErrorReport, sym::Symbol)
+"""
+    abstract type ToplevelWarningReport end
+
+A nonfatal diagnostic produced by JET during top-level processing. Concrete
+subtypes must have `file::String` and `line::Int` fields and implement
+[`JETInterface.print_report(io::IO, report)`](@ref print_report).
+Warnings are stored in `VirtualProcessResult.toplevel_warning_reports` and do
+not stop analysis. Warnings logged by user code or dependencies are not captured.
+"""
+abstract type ToplevelWarningReport end
+
+# Top-level diagnostic interface
+function Base.getproperty(er::Union{ToplevelErrorReport,ToplevelWarningReport}, sym::Symbol)
     return if sym === :file
         getfield(er, sym)::String
     elseif sym === :line
@@ -52,6 +63,39 @@ end
 # don't show stacktrace for syntax errors
 print_report(io::IO, report::ParseErrorReport) =
     JS.show_diagnostic(io, report.diagnostic, report.source)
+
+"""
+    ParseWarningReport <: ToplevelWarningReport
+
+A nonfatal parser diagnostic, with its source location and source text.
+"""
+struct ParseWarningReport <: ToplevelWarningReport
+    diagnostic::JS.Diagnostic
+    source::JS.SourceFile
+    file::String
+    line::Int
+    function ParseWarningReport(diagnostic::JS.Diagnostic, source::JS.SourceFile)
+        line = JS.source_line(source, JS.first_byte(diagnostic))
+        return new(diagnostic, source, source.filename::String, line)
+    end
+end
+print_report(io::IO, report::ParseWarningReport) =
+    JS.show_diagnostic(io, report.diagnostic, report.source)
+
+"""
+    UnsupportedFeatureReport <: ToplevelWarningReport
+
+A limitation for which JET continues analysis with an approximation. The message
+explains the unsupported feature and how the analyzed code differs from it.
+For example, JET reports `include(mapexpr, filename)` with this report and analyzes the
+included file without applying `mapexpr`.
+"""
+struct UnsupportedFeatureReport <: ToplevelWarningReport
+    message::String
+    file::String
+    line::Int
+end
+print_report(io::IO, report::UnsupportedFeatureReport) = print(io, report.message)
 
 # TODO Use JuliaLowering.jl
 struct MacroExpansionErrorReport <: ToplevelErrorReport
@@ -160,8 +204,8 @@ function print_report(io::IO, report::ConcretizationTimeoutErrorReport)
     println(io, "values, or code matching `concretization_patterns`. This statement")
     println(io, "exceeded the time limit, possibly due to interpretation overhead, a")
     println(io, "long-running computation, or nontermination. The rest of the statement")
-    println(io, "was not executed, so the definitions it would have made are missing from")
-    println(io, "the rest of the analysis, and the statement itself was not analyzed.")
+    println(io, "was not executed, and JET stopped the entire top-level analysis without")
+    println(io, "analyzing this statement or any subsequent statements.")
     println(io)
     println(io, "- Move the definitions or `@eval` calls out of the long-running code, so")
     println(io, "  that JET analyzes the code instead of executing it.")
@@ -288,8 +332,7 @@ These options apply to all entry points described in the
 - `analyze_from_definitions::Union{Bool,Symbol} = false` \\
   If `true`, after top-level processing completes, JET starts analysis from
   collected signatures of top-level definitions, such as method signatures.
-  It does so only when no serious top-level error occurred, such as an error
-  during macro expansion.
+  It does so only when top-level processing completes without a fatal error.
 
   This is useful for packages that contain definitions but no top-level call
   sites that exercise them. It allows JET to begin analysis from method or
@@ -421,11 +464,11 @@ These options apply to all entry points described in the
   never terminate. When the execution is still running after the timeout, JET
   stops it at the next interpreted statement, including statements of functions
   called from the top-level code, reports a `ConcretizationTimeoutErrorReport`
-  showing the calls that were running, and skips the abstract analysis of that
-  top-level statement. Code passed to `Core.eval`, as by `@eval`, is
-  interpreted as well. Code that runs natively, such as `ccall`s, builtins,
-  the `__init__` functions of modules evaluated by `Core.eval` and the calls of
-  blocks selected by `concretization_patterns`, cannot be interrupted.
+  showing the calls that were running, and stops the entire top-level analysis.
+  Code passed to `Core.eval`, as by `@eval`, is interpreted as well. Code that
+  runs natively, such as `ccall`s, builtins, the `__init__` functions of modules
+  evaluated by `Core.eval` and the calls of blocks selected by
+  `concretization_patterns`, cannot be interrupted.
   The time spent in `include`d files and in module-loading statements handled
   by JET is not counted.
   Set `Inf` to disable the timeout.
@@ -567,10 +610,14 @@ end
 
 - `res.analyzed_files::Dict{String,AnalyzedFileInfo}`: analyzed files and the
   source ranges associated with each module in those files.
-- `res.toplevel_error_reports::Vector{ToplevelErrorReport}`: reports produced
-  during top-level processing, including parsing, macro expansion, lowering,
-  and partial concrete interpretation. These critical reports take precedence
-  over `inference_error_reports`.
+- `res.toplevel_error_report::Union{Nothing,ToplevelErrorReport}`: the first
+  fatal error during parsing, macro expansion, lowering, or partial concrete
+  interpretation, or `nothing` on success. A fatal error stops the entire
+  top-level analysis and takes precedence over warning and inference reports.
+- `res.toplevel_warning_reports::Vector{ToplevelWarningReport}`: nonfatal
+  diagnostics produced by JET, including parser warnings and unsupported
+  features. These are returned alongside inference reports when processing
+  succeeds, rather than also being logged with `@warn`.
 - `res.inference_error_reports::Vector{InferenceErrorReport}`: reports of
   potential errors found by `ToplevelAbstractAnalyzer`.
 - `res.signature_infos::Vector{SignatureInfo}`: method signatures collected
@@ -578,20 +625,53 @@ end
 - `res.actual2virtual::Union{Actual2Virtual,Nothing}`: maps the actual root
   module to its virtual counterpart, or is `nothing` when module
   virtualization is disabled.
+
+The legacy `res.toplevel_error_reports` property is deprecated and will be
+removed in a future release. It emits a deprecation warning and returns a fresh
+vector containing the error, or an empty vector on success. Mutating that vector
+does not change `res`. Use `res.toplevel_error_report` instead.
 """
-struct VirtualProcessResult
-    analyzed_files::Dict{String,AnalyzedFileInfo}
-    toplevel_error_reports::Vector{ToplevelErrorReport}
-    inference_error_reports::Vector{InferenceErrorReport}
-    signature_infos::Vector{SignatureInfo}
-    actual2virtual::Union{Actual2Virtual,Nothing}
+mutable struct VirtualProcessResult
+    const analyzed_files::Dict{String,AnalyzedFileInfo}
+    toplevel_error_report::Union{Nothing,ToplevelErrorReport}
+    const toplevel_warning_reports::Vector{ToplevelWarningReport}
+    const inference_error_reports::Vector{InferenceErrorReport}
+    const signature_infos::Vector{SignatureInfo}
+    const actual2virtual::Union{Actual2Virtual,Nothing}
     VirtualProcessResult(actual2virtual::Union{Actual2Virtual,Nothing}) =
         new(Dict{String,AnalyzedFileInfo}(),
-            ToplevelErrorReport[],
+            nothing,
+            ToplevelWarningReport[],
             InferenceErrorReport[],
             Type[],
             actual2virtual)
 end
+
+function Base.getproperty(res::VirtualProcessResult, name::Symbol)
+    if name === :toplevel_error_reports
+        Base.depwarn("`VirtualProcessResult.toplevel_error_reports` is deprecated and " *
+                     "will be removed in a future release. Use `toplevel_error_report`, " *
+                     "which is `nothing` on success or a single `ToplevelErrorReport`.",
+                     :getproperty)
+        report = getfield(res, :toplevel_error_report)
+        return report === nothing ? ToplevelErrorReport[] : ToplevelErrorReport[report]
+    end
+    return getfield(res, name)
+end
+
+Base.propertynames(::VirtualProcessResult, private::Bool=false) =
+    private ? (fieldnames(VirtualProcessResult)..., :toplevel_error_reports) :
+    fieldnames(VirtualProcessResult)
+
+# Unwinds nested modules, includes, and interpreted calls without entering user catch blocks.
+struct ToplevelAbort <: Exception end
+
+# Unlike analysis failures, invariant violations escape the analysis API as exceptions.
+struct ToplevelInternalError <: Exception
+    message::String
+end
+Base.showerror(io::IO, err::ToplevelInternalError) =
+    print(io, "JET internal error: ", err.message)
 
 function defined_modules(res::VirtualProcessResult)
     ret = Set{Module}()
@@ -619,7 +699,6 @@ mutable struct InterpretationState
     const res::VirtualProcessResult
     const pkg_mod_depth::Int
     const files_stack::Vector{String}
-    isfailed::Bool
     concretization_deadline::UInt64 # in `time_ns()`, for the current top-level statement
     callee_error::Union{Nothing,CalleeError} # currently unwinding
     # The interpreted stacks of the errors caught in each frame, parallel to the frame's
@@ -641,7 +720,6 @@ function InterpretationState(
     config::ToplevelConfig = state.config
     res::VirtualProcessResult = state.res
     files_stack::Vector{String} = state.files_stack
-    isfailed = false
     concretization_deadline = typemax(UInt64)
     return InterpretationState(
         filename,
@@ -653,7 +731,6 @@ function InterpretationState(
         res,
         pkg_mod_depth,
         files_stack,
-        isfailed,
         concretization_deadline,
         #=callee_error=#nothing,
         #=caught_callee_errors=#IdDict{Frame,Vector{CalleeError}}(),
@@ -744,8 +821,12 @@ concretization_patterns(interp::ConcreteInterpreter, ::AbstractString) =
                     config::ToplevelConfig;
                     overrideex::Union{Nothing,Expr}=nothing) -> res::VirtualProcessResult
 
-Simulates Julia's top-level execution, collects error reports, and returns a
-`VirtualProcessResult`.
+Simulates Julia's top-level execution and returns a `VirtualProcessResult`.
+The first fatal top-level error aborts processing, including enclosing modules
+and files, and is returned as `res.toplevel_error_report`. Ordinary exceptions
+caught by interpreted user code do not abort analysis; JET's own interruption
+signals cannot be caught by user code. Internal invariant and extension contract
+violations are thrown as exceptions rather than returned as reports.
 
 If `x` is an `AbstractString`, this function first parses it into a `JS.SyntaxNode`.
 The internal `overrideex` keyword may be used only when `x` is a `JS.SyntaxNode`,
@@ -776,6 +857,15 @@ supplied syntax tree as follows:
     another block that was abstractly rather than concretely interpreted. Use
     `concretization_patterns` to force the relevant blocks to be concretely
     interpreted. See [`ToplevelConfig`](@ref) for details.
+
+!!! warning "Cleanup on interruption"
+    When processing aborts, whether because of a fatal error, a concretization
+    timeout, a missing concretization, or an internal error, the interpreter unwinds
+    without running active user `catch` handlers or `finally` blocks. Side effects
+    of concrete execution are not rolled back: for example, `cd(...) do` can leave
+    the working directory changed, and `lock(...) do` can leave a lock held after
+    analysis exits. Run analysis in a separate Julia process when the state of the
+    current process must be preserved.
 """
 function virtual_process(interp::ConcreteInterpreter,
                          x::Union{AbstractString,JS.SyntaxNode},
@@ -822,18 +912,21 @@ function virtual_process(interp::ConcreteInterpreter,
     world = Base.get_world_counter()
     state = InterpretationState(
         filename, #=curline=#0, world, #=dependencies=#Set{Symbol}(), context, config,
-        res, #=pkg_mod_depth=#0, #=files_stack=#String[], #=isfailed=#false,
+        res, #=pkg_mod_depth=#0, #=files_stack=#String[],
         #=concretization_deadline=#typemax(UInt64), #=callee_error=#nothing,
         #=caught_callee_errors=#IdDict{Frame,Vector{CalleeError}}(), #=native_calls=#false)
     interp = ConcreteInterpreter(interp, state)
     try
         virtual_process!(interp, x, overrideex)
+    catch err
+        err isa ToplevelAbort || rethrow()
+        @assert res.toplevel_error_report !== nothing
     finally
         Preferences.main_uuid[] = old_main_uuid
     end
 
     # analyze collected signatures unless critical error happened
-    if should_analyze_from_definitions(config) && isempty(res.toplevel_error_reports)
+    if should_analyze_from_definitions(config) && res.toplevel_error_report === nothing
         analyze_from_definitions!(interp, config)
     end
 
@@ -1005,10 +1098,13 @@ end
 # \r returns cursor to beginning of line
 clearline(io) = print(io, "\e[2K\r")
 
-function add_toplevel_error_report!(state::InterpretationState, @nospecialize report::ToplevelErrorReport)
-    push!(state.res.toplevel_error_reports, report)
-    state.isfailed = true
-    nothing
+function abort_toplevel_analysis!(state::InterpretationState, @nospecialize report::ToplevelErrorReport)
+    if state.res.toplevel_error_report === nothing
+        state.res.toplevel_error_report = report
+    end
+    empty!(state.caught_callee_errors)
+    state.callee_error = nothing
+    throw(ToplevelAbort())
 end
 
 function _virtual_process!(interp::ConcreteInterpreter,
@@ -1027,19 +1123,20 @@ function _virtual_process!(interp::ConcreteInterpreter,
     s = String(s)::String
     stream = JS.ParseStream(s)
     JS.parse!(stream; rule=:all)
-    if isempty(stream.diagnostics)
-        parsed = JS.build_tree(JS.SyntaxNode, stream; filename)
-        _virtual_process!(interp, parsed)
-    else
-        sourcefile = JS.SourceFile(stream; filename)
-        first_line = JS.source_line(sourcefile, JS.first_byte(stream))
-        last_line = JS.source_line(sourcefile, JS.last_byte(stream))
-        state.res.analyzed_files[filename] = AnalyzedFileInfo(
-            ModuleRangeInfo[first_line:last_line => state.context])
-        for diagnostic in stream.diagnostics
-            add_toplevel_error_report!(state, ParseErrorReport(diagnostic, sourcefile))
+    sourcefile = JS.SourceFile(stream; filename)
+    for diagnostic in stream.diagnostics
+        if diagnostic.level === :error
+            first_line = JS.source_line(sourcefile, JS.first_byte(stream))
+            last_line = JS.source_line(sourcefile, JS.last_byte(stream))
+            state.res.analyzed_files[filename] = AnalyzedFileInfo(
+                ModuleRangeInfo[first_line:last_line => state.context])
+            abort_toplevel_analysis!(state, ParseErrorReport(diagnostic, sourcefile))
+        elseif diagnostic.level === :warning
+            push!(state.res.toplevel_warning_reports, ParseWarningReport(diagnostic, sourcefile))
         end
     end
+    parsed = JS.build_tree(JS.SyntaxNode, stream; filename)
+    _virtual_process!(interp, parsed)
 
     toplevel_logger(config) do @nospecialize(io::IO)
         sec = round(time() - start; digits = 3)
@@ -1173,20 +1270,17 @@ end
 
 function general_err_handler(@nospecialize(err), st, state::InterpretationState)
     report = ActualErrorWrapped(err, st, state.filename, state.curline)
-    add_toplevel_error_report!(state, report)
-    nothing
+    abort_toplevel_analysis!(state, report)
 end
 
 function macro_expansion_err_handler(@nospecialize(err), st, state::InterpretationState)
     report = MacroExpansionErrorReport(err, st, state.filename, state.curline)
-    add_toplevel_error_report!(state, report)
-    nothing
+    abort_toplevel_analysis!(state, report)
 end
 
 function lowering_err_handler(@nospecialize(err), st, state::InterpretationState)
     report = LoweringErrorReport(err, state.filename, state.curline, st)
-    add_toplevel_error_report!(state, report)
-    nothing
+    abort_toplevel_analysis!(state, report)
 end
 
 function eval_with_err_handling(state::InterpretationState, x::Expr)
@@ -1267,14 +1361,13 @@ function lower_with_err_handling(interp::ConcreteInterpreter, ::JS.SyntaxNode, x
     # `scrub_offset = 1`: `lower`
     state = InterpretationState(interp)
 
-    xexpanded = @something macroexpand_with_err_handling(state, xblk) return nothing
+    xexpanded = macroexpand_with_err_handling(state, xblk)
 
     with_err_handling(lowering_err_handler, state; scrub_offset=1) do
         lwr = Base.invoke_in_world(state.world, lower, state.context, xexpanded)
         if isexpr(lwr, :error)
             msg = first(lwr.args)
-            add_toplevel_error_report!(state, LoweringErrorReport(msg, state.filename, state.curline))
-            return nothing
+            abort_toplevel_analysis!(state, LoweringErrorReport(msg, state.filename, state.curline))
         end
         return lwr
     end
@@ -1617,7 +1710,16 @@ function _virtual_process!(interp::ConcreteInterpreter,
     end
     state.curline = first_line
     push!(state.files_stack, state.filename)
+    try
+        return process_toplevel!(interp, toplevelnode, force_concretize, overrideex)
+    finally
+        pop!(state.files_stack)
+    end
+end
 
+function process_toplevel!(interp::ConcreteInterpreter, toplevelnode::JS.SyntaxNode,
+                           force_concretize::Bool, overrideex::Union{Nothing,Expr})
+    state = InterpretationState(interp)
     file_concretization_patterns = Any[
         striplines(normalise(pattern))
         for pattern in concretization_patterns(interp, state.filename)]
@@ -1687,7 +1789,7 @@ function _virtual_process!(interp::ConcreteInterpreter,
                 macroexpand_with_err_handling(state, x)
             end
 
-            # if any error happened during macro expansion, bail out now and continue
+            # A macro can expand to `nothing`.
             isnothing(newx) && continue
 
             # special case and flatten the resulting expression expanded from `@doc` macro
@@ -1735,7 +1837,6 @@ function _virtual_process!(interp::ConcreteInterpreter,
                 JuliaInterpreter.ModuleExprParts(x).body
             catch err
                 general_err_handler(err, Base.StackTraces.StackFrame[], state)
-                continue
             end
             @static if !isdefinedglobal(Base, :set_syntax_version)
                 if length(x.args) == 4 && x.args[1] isa VersionNumber
@@ -1743,9 +1844,7 @@ function _virtual_process!(interp::ConcreteInterpreter,
                 end
             end
             x.args[end] = Expr(:block, lnn) # empty module's code body
-            newcontext = eval_with_err_handling(state, x)
-            isnothing(newcontext) && continue # error happened, e.g. duplicated naming
-            newcontext = newcontext::Module
+            newcontext = eval_with_err_handling(state, x)::Module
             newstate = InterpretationState(state;
                                            context = newcontext,
                                            pkg_mod_depth = state.pkg_mod_depth + 1,
@@ -1774,14 +1873,12 @@ function _virtual_process!(interp::ConcreteInterpreter,
         blk = Expr(:block, lnn, x) # attach current line number info
         lwr = lower_with_err_handling(interp, node, blk)
 
-        isnothing(lwr) && continue # error happened during lowering
         isexpr(lwr, :thunk) || continue # literal
 
         src = only(lwr.args)::CodeInfo
 
         fix_self_references!(state.res.actual2virtual, src)
 
-        state.isfailed = false
         state.callee_error = nothing
         empty!(state.caught_callee_errors)
         state.native_calls = force_concretize
@@ -1796,8 +1893,6 @@ function _virtual_process!(interp::ConcreteInterpreter,
         if bail_out_concretized(concretization.concretized, src)
             # bail out if nothing to analyze (just a performance optimization)
             continue
-        elseif state.isfailed
-            continue
         end
 
         analyzer = ToplevelAbstractAnalyzer(interp, concretization.concretized;
@@ -1807,8 +1902,6 @@ function _virtual_process!(interp::ConcreteInterpreter,
 
         append!(state.res.inference_error_reports, get_reports(analyzer, result)) # collect error reports
     end
-
-    pop!(state.files_stack)
 
     return state.res
 end
@@ -2441,16 +2534,13 @@ function usemodule_with_err_handling(interp::ConcreteInterpreter, ex::Expr, worl
                     if depid === nothing
                         # IDEA better message in a case of `any(m::Module->dep===nameof(m), res.defined_modules))`?
                         local report = DependencyError(pkgid.name, depstr, state.filename, state.curline)
-                        add_toplevel_error_report!(state, report)
-                        return nothing
+                        abort_toplevel_analysis!(state, report)
                     end
                     require_ex = :(const $dep = Base.require($depid))
                     # TODO better handling of loading errors that may happen here
-                    require_res = let mod=mod; with_err_handling(general_err_handler, state; scrub_offset=2) do
+                    let mod=mod; with_err_handling(general_err_handler, state; scrub_offset=2) do
                         Base.invoke_in_world(world, Core.eval, mod, require_ex)
-                        true
                     end; end
-                    isnothing(require_res) && return nothing
                     push!(dependencies, dep)
                 end
                 pushfirst!(modpath, :.)
@@ -2485,8 +2575,8 @@ function usemodule_with_err_handling(interp::ConcreteInterpreter, ex::Expr, worl
     # `scrub_offset = 2`: `invoke_in_world` -> `Core.eval`
     let mod=mod, ex=ex; with_err_handling(general_err_handler, state; scrub_offset=2) do
         Base.invoke_in_world(world, Core.eval, mod, ex)
-        true
     end; end
+    return nothing
 end
 
 function start_concretization_timeout!(state::InterpretationState)
@@ -2538,9 +2628,7 @@ function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, 
         world = frame.world
         pause_concretization_timeout(state) do
             for ex in to_simple_module_usages(moduleusage)
-                if usemodule_with_err_handling(interp, ex, world) === nothing
-                    break
-                end
+                usemodule_with_err_handling(interp, ex, world)
             end
         end
         return frame.pc += 1
@@ -2596,11 +2684,9 @@ function collect_toplevel_signature!(interp::ConcreteInterpreter, frame::Frame, 
     atype_params, sparams, linenode =
         JuliaInterpreter.lookup(frame, node.args[2])::SimpleVector
     tt = form_method_signature(atype_params::SimpleVector, sparams::SimpleVector)
-    @assert !CC.has_free_typevars(tt) "free type variable left in signature_infos"
-    if !(tt isa Type)
-        @warn "Found non-Type method signature" tt
-        return nothing
-    end
+    tt isa Type || throw(ToplevelInternalError("Expected a method signature type, got $(typeof(tt))"))
+    CC.has_free_typevars(tt) &&
+        throw(ToplevelInternalError("Free type variable left in signature_infos"))
     mod = JuliaInterpreter.moduleof(frame)
     src = JuliaInterpreter.lookup(frame, node.args[3])
     push!(state.res.signature_infos,
@@ -2707,12 +2793,12 @@ function JuliaInterpreter.evaluate_call!(
         end
     end
     state = InterpretationState(interp)
-    if InterpretationState(interp).native_calls
+    if f === Base.rethrow
+        # Even native calls must rethrow the interpreted frame's active exception.
+        restore_callee_error!(state, frame, fargs)
+    elseif state.native_calls
         popfirst!(fargs)
         return Base.invoke_in_world(frame.world, f, fargs...)
-    end
-    if f === Base.rethrow
-        restore_callee_error!(state, frame, fargs)
     end
     return @invoke JuliaInterpreter.evaluate_call!(
         interp::Interpreter, frame::Frame, fargs::Vector{Any}, enter_generated::Bool)
@@ -2727,13 +2813,14 @@ function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func)
     # `include` of another module, e.g. called in code evaluated into that module
     include_context = include_func isa Base.IncludeInto ? include_func.m : state.context
 
-    function add_actual_method_error_report!(args::Vector{Any})
+    function abort_method_error!(args::Vector{Any})
         err = MethodError(include_func, args)
         local report = ActualErrorWrapped(err, [], filename, line)
-        add_toplevel_error_report!(state, report)
+        abort_toplevel_analysis!(state, report)
     end
 
     nargs = length(args)
+    fname = nothing
     if nargs == 1
         fname = only(args)
     elseif nargs == 2
@@ -2742,33 +2829,34 @@ function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func)
             include_context = x
             # TODO propagate appropriate `dependencies` to `newstate`
         elseif isa(x, Function)
-            @warn "JET is unable to analyze `include(mapexpr::Function, filename::String)` call currently."
+            push!(state.res.toplevel_warning_reports, UnsupportedFeatureReport(
+                "JET does not support `include(mapexpr::Function, filename::String)`. " *
+                "The included file is analyzed without applying `mapexpr`.", filename, line))
         else
-            add_actual_method_error_report!(args)
-            return nothing
+            abort_method_error!(args)
         end
     else
-        add_actual_method_error_report!(args)
-        return nothing
+        abort_method_error!(args)
     end
     if !isa(fname, String)
-        add_actual_method_error_report!(args)
-        return nothing
+        abort_method_error!(args)
     end
 
     include_file = normpath(dirname(filename), fname)
     # handle recursive `include`s
     if include_file in state.files_stack
         local report = RecursiveIncludeErrorReport(include_file, copy(state.files_stack), filename, line)
-        add_toplevel_error_report!(state, report)
-        return nothing
+        abort_toplevel_analysis!(state, report)
     end
 
     included = try_read_file(interp, include_context, include_file)
-    isnothing(included) && return nothing # typically no file error
+    # the default `try_read_file` aborts on read errors, but an overload may skip the file
+    isnothing(included) && return nothing
     if !(included isa AbstractString || included isa JS.SyntaxNode)
-        @warn lazy"Unexpected value returned from `try_read_file(interp::$(nameof(typeof(interp))), ...)" typeof(included)
-        return nothing
+        throw(ToplevelInternalError(
+            "Unexpected return type $(typeof(included)) from " *
+            "try_read_file(interp::$(nameof(typeof(interp))), ...); " *
+            "expected AbstractString, JuliaSyntax.SyntaxNode, or nothing"))
     end
 
     newstate = InterpretationState(state;
@@ -2820,8 +2908,18 @@ function JuliaInterpreter.handle_err(
         interp::ConcreteInterpreter, frame::Frame, @nospecialize(err)
     )
     state = InterpretationState(interp)
-    # only the top-level frame of a statement has no caller
-    if frame.caller !== nothing
+    if err isa ToplevelAbort || err isa ToplevelInternalError
+        # Forced unwinding skips `finally` too. Lowered handlers do not distinguish catch
+        # from finally; recognizing rethrow is insufficient. Running handlers would execute
+        # catch bodies, and cleanup itself can return, throw, or fail to terminate.
+        empty!(state.caught_callee_errors)
+        state.callee_error = nothing
+        frame.caller === nothing || JuliaInterpreter.return_from(frame)
+        rethrow()
+    end
+    # The root frame can also contain a user catch handler.
+    if (frame.caller !== nothing || (!isempty(frame.framedata.exception_frames) &&
+        !(err isa ConcretizationTimeoutError || err isa MissingConcretizationError)))
         return handle_callee_err(interp, state, frame, err)
     end
 
@@ -2857,9 +2955,7 @@ function JuliaInterpreter.handle_err(
         append!(st, callee_error.st)
         report = ActualErrorWrapped(err, st, state.filename, state.curline)
     end
-    add_toplevel_error_report!(state, report)
-
-    return nothing # stop further interpretation
+    abort_toplevel_analysis!(state, report)
 end
 
 # The frames of natively executed user code in `bt`: those before the first frame of the
@@ -2873,7 +2969,7 @@ end
 
 # Errors in interpreted callees follow JuliaInterpreter's own handling, so `try`/`catch` in
 # user code works as usual. JET's own signals are the exception: they must not be caught by
-# user code, so they unwind frame by frame up to the top-level frame.
+# user code, so they unwind frame by frame, skipping finally as in `handle_err`.
 function handle_callee_err(
         interp::ConcreteInterpreter, state::InterpretationState, frame::Frame,
         @nospecialize(err)
@@ -2947,6 +3043,7 @@ end
     try
         return @noinline f()
     catch err
+        (err isa ToplevelAbort || err isa ToplevelInternalError) && rethrow()
         bt = catch_backtrace()
         st = stacktrace(bt)
 

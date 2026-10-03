@@ -209,5 +209,39 @@ let nonexistinclude = normpath(@__DIR__, "fixtures", "nonexistinclude.jl")
         @test only(ts.results) isa Test.Fail
     end
 end
+# `UnsupportedFeatureReport`s do not fail a test, but `ParseWarningReport`s do
+mktempdir() do dir
+    main = joinpath(dir, "main.jl")
+    write(joinpath(dir, "child.jl"), "x = 1\n")
+    text = "include(identity, \"child.jl\")\n"
+    @test !JET.has_problems(report_text(text, main))
+    @test JET.has_problems(report_text(text * "undefined_after_warning\n", main))
+    let ts = with_isolated_testset() do
+            test_text(text, main)
+        end
+        @test ts.n_passed == 1
+    end
+    let ts = with_isolated_testset() do
+            test_text(text, main; broken=true)
+        end
+        @test ts.n_passed == 0
+        r = only(ts.results)
+        @test r isa Test.Error
+        @test r.test_type === :test_unbroken
+    end
+    let ts = with_isolated_testset() do
+            test_text(text * "undefined_after_warning\n", main)
+        end
+        @test ts.n_passed == 0
+        @test only(ts.results) isa Test.Fail
+    end
+end
+@test JET.has_problems(report_text("x = 1e-1000\n", "parse_warning.jl"))
+let ts = with_isolated_testset() do
+        test_text("x = 1e-1000\n", "parse_warning.jl")
+    end
+    @test ts.n_passed == 0
+    @test only(ts.results) isa Test.Fail
+end
 
 end # module test_Test
