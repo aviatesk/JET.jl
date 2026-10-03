@@ -45,7 +45,7 @@ are displayed in the REPL.
   **Deprecated**. This configuration will be removed in a future release.
   If `true`, print a message when no errors are found by an
   abstract-interpretation-based analysis pass.
-  Use `isempty(JET.get_reports(result))` to check for a result without reports.
+  Use [`JET.has_problems(result)`](@ref has_problems) to check whether a result has problems.
 ---
 - `stacktrace_types_limit::Union{Nothing, Int} = nothing` \\
   If `nothing`, limit the type depth of argument types in stack traces based on
@@ -73,8 +73,8 @@ struct PrintConfig
         else
             Base.depwarn("The `print_inference_success` configuration is deprecated and " *
                          "will be removed in a future release. Use " *
-                         "`isempty(JET.get_reports(result))` to check for a result " *
-                         "without reports.", :PrintConfig)
+                         "`JET.has_problems(result)` to check whether a result has " *
+                         "problems.", :PrintConfig)
         end
         if sourceinfo ∉ (:full, :default, :compact, :minimal, :none)
             throw(ArgumentError("Invalid sourceinfo: $sourceinfo. Must be one of :full, :default, :compact, :minimal, :none"))
@@ -89,6 +89,7 @@ end
 # =======
 
 const ERROR_COLOR = :light_red
+const WARNING_COLOR = :yellow
 const NOERROR_COLOR = :light_green
 # TODO other nicer color scheme ?
 const RAIL_COLORS = ( # Julia color + yellow
@@ -100,6 +101,7 @@ const RAIL_COLORS = ( # Julia color + yellow
 const N_RAILS = length(RAIL_COLORS)
 const LEFT_ROOF  = "═════ "
 const RIGHT_ROOF = " ═════"
+header_width(s::String) = textwidth(LEFT_ROOF) + textwidth(s) + textwidth(RIGHT_ROOF)
 const HEADER_COLOR = :reverse
 const ERROR_SIG_COLOR = :bold
 const TYPE_ANNOTATION_COLOR = :light_cyan
@@ -157,37 +159,76 @@ function print_reports(io::IO,
     n = length(reports)
     n == 0 && return 0
 
-    ctx = colorctx(io)
-    with_bufferring(ctx) do io
-        s = string(pluralize(n, "toplevel error"), " found")
+    with_bufferring(colorctx(io)) do io
+        s = "Top-level analysis failed"
         printlnstyled(io, LEFT_ROOF, s, RIGHT_ROOF; color = HEADER_COLOR)
-
-        color = ERROR_COLOR
-
-        rail = with_bufferring(ctx) do io
-            printstyled(io, "│ "; color)
-        end
-
+        println(io, "JET stopped before completing the analysis.")
+        println(io, "Fix the error below and rerun the analysis.")
         for report in reports
-            # For top-level errors, :none and :minimal don't make sense, so treat them as :compact
-            style = config.sourceinfo
-            if style === :none || style === :minimal
-                style = :compact
-            end
-            filepath = format_path(report.file, style)
-            printlnstyled(io, "┌ @ ", filepath, ':', report.line, ' '; color)
-
-            errlines = with_bufferring(ctx) do io
-                print_report(io, report)
-            end |> strip
-            join(io, string.(rail, split(errlines, '\n')), '\n')
-            println(io)
-
-            printlnstyled(io, '└', '─'^(length(s)-1); color)
+            print_toplevel_report(io, report, config, ERROR_COLOR, header_width(s))
         end
     end |> postprocessor |> (x->print(io::IO,x))
 
     return n
+end
+
+function print_reports(io::IO,
+                       reports::Vector{ToplevelWarningReport},
+                       postprocessor::PostProcessor = PostProcessor();
+                       jetconfigs...)
+    config = PrintConfig(; jetconfigs...)
+
+    n = length(reports)
+    n == 0 && return 0
+
+    with_bufferring(colorctx(io)) do io
+        s = string(pluralize(n, "toplevel warning"), " found")
+        printlnstyled(io, LEFT_ROOF, s, RIGHT_ROOF; color = HEADER_COLOR)
+        for report in reports
+            print_toplevel_report(io, report, config, WARNING_COLOR, header_width(s))
+        end
+    end |> postprocessor |> (x->print(io::IO,x))
+
+    return n
+end
+
+function print_toplevel_report(io::IO,
+                               report::Union{ToplevelErrorReport,ToplevelWarningReport},
+                               config::PrintConfig, color::Symbol, width::Int)
+    ctx = colorctx(io)
+    rail = with_bufferring(ctx) do io
+        printstyled(io, "│ "; color)
+    end
+
+    # For top-level reports, :none and :minimal don't make sense, so treat them as :compact
+    style = config.sourceinfo
+    if style === :none || style === :minimal
+        style = :compact
+    end
+    filepath = format_path(report.file, style)
+    printlnstyled(io, "┌ @ ", filepath, ':', report.line, ' '; color)
+
+    lines = with_bufferring(ctx) do io
+        print_report(io, report)
+    end |> strip
+    join(io, string.(rail, split(lines, '\n')), '\n')
+    println(io)
+    printlnstyled(io, '└', '─'^(width-1); color)
+    return nothing
+end
+
+function print_reports(io::IO,
+                       reports::Vector{Union{ToplevelWarningReport,InferenceErrorReport}},
+                       postprocessor::PostProcessor = PostProcessor();
+                       jetconfigs...)
+    warnings = ToplevelWarningReport[r for r in reports if r isa ToplevelWarningReport]
+    errors = InferenceErrorReport[r for r in reports if r isa InferenceErrorReport]
+    isempty(warnings) || print_reports(io, warnings, postprocessor; jetconfigs...)
+    # "No errors detected" after warnings would read as if the analysis found no problems
+    if isempty(warnings) || !isempty(errors)
+        print_reports(io, errors, postprocessor; jetconfigs...)
+    end
+    return length(reports)
 end
 
 # inference

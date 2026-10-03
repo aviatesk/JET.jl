@@ -49,14 +49,14 @@ JET.JETCallResult
 ### [Splitting and filtering reports](@id optanalysis-splitting)
 
 Both `JETToplevelResult` and `JETCallResult` can be split into individual
-failures for integration with tools like Cthulhu:
+reports for integration with tools like Cthulhu:
 
 ```@docs
 JET.get_reports
 JET.reportkey
 ```
 
-## Error report interface
+## Report interface
 
 ```@docs
 JET.VirtualFrame
@@ -64,4 +64,6 @@ JET.VirtualStackTrace
 JET.Signature
 JET.InferenceErrorReport
 JET.ToplevelErrorReport
+JET.ParseWarningReport
+JET.UnsupportedFeatureReport
 ```

@@ -334,7 +334,7 @@ using MyPkg, JET, MethodAnalysis
 mis = methodinstances(MyPkg)    # get all the compiled methodinstances for functions owned by the package
 # Now let's filter out the ones that pass without issue
 badmis = filter(mis) do mi
-    !isempty(JET.get_reports(report_call(mi)))
+    JET.has_problems(report_call(mi))
 end
 ```
 

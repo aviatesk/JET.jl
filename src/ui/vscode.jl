@@ -6,6 +6,7 @@ import ..JET:
     AbstractAnalyzer,
     JETToplevelResult,
     ToplevelErrorReport,
+    ToplevelWarningReport,
     JETCallResult,
     InferenceErrorReport,
     get_reports,
@@ -68,17 +69,23 @@ function Base.show(::IO, ::MIME"application/vnd.julia-vscode.diagnostics",
                               postprocessor)
 end
 function vscode_diagnostics(analyzer::Analyzer,
-                            reports::Vector{ToplevelErrorReport},
+                            reports::Vector{<:Union{ToplevelErrorReport,ToplevelWarningReport,InferenceErrorReport}},
                             source::AbstractString,
-                            _config::PrintConfig=PrintConfig();
+                            config::PrintConfig=PrintConfig();
                             postprocessor::PostProcessor = PostProcessor()) where {Analyzer<:AbstractAnalyzer}
+    order = vscode_diagnostics_order(analyzer)
     return (; source = String(source),
               items = map(reports) do report
-                  return (; msg = postprocessor(sprint(print_report, report)),
-                            path = tovscodepath(report.file),
-                            line = report.line,
-                            severity = 0) # 0: Error, 1: Warning, 2: Information, 3: Hint
+                  return vscode_diagnostic(report, config, postprocessor, order)
               end)
+end
+
+function vscode_diagnostic(report::Union{ToplevelErrorReport,ToplevelWarningReport},
+                           ::PrintConfig, postprocessor::PostProcessor, ::Bool)
+    return (; msg = postprocessor(sprint(print_report, report)),
+              path = tovscodepath(report.file),
+              line = report.line,
+              severity = report isa ToplevelWarningReport ? 1 : 0)
 end
 
 # inference
@@ -94,24 +101,17 @@ function Base.show(::IO, ::MIME"application/vnd.julia-vscode.diagnostics",
                               res.source,
                               config)
 end
-function vscode_diagnostics(analyzer::Analyzer,
-                            reports::Vector{InferenceErrorReport},
-                            source::AbstractString,
-                            config::PrintConfig=PrintConfig();
-                            postprocessor::PostProcessor = PostProcessor()) where {Analyzer<:AbstractAnalyzer}
-    order = vscode_diagnostics_order(analyzer)
-    return (; source = String(source),
-              items = map(reports) do report
-                  showpoint = (order ? first : last)(report.vst)
-                  return (; msg = postprocessor(sprint(print_report, report, config)),
-                            path = tovscodepath(showpoint.file),
-                            line = showpoint.line,
-                            severity = 1, # 0: Error, 1: Warning, 2: Information, 3: Hint
-                            relatedInformation = map((order ? identity : reverse)(report.vst)) do frame
-                                return (; msg = postprocessor(sprint(print_frame_sig, frame, config)),
-                                          path = tovscodepath(frame.file),
-                                          line = frame.line)
-                            end)
+function vscode_diagnostic(report::InferenceErrorReport, config::PrintConfig,
+                           postprocessor::PostProcessor, order::Bool)
+    showpoint = (order ? first : last)(report.vst)
+    return (; msg = postprocessor(sprint(print_report, report, config)),
+              path = tovscodepath(showpoint.file),
+              line = showpoint.line,
+              severity = 1, # 0: Error, 1: Warning, 2: Information, 3: Hint
+              relatedInformation = map((order ? identity : reverse)(report.vst)) do frame
+                  return (; msg = postprocessor(sprint(print_frame_sig, frame, config)),
+                            path = tovscodepath(frame.file),
+                            line = frame.line)
               end)
 end
 
