@@ -32,6 +32,7 @@ using JET: Preferences
 
         @testset "toplevel" begin
             @testset "virtualprocess.jl" include("toplevel/test_virtualprocess.jl")
+            @testset "toplevel_errors.jl" include("toplevel/test_toplevel_errors.jl")
             @testset "toplevel_inference.jl" include("toplevel/test_toplevel_inference.jl")
         end
 

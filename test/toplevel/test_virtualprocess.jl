@@ -12,12 +12,12 @@ include("../setup.jl")
         """ |> strip
 
         res = report_text(s)
-        report = only(res.res.toplevel_error_reports)
+        report = res.res.toplevel_error_report
         @test report isa ParseErrorReport
         @test report.line == 5
     end
 
-    # report multiple syntax errors if exist
+    # Only the first syntax error is reported.
     let s = """
         function f(W,X,Y)
             s = 0
@@ -31,8 +31,9 @@ include("../setup.jl")
         """ |> strip
 
         res = report_text(s)
-        @test length(res.res.toplevel_error_reports) == 2
-        @test all(r -> r isa ParseErrorReport, res.res.toplevel_error_reports)
+        report = res.res.toplevel_error_report
+        @test report isa ParseErrorReport
+        @test report.line == 4
     end
 end
 
@@ -89,7 +90,7 @@ end
         end
 
         # "cannot assign a value to variable orig.Foo from module orig" shouldn't be reported
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
     end
 
     # don't error if there is undefined export
@@ -103,7 +104,7 @@ end
             println(undefined)
         end
 
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test any(res.res.inference_error_reports) do err
             isa(err, UndefVarErrorReport) &&
             err.var isa GlobalRef && err.var.name === :undefined
@@ -172,7 +173,7 @@ end
 #             end
 #         end
 #
-#         @test isempty(res.res.toplevel_error_reports)
+#         @test isnothing(res.res.toplevel_error_report)
 #     end
 #
 #     let res = @analyze_toplevel begin
@@ -183,7 +184,7 @@ end
 #             end
 #         end
 #
-#         @test isempty(res.res.toplevel_error_reports)
+#         @test isnothing(res.res.toplevel_error_report)
 #     end
 #
 #     # stress test
@@ -238,7 +239,7 @@ end
 #             end
 #         end
 #
-#         @test isempty(res.res.toplevel_error_reports)
+#         @test isnothing(res.res.toplevel_error_report)
 #     end
 # end
 
@@ -260,7 +261,7 @@ let res = @analyze_toplevel begin
             throw("should be ignored")
         end
     end
-    @test isempty(res.res.toplevel_error_reports)
+    @test isnothing(res.res.toplevel_error_report)
     @test isempty(res.res.inference_error_reports)
 end
 
@@ -269,7 +270,7 @@ end
             foo() = nothing
             foo()
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
     let res = @analyze_toplevel begin
@@ -278,7 +279,7 @@ end
                 foo("julia")
             end
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         test_sum_over_string(res)
     end
     let res = @analyze_toplevel begin
@@ -286,7 +287,7 @@ end
             @foo func(a) = sum(a)
             func("julia")
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         test_sum_over_string(res)
     end
     let res = @analyze_toplevel begin
@@ -302,14 +303,14 @@ end
                 println(Foo2(val))
             end
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
     let res = @analyze_toplevel begin
             primitive type Foo 32 end
             println(sizeof(Foo))
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
     let res = @analyze_toplevel begin
@@ -335,7 +336,7 @@ end
                 sum(foo.val)
             end
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         test_sum_over_string(res)
     end
 
@@ -356,7 +357,7 @@ end
         @test isabstract(res, vmod, :gb)
         @test isconcrete(res, vmod, :Foo)
         @test isabstract(res, vmod, :foo)
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
 
@@ -392,7 +393,7 @@ end
                 end
             end
 
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
             @test isconcrete(res, vmod, :Foo)
             @test isanalyzed(res, vmod, :foo)
         end
@@ -410,7 +411,7 @@ end
                 end
             end
 
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
             @test isconcrete(res, vmod, :Foo)
             @test isconcrete(res, vmod, :Foo1)
             @test isanalyzed(res, vmod, :foo)
@@ -429,7 +430,7 @@ end
                 bar = Foo(gensym()).baz
             end
 
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
             @test isconcrete(res, vmod, :Foo)
             @test isabstract(res, vmod, :bar)
         end
@@ -452,7 +453,7 @@ end
                 end
             end
 
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
             @test isconcrete(res, vmod, :Foo)
             @test isabstract(res, vmod, :bar)
         end
@@ -489,7 +490,7 @@ end
                     A{T}(x) where T = new{T}(x)
                 end
             end
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
             @test isempty(res.res.inference_error_reports)
         end
         # Suppressing the top-level call must not erase the cached callee reports.
@@ -507,7 +508,7 @@ end
         end
 
         @test isconcrete(res, vmod, :foo)
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
 
@@ -523,7 +524,7 @@ end
         end
 
         @test isconcrete(res, vmod, Symbol("@foo"))
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
 
@@ -539,10 +540,10 @@ end
 
             @foo sin()
         end
-        isexpected = length(res.res.toplevel_error_reports) == 1
+        isexpected = !isnothing(res.res.toplevel_error_report)
         @test isexpected
         if isexpected
-            report = only(res.res.toplevel_error_reports)
+            report = res.res.toplevel_error_report
             # FIXME MissingConcretizationErrorReport support for macroexpansion
             # Broken since currently there is no way to use JuliaInterpreter for macroexpansion
             # Maybe some plugin system for JuliaLowering would fix this.
@@ -566,7 +567,7 @@ end
             end
         end
         # FIXME syntax: "module" expression not at top level
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isconcrete(res, vmod, :foo)
         foo = @invokelatest vmod.foo
         @test isconcrete(res, foo, :bar)
@@ -595,8 +596,8 @@ end
             end
         end
 
-        @test !isempty(res.res.toplevel_error_reports)
-        @test only(res.res.toplevel_error_reports) isa LoweringErrorReport
+        @test !isnothing(res.res.toplevel_error_report)
+        @test res.res.toplevel_error_report isa LoweringErrorReport
     end
 end
 
@@ -619,7 +620,7 @@ end
         @test f1 in JET.included_files(res.res)
         @test f2 in JET.included_files(res.res)
         @test isconcrete(res, context, :foo)
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
 
@@ -627,18 +628,17 @@ end
         res = report_file2(f)
 
         @test f in JET.included_files(res.res)
-        @test !isempty(res.res.toplevel_error_reports)
-        @test first(res.res.toplevel_error_reports) isa ActualErrorWrapped
-        @test !isempty(res.res.inference_error_reports)
-        @test first(res.res.inference_error_reports) isa UndefVarErrorReport
+        @test !isnothing(res.res.toplevel_error_report)
+        @test res.res.toplevel_error_report isa ActualErrorWrapped
+        @test isempty(res.res.inference_error_reports)
     end
 
     let f = normpath(FIXTURES_DIR, "selfrecursiveinclude.jl")
         res = report_file2(f)
 
         @test f in JET.included_files(res.res)
-        @test !isempty(res.res.toplevel_error_reports)
-        @test first(res.res.toplevel_error_reports) isa RecursiveIncludeErrorReport
+        @test !isnothing(res.res.toplevel_error_report)
+        @test res.res.toplevel_error_report isa RecursiveIncludeErrorReport
     end
 
     let f1 = normpath(FIXTURES_DIR, "chainrecursiveinclude1.jl")
@@ -647,8 +647,8 @@ end
 
         @test f1 in JET.included_files(res.res)
         @test f2 in JET.included_files(res.res)
-        @test !isempty(res.res.toplevel_error_reports)
-        let report = only(res.res.toplevel_error_reports)
+        @test !isnothing(res.res.toplevel_error_report)
+        let report = res.res.toplevel_error_report
             @test report isa RecursiveIncludeErrorReport
             @test report.duplicated_file == f1
             @test f1 in report.files
@@ -664,7 +664,7 @@ end
 
         @test f1 in JET.included_files(res.res)
         @test f2 in JET.included_files(res.res)
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
     end
 
     let modf = normpath(FIXTURES_DIR, "modinclude.jl")
@@ -675,7 +675,7 @@ end
 
         @test modf in JET.included_files(res.res)
         @test inc2 in JET.included_files(res.res)
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
         outer = @invokelatest context.Outer
         @test isconcrete(res, outer, :foo)
@@ -687,8 +687,8 @@ end
     let res = @analyze_toplevel begin
             include(Symbol("somefile.jl"))
         end
-        @test length(res.res.toplevel_error_reports) == 1
-        report = only(res.res.toplevel_error_reports)
+        @test !isnothing(res.res.toplevel_error_report)
+        report = res.res.toplevel_error_report
         @test report isa ActualErrorWrapped
         err = report.err
         @test err isa MethodError
@@ -697,7 +697,7 @@ end
             module __xxx__ end
             Base.include("somefile.jl", __xxx__)
         end
-        report = only(res.res.toplevel_error_reports)
+        report = res.res.toplevel_error_report
         @test report isa ActualErrorWrapped
         err = report.err
         @test err isa MethodError
@@ -707,7 +707,7 @@ end
             module __xxx__ end
             Core.include("somefile.jl", __xxx__)
         end
-        report = only(res.res.toplevel_error_reports)
+        report = res.res.toplevel_error_report
         @test report isa ActualErrorWrapped
         err = report.err
         @test err isa MethodError
@@ -717,7 +717,7 @@ end
             module __xxx__ end
             Base.include(__xxx__, Symbol("somefile.jl"))
         end
-        report = only(res.res.toplevel_error_reports)
+        report = res.res.toplevel_error_report
         @test report isa ActualErrorWrapped
         err = report.err
         @test err isa MethodError
@@ -726,13 +726,14 @@ end
     # unsupported features
     # --------------------
 
-    let res = @test_logs (:warn,) @analyze_toplevel begin
+    let res = @test_logs @analyze_toplevel begin
             function mymapexpr(x::Expr)
                 println(x)
                 nothing
             end
             include(mymapexpr, "somefile.jl")
         end
+        @test only(res.res.toplevel_warning_reports) isa JET.UnsupportedFeatureReport
     end
 end
 
@@ -880,7 +881,7 @@ end
                                        """
                                        )
     res = report_text(s)
-    @test isempty(res.res.toplevel_error_reports)
+    @test isnothing(res.res.toplevel_error_report)
 end
 
 # A macro can generate a module expression that native evaluation rejects.
@@ -896,7 +897,7 @@ end
         end
         @badmodule
         """)
-    er = only(res.res.toplevel_error_reports)
+    er = res.res.toplevel_error_report
     @test er isa ActualErrorWrapped
     @test sprint(showerror, er.err) == msg
 end
@@ -910,7 +911,7 @@ end
             isexpr2(:(foo(bar)), :call)
             end # SomeModule
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         report = only(res.res.inference_error_reports)
         @test report isa UndefVarErrorReport
         @test occursin("isexpr2", get_msg(report))
@@ -924,7 +925,7 @@ end
                 end # module InnerModule
             end # module OuterModule
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test !isempty(res.res.inference_error_reports)
         @test only(res.res.inference_error_reports) isa UndefVarErrorReport
     end
@@ -937,7 +938,7 @@ end
                 end # module InnerModule
             end # module OuterModule
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         test_sum_over_string(res)
     end
     let res = @analyze_toplevel begin
@@ -949,7 +950,7 @@ end
                 end # module InnerModule
             end # module OuterModule
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         test_sum_over_string(res)
     end
     # module usage within a block
@@ -964,7 +965,7 @@ end
                 end # module InnerModule
             end # module OuterModule
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         test_sum_over_string(res)
     end
 
@@ -977,7 +978,7 @@ end
             using .Exporter
             exported("julia") # -> MethodErrorReports
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         test_sum_over_string(res)
     end
 
@@ -989,7 +990,7 @@ end
             getx() = :x
         end
         """)
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
     end
 end
 
@@ -1017,7 +1018,7 @@ end
             end
             println(globalvar)
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
 
@@ -1029,7 +1030,7 @@ end
             end
             println(globalvar)
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
 
@@ -1042,7 +1043,7 @@ end
             end
             println(globalvar)
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
 
@@ -1055,7 +1056,7 @@ end
             println(globalvar1)
             println(globalvar2)
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
 
@@ -1068,7 +1069,7 @@ end
             end
             println(localvar)
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         isexpected = length(res.res.inference_error_reports) == 1
         @test isexpected
         if isexpected
@@ -1086,7 +1087,7 @@ end
             end
             println(globalvar)
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         isexpected = length(res.res.inference_error_reports) == 1
         @test isexpected
         if isexpected
@@ -1105,7 +1106,7 @@ end
             end
             println(globalvar)
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         isexpected = length(res.res.inference_error_reports) == 1
         @test isexpected
         if isexpected
@@ -1129,13 +1130,13 @@ end
             macro badmacro(s) throw(s) end
             @badmacro "hi"
         end
-        @test only(res.res.toplevel_error_reports) isa MacroExpansionErrorReport
+        @test res.res.toplevel_error_report isa MacroExpansionErrorReport
     end
     let res = @analyze_toplevel begin
             macro badmacro(s) throw(s) end
             x = @badmacro "hi"
         end
-        @test only(res.res.toplevel_error_reports) isa MacroExpansionErrorReport
+        @test res.res.toplevel_error_report isa MacroExpansionErrorReport
     end
 end
 
@@ -1146,12 +1147,12 @@ end
         end
         @typdef T42
         """)
-    @test isempty(res.res.toplevel_error_reports)
+    @test isnothing(res.res.toplevel_error_report)
 end
 
 @testset "lowering error report" begin
     let res = report_text("macro badmacro(x) \$(x) end")
-        @test only(res.res.toplevel_error_reports) isa LoweringErrorReport
+        @test res.res.toplevel_error_report isa LoweringErrorReport
     end
 end
 
@@ -1161,7 +1162,7 @@ end
         res = report_text("""
         struct AType <: BType end # L1
         """, filename)
-        er = only(res.res.toplevel_error_reports)
+        er = res.res.toplevel_error_report
         @test er isa ActualErrorWrapped
         @test er.err isa UndefVarError && er.err.var === :BType
         @test er.file == filename && er.line == 1 # L1
@@ -1180,7 +1181,7 @@ end
             end
             struct S <: g() end
             """; context, virtualize=false)
-        report = only(res.res.toplevel_error_reports)
+        report = res.res.toplevel_error_report
         @test report isa MissingConcretizationErrorReport
         @test !(@invokelatest isdefinedglobal(context, :S))
     end
@@ -1192,7 +1193,7 @@ end
                 macro badmacro(s) throw(s) end # L1
                 @badmacro "hi"                 # L2
             """, filename)
-            er = only(res.res.toplevel_error_reports)
+            er = res.res.toplevel_error_report
             @test er isa MacroExpansionErrorReport
             @test er.file == filename && er.line == 2 # L2
             @test length(er.st) == 1
@@ -1213,7 +1214,7 @@ end
                     """)
                 mktemp() do filename, io
                     res = report_text(source, filename)
-                    er = only(res.res.toplevel_error_reports)
+                    er = res.res.toplevel_error_report
                     @test er isa MacroExpansionErrorReport
                     @test er.err == "hi"
                     @test er.file == filename && er.line == 2
@@ -1234,7 +1235,7 @@ end
                     fld::UndefinedType
                 end
             """, filename)
-            er = only(res.res.toplevel_error_reports)
+            er = res.res.toplevel_error_report
             @test er isa ActualErrorWrapped
             @test er.err isa UndefVarError && er.err.var === :UndefinedType
             @test er.file == filename && er.line == 1 # L1
@@ -1248,7 +1249,7 @@ end
                 struct A <: foo() end # L2
             """, filename)
 
-            er = only(res.res.toplevel_error_reports)
+            er = res.res.toplevel_error_report
             @test er isa ActualErrorWrapped
             @test er.err == "don't call me, pal"
             @test er.file == filename && er.line == 2
@@ -1262,7 +1263,7 @@ end
                 outer() = inner()        # L2
                 struct A <: outer() end  # L3
             """, filename)
-            er = only(res.res.toplevel_error_reports)
+            er = res.res.toplevel_error_report
             @test er isa ActualErrorWrapped
             @test er.err == "deep"
             @test er.file == filename && er.line == 3
@@ -1286,7 +1287,7 @@ end
                     end
                     struct A <: f() end
                     """, filename)
-                er = only(res.res.toplevel_error_reports)
+                er = res.res.toplevel_error_report
                 @test er isa ActualErrorWrapped
                 @test er.err isa DivideError
                 @test er.file == filename && er.line == 10
@@ -1313,7 +1314,7 @@ end
                         end
                         struct A <: f() end
                         """, filename)
-                    er = only(res.res.toplevel_error_reports)
+                    er = res.res.toplevel_error_report
                     @test er isa ActualErrorWrapped
                     @test er.err isa errtype
                     @test er.file == filename && er.line == 10
@@ -1343,7 +1344,7 @@ end
                         end
                         struct A <: f() end
                         """, filename)
-                    er = only(res.res.toplevel_error_reports)
+                    er = res.res.toplevel_error_report
                     @test er isa ActualErrorWrapped
                     @test er.err isa DivideError
                     @test er.file == filename && er.line == 14
@@ -1377,7 +1378,7 @@ end
                         end
                         struct A <: f() end
                         """, filename)
-                    er = only(res.res.toplevel_error_reports)
+                    er = res.res.toplevel_error_report
                     @test er isa ActualErrorWrapped
                     @test er.err isa DivideError
                     @test er.file == filename && er.line == 21
@@ -1404,7 +1405,7 @@ end
                         end
                         struct A <: f() end
                         """, filename)
-                    er = only(res.res.toplevel_error_reports)
+                    er = res.res.toplevel_error_report
                     @test er isa ActualErrorWrapped
                     @test er.err isa DivideError
                     @test er.file == filename && er.line == 14
@@ -1427,7 +1428,7 @@ end
                         end
                         struct A <: f() end                  # L9
                         """, filename)
-                    er = only(res.res.toplevel_error_reports)
+                    er = res.res.toplevel_error_report
                     @test er isa ActualErrorWrapped
                     @test er.err isa DivideError
                     @test er.file == filename && er.line == 9
@@ -1447,7 +1448,7 @@ end
                         end
                         struct A <: f() end                           # L9
                         """, filename)
-                    er = only(res.res.toplevel_error_reports)
+                    er = res.res.toplevel_error_report
                     @test er isa ActualErrorWrapped
                     @test er.err isa ArgumentError
                     @test er.file == filename && er.line == 9
@@ -1472,7 +1473,7 @@ end
                         end
                         struct A <: f() end                  # L15
                         """, filename)
-                    er = only(res.res.toplevel_error_reports)
+                    er = res.res.toplevel_error_report
                     @test er isa ActualErrorWrapped
                     @test er.err isa DivideError
                     @test er.file == filename && er.line == 15
@@ -1494,7 +1495,7 @@ end
                 run_native() = invokelatest(bad)  # L2
                 struct A <: run_native() end      # L3
             """, filename)
-            er = only(res.res.toplevel_error_reports)
+            er = res.res.toplevel_error_report
             @test er isa ActualErrorWrapped
             @test er.err == "native"
             @test er.file == filename && er.line == 3
@@ -1519,7 +1520,7 @@ end
                     end
                     struct A <: f() end
                     """, filename)
-                er = only(res.res.toplevel_error_reports)
+                er = res.res.toplevel_error_report
                 @test er isa ActualErrorWrapped
                 @test er.err isa DivideError
                 st = [(sf.func, sf.line) for sf in er.st]
@@ -1537,7 +1538,7 @@ end
                 bad() = throw("native")  # L1
                 struct A <: bad() end    # L2
             """, filename; concretization_patterns=[:x_])
-            er = only(res.res.toplevel_error_reports)
+            er = res.res.toplevel_error_report
             @test er isa ActualErrorWrapped
             @test er.err == "native"
             @test er.file == filename && er.line == 2
@@ -1557,7 +1558,7 @@ end
                 end
                 struct A <: guarded() end
             end
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
         end
     end
 end
@@ -1569,7 +1570,7 @@ end
         @test_skip false
     else
         let res = report_text("@eval while true end\n"; concretization_timeout=0.1)
-            report = only(res.res.toplevel_error_reports)
+            report = res.res.toplevel_error_report
             @test report isa JET.ConcretizationTimeoutErrorReport
             @test any(sf -> sf.func === Symbol("top-level scope"), report.st)
         end
@@ -1588,7 +1589,7 @@ end
                     g::typeof(Iterators.flatten)
                 end
                 """; context, virtualize=false)
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
             @test (@invokelatest isdefinedglobal(context, :A))
         end
         let res = @analyze_toplevel begin
@@ -1601,7 +1602,7 @@ end
                 end
                 struct B <: guarded() end
             end
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
         end
         mktemp() do filename, _
             res = report_text("""
@@ -1611,7 +1612,7 @@ end
                 end
                 struct C <: h() end                         # L5
                 """, filename)
-            er = only(res.res.toplevel_error_reports)
+            er = res.res.toplevel_error_report
             @test er isa ActualErrorWrapped
             @test er.err == "in eval"
             st = [(sf.func, sf.line) for sf in er.st]
@@ -1627,7 +1628,7 @@ end
                 struct D <: (included_f() == 1 ? Integer : Real) end
                 """)
             res = report_file2(main)
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
             @test any(endswith("included.jl"), keys(res.res.analyzed_files))
         end
         # Module usages and `include`s in code evaluated into another module apply to it.
@@ -1639,7 +1640,7 @@ end
                     f::typeof(M.flatten)
                 end
                 """; context, virtualize=false)
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
             M = @invokelatest getglobal(context, :M)
             @test (@invokelatest isdefinedglobal(M, :flatten))
             @test !(@invokelatest isdefinedglobal(context, :flatten))
@@ -1653,7 +1654,7 @@ end
                 struct G <: (M2.included_g() == 2 ? Integer : Real) end
                 """)
             res = report_file2(main)
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
         end
         # A failing module usage in evaluated code reaches the caller's `catch`.
         let res = @analyze_toplevel begin
@@ -1666,7 +1667,7 @@ end
                 end
                 struct F <: guarded_using() end
             end
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
         end
         # Module expressions are evaluated as natively: each evaluation creates a fresh
         # module, runs its `__init__` and evaluates to the module.
@@ -1680,7 +1681,7 @@ end
                 evalmod() = @eval module EvalMod end
                 struct H <: (evalmod() isa Module ? Integer : Real) end
                 """; context, virtualize=false)
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
             old = @invokelatest getglobal(context, :OldEvalMod)
             new = @invokelatest getglobal(context, :EvalMod)
             @test old !== new
@@ -1693,7 +1694,7 @@ end
                     __init__() = error("init failed")
                 end
                 """)
-            er = only(res.res.toplevel_error_reports)
+            er = res.res.toplevel_error_report
             @test er isa ActualErrorWrapped
             @test er.err isa InitError && er.err.mod === :EvalInitError
             @test any(sf -> sf.func === :__init__, er.st)
@@ -1719,7 +1720,7 @@ end
             end # module foo
         end
 
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         test_sum_over_string(res)
     end
 
@@ -1740,7 +1741,7 @@ end
             end # module foo
         end
 
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         test_sum_over_string(res; broken=true)
     end
 end
@@ -1771,7 +1772,7 @@ end
             getx() = x
             getx()
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         # Ignore the unrelated false positive from Base.active_module().
         reports = filter(res.res.inference_error_reports) do r
             !is_global_undef_var(r, Base, :active_repl)
@@ -1784,7 +1785,7 @@ end
             "doc for foo"
             const foo = Dict()
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isconcrete(res, vmod, :foo)
         foo = @invokelatest vmod.foo
         @test foo isa Dict
@@ -1809,7 +1810,7 @@ end
             "doc for S"
             @make_type
             """; context=vmod, virtualize=false, concretization_patterns=[:x_])
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
         @test isconcrete(res, vmod, :S)
         docs = @invokelatest Base.Docs.meta(vmod)
@@ -1833,7 +1834,7 @@ end
             "doc for f"
             @decorate f() = @body
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
         @test (@invokelatest vmod.outer_expansions[]) == 1
         @test (@invokelatest vmod.inner_expansions[]) == 1
@@ -1850,7 +1851,7 @@ end
             "doc for mod"
             const mod = @__MODULE__
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
         @test (@invokelatest vmod.owner()) === vmod
         @test (@invokelatest vmod.mod) === vmod
@@ -1873,7 +1874,7 @@ end
             "doc for f"
             f()
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
         @test (@invokelatest vmod.calls[]) == 0
         docs = @invokelatest Base.Docs.meta(vmod)
@@ -1891,8 +1892,8 @@ end
             end
             outer()
         end
-        @test length(res.res.toplevel_error_reports) == 1
-        report = only(res.res.toplevel_error_reports)
+        @test !isnothing(res.res.toplevel_error_report)
+        report = res.res.toplevel_error_report
         @test report isa ActualErrorWrapped
         @test report.err isa MethodError
     end
@@ -1904,7 +1905,7 @@ end
                 a = @inferred(ones(Int,ntuple(d->1,1)), ntuple(x->x+1,1))
             end
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         true
     end
 
@@ -1912,7 +1913,7 @@ end
             using Test
             @test_warn "foo" println(stderr, "foo")
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         true
     end
 end
@@ -1955,10 +1956,10 @@ const CONCRETIZATION_PATTERNS_FILE =
     # the analysis on `test/fixtures/concretization_patterns.jl` will produce inappropriate
     # top-level error report because of missing concretization
     let res = report_file2(CONCRETIZATION_PATTERNS_FILE)
-        isexpected = length(res.res.toplevel_error_reports) == 1
+        isexpected = !isnothing(res.res.toplevel_error_report)
         @test isexpected
         if isexpected
-            report = only(res.res.toplevel_error_reports)
+            report = res.res.toplevel_error_report
             # FIXME MissingConcretizationErrorReport support for macroexpansion
             @test_broken isa(report, MissingConcretizationErrorReport)
         end
@@ -1968,7 +1969,7 @@ const CONCRETIZATION_PATTERNS_FILE =
     let res = report_file2(CONCRETIZATION_PATTERNS_FILE;
                            concretization_patterns = [:(const GLOBAL_CODE_STORE = Dict())],
                            )
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
     end
 
     # we can specify whatever pattern `@capture` can accept
@@ -2060,7 +2061,7 @@ end
                 g(x::Int) = undefined_after_catch
             end
             """; context, virtualize=false, analyze_from_definitions)
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test (@invokelatest isdefinedglobal(context, :g))
         should_analyze_g = analyze_from_definitions === true || analyze_from_definitions === :g
         @test length(res.res.signature_infos) == (should_analyze_g ? 1 : 0)
@@ -2071,7 +2072,7 @@ end
         end
     end
     let res = report_text("@eval f(x::Union{}) = x"; analyze_from_definitions=true)
-        report = only(res.res.toplevel_error_reports)
+        report = res.res.toplevel_error_report
         @test report isa ActualErrorWrapped
         @test report.err isa ErrorException
         @test isempty(res.res.signature_infos)
@@ -2295,7 +2296,7 @@ end
                     @eval global getsum() = $s # concretization is forced
                     println("This should not be printed: ", product) # should NOT be selected
                 end
-                @test isempty(res.res.toplevel_error_reports)
+                @test isnothing(res.res.toplevel_error_report)
                 @test isconcrete(res, vmod, :getsum)
             end
             flush(io)
@@ -2350,7 +2351,7 @@ end
                     global nums = String[]
                 end
             end
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
             gr = GlobalRef(vmod, :nums)
             partition = Base.lookup_binding_partition(Base.get_world_counter(), gr)
             @test Base.binding_kind(partition) != Base.PARTITION_KIND_GUARD
@@ -2363,7 +2364,7 @@ end
                 end
             end
             """, "declared_in_block.jl")
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
         end
 
         # the enclosing condition is not concretized for the declaration
@@ -2388,7 +2389,7 @@ end
                     global s = rand(Int, 10)
                 end
             end
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
         end
         let res = @analyze_toplevel begin
                 xs = [1, 2, 3]
@@ -2396,7 +2397,7 @@ end
                     global acc = x
                 end
             end
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
         end
         # the weak form leaves a later typed declaration intact
         let res = @analyze_toplevel begin
@@ -2406,7 +2407,7 @@ end
                 end
                 global x::Int
             end
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
         end
 
         # unconditional and typed declarations keep the concrete processing
@@ -2422,7 +2423,7 @@ end
                 x = 1
                 global x::Int # errors: `x` is already a global
             end
-            @test length(res.res.toplevel_error_reports) == 1
+            @test !isnothing(res.res.toplevel_error_report)
         end
         let mod = Module()
             Core.eval(mod, :(global value::Int))
@@ -2451,7 +2452,7 @@ end
             # Use the current world so the test logger's IO method is visible.
             res = JET.virtual_process(interp, "f() = nothing", "top-level", config)
             @test logger.delayed
-            @test isempty(res.toplevel_error_reports)
+            @test isnothing(res.toplevel_error_report)
             @test (@invokelatest isdefinedglobal(context, :f))
         end
 
@@ -2464,7 +2465,7 @@ end
                     end
                 end
             end
-            report = only(res.res.toplevel_error_reports)
+            report = res.res.toplevel_error_report
             @test report isa JET.ConcretizationTimeoutErrorReport
             @test report.timeout == 0.1
             msg = @invokelatest sprint(JET.print_report, report)
@@ -2476,7 +2477,7 @@ end
                     @eval g(::Val{$i}) = $i
                 end
             end
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
             g = @invokelatest getglobal(vmod, :g)
             @test length(methods(g)) == 3
         end
@@ -2487,7 +2488,7 @@ end
                     @eval h() = 1
                 end
                 """; concretization_timeout=0.1, concretization_patterns)
-            report = only(res.res.toplevel_error_reports)
+            report = res.res.toplevel_error_report
             @test report isa JET.ConcretizationTimeoutErrorReport
             msg = sprint(JET.print_report, report)
             if isempty(concretization_patterns)
@@ -2512,7 +2513,7 @@ end
                 end
                 """)
             res = report_file2(main; concretization_timeout = 1.0)
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
         end
         # The statement's own runtime still counts after the pause for an `include`.
         mktempdir() do dir
@@ -2527,7 +2528,7 @@ end
                 """)
             context = gen_virtual_module()
             res = report_file2(main; context, virtualize=false, concretization_timeout=1.0)
-            report = only(res.res.toplevel_error_reports)
+            report = res.res.toplevel_error_report
             @test report isa JET.ConcretizationTimeoutErrorReport
             @test report.file == main
             @test !(@invokelatest isdefinedglobal(context, :finished))
@@ -2544,7 +2545,7 @@ end
                 drive() = spin()
                 struct A <: drive() end
                 """; context, virtualize=false, concretization_timeout=0.1)
-            report = only(res.res.toplevel_error_reports)
+            report = res.res.toplevel_error_report
             @test report isa JET.ConcretizationTimeoutErrorReport
             @test report.line == 6
             @test !(@invokelatest isdefinedglobal(context, :A))
@@ -2572,7 +2573,7 @@ end
                 end
                 struct B <: spin_guarded() end
                 """; context, virtualize=false, concretization_timeout=0.1)
-            report = only(res.res.toplevel_error_reports)
+            report = res.res.toplevel_error_report
             @test report isa JET.ConcretizationTimeoutErrorReport
             @test only(report.st).func === :spin_guarded
             @test !(@invokelatest isdefinedglobal(context, :B))
@@ -2590,7 +2591,7 @@ end
                 const V = fillup!(Int[])
                 """; context, virtualize=false, concretization_timeout=1.0,
                 concretization_patterns=[:(const V = fillup!(Int[]))])
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
             @test length(@invokelatest getglobal(context, :V)) == 100_000
         end
         @test_throws ArgumentError JET.ToplevelConfig(; concretization_timeout=0)
@@ -2721,14 +2722,14 @@ end
                 s = undefvar # actual top-level error is better not to happen here
                 global foo() = return s
             end
-            @test_broken isempty(res.res.toplevel_error_reports)
+            @test_broken isnothing(res.res.toplevel_error_report)
 
             # more realistic example
             vmod, res = @analyze_toplevel2 let s = sprint(showerror, DivideError())
                 global errmsg(s = s) = string("error: ", s)
             end
             @test isconcrete(res, vmod, :errmsg)
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
         end
     end
 
@@ -2757,7 +2758,7 @@ end
                 err
             end
 
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
             @test length(res.res.signature_infos) == 1
             test_sum_over_string(res)
         end
@@ -2771,7 +2772,7 @@ end
                 err
             end
 
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
             @test length(res.res.signature_infos) == 1
             test_sum_over_string(res)
         end
@@ -2851,7 +2852,7 @@ end
                 tpl = (Any[i for i in 1:N]...,)
                 @eval gettpl() = $tpl # `tpl` here should be fully concretized
             end
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
             @test isconcrete(res, vmod, :gettpl)
         end
 
@@ -2864,7 +2865,7 @@ end
                 tpl = (ary...,)
                 @eval gettpl() = $tpl # `tpl` here should be fully concretized
             end
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
             @test isconcrete(res, vmod, :gettpl)
         end
 
@@ -2877,7 +2878,7 @@ end
                         tpl2 = (Any[print(i) for i in S]...,)
                         @eval gettpl1() = $tpl1 # `tpl` here should be fully concretized
                     end
-                    @test isempty(res.res.toplevel_error_reports)
+                    @test isnothing(res.res.toplevel_error_report)
                     @test isconcrete(res, vmod, :gettpl1)
                 end
                 flush(io)
@@ -2895,7 +2896,7 @@ end
         res = @analyze_toplevel begin
             @enum Fruit apple orange
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
     end
 
     # force concretization of type aliases
@@ -2905,14 +2906,14 @@ end
                 const OptParamType = Vector{ParamType}
                 f(o::OptParamType) = true
             end
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
         end
         let res = @analyze_toplevel begin
                 ParamType = Tuple{Real, Vararg{Real}}
                 OptParamType = Vector{ParamType}
                 f(o::OptParamType) = true
             end
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
         end
     end
 end
@@ -3151,7 +3152,7 @@ end
                     false
                 end
             end
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
             @test any(res.res.inference_error_reports) do report
                 is_global_undef_var(report, :undefined_in_broken_test)
             end
@@ -3171,7 +3172,7 @@ end
                     end
                 end
             end
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
         end
     end
 
@@ -3185,7 +3186,7 @@ end
             @test 2 + 2 == 5 skip=true
             @test 2 + 2 == 4 skip=false
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
     end
 
     let # @test_skip
@@ -3193,7 +3194,7 @@ end
             @test_skip 1 == 2
             @test_skip 1 == 2 atol=0.1
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
     end
 
     let # @test_broken
@@ -3201,7 +3202,7 @@ end
             @test_broken 1 == 2
             @test_broken 1 == 2 atol=0.1
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
     end
 
     let # @test_throws
@@ -3209,7 +3210,7 @@ end
             @test_throws BoundsError [1, 2, 3][4]
             @test_throws DimensionMismatch [1, 2, 3] + [1, 2]
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
     end
 
     let # @test_logs
@@ -3231,7 +3232,7 @@ end
             f() = return
             @test_logs min_level=Warn f()  # test `f` logs no messages when the logger level is warn.
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
     end
 
     let # @test_warn, @test_nowarn
@@ -3244,7 +3245,7 @@ end
                 @test a === 1
             end
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
     end
 
     let # @test_deprecated
@@ -3253,7 +3254,7 @@ end
             b() = 2
             @test_deprecated a()
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
     end
 
     let # @testset
@@ -3266,7 +3267,7 @@ end
                 @test cos(2θ) ≈ cos(θ)^2 - sin(θ)^2
             end
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
     end
 
     let # @testset with actual type-level errors
@@ -3275,7 +3276,7 @@ end
                 @test sum("julia") == "julia" # actual errors
             end
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         test_sum_over_string(res)
     end
 
@@ -3283,7 +3284,7 @@ end
         res = @analyze_toplevel context = vmod virtualize = false begin
             result = @test sum("julia") == "julia"
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         test_sum_over_string(res)
     end
 
@@ -3303,7 +3304,7 @@ end
                 d = @inferred IdDict{Any,Any}(i=>i for i=1:3)
             end
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
     end
 end
 
@@ -3315,11 +3316,11 @@ end
     TARGET_DIR = normpath(FIXTURES_DIR, "targets")
 
     let res = report_file2(normpath(TARGET_DIR, "error.jl"))
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
     end
 
     let res = report_file2(normpath(TARGET_DIR, "dict.jl"))
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
     end
 end
 
@@ -3435,7 +3436,7 @@ end
             using Core: Box
             makebox() = Core.Box()
         end)) do res
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
     test_report_package(:(module ImportBase
@@ -3443,7 +3444,7 @@ end
             struct XXX end
             show(io::IO, ::XXX) = xxx
         end)) do res
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         r = only(res.res.inference_error_reports)
         @test isa(r, UndefVarErrorReport) && r.var.name === :xxx
     end
@@ -3453,7 +3454,7 @@ end
             callfunc1() = func1()
             callfunc3() = func3()
         end)) do res
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         r = only(res.res.inference_error_reports)
         @test isa(r, UndefVarErrorReport) && r.var.name === :func3
     end
@@ -3461,14 +3462,14 @@ end
             using PkgAnalysisDep: func1
             callfunc1() = func1()
         end)) do res
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
     test_report_package(:(module UsingAlias
             using PkgAnalysisDep: func1 as func
             callfunc1() = func()
         end)) do res
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
     test_report_package(:(module UsingInner
@@ -3476,7 +3477,7 @@ end
             callfunc1() = func1()
             callfunc3() = func3()
         end)) do res
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         r = only(res.res.inference_error_reports)
         @test isa(r, UndefVarErrorReport) && r.var.name === :func1
     end
@@ -3487,7 +3488,7 @@ end
                 callfunc3() = func3()
             end
         end)) do res
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         r = only(res.res.inference_error_reports)
         @test isa(r, UndefVarErrorReport) && r.var.name === :func3
     end
@@ -3499,7 +3500,7 @@ end
                 callfunc3() = func3()
             end
         end)) do res
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         r = only(res.res.inference_error_reports)
         @test isa(r, UndefVarErrorReport) && r.var.name === :func3
     end
@@ -3508,35 +3509,35 @@ end
             import PkgAnalysisDep
             callfunc1() = PkgAnalysisDep.func1()
         end)) do res
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
     test_report_package(:(module ImportAlias
             import PkgAnalysisDep as PAD
             callfunc1() = PAD.func1()
         end)) do res
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
     test_report_package(:(module ImportInnerAlias
             import PkgAnalysisDep.Inner as PADI
             callfunc3() = PADI.func3()
         end)) do res
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
     test_report_package(:(module ImportSpecific
             import PkgAnalysisDep: func1
             callfunc1() = func1()
         end)) do res
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
     test_report_package(:(module ImportAlias
             import PkgAnalysisDep: func1 as func
             callfunc1() = func()
         end)) do res
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
     test_report_package(:(module ImportInner
@@ -3544,7 +3545,7 @@ end
             callfunc1() = Inner.func1()
             callfunc3() = Inner.func3()
         end)) do res
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         r = only(res.res.inference_error_reports)
         @test isa(r, UndefVarErrorReport) && r.var.name === :func1
     end
@@ -3554,7 +3555,7 @@ end
                 callfunc1() = PkgAnalysisDep.func1()
             end
         end)) do res
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
     test_report_package(:(module ImportBlock
@@ -3564,7 +3565,7 @@ end
                 callfunc1() = PkgAnalysisDep.func1()
             end
         end)) do res
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
 
@@ -3574,7 +3575,7 @@ end
             callfunc1() = func1()
             callfunc2() = func2()
         end)) do res
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         r = only(res.res.inference_error_reports)
         @test isa(r, UndefVarErrorReport) && r.var.name === :func1
     end
@@ -3586,7 +3587,7 @@ end
             using .Inner
             Base.show(io::IO, ::XXX) = xxx
         end)) do res
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         r = only(res.res.inference_error_reports)
         @test isa(r, UndefVarErrorReport) && r.var.name === :xxx
     end
@@ -3601,7 +3602,7 @@ end
         end);
         base_setup=Returns(nothing),
         additional_sources=["shared.jl" => "shared() = shared_missing\n"]) do res
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         reports = res.res.inference_error_reports
         @test count(r -> is_global_undef_var(r, :shared_missing), reports) == 2
     end
@@ -3611,13 +3612,13 @@ end
     #         module Inner end
     #         using Inner # should be `using .Inner`
     #     end)) do res
-    #     r = only(res.res.toplevel_error_reports)
+    #     r = res.res.toplevel_error_report
     #     @test isa(r, DependencyError) && r.pkg == "BadRelativeInner" && r.dep == "Inner"
     # end
     # test_report_package(:(module UninstalledDependency
     #         using UninstalledDep
     #     end)) do res
-    #     r = only(res.res.toplevel_error_reports)
+    #     r = res.res.toplevel_error_report
     #     @test isa(r, DependencyError) && r.pkg == "UninstalledDependency" && r.dep == "UninstalledDep"
     # end
 
@@ -3636,7 +3637,7 @@ end
         additional_setup = function ()
             Pkg.add("Preferences"; io=devnull)
         end) do res
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
 
@@ -3649,7 +3650,7 @@ end
             end # module SubModule
             call_overload(x::Number) = overload(x)
         end)) do res
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
 
@@ -3667,7 +3668,7 @@ end
             end # module SubModule
             call_overload(x::Number) = overload(x)
         end)) do res
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
 
@@ -3688,7 +3689,7 @@ end
             end # module SubModule
             call_overload(x::Number) = overload(x)
         end)) do res
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
 
@@ -3698,7 +3699,7 @@ end
             isa542(x) = x == Issue542Typ() ? true : false
         end);
         base_setup=Returns(nothing)) do res
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
     test_report_package(:(module Issue542_2
@@ -3707,7 +3708,7 @@ end
         end);
         base_setup=Returns(nothing),
         ignore_missing_comparison=false) do res
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isa(only(res.res.inference_error_reports), NonBooleanCondErrorReport)
     end
 
@@ -3716,7 +3717,7 @@ end
             reducer(a::Vector{String}) = maximum(length, a)
         end);
         base_setup=Returns(nothing)) do res
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
 
@@ -3724,28 +3725,28 @@ end
             using PkgAnalysisDep: Inner.func3
             callfunc3() = func3()
         end)) do res
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
     test_report_package(:(module Issue554_2
             using PkgAnalysisDep: Inner.func3 as func
             callfunc() = func()
         end)) do res
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
     test_report_package(:(module Issue554_3
             import PkgAnalysisDep: Inner.func3
             callfunc3() = func3()
         end)) do res
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
     test_report_package(:(module Issue554_4
             import PkgAnalysisDep: Inner.func3 as func
             callfunc() = func()
         end)) do res
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
     test_report_package(:(module Issue554
@@ -3755,7 +3756,7 @@ end
         base_setup = function ()
             Pkg.add("LinearAlgebra", io=devnull)
         end) do res
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
 
@@ -3768,7 +3769,7 @@ end
             import ..Inner: AbstractType619 # this line works if loaded as a package
             struct ConcreteType619 <: AbstractType619 end
         end)) do res
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
     let res = @analyze_toplevel module Issue619
@@ -3779,12 +3780,10 @@ end
             import ..Inner: AbstractType619 # this line should error if loaded as a script
             struct ConcreteType619 <: AbstractType619 end
         end # module Issue619
-        @test any(res.res.toplevel_error_reports) do r
-            r isa ActualErrorWrapped || return false
-            err = r.err
-            err isa UndefVarError || return false
-            return err.var === :Inner
-        end
+        report = res.res.toplevel_error_report
+        @test report isa ActualErrorWrapped
+        @test report.err isa UndefVarError
+        @test report.err.var === :Inner
     end
 end
 
@@ -3798,10 +3797,10 @@ let old = Pkg.project().path
         using JET597
 
         res = report_package(JET597; toplevel_logger=nothing)
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
 
         res = report_package(JET597; toplevel_logger=nothing)
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
     finally
         Pkg.activate(old; io=devnull)
     end

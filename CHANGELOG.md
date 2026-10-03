@@ -64,6 +64,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Top-level processing now stops entirely at the first fatal parsing, macro
+  expansion, lowering, concrete execution, dependency, or include failure.
+  No later statements, modules, files, or definition analysis are processed.
+  Fatal results are displayed as `Top-level analysis failed`, with guidance
+  to fix the error and rerun the incomplete analysis.
+  `VirtualProcessResult.toplevel_error_report` holds that single
+  `ToplevelErrorReport`, or `nothing` on success. `get_reports` on a
+  `JETToplevelResult` still returns a vector: only the fatal error on failure,
+  or warnings followed by filtered inference reports on success. Module and
+  `report_config` filtering apply only to inference reports; warnings are
+  retained, so successful results can contain a mix of report types.
+
+  > [!WARNING]
+  > Known limitation: forced interruption skips user `finally` blocks in
+  > interpreted code, including during timeout, missing-concretization, and
+  > fatal include failures. Concrete execution can leave the working directory
+  > changed or locks held after analysis exits; its side effects are not rolled
+  > back.
+
+- Nonfatal JET warnings are stored in
+  `VirtualProcessResult.toplevel_warning_reports`, a
+  `Vector{ToplevelWarningReport}`, and are not also emitted as `@warn` logs.
+  Parser warnings now produce nonfatal `ParseWarningReport`s. Unsupported
+  `include(mapexpr, filename)` calls produce `UnsupportedFeatureReport`s and
+  analyze the included file without applying `mapexpr`.
+
+### Deprecated
+
+- `VirtualProcessResult.toplevel_error_reports` is deprecated and will be
+  removed in a future release. Access emits `Base.depwarn` and returns a fresh
+  empty or one-element `Vector`. Migrate to `toplevel_error_report`: replace
+  `isempty(res.toplevel_error_reports)` with
+  `isnothing(res.toplevel_error_report)` and use the singular report directly
+  when non-`nothing`. For a vector of reports from a `JETToplevelResult`, use
+  `JET.get_reports(result)` instead.
+
 ## [0.12.3]
 
 ### Changed

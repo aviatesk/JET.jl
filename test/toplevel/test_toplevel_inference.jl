@@ -25,7 +25,7 @@ include("../setup.jl")
             lnn = LineNumberNode(@__LINE__, Symbol(@__FILE__))
             res = analyze_toplevel(ex, lnn; context=vmod, virtualize=false)
             @test !isdefinedglobal(vmod, :undefined_const)
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
             let report = only(res.res.inference_error_reports)
                 @test report isa UndefVarErrorReport
                 @test report.var.name === :undefined_const
@@ -35,7 +35,7 @@ include("../setup.jl")
             res = analyze_toplevel(:(const undefined_const = 1), lnn;
                 context=vmod, virtualize=false)
             @test @invokelatest(isdefinedglobal(vmod, :undefined_const))
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
             @test isempty(res.res.inference_error_reports)
         end
     end
@@ -56,7 +56,7 @@ include("../setup.jl")
             global a = 0
             sin(a)
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
     end
 
     # sequential
@@ -66,7 +66,7 @@ include("../setup.jl")
             const a = 0
             println(sin(a))
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
     let res = @analyze_toplevel begin
@@ -75,7 +75,7 @@ include("../setup.jl")
             const a = "julia"
             println(length(a))
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
     let res = @analyze_toplevel begin
@@ -84,7 +84,7 @@ include("../setup.jl")
             const a = "julia"
             println(sum(a))
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         test_sum_over_string(res)
     end
     let res = @analyze_toplevel begin
@@ -93,7 +93,7 @@ include("../setup.jl")
             global a = 0.0
             sin(a)
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
     end
 end
 
@@ -109,7 +109,7 @@ end
             parse(projectfile)
         end
         @test isempty(read(path, String))
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         # @test isempty(res.res.inference_error_reports) # should be enabled once https://github.com/JuliaLang/julia/pull/58212 is merged
     end
     mktemp() do path, io
@@ -123,7 +123,7 @@ end
         flush(io)
         s = read(path, String)
         @test isempty(read(path, String))
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
 end
@@ -138,7 +138,7 @@ end
             end # module InnerModule
             end # module TopModule
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         test_sum_over_string(res)
     end
     let res = @analyze_toplevel begin
@@ -149,7 +149,7 @@ end
             using .Exporter
             sum(exported_name)
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         test_sum_over_string(res)
     end
 end
@@ -159,7 +159,7 @@ end
             x = 1
             const x = 2
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         report = only(res.res.inference_error_reports)
         @test report isa InvalidConstantDeclarationReport
         @test report.var === GlobalRef(vmod, :x)
@@ -170,12 +170,12 @@ end
             x = 1
             const x = 2
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test only(res.res.inference_error_reports) isa InvalidConstantDeclarationReport
     end
     for source in ("x = 1\nconst x = 2", "global x\nx = 1\nconst x = 2")
         res = report_text(source, "const-declaration.jl")
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test only(get_reports_with_test(res)) isa InvalidConstantDeclarationReport
     end
     let (vmod, res) = @analyze_toplevel2 begin
@@ -185,14 +185,14 @@ end
             import .Exporter: x
             const x = 2
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         report = only(res.res.inference_error_reports)
         @test report isa InvalidConstantDeclarationReport
         @test report.var === GlobalRef(vmod, :x)
         @test report.isimported
     end
     let res = report_text("x = 1\nglobal x::Int", "global-declaration.jl")
-        @test only(res.res.toplevel_error_reports) isa ActualErrorWrapped
+        @test res.res.toplevel_error_report isa ActualErrorWrapped
         @test isempty(res.res.inference_error_reports)
     end
     for mode in (:basic, :sound)
@@ -200,7 +200,7 @@ end
                 x = 1
                 const x = 2
             end
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
             @test only(res.res.inference_error_reports) isa InvalidConstantDeclarationReport
         end
         let res = @analyze_toplevel mode=mode ignore_throws=true begin
@@ -209,7 +209,7 @@ end
                     const x = 2
                 end
             end
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
             @test only(res.res.inference_error_reports) isa InvalidConstantDeclarationReport
         end
         let res = @analyze_toplevel mode=mode ignore_throws=true begin
@@ -220,7 +220,7 @@ end
                 catch
                 end
             end
-            @test isempty(res.res.toplevel_error_reports)
+            @test isnothing(res.res.toplevel_error_report)
             @test only(res.res.inference_error_reports) isa InvalidConstantDeclarationReport
         end
     end
@@ -255,7 +255,7 @@ end
         lnn = LineNumberNode(@__LINE__, Symbol(@__FILE__))
         res = analyze_toplevel(ex, lnn; context=m, virtualize=false)
         states = JET.get_binding_states(res.analyzer)
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test !haskey(states, guard)
         @test !haskey(states, declared)
         if value isa Int
@@ -336,7 +336,7 @@ end
             r1, r2 = rand(2)
             println(r1, r2)
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
 
@@ -347,7 +347,7 @@ end
                 println(r1, r2)
             end
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
 
@@ -358,7 +358,7 @@ end
             end
             println(r1, r2)
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
 
@@ -370,7 +370,7 @@ end
             end
             println(ro1, ro2)
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
 
@@ -382,7 +382,7 @@ end
             end
             println(g)
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
 end
@@ -397,7 +397,7 @@ end
             end
             @show area(Circle(2))
         end
-        @test_broken isempty(res.res.toplevel_error_reports)
+        @test_broken isnothing(res.res.toplevel_error_report)
     end
     let res = @analyze_toplevel begin
             const Circle = @NamedTuple begin
@@ -423,7 +423,7 @@ end
             ccall(gethostcpufeatures, Cstring, ())
         end
     end
-    @test isempty(res.res.toplevel_error_reports)
+    @test isnothing(res.res.toplevel_error_report)
     @test isempty(res.res.inference_error_reports)
 end
 
@@ -432,7 +432,7 @@ let res = @analyze_toplevel begin
         const constvar = rand(Bool)
         println(var, constvar)
     end
-    @test isempty(res.res.toplevel_error_reports)
+    @test isnothing(res.res.toplevel_error_report)
     @test isempty(res.res.inference_error_reports)
 end
 
@@ -450,7 +450,7 @@ end
             push!(ys_all, [calc_kite_pos(deg2rad(ta))[2] for ta in turn_angles])
         end
     end
-    @test isempty(res.res.toplevel_error_reports)
+    @test isnothing(res.res.toplevel_error_report)
     @test isempty(res.res.inference_error_reports)
 end
 
@@ -467,7 +467,7 @@ end
             end
         end
     end
-    @test isempty(res.res.toplevel_error_reports)
+    @test isnothing(res.res.toplevel_error_report)
     @test isempty(res.res.inference_error_reports)
 end
 
@@ -513,10 +513,10 @@ end
                 field::RandomType
             end
         end
-        isone = length(res.res.toplevel_error_reports) == 1
+        isone = !isnothing(res.res.toplevel_error_report)
         @test isone
         if isone
-            report = only(res.res.toplevel_error_reports)
+            report = res.res.toplevel_error_report
             @test isa(report, MissingConcretizationErrorReport)
             @test report.var.name === :RandomType
             @test !report.isconst
@@ -541,7 +541,7 @@ end
                 field::CONFIG_
             end
         end
-        report = only(res.res.toplevel_error_reports)
+        report = res.res.toplevel_error_report
         @test report isa MissingConcretizationErrorReport
         @test report.assignment isa JET.ToplevelAssignment
         @test report.assignment.pattern === nothing
@@ -558,7 +558,7 @@ end
                 field::TypedRandomType
             end
         end
-        report = only(res.res.toplevel_error_reports)
+        report = res.res.toplevel_error_report
         @test report isa MissingConcretizationErrorReport
         @test report.assignment isa JET.ToplevelAssignment
         @test report.assignment.pattern == :(TypedRandomType::DataType = x_)
@@ -570,7 +570,7 @@ end
                 field::TypedRandomType
             end
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
     end
 
     let res = @analyze_toplevel begin
@@ -579,7 +579,7 @@ end
                 field::GlobalRandomType
             end
         end
-        report = only(res.res.toplevel_error_reports)
+        report = res.res.toplevel_error_report
         @test report isa MissingConcretizationErrorReport
         @test report.assignment isa JET.ToplevelAssignment
         @test report.assignment.pattern == :(global GlobalRandomType = x_)
@@ -591,7 +591,7 @@ end
                 field::GlobalRandomType
             end
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
     end
 
     mktempdir() do dir
@@ -603,7 +603,7 @@ end
         write(use_file, "struct IncludedStruct\n    field::IncludedRandomType\nend\n")
 
         res = report_file2(main_file)
-        report = only(res.res.toplevel_error_reports)
+        report = res.res.toplevel_error_report
         @test report isa MissingConcretizationErrorReport
         @test report.file == use_file
         @test report.assignment isa JET.ToplevelAssignment
@@ -625,7 +625,7 @@ end
                 field::NestedRandomType
             end
             """)
-        report = only(res.res.toplevel_error_reports)
+        report = res.res.toplevel_error_report
         @test report isa MissingConcretizationErrorReport
         @test report.assignment isa JET.ToplevelAssignment
         @test report.assignment.pattern === nothing
