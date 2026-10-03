@@ -883,6 +883,24 @@ end
     @test isempty(res.res.toplevel_error_reports)
 end
 
+# A macro can generate a module expression that native evaluation rejects.
+@testset "malformed module expression: $badex" for (badex, msg) in (
+        "Expr(:module, true, :M, :(x = 1))" =>
+            "syntax: module expression third argument must be a block",
+        "Expr(:module)" => "syntax: malformed module expression",
+        "Expr(:module, true, GlobalRef(Main, :M), Expr(:block))" =>
+            "TypeError: in module, expected Symbol, got a value of type GlobalRef")
+    res = report_text("""
+        macro badmodule()
+            esc($badex)
+        end
+        @badmodule
+        """)
+    er = only(res.res.toplevel_error_reports)
+    @test er isa ActualErrorWrapped
+    @test sprint(showerror, er.err) == msg
+end
+
 @testset "module usage" begin
     # using
     let res = @analyze_toplevel begin
