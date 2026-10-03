@@ -2016,8 +2016,10 @@ function partially_interpret!(
         src′.code[idx] = weak_global_declaration(stmt)
     end
 
-    # NOTE if `JuliaInterpreter.optimize!` may modify `src′`, `src′` and `plan` can be
-    # inconsistent; create the frame without optimization (#277).
+    # Create the frame without JuliaInterpreter's optimizations: for top-level code they
+    # compile `ccall`s and `@cfunction`s into wrappers when the frame is built, evaluating
+    # their type and library expressions natively, even for statements `plan` does not select.
+    # Statement indices are preserved either way, so `plan` stays aligned with the frame.
     frame = Frame(mod, src′; optimize=false, world=state.world)
     # The controller's gotos and shortcuts come from `plan.selected` alone, so the loops
     # and branches enclosing materialized declarations fall through and each declaration
