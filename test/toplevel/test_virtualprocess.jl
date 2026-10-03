@@ -740,6 +740,198 @@ end
     end
 end
 
+function binding_type(res::JET.JETToplevelResult, mod::Module, name::Symbol)
+    binding = GlobalRef(mod, name)
+    partition = Base.lookup_binding_partition(Base.get_world_counter(), binding)
+    state = get(JET.get_binding_states(res.analyzer), partition, nothing)
+    if state === nothing
+        value = @invokelatest getglobal(mod, name)
+        return value isa JET.AbstractBindingState ? value.typ : JET.Const(value)
+    end
+    return state.typ
+end
+
+# At top level, JET executes only definitions, `include` calls, and what they depend on, so
+# the tests below wrap code that must actually run, such as `throw`s, side effects, and
+# `catch` handlers, in `@eval`, whose code JET interprets concretely.
+@testset "concrete include return values" begin
+    mktempdir() do dir
+        write(joinpath(dir, "child.jl"), "1\nInteger")
+        context = gen_virtual_module()
+        res = report_text("""
+            struct Direct <: include("child.jl") end
+            struct Evaled <: Core.eval(@__MODULE__, :(include("child.jl"))) end
+            """, joinpath(dir, "main.jl"); context, virtualize=false)
+        @test isempty(get_reports(res))
+        @test (@invokelatest getglobal(context, :Direct)) <: Integer
+        @test (@invokelatest getglobal(context, :Evaled)) <: Integer
+    end
+end
+
+@testset "abstract include results reach caller inference without replay" begin
+    mktempdir() do dir
+        write(joinpath(dir, "child.jl"), "@eval effects[] += 1\nrand(Bool) ? 1 : 2.0")
+        context = gen_virtual_module()
+        effects = Ref(0)
+        Core.eval(context, :(const effects = $effects))
+        res = report_text("""
+            function load_child()
+                x = include("child.jl")
+                y = x
+                return y
+            end
+            const value = Core.eval(@__MODULE__, :(load_child()))
+            sin(value)
+            value + "bad"
+            """, joinpath(dir, "main.jl"); context, virtualize=false)
+        @test isnothing(res.res.toplevel_error_report)
+        @test binding_type(res, context, :value) === Union{Int,Float64}
+        @test only(get_reports(res)) isa MethodErrorReport
+        @test effects[] == 1
+    end
+end
+
+@testset "concrete consumers reject abstract include results" begin
+    mktempdir() do dir
+        child = joinpath(dir, "child.jl")
+        write(child, "rand(Bool) ? Integer : AbstractFloat")
+        context = gen_virtual_module()
+        res = report_text("""
+            try
+                struct Included <: include("child.jl") end
+            catch
+                struct Caught end
+            end
+            struct Unreachable end
+            """, joinpath(dir, "main.jl"); context, virtualize=false)
+        report = res.res.toplevel_error_report
+        @test report isa JET.MissingIncludeConcretizationReport
+        @test report.included_file == child
+        @test !(@invokelatest isdefinedglobal(context, :Caught))
+        @test !(@invokelatest isdefinedglobal(context, :Unreachable))
+    end
+end
+
+@testset "repeated include calls join their return values" begin
+    mktempdir() do dir
+        write(joinpath(dir, "string.jl"), "\"s\"")
+        write(joinpath(dir, "integer.jl"), "1")
+        # The eval form assigns directly to a slot rather than through an SSA value.
+        for call in ("include(file)", "Core.eval(@__MODULE__, Expr(:call, :include, file))")
+            res = report_text("""
+                for file in ("string.jl", "integer.jl")
+                    value = $call
+                    value + 1
+                end
+                """, joinpath(dir, "main.jl"))
+            @test isnothing(res.res.toplevel_error_report)
+            @test !isempty(get_reports(res))
+            @test all(report -> report isa MethodErrorReport, get_reports(res))
+        end
+    end
+end
+
+@testset "nested include errors reach the caller" begin
+    mktempdir() do dir
+        parent = joinpath(dir, "parent.jl")
+        child = joinpath(dir, "child.jl")
+        write(parent, "include(\"child.jl\")\nstruct Unreachable end")
+        write(child, "\n@eval throw(:included_failure)")
+        context = gen_virtual_module()
+        res = report_text("""
+            function load_child()
+                try
+                    @eval include("parent.jl")
+                catch err
+                    global caught = err
+                    return Integer
+                end
+            end
+            struct AfterCatch <: load_child() end
+            """, joinpath(dir, "main.jl"); context, virtualize=false)
+        @test isempty(get_reports(res))
+        @test (@invokelatest getglobal(context, :AfterCatch)) <: Integer
+        @test !(@invokelatest isdefinedglobal(context, :Unreachable))
+        caught = @invokelatest getglobal(context, :caught)
+        @test caught isa LoadError
+        @test (caught.file, caught.line) == (parent, 1)
+        @test caught.error isa LoadError
+        @test (caught.error.file, caught.error.line) == (child, 2)
+        @test caught.error.error === :included_failure
+    end
+end
+
+@testset "include read errors propagate without LoadError wrapping" begin
+    mktempdir() do dir
+        context = gen_virtual_module()
+        res = report_text("""
+            @eval try
+                include("missing.jl")
+            catch err
+                global caught = err
+            end
+            """, joinpath(dir, "main.jl"); context, virtualize=false)
+        @test isempty(get_reports(res))
+        @test (@invokelatest getglobal(context, :caught)) isa SystemError
+    end
+end
+
+@testset "uncaught include rethrows retain the original diagnostic" begin
+    mktempdir() do dir
+        child = joinpath(dir, "child.jl")
+        write(child, "@eval throw(:original_failure)")
+        res = report_text("""
+            @eval try
+                include("child.jl")
+            catch
+                rethrow()
+            end
+            """, joinpath(dir, "main.jl"))
+        report = res.res.toplevel_error_report
+        @test report isa ActualErrorWrapped
+        @test report.err === :original_failure
+        @test (report.file, report.line) == (child, 1)
+    end
+end
+
+@testset "parse failures execute only complete preceding expressions" begin
+    mktempdir() do dir
+        write(joinpath(dir, "child.jl"), """
+            @eval push!(events, :before)
+            begin
+                @eval push!(events, :inside)
+                x = )
+            end
+            @eval push!(events, :after)
+            """)
+        context = gen_virtual_module()
+        events = Symbol[]
+        Core.eval(context, :(const events = $events))
+        res = report_text("""
+            @eval try
+                include("child.jl")
+            catch err
+                global caught = err
+            end
+            """, joinpath(dir, "main.jl"); context, virtualize=false)
+        @test isempty(get_reports(res))
+        @test events == [:before]
+        caught = @invokelatest getglobal(context, :caught)
+        @test caught isa LoadError
+        @test caught.error isa Meta.ParseError
+    end
+end
+
+@testset "earlier execution errors take precedence over parse errors" begin
+    mktempdir() do dir
+        write(joinpath(dir, "child.jl"), "@eval throw(:first_failure)\nx = )")
+        res = report_text("include(\"child.jl\")", joinpath(dir, "main.jl"))
+        report = res.res.toplevel_error_report
+        @test report isa ActualErrorWrapped
+        @test report.err === :first_failure
+    end
+end
+
 function get_module_context(analyzed_file_info::JET.AnalyzedFileInfo, line::Int)
     _, idx = findmin(analyzed_file_info.module_range_infos) do (range, mod)
         line in range || return typemax(Int)

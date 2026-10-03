@@ -120,6 +120,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when non-`nothing`. For a vector of reports from a `JETToplevelResult`, use
   `JET.get_reports(result)` instead.
 
+### Fixed
+
+- Fixed `include` return values being replaced by `nothing` during top-level
+  analysis, including calls inside functions and `@eval`. JET now preserves
+  the last expression's concrete or abstract value. If concrete execution
+  needs a return value that is only known abstractly, analysis stops with a
+  `MissingIncludeConcretizationReport`; it does not re-execute the file.
+
+- Fixed ordinary errors from included files bypassing the caller's `catch`.
+  File evaluation errors propagate with `LoadError` wrappers, while file
+  reading errors propagate directly. Complete top-level statements before a
+  syntax error are processed once; the erroneous expression is not executed.
+  Caught errors no longer abort analysis; uncaught errors retain their
+  original diagnostic. JET's own interruption signals and internal errors
+  remain uncatchable by analyzed code.
+
 ## [0.12.3]
 
 ### Changed
