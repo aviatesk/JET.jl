@@ -169,7 +169,7 @@ end; end
             struct Foo end
             println(Foo())
         end
-        @test isempty(res.res.toplevel_error_reports)
+        @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
 end

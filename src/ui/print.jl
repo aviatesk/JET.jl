@@ -76,6 +76,7 @@ end
 # =======
 
 const ERROR_COLOR = :light_red
+const WARNING_COLOR = :yellow
 const NOERROR_COLOR = :light_green
 # TODO other nicer color scheme ?
 const RAIL_COLORS = ( # Julia color + yellow
@@ -149,37 +150,83 @@ function print_reports(io::IO,
         return 0
     end
 
-    ctx = colorctx(io)
-    with_bufferring(ctx) do io
-        s = string(pluralize(n, "toplevel error"), " found")
+    with_bufferring(colorctx(io)) do io
+        s = "Top-level analysis failed"
         printlnstyled(io, LEFT_ROOF, s, RIGHT_ROOF; color = HEADER_COLOR)
-
-        color = ERROR_COLOR
-
-        rail = with_bufferring(ctx) do io
-            printstyled(io, "│ "; color)
-        end
-
+        println(io, "JET stopped before completing the analysis.")
+        println(io, "Fix the error below and rerun the analysis.")
+        println(io)
         for report in reports
-            # For top-level errors, :none and :minimal don't make sense, so treat them as :compact
-            style = config.sourceinfo
-            if style === :none || style === :minimal
-                style = :compact
-            end
-            filepath = format_path(report.file, style)
-            printlnstyled(io, "┌ @ ", filepath, ':', report.line, ' '; color)
-
-            errlines = with_bufferring(ctx) do io
-                print_report(io, report)
-            end |> strip
-            join(io, string.(rail, split(errlines, '\n')), '\n')
-            println(io)
-
-            printlnstyled(io, '└', '─'^(length(s)-1); color)
+            print_toplevel_report(io, report, config, ERROR_COLOR, length(s)-1)
         end
     end |> postprocessor |> (x->print(io::IO,x))
 
     return n
+end
+
+function print_reports(io::IO,
+                       reports::Vector{ToplevelWarningReport},
+                       postprocessor::PostProcessor = PostProcessor();
+                       jetconfigs...)
+    config = PrintConfig(; jetconfigs...)
+
+    n = length(reports)
+    if n == 0
+        if config.print_toplevel_success
+            printlnstyled(io, "No toplevel warnings detected"; color = NOERROR_COLOR)
+        end
+        return 0
+    end
+
+    with_bufferring(colorctx(io)) do io
+        s = string(pluralize(n, "toplevel warning"), " found")
+        printlnstyled(io, LEFT_ROOF, s, RIGHT_ROOF; color = HEADER_COLOR)
+        for report in reports
+            print_toplevel_report(io, report, config, WARNING_COLOR, length(s)-1)
+        end
+    end |> postprocessor |> (x->print(io::IO,x))
+
+    return n
+end
+
+function print_toplevel_report(io::IO,
+                               report::Union{ToplevelErrorReport,ToplevelWarningReport},
+                               config::PrintConfig, color::Symbol, width::Int)
+    ctx = colorctx(io)
+    rail = with_bufferring(ctx) do io
+        printstyled(io, "│ "; color)
+    end
+
+    # For top-level reports, :none and :minimal don't make sense, so treat them as :compact
+    style = config.sourceinfo
+    if style === :none || style === :minimal
+        style = :compact
+    end
+    filepath = format_path(report.file, style)
+    printlnstyled(io, "┌ @ ", filepath, ':', report.line, ' '; color)
+
+    lines = with_bufferring(ctx) do io
+        print_report(io, report)
+    end |> strip
+    join(io, string.(rail, split(lines, '\n')), '\n')
+    println(io)
+    printlnstyled(io, '└', '─'^width; color)
+    return nothing
+end
+
+function print_reports(io::IO,
+                       reports::Vector{Union{ToplevelWarningReport,InferenceErrorReport}},
+                       postprocessor::PostProcessor = PostProcessor();
+                       jetconfigs...)
+    warnings = ToplevelWarningReport[r for r in reports if r isa ToplevelWarningReport]
+    errors = InferenceErrorReport[r for r in reports if r isa InferenceErrorReport]
+    if !isempty(warnings)
+        print_reports(io, warnings, postprocessor; jetconfigs...)
+    end
+    if isempty(warnings) || !isempty(errors)
+        print_reports(io, errors, postprocessor; jetconfigs...)
+    end
+    return length(reports)
 end
 
 # inference

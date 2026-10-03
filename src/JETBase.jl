@@ -344,9 +344,9 @@ include("abstractinterpret/abstractanalyzer.jl")
 include("abstractinterpret/typeinfer.jl")
 
 """
-    print_report(io::IO, report::ToplevelErrorReport)
+    print_report(io::IO, report::Union{ToplevelErrorReport,ToplevelWarningReport})
 
-Prints a report of the top-level error `report` to the given `io`.
+Print a top-level error or warning report to the given `io`.
 """
 function print_report end
 
@@ -484,9 +484,11 @@ end
 Return the reports represented by `result`, one per detected issue.
 
 For a [`JETCallResult`](@ref), this returns the inference reports after applying
-report configuration. For a [`JETToplevelResult`](@ref), top-level errors take
-precedence: if any top-level errors were collected, only those errors are
-returned. Otherwise, this returns the configured inference reports.
+report configuration. For a [`JETToplevelResult`](@ref), a fatal top-level error
+stops analysis and takes precedence: this returns a vector containing that one
+error. Otherwise, this returns top-level warning reports followed by the configured
+inference reports. Report filtering applies only to inference reports; warnings
+are retained. Warnings are not also emitted as log messages.
 """
 function get_reports(result::JETCallResult)
     reports = get_reports(result.analyzer, result.result)
@@ -494,13 +496,14 @@ function get_reports(result::JETCallResult)
 end
 function get_reports(result::JETToplevelResult)
     res = result.res
-    if !isempty(res.toplevel_error_reports)
-        # non-empty `ret.toplevel_error_reports` means critical errors happened during
-        # the AST transformation, so they always have precedence over `ret.inference_error_reports`
-        return res.toplevel_error_reports
-    else
-        return configured_reports(res.inference_error_reports; result.jetconfigs...)
+    report = res.toplevel_error_report
+    if report !== nothing
+        return ToplevelErrorReport[report]
     end
+    reports = configured_reports(res.inference_error_reports; result.jetconfigs...)
+    warnings = res.toplevel_warning_reports
+    isempty(warnings) && return reports
+    return Union{ToplevelWarningReport,InferenceErrorReport}[warnings; reports]
 end
 
 """
@@ -1418,7 +1421,7 @@ reexport_as_api!(JETInterface,
     AbstractAnalyzer, AnalyzerState, AnalysisToken, ToplevelAbstractAnalyzer,
     valid_configurations, aggregation_policy, typeinf_world, VSCode.vscode_diagnostics_order,
     # ErrorReport API
-    InferenceErrorReport, ToplevelErrorReport, copy_report, print_report,
+    InferenceErrorReport, ToplevelErrorReport, ToplevelWarningReport, copy_report, print_report,
     print_report_message, print_signature, report_color,
     # generic entry points,
     analyze_and_report_call!, call_test_ex, func_test,
