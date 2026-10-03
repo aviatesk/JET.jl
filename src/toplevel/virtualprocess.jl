@@ -232,8 +232,23 @@ struct CalleeError
     err
     bt::Vector{Union{Ptr{Nothing},Base.InterpreterIP}}
     st::Base.StackTraces.StackTrace
+    report::Union{Nothing,ToplevelErrorReport}
     CalleeError(@nospecialize(err), bt::Vector{Union{Ptr{Nothing},Base.InterpreterIP}},
-                st::Base.StackTraces.StackTrace) = new(err, bt, st)
+                st::Base.StackTraces.StackTrace,
+                report::Union{Nothing,ToplevelErrorReport}=nothing) = new(err, bt, st, report)
+end
+
+# Carries an ordinary exception across top-level drivers without committing a fatal report.
+# Interpreted handlers see `err`, while an uncaught failure retains its original diagnostic.
+struct ToplevelException <: Exception
+    err
+    report::ToplevelErrorReport
+    bt::Vector{Union{Ptr{Nothing},Base.InterpreterIP}}
+    st::Base.StackTraces.StackTrace
+    ToplevelException(@nospecialize(err), report::ToplevelErrorReport,
+                      bt::Vector{Union{Ptr{Nothing},Base.InterpreterIP}}=catch_backtrace(),
+                      st::Base.StackTraces.StackTrace=Base.StackTraces.StackFrame[]) =
+        new(err, report, bt, st)
 end
 
 # a special exception type that is supposed to be thrown only by `JuliaInterpreter.lookup(::ConcreteInterpreter)`
@@ -300,6 +315,20 @@ function print_report(io::IO, report::MissingConcretizationErrorReport)
     println(io, "- As a last resort, use `concretization_patterns = [:(x_)]` to evaluate")
     println(io, "  all top-level code in the module. This may run side effects and can")
     print(io, "  make analysis slower.")
+end
+
+struct MissingIncludeConcretizationReport <: ToplevelErrorReport
+    included_file::String
+    file::String
+    line::Int
+end
+
+function print_report(io::IO, report::MissingIncludeConcretizationReport)
+    println(io, "JET needs the concrete return value of `include` while processing")
+    println(io, "top-level definitions, but only an abstract value is available.")
+    println(io)
+    println(io, "Included file: ", report.included_file)
+    print(io, "Use `concretization_patterns` to concretize the expression producing that value.")
 end
 
 const DEFAULT_CONCRETIZATION_TIMEOUT = 10.0
@@ -700,6 +729,9 @@ mutable struct InterpretationState
     # removed whenever its frame exits, whether by returning or by unwinding.
     const caught_callee_errors::IdDict{Frame,Vector{CalleeError}}
     native_calls::Bool # the current statement was selected by `concretization_patterns`
+    toplevel_result::Any # abstract value of the last top-level expression
+    const include_results::Dict{Int,Any} # processed calls in the current root frame
+    include_count::Int # also detects include calls nested in interpreted callees
 end
 function InterpretationState(
         state::InterpretationState;
@@ -728,7 +760,7 @@ function InterpretationState(
         concretization_deadline,
         #=callee_error=#nothing,
         #=caught_callee_errors=#IdDict{Frame,Vector{CalleeError}}(),
-        #=native_calls=#false)
+        #=native_calls=#false, Const(nothing), Dict{Int,Any}(), 0)
 end
 
 """
@@ -841,6 +873,14 @@ supplied syntax tree as follows:
 5. Use `ToplevelAbstractAnalyzer` to analyze the remaining statements
    abstractly.
 
+Included files are processed once, preserving the last expression's concrete or
+abstract return value. An abstract return value can flow into the caller's
+abstract analysis, but using it in concrete execution stops analysis with a
+`MissingIncludeConcretizationReport`. Ordinary exceptions from file evaluation
+propagate to interpreted callers with `LoadError` wrappers; reading errors are
+not wrapped at the unread file. Only uncaught exceptions become fatal reports.
+JET's own interruption signals and internal errors bypass user catch handlers.
+
 !!! warning
     To process top-level code sequentially, as the Julia runtime does,
     `virtual_process` splits the input into code blocks and simulates them one
@@ -898,13 +938,20 @@ function virtual_process(interp::ConcreteInterpreter,
         filename, #=curline=#0, world, #=dependencies=#Set{Symbol}(), context, config,
         res, #=pkg_mod_depth=#0, #=files_stack=#String[],
         #=concretization_deadline=#typemax(UInt64), #=callee_error=#nothing,
-        #=caught_callee_errors=#IdDict{Frame,Vector{CalleeError}}(), #=native_calls=#false)
+        #=caught_callee_errors=#IdDict{Frame,Vector{CalleeError}}(), #=native_calls=#false,
+        Const(nothing), Dict{Int,Any}(), 0)
     interp = ConcreteInterpreter(interp, state)
     try
         virtual_process!(interp, x, overrideex)
     catch err
-        err isa ToplevelAbort || rethrow()
-        @assert res.toplevel_error_report !== nothing
+        if err isa ToplevelException
+            res.toplevel_error_report === nothing && (res.toplevel_error_report = err.report)
+            empty!(state.caught_callee_errors)
+            state.callee_error = nothing
+        else
+            err isa ToplevelAbort || rethrow()
+            @assert res.toplevel_error_report !== nothing
+        end
     finally
         Preferences.main_uuid[] = old_main_uuid
     end
@@ -1110,11 +1157,24 @@ function _virtual_process!(interp::ConcreteInterpreter,
     sourcefile = JS.SourceFile(stream; filename)
     for diagnostic in stream.diagnostics
         if diagnostic.level === :error
-            first_line = JS.source_line(sourcefile, JS.first_byte(stream))
-            last_line = JS.source_line(sourcefile, JS.last_byte(stream))
-            state.res.analyzed_files[filename] = AnalyzedFileInfo(
-                ModuleRangeInfo[first_line:last_line => state.context])
-            abort_toplevel_analysis!(state, ParseErrorReport(diagnostic, sourcefile))
+            report = ParseErrorReport(diagnostic, sourcefile)
+            err, line = parse_error_exception(s, filename, stream, report.line)
+            parsed = JS.build_tree(JS.SyntaxNode, stream; filename)
+            nodes = JS.children(parsed)::Vector{JS.SyntaxNode}
+            error_index = findfirst(has_parse_error, nodes)
+            if error_index !== nothing && error_index > 1
+                # Keep whole top-level siblings only: even a valid prefix inside an
+                # erroneous module, block, or semicolon group must not execute.
+                resize!(nodes, error_index - 1)
+                _virtual_process!(interp, parsed)
+            else
+                first_line = JS.source_line(sourcefile, JS.first_byte(stream))
+                last_line = JS.source_line(sourcefile, JS.last_byte(stream))
+                state.res.analyzed_files[filename] = AnalyzedFileInfo(
+                    ModuleRangeInfo[first_line:last_line => state.context])
+            end
+            state.curline = line
+            throw(ToplevelException(err, report))
         elseif diagnostic.level === :warning
             push!(state.res.toplevel_warning_reports, ParseWarningReport(diagnostic, sourcefile))
         end
@@ -1128,6 +1188,31 @@ function _virtual_process!(interp::ConcreteInterpreter,
     end
 
     return state.res
+end
+
+has_parse_error(node::JS.SyntaxNode) =
+    JS.is_error(node) || (!JS.is_leaf(node) && any(has_parse_error, JS.children(node)))
+
+function parse_error_exception(s::String, filename::String, stream::JS.ParseStream, line::Int)
+    # Use the runtime parser's exception, but never evaluate the valid source preceding it.
+    parsed = Meta.parseall(s; filename)
+    if isexpr(parsed, :toplevel)
+        for ex in parsed.args
+            if ex isa LineNumberNode
+                line = ex.line
+            elseif isexpr(ex, (:error, :incomplete))
+                try
+                    Core.eval(Main, ex)
+                catch err
+                    is_toplevel_control_exception(err) && rethrow()
+                    return err, line
+                end
+            end
+        end
+    end
+    # The separately versioned JuliaSyntax parser can reject syntax accepted by Base.
+    err = JS.ParseError(stream; filename)
+    return Meta.ParseError(sprint(showerror, err), err), line
 end
 
 struct ConcretizationPlan
@@ -1254,17 +1339,17 @@ end
 
 function general_err_handler(@nospecialize(err), st, state::InterpretationState)
     report = ActualErrorWrapped(err, st, state.filename, state.curline)
-    abort_toplevel_analysis!(state, report)
+    throw(ToplevelException(err, report))
 end
 
 function macro_expansion_err_handler(@nospecialize(err), st, state::InterpretationState)
     report = MacroExpansionErrorReport(err, st, state.filename, state.curline)
-    abort_toplevel_analysis!(state, report)
+    throw(ToplevelException(LoadError(state.filename, state.curline, err), report))
 end
 
 function lowering_err_handler(@nospecialize(err), st, state::InterpretationState)
     report = LoweringErrorReport(err, state.filename, state.curline, st)
-    abort_toplevel_analysis!(state, report)
+    throw(ToplevelException(err, report))
 end
 
 function eval_with_err_handling(state::InterpretationState, x::Expr)
@@ -1351,7 +1436,13 @@ function lower_with_err_handling(interp::ConcreteInterpreter, ::JS.SyntaxNode, x
         lwr = Base.invoke_in_world(state.world, lower, state.context, xexpanded)
         if isexpr(lwr, :error)
             msg = first(lwr.args)
-            abort_toplevel_analysis!(state, LoweringErrorReport(msg, state.filename, state.curline))
+            report = LoweringErrorReport(msg, state.filename, state.curline)
+            try
+                Base.invoke_in_world(state.world, Core.eval, state.context, lwr)
+            catch err
+                is_toplevel_control_exception(err) && rethrow()
+                throw(ToplevelException(err, report))
+            end
         end
         return lwr
     end
@@ -1736,6 +1827,7 @@ function process_toplevel!(interp::ConcreteInterpreter, toplevelnode::JS.SyntaxN
         end
         state.curline = JS.source_line(node)
         state.world = Base.get_world_counter()
+        state.toplevel_result = Const(nothing)
 
         # apply user-specified concretization strategy, which is configured as expression
         # pattern match on surface level AST code representation; if any of the specified
@@ -1844,6 +1936,7 @@ function process_toplevel!(interp::ConcreteInterpreter, toplevelnode::JS.SyntaxN
                 _virtual_process!(newinterp, node;
                                   force_concretize)
             end
+            state.toplevel_result = Const(newcontext)
             continue
         end
 
@@ -1857,7 +1950,10 @@ function process_toplevel!(interp::ConcreteInterpreter, toplevelnode::JS.SyntaxN
         blk = Expr(:block, lnn, x) # attach current line number info
         lwr = lower_with_err_handling(interp, node, blk)
 
-        isexpr(lwr, :thunk) || continue # literal
+        if !isexpr(lwr, :thunk)
+            state.toplevel_result = Const(lwr isa QuoteNode ? lwr.value : lwr)
+            continue
+        end
 
         src = only(lwr.args)::CodeInfo
 
@@ -1866,10 +1962,12 @@ function process_toplevel!(interp::ConcreteInterpreter, toplevelnode::JS.SyntaxN
         state.callee_error = nothing
         empty!(state.caught_callee_errors)
         state.native_calls = force_concretize
+        empty!(state.include_results)
         if force_concretize
             frame = Frame(state.context, src; world=state.world)
             start_concretization_timeout!(state)
             JuliaInterpreter.finish!(interp, frame, true)
+            state.toplevel_result = include_result_type(JuliaInterpreter.get_return(interp, frame))
             continue
         end
         partially_interpret!(interp, concretization, state.context, src)
@@ -1880,9 +1978,11 @@ function process_toplevel!(interp::ConcreteInterpreter, toplevelnode::JS.SyntaxN
         end
 
         analyzer = ToplevelAbstractAnalyzer(interp, concretization.concretized;
-                                            current_toplevel_assignment)
+                                            current_toplevel_assignment,
+                                            include_results=state.include_results)
 
         result = analyze_toplevel!(analyzer, src, state.context)
+        state.toplevel_result = result.result
 
         append!(state.res.inference_error_reports, get_reports(analyzer, result)) # collect error reports
     end
@@ -2112,6 +2212,9 @@ function partially_interpret!(
     start_concretization_timeout!(state)
     LoweredCodeUtils.selective_eval_fromstart!(
         interp, frame, plan.concretized, controller, #=istoplevel=#true)
+    if all(plan.concretized)
+        state.toplevel_result = include_result_type(JuliaInterpreter.get_return(interp, frame))
+    end
 
     return plan
 end
@@ -2270,7 +2373,8 @@ function select_direct_requirement!(
         if (LoweredCodeUtils.ismethod(stmt) ||    # don't abstract away method definitions
             LoweredCodeUtils.istypedef(stmt) ||   # don't abstract away type definitions
             (isexpr(stmt, :call) && length(stmt.args) ≥ 1 &&
-             stmt.args[1] == GlobalRef(Core, :_defaultctors)) ||
+             (stmt.args[1] == GlobalRef(Core, :_defaultctors) ||
+              stmt.args[1] == GlobalRef(Core, :_setsuper!))) ||
             (ismoduleusage(stmt) || is_lowered_module_usage(stmt)))
             selected[idx] = true
             continue
@@ -2486,7 +2590,20 @@ function JuliaInterpreter.lookup(interp::ConcreteInterpreter, frame::Frame, @nos
             end
         end
     end
-    return @invoke JuliaInterpreter.lookup(interp::Interpreter, frame::Frame, node::Any)
+    value = @invoke JuliaInterpreter.lookup(interp::Interpreter, frame::Frame, node::Any)
+    if value isa AbstractIncludeResult
+        stmt = JuliaInterpreter.pc_expr(frame)
+        transports_value = stmt isa ReturnNode ||
+            stmt isa Union{JuliaInterpreter.SlotNumber,JuliaInterpreter.SSAValue} ||
+            (isexpr(stmt, :(=), 2) && stmt.args[1] isa JuliaInterpreter.SlotNumber &&
+             stmt.args[2] === node)
+        if !transports_value
+            state = InterpretationState(interp)
+            abort_toplevel_analysis!(state, MissingIncludeConcretizationReport(
+                value.included_file, value.file, value.line))
+        end
+    end
+    return value
 end
 
 function usemodule_with_err_handling(interp::ConcreteInterpreter, ex::Expr, world::UInt)
@@ -2618,7 +2735,17 @@ function JuliaInterpreter.step_expr!(interp::ConcreteInterpreter, frame::Frame, 
         return frame.pc += 1
     end
 
+    pc = frame.pc
+    include_count = state.include_count
     res = @invoke JuliaInterpreter.step_expr!(interp::Interpreter, frame::Frame, node::Any, istoplevel::Bool)
+    if frame.caller === nothing && state.include_count != include_count && res === pc + 1
+        if isexpr(node, :(=), 2) && node.args[1] isa JuliaInterpreter.SlotNumber
+            value = something(frame.framedata.locals[node.args[1].id])
+            record_include_result!(interp, pc, value)
+        elseif isassigned(frame.framedata.ssavalues, pc)
+            record_include_result!(interp, pc, frame.framedata.ssavalues[pc])
+        end
+    end
 
     if node isa ReturnNode
         delete!(state.caught_callee_errors, frame)
@@ -2767,7 +2894,11 @@ function JuliaInterpreter.evaluate_call!(
     f = fargs[1]
     if isinclude(f)
         popfirst!(fargs)
-        return handle_include(interp, f, fargs)
+        value = handle_include(interp, f, fargs)
+        if frame.caller === nothing
+            record_include_result!(interp, frame.pc, value)
+        end
+        return value
     elseif f === Base._ccallable
         # skip concrete-interpretation of `jl_extern_c`, but only when the method dispatch
         # would succeed; otherwise the call goes through and raises the `MethodError`
@@ -2787,20 +2918,38 @@ function JuliaInterpreter.evaluate_call!(
         interp::Interpreter, frame::Frame, fargs::Vector{Any}, enter_generated::Bool)
 end
 
+# May travel through interpreted locals and returns, but must never reach concrete
+# consumers. `lookup` enforces this boundary; the root frame exports its abstract type.
+struct AbstractIncludeResult
+    typ::Any
+    included_file::String
+    file::String
+    line::Int
+end
+
+include_result_type(@nospecialize(value)) =
+    value isa AbstractIncludeResult ? value.typ : Const(value)
+
+function record_include_result!(interp::ConcreteInterpreter, pc::Int, @nospecialize(value))
+    results = InterpretationState(interp).include_results
+    rt = include_result_type(value)
+    if haskey(results, pc)
+        ⊔ = CC.join(CC.typeinf_lattice(ToplevelAbstractAnalyzer(interp)))
+        rt = results[pc] ⊔ rt
+    end
+    results[pc] = rt
+    return nothing
+end
+
 isinclude(@nospecialize f) = f isa Base.IncludeInto || (isa(f, Function) && nameof(f) === :include)
 
 function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func), args::Vector{Any})
     state = InterpretationState(interp)
+    state.include_count += 1
     filename = state.filename
     line = state.curline
     # `include` of another module, e.g. called in code evaluated into that module
     include_context = include_func isa Base.IncludeInto ? include_func.m : state.context
-
-    function abort_method_error!(args::Vector{Any})
-        err = MethodError(include_func, args)
-        local report = ActualErrorWrapped(err, [], filename, line)
-        abort_toplevel_analysis!(state, report)
-    end
 
     nargs = length(args)
     fname = nothing
@@ -2816,13 +2965,13 @@ function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func)
                 "JET does not support `include(mapexpr::Function, filename::String)`. " *
                 "The included file is analyzed without applying `mapexpr`.", filename, line))
         else
-            abort_method_error!(args)
+            throw(MethodError(include_func, args))
         end
     else
-        abort_method_error!(args)
+        throw(MethodError(include_func, args))
     end
     if !isa(fname, String)
-        abort_method_error!(args)
+        throw(MethodError(include_func, args))
     end
 
     include_file = normpath(dirname(filename), fname)
@@ -2833,7 +2982,7 @@ function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func)
     end
 
     included = try_read_file(interp, include_context, include_file)
-    # the default `try_read_file` aborts on read errors, but an overload may skip the file
+    # The default reader throws on read errors, but an overload may skip the file.
     isnothing(included) && return nothing
     if !(included isa AbstractString || included isa JS.SyntaxNode)
         throw(ToplevelInternalError(
@@ -2848,11 +2997,29 @@ function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func)
                                    context = include_context)
     newinterp = ConcreteInterpreter(interp, newstate)
     pause_concretization_timeout(state) do
-        virtual_process!(newinterp, included)
+        with_include_error_handling(newstate) do
+            virtual_process!(newinterp, included)
+        end
     end
 
-    # TODO: actually, here we need to try to get the lastly analyzed result of the `_virtual_process!` call above
-    nothing
+    rt = newstate.toplevel_result
+    return rt isa Const ? rt.val : AbstractIncludeResult(rt, include_file, filename, line)
+end
+
+"""
+    with_include_error_handling(f, state::InterpretationState)
+
+Run the included file's virtual process, wrapping ordinary failures in `LoadError`.
+Pass the included file's state; perform file reading outside this scope.
+"""
+function with_include_error_handling(f, state::InterpretationState)
+    try
+        return f()
+    catch err
+        err isa ToplevelException || rethrow()
+        wrapped = LoadError(state.filename, state.curline, err.err)
+        throw(ToplevelException(wrapped, err.report, err.bt, err.st))
+    end
 end
 
 function try_read_file(
@@ -2900,6 +3067,12 @@ function JuliaInterpreter.handle_err(
         frame.caller === nothing || JuliaInterpreter.return_from(frame)
         rethrow()
     end
+    if err isa ToplevelException
+        transported = err
+        err = transported.err
+        st = vcat(transported.st, callee_stacktrace(frame))
+        state.callee_error = CalleeError(err, transported.bt, st, transported.report)
+    end
     # The root frame can also contain a user catch handler.
     if (frame.caller !== nothing || (!isempty(frame.framedata.exception_frames) &&
         !(err isa ConcretizationTimeoutError || err isa MissingConcretizationError)))
@@ -2924,10 +3097,14 @@ function JuliaInterpreter.handle_err(
 
     if err isa MissingConcretizationError
         report = MissingConcretizationErrorReport(err.isconst, err.var, err.assignment, state.filename, state.curline)
+        abort_toplevel_analysis!(state, report)
     elseif err isa ConcretizationTimeoutError
         # raised by `step_expr!` itself, so no natively executed user code is involved
         callee_st = callee_error === nothing ? Base.StackTraces.StackFrame[] : callee_error.st
         report = ConcretizationTimeoutErrorReport(err.timeout, callee_st, state.filename, state.curline)
+        abort_toplevel_analysis!(state, report)
+    elseif callee_error !== nothing && callee_error.report !== nothing
+        report = callee_error.report
     elseif callee_error === nothing
         st = native_user_stacktrace(bt)
         report = ActualErrorWrapped(err, st, state.filename, state.curline)
@@ -2938,7 +3115,11 @@ function JuliaInterpreter.handle_err(
         append!(st, callee_error.st)
         report = ActualErrorWrapped(err, st, state.filename, state.curline)
     end
-    abort_toplevel_analysis!(state, report)
+    callee_st = callee_error === nothing ? Base.StackTraces.StackFrame[] : callee_error.st
+    callee_error === nothing || (bt = callee_error.bt)
+    empty!(state.caught_callee_errors)
+    state.callee_error = nothing
+    throw(ToplevelException(err, report, bt, callee_st))
 end
 
 # The frames of natively executed user code in `bt`: those before the first frame of the
@@ -2993,7 +3174,8 @@ function restore_callee_error!(state::InterpretationState, frame::Frame, fargs::
             end
             err = length(fargs) > 1 ? fargs[2] : exceptions[end]
             recorded = caught[end]
-            state.callee_error = CalleeError(err, recorded.bt, recorded.st)
+            report = err === recorded.err ? recorded.report : nothing
+            state.callee_error = CalleeError(err, recorded.bt, recorded.st, report)
             return nothing
         end
         frame = @something frame.caller return nothing
@@ -3022,11 +3204,15 @@ function callee_stacktrace(frame::Frame)
     return st
 end
 
+is_toplevel_control_exception(@nospecialize(err)) =
+    err isa ToplevelException || err isa ToplevelAbort || err isa ToplevelInternalError ||
+    err isa ConcretizationTimeoutError || err isa MissingConcretizationError
+
 @noinline function with_err_handling(f, err_handler, handler_args...; scrub_offset::Int)
     try
         return @noinline f()
     catch err
-        (err isa ToplevelAbort || err isa ToplevelInternalError) && rethrow()
+        is_toplevel_control_exception(err) && rethrow()
         bt = catch_backtrace()
         st = stacktrace(bt)
 
