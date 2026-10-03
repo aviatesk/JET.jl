@@ -1720,37 +1720,40 @@ function _virtual_process!(interp::ConcreteInterpreter,
 
         if isexpr(x, :module)
             @static if !isdefinedglobal(Base, :set_syntax_version)
+                # Older Julia versions accept any standard-imports flag; only `true` enables it.
+                if length(x.args) == 3
+                    x.args[1] = x.args[1] === true
+                end
+            end
+            # A macro can generate a malformed module expression: reject it with the error
+            # native evaluation raises, before its body is replaced below.
+            modbody = try
+                JuliaInterpreter.ModuleExprParts(x).body
+            catch err
+                general_err_handler(err, Base.StackTraces.StackFrame[], state)
+                continue
+            end
+            @static if !isdefinedglobal(Base, :set_syntax_version)
                 if length(x.args) == 4 && x.args[1] isa VersionNumber
                     deleteat!(x.args, 1)
                 end
             end
+            x.args[end] = Expr(:block, lnn) # empty module's code body
+            newcontext = eval_with_err_handling(state, x)
+            isnothing(newcontext) && continue # error happened, e.g. duplicated naming
+            newcontext = newcontext::Module
+            newstate = InterpretationState(state;
+                                           context = newcontext,
+                                           pkg_mod_depth = state.pkg_mod_depth + 1,
+                                           dependencies = Set{Symbol}())
+            newinterp = ConcreteInterpreter(interp, newstate)
             if isexpanded
-                newblk = x.args[end]
-                @assert isexpr(newblk, :block)
-                overrideex = Expr(:toplevel, newblk.args...)
-                x.args[end] = Expr(:block, lnn) # empty module's code body
-                newcontext = eval_with_err_handling(state, x)
-                isnothing(newcontext) && continue # error happened, e.g. duplicated naming
-                newcontext = newcontext::Module
-                newstate = InterpretationState(state;
-                                               context = newcontext,
-                                               pkg_mod_depth = state.pkg_mod_depth + 1,
-                                               dependencies = Set{Symbol}())
-                newinterp = ConcreteInterpreter(interp, newstate)
+                overrideex = Expr(:toplevel, modbody.args...)
                 modnode = something(find_module_node(node), node)
                 _virtual_process!(newinterp, modnode;
                                   force_concretize, overrideex)
             else
                 @assert JS.kind(node) === K"module"
-                x.args[end] = Expr(:block, lnn) # empty module's code body
-                newcontext = eval_with_err_handling(state, x)
-                isnothing(newcontext) && continue # error happened, e.g. duplicated naming
-                newcontext = newcontext::Module
-                newstate = InterpretationState(state;
-                                               context = newcontext,
-                                               pkg_mod_depth = state.pkg_mod_depth + 1,
-                                               dependencies = Set{Symbol}())
-                newinterp = ConcreteInterpreter(interp, newstate)
                 _virtual_process!(newinterp, node;
                                   force_concretize)
             end
