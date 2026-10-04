@@ -114,11 +114,11 @@ julia> @report_opt foldl(+, Any[]; init=0)
 ││││││┌ _foldl_impl(op::Base.BottomRF{typeof(+)}, init::Int64, itr::Vector{Any}) @ Base ./reduce.jl:58
 │││││││┌ (::Base.BottomRF{typeof(+)})(acc::Int64, x::Any) @ Base ./reduce.jl:86
 ││││││││ runtime dispatch detected: +(acc::Int64, x::Any)::Any
-│││││││└────────────────────
+││││││└┴──────────────────────────────────────────────────────
 ││││││┌ _foldl_impl(op::Base.BottomRF{typeof(+)}, init::Int64, itr::Vector{Any}) @ Base ./reduce.jl:62
 │││││││┌ (::Base.BottomRF{typeof(+)})(acc::Any, x::Any) @ Base ./reduce.jl:86
 ││││││││ runtime dispatch detected: +(acc::Any, x::Any)::Any
-│││││││└────────────────────
+└┴┴┴┴┴┴┴────────────────────────────────────────────────────
 ```
 
 ### Detect type errors with `@report_call`
@@ -141,14 +141,14 @@ julia> @report_call foldl(+, Char[])
 ││││││┌ _foldl_impl(op::Base.BottomRF{typeof(+)}, init::Base._InitialValue, itr::Vector{Char}) @ Base ./reduce.jl:62
 │││││││┌ (::Base.BottomRF{typeof(+)})(acc::Char, x::Char) @ Base ./reduce.jl:86
 ││││││││ no matching method found `+(::Char, ::Char)`: (op::Base.BottomRF{typeof(+)}).rf::typeof(+)(acc::Char, x::Char)
-│││││││└────────────────────
+│││││└┴┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────
 │││││┌ foldl_impl(op::Base.BottomRF{typeof(+)}, nt::Base._InitialValue, itr::Vector{Char}) @ Base ./reduce.jl:49
 ││││││┌ reduce_empty_iter(op::Base.BottomRF{typeof(+)}, itr::Vector{Char}) @ Base ./reduce.jl:383
 │││││││┌ reduce_empty_iter(op::Base.BottomRF{typeof(+)}, itr::Vector{Char}, ::Base.HasEltype) @ Base ./reduce.jl:384
 ││││││││┌ reduce_empty(op::Base.BottomRF{typeof(+)}, ::Type{Char}) @ Base ./reduce.jl:360
 │││││││││┌ reduce_empty(::typeof(+), ::Type{Char}) @ Base ./reduce.jl:343
 ││││││││││ no matching method found `zero(::Type{Char})`: zero(T::Type{Char})
-│││││││││└────────────────────
+└┴┴┴┴┴┴┴┴┴───────────────────────────────────────────────────────────────────
 ```
 
 ### Analyze packages with `report_package`
@@ -172,30 +172,30 @@ julia> report_package(AbstractTrees)
 ═════ 7 possible errors found ═════
 ┌ isroot(root::Any, x::Any) @ AbstractTrees ~/.julia/packages/AbstractTrees/Ftf8W/src/base.jl:102
 │ no matching method found `parent(::Any, ::Any)`: AbstractTrees.parent(root::Any, x::Any)
-└────────────────────
+└─────────────────────────────────────────────────────────────────────────────────────────
 ┌ StableNode{T}(x::T, ch::Any) where T @ AbstractTrees ~/.julia/packages/AbstractTrees/Ftf8W/src/base.jl:260
 │┌ collect(::Type{StableNode{_A}} where _A, itr::Any) @ Base ./array.jl:641
 ││┌ _collect(::Type{StableNode{_A}}, itr::Any, isz::Union{Base.HasLength, Base.HasShape}) where _A @ Base ./array.jl:643
 │││┌ _array_for(::Type{StableNode{_A}} where _A, itr::Base.HasLength, isz::Any) @ Base ./array.jl:673
 ││││┌ _similar_shape(itr::Base.HasLength, ::Base.HasLength) @ Base ./array.jl:657
 │││││ no matching method found `length(::Base.HasLength)`: length(itr::Base.HasLength)
-││││└────────────────────
+││││└─────────────────────────────────────────────────────────────────────────────────
 ││││┌ _similar_shape(itr::Base.HasLength, ::Base.HasShape) @ Base ./array.jl:658
 │││││┌ axes(A::Base.HasLength) @ Base ./abstractarray.jl:98
 ││││││ no matching method found `size(::Base.HasLength)`: size(A::Base.HasLength)
-│││││└────────────────────
+└┴┴┴┴┴───────────────────────────────────────────────────────────────────────────
 ┌ IndexNode(tree::Any) @ AbstractTrees ~/.julia/packages/AbstractTrees/Ftf8W/src/indexing.jl:117
 │ no matching method found `rootindex(::Any)`: rootindex(tree::Any)
-└────────────────────
+└──────────────────────────────────────────────────────────────────
 ┌ parent(idx::IndexNode) @ AbstractTrees ~/.julia/packages/AbstractTrees/Ftf8W/src/indexing.jl:127
 │ no matching method found `parentindex(::Any, ::Any)`: pidx = parentindex((idx::IndexNode).tree::Any, (idx::IndexNode).index::Any)
-└────────────────────
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ┌ nextsibling(idx::IndexNode) @ AbstractTrees ~/.julia/packages/AbstractTrees/Ftf8W/src/indexing.jl:132
 │ no matching method found `nextsiblingindex(::Any, ::Any)`: sidx = nextsiblingindex((idx::IndexNode).tree::Any, (idx::IndexNode).index::Any)
-└────────────────────
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ┌ prevsibling(idx::IndexNode) @ AbstractTrees ~/.julia/packages/AbstractTrees/Ftf8W/src/indexing.jl:137
 │ no matching method found `prevsiblingindex(::Any, ::Any)`: sidx = prevsiblingindex((idx::IndexNode).tree::Any, (idx::IndexNode).index::Any)
-└────────────────────
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 julia> report_package(AbstractTrees; target_modules=(AbstractTrees,)) # ignore errors that occur outside the AbstractTrees module context
 [toplevel-info] Skipped analysis for cached definition (256/256)
@@ -203,19 +203,19 @@ julia> report_package(AbstractTrees; target_modules=(AbstractTrees,)) # ignore e
 ═════ 5 possible errors found ═════
 ┌ isroot(root::Any, x::Any) @ AbstractTrees ~/.julia/packages/AbstractTrees/Ftf8W/src/base.jl:102
 │ no matching method found `parent(::Any, ::Any)`: AbstractTrees.parent(root::Any, x::Any)
-└────────────────────
+└─────────────────────────────────────────────────────────────────────────────────────────
 ┌ IndexNode(tree::Any) @ AbstractTrees ~/.julia/packages/AbstractTrees/Ftf8W/src/indexing.jl:117
 │ no matching method found `rootindex(::Any)`: rootindex(tree::Any)
-└────────────────────
+└──────────────────────────────────────────────────────────────────
 ┌ parent(idx::IndexNode) @ AbstractTrees ~/.julia/packages/AbstractTrees/Ftf8W/src/indexing.jl:127
 │ no matching method found `parentindex(::Any, ::Any)`: pidx = parentindex((idx::IndexNode).tree::Any, (idx::IndexNode).index::Any)
-└────────────────────
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ┌ nextsibling(idx::IndexNode) @ AbstractTrees ~/.julia/packages/AbstractTrees/Ftf8W/src/indexing.jl:132
 │ no matching method found `nextsiblingindex(::Any, ::Any)`: sidx = nextsiblingindex((idx::IndexNode).tree::Any, (idx::IndexNode).index::Any)
-└────────────────────
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ┌ prevsibling(idx::IndexNode) @ AbstractTrees ~/.julia/packages/AbstractTrees/Ftf8W/src/indexing.jl:137
 │ no matching method found `prevsiblingindex(::Any, ::Any)`: sidx = prevsiblingindex((idx::IndexNode).tree::Any, (idx::IndexNode).index::Any)
-└────────────────────
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ```
 
 ## Limitations
