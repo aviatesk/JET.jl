@@ -64,6 +64,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Deprecated
+
+- The `print_toplevel_success` and `print_inference_success` configurations
+  are deprecated and will be removed in a future release. Passing either one
+  emits `Base.depwarn`. `print_toplevel_success` now has no effect; displayed
+  analysis results never printed its message. `print_inference_success` keeps
+  working until its removal; use `isempty(JET.get_reports(result))` to check
+  for a result without reports.
+
 ## [0.12.3]
 
 ### Changed
