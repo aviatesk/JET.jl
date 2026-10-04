@@ -114,6 +114,17 @@ end
     end
 end
 
+@testset "deprecated success configurations" begin
+    @test isempty(@test_deprecated r"print_toplevel_success" sprint(io ->
+        print_reports(io, ToplevelErrorReport[]; print_toplevel_success=true)))
+    @test isempty(@test_deprecated r"print_inference_success" sprint(io ->
+        print_reports(io, InferenceErrorReport[]; print_inference_success=false)))
+    @test (@test_deprecated r"print_inference_success" sprint(io ->
+        print_reports(io, InferenceErrorReport[]; print_inference_success=true))) ==
+        "No errors detected\n"
+    @test sprint(print_reports, InferenceErrorReport[]) == "No errors detected\n"
+end
+
 @testset "invalid constant declaration messages" begin
     let res = @analyze_toplevel begin
             x = 1

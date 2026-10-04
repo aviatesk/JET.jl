@@ -39,11 +39,13 @@ are displayed in the REPL.
     location is essential.
 ---
 - `print_toplevel_success::Bool = false` \\
-  If `true`, print a message when no top-level errors are found.
+  **Deprecated**. This configuration has no effect and will be removed in a future release.
 ---
 - `print_inference_success::Bool = true` \\
+  **Deprecated**. This configuration will be removed in a future release.
   If `true`, print a message when no errors are found by an
   abstract-interpretation-based analysis pass.
+  Use `isempty(JET.get_reports(result))` to check for a result without reports.
 ---
 - `stacktrace_types_limit::Union{Nothing, Int} = nothing` \\
   If `nothing`, limit the type depth of argument types in stack traces based on
@@ -53,20 +55,31 @@ are displayed in the REPL.
 ---
 """
 struct PrintConfig
-    print_toplevel_success::Bool
     print_inference_success::Bool
     sourceinfo::Symbol
     stacktrace_types_limit::Union{Nothing,Int}
-    function PrintConfig(; print_toplevel_success::Bool = false,
-                           print_inference_success::Bool = true,
+    function PrintConfig(; print_toplevel_success::Union{Nothing,Bool} = nothing,
+                           print_inference_success::Union{Nothing,Bool} = nothing,
                            sourceinfo::Symbol = :default,
                            stacktrace_types_limit::Union{Nothing,Int} = nothing,
                            _jetconfigs...)
+        if print_toplevel_success !== nothing
+            Base.depwarn("The `print_toplevel_success` configuration is deprecated and " *
+                         "has no effect. It will be removed in a future release.",
+                         :PrintConfig)
+        end
+        if print_inference_success === nothing
+            print_inference_success = true
+        else
+            Base.depwarn("The `print_inference_success` configuration is deprecated and " *
+                         "will be removed in a future release. Use " *
+                         "`isempty(JET.get_reports(result))` to check for a result " *
+                         "without reports.", :PrintConfig)
+        end
         if sourceinfo ∉ (:full, :default, :compact, :minimal, :none)
             throw(ArgumentError("Invalid sourceinfo: $sourceinfo. Must be one of :full, :default, :compact, :minimal, :none"))
         end
-        return new(print_toplevel_success,
-                   print_inference_success,
+        return new(print_inference_success,
                    sourceinfo,
                    stacktrace_types_limit)
     end
@@ -142,12 +155,7 @@ function print_reports(io::IO,
     config = PrintConfig(; jetconfigs...)
 
     n = length(reports)
-    if n == 0
-        if config.print_toplevel_success
-            printlnstyled(io, "No toplevel errors detected"; color = NOERROR_COLOR)
-        end
-        return 0
-    end
+    n == 0 && return 0
 
     ctx = colorctx(io)
     with_bufferring(ctx) do io
