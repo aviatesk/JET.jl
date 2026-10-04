@@ -553,9 +553,13 @@ struct SignatureInfo
     mod::Module
     tt::Type
     src
+    # the location of the definition, as `Method.file` and `Method.line`:
+    # `src` may carry no line information, e.g. for `f() = 1`
+    linenode::LineNumberNode
     SignatureInfo(
-        filename::AbstractString, mod::Module, @nospecialize(tt::Type), @nospecialize(src)
-    ) = new(filename, mod, tt, src)
+        filename::AbstractString, mod::Module, @nospecialize(tt::Type), @nospecialize(src),
+        linenode::LineNumberNode
+    ) = new(filename, mod, tt, src, linenode)
 end
 
 """
@@ -2589,7 +2593,7 @@ function collect_toplevel_signature!(interp::ConcreteInterpreter, frame::Frame, 
             return nothing
         end
     end
-    atype_params, sparams, #=linenode=#_ =
+    atype_params, sparams, linenode =
         JuliaInterpreter.lookup(frame, node.args[2])::SimpleVector
     tt = form_method_signature(atype_params::SimpleVector, sparams::SimpleVector)
     @assert !CC.has_free_typevars(tt) "free type variable left in signature_infos"
@@ -2599,7 +2603,8 @@ function collect_toplevel_signature!(interp::ConcreteInterpreter, frame::Frame, 
     end
     mod = JuliaInterpreter.moduleof(frame)
     src = JuliaInterpreter.lookup(frame, node.args[3])
-    push!(state.res.signature_infos, SignatureInfo(state.filename, mod, tt, src))
+    push!(state.res.signature_infos,
+        SignatureInfo(state.filename, mod, tt, src, linenode::LineNumberNode))
 end
 
 # form a method signature from the first and second parameters of lowered `:method` expression

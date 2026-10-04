@@ -2053,6 +2053,23 @@ end
     end
 end
 
+@testset "signature locations" begin
+    res = report_text("""
+        f() = 1
+
+        function g(x)
+            x
+        end
+        for i in 1:2
+            @eval h() = \$i
+        end
+        """, "signature-locations.jl"; analyze_from_definitions=true)
+    @test [linenode.line for (; linenode) in res.res.signature_infos] == [1, 3, 7, 7]
+    @test all(res.res.signature_infos) do (; linenode)
+        linenode.file === Symbol("signature-locations.jl")
+    end
+end
+
 @testset "failed method definition signatures" begin
     @testset "caught: $analyze_from_definitions" for analyze_from_definitions in (true, false, :g, :f)
         context = gen_virtual_module()
