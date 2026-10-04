@@ -546,7 +546,10 @@ end
             # FIXME MissingConcretizationErrorReport support for macroexpansion
             # Broken since currently there is no way to use JuliaInterpreter for macroexpansion
             # Maybe some plugin system for JuliaLowering would fix this.
-            @test_broken isa(report, MissingConcretizationErrorReport)
+            # Don't pass `report` to `@test_broken` directly: stringifying it on failure
+            # accesses `@foo` from a world prior to its definition
+            ismissingconcretization = report isa MissingConcretizationErrorReport
+            @test_broken ismissingconcretization
             # @test_broken report.var.name === :arg
         end
     end
@@ -1960,7 +1963,9 @@ const CONCRETIZATION_PATTERNS_FILE =
         if isexpected
             report = only(res.res.toplevel_error_reports)
             # FIXME MissingConcretizationErrorReport support for macroexpansion
-            @test_broken isa(report, MissingConcretizationErrorReport)
+            # Don't pass `report` to `@test_broken` directly (see the `@foo` case above)
+            ismissingconcretization = report isa MissingConcretizationErrorReport
+            @test_broken ismissingconcretization
         end
     end
 
