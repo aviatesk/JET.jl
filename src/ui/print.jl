@@ -101,7 +101,6 @@ const RAIL_COLORS = ( # Julia color + yellow
 const N_RAILS = length(RAIL_COLORS)
 const LEFT_ROOF  = "═════ "
 const RIGHT_ROOF = " ═════"
-header_width(s::String) = textwidth(LEFT_ROOF) + textwidth(s) + textwidth(RIGHT_ROOF)
 const HEADER_COLOR = :reverse
 const ERROR_SIG_COLOR = :bold
 const TYPE_ANNOTATION_COLOR = :light_cyan
@@ -117,6 +116,22 @@ function print_rails(io, depth)
         color = RAIL_COLORS[i%N_RAILS+1]
         printstyled(io, '│'; color)
     end
+end
+
+# Terminal control sequences, which take no display width: CSI sequences such as colors and
+# OSC sequences such as hyperlinks
+const CONTROL_SEQUENCE = r"\e\[[0-?]*[ -/]*[@-~]|\e\][^\a\e]*(?:\a|\e\\)"
+
+# The display width of the widest line of the report message `s` as it is finally shown,
+# i.e. after `postprocessor` and without terminal control sequences.
+message_width(s::String, postprocessor::PostProcessor) =
+    maximum(textwidth, split(replace(postprocessor(s), CONTROL_SEQUENCE => ""), '\n'))
+
+# Closes the boxes from depth `to` through `from` on one line that is `width` wide: `└`
+# closes the box at depth `to`, and each `┴` closes a deeper box.
+function print_box_bottom(io::IO, width::Int, from::Int, to::Int, color::Symbol)
+    print_rails(io, to-1)
+    printlnstyled(io, '└', '┴'^(from-to), '─'^max(width-from, 1); color)
 end
 
 function format_path(path::AbstractString, sourceinfo::Symbol)
@@ -165,7 +180,7 @@ function print_reports(io::IO,
         println(io, "JET stopped before completing the analysis.")
         println(io, "Fix the error below and rerun the analysis.")
         for report in reports
-            print_toplevel_report(io, report, config, ERROR_COLOR, header_width(s))
+            print_toplevel_report(io, report, config, ERROR_COLOR, postprocessor)
         end
     end |> postprocessor |> (x->print(io::IO,x))
 
@@ -185,7 +200,7 @@ function print_reports(io::IO,
         s = string(pluralize(n, "toplevel warning"), " found")
         printlnstyled(io, LEFT_ROOF, s, RIGHT_ROOF; color = HEADER_COLOR)
         for report in reports
-            print_toplevel_report(io, report, config, WARNING_COLOR, header_width(s))
+            print_toplevel_report(io, report, config, WARNING_COLOR, postprocessor)
         end
     end |> postprocessor |> (x->print(io::IO,x))
 
@@ -194,7 +209,8 @@ end
 
 function print_toplevel_report(io::IO,
                                report::Union{ToplevelErrorReport,ToplevelWarningReport},
-                               config::PrintConfig, color::Symbol, width::Int)
+                               config::PrintConfig, color::Symbol,
+                               postprocessor::PostProcessor)
     ctx = colorctx(io)
     rail = with_bufferring(ctx) do io
         printstyled(io, "│ "; color)
@@ -211,9 +227,9 @@ function print_toplevel_report(io::IO,
     lines = with_bufferring(ctx) do io
         print_report(io, report)
     end |> strip
-    join(io, string.(rail, split(lines, '\n')), '\n')
-    println(io)
-    printlnstyled(io, '└', '─'^(width-1); color)
+    message = join(string.(rail, split(lines, '\n')), '\n')
+    println(io, message)
+    print_box_bottom(io, message_width(message, postprocessor), 1, 1, color)
     return nothing
 end
 
@@ -256,23 +272,40 @@ function print_reports(io::IO,
         # don't duplicated virtual stack frames for reports from the same toplevel frame
         toplevel_linfo_hash = hash(:dummy)
         wrote_linfos = Set{UInt64}()
+        open_depth, open_width, open_color = 0, 0, ERROR_COLOR
         for report in reports
             new_toplevel_linfo_hash = hash(first(report.vst))
             if toplevel_linfo_hash != new_toplevel_linfo_hash
                 toplevel_linfo_hash = new_toplevel_linfo_hash
                 wrote_linfos = Set{UInt64}()
             end
-            print_stack(io, report, config, wrote_linfos)
+            if open_depth > 0
+                # close the boxes that the next report does not share
+                to = min(first_printed_depth(report, wrote_linfos), open_depth)
+                print_box_bottom(io, open_width, open_depth, to, open_color)
+            end
+            open_width = print_stack(io, report, config, wrote_linfos, postprocessor)::Int
+            open_depth, open_color = length(report.vst), report_color(report)
         end
+        print_box_bottom(io, open_width, open_depth, 1, open_color)
     end |> postprocessor |> (x->print(io::IO,x))
 
     return n
 end
 
-# traverse abstract call stack, print frames
-function print_stack(io, report, config, wrote_linfos, depth = 1)
+# The depth of the first frame that `print_stack` prints for `report`.
+function first_printed_depth(report::InferenceErrorReport, wrote_linfos::Set{UInt64})
+    vst = report.vst
+    for depth = 1:length(vst)-1
+        hash(vst[depth]) ∉ wrote_linfos && return depth
+    end
+    return length(vst)
+end
+
+# traverse abstract call stack, print frames, and return the width of the error message
+function print_stack(io, report, config, wrote_linfos, postprocessor, depth = 1)
     if length(report.vst) == depth # error here
-        return print_error_frame(io, report, config, depth)
+        return print_error_frame(io, report, config, postprocessor, depth)
     end
 
     frame = report.vst[depth]
@@ -292,7 +325,7 @@ function print_stack(io, report, config, wrote_linfos, depth = 1)
         print_frame_loc(io, frame, config, color)
         println(io)
     end
-    print_stack(io, report, config, wrote_linfos, depth + 1)
+    print_stack(io, report, config, wrote_linfos, postprocessor, depth + 1)
 end
 
 function print_frame_sig(io, frame, config)
@@ -350,7 +383,7 @@ function fixed_line_number(frame)
     return line + Δ
 end
 
-function print_error_frame(io, report, config, depth)
+function print_error_frame(io, report, config, postprocessor, depth)
     frame = report.vst[depth]
     color = report_color(report)
 
@@ -361,13 +394,13 @@ function print_error_frame(io, report, config, depth)
     print_frame_loc(io, frame, config, color)
     println(io)
 
-    print_rails(io, depth-1)
-    printstyled(io, "│ "; color)
-    print_report(io, report, config)
-    println(io)
-
-    print_rails(io, depth-1)
-    printlnstyled(io, '└', '─'^20; color)
+    message = with_bufferring(colorctx(io)) do io
+        print_rails(io, depth-1)
+        printstyled(io, "│ "; color)
+        print_report(io, report, config)
+    end
+    println(io, message)
+    return message_width(message, postprocessor)
 end
 
 function print_report(io::IO, report::InferenceErrorReport, config::PrintConfig=PrintConfig())

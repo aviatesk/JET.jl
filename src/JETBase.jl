@@ -608,7 +608,7 @@ julia> @report_call foo("julia")
 ││││││││││││┌ (::Base.BottomRF{typeof(Base.add_sum)})(acc::Char, x::Char) @ Base ./reduce.jl:86
 │││││││││││││┌ add_sum(x::Char, y::Char) @ Base ./reduce.jl:24
 ││││││││││││││ no matching method found `+(::Char, ::Char)`: (x::Char + y::Char)
-│││││││││││││└────────────────────
+││││││││││└┴┴┴──────────────────────────────────────────────────────────────────
 ││││││││││┌ foldl_impl(op::Base.BottomRF{typeof(Base.add_sum)}, nt::Base._InitialValue, itr::String) @ Base ./reduce.jl:49
 │││││││││││┌ reduce_empty_iter(op::Base.BottomRF{typeof(Base.add_sum)}, itr::String) @ Base ./reduce.jl:383
 ││││││││││││┌ reduce_empty_iter(op::Base.BottomRF{typeof(Base.add_sum)}, itr::String, ::Base.HasEltype) @ Base ./reduce.jl:384
@@ -616,10 +616,10 @@ julia> @report_call foo("julia")
 ││││││││││││││┌ reduce_empty(::typeof(Base.add_sum), ::Type{Char}) @ Base ./reduce.jl:352
 │││││││││││││││┌ reduce_empty(::typeof(+), ::Type{Char}) @ Base ./reduce.jl:343
 ││││││││││││││││ no matching method found `zero(::Type{Char})`: zero(T::Type{Char})
-│││││││││││││││└────────────────────
+└┴┴┴┴┴┴┴┴┴┴┴┴┴┴┴───────────────────────────────────────────────────────────────────
 ┌ foo(a::String) @ Main ./REPL[14]:3
 │ `Main.undefsum` is not defined: undefsum
-└────────────────────
+└─────────────────────────────────────────
 
 # With `target_modules=(Main,)`, JET reports only problems detected in code
 # defined interactively in the REPL:
@@ -627,21 +627,21 @@ julia> @report_call target_modules=(Main,) foo("julia")
 ═════ 1 possible error found ═════
 ┌ foo(a::String) @ Main ./REPL[14]:3
 │ `Main.undefsum` is not defined: undefsum
-└────────────────────
+└─────────────────────────────────────────
 
 # With `ignored_modules=(Base,)`, JET ignores errors detected in `Base`:
 julia> @report_call ignored_modules=(Base,) foo("julia")
 ═════ 1 possible error found ═════
 ┌ foo(a::String) @ Main ./REPL[14]:3
 │ `Main.undefsum` is not defined: undefsum
-└────────────────────
+└─────────────────────────────────────────
 
 # Alternatively, use a Symbol to specify the module by name:
 julia> @report_call ignored_modules=(:Base,) foo("julia")
 ═════ 1 possible error found ═════
 ┌ foo(a::String) @ Main ./REPL[14]:3
 │ `Main.undefsum` is not defined: undefsum
-└────────────────────
+└─────────────────────────────────────────
 ```
 ---
 """

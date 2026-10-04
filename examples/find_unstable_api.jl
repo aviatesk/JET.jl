@@ -259,13 +259,13 @@ end #hide
 # │││┌ @ ~.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:38 IRTools.Inner.#meta#1(types, world, _3, T)
 # ││││┌ @ ~.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:43 Base._methods_by_ftype
 # │││││ usage of unstable API `Base._methods_by_ftype` found
-# ││││└─────────────────────────────────────────────────────────────────────────────────
+# ││││└─────────────────────────────────────────────────────
 # ││││┌ @ ~.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:49 Base.isgenerated
 # │││││ usage of unstable API `Base.isgenerated` found
-# ││││└─────────────────────────────────────────────────────────────────────────────────
+# ││││└───────────────────────────────────────────────
 # ││││┌ @ ~.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:49 Base.uncompressed_ast
 # │││││ usage of unstable API `Base.uncompressed_ast` found
-# ││││└─────────────────────────────────────────────────────────────────────────────────
+# ││││└────────────────────────────────────────────────────
 # ││││┌ @ ~.julia/packages/IRTools/aSVI5/src/reflection/reflection.jl:54
 # ... # many other "unstable API"s detected
 # ```

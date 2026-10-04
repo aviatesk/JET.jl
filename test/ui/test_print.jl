@@ -45,7 +45,7 @@ end
             Fix the error below and rerun the analysis.
             ┌ @ ./example.jl:7""")
         lines = split(s, '\n'; keepempty=false)
-        @test textwidth(last(lines)) == textwidth(first(lines))
+        @test textwidth(last(lines)) == maximum(textwidth, lines[5:end-1])
         @test !occursin("1 toplevel error found", s)
         @test !occursin("No errors detected", s)
     end
@@ -74,9 +74,16 @@ end
         s = sprint(print_reports, JET.ToplevelWarningReport[report, report])
         @test occursin("2 toplevel warnings found", s)
         lines = split(s, '\n'; keepempty=false)
-        bottoms = filter(startswith("└"), lines)
+        bottoms = findall(startswith("└"), lines)
         @test length(bottoms) == 2
-        @test all(l -> textwidth(l) == textwidth(first(lines)), bottoms)
+        @test all(i -> textwidth(lines[i]) == textwidth(lines[i-1]), bottoms)
+    end
+    # control sequences, such as hyperlinks in colored parser diagnostics, take no width
+    let res = @test_logs report_text("x = 1e-1000\n", @__FILE__)
+        s = sprint(show, res; context=:color=>true)
+        @test occursin("\e]8;;", s)
+        lines = split(replace(s, JET.CONTROL_SEQUENCE => ""), '\n'; keepempty=false)
+        @test textwidth(last(lines)) == maximum(textwidth, lines[3:end-1])
     end
     let res = @test_logs report_text("x = 1e-1000\n", @__FILE__)
         reports = get_reports(res)
@@ -202,6 +209,15 @@ end
             @test occursin("1 possible error found", s)
             @test occursin("$(escape_string(filename)):1", s) # toplevel call site
         end
+    end
+
+    # each line closing report boxes is as wide as the error message above it, and the last
+    # one closes all remaining boxes
+    let lines = split(sprint(show, report_call(sum, (String,))), '\n'; keepempty=false)
+        closings = findall(l -> occursin(r"^│*└┴*─+$", l), lines)
+        @test any(i -> startswith(lines[i], "│") && occursin('┴', lines[i]), closings)
+        @test all(i -> textwidth(lines[i]) == textwidth(lines[i-1]), closings)
+        @test startswith(last(lines), "└┴")
     end
 end
 

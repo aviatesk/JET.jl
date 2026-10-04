@@ -42,7 +42,7 @@ the following configurations specific to optimization analysis.
   ═════ 1 possible error found ═════
   ┌ strange_twos(a::Vector) @ Main ./REPL[2]:2
   │ runtime dispatch detected: fill_twos!(a::Vector)::Any
-  └────────────────────
+  └──────────────────────────────────────────────────────
 
   # Also include reports from inside non-compileable calls.
   julia> report_opt(strange_twos, (Vector,);
@@ -53,19 +53,19 @@ the following configurations specific to optimization analysis.
   ││┌ setindex!(A::Vector, x::Int64, i::Int64) @ Base ./array.jl:986
   │││┌ _setindex!(A::Vector{T}, x::Any, i::Int64) where T @ Base ./array.jl:990
   ││││ runtime dispatch detected: Base.throw_boundserror(A::Vector, %12::Tuple{Int64})
-  │││└────────────────────
+  ││└┴────────────────────────────────────────────────────────────────────────────────
   ││┌ setindex!(A::Vector, x::Int64, i::Int64) @ Base ./array.jl:985
   │││ runtime dispatch detected: convert(%5::Any, x::Int64)::Any
-  ││└────────────────────
+  ││└───────────────────────────────────────────────────────────
   ││┌ setindex!(A::Vector, x::Int64, i::Int64) @ Base ./array.jl:986
   │││ runtime dispatch detected: Base._setindex!(A::Vector, %9::Any, i::Int64)::Vector
-  ││└────────────────────
+  │└┴─────────────────────────────────────────────────────────────────────────────────
   │┌ fill_twos!(a::Vector) @ Main ./REPL[1]:3
   ││ runtime dispatch detected: ((a::Vector)[%13::Int64] = 2::Any)
-  │└────────────────────
+  └┴──────────────────────────────────────────────────────────────
   ┌ strange_twos(a::Vector) @ Main ./REPL[2]:2
   │ runtime dispatch detected: fill_twos!(a::Vector)::Any
-  └────────────────────
+  └──────────────────────────────────────────────────────
   ```
 
   With the default setting, JET reports the runtime dispatch from the entry
@@ -101,7 +101,7 @@ the following configurations specific to optimization analysis.
       ═════ 1 possible error found ═════
       ┌ (::var"#3#4")(xs::Vector{Any}) @ Main ./REPL[3]:7
       │ runtime dispatch detected: maybesin(%19::Any)::Any
-      └────────────────────
+      └───────────────────────────────────────────────────
 
       julia> function maybesin(@nospecialize x) # mark `x` with `@nospecialize`
                  if isa(x, Number)
@@ -125,7 +125,7 @@ the following configurations specific to optimization analysis.
       ┌ (::var"#5#6")(xs::Vector{Any}) @ Main ./REPL[5]:7
       │┌ maybesin(x::Any) @ Main ./REPL[4]:3
       ││ runtime dispatch detected: sin(%3::Number)::Any
-      │└────────────────────
+      └┴────────────────────────────────────────────────
       ```
 
 ---

@@ -1710,7 +1710,7 @@ JET-test failed at none:1
   ═════ 1 possible error found ═════
   ┌ f(n::Int64) @ Main ./none:2
   │ non-boolean `Any` may be used in boolean context: goto %5 if not cond
-  └────────────────────
+  └──────────────────────────────────────────────────────────────────────
 
 ERROR: There was an error during testing
 ```
@@ -1740,7 +1740,7 @@ check errors: JET-test failed at REPL[21]:3
   ═════ 1 possible error found ═════
   ┌ f(ref::Base.RefValue{Union{Nothing, Int64}}) @ Main ./REPL[19]:1
   │ no matching method found `sin(::Nothing)` (1/2 union split): sin((ref::Base.RefValue{Union{Nothing, Int64}})[]::Union{Nothing, Int64})
-  └────────────────────
+  └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 Test Summary: | Pass  Fail  Broken  Total  Time
 check errors  |    1     1       1      3  0.2s
