@@ -347,6 +347,18 @@ include("abstractinterpret/typeinfer.jl")
     print_report(io::IO, report::Union{ToplevelErrorReport,ToplevelWarningReport})
 
 Print a top-level error or warning report to the given `io`.
+
+The message starts with a summary that makes sense on its own, followed by a blank line
+and the body if any. Consumers can control the formatting with the following `IO`
+properties:
+- `:summary_line::Bool`: if `true`, the summary is printed on a single line, so that
+  consumers can show the first line on its own; otherwise it is wrapped like the body.
+  Error messages from Julia in the summary are not wrapped either way: when such a
+  summary does not fit, the error message starts a new line.
+- `:displaysize::Tuple{Int,Int}`: the message is wrapped at 90 columns, or at the width
+  of the display if it is narrower.
+- `:markdown_rendering::Bool`: if `true`, the message is rendered as Markdown, and
+  preformatted text such as stacktraces and source excerpts is printed in code blocks.
 """
 function print_report end
 

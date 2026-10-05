@@ -137,6 +137,11 @@ end
 # these utilities allow robust testing to check if a object is successfully analyzed by JET whichever it's concretized or abstracted
 isanalyzed(args...) = isconcrete(args...) || isabstract(args...)
 
+# the message of a top-level report with its whitespace collapsed, so that phrases can be
+# looked up regardless of where the message is wrapped
+report_message(report; context=nothing) =
+    join(split(sprint(JET.print_report, report; context)), ' ')
+
 function is_global_undef_var(@nospecialize(r::InferenceErrorReport), mod::Module, name::Symbol)
     r isa UndefVarErrorReport || return false
     var = r.var

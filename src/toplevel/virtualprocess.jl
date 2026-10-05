@@ -50,6 +50,14 @@ function Base.getproperty(er::Union{ToplevelErrorReport,ToplevelWarningReport}, 
     end
 end
 
+function print_syntax_diagnostic(io::IO, diagnostic::JS.Diagnostic, source::JS.SourceFile)
+    if markdown_rendering(io)
+        print_markdown_codeblock(io, sprint(JS.show_diagnostic, diagnostic, source; context=io))
+    else
+        JS.show_diagnostic(io, diagnostic, source)
+    end
+end
+
 struct ParseErrorReport <: ToplevelErrorReport
     diagnostic::JS.Diagnostic
     source::JS.SourceFile
@@ -60,9 +68,10 @@ struct ParseErrorReport <: ToplevelErrorReport
         return new(diagnostic, source, source.filename::String, line)
     end
 end
-# don't show stacktrace for syntax errors
-print_report(io::IO, report::ParseErrorReport) =
-    JS.show_diagnostic(io, report.diagnostic, report.source)
+function print_report(io::IO, report::ParseErrorReport)
+    print_summary(io, "Syntax error: $(report.diagnostic.message)")
+    print_syntax_diagnostic(io, report.diagnostic, report.source)
+end
 
 """
     ParseWarningReport <: ToplevelWarningReport
@@ -79,14 +88,17 @@ struct ParseWarningReport <: ToplevelWarningReport
         return new(diagnostic, source, source.filename::String, line)
     end
 end
-print_report(io::IO, report::ParseWarningReport) =
-    JS.show_diagnostic(io, report.diagnostic, report.source)
+function print_report(io::IO, report::ParseWarningReport)
+    print_summary(io, "Syntax warning: $(report.diagnostic.message)")
+    print_syntax_diagnostic(io, report.diagnostic, report.source)
+end
 
 """
     UnsupportedFeatureReport <: ToplevelWarningReport
 
 A limitation for which JET continues analysis with an approximation. The message
-explains the unsupported feature and how the analyzed code differs from it.
+explains the unsupported feature and how the analyzed code differs from it, and is
+printed below a header common to all unsupported features.
 For example, JET reports `include(mapexpr, filename)` with this report and analyzes the
 included file without applying `mapexpr`.
 """
@@ -95,7 +107,11 @@ struct UnsupportedFeatureReport <: ToplevelWarningReport
     file::String
     line::Int
 end
-print_report(io::IO, report::UnsupportedFeatureReport) = print(io, report.message)
+function print_report(io::IO, report::UnsupportedFeatureReport)
+    print_summary(io,
+        "JET analyzes this code approximately because it uses an unsupported feature.")
+    print_wrapped(io, report.message)
+end
 
 # TODO Use JuliaLowering.jl
 struct MacroExpansionErrorReport <: ToplevelErrorReport
@@ -104,10 +120,8 @@ struct MacroExpansionErrorReport <: ToplevelErrorReport
     file::String
     line::Int
 end
-function print_report(io::IO, report::MacroExpansionErrorReport)
-    println(io, "Macro expansion error:")
-    showerror(io, report.err, report.st)
-end
+print_report(io::IO, report::MacroExpansionErrorReport) =
+    print_error_report(io, "JET could not expand a macro in this code", report.err, report.st)
 
 # TODO Use JuliaLowering.jl
 struct LoweringErrorReport <: ToplevelErrorReport
@@ -120,10 +134,9 @@ struct LoweringErrorReport <: ToplevelErrorReport
 end
 function print_report(io::IO, report::LoweringErrorReport)
     if isdefined(report, :st)
-        println(io, "Lowering error:")
-        showerror(io, report.err, report.st)
+        print_error_report(io, "JET could not lower this code", report.err, report.st)
     else
-        showerror(io, ErrorException(lazy"syntax: $(report.err)"))
+        print_summary(io, "Syntax error: $(report.err)"; body = false)
     end
 end
 
@@ -137,19 +150,8 @@ struct ActualErrorWrapped <: ToplevelErrorReport
         return new(err, st, file, line)
     end
 end
-# TODO: add context information
-function print_report(io::IO, report::ActualErrorWrapped)
-    if get(io, :markdown_rendering, false)::Bool
-        msg = sprint(showerror, report.err, report.st; context=io)
-        parts = split(msg, "\nStacktrace:"; limit=2)
-        print(io, first(parts))
-        if length(parts) == 2
-            println(io, "\n\n```\nStacktrace:", last(parts), "\n```")
-        end
-    else
-        showerror(io, report.err, report.st)
-    end
-end
+print_report(io::IO, report::ActualErrorWrapped) =
+    print_error_report(io, "JET could not execute this top-level code", report.err, report.st)
 
 struct DependencyError <: ToplevelErrorReport
     pkg::String
@@ -159,15 +161,18 @@ struct DependencyError <: ToplevelErrorReport
 end
 function print_report(io::IO, report::DependencyError)
     (; pkg, dep) = report
-    # NOTE this message should sync with `Base.require`
-    print(io, """
-    Package $pkg does not have $dep in its dependencies:
-    - You may have a partially installed environment. Try `Pkg.instantiate()`
-      to ensure all packages in the environment are installed.
-    - Or, if you have $pkg checked out for development and have
-      added $dep as a dependency but haven't updated your primary
-      environment's manifest file, try `Pkg.resolve()`.
-    - Otherwise you may need to report an issue with $pkg""")
+    # NOTE the wording should sync with `Base.require`
+    print_summary(io, "Package $pkg does not have $dep in its dependencies.")
+    println_wrapped(io,
+        "You may have a partially installed environment. Try `Pkg.instantiate()` to ensure " *
+        "all packages in the environment are installed.";
+        prefix="- ")
+    println_wrapped(io,
+        "Or, if you have $pkg checked out for development and have added $dep as a " *
+        "dependency but haven't updated your primary environment's manifest file, try " *
+        "`Pkg.resolve()`.";
+        prefix="- ")
+    print_wrapped(io, "Otherwise you may need to report an issue with $pkg"; prefix="- ")
 end
 
 struct RecursiveIncludeErrorReport <: ToplevelErrorReport
@@ -177,10 +182,13 @@ struct RecursiveIncludeErrorReport <: ToplevelErrorReport
     line::Int
 end
 function print_report(io::IO, report::RecursiveIncludeErrorReport)
-    printstyled(io, "ERROR: "; bold = true, color = ERROR_COLOR)
-    println(io, "recursive `include` call detected:")
-    println(io, " ⚈ duplicated file: ", report.duplicated_file)
-    println(io, " ⚈  included files: ", join(report.files, ' '))
+    (; duplicated_file, files) = report
+    print_summary(io, "Recursive `include` detected: `$duplicated_file` is already being included.")
+    println(io, "Include chain:")
+    for file in files
+        println(io, "- `$file`")
+    end
+    print(io, "- `$duplicated_file`")
 end
 
 # thrown by `JuliaInterpreter.step_expr!(::ConcreteInterpreter, ...)` when the concrete
@@ -196,32 +204,42 @@ struct ConcretizationTimeoutErrorReport <: ToplevelErrorReport
     line::Int
 end
 function print_report(io::IO, report::ConcretizationTimeoutErrorReport)
-    print(io, "JET stopped the concrete execution of this top-level statement after")
-    println(io, " $(report.timeout) seconds (`concretization_timeout`).")
+    print_summary(io,
+        "JET stopped the concrete execution of this top-level statement after " *
+        "$(report.timeout) seconds (`concretization_timeout`).")
+    println_wrapped(io,
+        "JET executes top-level code concretely when it contains `function` or `struct` " *
+        "definitions, `@eval` calls, in-place updates of concretized values, or code matching " *
+        "`concretization_patterns`. This statement exceeded the time limit, possibly due to " *
+        "interpretation overhead, a long-running computation, or nontermination. The rest of " *
+        "the statement was not executed, and JET stopped the entire top-level analysis without " *
+        "analyzing this statement or any subsequent statements.")
     println(io)
-    println(io, "JET executes top-level code concretely when it contains `function` or")
-    println(io, "`struct` definitions, `@eval` calls, in-place updates of concretized")
-    println(io, "values, or code matching `concretization_patterns`. This statement")
-    println(io, "exceeded the time limit, possibly due to interpretation overhead, a")
-    println(io, "long-running computation, or nontermination. The rest of the statement")
-    println(io, "was not executed, and JET stopped the entire top-level analysis without")
-    println(io, "analyzing this statement or any subsequent statements.")
-    println(io)
-    println(io, "- Move the definitions or `@eval` calls out of the long-running code, so")
-    println(io, "  that JET analyzes the code instead of executing it.")
+    println_wrapped(io,
+        "Move the definitions or `@eval` calls out of the long-running code, so that JET " *
+        "analyzes the code instead of executing it.";
+        prefix="- ")
     if !isempty(report.st)
-        println(io, "- If the stacktrace shows code that normally finishes quickly, interpretation")
-        println(io, "  overhead may be causing the timeout. Add a `concretization_patterns` entry")
-        println(io, "  matching the enclosing top-level block to run its function calls natively.")
-        println(io, "  This executes the entire matching block, including any side effects, and")
-        println(io, "  `concretization_timeout` cannot interrupt those native calls.")
+        println_wrapped(io,
+            "If the stacktrace shows code that normally finishes quickly, interpretation " *
+            "overhead may be causing the timeout. Add a `concretization_patterns` entry " *
+            "matching the enclosing top-level block to run its function calls natively. This " *
+            "executes the entire matching block, including any side effects, and " *
+            "`concretization_timeout` cannot interrupt those native calls.";
+            prefix="- ")
     end
-    println(io, "- If the code is expected to run this long, raise `concretization_timeout`.")
+    println_wrapped(io,
+        "If the code is expected to run this long, raise `concretization_timeout`.";
+        prefix="- ")
     if !isempty(report.st)
-        markdown_rendering = get(io, :markdown_rendering, false)::Bool
-        markdown_rendering && (println(io); print(io, "```"))
-        Base.show_backtrace(io, report.st) # adds a `Stacktrace:` heading
-        markdown_rendering && println(io, "\n```")
+        if markdown_rendering(io)
+            println(io)
+            # `show_backtrace` prints a newline before its `Stacktrace:` heading
+            stacktrace = sprint(Base.show_backtrace, report.st; context=io)
+            print_markdown_codeblock(io, lstrip(stacktrace, '\n'))
+        else
+            Base.show_backtrace(io, report.st) # adds a `Stacktrace:` heading
+        end
     end
 end
 
@@ -255,53 +273,58 @@ end
 function print_report(io::IO, report::MissingConcretizationErrorReport)
     (; isconst, var, assignment) = report
     (; mod, name) = var
-    println(io, "`$mod.$name` is used while JET is processing top-level definitions,")
-    println(io, "so JET needs its concrete value (the actual runtime value).")
-    println(io)
-    println(io, "JET tracked that the binding exists, but it did not actually evaluate")
-    if assignment === nothing
-        println(io, "the assignment that gives this binding its value.")
-    else
-        println(io, "the assignment at $(assignment.file):$(assignment.line) that gives")
-        println(io, "this binding its value.")
-    end
+    print_summary(io,
+        "`$mod.$name` is used while JET is processing top-level definitions, so JET needs " *
+        "its concrete value (the actual runtime value).")
+    assignment_desc = assignment === nothing ? "the assignment" :
+        "the assignment at `$(assignment.file):$(assignment.line)`"
+    println_wrapped(io,
+        "JET tracked that the binding exists, but it did not actually evaluate " *
+        "$assignment_desc that gives this binding its value.")
     println(io)
     if !isconst
-        println(io, "- If `$name` is intended to be a stable configuration value,")
-        println(io, "  consider declaring it as a constant, e.g. `const $name = ...`.")
-        println(io, "  This helps only when JET can infer the concrete value from the")
-        println(io, "  right-hand side without executing the assignment.")
-        println(io, "- Otherwise, or if JET still cannot determine the value, add a")
-        println(io, "  `concretization_patterns` entry for the assignment.")
+        println_wrapped(io,
+            "If `$name` is intended to be a stable configuration value, consider declaring it " *
+            "as a constant, e.g. `const $name = ...`. This helps only when JET can infer the " *
+            "concrete value from the right-hand side without executing the assignment.";
+            prefix="- ")
+        add_entry = "Otherwise, or if JET still cannot determine the value, add"
     else
-        println(io, "- Add a `concretization_patterns` entry for the assignment.")
+        add_entry = "Add"
     end
-    println(io, "  This tells JET to actually evaluate top-level code that matches the")
+    entry = "$add_entry a `concretization_patterns` entry for the assignment. This tells " *
+        "JET to actually evaluate top-level code that matches the pattern."
     patternex = assignment === nothing ? nothing : assignment.pattern
     if patternex !== nothing
         pattern = sprint(Base.show_unquoted, patternex)
-        println(io, "  pattern. For example:")
+        println_wrapped(io, "$entry For example:"; prefix="- ")
         println(io, "  `report_file(\"path/to/file.jl\"; concretization_patterns = [:($pattern)])`")
-        println(io, "  Use a specific pattern when possible, because matching code is executed.")
+        println_wrapped(io,
+            "Use a specific pattern when possible, because matching code is executed.";
+            prefix="  ")
     elseif contains_macrotools_metavariable(name)
-        println(io, "  pattern. However, `MacroTools.@capture` treats `$name` itself")
-        println(io, "  as a catchall that matches any expression, so a pattern like")
-        println(io, "  `:($name = x_)` would match every assignment, not just this one.")
-        println(io, "  Consider renaming the binding first.")
+        println_wrapped(io,
+            "$entry However, `MacroTools.@capture` treats `$name` itself as a catchall that " *
+            "matches any expression, so a pattern like `:($name = x_)` would match every " *
+            "assignment, not just this one. Consider renaming the binding first.";
+            prefix="- ")
     elseif assignment !== nothing
-        println(io, "  pattern. Patterns are matched against whole top-level statements,")
-        println(io, "  and JET could not derive one from the statement holding that")
-        println(io, "  assignment, so the pattern has to be written by hand to match the")
-        println(io, "  statement as it appears in the source.")
+        println_wrapped(io,
+            "$entry Patterns are matched against whole top-level statements, and JET could " *
+            "not derive one from the statement holding that assignment, so the pattern has " *
+            "to be written by hand to match the statement as it appears in the source.";
+            prefix="- ")
     else
-        println(io, "  pattern. Patterns are matched against whole top-level statements,")
-        println(io, "  and JET could not identify the statement that assigns this binding,")
-        println(io, "  so the pattern has to be written by hand to match that statement as")
-        println(io, "  it appears in the source.")
+        println_wrapped(io,
+            "$entry Patterns are matched against whole top-level statements, and JET could " *
+            "not identify the statement that assigns this binding, so the pattern has to be " *
+            "written by hand to match that statement as it appears in the source.";
+            prefix="- ")
     end
-    println(io, "- As a last resort, use `concretization_patterns = [:(x_)]` to evaluate")
-    println(io, "  all top-level code in the module. This may run side effects and can")
-    print(io, "  make analysis slower.")
+    print_wrapped(io,
+        "As a last resort, use `concretization_patterns = [:(x_)]` to evaluate all top-level " *
+        "code in the module. This may run side effects and can make analysis slower.";
+        prefix="- ")
 end
 
 const DEFAULT_CONCRETIZATION_TIMEOUT = 10.0

@@ -102,6 +102,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `include(mapexpr, filename)` calls produce `UnsupportedFeatureReport`s and
   analyze the included file without applying `mapexpr`.
 
+- The explanatory text of top-level reports is wrapped at 90 columns, or at
+  the terminal width when results are shown in a narrower REPL. Error
+  messages, stacktraces, and source excerpts are not wrapped.
+
+- The `Top-level analysis failed` header is now highlighted in red.
+
+- Top-level report messages now start with a summary, followed by a blank line
+  and the details. Errors from parsing, macro expansion, lowering, and concrete
+  execution are summarized with what JET was doing and the first line of the
+  error message, e.g.
+  `JET could not execute this top-level code: UndefVarError: ...`, and parser
+  diagnostics as `Syntax error: ...` or `Syntax warning: ...`.
+  `UnsupportedFeatureReport`s show a common summary above the description of
+  the unsupported feature, and `RecursiveIncludeErrorReport`s list the include
+  chain. The VS Code integration keeps the summary on the first line of its
+  diagnostics.
+
 ### Deprecated
 
 - The `print_toplevel_success` and `print_inference_success` configurations
