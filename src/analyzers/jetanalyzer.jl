@@ -1855,7 +1855,8 @@ supplied as keyword arguments. Supplied values override the defaults below:
     One of the most common issues of this analysis is that the results of `report_package(pkg)`
     can be overwhelmed by errors within `pkg`'s dependency packages.
     In such cases, use the [`target_modules` configuration](@ref result-config)
-    to narrow down the error scope to `pkg`'s module context:
+    to retain errors occurring in `pkg` or its submodules. Specifying the
+    parent module includes its submodules automatically:
     ```julia
     julia> report_package(JET)
     [toplevel-info] Analyzing top-level definition (progress: 815/815)
@@ -1863,7 +1864,7 @@ supplied as keyword arguments. Supplied values override the defaults below:
     ═════ 104 possible errors found ═════
     ... # Many type instabilities in Base Compiler are reported
 
-    julia> report_package(JET; target_modules=(JET,JET.JETInterface,JET.VSCode)) # Limit error reports to those occurring within JET module contexts
+    julia> report_package(JET; target_modules=(JET,))
     [toplevel-info] Skipped analysis for cached definition (815/815)
     [toplevel-info] Analyzed all top-level definitions (all: 815 | analyzed: 0 | cached: 815 | took: 0.119 sec)
     ═════ 2 possible errors found ═════
