@@ -122,6 +122,9 @@ end
 # OSC sequences such as hyperlinks
 const CONTROL_SEQUENCE = r"\e\[[0-?]*[ -/]*[@-~]|\e\][^\a\e]*(?:\a|\e\\)"
 
+# error messages in report messages can be colored
+display_width(s::AbstractString) = textwidth(replace(s, CONTROL_SEQUENCE => ""))
+
 # The display width of the widest line of the report message `s` as it is finally shown,
 # i.e. after `postprocessor` and without terminal control sequences.
 message_width(s::String, postprocessor::PostProcessor) =
@@ -174,9 +177,10 @@ function print_reports(io::IO,
     n = length(reports)
     n == 0 && return 0
 
-    with_bufferring(colorctx(io)) do io
+    with_bufferring(colorctx(io), :displaysize => displaysize(io)) do io
         s = "Top-level analysis failed"
-        printlnstyled(io, LEFT_ROOF, s, RIGHT_ROOF; color = HEADER_COLOR)
+        # unlike the headers for found problems, this one tells that the analysis stopped
+        printlnstyled(io, LEFT_ROOF, s, RIGHT_ROOF; color = ERROR_COLOR, reverse = true)
         println(io, "JET stopped before completing the analysis.")
         println(io, "Fix the error below and rerun the analysis.")
         for report in reports
@@ -196,7 +200,7 @@ function print_reports(io::IO,
     n = length(reports)
     n == 0 && return 0
 
-    with_bufferring(colorctx(io)) do io
+    with_bufferring(colorctx(io), :displaysize => displaysize(io)) do io
         s = string(pluralize(n, "toplevel warning"), " found")
         printlnstyled(io, LEFT_ROOF, s, RIGHT_ROOF; color = HEADER_COLOR)
         for report in reports
@@ -224,7 +228,9 @@ function print_toplevel_report(io::IO,
     filepath = format_path(report.file, style)
     printlnstyled(io, "┌ @ ", filepath, ':', report.line, ' '; color)
 
-    lines = with_bufferring(ctx) do io
+    rows, cols = displaysize(io)
+    # the message is printed after the two-column rail
+    lines = with_bufferring(ctx, :displaysize => (rows, cols - 2)) do io
         print_report(io, report)
     end |> strip
     message = join(string.(rail, split(lines, '\n')), '\n')
@@ -245,6 +251,143 @@ function print_reports(io::IO,
         print_reports(io, errors, postprocessor; jetconfigs...)
     end
     return length(reports)
+end
+
+# A top-level report message starts with a summary that makes sense on its own, followed by
+# a blank line and the body if any. Consumers that show the first line on its own, such as
+# the JETLS CLI, set the `:summary_line` IO property so that the summary is printed on a
+# single line; otherwise it is wrapped like the body.
+summary_line(io::IO) = get(io, :summary_line, false)::Bool
+
+function print_summary(io::IO, summary::String; body::Bool = true)
+    if summary_line(io)
+        print(io, summary)
+    else
+        print_wrapped(io, summary)
+    end
+    body && print(io, "\n\n")
+end
+
+# A summary that joins JET's `context` with an error `message` from Julia. The message is
+# kept intact, like the rest of the error output: when the summary does not fit, the
+# message starts a new line instead of being wrapped.
+function print_summary(io::IO, context::String, message::String; body::Bool = true)
+    summary = isempty(message) ? "$context." : "$context: $message"
+    if summary_line(io) || display_width(summary) ≤ wrap_width(io)
+        print(io, summary)
+    else
+        print_wrapped(io, "$context:")
+        print(io, '\n', message)
+    end
+    body && print(io, "\n\n")
+end
+
+# Prints the error message as Julia shows it, after the context of the error: the first line
+# of the `showerror` output joins the context in the summary, and the rest of the output,
+# including the stacktrace, makes the body.
+function print_error_report(io::IO, context::String, @nospecialize(err),
+                            st::Base.StackTraces.StackTrace)
+    msg = sprint(showerror, err, st; context=io)
+    firstline, rest = let i = findfirst('\n', msg)
+        i === nothing ? (msg, "") : (msg[1:prevind(msg, i)], msg[nextind(msg, i):end])
+    end
+    print_summary(io, context, firstline; body = !isempty(rest))
+    stacktrace = markdown_rendering(io) ? findfirst(r"^Stacktrace:"m, rest) : nothing
+    if stacktrace === nothing
+        print(io, rest)
+    else
+        message = rstrip(rest[1:prevind(rest, first(stacktrace))], '\n')
+        isempty(message) || print(io, message, "\n\n")
+        print_markdown_codeblock(io, rest[first(stacktrace):end])
+    end
+end
+
+# Consumers such as language servers set the `:markdown_rendering` IO property when they
+# render report messages as Markdown. Preformatted text, such as stacktraces and source
+# excerpts, then has to be printed in code blocks to keep Markdown from reflowing it.
+markdown_rendering(io::IO) = get(io, :markdown_rendering, false)::Bool
+
+# the fence is longer than any backtick run in `code`, which would otherwise close it
+function print_markdown_codeblock(io::IO, code::AbstractString)
+    fence = '`'^max(3, maximum(m -> length(m.match) + 1, eachmatch(r"`+", code); init=0))
+    print(io, fence, '\n', code, '\n', fence, '\n')
+end
+
+# Messages are wrapped at `MESSAGE_WIDTH` columns, which keeps prose readable and fits in 92
+# columns with a two-column line prefix. Displays that know their width, such as the REPL,
+# pass it to `print_report` as the `:displaysize` IO property, so that narrower displays get
+# narrower lines.
+const MESSAGE_WIDTH = 90
+
+function wrap_width(io::IO)
+    displaysize = get(io, :displaysize, nothing)
+    displaysize === nothing && return MESSAGE_WIDTH
+    # keep narrow displays legible
+    return clamp(last(displaysize::Tuple{Int,Int}), 40, MESSAGE_WIDTH)
+end
+
+# Prints `text` starting with `prefix` and wrapped at `wrap_width(io)` columns, indenting
+# continuation lines by the width of `prefix`. Inline code spans are not broken.
+function print_wrapped(io::IO, text::String; prefix::String = "")
+    words = message_words(text)
+    indent = textwidth(prefix)
+    print(io, prefix)
+    for (k, line) in enumerate(wrap_lines(map(display_width, words), wrap_width(io) - indent))
+        k == 1 || print(io, '\n', ' '^indent)
+        join(io, @view(words[line]), ' ')
+    end
+end
+println_wrapped(io::IO, text::String; prefix::String = "") =
+    (print_wrapped(io, text; prefix); println(io))
+
+# Breaks words with the given widths into lines of at most `width` columns, choosing the
+# breaks that minimize the sum of squared trailing spaces of the lines. The last line
+# weighs a quarter as much as the others: it may be shorter, but it is not left with only
+# a few words as in greedy wrapping. A word wider than `width` takes a line of its own.
+function wrap_lines(widths::Vector{Int}, width::Int)
+    n = length(widths)
+    # `cost[j+1]` is the minimum cost for the first `j` words, whose last line starts at
+    # word `start[j+1]`
+    cost = fill(typemax(Int), n+1)
+    start = zeros(Int, n+1)
+    cost[1] = 0
+    for j = 1:n
+        linewidth = -1
+        for i = j:-1:1
+            linewidth += widths[i] + 1
+            linewidth > width && i < j && break
+            slack = max(width - linewidth, 0)
+            c = cost[i] + (j == n ? slack^2 : 4slack^2)
+            if c < cost[j+1]
+                cost[j+1] = c
+                start[j+1] = i
+            end
+        end
+    end
+    lines = UnitRange{Int}[]
+    j = n + 1
+    while j > 1
+        pushfirst!(lines, start[j]:j-1)
+        j = start[j]
+    end
+    return lines
+end
+
+# space-separated words of `text`, where an inline code span counts as a single word
+function message_words(text::String)
+    words = String[]
+    start = firstindex(text)
+    in_code = false
+    for (i, c) in pairs(text)
+        if c == ' ' && !in_code
+            start < i && push!(words, text[start:prevind(text, i)])
+            start = nextind(text, i)
+        elseif c == '`'
+            in_code = !in_code
+        end
+    end
+    start ≤ lastindex(text) && push!(words, text[start:end])
+    return words
 end
 
 # inference

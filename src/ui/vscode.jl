@@ -82,7 +82,9 @@ end
 
 function vscode_diagnostic(report::Union{ToplevelErrorReport,ToplevelWarningReport},
                            ::PrintConfig, postprocessor::PostProcessor, ::Bool)
-    return (; msg = postprocessor(sprint(print_report, report)),
+    # like other diagnostics in the editor, the first line is a summary in compact views
+    msg = sprint(print_report, report; context = :summary_line => true)
+    return (; msg = postprocessor(msg),
               path = tovscodepath(report.file),
               line = report.line,
               severity = report isa ToplevelWarningReport ? 1 : 0)

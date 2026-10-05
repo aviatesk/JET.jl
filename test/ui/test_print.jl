@@ -76,7 +76,8 @@ end
         lines = split(s, '\n'; keepempty=false)
         bottoms = findall(startswith("└"), lines)
         @test length(bottoms) == 2
-        @test all(i -> textwidth(lines[i]) == textwidth(lines[i-1]), bottoms)
+        @test all(textwidth(lines[bottom]) == maximum(textwidth, lines[top+1:bottom-1])
+                  for (top, bottom) in zip(findall(startswith("┌"), lines), bottoms))
     end
     # control sequences, such as hyperlinks in colored parser diagnostics, take no width
     let res = @test_logs report_text("x = 1e-1000\n", @__FILE__)
@@ -142,19 +143,21 @@ end
         st = [Base.StackTraces.StackFrame(:example, Symbol("example.jl"), 1)]
         report = ActualErrorWrapped(err, st, "example.jl", 1)
         for color in (false, true)
-            msg = sprint(showerror, err, st; context=:color=>color)
-            @test sprint(JET.print_report, report; context=:color=>color) == msg
-            @test sprint(JET.print_report, report; context=(:color=>color, :markdown_rendering=>false)) == msg
+            # the first line of the error message joins the summary
+            firstline, rest = split(sprint(showerror, err, st; context=:color=>color), '\n'; limit=2)
+            @test endswith(firstline, "execution failed")
+            @test startswith(rest, "Stacktrace:")
+            summary = "JET could not execute this top-level code: $firstline\n\n"
+            @test sprint(JET.print_report, report; context=:color=>color) == summary * rest
+            @test sprint(JET.print_report, report; context=(:color=>color, :markdown_rendering=>false)) == summary * rest
             msg_md = sprint(JET.print_report, report; context=(:color=>color, :markdown_rendering=>true))
-            @test occursin("execution failed\n\n```\nStacktrace:", msg_md)
-            @test endswith(msg_md, "\n```\n")
-            @test msg_md == replace(msg, "\nStacktrace:"=>"\n\n```\nStacktrace:"; count=1) * "\n```\n"
+            @test msg_md == summary * "```\n" * rest * "\n```\n"
         end
     end
     @testset "without stacktrace" begin
         err = ErrorException("execution failed")
         report = ActualErrorWrapped(err, Base.StackTraces.StackFrame[], "example.jl", 1)
-        msg = sprint(showerror, err, report.st)
+        msg = "JET could not execute this top-level code: execution failed"
         @test sprint(JET.print_report, report) == msg
         @test sprint(JET.print_report, report; context=:markdown_rendering=>true) == msg
         @test !occursin("```", msg)
@@ -168,7 +171,7 @@ end
             Base.StackTraces.StackFrame(:example, Symbol("example.jl"), 1)
         ] : Base.StackTraces.StackFrame[]
     report = JET.ConcretizationTimeoutErrorReport(0.1, st, "example.jl", 1)
-    msg = sprint(JET.print_report, report; context=:markdown_rendering=>markdown_rendering)
+    msg = report_message(report; context=:markdown_rendering=>markdown_rendering)
     @test occursin("possibly due to interpretation overhead", msg)
     @test occursin("raise `concretization_timeout`", msg)
     for guidance in (
@@ -182,6 +185,195 @@ end
     end
     @test occursin("Stacktrace:", msg) == with_stacktrace
     @test occursin("```", msg) == (with_stacktrace && markdown_rendering)
+end
+
+@testset "markdown rendering of preformatted text" begin
+    @testset "macro expansion and lowering errors" begin
+        st = [Base.StackTraces.StackFrame(:example, Symbol("example.jl"), 1)]
+        err = ErrorException("transformation failed")
+        for (report, context) in (
+                (MacroExpansionErrorReport(err, st, "example.jl", 1),
+                 "JET could not expand a macro in this code"),
+                (LoweringErrorReport(err, "example.jl", 1, st), "JET could not lower this code"))
+            msg = sprint(JET.print_report, report)
+            @test startswith(msg, "$context: transformation failed\n\nStacktrace:")
+            msg_md = sprint(JET.print_report, report; context=:markdown_rendering=>true)
+            @test msg_md == replace(msg, "\n\nStacktrace:"=>"\n\n```\nStacktrace:"; count=1) * "\n```\n"
+        end
+        let report = LoweringErrorReport("invalid assignment location", "example.jl", 1)
+            @test sprint(JET.print_report, report) == "Syntax error: invalid assignment location"
+        end
+    end
+    @testset "syntax diagnostics" begin
+        error_report = report_text("x = (1 +\n", "example.jl").res.toplevel_error_report
+        @test error_report isa ParseErrorReport
+        warning_report = only(report_text("x = 1e-1000\n", "example.jl").res.toplevel_warning_reports)
+        @test warning_report isa JET.ParseWarningReport
+        for report in (error_report, warning_report)
+            diagnostic = sprint(JS.show_diagnostic, report.diagnostic, report.source)
+            @test startswith(diagnostic, "# ") # a Markdown heading outside of code blocks
+            summary, body = split(sprint(JET.print_report, report), "\n\n"; limit=2)
+            level = report isa ParseErrorReport ? "error" : "warning"
+            @test summary == "Syntax $level: $(report.diagnostic.message)"
+            @test body == diagnostic
+            @test sprint(JET.print_report, report; context=:markdown_rendering=>true) ==
+                "$summary\n\n```\n$diagnostic\n```\n"
+        end
+    end
+    @testset "backticks in code blocks" begin
+        @test sprint(JET.print_markdown_codeblock, "`a`") == "```\n`a`\n```\n"
+        @test sprint(JET.print_markdown_codeblock, "a\n```\nb") == "````\na\n```\nb\n````\n"
+    end
+end
+
+@testset "recursive include rendering" begin
+    report = RecursiveIncludeErrorReport("/dir/a.jl", ["/dir/a.jl", "/dir/b.jl"], "/dir/b.jl", 1)
+    for context in (:color=>true, :markdown_rendering=>true)
+        @test sprint(JET.print_report, report; context) == """
+            Recursive `include` detected: `/dir/a.jl` is already being included.
+
+            Include chain:
+            - `/dir/a.jl`
+            - `/dir/b.jl`
+            - `/dir/a.jl`"""
+    end
+end
+
+@testset "message wrapping" begin
+    let text = join(fill("word", 40), ' ') * " `a code span that is not broken`"
+        s = sprint(io -> JET.println_wrapped(io, text; prefix="- "))
+        lines = split(chomp(s), '\n')
+        @test length(lines) > 1
+        @test all(line -> textwidth(line) ≤ JET.MESSAGE_WIDTH, lines)
+        @test all(line -> startswith(line, "  "), lines[2:end])
+        @test occursin("`a code span that is not broken`", s)
+        @test join(split(s), ' ') == "- " * text
+    end
+    let code = "`" * 'x'^JET.MESSAGE_WIDTH * "`"
+        @test sprint(JET.print_wrapped, "a $code b") == "a\n$code\nb"
+    end
+    @testset "literal whitespace in code spans" begin
+        @test JET.message_words("  path  `/dir/あ  b/file.jl`  is missing  ") ==
+            ["path", "`/dir/あ  b/file.jl`", "is", "missing"]
+        @test JET.message_words("use `  a   b  `, then `c  d`.") ==
+            ["use", "`  a   b  `,", "then", "`c  d`."]
+        file = "/dir/あ  b/file.jl"
+        report = RecursiveIncludeErrorReport(file, [file], "example.jl", 1)
+        for cols in (40, 120), summary_line in (false, true)
+            msg = sprint(JET.print_report, report;
+                         context=(:displaysize=>(24, cols), :summary_line=>summary_line))
+            summary, body = split(msg, "\n\n"; limit=2)
+            @test occursin("`$file`", summary)
+            @test body == "Include chain:\n- `$file`\n- `$file`"
+        end
+    end
+    # "aaa bb cc ddddd" at width 6: greedy wrapping would leave "cc" alone on a line
+    @test JET.wrap_lines([3, 2, 2, 5], 6) == [1:1, 2:3, 4:4]
+    @test isempty(JET.wrap_lines(Int[], 6))
+    @test sprint(io -> JET.print_wrapped(io, ""; prefix="- ")) == "- "
+    # the wrapping adapts to interpolated values such as paths
+    let file = "/" * join(fill("long_directory_name", 3), '/') * "/config.jl"
+        assignment = JET.ToplevelAssignment(nothing, file, 3)
+        report = MissingConcretizationErrorReport(false, GlobalRef(Main, :RandomType),
+            assignment, "example.jl", 7)
+        lines = split(sprint(JET.print_report, report), '\n')
+        @test all(line -> textwidth(line) ≤ JET.MESSAGE_WIDTH, lines)
+    end
+    let text = join(fill("word", 40), ' ') # 199 columns
+        wrapped(cols) =
+            split(sprint(JET.print_wrapped, text; context=:displaysize=>(24, cols)), '\n')
+        @test maximum(textwidth, wrapped(60)) ≤ 60
+        # wider displays do not get lines wider than `MESSAGE_WIDTH`
+        @test wrapped(200) == wrapped(JET.MESSAGE_WIDTH) == split(sprint(JET.print_wrapped, text), '\n')
+        @test 10 < maximum(textwidth, wrapped(10)) ≤ 40
+    end
+    # the report box passes the display width without its rail to the message
+    let report = JET.ConcretizationTimeoutErrorReport(0.1, Base.StackTraces.StackFrame[],
+                                                      "example.jl", 7)
+        function paragraph_width(cols)
+            s = sprint(print_reports, ToplevelErrorReport[report]; context=:displaysize=>(24, cols))
+            lines = split(s, '\n'; keepempty=false)
+            paragraph = findfirst(startswith("│ JET executes"), lines)::Int
+            return maximum(textwidth, lines[paragraph:end-1]) # excluding the box bottom
+        end
+        @test paragraph_width(60) ≤ 60
+        @test paragraph_width(150) ≤ JET.MESSAGE_WIDTH + 2
+    end
+    let report = JET.UnsupportedFeatureReport(join(fill("word", 40), ' '), "example.jl", 7)
+        lines = split(sprint(JET.print_report, report; context=:displaysize=>(24, 50)), '\n')
+        @test length(lines) > 5
+        @test all(line -> textwidth(line) ≤ 50, lines)
+    end
+    let report = JET.DependencyError("MyPkg", "SomeDep", "example.jl", 7)
+        msg = sprint(JET.print_report, report; context=:displaysize=>(24, 50))
+        _, body = split(msg, "\n\n"; limit=2)
+        @test all(line -> textwidth(line) ≤ 50, split(msg, '\n'))
+        @test all(line -> startswith(line, r"- |  \S"), split(body, '\n'))
+        # the wording is synced with `Base.require`
+        @test report_message(report) ==
+            "Package MyPkg does not have SomeDep in its dependencies. - You may have a " *
+            "partially installed environment. Try `Pkg.instantiate()` to ensure all " *
+            "packages in the environment are installed. - Or, if you have MyPkg checked " *
+            "out for development and have added SomeDep as a dependency but haven't " *
+            "updated your primary environment's manifest file, try `Pkg.resolve()`. - " *
+            "Otherwise you may need to report an issue with MyPkg"
+    end
+end
+
+@testset "report summaries" begin
+    st = [Base.StackTraces.StackFrame(:example, Symbol("example.jl"), 1)]
+    err = ErrorException("execution failed")
+    reports = Any[
+        report_text("x = (1 +\n", "example.jl").res.toplevel_error_report,
+        only(report_text("x = 1e-1000\n", "example.jl").res.toplevel_warning_reports),
+        JET.UnsupportedFeatureReport("unsupported test feature", "example.jl", 1),
+        MacroExpansionErrorReport(err, st, "example.jl", 1),
+        LoweringErrorReport(err, "example.jl", 1, st),
+        LoweringErrorReport("lowering failed", "example.jl", 1),
+        ActualErrorWrapped(err, st, "example.jl", 1),
+        DependencyError("MyPkg", "SomeDep", "example.jl", 1),
+        RecursiveIncludeErrorReport("/dir/a.jl", ["/dir/a.jl", "/dir/b.jl"], "/dir/b.jl", 1),
+        JET.ConcretizationTimeoutErrorReport(0.1, st, "example.jl", 1),
+        MissingConcretizationErrorReport(false, GlobalRef(Main, :RandomType), nothing,
+                                         "example.jl", 1)]
+    for report in reports
+        wrapped = sprint(JET.print_report, report; context=:displaysize=>(24, 40))
+        oneline = sprint(JET.print_report, report;
+                         context=(:displaysize=>(24, 40), :summary_line=>true))
+        # the summary is followed by a blank line and the body if any, and only the
+        # wrapping of the summary differs
+        summary, body... = split(oneline, "\n\n"; limit=2)
+        wrapped_summary, wrapped_body... = split(wrapped, "\n\n"; limit=2)
+        @test !occursin('\n', summary)
+        @test join(split(wrapped_summary), ' ') == summary
+        @test all(line -> textwidth(line) ≤ 40, split(wrapped_summary, '\n'))
+        @test wrapped_body == body
+    end
+    # an error message that does not fit is put on its own line instead of being wrapped
+    let err = ErrorException(join(fill("word", 20), ' ')) # 99 columns
+        report = ActualErrorWrapped(err, Base.StackTraces.StackFrame[], "example.jl", 1)
+        @test sprint(JET.print_report, report; context=:displaysize=>(24, 60)) ==
+            "JET could not execute this top-level code:\n" * err.msg
+        @test sprint(JET.print_report, report;
+                     context=(:displaysize=>(24, 60), :summary_line=>true)) ==
+            "JET could not execute this top-level code: " * err.msg
+        @test sprint(JET.print_report, report; context=:displaysize=>(24, 150)) ==
+            "JET could not execute this top-level code:\n" * err.msg
+    end
+    @testset "literal whitespace" for err in (
+            ErrorException("expected \"a  b\""),
+            ArgumentError("invalid value: \"a  b\""))
+        st = Base.StackTraces.StackFrame[]
+        report = ActualErrorWrapped(err, st, "example.jl", 1)
+        message = sprint(showerror, err, st)
+        context = "JET could not execute this top-level code:"
+        for cols in (50, 120), summary_line in (false, true)
+            separator = summary_line || cols == 120 ? " " : "\n"
+            @test sprint(JET.print_report, report;
+                         context=(:displaysize=>(24, cols), :summary_line=>summary_line)) ==
+                context * separator * message
+        end
+    end
 end
 
 @testset "print inference errors" begin

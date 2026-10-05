@@ -523,7 +523,7 @@ end
             @test report.assignment isa JET.ToplevelAssignment
             @test report.assignment.pattern == :(RandomType = x_)
 
-            msg = sprint(JET.print_report, report)
+            msg = report_message(report)
             @test occursin("JET needs its concrete value", msg)
             @test occursin("JET tracked that the binding exists", msg)
             @test occursin("`const RandomType = ...`", msg)
@@ -531,7 +531,7 @@ end
             @test occursin("if JET still cannot determine the value", msg)
             @test occursin("concretization_patterns = [:(RandomType = x_)]", msg)
             @test occursin("because matching code is executed", msg)
-            @test occursin("the assignment at $(report.assignment.file):$(report.assignment.line)", msg)
+            @test occursin("the assignment at `$(report.assignment.file):$(report.assignment.line)`", msg)
         end
     end
 
@@ -545,7 +545,7 @@ end
         @test report isa MissingConcretizationErrorReport
         @test report.assignment isa JET.ToplevelAssignment
         @test report.assignment.pattern === nothing
-        msg = sprint(JET.print_report, report)
+        msg = report_message(report)
         @test occursin("treats `CONFIG_` itself", msg)
         @test occursin("match every assignment", msg)
         @test occursin("Consider renaming the binding", msg)
@@ -610,7 +610,7 @@ end
         @test report.assignment.file == assignment_file
         @test report.assignment.pattern == :(IncludedRandomType::DataType = x_)
         # the report is anchored at the use site, so the message needs to point elsewhere
-        @test occursin("the assignment at $assignment_file:1", sprint(JET.print_report, report))
+        @test occursin("the assignment at `$assignment_file:1`", report_message(report))
     end
 
     # a pattern covering the enclosing statement is left to the user to write, so JET must
@@ -631,8 +631,8 @@ end
         @test report.assignment.pattern === nothing
         @test report.assignment.line == 1 # the `let` statement, not the use site
         @test report.line == 4
-        msg = sprint(JET.print_report, report)
-        @test occursin("the assignment at $(report.assignment.file):1", msg)
+        msg = report_message(report)
+        @test occursin("the assignment at `$(report.assignment.file):1`", msg)
         @test occursin("could not derive one from the statement holding that", msg)
         @test !occursin("concretization_patterns = [:(NestedRandomType = x_)]", msg)
     end

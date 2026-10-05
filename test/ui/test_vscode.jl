@@ -135,7 +135,8 @@ end
             @test item.severity == 1
             @test item.path == "Untitled-warning"
             @test item.line == 1
-            @test item.msg == sprint(JET.print_report, only(reports))
+            @test item.msg == sprint(JET.print_report, only(reports);
+                                     context=:summary_line=>true)
             @test !hasproperty(item, :relatedInformation)
         end
         io = IOBuffer()
@@ -167,8 +168,18 @@ end
         postprocessor = PostProcessor(Main => @__MODULE__)
         diagnostics = vscode_diagnostics(res.analyzer, [report], "warning source"; postprocessor)
         @test diagnostics.source == "warning source"
-        @test only(diagnostics.items) ==
-              (; msg="unsupported", path=@__FILE__, line=7, severity=1)
+        msg = "JET analyzes this code approximately because it uses an unsupported " *
+              "feature.\n\nunsupported"
+        @test only(diagnostics.items) == (; msg, path=@__FILE__, line=7, severity=1)
+    end
+    # the summary stays on the first line however long it is
+    let res = report_text("")
+        report = JET.ConcretizationTimeoutErrorReport(10.0, Base.StackTraces.StackFrame[],
+                                                      @__FILE__, 7)
+        diagnostics = vscode_diagnostics(res.analyzer, [report], "timeout source")
+        @test first(split(only(diagnostics.items).msg, '\n')) ==
+            "JET stopped the concrete execution of this top-level statement after 10.0 " *
+            "seconds (`concretization_timeout`)."
     end
     let res = report_text("""
             x = 1e-1000
