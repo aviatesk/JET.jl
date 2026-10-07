@@ -1360,6 +1360,9 @@ function macroexpand_doc_with_err_handling(state::InterpretationState, x::Expr)
     end
 end
 
+# `Base.Docs.docerror` defers the error for an undocumentable expression to the call site
+is_docerror(@nospecialize x) = isexpr(x, :call) && !isempty(x.args) && x.args[1] === error
+
 function macroexpand_doc(mod::Module, x::Expr)
     # Reuse the expanded target so that user macros run only once, including when
     # falling back to ordinary `@doc` expansion for macro-generated blocks.
@@ -1818,11 +1821,15 @@ function process_toplevel!(interp::ConcreteInterpreter, toplevelnode::JS.SyntaxN
             # special case and flatten the resulting expression expanded from `@doc` macro
             # the macro expands to a block expression and so it makes it difficult to specify
             # concretization pattern correctly since `@doc` macro is attached implicitly
-            if isdoc
-                # `@doc` macro usually produces :block expression, but may also produce :toplevel
-                # one when attached to a module expression
-                @assert isexpr(newx, :block) || isexpr(newx, :toplevel)
+            # `@doc` macro usually produces :block expression, but may also produce :toplevel
+            # one when attached to a module expression
+            if isdoc && (isexpr(newx, :block) || isexpr(newx, :toplevel))
                 push_vnode_stack!(vnodes, node, newx, force_concretize)
+            elseif isdoc && is_docerror(newx)
+                # A docstring attached to an undocumentable expression, e.g. an `if` block,
+                # expands to code that throws only when evaluated: evaluate it so that the
+                # analysis stops with the error Julia raises
+                push!(vnodes, VNode(node, newx, #=force_concretize=#true))
             else
                 push!(vnodes, VNode(node, newx, force_concretize))
             end

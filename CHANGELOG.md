@@ -137,6 +137,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when non-`nothing`. For a vector of reports from a `JETToplevelResult`, use
   `JET.get_reports(result)` instead.
 
+### Fixed
+
+- Fixed top-level analysis crashing with an `AssertionError` when a docstring
+  is attached to an expression that cannot be documented, such as an `if`
+  block. The analysis now stops with the error that Julia raises for such
+  code, `cannot document the following expression`.
+
 ## [0.12.3]
 
 ### Changed

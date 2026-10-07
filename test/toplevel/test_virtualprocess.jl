@@ -1884,6 +1884,20 @@ end
         doc = docs[Base.Docs.Binding(vmod, :f)].docs[Tuple{}]
         @test only(doc.text) == "doc for f"
     end
+
+    @testset "undocumentable expression" begin
+        res = report_text("""
+            "doc"
+            if true
+                f() = 1
+            end
+            """, "undocumentable.jl")
+        er = res.res.toplevel_error_report
+        @test er isa ActualErrorWrapped
+        @test er.err isa ErrorException
+        @test startswith(er.err.msg, "cannot document the following expression")
+        @test er.file == "undocumentable.jl" && er.line == 1
+    end
 end
 
 @testset "world age" begin
