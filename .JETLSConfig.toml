@@ -1,11 +1,23 @@
+# TODO [JETLS]
+# Imports are collected from the unexpanded syntax tree, so `import`/`using` patterns
+# passed to `MacroTools.@capture` are taken as real imports, and their pattern variables
+# are reported as unused.
+[[diagnostic.patterns]]
+pattern = "Unused import `(namepath__|alias_)`"
+match_by = "message"
+match_type = "regex"
+severity = "off"
+path = "src/toplevel/virtualprocess.jl"
+
+# `benchmark/`, `examples/`, and `test/` hold scripts that run JET's analyses at top level,
+# e.g. `@report_call` and `@test_call`; script analysis of them mostly ends up analyzing
+# JET's own analysis machinery, which is slow and of little use.
 [[initialization_options.analysis_overrides]]
 path = "benchmark/**/*.jl"
 full_analysis = false
-
 [[initialization_options.analysis_overrides]]
 path = "examples/**/*.jl"
 full_analysis = false
-
 [[initialization_options.analysis_overrides]]
 path = "test/**/*.jl"
 full_analysis = false

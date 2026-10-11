@@ -1966,7 +1966,8 @@ function ModuleUsage(m::ModuleUsage;
 end
 
 function pattern_match_module_usage(usage::Expr)
-    modpath = namepath = alias = nothing
+    local modpath
+    local namepath = local alias = nothing
     if @capture(usage, import modpath__)
         head = :import
     elseif @capture(usage, using modpath__)
