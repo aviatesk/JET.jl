@@ -420,7 +420,12 @@ handle_sig!(sig::Vector{Any}, ::StateAtPC, x::String) = (push!(sig, Repr(x)); re
 handle_sig!(sig::Vector{Any}, ::StateAtPC, @nospecialize(x)) = (push!(sig, x); return sig, nothing)
 
 function typeof_arg(s::State, @nospecialize(f))
-    isa(f, GlobalRef) && return isdefined(f.mod, f.name) ? Core.Typeof(getglobal(f.mod, f.name)) : Any
+    if isa(f, GlobalRef)
+        # the analysis runs in JET's own world, which may predate the binding's definition
+        world = analysis_world(s)
+        Base.invoke_in_world(world, isdefinedglobal, f.mod, f.name) || return Any
+        return Core.Typeof(Base.invoke_in_world(world, getglobal, f.mod, f.name))
+    end
     isa(f, SSAValue) && return safewidenconst(get_ssavaluetype((s, f.id)))
     isa(f, QuoteNode) && return Core.Typeof(f.value)
     isexpr(f, :static_parameter) &&
