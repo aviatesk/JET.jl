@@ -221,7 +221,7 @@ const StateAtPC = Tuple{State,Int}
 const LineTable = Union{Vector{Any},Vector{LineInfoNode}}
 
 analysis_world(sv::InferenceState) = sv.world.this
-analysis_world(sv::OptimizedIRState) = sv.opt.inlining.world
+analysis_world(sv::OptimizedIRState) = CC.get_inference_world(sv.opt.inlining.interp)
 
 get_stmt((sv, pc)::Tuple{InferenceState,Int}) = sv.src.code[pc]
 get_stmt((sv, pc)::Tuple{OptimizedIRState,Int}) = sv.ir.stmts[pc][:stmt]

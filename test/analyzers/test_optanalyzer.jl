@@ -88,7 +88,7 @@ end
     @test_opt sin(10)
 end
 
-# the analysis runs in JET's world, which predates this binding
+# with `use_fixed_world`, the analysis runs in JET's world, which predates this binding
 callee_newer_than_jet(t, ::Val{D}) where {D} = t[D]
 @testset "runtime dispatch report doesn't access bindings from a stale world" begin
     stderr_output = mktemp() do path, io

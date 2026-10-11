@@ -200,7 +200,7 @@ function handle_sig_getproperty!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, a
     push!(sig, '.')
     push!(sig, String(val))
     push!(sig, safewidenconst(get_ssavaluetype(s)))
-    push!(sig, Tuple{typeof(getglobal(f.mod, f.name)), typeof_arg(s, args[1]), Symbol})
+    push!(sig, Tuple{typeof_arg(s, f), typeof_arg(s, args[1]), Symbol})
     return true
 end
 
@@ -219,7 +219,7 @@ function handle_sig_setproperty!!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, 
         handle_sig!(sig, s, args[3])
         push!(sig, safewidenconst(get_ssavaluetype(s)))
     end
-    push!(sig, Tuple{typeof(getglobal(f.mod, f.name)), typeof_arg(s, args[1]), Symbol, typeof_arg(s, args[3])})
+    push!(sig, Tuple{typeof_arg(s, f), typeof_arg(s, args[1]), Symbol, typeof_arg(s, args[3])})
     return true
 end
 
@@ -235,7 +235,7 @@ function handle_sig_getindex!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, args
     end
     push!(sig, ']')
     push!(sig, safewidenconst(get_ssavaluetype(s)))
-    push!(sig, Tuple{typeof(getglobal(f.mod, f.name)), [typeof_arg(s, arg) for arg in args]...})
+    push!(sig, Tuple{typeof_arg(s, f), [typeof_arg(s, arg) for arg in args]...})
     return true
 end
 
@@ -255,7 +255,7 @@ function handle_sig_setindex!!(sig::Vector{Any}, s::StateAtPC, f::GlobalRef, arg
         handle_sig!(sig, s, args[2])
         push!(sig, safewidenconst(get_ssavaluetype(s)))
     end
-    push!(sig, Tuple{typeof(getglobal(f.mod, f.name)), [typeof_arg(s, arg) for arg in args]...})
+    push!(sig, Tuple{typeof_arg(s, f), [typeof_arg(s, arg) for arg in args]...})
     return true
 end
 
@@ -264,7 +264,7 @@ function handle_sig_const_apply_type!(sig::Vector{Any}, s::StateAtPC, f::GlobalR
     typ = get_ssavaluetype(s)
     isa(typ, Const) || return false
     push!(sig, ApplyTypeResult(typ.val))
-    push!(sig, Tuple{typeof(getglobal(f.mod, f.name)), [typeof_arg(s, arg) for arg in args]...})
+    push!(sig, Tuple{typeof_arg(s, f), [typeof_arg(s, arg) for arg in args]...})
     return true
 end
 
