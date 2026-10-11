@@ -2846,7 +2846,7 @@ function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func)
     include_context = include_func isa Base.IncludeInto ? include_func.m : state.context
 
     function abort_method_error!(args::Vector{Any})
-        err = MethodError(include_func, args)
+        err = MethodError(include_func, Tuple(args), state.world)
         local report = ActualErrorWrapped(err, [], filename, line)
         abort_toplevel_analysis!(state, report)
     end

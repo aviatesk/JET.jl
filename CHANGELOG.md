@@ -139,6 +139,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fixed printing of a report about an `include` call with arguments that no
+  `include` method accepts, such as `include(Symbol("file.jl"))`, which threw
+  a `TypeError` instead of showing the `MethodError`.
+
 - Fixed top-level analysis crashing with an `AssertionError` when a docstring
   is attached to an expression that cannot be documented, such as an `if`
   block. The analysis now stops with the error that Julia raises for such

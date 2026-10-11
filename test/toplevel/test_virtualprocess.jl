@@ -695,6 +695,7 @@ end
         @test report isa ActualErrorWrapped
         err = report.err
         @test err isa MethodError
+        @test occursin("no method matching", sprint(JET.print_report, report))
     end
     let res = @analyze_toplevel begin
             module __xxx__ end
@@ -705,6 +706,7 @@ end
         err = report.err
         @test err isa MethodError
         @test err.f === Base.include
+        @test occursin("no method matching", sprint(JET.print_report, report))
     end
     let res = @analyze_toplevel begin
             module __xxx__ end
@@ -715,6 +717,7 @@ end
         err = report.err
         @test err isa MethodError
         @test err.f === Core.include
+        @test occursin("no method matching", sprint(JET.print_report, report))
     end
     let res = @analyze_toplevel begin
             module __xxx__ end
@@ -724,6 +727,7 @@ end
         @test report isa ActualErrorWrapped
         err = report.err
         @test err isa MethodError
+        @test occursin("no method matching", sprint(JET.print_report, report))
     end
 
     # unsupported features
