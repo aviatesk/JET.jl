@@ -2341,6 +2341,22 @@ end
         @test isempty(s)
     end
 
+    # the code after a `try` block whose `EnterNode` is selected runs outside its scope
+    let (vmod, res) = @analyze_toplevel2 begin
+            begin # a single top-level statement, so that `sv` gets concretized
+                sv = Base.ScopedValues.ScopedValue(0)
+                Base.ScopedValues.@with sv => 1 begin
+                    global inside() = 1
+                end
+                @eval outside() = $(sv[])
+            end
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        @test isconcrete(res, vmod, :inside)
+        @test isconcrete(res, vmod, :outside)
+        @test @invokelatest(vmod.outside()) == 0
+    end
+
     @testset "untyped global declarations" begin
         isdecl(stmt, stmts) = JET.isexpr(stmt, :globaldecl, 1) ||
             JET.is_known_call(stmt, :declare_global, stmts)

@@ -2458,6 +2458,7 @@ function select_dependencies!(
 
         # Mark necessary control flows.
         changed |= LoweredCodeUtils.add_control_flow!(concretize, src, cfg, postdomtree)
+        changed |= LoweredCodeUtils.add_handler_exits!(concretize, src, edges, ())
         changed |= add_ssa_preds!(concretize, src, edges, ())
 
         changed || break

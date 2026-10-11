@@ -144,6 +144,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   block. The analysis now stops with the error that Julia raises for such
   code, `cannot document the following expression`.
 
+- Fixed top-level analysis concretizing the code after a `try` block, such as
+  a `Base.ScopedValues.@with` block, within the block's exception handler and
+  dynamic scope when the block contains definitions. Such code could read the
+  scoped values set by the block, and an error thrown by it ran the code after
+  the block again.
+
 ## [0.12.3]
 
 ### Changed
