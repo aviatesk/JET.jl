@@ -1001,11 +1001,14 @@ report_undef_global_var!(analyzer::TypoJETAnalyzer, sv::InferenceState, binding:
 
 function _report_undef_global_var!(analyzer::JETAnalyzer, sv::InferenceState, binding::Core.Binding, partition::Core.BindingPartition, _sound::Bool)
     gr = binding.globalref
-    world = sv.world.this
-    if Base.invoke_in_world(world, isdefinedglobal, gr.mod, gr.name)
-        x = Base.invoke_in_world(world, getglobal, gr.mod, gr.name)
+    # Read constants from `partition` itself: `const_assignment_rt_exct` defines constants
+    # in a world newer than `sv.world`, and `getglobal` warns about such backdated constants.
+    if CC.is_defined_const_binding(CC.binding_kind(partition))
+        x = CC.partition_restriction(partition)
         x isa AbstractBindingState || return false
         binding_state = x
+    elseif Base.invoke_in_world(sv.world.this, isdefinedglobal, gr.mod, gr.name)
+        return false
     else
         binding_states = get_binding_states(analyzer)
         binding_state = get(binding_states, partition, nothing)

@@ -95,6 +95,21 @@ include("../setup.jl")
         end
         @test isnothing(res.res.toplevel_error_report)
     end
+
+    # reading a constant declared earlier in the same thunk should not warn about
+    # accessing a backdated binding
+    mktemp() do path, io
+        res = redirect_stderr(io) do
+            @analyze_toplevel let
+                global const a = rand(Int)
+                sin(a)
+            end
+        end
+        flush(io)
+        @test !occursin("prior to its definition world", read(path, String))
+        @test isnothing(res.res.toplevel_error_report)
+        @test isempty(res.res.inference_error_reports)
+    end
 end
 
 @testset "`const x_ = ...` should not be concretized by default" begin

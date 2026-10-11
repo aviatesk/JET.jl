@@ -150,6 +150,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scoped values set by the block, and an error thrown by it ran the code after
   the block again.
 
+- Fixed a `WARNING: Detected access to binding ... in a world prior to its
+  definition world` message that top-level analysis (e.g. `report_file`) could
+  print when reading a constant declared earlier in the same top-level block,
+  such as a `global const` inside a `let` block.
+
 ## [0.12.3]
 
 ### Changed
