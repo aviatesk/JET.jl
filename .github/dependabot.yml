@@ -10,7 +10,6 @@ updates:
       interval: "weekly"
   - package-ecosystem: "julia"
     directories:
-      - "/benchmark"
       - "/examples"
     schedule:
       interval: "weekly"

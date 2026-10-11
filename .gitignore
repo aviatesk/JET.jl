@@ -1,5 +1,4 @@
 /.benchmarkci/
-!/benchmark/Manifest.toml
 !/benchmark/tune.json
 /docs/build/
 !/docs/LocalPreferences.toml

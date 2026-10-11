@@ -1,3 +1,1 @@
-benchmark/Manifest.toml linguist-generated
-docs/Manifest.toml linguist-generated
 test/fixtures/targets/*.jl linguist-vendored
