@@ -88,6 +88,22 @@ end
     @test_opt sin(10)
 end
 
+# with `use_fixed_world`, the analysis runs in JET's world, which predates this binding
+callee_newer_than_jet(t, ::Val{D}) where {D} = t[D]
+@testset "runtime dispatch report doesn't access bindings from a stale world" begin
+    stderr_output = mktemp() do path, io
+        result = redirect_stderr(io) do
+            report_opt((Tuple{Int,Int}, Int)) do t, d
+                callee_newer_than_jet(t, Val(d))
+            end
+        end
+        @test only(get_reports_with_test(result)) isa RuntimeDispatchReport
+        close(io)
+        read(path, String)
+    end
+    @test !occursin("prior to its definition world", stderr_output)
+end
+
 function captured_variable_f(a, n)
     incr! = x -> a += x
 

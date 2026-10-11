@@ -155,6 +155,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   print when reading a constant declared earlier in the same top-level block,
   such as a `global const` inside a `let` block.
 
+- Fixed a `WARNING: Detected access to binding ... in a world prior to its
+  definition world` message that `report_opt` could print when reporting a
+  runtime dispatch to a function defined after JET was loaded.
+
 ## [0.12.3]
 
 ### Changed
