@@ -730,6 +730,19 @@ end
         @test occursin("no method matching", sprint(JET.print_report, report))
     end
 
+    @testset "$call" for call in (
+            "Base.include(1, @__MODULE__, \"somefile.jl\")",
+            "Base.include(identity, 1, \"somefile.jl\")",
+            "Base.include(identity, @__MODULE__, :somefile)",
+            "Core.include(identity, @__MODULE__, \"somefile.jl\")",
+            "include(identity, @__MODULE__, \"somefile.jl\")")
+        res = report_text(call)
+        report = res.res.toplevel_error_report
+        @test report isa ActualErrorWrapped
+        @test report.err isa MethodError
+        @test isempty(res.res.toplevel_warning_reports)
+    end
+
     # unsupported features
     # --------------------
 
@@ -741,6 +754,104 @@ end
             include(mymapexpr, "somefile.jl")
         end
         @test only(res.res.toplevel_warning_reports) isa JET.UnsupportedFeatureReport
+    end
+end
+
+@testset "custom `include` functions" begin
+    let (context, res) = @analyze_toplevel2 begin
+            baremodule CustomInclude
+                using Base
+                include(::String) = Integer
+            end
+            struct Trigger <: CustomInclude.include("not-a-file.jl") end
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        @test isempty(res.res.inference_error_reports)
+        @test isconcrete(res, context, :Trigger)
+    end
+    mktempdir() do dir
+        main = joinpath(dir, "main.jl")
+        child = joinpath(dir, "child.jl")
+        write(child, "struct Included end\nundefined_included\n")
+        context = gen_virtual_module()
+        res = report_text("""
+            baremodule CustomInclude
+                using Base
+                function include(stem::String)
+                    Base.include(@__MODULE__, stem * ".jl")
+                    return Integer
+                end
+            end
+            struct Trigger <: CustomInclude.include("child") end
+            """, main; context, virtualize=false)
+        @test isnothing(res.res.toplevel_error_report)
+        @test child in JET.included_files(res.res)
+        custom = @invokelatest getglobal(context, :CustomInclude)
+        @test isconcrete(res, custom, :Included)
+        @test isconcrete(res, context, :Trigger)
+        report = only(res.res.inference_error_reports)
+        @test is_global_undef_var(report, custom, :undefined_included)
+    end
+end
+
+@testset "`include` reports point to the call" begin
+    mktempdir() do dir
+        main = joinpath(dir, "main.jl")
+        let res = report_text("""
+                begin
+                    x = 1
+                    include("nonexistent.jl")
+                end
+                """, main)
+            report = res.res.toplevel_error_report
+            @test report isa ActualErrorWrapped
+            @test report.err isa SystemError
+            @test report.file == main
+            @test report.line == 3
+        end
+        let res = report_text("""
+                begin
+                    x = 1
+                    include("main.jl")
+                end
+                """, main)
+            report = res.res.toplevel_error_report
+            @test report isa RecursiveIncludeErrorReport
+            @test report.file == main
+            @test report.line == 3
+        end
+        let res = report_text("""
+                function load_child()
+                    include("nonexistent.jl")
+                    return Integer
+                end
+                struct Trigger <: load_child() end
+                """, main)
+            report = res.res.toplevel_error_report
+            @test report isa ActualErrorWrapped
+            @test report.err isa SystemError
+            @test report.file == main
+            @test report.line == 2
+        end
+        write(joinpath(dir, "helper.jl"), """
+            function load_child()
+                include("nonexistent.jl")
+                return Integer
+            end
+            """)
+        let res = report_text("""
+                include("helper.jl")
+                begin
+                    x = 1
+                    struct Trigger <: load_child() end
+                end
+                """, main)
+            report = res.res.toplevel_error_report
+            @test report isa ActualErrorWrapped
+            @test report.err isa SystemError
+            @test report.file == main
+            @test report.line == 4
+        end
     end
 end
 

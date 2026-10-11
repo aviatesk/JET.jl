@@ -276,6 +276,32 @@ end
         @test is_global_undef_var(report, :undefined_included)
         @test get_reports(res) == [warning, report]
     end
+    mktempdir() do dir
+        main = joinpath(dir, "main.jl")
+        child = joinpath(dir, "child.jl")
+        write(child, "struct Included end\nundefined_included\n")
+        context = gen_virtual_module()
+        res = @test_logs report_text("""
+            module Child end
+            mapexpr(ex) = error("mapexpr must not run")
+            Base.include(mapexpr, Child, "child.jl")
+            struct AfterInclude end
+            """, main; context, virtualize=false)
+        @test isnothing(res.res.toplevel_error_report)
+        warning = only(res.res.toplevel_warning_reports)
+        @test warning isa JET.UnsupportedFeatureReport
+        @test warning.file == main
+        @test warning.line == 3
+        @test occursin("include(mapexpr::Function, mod::Module, filename::String)",
+                      warning.message)
+        childmod = @invokelatest getglobal(context, :Child)
+        @test (@invokelatest isdefinedglobal(childmod, :Included))
+        @test !(@invokelatest isdefinedglobal(context, :Included))
+        @test (@invokelatest isdefinedglobal(context, :AfterInclude))
+        report = only(res.res.inference_error_reports)
+        @test is_global_undef_var(report, childmod, :undefined_included)
+        @test get_reports(res) == [warning, report]
+    end
 end
 
 @testset "user warnings remain log messages" begin

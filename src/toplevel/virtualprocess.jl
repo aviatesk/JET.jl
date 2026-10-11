@@ -2814,9 +2814,18 @@ function JuliaInterpreter.evaluate_call!(
         interp::ConcreteInterpreter, frame::Frame, fargs::Vector{Any}, enter_generated::Bool
     )
     f = fargs[1]
+    state = InterpretationState(interp)
     if isinclude(f)
         popfirst!(fargs)
-        return handle_include(interp, f, fargs)
+        # `curline` is the first line of the top-level statement, which may contain the
+        # call in a nested block or a callee; reports and `try_read_file` overloads read it
+        curline = state.curline
+        state.curline = something(line_in_file(frame, state.filename), curline)
+        try
+            return handle_include(interp, f, fargs)
+        finally
+            state.curline = curline
+        end
     elseif f === Base._ccallable
         # skip concrete-interpretation of `jl_extern_c`, but only when the method dispatch
         # would succeed; otherwise the call goes through and raises the `MethodError`
@@ -2824,7 +2833,6 @@ function JuliaInterpreter.evaluate_call!(
             return nothing
         end
     end
-    state = InterpretationState(interp)
     if f === Base.rethrow
         # Even native calls must rethrow the interpreted frame's active exception.
         restore_callee_error!(state, frame, fargs)
@@ -2836,7 +2844,22 @@ function JuliaInterpreter.evaluate_call!(
         interp::Interpreter, frame::Frame, fargs::Vector{Any}, enter_generated::Bool)
 end
 
-isinclude(@nospecialize f) = f isa Base.IncludeInto || (isa(f, Function) && nameof(f) === :include)
+isinclude(@nospecialize f) = f isa Base.IncludeInto || f === Base.include || f === Core.include
+
+# the line of the innermost frame in `filename`, i.e. where the current call is written in
+# the file being analyzed when it happens in a callee defined elsewhere
+function line_in_file(frame::Frame, filename::String)
+    f = frame
+    while f !== nothing
+        loc = CodeTracking.whereis(f)
+        if loc !== nothing
+            file, line = loc
+            file == filename && return line
+        end
+        f = f.caller
+    end
+    return nothing
+end
 
 function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func), args::Vector{Any})
     state = InterpretationState(interp)
@@ -2853,6 +2876,7 @@ function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func)
 
     nargs = length(args)
     fname = nothing
+    mapexpr_signature = nothing
     if nargs == 1
         fname = only(args)
     elseif nargs == 2
@@ -2861,17 +2885,27 @@ function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func)
             include_context = x
             # TODO propagate appropriate `dependencies` to `newstate`
         elseif isa(x, Function)
-            push!(state.res.toplevel_warning_reports, UnsupportedFeatureReport(
-                "JET does not support `include(mapexpr::Function, filename::String)`. " *
-                "The included file is analyzed without applying `mapexpr`.", filename, line))
+            mapexpr_signature = "include(mapexpr::Function, filename::String)"
         else
             abort_method_error!(args)
         end
+    elseif nargs == 3 && include_func === Base.include
+        mapexpr, mod, fname = args
+        if !(isa(mapexpr, Function) && isa(mod, Module))
+            abort_method_error!(args)
+        end
+        include_context = mod
+        mapexpr_signature = "include(mapexpr::Function, mod::Module, filename::String)"
     else
         abort_method_error!(args)
     end
     if !isa(fname, String)
         abort_method_error!(args)
+    end
+    if mapexpr_signature !== nothing
+        push!(state.res.toplevel_warning_reports, UnsupportedFeatureReport(
+            "JET does not support `$mapexpr_signature`. " *
+            "The included file is analyzed without applying `mapexpr`.", filename, line))
     end
 
     include_file = normpath(dirname(filename), fname)
