@@ -7,8 +7,8 @@
 /docs/src/generated-*.md
 /docs/src/generated-*/
 !/examples/Manifest.toml
-./LocalPreferences.toml
-./Manifest.toml
-./Manifest-*.toml
+/LocalPreferences.toml
+/Manifest.toml
+/Manifest-*.toml
 .claude
 julia
