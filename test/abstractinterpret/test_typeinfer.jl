@@ -461,6 +461,277 @@ end
     end
 end
 
+cycle_c1(x::Int) = x > 0 ? cycle_c2(x) : 0
+cycle_c2(x::Int) = cycle_c3(x)
+cycle_c3(x::Int) = (x > 10 && sin(x, x); cycle_c1(x - 1))
+cycle_entry(x) = cycle_c1(x)
+cycle_cached_entry(x) = cycle_c1(x)
+
+@inline cycle_h1(x::Int, s::Symbol) = s === :bad ? cycle_h2(x) : 0
+cycle_h2(x::Int) = (x > 10 && sin(x, x); cycle_h1(x - 1, :bad))
+cycle_constprop_entry(x) = cycle_h1(x, :good)
+
+cycle_p(x::Int) = x > 0 ? cycle_m(x, :good) : 0
+@inline cycle_m(x::Int, s::Symbol) = s === :bad ? (x > 10 && sin(x, x); cycle_p(x - 1)) : 0
+cycle_inner_constprop_entry(x) = cycle_p(x)
+
+cycle_splat_p(x::Int) = x > 0 ? cycle_splat_m((x, :good)...) : 0
+@inline cycle_splat_m(x::Int, s::Symbol) = s === :bad ? (x > 10 && sin(x, x); cycle_splat_p(x - 1)) : 0
+cycle_splat_entry(x) = cycle_splat_p(x)
+
+cycle_invoke_p(x::Int) = x > 0 ? invoke(cycle_invoke_m, Tuple{Int,Symbol}, x, :good) : 0
+@inline cycle_invoke_m(x::Int, s::Symbol) = s === :bad ? (x > 10 && sin(x, x); cycle_invoke_p(x - 1)) : 0
+cycle_invoke_entry(x) = cycle_invoke_p(x)
+
+cycle_equal_p(x::Int, callback) = x > 0 ? cycle_equal_m(x, callback, :good) : callback()
+@inline cycle_equal_m(x::Int, callback, s::Symbol) =
+    s === :bad ? (x > 10 && sin(x, x); cycle_equal_p(x - 1, callback)) : callback()
+cycle_equal_entry(x, callback) = cycle_equal_p(x, callback)
+
+cycle_rt_a(x::Int) = x > 0 ? (cycle_rt_b(x, :good); cycle_rt_c(x)) : 0
+@inline cycle_rt_b(x::Int, s::Symbol) = s === :bad ? (x > 10 && sin(x, x); cycle_rt_a(x - 1)) : 0
+cycle_rt_c(x::Int) = Core.Compiler.return_type(cycle_rt_b, Tuple{Int,Symbol})
+cycle_rt_entry(x) = cycle_rt_a(x)
+
+cycle_q(x::Int) = x > 0 ? cycle_n(x, :good) : 0
+@inline cycle_n(x::Int, s::Symbol) = (x > 10 && sin(x, x); s === :bad ? 0 : cycle_q(x - 1))
+cycle_bailout_entry(x) = cycle_q(x)
+
+function cycle_r(x::Int)
+    s = :good
+    while x > 0
+        x = cycle_w(x, s)
+        s = cycle_sym(x)
+    end
+    return x
+end
+@inline cycle_w(x::Int, s::Symbol) = s === :bad ? (x > 10 && sin(x, x); cycle_r(x - 1)) : x - 1
+cycle_sym(x::Int) = x > 5 ? :good : :bad
+cycle_revisit_entry(x) = cycle_r(x)
+
+function cycle_sites_p(x::Int)
+    x > 0 || return 0
+    cycle_sites_m(x, :good)
+    return cycle_sites_m(x, :bad)
+end
+const CYCLE_SITES_BAD_LINE = (@__LINE__) - 2
+@inline cycle_sites_m(x::Int, s::Symbol) = s === :bad ? (x > 10 && sin(x, x); cycle_sites_p(x - 1)) : 0
+cycle_sites_entry(x) = cycle_sites_p(x)
+
+cycle_later_p(x::Int, s::Symbol) = x > 0 ? (cycle_later_m(x, :good); cycle_later_k(x, s)) : 0
+@inline cycle_later_m(x::Int, s::Symbol) = s === :bad ? (x > 10 && sin(x, x); cycle_later_p(x - 1, s)) : 0
+cycle_later_k(x::Int, s::Symbol) = cycle_later_m(x, s)
+cycle_later_entry(x, s) = cycle_later_p(x, s)
+
+cycle_upper_p(x::Int) = x > 0 ? (cycle_upper_k(x, :good); cycle_upper_m(x)) : 0
+@inline cycle_upper_k(x::Int, s::Symbol) = s === :bad ? cycle_upper_m(x) : 0
+cycle_upper_m(x::Int) = (x > 10 && sin(x, x); cycle_upper_p(x - 1))
+cycle_upper_entry(x) = cycle_upper_p(x)
+
+cycle_t1(x::Int) = x > 0 ? cycle_t2(x) : 0
+cycle_t2(x::Int) = x > 10 ? throw(ArgumentError("x")) : cycle_t1(x - 1)
+cycle_throw_entry(x) = cycle_t1(x)
+
+function cycle_opt1(x::Int, y::Base.RefValue{Any})
+    x > 0 || return 0
+    z = cycle_optinl(x)
+    return cycle_opt2(z, y)
+end
+const CYCLE_OPT1_CALLSITE_LINE = (@__LINE__) - 2
+@inline cycle_optinl(x) = x + 1
+cycle_opt2(x::Int, y::Base.RefValue{Any}) = (y[] + 1; cycle_opt1(x - 2, y))
+cycle_opt_entry(x, y) = cycle_opt1(x, y)
+
+cycle_reuse1_a(x::Int) = x > 0 ? (cycle_reuse1_b(x); cycle_reuse1_c(x)) : 0
+cycle_reuse1_b(x::Int) = cycle_reuse1_c(x)
+cycle_reuse1_c(x::Int) = (x > 10 && sin(x, x); cycle_reuse1_a(x - 1))
+cycle_reuse1_entry_a(x) = cycle_reuse1_a(x)
+cycle_reuse1_entry_b(x) = cycle_reuse1_b(x)
+
+cycle_reuse2_a(x::Int) = x > 0 ? (x > 10 && sin(x, x); cycle_reuse2_b(x)) : 0
+cycle_reuse2_b(x::Int) = cycle_reuse2_c(x)
+cycle_reuse2_c(x::Int) = cycle_reuse2_a(x - 1)
+cycle_reuse2_entry_a(x) = cycle_reuse2_a(x)
+cycle_reuse2_entry_b(x) = cycle_reuse2_b(x)
+
+@testset "reports within call cycles" begin
+    # reports of a cycle member are attributed to the call site that entered it,
+    # not to the caller of the whole cycle
+    let result = report_call(cycle_entry, (Int,))
+        r = only(get_reports_with_test(result))
+        @test r isa MethodErrorReport
+        @test [vf.linfo.def.name for vf in r.vst] == [:cycle_entry, :cycle_c1, :cycle_c2, :cycle_c3]
+    end
+
+    # the cycle top caches the reports from the whole cycle
+    let result = report_call(cycle_cached_entry, (Int,))
+        r = only(get_reports_with_test(result))
+        @test r isa MethodErrorReport
+        @test [vf.linfo.def.name for vf in r.vst] == [:cycle_cached_entry, :cycle_c1, :cycle_c2, :cycle_c3]
+    end
+
+    # constant propagation throws away the reports from the non-constant cycle
+    let result = report_call(cycle_constprop_entry, (Int,))
+        @test isempty(get_reports_with_test(result))
+    end
+
+    # the same holds when constant propagation happens inside the cycle
+    let result = report_call(cycle_inner_constprop_entry, (Int,))
+        @test isempty(get_reports_with_test(result))
+    end
+
+    let result = report_call(cycle_splat_entry, (Int,))
+        @test isempty(get_reports_with_test(result))
+    end
+
+    let result = report_call(cycle_invoke_entry, (Int,))
+        @test isempty(get_reports_with_test(result))
+    end
+
+    # The unknown callback keeps return/exception types and effects unchanged, but
+    # Compiler still retains the constant-propagation result that removes the error.
+    let result = report_call(cycle_equal_entry, (Int, Any))
+        @test isempty(get_reports_with_test(result))
+    end
+
+    # the reports don't reach the cycle top through the simulated call of `return_type`
+    let result = report_call(cycle_rt_entry, (Int,))
+        @test isempty(get_reports_with_test(result))
+    end
+
+    # but constant propagation that hits the cycle bails out, and the reports from the
+    # non-constant result are kept
+    let result = report_call(cycle_bailout_entry, (Int,))
+        r = only(get_reports_with_test(result))
+        @test r isa MethodErrorReport
+        @test [vf.linfo.def.name for vf in r.vst] == [:cycle_bailout_entry, :cycle_q, :cycle_n]
+    end
+
+    # the reports are kept as well when the cycle revisits the call site with arguments
+    # that are no longer constant, since the latest evaluation uses the non-constant result
+    let result = report_call(cycle_revisit_entry, (Int,))
+        r = only(get_reports_with_test(result))
+        @test r isa MethodErrorReport
+        @test [vf.linfo.def.name for vf in r.vst] == [:cycle_revisit_entry, :cycle_r, :cycle_w]
+    end
+
+    # constant propagation at one call site does not supersede the reports for another call
+    # site that uses the non-constant result
+    let result = report_call(cycle_sites_entry, (Int,))
+        r = only(get_reports_with_test(result))
+        @test r isa MethodErrorReport
+        @test [vf.linfo.def.name for vf in r.vst] == [:cycle_sites_entry, :cycle_sites_p, :cycle_sites_m]
+        @test r.vst[2].line == CYCLE_SITES_BAD_LINE
+    end
+
+    # the reports are handed over through a call site in a cycle member that is entered after
+    # the callee
+    let result = report_call(cycle_later_entry, (Int, Symbol))
+        r = only(get_reports_with_test(result))
+        @test r isa MethodErrorReport
+        @test [vf.linfo.def.name for vf in r.vst] == [:cycle_later_entry, :cycle_later_p, :cycle_later_k, :cycle_later_m]
+    end
+
+    # the reports are handed over through another call site when constant propagation
+    # supersedes them on the way to the cycle top
+    let result = report_call(cycle_upper_entry, (Int,))
+        r = only(get_reports_with_test(result))
+        @test r isa MethodErrorReport
+        @test [vf.linfo.def.name for vf in r.vst] == [:cycle_upper_entry, :cycle_upper_p, :cycle_upper_m]
+    end
+
+    # reports that analyzers add in their `CC.finish!` overloads are handed over as well
+    let result = report_call(cycle_throw_entry, (Int,); mode=:sound)
+        r = only(get_reports_with_test(result))
+        @test r isa UncaughtExceptionReport
+        @test [vf.linfo.def.name for vf in r.vst] == [:cycle_throw_entry, :cycle_t1, :cycle_t2]
+    end
+
+    # the call sites are resolved before analyzers that optimize transform the sources
+    let result = report_opt(cycle_opt_entry, (Int, Base.RefValue{Any}))
+        r = only(get_reports_with_test(result))
+        @test r isa RuntimeDispatchReport
+        @test [vf.linfo.def.name for vf in r.vst] == [:cycle_opt_entry, :cycle_opt1, :cycle_opt2]
+        @test r.vst[2].line == CYCLE_OPT1_CALLSITE_LINE
+    end
+
+    # the cycle members are not cached, so a later analysis entering the cycle through a
+    # member infers it again and gets the reports reachable from there
+    let result = report_call(cycle_reuse1_entry_a, (Int,))
+        @test only(get_reports_with_test(result)) isa MethodErrorReport
+    end
+    let result = report_call(cycle_reuse1_entry_b, (Int,))
+        r = only(get_reports_with_test(result))
+        @test r isa MethodErrorReport
+        @test [vf.linfo.def.name for vf in r.vst] == [:cycle_reuse1_entry_b, :cycle_reuse1_b, :cycle_reuse1_c]
+    end
+
+    # including the reports reachable only through the call back into the cycle top
+    let result = report_call(cycle_reuse2_entry_a, (Int,))
+        @test only(get_reports_with_test(result)) isa MethodErrorReport
+    end
+    let result = report_call(cycle_reuse2_entry_b, (Int,))
+        r = only(get_reports_with_test(result))
+        @test r isa MethodErrorReport
+        @test [vf.linfo.def.name for vf in r.vst] == [:cycle_reuse2_entry_b, :cycle_reuse2_b, :cycle_reuse2_c, :cycle_reuse2_a]
+    end
+end
+
+mutable struct ConstPropCycleOnce{F}
+    const f::F
+    x::Int
+end
+function (once::ConstPropCycleOnce)()
+    once.x == 0 && (once.x = once.f())
+    return once.x
+end
+constprop_cycle_wait() = CONSTPROP_CYCLE_ONCE()
+constprop_cycle_entry() = constprop_cycle_wait()
+const CONSTPROP_CYCLE_ONCE = ConstPropCycleOnce(constprop_cycle_wait, 0)
+
+mutable struct ConstPropCycleErrorOnce{F}
+    const f::F
+    x::Int
+end
+function (once::ConstPropCycleErrorOnce)()
+    once.x == 0 && (once.x = once.f())
+    once.x > 10 && sin(once.x, once.x)
+    return once.x
+end
+constprop_cycle_error_wait() = CONSTPROP_CYCLE_ERROR_ONCE()
+constprop_cycle_error_entry() = constprop_cycle_error_wait()
+const CONSTPROP_CYCLE_ERROR_ONCE = ConstPropCycleErrorOnce(constprop_cycle_error_wait, 0)
+
+constprop_cycle_cached_wait() = CONSTPROP_CYCLE_CACHED_ONCE()
+constprop_cycle_cached_entry() = constprop_cycle_cached_wait()
+const CONSTPROP_CYCLE_CACHED_ONCE = ConstPropCycleErrorOnce(constprop_cycle_cached_wait, 0)
+
+# aviatesk/JET.jl#868
+@testset "reports from constant propagation discarded by call cycles" begin
+    let result = report_opt(constprop_cycle_entry, ())
+        @test isempty(get_reports_with_test(result))
+    end
+
+    let result = report_call(constprop_cycle_error_entry, ())
+        r = only(get_reports_with_test(result))
+        @test r isa MethodErrorReport
+        @test r.t === Tuple{typeof(sin), Int, Int}
+    end
+
+    # A cached generic report must survive a failed constant-propagation attempt,
+    # rather than being replaced by a leaked report with the wrong call stack.
+    let result = report_call(CONSTPROP_CYCLE_CACHED_ONCE, ())
+        @test only(get_reports_with_test(result)) isa MethodErrorReport
+    end
+    let result = report_call(constprop_cycle_cached_entry, ())
+        r = only(get_reports_with_test(result))
+        @test r isa MethodErrorReport
+        @test r.t === Tuple{typeof(sin), Int, Int}
+        @test length(r.vst) == 3
+        @test r.vst[2].linfo.def.name === :constprop_cycle_cached_wait
+    end
+end
+
 @testset "additional analysis pass for task parallelism code" begin
     # general case with `schedule(::Task)` pattern
     report_call() do

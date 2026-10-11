@@ -3,6 +3,8 @@
 
 const ABSTRACT_CALL_USES_VTYPES = hasmethod(CC.abstract_call_known,
     Tuple{AbstractInterpreter,Any,ArgInfo,StmtInfo, Union{VarTable,Nothing},InferenceState,Int})
+const FINISHINFER_USES_OPT_CACHE = hasmethod(CC.finishinfer!,
+    Tuple{InferenceState,AbstractInterpreter,Int,IdDict{MethodInstance,CodeInstance}})
 
 function collect_callee_reports!(analyzer::AbstractAnalyzer, sv::InferenceState)
     reports = get_report_stash(analyzer)
@@ -64,13 +66,21 @@ function CC.const_prop_call(analyzer::AbstractAnalyzer,
     mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
     concrete_eval_result::Union{Nothing,ConstCallResult})
     set_cache_target!(analyzer, :const_prop_call => sv)
+    report_stash = get_report_stash(analyzer)
+    nstashed = length(report_stash)
     const_result = @invoke CC.const_prop_call(analyzer::AbstractInterpreter,
         mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
         concrete_eval_result::Union{Nothing,ConstCallResult})
     @assert get_cache_target(analyzer) === nothing "invalid JET analysis state"
     if const_result !== nothing
-        # successful constant prop', we need to update reports
+        # Keep the generic reports until constant propagation succeeds: a cycle-limited
+        # attempt may finish and stash reports even though Compiler discards its result.
+        filter_lineages!(analyzer, sv, mi)
         collect_callee_reports!(analyzer, sv)
+    else
+        # drop the reports that the failed attempt has stashed
+        @assert length(report_stash) ≥ nstashed "invalid JET analysis state"
+        resize!(report_stash, nstashed)
     end
     return const_result
 end
@@ -89,8 +99,8 @@ function CC.concrete_eval_call(analyzer::AbstractAnalyzer,
         # keep the generic reports: analyzers may discard such a result to fall back to
         # constant propagation for precise error reporting, but that fallback is not
         # guaranteed to run (e.g. `const_prop_argument_heuristic` may refuse it), and
-        # when it does run, its own lineage filtering (see the `CC.typeinf` and
-        # `CC.cache_lookup` overloads) replaces the generic reports at that point.
+        # when it does run successfully, the `CC.const_prop_call` overload replaces
+        # the generic reports at that point.
         edge = result.edge
         if edge isa CodeInstance
             filter_lineages!(analyzer, sv, edge.def)
@@ -343,14 +353,8 @@ function CC.cache_lookup(𝕃ᵢ::CC.AbstractLattice, mi::MethodInstance, given_
     # cache hit, restore reports from the local report cache
 
     if cache_target !== nothing
-        context, caller = cache_target
+        context, _ = cache_target
         @assert context === :const_prop_call "invalid JET analysis state"
-
-        # as the analyzer uses the reports that are cached by the abstract-interpretation
-        # with the extended lattice elements, here we should throw-away the error reports
-        # that are collected during the previous non-constant abstract-interpretation
-        # (see the `CC.typeinf(::AbstractAnalyzer, ::InferenceState)` overload)
-        filter_lineages!(analyzer, caller, mi)
 
         cached_reports = CC.traverse_analysis_results(inf_result) do @nospecialize analysis_result
             analysis_result isa CachedAnalysisResult ? analysis_result.reports : nothing
@@ -365,23 +369,6 @@ CC.push!(view::AbstractAnalyzerView, inf_result::InferenceResult) = CC.push!(get
 
 # main driver
 # ===========
-
-# in this overload we will work on some meta/debug information management per inference frame
-function CC.typeinf(analyzer::AbstractAnalyzer, frame::InferenceState)
-    parent = CC.frame_parent(frame)
-
-    if is_constant_propagated(frame) && parent isa InferenceState
-        # JET is going to perform the abstract-interpretation with the extended lattice elements:
-        # throw-away the error reports that are collected during the previous non-constant abstract-interpretation
-        # NOTE that the `linfo` here is the exactly same object as the method instance used
-        # for the previous non-constant abstract-interpretation
-        filter_lineages!(analyzer, parent, CC.frame_instance(frame))
-    end
-
-    ret = @invoke CC.typeinf(analyzer::AbstractInterpreter, frame::InferenceState)
-
-    return ret
-end
 
 """
     islineage(parent_frame::VirtualFrame, current::MethodInstance) ->
@@ -458,23 +445,211 @@ function finish_frame!(analyzer::AbstractAnalyzer, frame::InferenceState)
     # https://github.com/aviatesk/JET.jl/issues/75
     unique!(aggregation_policy(analyzer), reports)
 
-    if CC.frame_parent(frame) !== nothing
-        # inter-procedural handling: get back to the caller what we got from these results
-        stash_reports!(analyzer, reports)
-    end
-
     # Cached reports can be produced by analyzer hooks whose methods appear in
     # report stacks even when the ordinary inference result for `caller` does
     # not depend on them. Add those frames as edges before caching reports, so
     # method redefinitions invalidate diagnostics restored from the cache.
     add_report_dependency_edges!(frame.edges, caller.linfo, reports)
-    cache_reports!(analyzer, caller, reports)
+    # the cycle members are not cached (see the `CC.finishinfer!` overloads)
+    is_cycle_member(frame) || cache_reports!(analyzer, caller, reports)
+
+    # The frames of a call cycle are finished one by one from the cycle top, so wait for the
+    # last one, when every frame of the cycle has got the reports from analyzer hooks such
+    # as `CC.finish!` overloads.
+    callstack = frame_callstack(frame)
+    if frame.frameid == 0 || callstack[end] === frame
+        top = frame.cycleid == 0 ? frame : callstack[frame.cycleid]::InferenceState
+        top === frame || handoff_cycle_member_reports!(top)
+        if CC.frame_parent(top) !== nothing
+            # inter-procedural handling: get back to the caller what we got from these results
+            top_analyzer = top.interp::AbstractAnalyzer
+            stash_reports!(top_analyzer, get_reports(top_analyzer, top.result))
+        end
+    end
+end
+
+# Cycle members are finished only after the whole cycle converges, when their callers have
+# already collected callee reports from the stash. Hand their reports over along a spanning
+# tree of the calls within the cycle instead, which is searched breadth-first from the cycle
+# top through the call sites where Compiler has not used a constant prop' result in place of
+# the non-constant callee result. Members reachable only through such call sites don't hand
+# their reports over at all. The tree is prepared by the `CC.finishinfer!` overloads for the
+# cycle top, when the cycle has converged and no frame of it has been optimized yet, and the
+# reports are handed from the leaves once the last frame has got its reports from analyzer
+# hooks such as `CC.finish!` overloads.
+function prepare_cycle_handoff!(analyzer::AbstractAnalyzer, top::InferenceState)
+    callstack = frame_callstack(top)
+    cycle = top.frameid:length(callstack)
+    # caller frame id => [(callee frame id, program counter, superseded)]
+    calls = Dict{Int,Vector{Tuple{Int,Int,Bool}}}()
+    for frameid = cycle
+        callee = callstack[frameid]::InferenceState
+        for (caller, pc) in callee.cycle_backedges
+            caller === callee && continue
+            caller.frameid in cycle && callstack[caller.frameid] === caller || continue
+            caller.interp === callee.interp || continue
+            superseded = uses_constprop_result(caller, pc, callee.linfo)
+            push!(get!(Vector{Tuple{Int,Int,Bool}}, calls, caller.frameid),
+                  (frameid, pc, superseded))
+        end
+    end
+    order, parents = search_cycle_calls(calls, top.frameid, #=through_superseded=#false)
+    callsites = Dict{Int,Tuple{Int,VirtualFrame}}()
+    for (calleeid, (callerid, pc)) in parents
+        caller = callstack[callerid]::InferenceState
+        callsites[calleeid] = (callerid, get_virtual_frame((caller, pc)))
+    end
+    reachable = BitSet(first(search_cycle_calls(calls, top.frameid, #=through_superseded=#true)))
+    untracked = Int[frameid for frameid = cycle if frameid ∉ reachable]
+    get_cycle_handoffs(analyzer)[top] = CycleHandoff(order, callsites, untracked)
+    return nothing
+end
+
+# The final call info retains const-prop results even when the return type is unchanged.
+# Every occurrence of `mi` must be replaced, including implicit calls within wrappers.
+uses_constprop_result(caller::InferenceState, pc::Int, mi::MethodInstance) =
+    constprop_result_status(caller.stmt_info[pc], mi) === true
+
+# `nothing` means unrelated, `true` means the call site doesn't use the non-constant callee
+# reports, e.g. when a constant prop' result replaces them, and `false` vetoes suppression.
+# Unknown call info is conservative: it cannot prove the absence of a generic call.
+function constprop_result_status(@nospecialize(info::CC.CallInfo), mi::MethodInstance)
+    if (info isa CC.MethodResultPure || info isa CC.ModifyOpInfo ||
+        info isa CC.FinalizerInfo || info isa CC.VirtualMethodMatchInfo)
+        return constprop_result_status(info.info, mi)
+    elseif info isa CC.ReturnTypeCallInfo
+        # `return_type` analyzes a simulated call whose reports JET deliberately discards,
+        # so the reports shouldn't reach the cycle top through this call site either
+        return true
+    elseif info isa CC.GlobalAccessInfo
+        return nothing
+    elseif info isa CC.ApplyCallInfo
+        status = constprop_result_status(info.call, mi)
+        status === false && return false
+        for arg in info.arginfo
+            arg === nothing && continue
+            for call in arg.each
+                status = merge_constprop_status(status, constprop_result_status(call.info, mi))
+                status === false && return false
+            end
+        end
+        return status
+    elseif info isa CC.UnionSplitApplyCallInfo
+        status = nothing
+        for split in info.infos
+            status = merge_constprop_status(status, constprop_result_status(split, mi))
+            status === false && return false
+        end
+        return status
+    elseif info isa CC.InvokeCallInfo || info isa CC.OpaqueClosureCallInfo
+        return constprop_match_status(info.match, info.result, mi)
+    elseif info isa CC.OpaqueClosureCreateInfo
+        return constprop_result_status(info.unspec.info, mi)
+    elseif info isa CC.InvokeCICallInfo
+        return info.edge.def === mi ? false : nothing
+    end
+    nsplit = @something CC.nsplit(info) return false
+    status = nothing
+    result_index = 0
+    for i = 1:nsplit
+        for match in CC.getsplit(info, i)
+            result_index += 1
+            result = CC.getresult(info, result_index)
+            status = merge_constprop_status(status, constprop_match_status(match, result, mi))
+            status === false && return false
+        end
+    end
+    return status
+end
+
+function constprop_match_status(match::Core.MethodMatch,
+                               result::Union{Nothing,CC.ConstResult}, mi::MethodInstance)
+    if result isa CC.ConstPropResult && result.result.linfo === mi
+        return true
+    end
+    return specialize_method(match; preexisting=true) === mi ? false : nothing
+end
+
+function merge_constprop_status(a::Union{Nothing,Bool}, b::Union{Nothing,Bool})
+    (a === false || b === false) && return false
+    return (a === true || b === true) ? true : nothing
+end
+
+# Search the calls within a cycle breadth-first from `root`, returning the frame ids in the
+# visited order and the caller frame id and program counter that each frame is visited from.
+function search_cycle_calls(calls::Dict{Int,Vector{Tuple{Int,Int,Bool}}}, root::Int,
+                            through_superseded::Bool)
+    order = Int[root]
+    parents = Dict{Int,Tuple{Int,Int}}()
+    i = 1
+    while i ≤ length(order)
+        callerid = order[i]
+        i += 1
+        haskey(calls, callerid) || continue
+        for (calleeid, pc, superseded) in calls[callerid]
+            superseded && !through_superseded && continue
+            (calleeid == root || haskey(parents, calleeid)) && continue
+            parents[calleeid] = (callerid, pc)
+            push!(order, calleeid)
+        end
+    end
+    return order, parents
+end
+
+function handoff_cycle_member_reports!(top::InferenceState)
+    top_analyzer = top.interp::AbstractAnalyzer
+    (; order, callsites, untracked) = pop!(get_cycle_handoffs(top_analyzer), top)
+    callstack = frame_callstack(top)
+    handed = false
+    for i = length(order):-1:2
+        member = callstack[order[i]]::InferenceState
+        analyzer = member.interp::AbstractAnalyzer
+        reports = get_reports(analyzer, member.result)
+        isempty(reports) && continue
+        unique!(aggregation_policy(analyzer), reports)
+        callerid, vf = callsites[order[i]]
+        caller = callstack[callerid]::InferenceState
+        for report in reports
+            new = copy_report_stable(report)
+            pushfirst!(new.vst, vf)
+            add_new_report!(analyzer, caller.result, new)
+        end
+        handed = true
+    end
+    # Compiler validates the cycle `CodeInstance`s in the current world only after all the
+    # frames are finished, so the cached reports of the cycle top can still be updated here.
+    handed && refresh_cached_reports!(top_analyzer, top.result, get_reports(top_analyzer, top.result))
+    for frameid in untracked
+        # keep the conventional handling for the members whose calls are not tracked, which
+        # attributes the reports to the caller of the cycle top
+        member = callstack[frameid]::InferenceState
+        analyzer = member.interp::AbstractAnalyzer
+        reports = get_reports(analyzer, member.result)
+        isempty(reports) || stash_reports!(analyzer, reports)
+    end
+    return nothing
+end
+
+function refresh_cached_reports!(analyzer::AbstractAnalyzer, caller::InferenceResult,
+                                 reports::Vector{InferenceErrorReport})
+    unique!(aggregation_policy(analyzer), reports)
+    cached_reports = CC.traverse_analysis_results(caller) do @nospecialize analysis_result
+        analysis_result isa CachedAnalysisResult ? analysis_result.reports : nothing
+    end
+    cached_reports === nothing && return nothing
+    empty!(cached_reports)
+    fill_cached_reports!(cached_reports, caller.linfo, reports)
+    return nothing
 end
 
 function cache_reports!(::AbstractAnalyzer, caller::InferenceResult,
                         reports::Vector{InferenceErrorReport})
-    cached_reports = InferenceErrorReport[]
-    mi = caller.linfo
+    cached_reports = fill_cached_reports!(InferenceErrorReport[], caller.linfo, reports)
+    CC.stack_analysis_result!(caller, CachedAnalysisResult(cached_reports))
+end
+
+function fill_cached_reports!(cached_reports::Vector{InferenceErrorReport},
+                              mi::MethodInstance, reports::Vector{InferenceErrorReport})
     for report in reports
         @static if JET_DEV_MODE
             actual, expected = first(report.vst).linfo, mi
@@ -482,7 +657,50 @@ function cache_reports!(::AbstractAnalyzer, caller::InferenceResult,
         end
         cache_report!(cached_reports, report)
     end
-    CC.stack_analysis_result!(caller, CachedAnalysisResult(cached_reports))
+    return cached_reports
+end
+
+# `InferenceState.callstack` is untyped on Julia 1.12 and 1.13
+@static if fieldtype(InferenceState, :callstack) === Any
+    frame_callstack(sv::InferenceState) = sv.callstack::Vector{CC.AbsIntState}
+else
+    frame_callstack(sv::InferenceState) = sv.callstack
+end
+
+is_cycle_top(frame::InferenceState) = frame.frameid ≠ 0 && frame.cycleid == frame.frameid &&
+    length(frame_callstack(frame)) > frame.frameid
+is_cycle_member(frame::InferenceState) = frame.cycleid ≠ frame.frameid
+
+# `CC.finishinfer!` is called for every frame of a cycle once the cycle has converged, before
+# any frame of it is optimized or finished, so prepare the hand-off of the member reports
+# there. The reports of a member depend on the spanning tree that hands them over to the
+# cycle top, so like Compiler does for the results limited by recursion, don't cache this
+# intermediate work globally either but let later analyses infer it again.
+@static if FINISHINFER_USES_OPT_CACHE
+function CC.finishinfer!(
+        frame::InferenceState, analyzer::AbstractAnalyzer, cycleid::Int,
+        opt_cache::IdDict{MethodInstance,CodeInstance}
+    )
+    is_cycle_top(frame) && prepare_cycle_handoff!(analyzer, frame)
+    ret = @invoke CC.finishinfer!(
+        frame::InferenceState, analyzer::AbstractInterpreter, cycleid::Int,
+        opt_cache::IdDict{MethodInstance,CodeInstance})
+    # `CC.finish!` publishes the result, so the member stays in `opt_cache` for the inlining
+    # within the cycle
+    is_cycle_member(frame) && (frame.cache_mode &= ~CC.CACHE_MODE_GLOBAL)
+    return ret
+end
+else
+function CC.finishinfer!(frame::InferenceState, analyzer::AbstractAnalyzer, cycleid::Int)
+    is_cycle_top(frame) && prepare_cycle_handoff!(analyzer, frame)
+    # Julia 1.12 publishes the result within `CC.finishinfer!`, before the optimization that
+    # the cache mode also controls, so make the member volatile: it is still optimized but
+    # not cached, at the cost of the inlining within the cycle no longer finding it
+    if is_cycle_member(frame) && CC.is_cached(frame)
+        frame.cache_mode = CC.CACHE_MODE_VOLATILE
+    end
+    return @invoke CC.finishinfer!(frame::InferenceState, analyzer::AbstractInterpreter, cycleid::Int)
+end
 end
 
 function CC.finish!(analyzer::AbstractAnalyzer, frame::InferenceState, validation_world::UInt, time_before::UInt64)
