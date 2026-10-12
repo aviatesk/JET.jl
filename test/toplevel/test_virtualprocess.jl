@@ -3241,6 +3241,36 @@ end
             end)
             loop_values = @invokelatest getglobal(mod, :loop_values)
             @test loop_values == [1, 2]
+
+            Core.eval(mod, :(const failfast_steps = Int[]))
+            eval_replaced_test_macro(mod, quote
+                @testset failfast=true begin
+                    push!(failfast_steps, 1)
+                    @test true
+                    push!(failfast_steps, 2)
+                    @test false
+                    push!(failfast_steps, 3)
+                end
+                @testset failfast=true begin
+                    push!(failfast_steps, 4)
+                    @test error("x")
+                    push!(failfast_steps, 5)
+                end
+            end)
+            failfast_steps = @invokelatest getglobal(mod, :failfast_steps)
+            @test failfast_steps == [1, 2, 4]
+        end
+
+        let failfast_of(ex::Expr, failfast) = JET.testset_failfast(ex.args, failfast)
+            @test failfast_of(:(@testset failfast=true begin end), false) === true
+            @test failfast_of(:(@testset "name" failfast=true begin end), false) === true
+            @test failfast_of(:(@testset begin end), true) === true
+            @test failfast_of(:(@testset begin end), false) === false
+            @test failfast_of(:(@testset failfast=false begin end), true) === false
+            @test failfast_of(:(@testset failfast=flag begin end), false) === false
+            @test failfast_of(:(@testset MyTestSet failfast=true begin end), false) === nothing
+            @test failfast_of(:(@testset M.MyTestSet begin end), true) === nothing
+            @test failfast_of(:(@testset failfast=true begin end), nothing) === nothing
         end
 
         let ex = :(pred(x) && any(items) do item
@@ -3375,6 +3405,56 @@ end
         end
         @test any(res.res.inference_error_reports) do report
             is_global_undef_var(report, :undefined_in_test) && last(report.vst).line == 7
+        end
+    end
+
+    @testset "failfast" begin
+        # a failing test aborts a fail-fast test set, so the code after `@test x isa Int`
+        # runs only when `x` is an `Int`
+        let res = @analyze_toplevel context = vmod virtualize = false begin
+                @testset "failfast" failfast=true begin
+                    x = rand((0, nothing))
+                    @test x isa Int
+                    sin(x)
+                    @testset "inherited" begin
+                        y = rand((0, nothing))
+                        @test y isa Int
+                        sin(y)
+                    end
+                    foreach((rand((0, nothing)),)) do z
+                        @test z isa Int
+                        sin(z)
+                    end
+                end
+            end
+            @test isnothing(res.res.toplevel_error_report)
+            @test isempty(res.res.inference_error_reports)
+        end
+
+        let res = @analyze_toplevel context = vmod virtualize = false begin
+                @testset "default" begin
+                    x = rand((0, nothing))
+                    @test x isa Int
+                    sin(x)
+                end
+            end
+            @test isnothing(res.res.toplevel_error_report)
+            @test any(report -> report isa JET.MethodErrorReport,
+                res.res.inference_error_reports)
+        end
+
+        let res = @analyze_toplevel context = vmod virtualize = false begin
+                @testset "failfast" failfast=true begin
+                    @testset "disabled" failfast=false begin
+                        x = rand((0, nothing))
+                        @test x isa Int
+                        sin(x)
+                    end
+                end
+            end
+            @test isnothing(res.res.toplevel_error_report)
+            @test any(report -> report isa JET.MethodErrorReport,
+                res.res.inference_error_reports)
         end
     end
 
