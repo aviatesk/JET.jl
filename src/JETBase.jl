@@ -51,7 +51,7 @@ using LoweredCodeUtils: LoweredCodeUtils, add_ssa_preds!, callee_matches
 
 using JuliaInterpreter: Frame, Interpreter, JuliaInterpreter, _INACTIVE_EXCEPTION
 
-using MacroTools: @capture, normalise, striplines
+using MacroTools: @capture, @q, normalise, striplines
 
 using InteractiveUtils: InteractiveUtils
 

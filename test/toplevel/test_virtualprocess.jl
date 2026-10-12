@@ -3326,6 +3326,27 @@ end
         end
     end
 
+    @testset "report locations" begin
+        res = report_text("""
+            using Test
+            @testset "report locations" begin
+                x = rand((0, nothing))
+                @test sin(x) == 0
+                @test begin
+                    y = x
+                    undefined_in_test
+                end
+            end
+            """, "test_report_locations.jl")
+        @test isnothing(res.res.toplevel_error_report)
+        @test any(res.res.inference_error_reports) do report
+            report isa JET.MethodErrorReport && last(report.vst).line == 4
+        end
+        @test any(res.res.inference_error_reports) do report
+            is_global_undef_var(report, :undefined_in_test) && last(report.vst).line == 7
+        end
+    end
+
     @testset "testset statement order" begin
         let res = @analyze_toplevel context = vmod virtualize = false begin
                 consume_test_closure(f::Function) = nothing

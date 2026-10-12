@@ -122,14 +122,16 @@ function should_wrap_test_expression_in_thunk(
         has_conditionally_defined_test_function(ex, conditionally_evaluated)
 end
 
+# The replacement templates use `@q` instead of `Base.remove_linenums!`, which would also
+# strip the line numbers of the interpolated user code and make reports in it point to the
+# line of the top-level statement. `@q` strips only the template's own line numbers.
 function wrap_test_expression_in_thunk(@nospecialize(ex))
     thunk = gensym(:test_expression)
-    ret = quote
+    return @q begin
         let $thunk = () -> $ex
             $thunk()
         end
     end
-    return Base.remove_linenums!(ret)
 end
 
 """
@@ -156,19 +158,18 @@ function maybe_wrap_test_expression_in_thunk(@nospecialize(ex))
 end
 
 function discard_test_expression_value(@nospecialize(ex))
-    ret = quote
+    return @q begin
         try
             $ex
         catch
         end
         $(hide_test_replacement_value(nothing))
     end
-    return Base.remove_linenums!(ret)
 end
 
 function preserve_test_expression_value(@nospecialize(exs...))
     value = gensym(:test_value)
-    ret = quote
+    return @q begin
         let $value = nothing
             try
                 $(exs[1:end-1]...)
@@ -178,7 +179,6 @@ function preserve_test_expression_value(@nospecialize(exs...))
             $(hide_test_replacement_value(value))
         end
     end
-    return Base.remove_linenums!(ret)
 end
 
 macro_argument_value(@nospecialize(ex)) = isexpr(ex, :(=), 2) ? last(ex.args) : ex
@@ -200,7 +200,7 @@ function replace_test(@nospecialize(ex), kws::Vector{Any})
         if should_wrap_test_expression_in_thunk(ex; conditionally_evaluated = true)
             thunk = gensym(:test_expression)
             test_expr = discard_test_expression_value(Expr(:call, thunk))
-            ret = quote
+            ret = @q begin
                 let $thunk = () -> $ex
                     if $skip
                         $(hide_test_replacement_value(nothing))
@@ -211,7 +211,7 @@ function replace_test(@nospecialize(ex), kws::Vector{Any})
             end
         else
             test_expr = discard_test_expression_value(ex)
-            ret = quote
+            ret = @q begin
                 if $skip
                     $(hide_test_replacement_value(nothing))
                 else
@@ -219,7 +219,7 @@ function replace_test(@nospecialize(ex), kws::Vector{Any})
                 end
             end
         end
-        return Base.remove_linenums!(ret)
+        return ret
     end
     test_expr = discard_test_expression_value(maybe_wrap_test_expression_in_thunk(ex))
     if !isempty(broken)
@@ -241,8 +241,8 @@ affect the inference of the surrounding code: macros that return a test result r
 The checks performed by Test.jl, such as the exception type matching of `@test_throws` and
 the return type check of `@inferred`, are omitted.
 
-The replacements look like the following, where gensym'ed names are shortened and blocks
-that wrap a single expression are omitted.
+The replacements look like the following, where gensym'ed names are shortened, and the
+line numbers of the user code and blocks that wrap a single expression are omitted.
 
 `@test f(x) == 1` and `@test_broken f(x) == 1` become:
 ```julia
@@ -466,7 +466,7 @@ function replace_test_macrocall(name::Symbol, args::Vector{Any})
             body.args[2] = Expr(:block, values..., body.args[2])
             empty!(values)
         end
-        ret = quote
+        return @q begin
             let
                 try
                     $(values...)
@@ -476,7 +476,6 @@ function replace_test_macrocall(name::Symbol, args::Vector{Any})
                 $(hide_test_replacement_value(nothing))
             end
         end
-        return Base.remove_linenums!(ret)
     end
     return nothing
 end

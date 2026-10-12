@@ -177,6 +177,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that calls the enclosing function when that function is defined in another
   file.
 
+- Fixed reports in code checked by Test.jl macros, such as the body of a
+  `@testset` or a multi-line `@test` expression, pointing to the first line of
+  the enclosing top-level statement since 0.12.1. They now point to the line
+  of the reported code.
+
 ## [0.12.3]
 
 ### Changed
