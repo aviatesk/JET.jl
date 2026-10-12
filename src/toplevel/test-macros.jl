@@ -181,13 +181,30 @@ function preserve_test_expression_value(@nospecialize(exs...))
     end
 end
 
+"""
+    check_test_value(value)
+
+Do nothing when executed. `JETAnalyzer` reports a call to this function in top-level code
+as a test that always fails if `value`, the value of a test expression, is inferred to be
+`false` or of a non-boolean type (see `FailingTestReport`).
+"""
+check_test_value(@nospecialize(_)) = nothing
+
+checked_test_value(@nospecialize(value)) =
+    Expr(:call, GlobalRef(@__MODULE__, :check_test_value), value)
+
 # A failing or erroring test aborts a fail-fast test set, so the code after the test runs
 # only when the test expression evaluates to `true`. Expressing this as a branch lets
-# inference narrow the types in the subsequent code with the tested condition.
+# inference narrow the types in the subsequent code with the tested condition, which is
+# preserved through the `let` binding.
 function assert_test_expression_value(@nospecialize(ex))
+    value = gensym(:test_value)
     return @q begin
-        $(GlobalRef(Core, :(===)))($ex, true) ||
-            $(GlobalRef(Core, :throw))($(GlobalRef(Test, :FailFastError))())
+        let $value = $ex
+            $(checked_test_value(value))
+            $(GlobalRef(Core, :(===)))($value, true) ||
+                $(GlobalRef(Core, :throw))($(GlobalRef(Test, :FailFastError))())
+        end
         $(hide_test_replacement_value(nothing))
     end
 end
@@ -234,7 +251,7 @@ function replace_test(@nospecialize(ex), kws::Vector{Any}, failfast::Bool)
         skip = only(skip)
         if should_wrap_test_expression_in_thunk(ex; conditionally_evaluated = true)
             thunk = gensym(:test_expression)
-            test_expr = discard_test_expression_value(Expr(:call, thunk))
+            test_expr = discard_test_expression_value(checked_test_value(Expr(:call, thunk)))
             ret = @q begin
                 let $thunk = () -> $ex
                     if $skip
@@ -245,7 +262,7 @@ function replace_test(@nospecialize(ex), kws::Vector{Any}, failfast::Bool)
                 end
             end
         else
-            test_expr = discard_test_expression_value(ex)
+            test_expr = discard_test_expression_value(checked_test_value(ex))
             ret = @q begin
                 if $skip
                     $(hide_test_replacement_value(nothing))
@@ -262,7 +279,7 @@ function replace_test(@nospecialize(ex), kws::Vector{Any}, failfast::Bool)
     elseif failfast
         return assert_test_expression_value(ex)
     end
-    return discard_test_expression_value(ex)
+    return discard_test_expression_value(checked_test_value(ex))
 end
 
 """
@@ -282,7 +299,20 @@ the return type check of `@inferred`, are omitted.
 The replacements look like the following, where gensym'ed names are shortened, and the
 line numbers of the user code and blocks that wrap a single expression are omitted.
 
-`@test f(x) == 1` and `@test_broken f(x) == 1` become:
+`@test f(x) == 1` becomes the following, where `JET.check_test_value` lets `JETAnalyzer`
+report the test if it always fails (see `FailingTestReport`):
+```julia
+begin
+    try
+        JET.check_test_value(f(x) == 1)
+    catch
+    end
+    Base.inferencebarrier(nothing)
+end
+```
+Keyword arguments other than `broken` and `skip` are passed to the tested call as Test.jl
+does, so `@test a ≈ b atol=0.1` tests `≈(a, b, atol = 0.1)`. The values of the tests
+expected to fail are not checked, so `@test_broken f(x) == 1` becomes:
 ```julia
 begin
     try
@@ -292,8 +322,6 @@ begin
     Base.inferencebarrier(nothing)
 end
 ```
-Keyword arguments other than `broken` and `skip` are passed to the tested call as Test.jl
-does, so `@test a ≈ b atol=0.1` tests `≈(a, b, atol = 0.1)`.
 
 `@test f(x) broken=Sys.iswindows()` becomes:
 ```julia
@@ -316,7 +344,7 @@ if Sys.iswindows()
 else
     begin
         try
-            f(x)
+            JET.check_test_value(f(x))
         catch
         end
         Base.inferencebarrier(nothing)
@@ -329,7 +357,10 @@ and an exception thrown by `ex` also aborts the test set. So `@test x isa Int` b
 following, which lets inference narrow `x` to `Int` in the subsequent code:
 ```julia
 begin
-    (x isa Int) === true || throw(Test.FailFastError())
+    let value = x isa Int
+        JET.check_test_value(value)
+        value === true || throw(Test.FailFastError())
+    end
     Base.inferencebarrier(nothing)
 end
 ```
@@ -445,7 +476,7 @@ let thunk = () -> all(y -> y > 0, x)
     else
         begin
             try
-                thunk()
+                JET.check_test_value(thunk())
             catch
             end
             Base.inferencebarrier(nothing)

@@ -330,7 +330,7 @@ function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer,
     ret = @invoke CC.abstract_call_gf_by_type(analyzer::ToplevelAbstractAnalyzer,
         func::Any, arginfo::ArgInfo, si::StmtInfo, atype::Any,
         vtypes::Union{VarTable,Nothing}, sv::InferenceState, max_methods::Int)
-    return postprocess_abstract_call_gf_by_type!(analyzer, ret, arginfo, atype, sv)
+    return postprocess_abstract_call_gf_by_type!(analyzer, ret, func, arginfo, atype, sv)
 end
 else
 function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer,
@@ -339,12 +339,15 @@ function CC.abstract_call_gf_by_type(analyzer::JETAnalyzer,
     ret = @invoke CC.abstract_call_gf_by_type(analyzer::ToplevelAbstractAnalyzer,
         func::Any, arginfo::ArgInfo, si::StmtInfo, atype::Any, sv::InferenceState,
         max_methods::Int)
-    return postprocess_abstract_call_gf_by_type!(analyzer, ret, arginfo, atype, sv)
+    return postprocess_abstract_call_gf_by_type!(analyzer, ret, func, arginfo, atype, sv)
 end
 end
 
 function postprocess_abstract_call_gf_by_type!(analyzer::JETAnalyzer, ret::Future,
-    arginfo::ArgInfo, @nospecialize(atype), sv::InferenceState)
+    @nospecialize(func), arginfo::ArgInfo, @nospecialize(atype), sv::InferenceState)
+    if func === check_test_value
+        report_failing_test!(analyzer, sv, arginfo.argtypes)
+    end
     atype′ = Ref{Any}(atype)
     function after_abstract_call_gf_by_type(analyzer′::JETAnalyzer, sv′::InferenceState)
         ret′ = ret[]
@@ -742,6 +745,11 @@ function _report_uncaught_exception!(analyzer::JETAnalyzer, frame::InferenceStat
         (f isa GlobalRef && f.name === :throw) || continue
         # if this `throw` is already reported, don't duplicate
         if !isnothing(reported_locs) && get_lin((frame, pc)) in reported_locs
+            continue
+        end
+        # `@test` in a fail-fast test set throws `Test.FailFastError` when it fails, and
+        # `FailingTestReport` reports the test instead if it always fails
+        if (length(stmt.args) == 2 && widenconst(CC.argextype(stmt.args[2], frame.src, frame.sptypes)) === Test.FailFastError)
             continue
         end
         if isnothing(throw_calls)
@@ -1205,6 +1213,46 @@ function _report_non_boolean_cond!(analyzer::JETAnalyzer, sv::InferenceState, @n
     else
         if !(check_uncovered ? t ⊑ Bool : hasintersect(t, Bool))
             add_new_report!(analyzer, sv.result, NonBooleanCondErrorReport(sv, t, 0, #=uncovered=#check_uncovered))
+        end
+    end
+end
+
+"""
+    FailingTestReport <: InferenceErrorReport
+
+Represents a `@test` in top-level code that always fails, since its expression is inferred
+to evaluate to `false` or to a non-boolean value. Top-level analysis replaces `@test` with
+code that passes the value of the test expression to `check_test_value`, whose calls are
+checked by this report pass.
+"""
+@jetreport struct FailingTestReport <: InferenceErrorReport
+    @nospecialize t # `Bool` for an expression that always evaluates to `false`
+end
+function JETInterface.print_report_message(io::IO, (; t)::FailingTestReport)
+    print(io, "this test always fails since its expression evaluates to ")
+    if t === Bool
+        print(io, "`false`")
+    else
+        print(io, "non-boolean `", t, "`")
+    end
+end
+JETInterface.print_signature(::FailingTestReport) = false
+
+report_failing_test!(::JETAnalyzer, ::InferenceState, ::Argtypes) = nothing
+function report_failing_test!(analyzer::SoundBasicAnalyzer, sv::InferenceState, argtypes::Argtypes)
+    # A test in a function body is inferred for each specialization, e.g. for each member of
+    # a union split at the call site, where a failure for some argument types does not mean
+    # that the test always fails. So report only the tests in top-level code.
+    sv.linfo.def isa Module || return nothing
+    length(argtypes) == 2 || return nothing
+    # e.g. `x isa Int` for a local `x::Nothing` is a `Conditional` that is never true
+    value = CC.widenconditional(argtypes[2])
+    if value isa Const && value.val === false
+        add_new_report!(analyzer, sv.result, FailingTestReport(sv, Bool))
+    else
+        t = widenconst(value)
+        if t !== Union{} && !hasintersect(t, Bool)
+            add_new_report!(analyzer, sv.result, FailingTestReport(sv, t))
         end
     end
 end
