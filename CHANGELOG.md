@@ -69,6 +69,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `JETInterface` now exports `has_problems`, the predicate that `call_test_ex`
   and `func_test` use to decide whether an analysis result fails a test.
 
+- Top-level analysis now reports a `@test` that always fails, i.e. whose
+  expression is inferred to evaluate to `false` or to a non-boolean value:
+  ```julia
+  @testset "foo" begin
+      x = nothing
+      @test x isa Int # reported: always `false`
+      y = rand((0, nothing))
+      @test y         # reported: non-boolean `Union{Nothing, Int64}`
+  end
+  ```
+  `@test_broken` and `@test ex broken=true` are not reported, nor are the
+  tests in function bodies. `@test false` is also reported, so use e.g.
+  `error("unreachable")` to mark code that should not be reached.
+
 ### Changed
 
 - Top-level processing now stops entirely at the first fatal parsing, macro

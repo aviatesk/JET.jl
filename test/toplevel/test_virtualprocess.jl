@@ -3495,6 +3495,73 @@ end
         end
     end
 
+    @testset "failing tests" begin
+        let res = @analyze_toplevel context = vmod virtualize = false begin
+                @testset "failing tests" begin
+                    x = nothing
+                    @test x isa Int
+                    y = rand((0, nothing))
+                    @test y
+                    @test x isa Int skip=rand(Bool)
+                    @test false
+                end
+            end
+            @test isnothing(res.res.toplevel_error_report)
+            reports = res.res.inference_error_reports
+            @test length(reports) == 4
+            @test all(report -> report isa JET.FailingTestReport, reports)
+            @test count(report -> report.t === Bool, reports) == 3
+            @test count(report -> report.t === Union{Nothing,Int}, reports) == 1
+        end
+
+        # tests that may pass or are expected to fail
+        let res = @analyze_toplevel context = vmod virtualize = false begin
+                @testset "not failing tests" begin
+                    x = nothing
+                    y = rand((0, nothing))
+                    @test y isa Int
+                    @test_broken x isa Int
+                    @test x isa Int broken=true
+                    @test_skip x isa Int
+                    # inferred separately for `z::Int` and `z::Nothing`
+                    foreach((rand((0, nothing)),)) do z
+                        @test z isa Int
+                    end
+                end
+            end
+            @test isnothing(res.res.toplevel_error_report)
+            @test isempty(res.res.inference_error_reports)
+        end
+
+        # a failing test aborts a fail-fast test set, so the code after it is unreachable
+        let res = @analyze_toplevel context = vmod virtualize = false begin
+                @testset "failfast" failfast=true begin
+                    x = rand((0, nothing))
+                    @test x
+                    sin(x)
+                end
+            end
+            @test isnothing(res.res.toplevel_error_report)
+            report = only(res.res.inference_error_reports)
+            @test report isa JET.FailingTestReport && report.t === Union{Nothing,Int}
+        end
+
+        # a top-level `@test` in an included fail-fast file throws uncaught on failure, which
+        # is reported by `FailingTestReport` rather than `UncaughtExceptionReport`
+        mktempdir() do dir
+            write(joinpath(dir, "child.jl"), "@test nothing\n")
+            res = report_text("""
+                using Test
+                @testset "failfast" failfast=true begin
+                    include("child.jl")
+                end
+                """, joinpath(dir, "main.jl"))
+            @test isnothing(res.res.toplevel_error_report)
+            report = only(res.res.inference_error_reports)
+            @test report isa JET.FailingTestReport && report.t === Nothing
+        end
+    end
+
     @testset "testset statement order" begin
         let res = @analyze_toplevel context = vmod virtualize = false begin
                 consume_test_closure(f::Function) = nothing
