@@ -529,7 +529,8 @@ function replace_test_macrocall(name::Symbol, args::Vector{Any}, failfast::Bool)
 end
 
 """
-    replace_test_macrocalls(x, mod::Module, failfast::Union{Nothing,Bool} = false)
+    replace_test_macrocalls(x, mod::Module, failfast::Union{Nothing,Bool} = false,
+                            failfast_modes::Union{Nothing,Dict} = nothing)
 
 Replace the Test.jl macro calls in the top-level expression `x` with lightweight code that
 evaluates the test expressions but omits the construction and recording of test results.
@@ -545,12 +546,19 @@ error.
 
 `failfast` is the fail-fast mode of the test set enclosing `x` (see `testset_failfast`).
 It applies to all code lexically within a `@testset` call, including the bodies of the
-functions defined there.
+functions defined there. If `failfast_modes` is given, the fail-fast mode at each line of
+`x` is recorded in it, so that an `include` call at the line can pass the mode on to the
+included file.
 
 See `replace_test_macrocall` for the replacement of each macro.
 """
 function replace_test_macrocalls(
-        @nospecialize(x), mod::Module, failfast::Union{Nothing,Bool} = false)
+        @nospecialize(x), mod::Module, failfast::Union{Nothing,Bool} = false,
+        failfast_modes::Union{Nothing,Dict{Int,Union{Nothing,Bool}}} = nothing)
+    if x isa LineNumberNode
+        failfast_modes === nothing || (failfast_modes[x.line] = failfast)
+        return x
+    end
     x isa Expr || return x
     isexpr(x, (:quote, :inert)) && return x
     if isexpr(x, :macrocall)
@@ -558,12 +566,19 @@ function replace_test_macrocalls(
         name ∈ TEST_MACRO_NAMES || return x
         inner_failfast =
             name === Symbol("@testset") ? testset_failfast(x.args, failfast) : failfast
-        replaced = Expr(:macrocall, x.args[1], x.args[2],
-            map(@nospecialize(arg) -> replace_test_macrocalls(arg, mod, inner_failfast),
-                x.args[3:end])...)
+        source = x.args[2]
+        if failfast_modes !== nothing && source isa LineNumberNode
+            # The body of a one-line `@testset`, e.g. `@testset "x" include("x.jl")`, has no
+            # line number of its own but shares the line of the macro call.
+            failfast_modes[source.line] = inner_failfast
+        end
+        args = Any[replace_test_macrocalls(arg, mod, inner_failfast, failfast_modes)
+                   for arg in x.args[3:end]]
+        replaced = Expr(:macrocall, x.args[1], source, args...)
         replacement = replace_test_macrocall(name, replaced.args, failfast === true)
         return @something replacement replaced
     end
-    return Expr(x.head,
-        map(@nospecialize(arg) -> replace_test_macrocalls(arg, mod, failfast), x.args)...)
+    args = Any[replace_test_macrocalls(arg, mod, failfast, failfast_modes)
+               for arg in x.args]
+    return Expr(x.head, args...)
 end

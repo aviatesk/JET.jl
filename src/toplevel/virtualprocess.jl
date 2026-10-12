@@ -729,6 +729,12 @@ mutable struct InterpretationState
     # removed whenever its frame exits, whether by returning or by unwinding.
     const caught_callee_errors::IdDict{Frame,Vector{CalleeError}}
     native_calls::Bool # the current statement was selected by `concretization_patterns`
+    # The fail-fast mode of the test set enclosing the code of this file (see
+    # `testset_failfast`), which is inherited from the test set enclosing the `include` call
+    const failfast::Union{Nothing,Bool}
+    # The fail-fast modes of the test sets enclosing each line of the code processed so far,
+    # from which an `include` call finds the mode for the included file
+    const failfast_modes::Dict{Int,Union{Nothing,Bool}}
 end
 function InterpretationState(
         state::InterpretationState;
@@ -737,7 +743,8 @@ function InterpretationState(
         world::UInt = state.world,
         dependencies::Set{Symbol} = state.dependencies,
         context::Module = state.context,
-        pkg_mod_depth::Int = state.pkg_mod_depth
+        pkg_mod_depth::Int = state.pkg_mod_depth,
+        failfast::Union{Nothing,Bool} = state.failfast
     )
     # these fields should be shared across all states
     config::ToplevelConfig = state.config
@@ -757,7 +764,9 @@ function InterpretationState(
         concretization_deadline,
         #=callee_error=#nothing,
         #=caught_callee_errors=#IdDict{Frame,Vector{CalleeError}}(),
-        #=native_calls=#false)
+        #=native_calls=#false,
+        failfast,
+        #=failfast_modes=#Dict{Int,Union{Nothing,Bool}}())
 end
 
 """
@@ -944,7 +953,8 @@ function virtual_process(interp::ConcreteInterpreter,
         filename, #=curline=#0, world, #=dependencies=#Set{Symbol}(), context, config,
         res, #=pkg_mod_depth=#0, #=files_stack=#String[],
         #=concretization_deadline=#typemax(UInt64), #=callee_error=#nothing,
-        #=caught_callee_errors=#IdDict{Frame,Vector{CalleeError}}(), #=native_calls=#false)
+        #=caught_callee_errors=#IdDict{Frame,Vector{CalleeError}}(), #=native_calls=#false,
+        #=failfast=#false, #=failfast_modes=#Dict{Int,Union{Nothing,Bool}}())
     interp = ConcreteInterpreter(interp, state)
     try
         virtual_process!(interp, x, overrideex)
@@ -1546,7 +1556,7 @@ function process_toplevel!(interp::ConcreteInterpreter, toplevelnode::JS.SyntaxN
         end
 
         x = desugar_main_macrocall(x)
-        x = replace_test_macrocalls(x, state.context)
+        x = replace_test_macrocalls(x, state.context, state.failfast, state.failfast_modes)
 
         # although we will lower `x` after special-handling `:toplevel` and `:module` expressions,
         # expand `macrocall`s here because macro can arbitrarily generate those expressions
@@ -2685,10 +2695,12 @@ function handle_include(interp::ConcreteInterpreter, @nospecialize(include_func)
             "expected AbstractString, JuliaSyntax.SyntaxNode, or nothing"))
     end
 
+    failfast = get(state.failfast_modes, line, state.failfast)
     newstate = InterpretationState(state;
                                    filename = include_file,
                                    curline = 0,
-                                   context = include_context)
+                                   context = include_context,
+                                   failfast)
     newinterp = ConcreteInterpreter(interp, newstate)
     pause_concretization_timeout(state) do
         virtual_process!(newinterp, included)

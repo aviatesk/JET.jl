@@ -131,8 +131,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       sin(x) # no longer reported as `sin(::Nothing)`: `x` is an `Int` here
   end
   ```
-  Nested test sets inherit this unless they specify `failfast=false`. Test sets
-  of a custom type, e.g. `@testset MyTestSet failfast=true begin ... end`, are
+  Nested test sets inherit this unless they specify `failfast=false`, and so do
+  the files included from such test sets:
+  ```julia
+  # runtests.jl
+  @testset "MyPkg" failfast=true begin
+      @testset "foo" include("foo.jl") # the test sets in foo.jl are analyzed the same way
+  end
+  ```
+  Test sets of a custom type, e.g. `@testset MyTestSet failfast=true ...`, are
   not affected.
 
 ### Deprecated
