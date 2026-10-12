@@ -3456,6 +3456,43 @@ end
             @test any(report -> report isa JET.MethodErrorReport,
                 res.res.inference_error_reports)
         end
+
+        # included files inherit the fail-fast mode of the test set enclosing `include`
+        mktempdir() do dir
+            testset = """
+                @testset "inner" begin
+                    x = rand((0, nothing))
+                    @test x isa Int
+                    sin(x)
+                end
+                """
+            for name in ("grandchild", "oneline", "default", "disabled", "custom")
+                write(joinpath(dir, "$name.jl"), testset)
+            end
+            write(joinpath(dir, "child.jl"), testset * "include(\"grandchild.jl\")\n")
+            res = report_text("""
+                using Test
+                @testset "failfast" failfast=true begin
+                    include("child.jl")
+                end
+                @testset "failfast one-line" failfast=true include("oneline.jl")
+                @testset "default" begin
+                    include("default.jl")
+                end
+                @testset "outer" failfast=true begin
+                    @testset "disabled" failfast=false begin
+                        include("disabled.jl")
+                    end
+                end
+                @testset Test.DefaultTestSet failfast=true begin
+                    include("custom.jl")
+                end
+                """, joinpath(dir, "main.jl"))
+            @test isnothing(res.res.toplevel_error_report)
+            reported = Set(basename(String(last(report.vst).file))
+                           for report in res.res.inference_error_reports)
+            @test reported == Set(("default.jl", "disabled.jl", "custom.jl"))
+        end
     end
 
     @testset "testset statement order" begin
