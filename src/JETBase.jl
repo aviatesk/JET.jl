@@ -423,6 +423,7 @@ function run_signature_analysis_jobs!(
 end
 
 include("toplevel/virtualprocess.jl")
+include("toplevel/test-macros.jl")
 
 # results
 # =======
