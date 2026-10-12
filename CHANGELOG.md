@@ -121,6 +121,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   chain. The VS Code integration keeps the summary on the first line of its
   diagnostics.
 
+- In a `@testset` with `failfast=true`, where a failing test aborts the test
+  set, top-level analysis now analyzes the code after `@test ex` assuming that
+  `ex` is `true`:
+  ```julia
+  @testset "failfast" failfast=true begin
+      x = rand((0, nothing))
+      @test x isa Int
+      sin(x) # no longer reported as `sin(::Nothing)`: `x` is an `Int` here
+  end
+  ```
+  Nested test sets inherit this unless they specify `failfast=false`. Test sets
+  of a custom type, e.g. `@testset MyTestSet failfast=true begin ... end`, are
+  not affected.
+
 ### Deprecated
 
 - The `print_toplevel_success` and `print_inference_success` configurations
