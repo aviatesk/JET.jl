@@ -1337,6 +1337,39 @@ function eval_with_err_handling(state::InterpretationState, x::Expr)
     end
 end
 
+# Make the virtualized module of the analyzed package look like the root module that loading
+# the package defines, so that `pathof`, `pkgdir` and `pkgversion` work for it and its
+# submodules, wherever they are called from. Like package loading, this gives the module a
+# UUID, makes it its own parent, and registers the analyzed file as its origin in
+# `Base.pkgorigins`. The UUID is derived from the package UUID rather than being the package
+# UUID itself, so that the origin is not shared with the actual package when it is loaded in
+# this process from another path, e.g. by Revise. Preferences.jl thus needs the package UUID
+# to be registered separately.
+function setup_package_module!(state::InterpretationState, pkgmod::Module)
+    pkgid = @something state.config.pkgid return nothing
+    state.res.actual2virtual === nothing && return nothing
+    nameof(pkgmod) === Symbol(pkgid.name) || return nothing
+    vpkgid = virtual_package_id(pkgid)
+    @ccall jl_set_module_uuid(pkgmod::Any, convert(NTuple{2,UInt64}, vpkgid.uuid::Base.UUID)::NTuple{2,UInt64})::Cvoid
+    @ccall jl_set_module_parent(pkgmod::Any, pkgmod::Any)::Cvoid
+    @lock Base.require_lock begin
+        origin = get!(Base.PkgOrigin, Base.pkgorigins, vpkgid)
+        origin.path = state.filename
+        # `pkgversion` caches the version here, which may be stale since the last analysis
+        origin.version = nothing
+    end
+    if pkgid.uuid !== nothing
+        register_preferences_uuid!(pkgmod, pkgid.uuid)
+    end
+    return nothing
+end
+
+function virtual_package_id(pkgid::PkgId)
+    key = pkgid.uuid === nothing ? pkgid.name : string(pkgid.uuid)
+    return PkgId(Base.uuid5(VIRTUAL_PACKAGE_UUID_NAMESPACE, key), pkgid.name)
+end
+const VIRTUAL_PACKAGE_UUID_NAMESPACE = Base.UUID("2f1c5d24-7b0e-4a39-9d6e-8c3b1a5f0e72")
+
 # If `x` is a `function`/`=` definition whose signature contains `@main`,
 # rewrite the `@main` macrocall to a plain `main` identifier. This avoids
 # macro expansion failure when multiple standalone files defining `@main`
@@ -1590,6 +1623,9 @@ function process_toplevel!(interp::ConcreteInterpreter, toplevelnode::JS.SyntaxN
             end
             x.args[end] = Expr(:block, lnn) # empty module's code body
             newcontext = eval_with_err_handling(state, x)::Module
+            if state.pkg_mod_depth == 0
+                setup_package_module!(state, newcontext)
+            end
             newstate = InterpretationState(state;
                                            context = newcontext,
                                            pkg_mod_depth = state.pkg_mod_depth + 1,
@@ -2293,6 +2329,10 @@ function usemodule_with_err_handling(interp::ConcreteInterpreter, ex::Expr, worl
                     actual2virtual = state.res.actual2virtual
                     if actual2virtual !== nothing && pkgid.uuid !== nothing
                         register_preferences_uuid!(last(actual2virtual), pkgid.uuid)
+                        pkgmod = Base.moduleroot(mod)
+                        if Base.PkgId(pkgmod) == virtual_package_id(pkgid)
+                            register_preferences_uuid!(pkgmod, pkgid.uuid)
+                        end
                     end
                 end
                 pushfirst!(modpath, :.)

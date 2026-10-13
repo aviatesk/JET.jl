@@ -112,6 +112,41 @@ end
     end
 end
 
+@testset "package origin of virtualized package" begin
+    let pkgpath = mktempdir()
+        pkgid = Base.PkgId(Base.UUID("6b1d2f0e-3c5a-4e8b-9f7d-0a2c4e6b8d13"), "VirtualPkg")
+        write(joinpath(pkgpath, "Project.toml"), """
+            name = "VirtualPkg"
+            uuid = "$(pkgid.uuid)"
+            version = "1.2.3"
+            """)
+        pkgfile = joinpath(mkpath(joinpath(pkgpath, "src")), "VirtualPkg.jl")
+        write(pkgfile, """
+            module VirtualPkg
+            const DIR = pkgdir(@__MODULE__)
+            const VERSION = pkgversion(@__MODULE__)
+            srcdir() = pkgdir(@__MODULE__, "src")
+            const SRCDIR = srcdir()
+            module Sub
+            const FILE = pathof(@__MODULE__)
+            end
+            end
+            """)
+        res = report_file(pkgfile, pkgid;
+            concretization_patterns=[:(x_)], toplevel_logger=nothing)
+        Core.@latestworld
+        @test isnothing(res.res.toplevel_error_report)
+        pkgmod = last(res.res.actual2virtual).VirtualPkg
+        @test pkgmod.DIR == pkgpath
+        @test pkgmod.VERSION == v"1.2.3"
+        @test pkgmod.SRCDIR == joinpath(pkgpath, "src")
+        @test pkgmod.Sub.FILE == pkgfile
+        # the origin of the actual package is left untouched
+        @test Base.PkgId(pkgmod) != pkgid
+        @test !haskey(Base.pkgorigins, pkgid)
+    end
+end
+
 @static if isdefinedglobal(Core, :_eval_import)
 function get_lowered_module_usage(ex::Expr)
     lwr = Meta.lower(@__MODULE__, ex)
