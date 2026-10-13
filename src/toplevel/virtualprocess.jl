@@ -926,10 +926,17 @@ function virtual_process(interp::ConcreteInterpreter,
     # Note that we can't use the CassetteOverlay-like mechanism here for a cleaner
     # implementation, since Preferences.jl might be called within `macroexpand` or `lower`
     # of the main `_virtual_process!` loop, where we don't have control over execution.
+    # Registering the virtual module in the internal `uuid_cache` keeps the override in effect
+    # after this analysis, e.g. when a language server expands macros in the virtual module,
+    # whereas the documented `main_uuid` is effective only while it is set.
     pkgid = config.pkgid
     old_main_uuid = Preferences.main_uuid[]
     if pkgid !== nothing && pkgid.uuid !== nothing
-        Preferences.main_uuid[] = pkgid.uuid
+        if actual2virtual !== nothing
+            register_preferences_uuid!(context, pkgid.uuid)
+        else
+            Preferences.main_uuid[] = pkgid.uuid
+        end
     end
     res = VirtualProcessResult(actual2virtual)
     world = Base.get_world_counter()
@@ -957,6 +964,23 @@ function virtual_process(interp::ConcreteInterpreter,
     unique!(aggregation_policy(ToplevelAbstractAnalyzer(interp)), res.inference_error_reports)
 
     return res
+end
+
+const PREFERENCES_PKGID = Base.PkgId(Base.UUID("21216c6a-2e73-6563-6e65-726566657250"), "Preferences")
+
+# The analyzed code uses the copy of Preferences.jl loaded under its registered UUID, which
+# is not JET's own copy when JET is vendored under another UUID in JETLS releases.
+# The entries are never removed: virtual modules stay bound in `Main` and are never released,
+# so removing them would not free anything. Remove them, including the entries `get_uuid`
+# caches for their submodules, if virtual modules ever become releasable.
+function register_preferences_uuid!(virtual::Module, uuid::Base.UUID)
+    preferences = Base.maybe_root_module(PREFERENCES_PKGID)
+    preferences isa Module || return nothing
+    @invokelatest(isdefinedglobal(preferences, :uuid_cache)) || return nothing
+    uuid_cache = @invokelatest getglobal(preferences, :uuid_cache)
+    uuid_cache isa Dict{Module,Base.UUID} || return nothing
+    uuid_cache[virtual] = uuid
+    return nothing
 end
 
 # analysis is initiated or entered into new file
@@ -2265,6 +2289,11 @@ function usemodule_with_err_handling(interp::ConcreteInterpreter, ex::Expr, worl
                         Base.invoke_in_world(world, Core.eval, mod, require_ex)
                     end; end
                     push!(dependencies, dep)
+                    # Preferences.jl may be loaded only now, directly or as a dependency of `dep`
+                    actual2virtual = state.res.actual2virtual
+                    if actual2virtual !== nothing && pkgid.uuid !== nothing
+                        register_preferences_uuid!(last(actual2virtual), pkgid.uuid)
+                    end
                 end
                 pushfirst!(modpath, :.)
             end
