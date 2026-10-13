@@ -1684,139 +1684,135 @@ end
 # JuliaInterpreter interprets the code passed to `Core.eval` from this feature on, so the
 # timeout, error reports and definition analysis extend into `@eval`ed code
 @testset "`Core.eval`ed code is interpreted" begin
-    if !isdefined(JET.JuliaInterpreter, :evaluate_eval!)
-        @test_skip false
-    else
-        let res = report_text("@eval while true end\n"; concretization_timeout=0.1)
-            report = res.res.toplevel_error_report
-            @test report isa JET.ConcretizationTimeoutErrorReport
-            @test any(sf -> sf.func === Symbol("top-level scope"), report.st)
-        end
-        let res = report_text("""
-                @eval f(x::Int) = x + "a"
-                g(x::Int) = x + "b"
-                """; analyze_from_definitions=true)
-            @test length(res.res.inference_error_reports) == 2
-        end
-        let context = gen_virtual_module()
-            res = report_text("""
-                @eval using Base.Iterators: flatten
-                @eval import Base.Iterators
-                struct A
-                    f::typeof(flatten)
-                    g::typeof(Iterators.flatten)
-                end
-                """; context, virtualize=false)
-            @test isnothing(res.res.toplevel_error_report)
-            @test (@invokelatest isdefinedglobal(context, :A))
-        end
-        let res = @analyze_toplevel begin
-                function guarded()
-                    try
-                        @eval error("boom")
-                    catch
-                        return Integer
-                    end
-                end
-                struct B <: guarded() end
+    let res = report_text("@eval while true end\n"; concretization_timeout=0.1)
+        report = res.res.toplevel_error_report
+        @test report isa JET.ConcretizationTimeoutErrorReport
+        @test any(sf -> sf.func === Symbol("top-level scope"), report.st)
+    end
+    let res = report_text("""
+            @eval f(x::Int) = x + "a"
+            g(x::Int) = x + "b"
+            """; analyze_from_definitions=true)
+        @test length(res.res.inference_error_reports) == 2
+    end
+    let context = gen_virtual_module()
+        res = report_text("""
+            @eval using Base.Iterators: flatten
+            @eval import Base.Iterators
+            struct A
+                f::typeof(flatten)
+                g::typeof(Iterators.flatten)
             end
-            @test isnothing(res.res.toplevel_error_report)
-        end
-        mktemp() do filename, _
-            res = report_text("""
-                bad() = throw("in eval")                    # L1
-                function h()
-                    Core.eval(@__MODULE__, :(bad()))        # L3
+            """; context, virtualize=false)
+        @test isnothing(res.res.toplevel_error_report)
+        @test (@invokelatest isdefinedglobal(context, :A))
+    end
+    let res = @analyze_toplevel begin
+            function guarded()
+                try
+                    @eval error("boom")
+                catch
+                    return Integer
                 end
-                struct C <: h() end                         # L5
-                """, filename)
-            er = res.res.toplevel_error_report
-            @test er isa ActualErrorWrapped
-            @test er.err == "in eval"
-            st = [(sf.func, sf.line) for sf in er.st]
-            @test st[1] == (:bad, 1)
-            @test any(sf -> sf.func === Symbol("top-level scope"), er.st)
-            @test st[end] == (:h, 3)
-        end
-        mktempdir() do dir
-            write(joinpath(dir, "included.jl"), "included_f() = 1\n")
-            main = joinpath(dir, "main.jl")
-            write(main, """
-                @eval include("included.jl")
-                struct D <: (included_f() == 1 ? Integer : Real) end
-                """)
-            res = report_file2(main)
-            @test isnothing(res.res.toplevel_error_report)
-            @test any(endswith("included.jl"), keys(res.res.analyzed_files))
-        end
-        # Module usages and `include`s in code evaluated into another module apply to it.
-        let context = gen_virtual_module()
-            res = report_text("""
-                module M end
-                @eval M using Base.Iterators: flatten
-                struct E
-                    f::typeof(M.flatten)
-                end
-                """; context, virtualize=false)
-            @test isnothing(res.res.toplevel_error_report)
-            M = @invokelatest getglobal(context, :M)
-            @test (@invokelatest isdefinedglobal(M, :flatten))
-            @test !(@invokelatest isdefinedglobal(context, :flatten))
-        end
-        mktempdir() do dir
-            write(joinpath(dir, "included_into.jl"), "included_g() = 2\n")
-            main = joinpath(dir, "main.jl")
-            write(main, """
-                module M2 end
-                Core.eval(M2, :(include("included_into.jl")))
-                struct G <: (M2.included_g() == 2 ? Integer : Real) end
-                """)
-            res = report_file2(main)
-            @test isnothing(res.res.toplevel_error_report)
-        end
-        # A failing module usage in evaluated code reaches the caller's `catch`.
-        let res = @analyze_toplevel begin
-                function guarded_using()
-                    try
-                        @eval using JETNonexistentPackage
-                    catch
-                        return Integer
-                    end
-                end
-                struct F <: guarded_using() end
             end
-            @test isnothing(res.res.toplevel_error_report)
+            struct B <: guarded() end
         end
-        # Module expressions are evaluated as natively: each evaluation creates a fresh
-        # module, runs its `__init__` and evaluates to the module.
-        let context = gen_virtual_module()
-            res = report_text("""
-                @eval module EvalMod
-                    const initialized = Ref(false)
-                    __init__() = initialized[] = true
+        @test isnothing(res.res.toplevel_error_report)
+    end
+    mktemp() do filename, _
+        res = report_text("""
+            bad() = throw("in eval")                    # L1
+            function h()
+                Core.eval(@__MODULE__, :(bad()))        # L3
+            end
+            struct C <: h() end                         # L5
+            """, filename)
+        er = res.res.toplevel_error_report
+        @test er isa ActualErrorWrapped
+        @test er.err == "in eval"
+        st = [(sf.func, sf.line) for sf in er.st]
+        @test st[1] == (:bad, 1)
+        @test any(sf -> sf.func === Symbol("top-level scope"), er.st)
+        @test st[end] == (:h, 3)
+    end
+    mktempdir() do dir
+        write(joinpath(dir, "included.jl"), "included_f() = 1\n")
+        main = joinpath(dir, "main.jl")
+        write(main, """
+            @eval include("included.jl")
+            struct D <: (included_f() == 1 ? Integer : Real) end
+            """)
+        res = report_file2(main)
+        @test isnothing(res.res.toplevel_error_report)
+        @test any(endswith("included.jl"), keys(res.res.analyzed_files))
+    end
+    # Module usages and `include`s in code evaluated into another module apply to it.
+    let context = gen_virtual_module()
+        res = report_text("""
+            module M end
+            @eval M using Base.Iterators: flatten
+            struct E
+                f::typeof(M.flatten)
+            end
+            """; context, virtualize=false)
+        @test isnothing(res.res.toplevel_error_report)
+        M = @invokelatest getglobal(context, :M)
+        @test (@invokelatest isdefinedglobal(M, :flatten))
+        @test !(@invokelatest isdefinedglobal(context, :flatten))
+    end
+    mktempdir() do dir
+        write(joinpath(dir, "included_into.jl"), "included_g() = 2\n")
+        main = joinpath(dir, "main.jl")
+        write(main, """
+            module M2 end
+            Core.eval(M2, :(include("included_into.jl")))
+            struct G <: (M2.included_g() == 2 ? Integer : Real) end
+            """)
+        res = report_file2(main)
+        @test isnothing(res.res.toplevel_error_report)
+    end
+    # A failing module usage in evaluated code reaches the caller's `catch`.
+    let res = @analyze_toplevel begin
+            function guarded_using()
+                try
+                    @eval using JETNonexistentPackage
+                catch
+                    return Integer
                 end
-                @eval const OldEvalMod = EvalMod
-                evalmod() = @eval module EvalMod end
-                struct H <: (evalmod() isa Module ? Integer : Real) end
-                """; context, virtualize=false)
-            @test isnothing(res.res.toplevel_error_report)
-            old = @invokelatest getglobal(context, :OldEvalMod)
-            new = @invokelatest getglobal(context, :EvalMod)
-            @test old !== new
-            @test (@invokelatest getglobal(old, :initialized))[]
-            @test !(@invokelatest isdefinedglobal(new, :initialized))
-            @test supertype(@invokelatest getglobal(context, :H)) === Integer
+            end
+            struct F <: guarded_using() end
         end
-        let res = report_text("""
-                @eval module EvalInitError
-                    __init__() = error("init failed")
-                end
-                """)
-            er = res.res.toplevel_error_report
-            @test er isa ActualErrorWrapped
-            @test er.err isa InitError && er.err.mod === :EvalInitError
-            @test any(sf -> sf.func === :__init__, er.st)
-        end
+        @test isnothing(res.res.toplevel_error_report)
+    end
+    # Module expressions are evaluated as natively: each evaluation creates a fresh
+    # module, runs its `__init__` and evaluates to the module.
+    let context = gen_virtual_module()
+        res = report_text("""
+            @eval module EvalMod
+                const initialized = Ref(false)
+                __init__() = initialized[] = true
+            end
+            @eval const OldEvalMod = EvalMod
+            evalmod() = @eval module EvalMod end
+            struct H <: (evalmod() isa Module ? Integer : Real) end
+            """; context, virtualize=false)
+        @test isnothing(res.res.toplevel_error_report)
+        old = @invokelatest getglobal(context, :OldEvalMod)
+        new = @invokelatest getglobal(context, :EvalMod)
+        @test old !== new
+        @test (@invokelatest getglobal(old, :initialized))[]
+        @test !(@invokelatest isdefinedglobal(new, :initialized))
+        @test supertype(@invokelatest getglobal(context, :H)) === Integer
+    end
+    let res = report_text("""
+            @eval module EvalInitError
+                __init__() = error("init failed")
+            end
+            """)
+        er = res.res.toplevel_error_report
+        @test er isa ActualErrorWrapped
+        @test er.err isa InitError && er.err.mod === :EvalInitError
+        @test any(sf -> sf.func === :__init__, er.st)
     end
 end
 
