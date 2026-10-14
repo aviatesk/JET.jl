@@ -1428,7 +1428,7 @@ const GENERAL_CONFIGURATIONS = Set{Symbol}((
     :report_config, :target_modules, :ignored_modules,
     # toplevel
     :context, :analyze_from_definitions, :concretization_patterns,
-    :concretization_timeout, :virtualize, :toplevel_logger,
+    :concretization_timeout, :testset_failfast, :virtualize, :toplevel_logger,
     # ui
     :print_toplevel_success, :print_inference_success, :sourceinfo, :stacktrace_types_limit,
     :vscode_console_output))

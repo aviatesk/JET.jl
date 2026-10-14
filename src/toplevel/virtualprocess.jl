@@ -496,6 +496,26 @@ These options apply to all entry points described in the
   by JET is not counted.
   Set `Inf` to disable the timeout.
 ---
+- `testset_failfast::Bool = true` \\
+  When `true`, JET analyzes test sets as if they were declared with
+  `failfast=true`, i.e. as if the tests were run with `JULIA_TEST_FAILFAST=true`.
+  Since a failing test aborts a fail-fast test set, JET analyzes the code after
+  `@test ex` assuming that `ex` is `true`, and does not report errors in the
+  cases that the test rules out:
+  ```julia
+  @testset "foo" begin
+      x = rand((0, nothing))
+      @test x isa Int
+      sin(x) # not reported as `sin(::Nothing)`, since `x` is an `Int` here
+  end
+  ```
+  Test sets that specify `failfast=false`, test sets of a custom type, and the
+  test sets nested in them are analyzed as declared. When `false`, JET analyzes
+  as fail-fast only the test sets that specify `failfast=true`, the test sets
+  nested in them, and the files included from them.
+  Note that the code after a test that always fails is not analyzed, while
+  JET reports such a test.
+---
 - `toplevel_logger::Union{Nothing,IO} = nothing` \\
   If an `IO` object is provided, JET writes top-level analysis logs to it.
   Set the logging level with the `$(repr(JET_LOGGER_LEVEL))` `IO` property.
@@ -529,6 +549,7 @@ struct ToplevelConfig
     analyze_from_definitions::Union{Bool,Symbol}
     concretization_patterns::Vector{Any}
     concretization_timeout::Float64
+    testset_failfast::Bool
     virtualize::Bool
     toplevel_logger # ::Union{Nothing,IO}
     function ToplevelConfig(
@@ -537,6 +558,7 @@ struct ToplevelConfig
         analyze_from_definitions::Union{Bool,Symbol} = false,
         concretization_patterns = Any[],
         concretization_timeout::Real = DEFAULT_CONCRETIZATION_TIMEOUT,
+        testset_failfast::Bool = true,
         virtualize::Bool = true,
         toplevel_logger::Union{Nothing,IO} = nothing,
         __jetconfigs...)
@@ -555,6 +577,7 @@ struct ToplevelConfig
             analyze_from_definitions,
             concretization_patterns,
             Float64(concretization_timeout),
+            testset_failfast,
             virtualize,
             toplevel_logger)
     end
@@ -954,7 +977,8 @@ function virtual_process(interp::ConcreteInterpreter,
         res, #=pkg_mod_depth=#0, #=files_stack=#String[],
         #=concretization_deadline=#typemax(UInt64), #=callee_error=#nothing,
         #=caught_callee_errors=#IdDict{Frame,Vector{CalleeError}}(), #=native_calls=#false,
-        #=failfast=#false, #=failfast_modes=#Dict{Int,Union{Nothing,Bool}}())
+        #=failfast=#config.testset_failfast,
+        #=failfast_modes=#Dict{Int,Union{Nothing,Bool}}())
     interp = ConcreteInterpreter(interp, state)
     try
         virtual_process!(interp, x, overrideex)
