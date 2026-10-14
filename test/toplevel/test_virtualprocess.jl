@@ -3411,7 +3411,7 @@ end
     @testset "failfast" begin
         # a failing test aborts a fail-fast test set, so the code after `@test x isa Int`
         # runs only when `x` is an `Int`
-        let res = @analyze_toplevel context = vmod virtualize = false begin
+        let res = @analyze_toplevel context = vmod virtualize = false testset_failfast = false begin
                 @testset "failfast" failfast=true begin
                     x = rand((0, nothing))
                     @test x isa Int
@@ -3431,7 +3431,7 @@ end
             @test isempty(res.res.inference_error_reports)
         end
 
-        let res = @analyze_toplevel context = vmod virtualize = false begin
+        let res = @analyze_toplevel context = vmod virtualize = false testset_failfast = false begin
                 @testset "default" begin
                     x = rand((0, nothing))
                     @test x isa Int
@@ -3443,7 +3443,25 @@ end
                 res.res.inference_error_reports)
         end
 
+        # `testset_failfast = true`, the default, analyzes test sets as fail-fast unless they
+        # specify `failfast=false`
         let res = @analyze_toplevel context = vmod virtualize = false begin
+                @testset "default" begin
+                    x = rand((0, nothing))
+                    @test x isa Int
+                    sin(x)
+                    @testset "disabled" failfast=false begin
+                        y = rand((0, nothing))
+                        @test y isa Int
+                        sin(y)
+                    end
+                end
+            end
+            @test isnothing(res.res.toplevel_error_report)
+            @test only(res.res.inference_error_reports) isa JET.MethodErrorReport
+        end
+
+        let res = @analyze_toplevel context = vmod virtualize = false testset_failfast = false begin
                 @testset "failfast" failfast=true begin
                     @testset "disabled" failfast=false begin
                         x = rand((0, nothing))
@@ -3470,7 +3488,7 @@ end
                 write(joinpath(dir, "$name.jl"), testset)
             end
             write(joinpath(dir, "child.jl"), testset * "include(\"grandchild.jl\")\n")
-            res = report_text("""
+            text = """
                 using Test
                 @testset "failfast" failfast=true begin
                     include("child.jl")
@@ -3487,16 +3505,21 @@ end
                 @testset Test.DefaultTestSet failfast=true begin
                     include("custom.jl")
                 end
-                """, joinpath(dir, "main.jl"))
+                """
+            reported_files(res) = Set(basename(String(last(report.vst).file))
+                                      for report in res.res.inference_error_reports)
+            res = report_text(text, joinpath(dir, "main.jl"); testset_failfast = false)
             @test isnothing(res.res.toplevel_error_report)
-            reported = Set(basename(String(last(report.vst).file))
-                           for report in res.res.inference_error_reports)
-            @test reported == Set(("default.jl", "disabled.jl", "custom.jl"))
+            @test reported_files(res) == Set(("default.jl", "disabled.jl", "custom.jl"))
+            res = report_text(text, joinpath(dir, "main.jl"))
+            @test isnothing(res.res.toplevel_error_report)
+            @test reported_files(res) == Set(("disabled.jl", "custom.jl"))
         end
     end
 
     @testset "failing tests" begin
-        let res = @analyze_toplevel context = vmod virtualize = false begin
+        # analyze the tests after a test that always fails
+        let res = @analyze_toplevel context = vmod virtualize = false testset_failfast = false begin
                 @testset "failing tests" begin
                     x = nothing
                     @test x isa Int
