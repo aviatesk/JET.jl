@@ -7,8 +7,41 @@ on:
   pull_request:
 
 jobs:
+  # Lets `push` runs skip their checks when a pull request run already verified the pushed
+  # tree. `record-verified-tree` records each such tree as a `verified-tree-<tree>` artifact.
+  verified-tree:
+    name: Verified tree
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      verified: ${{ steps.lookup.outputs.verified }}
+    steps:
+      - id: lookup
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tree=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA" --jq .commit.tree.sha)
+          # Records uploaded by pull requests from forks are not trusted.
+          run_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=verified-tree-$tree" \
+            --jq '[.artifacts[] | select(.expired | not) | .workflow_run |
+              select(.head_repository_id == .repository_id)][0].id // empty')
+          if [ -n "$run_id" ]; then
+            echo "Skipping checks: tree $tree was verified by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run_id"
+            echo "verified=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "verified=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # The jobs below need `!failure() && !cancelled()` to keep running when `verified-tree` is
+  # skipped, i.e. for pull requests: without a status check function, `success()` is implied,
+  # which also covers the skipped `verified-tree`.
   arch-test:
     name: Julia ${{ matrix.version }} / ${{ matrix.os }} ${{ matrix.arch }}
+    needs: verified-tree
+    if: ${{ !failure() && !cancelled() && needs.verified-tree.outputs.verified != 'true' }}
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.version == 'nightly' }}
     strategy:
@@ -58,6 +91,8 @@ jobs:
 
   preference-test:
     name: JET_DEV_MODE=${{ matrix.JET_DEV_MODE }} / use_fixed_world=${{ matrix.use_fixed_world }} / precompile_workload=${{ matrix.precompile_workload }}
+    needs: verified-tree
+    if: ${{ !failure() && !cancelled() && needs.verified-tree.outputs.verified != 'true' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -86,6 +121,8 @@ jobs:
 
   multithreading-test:
     name: JULIA_NUM_THREADS=4,2
+    needs: verified-tree
+    if: ${{ !failure() && !cancelled() && needs.verified-tree.outputs.verified != 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -105,6 +142,8 @@ jobs:
           JULIA_NUM_THREADS: "4,2"
 
   empty-loading-test:
+    needs: verified-tree
+    if: ${{ !failure() && !cancelled() && needs.verified-tree.outputs.verified != 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -117,7 +156,38 @@ jobs:
       - uses: julia-actions/julia-runtest@latest
 
   jetls-check:
+    needs: verified-tree
+    if: ${{ !failure() && !cancelled() && needs.verified-tree.outputs.verified != 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: aviatesk/JETLS.jl/.github/actions/check@release
+
+  record-verified-tree:
+    name: Record the verified tree
+    needs:
+      - arch-test
+      - preference-test
+      - multithreading-test
+      - empty-loading-test
+      - jetls-check
+    if: ${{ !failure() && !cancelled() && github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Get the verified tree
+        id: tree
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tree=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA" --jq .commit.tree.sha)
+          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+          echo "$GITHUB_SHA" > verified-tree
+      - name: Record the verified tree
+        uses: actions/upload-artifact@v7
+        with:
+          name: verified-tree-${{ steps.tree.outputs.tree }}
+          path: verified-tree
+          if-no-files-found: error
+          overwrite: true
