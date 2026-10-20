@@ -1905,6 +1905,10 @@ The selection includes:
   recursively analyzed.
 - `include` calls, which cause top-level analysis to recursively enter the
   included file.
+- `Base.deprecate` calls on the module being analyzed, such as those emitted by
+  `Base.@deprecate_binding`, so that the deprecated bindings are flagged, and
+  the `_dep_message_*` constants that hold the rest of their deprecation
+  warnings.
 - Untyped global declarations emitted by assignments; ones under control flow
   are materialized rather than selected.
 """
@@ -2108,6 +2112,12 @@ function select_direct_requirement!(
             continue
         end
 
+        # Julia reads the rest of the deprecation warning of a binding from this constant
+        if is_dep_message_declaration(stmt, mod)
+            selected[idx] = true
+            continue
+        end
+
         if isexpr(stmt, :(=))
             _, rhs = stmt.args
             stmt = rhs
@@ -2132,8 +2142,58 @@ function select_direct_requirement!(
         elseif is_known_getproperty(stmt, :eval, stmts)
             selected[idx] = true
             selected[edges.succs[idx]] .= true
+        # deprecation flags of bindings are part of the analysis world
+        elseif is_base_deprecate_call(stmt, mod, stmts)
+            selected[idx] = true
         end
     end
+end
+
+# Only deprecations of bindings in `mod` are selected, as emitted by `@deprecate_binding`
+# and `Base.deprecate(@__MODULE__, ...)`, so that concretization does not mark bindings of
+# other, possibly actual, modules.
+function is_base_deprecate_call(@nospecialize(stmt), mod::Module, stmts::Vector{Any})
+    isexpr(stmt, :call) && length(stmt.args) ≥ 3 || return false
+    stmt.args[2] === mod || return false
+    f = stmt.args[1]
+    if f isa SSAValue
+        f = stmts[f.id]
+    end
+    if f isa GlobalRef
+        f.name === :deprecate || return false
+        return resolve_latest_global(f) === Base.deprecate
+    end
+    is_known_getproperty(f, :deprecate, stmts) || return false
+    obj = (f::Expr).args[2]
+    if obj isa SSAValue
+        obj = stmts[obj.id]
+    end
+    if obj isa GlobalRef
+        obj = resolve_latest_global(obj)
+    end
+    return obj === Base
+end
+
+function is_dep_message_declaration(@nospecialize(stmt), mod::Module)
+    if isexpr(stmt, :const, 2) # Julia 1.12
+        gr = stmt.args[1]
+        gr isa GlobalRef && gr.mod === mod || return false
+        name = gr.name
+    elseif isexpr(stmt, :call, 4) && stmt.args[1] == GlobalRef(Core, :declare_const)
+        stmt.args[2] === mod || return false
+        name = stmt.args[3]
+        name isa QuoteNode || return false
+        name = name.value
+        name isa Symbol || return false
+    else
+        return false
+    end
+    return startswith(String(name), "_dep_message_")
+end
+
+function resolve_latest_global(gr::GlobalRef)
+    @invokelatest(isdefinedglobal(gr.mod, gr.name)) || return nothing
+    return @invokelatest getglobal(gr.mod, gr.name)
 end
 
 # adapted from
