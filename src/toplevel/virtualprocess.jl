@@ -1010,8 +1010,7 @@ const PREFERENCES_PKGID = Base.PkgId(Base.UUID("21216c6a-2e73-6563-6e65-72656665
 function register_preferences_uuid!(virtual::Module, uuid::Base.UUID)
     preferences = Base.maybe_root_module(PREFERENCES_PKGID)
     preferences isa Module || return nothing
-    @invokelatest(isdefinedglobal(preferences, :uuid_cache)) || return nothing
-    uuid_cache = @invokelatest getglobal(preferences, :uuid_cache)
+    uuid_cache = resolve_latest_global(GlobalRef(preferences, :uuid_cache))
     uuid_cache isa Dict{Module,Base.UUID} || return nothing
     uuid_cache[virtual] = uuid
     return nothing
