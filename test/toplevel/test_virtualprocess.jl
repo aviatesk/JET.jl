@@ -1271,6 +1271,49 @@ end
     end
 end
 
+@testset "binding states of replaced partitions" begin
+    # `export` replaces the partition of the binding with one that differs only in its flags
+    let res = @analyze_toplevel begin
+            global globalvar = rand(Bool)
+            export globalvar
+            println(globalvar)
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        @test isempty(res.res.inference_error_reports)
+    end
+
+    let res = @analyze_toplevel begin
+            if rand(Bool)
+                global globalvar = 1
+            end
+            export globalvar
+            println(globalvar)
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        isexpected = length(res.res.inference_error_reports) == 1
+        @test isexpected
+        if isexpected
+            report = only(res.res.inference_error_reports)
+            @test report isa UndefVarErrorReport
+            @test report.var.name === :globalvar
+            @test report.maybeundef
+        end
+    end
+
+    # an assignment after the replacement is merged with the state before it
+    let res = @analyze_toplevel begin
+            global globalvar = 1
+            export globalvar
+            if rand(Bool)
+                global globalvar = 2
+            end
+            println(globalvar)
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        @test isempty(res.res.inference_error_reports)
+    end
+end
+
 @testset "toplevel throw" begin
     res = @analyze_toplevel begin
         throw("throw me")
