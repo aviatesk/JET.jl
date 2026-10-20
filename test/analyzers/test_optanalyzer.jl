@@ -104,6 +104,27 @@ callee_newer_than_jet(t, ::Val{D}) where {D} = t[D]
     @test !occursin("prior to its definition world", stderr_output)
 end
 
+const threads_untyped = Ref{Any}(1)
+threads_loop_body(i) = i + threads_untyped[]
+@testset "`Threads.@threads` loop body (aviatesk/JET.jl#890)" begin
+    result = report_opt((Int,)) do n
+        Threads.@threads for i in 1:n
+            threads_loop_body(i)
+        end
+    end
+    reports = get_reports_with_test(result)
+    @test any(reports) do r
+        r isa RuntimeDispatchReport && last(r.vst).linfo.def.name === :threads_loop_body
+    end
+    # the dynamic dispatch of the loop body in the runner is intentional
+    @test !any(reports) do r
+        any(r.vst) do vf
+            def = vf.linfo.def
+            def isa Method && def.name === :_threads_call
+        end
+    end
+end
+
 function captured_variable_f(a, n)
     incr! = x -> a += x
 
