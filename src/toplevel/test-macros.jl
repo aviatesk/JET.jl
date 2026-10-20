@@ -26,8 +26,7 @@ function test_macro_name(mod::Module, @nospecialize(mac))
         name = name.value
         name isa Symbol || return nothing
         modname isa Symbol || return nothing
-        @invokelatest(isdefinedglobal(mod, modname)) || return nothing
-        @invokelatest(getglobal(mod, modname)) === Test || return nothing
+        resolve_latest_global(GlobalRef(mod, modname)) === Test || return nothing
         return name
     end
     return nothing
