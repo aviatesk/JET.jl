@@ -254,6 +254,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ```julia
   g(f::Function) = Task(f)
   report_call(g, (Function,)) # no longer throws
+
+- Fixed top-level analysis (e.g. `report_file`) reporting a global variable as
+  not defined when the variable is exported after its assignment:
+  ```julia
+  x = rand(Bool)
+  export x
+  println(x) # was reported: `x` is not defined
   ```
 
 ## [0.12.3]

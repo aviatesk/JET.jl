@@ -139,14 +139,36 @@ struct AbstractBindings
     lock::Threads.SpinLock
     AbstractBindings() = new(IdDict{Core.BindingPartition,AbstractBindingState}(), Threads.SpinLock())
 end
-@inline Base.getindex(b::AbstractBindings, partition::Core.BindingPartition) =
-    @lock b.lock b.bindings[partition]
+@inline function Base.getindex(b::AbstractBindings, partition::Core.BindingPartition)
+    binding_state = @lock b.lock find_binding_state(b.bindings, partition)
+    binding_state === nothing && throw(KeyError(partition))
+    return binding_state
+end
 @inline Base.setindex!(b::AbstractBindings, binding_state::AbstractBindingState, partition::Core.BindingPartition) =
     (@lock b.lock b.bindings[partition] = binding_state; return b)
 @inline Base.haskey(b::AbstractBindings, partition::Core.BindingPartition) =
-    @lock b.lock haskey(b.bindings, partition)
+    @lock(b.lock, find_binding_state(b.bindings, partition)) !== nothing
 @inline Base.get(b::AbstractBindings, partition::Core.BindingPartition, @nospecialize(default)) =
-    @lock b.lock get(b.bindings, partition, default)
+    @something(@lock(b.lock, find_binding_state(b.bindings, partition)), Some(default))
+
+# `export` and `Base.deprecate` replace a partition with one that differs only in its flags,
+# for which the state recorded for the replaced partition still holds
+function find_binding_state(
+        bindings::IdDict{Core.BindingPartition,AbstractBindingState},
+        partition::Core.BindingPartition
+    )
+    while true
+        binding_state = get(bindings, partition, nothing)
+        binding_state === nothing || return binding_state
+        isdefined(partition, :next, :acquire) || return nothing
+        prev = @atomic :acquire partition.next
+        CC.binding_kind(prev) == CC.binding_kind(partition) || return nothing
+        has_restriction = isdefined(partition, :restriction)
+        has_restriction === isdefined(prev, :restriction) || return nothing
+        has_restriction && prev.restriction !== partition.restriction && return nothing
+        partition = prev
+    end
+end
 
 """
     mutable struct AnalyzerState
