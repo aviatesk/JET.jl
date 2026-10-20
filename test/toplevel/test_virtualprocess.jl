@@ -2444,6 +2444,11 @@ function Base.unsafe_write(io::ConcretizationDelayLogger, p::Ptr{UInt8}, n::UInt
     return n
 end
 
+function deprecation_flags(mod::Module, name::Symbol)
+    kind = Base.lookup_binding_partition(Base.get_world_counter(), GlobalRef(mod, name)).kind
+    return (kind & Base.PARTITION_FLAG_DEPRECATED ≠ 0, kind & Base.PARTITION_FLAG_DEPWARN ≠ 0)
+end
+
 @testset "top-level statement selection" begin
     # simplest example
     let # global function
@@ -3027,6 +3032,60 @@ end
                 @eval $sym() = :foo # should be concretized
             end
             @test isconcrete(res, vmod, :foo)
+        end
+    end
+
+    @testset "`Base.deprecate` calls" begin
+        let (vmod, res) = @analyze_toplevel2 begin
+                const new = 1
+                Base.@deprecate_binding old new
+                Base.@deprecate_moved moved SomePkg
+                const x = 1
+                Base.deprecate(@__MODULE__, :x)
+                using Base: deprecate
+                const y = 1
+                deprecate(@__MODULE__, :y, 2)
+            end
+            @test isnothing(res.res.toplevel_error_report)
+            @test deprecation_flags(vmod, :old) == (true, true)
+            @test (@invokelatest getglobal(vmod, :_dep_message_old)) == ", use new instead."
+            @test deprecation_flags(vmod, :moved) == (true, false)
+            @test deprecation_flags(vmod, :x) == (true, true)
+            @test deprecation_flags(vmod, :y) == (true, false)
+        end
+
+        # the binding is flagged, but its non-constant assignment is not concretized
+        let (vmod, res) = @analyze_toplevel2 begin
+                global gnew = 2
+                Base.@deprecate_binding gold gnew true nothing false
+            end
+            @test isnothing(res.res.toplevel_error_report)
+            @test deprecation_flags(vmod, :gold) == (true, true)
+            @test !(@invokelatest isdefinedglobal(vmod, :gold))
+        end
+        # and the binding is still known to be assigned
+        let res = @analyze_toplevel begin
+                global gnew = 2
+                Base.@deprecate_binding gold gnew true nothing false
+                println(gold)
+            end
+            @test isnothing(res.res.toplevel_error_report)
+            @test isempty(res.res.inference_error_reports)
+        end
+
+        # only `Base.deprecate` on the module being analyzed is selected
+        let mod = Module()
+            Core.eval(mod, :(deprecate(m::Module, s::Symbol) = nothing))
+            Core.eval(mod, :(module Fake
+                deprecate(m::Module, s::Symbol) = nothing
+            end))
+            src = only(Meta.lower(mod, :(Base.deprecate($mod, :x))).args)::CodeInfo
+            @test any(JET.select_statements(mod, src))
+            for ex in (:(deprecate($mod, :x)), :(Fake.deprecate($mod, :x)),
+                       :(Base.deprecate(Fake, :x)))
+                src = only(Meta.lower(mod, ex).args)::CodeInfo
+                @test !any(JET.select_statements(mod, src))
+            end
         end
     end
 
