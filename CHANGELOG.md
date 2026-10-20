@@ -222,6 +222,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the enclosing top-level statement since 0.12.1. They now point to the line
   of the reported code.
 
+- Fixed the loop bodies of `Threads.@threads` not being analyzed on Julia
+  1.13.2 and later, where its tasks call the loop body through a dynamic
+  dispatch (JuliaLang/julia#63184). The loop body is now analyzed where
+  `@threads` is used, and `report_opt` no longer reports that dynamic dispatch
+  in `Base.Threads._threads_call`:
+  ```julia
+  const g = Ref{Any}(1)
+  helper(i) = i + g[]
+  function f(n)
+      Threads.@threads for i in 1:n
+          helper(i) # `@report_opt f(10)` reports this runtime dispatch again
+      end
+  end
+  ```
+
+- Fixed errors in the function run by a `Task` not being reported when the
+  function had not been analyzed before, as when the task is created by
+  `Task(f, reserved_stack)`:
+  ```julia
+  report_call() do
+      t = Task(() -> sum("julia"), 0) # errors in `sum("julia")` now reported
+      schedule(t)
+      fetch(t)
+  end
+  ```
+
+- Fixed analysis crashing with `Could not find single target method` when a
+  `Task` is created from a function whose type is not known, such as
+  `f::Function`:
+  ```julia
+  g(f::Function) = Task(f)
+  report_call(g, (Function,)) # no longer throws
+  ```
+
 ## [0.12.3]
 
 ### Changed

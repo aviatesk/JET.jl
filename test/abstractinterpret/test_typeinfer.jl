@@ -471,6 +471,19 @@ end
         fetch(t)
     end |> test_sum_over_string
 
+    # the closure is inferred for the first time by the additional pass, since
+    # `Task(f, reserved_stack)` doesn't call another `Task` constructor
+    report_call() do
+        t = Task(() -> sum("julia"), 0)
+        schedule(t)
+        fetch(t)
+    end |> test_sum_over_string
+
+    # the closure to analyze is unknown
+    test_call((Function,)) do f
+        Task(f)
+    end
+
     # handle `Threads.@spawn` (https://github.com/aviatesk/JET.jl/issues/114)
     result = report_call() do
         fetch(Threads.@spawn 1 + "foo")
@@ -480,7 +493,8 @@ end
         @test r.t === Tuple{typeof(+), Int, String}
     end
 
-    # handle `Threads.@threads`
+    # handle `Threads.@threads`, whose tasks call the loop body through a dynamic dispatch
+    # since JuliaLang/julia#63184 (https://github.com/aviatesk/JET.jl/issues/890)
     result = report_call((Int,)) do n
         a = String[]
         Threads.@threads for i in 1:n
