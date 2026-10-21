@@ -159,7 +159,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ```
   Test sets that specify `failfast=false` and test sets of a custom type, e.g.
   `@testset MyTestSet ...`, are analyzed as declared. Note that the code after a
-  test that always fails is not analyzed.
+  test that always fails is not analyzed. Likewise, regardless of
+  `testset_failfast`, the code after `@test_warn`, `@test_nowarn`, `@inferred`,
+  and `@testset let ... end` is not analyzed if they always throw, since
+  Test.jl does not catch exceptions in them. The values of `@test_warn`,
+  `@test_nowarn`, and `@inferred` also keep their inferred types, e.g. `y` of
+  `y = @inferred parse(Int, "1")` is inferred as `Int` instead of `Any`.
 
 ### Deprecated
 
