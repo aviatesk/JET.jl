@@ -70,7 +70,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `func_test` use to decide whether an analysis result fails a test.
 
 - Top-level analysis now reports a `@test` that always fails, i.e. whose
-  expression is inferred to evaluate to `false` or to a non-boolean value:
+  expression is inferred to evaluate to `false` or to a non-boolean value, and
+  a `@test_throws` that always fails, i.e. whose expression is inferred to
+  throw only exceptions that do not match the expected one. The errors in the
+  expression of `@test_throws`, which is expected to throw, are no longer
+  reported:
   ```julia
   @testset "foo" begin
       x = nothing
@@ -80,10 +84,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       y = rand((0, nothing))
       @test y         # reported: non-boolean `Union{Nothing, Int64}`
   end
+  @testset "baz" begin
+      @test_throws MethodError sin("x")   # no longer reported
+      @test_throws ArgumentError sin("x") # reported: throws `MethodError`
+  end
   ```
   `@test_broken` and `@test ex broken=true` are not reported, nor are the
   tests in function bodies. `@test false` is also reported, so use e.g.
-  `error("unreachable")` to mark code that should not be reached.
+  `error("unreachable")` to mark code that should not be reached. The check of
+  `@test_throws` is conservative: the exceptions inferred across function calls
+  are often `Any`, which matches any expected exception, and message patterns
+  are not checked.
 
 ### Changed
 

@@ -3316,6 +3316,17 @@ end
             if JET.TEST_THROWS_ACCEPTS_PATTERN
                 @test eval_replaced_test_macro(mod,
                     :(@test_throws ErrorException "x" error("x"))) === nothing
+                # the pattern is evaluated in the original scope as Test.jl does
+                eval_replaced_test_macro(mod,
+                    :(@test_throws ErrorException (pattern_binding = "x") error("x")))
+                @test @invokelatest isdefinedglobal(mod, :pattern_binding)
+            end
+            # the test expression of `@test_throws` is evaluated in a marked `try` block
+            for ex in (:(@test_throws ErrorException error("x")),
+                       :(@test_throws ErrorException x = error("x")))
+                replaced = JET.replace_test_macrocalls(ex, mod)
+                @test has_globalref(replaced, JET, :enter_test_exception)
+                @test has_globalref(replaced, JET, :check_test_exception)
             end
             # `@test_throws` with keyword arguments is kept for the expansion of Test.jl
             for ex in (:(@test_throws MethodError sin("x") broken=true),
@@ -3705,6 +3716,124 @@ end
             @test isnothing(res.res.toplevel_error_report)
             report = only(res.res.inference_error_reports)
             @test report isa JET.FailingTestReport && report.t === Nothing
+        end
+    end
+
+    @testset "`@test_throws`" begin
+        # the reports from the test expressions are discarded, since they are expected to throw
+        let res = @analyze_toplevel context = vmod virtualize = false begin
+                @testset "expected exceptions" begin
+                    @test_throws MethodError sin("x")
+                    @test_throws UndefVarError undefined_in_test_throws
+                    @test_throws Exception sin("x")
+                    @test_throws "no method" sin("x")
+                    # inference does not model stack overflows
+                    @test_throws StackOverflowError error("x")
+                    @test_throws MethodError x = sin("x")
+                    @test_throws MethodError try
+                        sin("x")
+                    finally
+                    end
+                end
+                function test_throws_in_function()
+                    @test_throws MethodError sin("x")
+                end
+                test_throws_in_function()
+                @generated generated_in_test_throws(x) = error("generation")
+                @test_throws ErrorException generated_in_test_throws(1)
+            end
+            @test isnothing(res.res.toplevel_error_report)
+            @test isempty(res.res.inference_error_reports)
+        end
+
+        # but the tests whose expressions always throw unexpected exceptions are reported
+        let res = @analyze_toplevel context = vmod virtualize = false begin
+                @testset "unexpected exceptions" begin
+                    @test_throws ArgumentError sin("x")
+                    @test_throws ArgumentError("x") error("x")
+                end
+            end
+            @test isnothing(res.res.toplevel_error_report)
+            reports = res.res.inference_error_reports
+            @test length(reports) == 2
+            @test all(report -> report isa JET.FailingTestReport, reports)
+            @test any(reports) do report
+                report.t === MethodError && report.expected === ArgumentError
+            end
+            @test any(reports) do report
+                report.t === ErrorException && report.expected == ArgumentError("x")
+            end
+        end
+        if JET.TEST_THROWS_ACCEPTS_PATTERN
+            let res = @analyze_toplevel context = vmod virtualize = false begin
+                    @testset "unexpected exception with pattern" begin
+                        @test_throws ArgumentError "no method" sin("x")
+                    end
+                end
+                @test isnothing(res.res.toplevel_error_report)
+                report = only(res.res.inference_error_reports)
+                @test report isa JET.FailingTestReport && report.t === MethodError
+            end
+        end
+
+        # the code around the tests is analyzed as is, including the expected exceptions,
+        # and the local variables used in the test expressions keep their types
+        let res = @analyze_toplevel context = vmod virtualize = false begin
+                @testset "expected exception" begin
+                    @test_throws undefined_exception_type identity(1)
+                end
+                @testset "reassigned variable" begin
+                    x = 1
+                    @test_throws MethodError sin(string(x))
+                    x = "x"
+                    sin(x)
+                end
+            end
+            @test isnothing(res.res.toplevel_error_report)
+            reports = res.res.inference_error_reports
+            @test length(reports) == 2
+            @test any(report -> report isa JET.MethodErrorReport, reports)
+            @test any(report -> report isa JET.UndefVarErrorReport, reports)
+        end
+        # including a call on the same line, whose reports are not filtered out by the
+        # constant propagation of the call in the test expression
+        let res = @analyze_toplevel context = vmod virtualize = false begin
+                same_line_callee(x::Int) = x > 0 ? 1 : sin("x")
+                let x = rand(Int); same_line_callee(x); @test_throws MethodError same_line_callee(0); end
+            end
+            @test isnothing(res.res.toplevel_error_report)
+            @test only(res.res.inference_error_reports) isa JET.MethodErrorReport
+        end
+        if JET.TEST_THROWS_ACCEPTS_PATTERN
+            let res = @analyze_toplevel context = vmod virtualize = false begin
+                    @test_throws ErrorException (pattern_binding = "x") error("x")
+                    identity(pattern_binding)
+                end
+                @test isnothing(res.res.toplevel_error_report)
+                @test isempty(res.res.inference_error_reports)
+            end
+        end
+
+        # `throw` calls in the test expressions are not reported as uncaught, nor are the
+        # calls of `reduce_empty` and `mapreduce_empty`, which are reported in the same way
+        let res = @analyze_toplevel context = vmod virtualize = false begin
+                let
+                    @test_throws ErrorException throw(ErrorException("expected"))
+                    @test_throws MethodError Base.reduce_empty()
+                    @test_throws MethodError Base.mapreduce_empty()
+                    sin("x")
+                end
+            end
+            @test isnothing(res.res.toplevel_error_report)
+            @test only(res.res.inference_error_reports) isa JET.MethodErrorReport
+        end
+        let res = @analyze_toplevel context = vmod virtualize = false mode = :sound begin
+                let
+                    @test_throws ErrorException throw(ErrorException("expected"))
+                end
+            end
+            @test isnothing(res.res.toplevel_error_report)
+            @test isempty(res.res.inference_error_reports)
         end
     end
 
