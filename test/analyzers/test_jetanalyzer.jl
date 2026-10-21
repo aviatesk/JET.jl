@@ -998,6 +998,23 @@ complex_divide(a, b) = complex(a, b) / 2
         end
     end
 
+    @testset "`join` on tuples (JuliaLang/julia#63999)" begin
+        @test Base.infer_return_type(join, (Tuple{String,Vararg{String}},Char); interp=JETAnalyzer()) === String
+        @test Base.infer_return_type(join, (Tuple{Vararg{String}},String,String); interp=JETAnalyzer()) === String
+        test_call((Vector{String},)) do xs
+            pointer(join((xs...,), ", "))
+        end
+        @test Base.infer_return_type((String,Vector{String}); interp=JETAnalyzer()) do x, xs
+            join((x, xs...), ", ")
+        end === String
+        # without JuliaLang/julia#63999, this returns a `String` if there are no annotations
+        @test Base.infer_return_type(join, (Tuple{String,Base.AnnotatedString{String}},Char); interp=JETAnalyzer()) ==
+            (VERSION < v"1.15.0-DEV.63" ? Union{Base.AnnotatedString{String},String} : Base.AnnotatedString{String})
+        @test Base.infer_return_type(join, (Tuple{Base.AnnotatedString{String},Base.AnnotatedString{String}},Char); interp=JETAnalyzer()) ===
+            Base.AnnotatedString{String}
+        @test Base.infer_return_type(join, (Vector{String},Char); interp=JETAnalyzer()) === String
+    end
+
     @testset "`Libdl.dlsym`" begin
         @test Base.infer_return_type(Libdl.dlsym, (Ptr{Cvoid},Symbol); interp=JETAnalyzer()) === Ptr{Cvoid}
         @test Base.infer_return_type((Ptr{Cvoid},Symbol); interp=JETAnalyzer()) do hnd, name

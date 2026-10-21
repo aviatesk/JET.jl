@@ -269,6 +269,21 @@ end
     something(Base.mapreduce_impl(f, op, A, ifirst, ilast, Base.pairwise_blocksize(f, op)))
 end
 
+# Early take-in of JuliaLang/julia#63999. The generic method decides between the plain and
+# annotated code paths by `@default_eltype`, which cannot be folded for a tuple of unknown
+# length, e.g. `(xs...,)`, so `join` on it is inferred to return `AnnotatedString` as well.
+# Unlike the upstream method, fall back to the generic one for annotated arguments, since
+# without that change, joining them with plain strings may return a `String` at runtime.
+@static if VERSION < v"1.15.0-DEV.63"
+@overlay JET_METHOD_TABLE function Base._join_preserve_annotations(iterator::Tuple, args...)
+    if !any(Base._isannotated, iterator) && !any(Base._isannotated, args)
+        sprint(join, iterator, args...)
+    else
+        @invoke Base._join_preserve_annotations(iterator::Any, args...)
+    end
+end
+end
+
 # analysis injections
 # ===================
 
