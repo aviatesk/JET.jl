@@ -3312,6 +3312,27 @@ end
             @test eval_replaced_test_macro(mod, :(@test_nowarn 42)) == 42
             @test eval_replaced_test_macro(mod, :(@test_deprecated 42)) == 42
             @test eval_replaced_test_macro(mod, :(@inferred identity(42))) == 42
+            @test eval_replaced_test_macro(mod, :(@testset let v = 42; v end)) == 42
+            if JET.TEST_THROWS_ACCEPTS_PATTERN
+                @test eval_replaced_test_macro(mod,
+                    :(@test_throws ErrorException "x" error("x"))) === nothing
+            end
+            # `@test_throws` with keyword arguments is kept for the expansion of Test.jl
+            for ex in (:(@test_throws MethodError sin("x") broken=true),
+                       :(@test_throws MethodError sin("x") skip=true),
+                       :(@test_throws MethodError sin("x") context="x"))
+                @test JET.replace_test_macrocalls(ex, mod).head === :macrocall
+            end
+
+            # the macros that do not catch exceptions propagate them as Test.jl does
+            for ex in (:(@test_warn "warning" error("x")), :(@test_nowarn error("x")),
+                       :(@inferred error("x")), :(@testset let v = 1; error("x") end))
+                @test_throws ErrorException eval_replaced_test_macro(mod, ex)
+            end
+            eval_replaced_test_macro(mod, :(@test_nowarn scoped_in_test = 1))
+            @test !isdefinedglobal(mod, :scoped_in_test)
+            @test JET.replace_test_macrocalls(:(@testset "x" let v = 1; end), mod).head ===
+                :macrocall
 
             testset = eval_replaced_test_macro(mod, quote
                 @testset "scope" begin
@@ -3684,6 +3705,44 @@ end
             @test isnothing(res.res.toplevel_error_report)
             report = only(res.res.inference_error_reports)
             @test report isa JET.FailingTestReport && report.t === Nothing
+        end
+    end
+
+    @testset "exceptions in tests" begin
+        # the code after the tests that catch exceptions is analyzed
+        let res = @analyze_toplevel context = vmod virtualize = false begin
+                @testset "catching" begin
+                    @test_throws ErrorException error("x")
+                    @test_logs (:warn, "x") error("x")
+                    @testset "inner" begin
+                        error("x")
+                    end
+                    sin("x")
+                end
+            end
+            @test isnothing(res.res.toplevel_error_report)
+            @test only(res.res.inference_error_reports) isa JET.MethodErrorReport
+        end
+
+        # but not the code after the ones that propagate them
+        let res = @analyze_toplevel context = vmod virtualize = false begin
+                @testset "test_warn" begin
+                    @test_warn "x" error("x")
+                    sin("x")
+                end
+                @testset "inferred" begin
+                    @inferred error("x")
+                    sin("x")
+                end
+                @testset "let" begin
+                    @testset let v = 1
+                        error("x")
+                    end
+                    sin("x")
+                end
+            end
+            @test isnothing(res.res.toplevel_error_report)
+            @test isempty(res.res.inference_error_reports)
         end
     end
 

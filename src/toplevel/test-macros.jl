@@ -180,6 +180,17 @@ function preserve_test_expression_value(@nospecialize(exs...))
     end
 end
 
+function scope_test_expression(@nospecialize(exs...))
+    return @q begin
+        let
+            $(exs...)
+        end
+    end
+end
+
+const TEST_THROWS_ACCEPTS_PATTERN =
+    hasmethod(Test.var"@test_throws", Tuple{LineNumberNode,Module,Any,Any,Any})
+
 """
     check_test_value(value)
 
@@ -288,12 +299,13 @@ Return the replacement for the Test.jl macro call `name` with the macro call arg
 `args`, or `nothing` if the call is malformed. `failfast` tells whether the call is in a
 test set that a failing test aborts (see `testset_failfast`).
 
-The replacements evaluate the arguments of the macro call, catching exceptions as Test.jl
-does. Their values pass through `Base.inferencebarrier` so that the synthetic values do not
-affect the inference of the surrounding code: macros that return a test result return
-`nothing`, while macros that return the value of the test expression keep that value.
-The checks performed by Test.jl, such as the exception type matching of `@test_throws` and
-the return type check of `@inferred`, are omitted.
+The replacements evaluate the arguments of the macro call, catching exceptions where Test.jl
+does. The values of the replacements that catch exceptions pass through
+`Base.inferencebarrier` so that the synthetic values do not affect the inference of the
+surrounding code: macros that return a test result return `nothing`, while macros that
+return the value of the test expression keep that value. The checks performed by Test.jl,
+such as the exception type matching of `@test_throws` and the return type check of
+`@inferred`, are omitted.
 
 The replacements look like the following, where gensym'ed names are shortened, and the
 line numbers of the user code and blocks that wrap a single expression are omitted.
@@ -382,6 +394,8 @@ begin
     Base.inferencebarrier(nothing)
 end
 ```
+The message pattern of `@test_throws ArgumentError "msg" f(-1)`, which Test.jl accepts
+in Julia 1.13 and later, is evaluated in the same block.
 
 `@test_logs (:warn, "msg") min_level=Logging.Warn f(x)` becomes the following, where the
 keyword arguments are reduced to their values:
@@ -396,16 +410,15 @@ let value = nothing
     Base.inferencebarrier(value)
 end
 ```
-`@test_warn`, `@test_nowarn`, `@test_deprecated`, and `@inferred` are replaced in the same
-way. For example, `@inferred Float64 f(x)` becomes:
+`@test_deprecated` is replaced in the same way, as Test.jl catches exceptions in it when
+deprecation warnings are enabled, e.g. by `Pkg.test`.
+
+`@test_warn`, `@test_nowarn`, and `@inferred` evaluate the arguments in a `let` scope
+without catching exceptions, as Test.jl does. For example, `@inferred Float64 f(x)` becomes:
 ```julia
-let value = nothing
-    try
-        Float64
-        value = f(x)
-    catch
-    end
-    Base.inferencebarrier(value)
+let
+    Float64
+    f(x)
 end
 ```
 
@@ -463,6 +476,8 @@ let
     Base.inferencebarrier(nothing)
 end
 ```
+A `@testset` with a `let` argument, e.g. `@testset let x = f() ... end`, is replaced with
+the `let` expression itself, since Test.jl does not catch exceptions in it.
 
 When the test expression defines an anonymous function that would be evaluated
 conditionally, including within the `if` introduced by `skip`, the test expression is
@@ -508,7 +523,19 @@ function replace_test_macrocall(name::Symbol, args::Vector{Any}, failfast::Bool)
         end
         return hide_test_replacement_value(nothing)
     elseif name === Symbol("@test_throws")
-        length(exs) == 2 || return nothing
+        length(exs) == 2 || (TEST_THROWS_ACCEPTS_PATTERN && length(exs) == 3) ||
+            return nothing
+        # Keyword arguments are not supported here. Test.jl in Julia 1.14 and later takes
+        # the last argument as a keyword argument rather than the test expression if it
+        # follows two positional arguments and assigns `broken`, `skip`, or `context`.
+        if length(exs) == 3
+            kw = last(exs)
+            if isexpr(kw, :(=), 2)
+                kwname = first(kw.args)
+                (kwname === :broken || kwname === :skip || kwname === :context) &&
+                    return nothing
+            end
+        end
         ex = maybe_wrap_test_expression_in_thunk(Expr(:block, exs...))
         return discard_test_expression_value(ex)
     elseif name === Symbol("@test_logs")
@@ -520,11 +547,10 @@ function replace_test_macrocall(name::Symbol, args::Vector{Any}, failfast::Bool)
         length(exs) == 2 || return nothing
         exs = Any[exs...]
         exs[end] = maybe_wrap_test_expression_in_thunk(last(exs))
-        return preserve_test_expression_value(exs...)
+        return scope_test_expression(exs...)
     elseif name === Symbol("@test_nowarn")
         length(exs) == 1 || return nothing
-        return preserve_test_expression_value(
-            maybe_wrap_test_expression_in_thunk(only(exs)))
+        return scope_test_expression(maybe_wrap_test_expression_in_thunk(only(exs)))
     elseif name === Symbol("@test_deprecated")
         1 ≤ length(exs) ≤ 2 || return nothing
         exs = Any[exs...]
@@ -534,12 +560,19 @@ function replace_test_macrocall(name::Symbol, args::Vector{Any}, failfast::Bool)
         1 ≤ length(exs) ≤ 2 || return nothing
         exs = Any[exs...]
         exs[end] = maybe_wrap_test_expression_in_thunk(last(exs))
-        return preserve_test_expression_value(exs...)
+        return scope_test_expression(exs...)
     elseif name === Symbol("@testset")
         isempty(exs) && return nothing
         values = Any[macro_argument_value(ex) for ex in exs[1:end-1]]
         body = last(exs)
-        if isexpr(body, :for, 2)
+        if isexpr(body, :let)
+            isempty(values) || return nothing
+            bindings = first(body.args)
+            isexpr(bindings, :(=)) ||
+                isexpr(bindings, :block) && all(ex -> isexpr(ex, :(=)), bindings.args) ||
+                return nothing
+            return body
+        elseif isexpr(body, :for, 2)
             body = copy(body)
             body.args[2] = Expr(:block, values..., body.args[2])
             empty!(values)
