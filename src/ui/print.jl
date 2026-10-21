@@ -417,7 +417,7 @@ function print_reports(io::IO,
         wrote_linfos = Set{UInt64}()
         open_depth, open_width, open_color = 0, 0, ERROR_COLOR
         for report in reports
-            new_toplevel_linfo_hash = hash(first(report.vst))
+            new_toplevel_linfo_hash = location_hash(first(report.vst))
             if toplevel_linfo_hash != new_toplevel_linfo_hash
                 toplevel_linfo_hash = new_toplevel_linfo_hash
                 wrote_linfos = Set{UInt64}()
@@ -436,11 +436,14 @@ function print_reports(io::IO,
     return n
 end
 
+# Frames are printed once per source location, regardless of the statements they point to.
+location_hash(frame::VirtualFrame) = hash(frame.linfo, hash(frame.line, hash(frame.file)))
+
 # The depth of the first frame that `print_stack` prints for `report`.
 function first_printed_depth(report::InferenceErrorReport, wrote_linfos::Set{UInt64})
     vst = report.vst
     for depth = 1:length(vst)-1
-        hash(vst[depth]) ∉ wrote_linfos && return depth
+        location_hash(vst[depth]) ∉ wrote_linfos && return depth
     end
     return length(vst)
 end
@@ -454,7 +457,7 @@ function print_stack(io, report, config, wrote_linfos, postprocessor, depth = 1)
     frame = report.vst[depth]
 
     # cache current frame info
-    linfo_hash = hash(frame)
+    linfo_hash = location_hash(frame)
     should_print = linfo_hash ∉ wrote_linfos
     push!(wrote_linfos, linfo_hash)
 
