@@ -262,6 +262,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   end
   ```
 
+- Fixed `join` on a tuple of unknown length, such as one created by splatting
+  a vector, being inferred to return `Union{AnnotatedString{String},String}`
+  rather than `String`, which caused spurious reports for code that requires a
+  `String` (JuliaLang/julia#63999):
+  ```julia
+  report_call((Vector{String},)) do xs
+      pointer(join((xs...,), ", ")) # no longer reported
+  end
+  ```
+
 - Fixed errors in the function run by a `Task` not being reported when the
   function had not been analyzed before, as when the task is created by
   `Task(f, reserved_stack)`:
@@ -279,6 +289,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ```julia
   g(f::Function) = Task(f)
   report_call(g, (Function,)) # no longer throws
+  ```
 
 - Fixed top-level analysis (e.g. `report_file`) reporting a global variable as
   not defined when the variable is exported after its assignment:
