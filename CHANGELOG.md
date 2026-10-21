@@ -166,6 +166,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `@test_nowarn`, and `@inferred` also keep their inferred types, e.g. `y` of
   `y = @inferred parse(Int, "1")` is inferred as `Int` instead of `Any`.
 
+- `VirtualFrame` has the new `pc` field, the index of the statement that the
+  frame points to in the code analyzed for its `MethodInstance`, or `0` if the
+  frame does not point to a statement. Frames at different statements on the
+  same line are no longer equal:
+  ```julia
+  VirtualFrame(file, line, linfo, pc) # was `VirtualFrame(file, line, linfo)`
+  first(report.vst).pc                # the statement where `report` was found
+  ```
+
 ### Deprecated
 
 - The `print_toplevel_success` and `print_inference_success` configurations
@@ -266,6 +275,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   x = rand(Bool)
   export x
   println(x) # was reported: `x` is not defined
+  ```
+
+- Fixed the reports from a call being discarded by the constant propagation of
+  another call to the same function on the same line:
+  ```julia
+  foo(a) = a < 0 ? a + string(a) : a
+  bar(x) = (foo(x), foo(1)) # the report from `foo(x)` was discarded
+  report_call(bar, (Int,))
   ```
 
 ## [0.12.3]

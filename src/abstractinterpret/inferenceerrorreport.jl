@@ -50,6 +50,8 @@ Stack information representing a virtual execution context:
 - `file::Symbol`: the source file containing the execution context
 - `line::Int`: the source line containing the execution context
 - `linfo::MethodInstance`: the `MethodInstance` containing the context
+- `pc::Int`: the index of the statement containing the context in the code analyzed for
+  `linfo`, or `0` if the context is not a statement, e.g. the definition of `linfo`
 
 This type is similar to `Base.StackTraces.StackFrame`, but its context is
 collected during abstract interpretation rather than runtime execution.
@@ -58,6 +60,7 @@ collected during abstract interpretation rather than runtime execution.
     file::Symbol
     line::Int
     linfo::MethodInstance
+    pc::Int
 end
 
 """
@@ -77,13 +80,13 @@ const INFERENCE_ERROR_REPORT_FIELD_DECLS = [
 # get location information at the given program counter (or a current counter if not specified)
 function get_virtual_frame(state::StateAtPC)
     file, line = get_file_line(state)
-    return VirtualFrame(file, line, get_linfo(first(state)))
+    return VirtualFrame(file, line, get_linfo(first(state)), last(state))
 end
 get_virtual_frame(sv::InferenceState) = get_virtual_frame((sv, get_currpc(sv)))
 get_virtual_frame(caller::InferenceResult) = get_virtual_frame(get_linfo(caller))
 function get_virtual_frame(linfo::MethodInstance)
     file, line = get_file_line(linfo)
-    return VirtualFrame(file, line, linfo)
+    return VirtualFrame(file, line, linfo, 0)
 end
 
 get_file_line(s::StateAtPC) = get_file_line(get_lin(s)::LineInfoNode)

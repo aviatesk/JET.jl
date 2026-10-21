@@ -337,15 +337,13 @@ end
         @test report.t === Tuple{typeof(+), Int, String}
     end
 
-    # FIXME Same-line callsites of the same callee can't be distinguished by the
-    # (file, line, linfo) key: const-prop filtering for `foo(1)` still discards
-    # the report from `foo(x)` written on the same line.
+    # Same-line callsites of the same callee are distinguished by their statements.
     let result = Core.eval(Module(), quote
             foo(a) = a < 0 ? a + string(a) : a
             bar(x) = (foo(x), foo(1))
             $report_call(bar, (Int,))
         end)
-        @test_broken length(get_reports_with_test(result)) === 1
+        @test length(get_reports_with_test(result)) === 1
     end
 
     let result = Core.eval(Module(), quote
