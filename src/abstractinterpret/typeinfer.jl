@@ -68,10 +68,9 @@ function CC.const_prop_call(analyzer::AbstractAnalyzer,
         mi::MethodInstance, result::MethodCallResult, arginfo::ArgInfo, sv::InferenceState,
         concrete_eval_result::Union{Nothing,ConstCallResult})
     @assert get_cache_target(analyzer) === nothing "invalid JET analysis state"
-    if const_result !== nothing
-        # successful constant prop', we need to update reports
-        collect_callee_reports!(analyzer, sv)
-    end
+    # Collect the reports at this call site even if the constant propagation fails, e.g.
+    # when the generator of a generated function throws, rather than at a later call site.
+    collect_callee_reports!(analyzer, sv)
     return const_result
 end
 
@@ -498,6 +497,16 @@ function finish_frame!(analyzer::AbstractAnalyzer, frame::InferenceState)
     caller = frame.result
 
     reports = get_reports(analyzer, caller)
+
+    if analyzer isa ToplevelAbstractAnalyzer
+        # Discard the reports from the test expressions of `@test_throws`. The first frame of
+        # a report of `frame` points to the statement of `frame` where the error is detected
+        # or the report is collected from a callee (see `is_test_exception_statement`).
+        filter!(reports) do @nospecialize(report::InferenceErrorReport)
+            vf = first(report.vst)
+            return !(vf.linfo === frame.linfo && is_test_exception_statement(frame, vf.pc))
+        end
+    end
 
     # XXX this is a dirty fix for performance problem, we need more "proper" fix
     # https://github.com/aviatesk/JET.jl/issues/75
