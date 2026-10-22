@@ -2663,6 +2663,8 @@ end
 # - Ignore C-side function definitions created via `Base._ccallable`. These definitions
 #   are not namespaced in the module and can cause false-positive name conflict errors
 #   when running analysis multiple times (see aviatesk/JET.jl#597).
+# - Skip the native compilation requested by `precompile` calls, which packages often
+#   make at top level. It doesn't contribute to the analysis but can take long.
 function JuliaInterpreter.evaluate_call!(
         interp::ConcreteInterpreter, frame::Frame, fargs::Vector{Any}, enter_generated::Bool
     )
@@ -2685,6 +2687,9 @@ function JuliaInterpreter.evaluate_call!(
         if length(fargs) == 3 && fargs[2] isa Type && fargs[3] isa Type
             return nothing
         end
+    elseif f === Base.precompile
+        ret = precompile_without_compiling(fargs[2:end]...)
+        ret === nothing || return ret
     end
     if f === Base.rethrow
         # Even native calls must rethrow the interpreted frame's active exception.
@@ -2698,6 +2703,27 @@ function JuliaInterpreter.evaluate_call!(
 end
 
 isinclude(@nospecialize f) = f isa Base.IncludeInto || f === Base.include || f === Core.include
+
+# the return value of `precompile(args...)`, or `nothing` when no `Base.precompile` method
+# accepts `args`, so that the call goes through and raises the `MethodError`
+precompile_without_compiling(@nospecialize(f), @nospecialize(argtypes::Tuple)) =
+    precompile_without_compiling(Tuple{Core.Typeof(f), argtypes...})
+@static if isdefinedglobal(Base, :isprecompilable)
+precompile_without_compiling(@nospecialize(argt::Type)) = Base.isprecompilable(argt)
+else
+precompile_without_compiling(@nospecialize(argt::Type)) = true
+end
+precompile_without_compiling(::MethodInstance) = true
+precompile_without_compiling(::MethodInstance, ::UInt) = true
+precompile_without_compiling(@nospecialize(f), @nospecialize(argtypes::Tuple), m::Method) =
+    precompile_without_compiling(Tuple{Core.Typeof(f), argtypes...}, m)
+function precompile_without_compiling(@nospecialize(argt::Type), m::Method)
+    atype, sparams = (@ccall jl_type_intersection_with_env(argt::Any, m.sig::Any)::Any)::SimpleVector
+    # Keep Base's specialization checks, but do not compile the MethodInstance.
+    specialize_method(m, atype, sparams)
+    return true
+end
+precompile_without_compiling(@nospecialize _args...) = nothing
 
 # the line of the innermost frame in `filename`, i.e. where the current call is written in
 # the file being analyzed when it happens in a callee defined elsewhere
