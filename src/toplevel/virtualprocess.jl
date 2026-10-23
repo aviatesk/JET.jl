@@ -2104,8 +2104,7 @@ function select_direct_requirement!(
 
         if (LoweredCodeUtils.ismethod(stmt) ||    # don't abstract away method definitions
             LoweredCodeUtils.istypedef(stmt) ||   # don't abstract away type definitions
-            (isexpr(stmt, :call) && length(stmt.args) ≥ 1 &&
-             stmt.args[1] == GlobalRef(Core, :_defaultctors)) ||
+            LoweredCodeUtils.is_defaultctors_call(stmt) ||
             (ismoduleusage(stmt) || is_lowered_module_usage(stmt)))
             selected[idx] = true
             continue
@@ -2554,11 +2553,16 @@ function JuliaInterpreter.evaluate_methoddef(interp::ConcreteInterpreter, frame:
 end
 
 function collect_toplevel_signature!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node))
-    isexpr(node, :method, 3) || return nothing
+    LoweredCodeUtils.ismethod3(node) || return nothing
+    node = node::Expr
+    if isexpr(node, :method)
+        methname, sig, body = node.args
+    else # `Core.define_method(mod, name, sig, body)` on Julia 1.14 and later
+        _, _, methname, sig, body = node.args
+    end
     state = InterpretationState(interp)
     entrypoint = state.config.analyze_from_definitions
     if entrypoint isa Symbol
-        methname = node.args[1]
         if methname isa GlobalRef
             methname = methname.name
         end
@@ -2567,13 +2571,13 @@ function collect_toplevel_signature!(interp::ConcreteInterpreter, frame::Frame, 
         end
     end
     atype_params, sparams, linenode =
-        JuliaInterpreter.lookup(frame, node.args[2])::SimpleVector
+        JuliaInterpreter.lookup(frame, sig)::SimpleVector
     tt = form_method_signature(atype_params::SimpleVector, sparams::SimpleVector)
     tt isa Type || throw(ToplevelInternalError("Expected a method signature type, got $(typeof(tt))"))
     CC.has_free_typevars(tt) &&
         throw(ToplevelInternalError("Free type variable left in signature_infos"))
     mod = JuliaInterpreter.moduleof(frame)
-    src = JuliaInterpreter.lookup(frame, node.args[3])
+    src = JuliaInterpreter.lookup(frame, body)
     push!(state.res.signature_infos,
         SignatureInfo(state.filename, mod, tt, src, linenode::LineNumberNode))
 end
@@ -3020,7 +3024,9 @@ function analyze_toplevel!(analyzer::ToplevelAbstractAnalyzer, src::CodeInfo, co
 end
 
 function construct_toplevel_mi(src::Core.CodeInfo, context_module::Module)
-    resolve_toplevel_symbols!(src, context_module)
+    # Resolution evaluates e.g. `ccall` types, which must see the bindings of the latest
+    # world where top-level code runs.
+    @invokelatest resolve_toplevel_symbols!(src, context_module)
     return @ccall jl_method_instance_for_thunk(src::Any, context_module::Any)::Ref{Core.MethodInstance}
 end
 

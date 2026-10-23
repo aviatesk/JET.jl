@@ -287,7 +287,9 @@ end
 # including the stacktrace, makes the body.
 function print_error_report(io::IO, context::String, @nospecialize(err),
                             st::Base.StackTraces.StackTrace)
-    msg = sprint(showerror, err, st; context=io)
+    # The error comes from code evaluated in newer worlds, e.g. it may hold the `include` of
+    # a virtual module, which Julia 1.14 and later declares after creating the module.
+    msg = @invokelatest sprint(showerror, err, st; context=io)
     firstline, rest = let i = findfirst('\n', msg)
         i === nothing ? (msg, "") : (msg[1:prevind(msg, i)], msg[nextind(msg, i):end])
     end

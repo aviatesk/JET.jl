@@ -43,8 +43,8 @@ jobs:
     needs: verified-tree
     if: ${{ !failure() && !cancelled() && needs.verified-tree.outputs.verified != 'true' }}
     runs-on: ${{ matrix.os }}
-    # Failures against an unreleased Julia should not block merging.
-    continue-on-error: ${{ matrix.version == 'nightly' || matrix.version == 'pre' }}
+    # Failures against nightly Julia, which JET does not support yet, should not block merging.
+    continue-on-error: ${{ matrix.version == 'nightly' }}
     strategy:
       fail-fast: false # don't stop CI even when one of them fails
       matrix:
