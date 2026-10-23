@@ -1144,6 +1144,15 @@ end
         end)::ErrorException
         @test err.msg == r.msg
     end
+
+    # a `Union` target type may be any of its members
+    test_call(signed, (Base.BitUnsigned,))
+    test_call((Union{Type{Int8},Type{Int16}}, UInt8)) do T, x
+        Core.Intrinsics.bitcast(T, x)
+    end
+    test_call((Union{Type{UInt16},Type{UInt32}}, UInt8)) do T, x
+        Core.Intrinsics.zext_int(T, x)
+    end
 end
 
 # https://github.com/JuliaLang/julia/pull/49801
