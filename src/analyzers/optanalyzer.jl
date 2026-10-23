@@ -266,6 +266,9 @@ function should_analyze_optimized(
         analyzer::OptAnalyzer, caller::InferenceResult, opt::OptimizationState
     )
     CC.is_result_constabi_eligible(caller) && return false
+    # the dynamic dispatch of a `@threads` loop body is analyzed at the call sites of the
+    # runner instead (see `analyze_threads_loop_body!`)
+    is_threads_call_mi(caller.linfo) && return false
     is_analysis_target(analyzer, caller) && return true
     return is_inlineable_optimized(analyzer, caller, opt)
 end

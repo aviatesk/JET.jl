@@ -36,7 +36,7 @@ const USE_FIXED_WORLD = Preferences.@load_preference("use_fixed_world", !JET_DEV
 const PKG_EVAL = Base.get_bool_env("JULIA_PKGEVAL", false)
 
 const MINIMUM_JULIA_VERSION = v"1.12.0-beta1.11"
-const FIRST_UNSUPPORTED_JULIA_VERSION = v"1.14.0-DEV"
+const FIRST_UNSUPPORTED_JULIA_VERSION = v"1.15.0-DEV"
 
 _is_supported_julia(version::VersionNumber) =
     MINIMUM_JULIA_VERSION ≤ version < FIRST_UNSUPPORTED_JULIA_VERSION

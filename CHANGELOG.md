@@ -66,6 +66,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added support for Julia v1.14. JET now loads full functionality on Julia
+  1.14 instead of empty stubs.
+
 - `JETInterface` now exports `has_problems`, the predicate that `call_test_ex`
   and `func_test` use to decide whether an analysis result fails a test.
 
@@ -305,6 +308,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   foo(a) = a < 0 ? a + string(a) : a
   bar(x) = (foo(x), foo(1)) # the report from `foo(x)` was discarded
   report_call(bar, (Int,))
+  ```
+
+- Fixed reports about `getfield` or `setfield!` on a type object listing the
+  fields of that type instead of the fields of the type object itself:
+  ```julia
+  struct Foo; x::Int; end
+  report_call() do
+      getfield(Foo, :y) # now reported: type DataType has no field `y`
+  end
   ```
 
 ## [0.12.3]

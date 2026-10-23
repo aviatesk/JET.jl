@@ -162,6 +162,8 @@ function find_binding_state(
         binding_state === nothing || return binding_state
         isdefined(partition, :next, :acquire) || return nothing
         prev = @atomic :acquire partition.next
+        # The oldest partition links back to its binding on Julia 1.14 and later
+        prev isa Core.BindingPartition || return nothing
         CC.binding_kind(prev) == CC.binding_kind(partition) || return nothing
         has_restriction = isdefined(partition, :restriction)
         has_restriction === isdefined(prev, :restriction) || return nothing
@@ -200,7 +202,7 @@ mutable struct AnalyzerState
     ## AbstractInterpreter ##
 
     const world::UInt
-    const inf_cache::Vector{InferenceResult}
+    const inf_cache::LocalInferenceCache
     const inf_params::InferenceParams
     const opt_params::OptimizationParams
 
@@ -243,7 +245,7 @@ function AnalyzerState(world::UInt = get_world_counter();
                        jetconfigs...)
     reject_abstract_interpretation_configs(jetconfigs)
     return AnalyzerState(#=world::UInt=# world,
-                         #=inf_cache::Vector{InferenceResult}=# InferenceResult[],
+                         #=inf_cache::LocalInferenceCache=# new_inference_cache(),
                          #=inf_params::InferenceParams=# inf_params,
                          #=opt_params::OptimizationParams=# opt_params,
                          #=analysis_results::IdDict{InferenceResult,AnalysisResult}=# IdDict{InferenceResult,AnalysisResult}(),
@@ -265,7 +267,7 @@ function AnalyzerState(state::AnalyzerState, refresh_local_cache::Bool=true;
                        binding_states::AbstractBindings = state.binding_states,
                        entry::Union{Nothing,MethodInstance} = state.entry)
     if refresh_local_cache
-        inf_cache = InferenceResult[]
+        inf_cache = new_inference_cache()
         analysis_results = IdDict{InferenceResult,AnalysisResult}()
     else
         (; inf_cache, analysis_results) = state

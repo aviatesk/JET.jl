@@ -8,8 +8,8 @@ JET employs Julia's type inference system to detect potential bugs and type
 instabilities.
 
 > [!NOTE]
-> **The latest release series, v0.12, supports full JET functionality
-> on Julia v1.12 and v1.13 only.**
+> **The latest release series, v0.13, supports full JET functionality
+> on Julia v1.12, v1.13 and v1.14 only.**
 >
 > The JET version that works with Julia v1.11 is the
 > [v0.9 series](https://github.com/aviatesk/JET.jl/tree/release-0.9),
