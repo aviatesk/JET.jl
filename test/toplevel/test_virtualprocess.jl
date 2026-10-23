@@ -2203,6 +2203,61 @@ const CONCRETIZATION_PATTERNS_FILE =
     end
 end
 
+# whether the native code cache, i.e. the cache owned by `nothing`, has a `CodeInstance`
+# for `mi`
+function has_native_cache(mi::Core.MethodInstance)
+    isdefined(mi, :cache) || return false
+    ci = mi.cache
+    while true
+        ci.owner === nothing && return true
+        isdefined(ci, :next) || return false
+        ci = ci.next
+    end
+end
+
+@testset "`precompile` calls are not compiled" begin
+    vmod, res = @analyze_toplevel2 begin
+        f(x::Int) = x
+        precompile(f, (Int,))
+    end concretization_patterns = [:x_]
+    @test isnothing(res.res.toplevel_error_report)
+    f = @invokelatest vmod.f
+    @test !has_native_cache(Base.method_instance(f, (Int,)))
+end
+
+@testset "`precompile` with an explicit method" begin
+    let (vmod, res) = @analyze_toplevel2 begin
+            f(x::Number) = x
+            f(x::Int) = x + 1
+            m = which(f, (Number,))
+            @assert precompile(f, (Int,), m)
+            @assert precompile(Tuple{typeof(f), Int}, m)
+        end concretization_patterns = [:x_]
+        @test isnothing(res.res.toplevel_error_report)
+        f = @invokelatest vmod.f
+        m = @invokelatest vmod.m
+        mi = CC.specialize_method(m, Tuple{typeof(f),Int}, Core.svec())
+        @test !has_native_cache(mi)
+    end
+
+    @testset "$call" for call in (
+            "precompile(f, (String,), m)",
+            "precompile(Tuple{typeof(f), String}, m)",
+            "precompile(Int, m)",
+            "precompile(f, (Int[],), m)")
+        res = report_text("""
+            f(x::Int) = x
+            m = which(f, (Int,))
+            $call
+            """; concretization_patterns=[:x_], toplevel_logger=nothing)
+        report = res.res.toplevel_error_report
+        @test report isa ActualErrorWrapped
+        if report isa ActualErrorWrapped
+            @test report.err isa TypeError
+        end
+    end
+end
+
 @testset "`collect_toplevel_signature!`" begin
     res = @analyze_toplevel analyze_from_definitions=false begin
         foo() = return
