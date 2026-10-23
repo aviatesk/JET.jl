@@ -19,6 +19,12 @@ end
 
 const FIXTURES_DIR = normpath(pkgdir(JET), "test", "fixtures")
 
+# Some tests intentionally redefine methods, for which the runtime prints
+# "WARNING: Method definition ... overwritten ..." directly to stderr when
+# `--warn-overwrite=yes` (enabled by `Pkg.test`). Since the warning bypasses the logging
+# system, the stream itself needs to be redirected to keep the test output clean.
+suppress_stderr(f::Function) = redirect_stderr(f, devnull)
+
 const ERROR_REPORTS_FROM_SUM_OVER_STRING = let
     result = report_call(sum, (String,))
     @test !isempty(get_reports_with_test(result))

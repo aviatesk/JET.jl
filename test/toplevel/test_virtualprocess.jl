@@ -503,14 +503,16 @@ end
             @test only(res.res.inference_error_reports) isa UndefVarErrorReport
         end
 
-        let res = @analyze_toplevel begin
-                usefunc(a) = sin(func_impl(a))
+        let res = suppress_stderr() do
+                @analyze_toplevel begin
+                    usefunc(a) = sin(func_impl(a))
 
-                func_impl(a) = length(a)
-                usefunc("julia") # should not error
+                    func_impl(a) = length(a)
+                    usefunc("julia") # should not error
 
-                func_impl(a) = a
-                usefunc(42)  # should not error too
+                    func_impl(a) = a
+                    usefunc(42)  # should not error too
+                end
             end
             @test isempty(res.res.inference_error_reports)
         end
@@ -2313,16 +2315,18 @@ end
 end
 
 @testset "signature locations" begin
-    res = report_text("""
-        f() = 1
+    res = suppress_stderr() do
+        report_text("""
+            f() = 1
 
-        function g(x)
-            x
-        end
-        for i in 1:2
-            @eval h() = \$i
-        end
-        """, "signature-locations.jl"; analyze_from_definitions=true)
+            function g(x)
+                x
+            end
+            for i in 1:2
+                @eval h() = \$i
+            end
+            """, "signature-locations.jl"; analyze_from_definitions=true)
+    end
     @test [linenode.line for (; linenode) in res.res.signature_infos] == [1, 3, 7, 7]
     @test all(res.res.signature_infos) do (; linenode)
         linenode.file === Symbol("signature-locations.jl")
