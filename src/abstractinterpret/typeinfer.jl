@@ -770,11 +770,14 @@ function CC.abstract_eval_partition_load(analyzer::ToplevelAbstractAnalyzer, bin
     ⊑ = CC.partialorder(CC.typeinf_lattice(analyzer))
     if res.rt !== Union{} && res.rt ⊑ AbstractBindingState
         # HACK/FIXME Concretize `AbstractBindingState`
+        # Native execution would read the placeholder rather than the binding value,
+        # so prevent code loading it from being concretely evaluated.
+        effects = CC.Effects(res.effects; consistent=CC.ALWAYS_FALSE)
         rt = res.rt
         if rt isa Const
             binding_state = rt.val::AbstractBindingState
             if isdefined(binding_state, :typ)
-                (; exct, effects) = res
+                exct = res.exct
                 if binding_state.maybeundef
                     ⊔ = CC.join(CC.typeinf_lattice(analyzer))
                     exct = exct ⊔ UndefVarError
@@ -783,7 +786,7 @@ function CC.abstract_eval_partition_load(analyzer::ToplevelAbstractAnalyzer, bin
                 return RTEffects(binding_state.typ, exct, effects)
             end
         end
-        return RTEffects(Any, res.exct, res.effects)
+        return RTEffects(Any, res.exct, effects)
     end
     binding_state = get(get_binding_states(analyzer), partition, nothing)
     if binding_state !== nothing && isdefined(binding_state, :typ)

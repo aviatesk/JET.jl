@@ -96,6 +96,18 @@ include("../setup.jl")
         @test isnothing(res.res.toplevel_error_report)
     end
 
+    # `M.a` may be concretely evaluated after constant propagation
+    # (JuliaLang/julia#61677), which must not expose the binding's placeholder value
+    let res = @analyze_toplevel begin
+            module M
+            const a = rand(Int)
+            end
+            println(sin(M.a))
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        @test isempty(res.res.inference_error_reports)
+    end
+
     # reading a constant declared earlier in the same thunk should not warn about
     # accessing a backdated binding
     mktemp() do path, io
