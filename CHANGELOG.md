@@ -307,6 +307,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   report_call(bar, (Int,))
   ```
 
+- Fixed conversion intrinsics such as `bitcast` being reported as called with
+  a non-primitive target type when the target type is a `Union` of primitive
+  types:
+  ```julia
+  # was reported: bitcast: target type not a leaf primitive type
+  report_call(signed, (Base.BitUnsigned,))
+  ```
+
 ## [0.12.3]
 
 ### Changed

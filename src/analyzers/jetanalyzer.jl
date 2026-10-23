@@ -1380,6 +1380,9 @@ end
 
 @nospecs function with_conversion_errorcheck(t, x, bitshift::Bool=false)
     ty, _, isconcrete = instanceof_tfunc(t)
+    # `instanceof_tfunc` considers a `Union` of concrete types to be concrete, but the
+    # target type is then only one of its members, which this check cannot tell
+    isconcrete = isconcrete && !isa(ty, Union)
     if isconcrete
         if !isprimitivetype(ty)
             if bitshift
