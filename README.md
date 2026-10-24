@@ -59,8 +59,13 @@ end
 
 <!-- @doc JET.JET_AVAILABLE -->
 
-Setting the `JET_DEV_MODE` preference to `true` forces JET to try loading
-full functionality on an unsupported Julia version.
+Setting the `allow_unsupported_julia` preference to `true` forces JET to try
+loading full functionality on an unsupported Julia version.
+
+<!-- @doc JET.ALLOW_UNSUPPORTED_JULIA -->
+
+The `JET_DEV_MODE` preference enables it by default, along with other features
+intended for developing JET itself.
 
 <!-- @doc JET.JET_DEV_MODE -->
 

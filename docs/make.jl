@@ -5,7 +5,7 @@ const INDEX_FILENAME       = normpath(DOC_SRC_DIR, "index.md")
 const PLUGIN_API_FILENAME  = normpath(DOC_SRC_DIR, "generated-plugin-api.md")
 const PLUGIN_EXAMPLES_DIRS = (normpath(@__DIR__, "..", "examples"), normpath(DOC_SRC_DIR, "generated-plugin-examples"))
 # JET's exported API, plus the unexported names that `generate_index!` documents in index.md.
-const DOC_LINKABLE_NAMES   = push!(Set(String.(names(JET))), "JET_DEV_MODE")
+const DOC_LINKABLE_NAMES   = push!(Set(String.(names(JET))), "JET_DEV_MODE", "ALLOW_UNSUPPORTED_JULIA")
 
 writeln(io, xs...) = write(io, xs..., '\n')
 

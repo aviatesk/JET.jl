@@ -69,6 +69,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added support for Julia v1.14. JET now loads full functionality on Julia
   1.14 instead of empty stubs.
 
+- Added the `allow_unsupported_julia` preference, which loads full JET
+  functionality on unsupported Julia versions, e.g. nightly builds, without
+  the development features that `JET_DEV_MODE` also enables:
+  > LocalPreferences.toml
+  ```toml
+  [JET]
+  allow_unsupported_julia = true # previously `JET_DEV_MODE = true` was needed
+  ```
+  JET emits a warning when it is loaded on an unsupported Julia version this
+  way, since it may not work correctly there.
+
 - `JETInterface` now exports `has_problems`, the predicate that `call_test_ex`
   and `func_test` use to decide whether an analysis result fails a test.
 

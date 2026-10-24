@@ -16,9 +16,10 @@ JET_DEV_MODE = true
 ```
 
 Enabling it has the following effects:
-- Full JET functionality is loaded even on unsupported Julia versions, i.e.
-  [`JET_AVAILABLE`](@ref) becomes `true`. Note that JET may still not work correctly on
-  such versions.
+- The [`allow_unsupported_julia`](@ref ALLOW_UNSUPPORTED_JULIA) preference defaults to
+  `true`, so full JET functionality is loaded even on unsupported Julia versions, i.e.
+  [`JET_AVAILABLE`](@ref) becomes `true`. Unlike with `allow_unsupported_julia` alone, no
+  warning is emitted on such versions, although JET may still not work correctly there.
 - Internal assertions that check JET's report caching and validate report interface
   implementations are compiled in. They are omitted by default since they add overhead.
 - The `use_fixed_world` preference defaults to `false`, so JET's pre-defined analyzers and
@@ -26,8 +27,8 @@ Enabling it has the following effects:
   at load time. This makes redefinitions of JET's own code take effect, at the cost of
   losing robustness against invalidations caused by loading other packages.
 
-This mode is intended for developing JET itself and for experimenting on unsupported Julia
-versions, and is not recommended otherwise.
+This mode is intended for developing JET itself, and is not recommended otherwise. To try
+JET on an unsupported Julia version, enable [`ALLOW_UNSUPPORTED_JULIA`](@ref) instead.
 """
 const JET_DEV_MODE = Preferences.@load_preference("JET_DEV_MODE", false)
 
@@ -41,6 +42,29 @@ const FIRST_UNSUPPORTED_JULIA_VERSION = v"1.15.0-DEV"
 _is_supported_julia(version::VersionNumber) =
     MINIMUM_JULIA_VERSION ≤ version < FIRST_UNSUPPORTED_JULIA_VERSION
 
+"""
+    const ALLOW_UNSUPPORTED_JULIA::Bool
+
+Whether full JET functionality is loaded even on unsupported Julia versions.
+
+This is a [Preferences.jl](https://github.com/JuliaPackaging/Preferences.jl) setting that
+is read when JET is loaded, so it needs to be configured before JET is precompiled, e.g.
+with a `LocalPreferences.toml` file containing:
+```toml
+[JET]
+allow_unsupported_julia = true
+```
+
+Unlike [`JET_DEV_MODE`](@ref), enabling it does not change any other behavior of JET.
+It has no effect on supported Julia versions, and applies to any unsupported Julia version
+rather than a specific one. Since JET may not work correctly on unsupported Julia versions,
+loading JET on such a version with this setting enabled emits a warning, unless
+`JET_DEV_MODE` is enabled.
+
+It defaults to `true` when `JET_DEV_MODE` is enabled, and to `false` otherwise.
+"""
+const ALLOW_UNSUPPORTED_JULIA = Preferences.@load_preference("allow_unsupported_julia", JET_DEV_MODE)
+
 # PkgEval must exercise full JET functionality on pre-release Julia versions so that
 # compiler incompatibilities are detected instead of being hidden by empty stubs.
 """
@@ -48,10 +72,10 @@ _is_supported_julia(version::VersionNumber) =
 
 Whether full JET functionality is available in the current process.
 
-This is `true` on supported Julia versions, when [`JET_DEV_MODE`](@ref) is enabled, or when
-running under PkgEval, i.e. with the `JULIA_PKGEVAL` environment variable set. Otherwise JET
-is loaded with empty stubs: loading it emits a warning, and calling any of its entry points
-throws an error.
+This is `true` on supported Julia versions, when [`ALLOW_UNSUPPORTED_JULIA`](@ref) is
+enabled (as it is by default with [`JET_DEV_MODE`](@ref)), or when running under PkgEval,
+i.e. with the `JULIA_PKGEVAL` environment variable set. Otherwise JET is loaded with empty
+stubs: loading it emits a warning, and calling any of its entry points throws an error.
 
 This lets a test suite stay instantiable on unsupported Julia versions while skipping its
 JET-specific checks at runtime:
@@ -63,7 +87,7 @@ if JET.JET_AVAILABLE
 end
 ```
 """
-const JET_AVAILABLE = JET_DEV_MODE || PKG_EVAL || _is_supported_julia(VERSION)
+const JET_AVAILABLE = ALLOW_UNSUPPORTED_JULIA || PKG_EVAL || _is_supported_julia(VERSION)
 export JET_AVAILABLE
 
 # exports
@@ -86,7 +110,8 @@ end
 
 # Keep JET installable on unsupported future Julia versions so that packages with JET
 # as a test dependency can instantiate their test environments. Full functionality is
-# only loaded on supported Julia versions unless explicitly enabled with `JET_DEV_MODE`.
+# only loaded on supported Julia versions unless explicitly enabled with
+# `allow_unsupported_julia` or `JET_DEV_MODE`.
 @static if JET_AVAILABLE
     include("JETBase.jl")
 else

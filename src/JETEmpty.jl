@@ -3,8 +3,8 @@
 const empty_loading_message = """
     Full JET functionality is not available on Julia $VERSION.
     JET was loaded with empty stubs so that this environment remains usable.
-    To try JET on this Julia version, set the `JET_DEV_MODE` Preferences.jl
-    configuration to `true` and reload it.
+    To try JET on this Julia version, set the `allow_unsupported_julia`
+    Preferences.jl configuration to `true` and reload it.
     """ |> strip
 function __init__()
     @warn empty_loading_message
@@ -12,14 +12,15 @@ end
 
 const empty_stub_message = strip("""
     Full JET functionality is not available on Julia $VERSION.
-    To try JET on this Julia version, use Preferences.jl to enable `JET_DEV_MODE` and
-    reload JET. For example, create a `LocalPreferences.toml` file containing:
+    To try JET on this Julia version, use Preferences.jl to enable
+    `allow_unsupported_julia` and reload JET. For example, create a
+    `LocalPreferences.toml` file containing:
         ```toml
         [JET]
-        JET_DEV_MODE = true
+        allow_unsupported_julia = true
         ```
     JET may not function correctly on unsupported Julia versions even with
-    `JET_DEV_MODE` enabled.
+    `allow_unsupported_julia` enabled.
     """)
 
 for exported_func in exports

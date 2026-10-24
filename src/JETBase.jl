@@ -93,6 +93,17 @@ push_inithook!() do
     global debug_toplevel_logger = IOContext(stderr, JET_LOGGER_LEVEL=>1)
 end
 
+@static if ALLOW_UNSUPPORTED_JULIA && !JET_DEV_MODE && !_is_supported_julia(VERSION)
+    push_inithook!() do
+        # avoid cluttering the precompilation output of packages that depend on JET
+        generating_output() || @warn """
+            Julia $VERSION is not officially supported by this version of JET.
+            Full JET functionality was loaded since the `allow_unsupported_julia`
+            preference is enabled, but JET may not work correctly.
+            """ |> strip
+    end
+end
+
 # compat
 # ------
 
