@@ -232,8 +232,8 @@ with `extype` and `pattern`, the expected exception and the message pattern of t
 if `exception` is inferred to be only of exception types that do not match `extype` (see
 `FailingTestReport`).
 """
-check_test_exception(@nospecialize(exception), @nospecialize(extype),
-                     @nospecialize(pattern...)) = nothing
+check_test_exception(@nospecialize(_exception), @nospecialize(_extype),
+                     @nospecialize(_pattern...)) = nothing
 
 """
     is_test_exception_statement(frame::InferenceState, pc::Int) -> Bool
