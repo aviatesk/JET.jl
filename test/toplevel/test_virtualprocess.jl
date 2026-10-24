@@ -780,6 +780,20 @@ end
         @test isempty(res.res.toplevel_warning_reports)
     end
 
+    # the error holds the virtual module's `include`, which Julia 1.14 and later declares in
+    # a world newer than this code
+    let stderr_output = mktemp() do path, io
+            redirect_stderr(io) do
+                res = report_text("include(identity, @__MODULE__, \"somefile.jl\")")
+                report = res.res.toplevel_error_report
+                @test occursin("no method matching", sprint(JET.print_report, report))
+            end
+            close(io)
+            read(path, String)
+        end
+        @test !occursin("prior to its definition world", stderr_output)
+    end
+
     # unsupported features
     # --------------------
 
@@ -1385,6 +1399,9 @@ end
     end
 
     @testset "stacktrace scrubbing" begin
+        # JuliaLang/julia#61699 names macro method frames "macro expansion"
+        badmacro_func = VERSION ≥ v"1.14.0-DEV.2272" ? Symbol("macro expansion") : Symbol("@badmacro")
+
         # scrub internal frames until (errored) user macro
         mktemp() do filename, io
             res = report_text("""
@@ -1397,7 +1414,7 @@ end
             @test length(er.st) == 1
             sf = only(er.st)
             @test sf.file === Symbol(filename) && sf.line == 1
-            @test sf.func === Symbol("@badmacro")
+            @test sf.func === badmacro_func
         end
 
         @testset "documented macro expansion errors" begin
@@ -1419,7 +1436,7 @@ end
                     @test length(er.st) == 1
                     sf = only(er.st)
                     @test sf.file === Symbol(filename) && sf.line == 1
-                    @test sf.func === Symbol("@badmacro")
+                    @test sf.func === badmacro_func
                 end
             end
         end
@@ -1918,6 +1935,28 @@ end
         test_sum_over_string(res)
     end
 
+    let res = report_text("""
+            module LatestWorldGetproperty
+
+            const bar = sum
+
+            module Inner
+
+            using ..LatestWorldGetproperty
+
+            let
+                Core.@latestworld
+                LatestWorldGetproperty.bar("julia")
+            end
+
+            end # module Inner
+
+            end # module LatestWorldGetproperty
+        """)
+        @test isnothing(res.res.toplevel_error_report)
+        @test isempty(res.res.inference_error_reports)
+    end
+
     # this should work even if the accessed variable is not constant
     let res = @analyze_toplevel begin
             module foo
@@ -1937,6 +1976,21 @@ end
 
         @test isnothing(res.res.toplevel_error_report)
         test_sum_over_string(res; broken=true)
+    end
+
+    let context = gen_virtual_module(@__MODULE__)
+        Core.eval(context, :(module ExternalMutation
+            bar = sum
+            change() = (global bar = identity)
+        end))
+        Core.@latestworld
+
+        res = report_text("""
+            ExternalMutation.change()
+            ExternalMutation.bar("julia")
+        """; context=context, virtualize=false)
+        @test isnothing(res.res.toplevel_error_report)
+        @test isempty(res.res.inference_error_reports)
     end
 end
 
@@ -2416,7 +2470,10 @@ end
     let res = @analyze_toplevel analyze_from_definitions=true ignore_missing_comparison=true begin
             f(a::Vector{T}, b::Vector{T}) where T<:Integer = a == b ? true : false
         end
-        @test isempty(res.res.inference_error_reports)
+        # Since JuliaLang/julia#62263, `typeof(::Memory{T})` is inferred as a
+        # `Type{Memory{T}}` that is not a `DataType`, so `supertype(::UnionAll)` is also
+        # analyzed
+        @test isempty(res.res.inference_error_reports) broken=VERSION≥v"1.14.0-DEV.2603"
     end
     # make sure we get the error report from the interactive entry
     let res = report_call((Any, Nothing)) do x, y
@@ -4171,7 +4228,8 @@ function test_report_package(test_func, module_ex;
                                 Pair{String,String}[],
                              jetconfigs...)
     Meta.isexpr(module_ex, :module) || throw(ArgumentError("Expected :module expression"))
-    pkgname = String(module_ex.args[2]::Symbol)
+    nameidx = findfirst(arg -> arg isa Symbol, module_ex.args)::Int
+    pkgname = String(module_ex.args[nameidx]::Symbol)
     old = Pkg.project().path
     pkgcode = Base.remove_linenums!(module_ex)
     mktempdir() do tempdir

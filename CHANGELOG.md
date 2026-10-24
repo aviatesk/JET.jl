@@ -66,6 +66,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added support for Julia v1.14. JET now loads full functionality on Julia
+  1.14 instead of empty stubs.
+
 - `JETInterface` now exports `has_problems`, the predicate that `call_test_ex`
   and `func_test` use to decide whether an analysis result fails a test.
 
@@ -339,6 +342,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   # was reported: bitcast: target type not a leaf primitive type
   report_call(signed, (Base.BitUnsigned,))
   ```
+
+- Fixed reports about `getfield` or `setfield!` on a type object listing the
+  fields of that type instead of the fields of the type object itself, and
+  the analysis of field accesses throwing on a field name that is neither a
+  `Symbol` nor an `Int`, or on a tuple of unknown length:
+  ```julia
+  struct Foo; x::Int; end
+  # now reported: type DataType has no field `y`
+  report_call(() -> getfield(Foo, :y))
+  report_call(() -> getfield(Foo, "y")) # no longer throws
+  ```
+
+- Fixed `Core.invoke` calls with a `CodeInstance` being misclassified as invalid
+  `invoke` calls when the invoked code always throws. Callee diagnostics for
+  direct `CodeInstance` calls are not yet collected.
 
 ## [0.12.3]
 
