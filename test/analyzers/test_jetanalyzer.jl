@@ -52,6 +52,10 @@ func_method_error2(a::AbstractString) = "AbstractString"
 func_onlyint(::Int) = :ok
 func_integer_or_nothing(::Integer) = :ok1
 func_integer_or_nothing(::Nothing) = :ok2
+func_ambiguous(::Int, ::Any) = :int_any
+func_ambiguous(::Any, ::Int) = :any_int
+func_ambiguous_abstract(::Integer, ::Any) = :integer_any
+func_ambiguous_abstract(::Any, ::Integer) = :any_integer
 
 @testset "MethodErrorReport" begin
     # report no match case
@@ -78,6 +82,38 @@ func_integer_or_nothing(::Nothing) = :ok2
         report = only(get_reports_with_test(result))
         @test report isa MethodErrorReport
         @test report.t == Any[Tuple{typeof(func_method_error2), Nothing}]
+    end
+
+    # ambiguous matches should be reported separately from the no match case
+    let result = report_call((Int,)) do a
+            func_ambiguous(a, a)
+        end
+        report = only(get_reports_with_test(result))
+        @test report isa AmbiguousMethodErrorReport
+        @test report.t === Tuple{typeof(func_ambiguous), Int, Int}
+    end
+    let result = report_call((Union{Int,String},)) do a
+            func_ambiguous(a, a)
+        end
+        reports = get_reports_with_test(result)
+        @test length(reports) == 2
+        @test any(reports) do report
+            report isa AmbiguousMethodErrorReport &&
+            report.t == Any[Tuple{typeof(func_ambiguous), Int, Int}] &&
+            report.union_split == 4
+        end
+        @test any(reports) do report
+            report isa MethodErrorReport &&
+            report.t == Any[Tuple{typeof(func_ambiguous), String, String}] &&
+            report.union_split == 4
+        end
+    end
+    let result = report_call((Integer,)) do a
+            func_ambiguous_abstract(a, a)
+        end
+        report = only(get_reports_with_test(result))
+        @test report isa AmbiguousMethodErrorReport
+        @test report.t === Tuple{typeof(func_ambiguous_abstract), Integer, Integer}
     end
 
     # report uncovered match

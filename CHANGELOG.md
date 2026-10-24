@@ -69,6 +69,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `JETInterface` now exports `has_problems`, the predicate that `call_test_ex`
   and `func_test` use to decide whether an analysis result fails a test.
 
+- Calls whose matching methods are ambiguous are now reported as
+  `AmbiguousMethodErrorReport` instead of `MethodErrorReport` saying that no
+  matching method is found. For a union-split call, the ambiguous signatures
+  are reported separately from those without any matching method:
+  ```julia
+  k(::Int, ::Any) = 1
+  k(::Any, ::Int) = 2
+  m(x::Int) = k(x, x)               # reported: ambiguous `k(::Int, ::Int)`
+  n(x::Union{Int,String}) = k(x, x) # reported: ambiguous `k(::Int, ::Int)`
+                                    # and no method for `k(::String, ::String)`
+  ```
+
 - `invoke` calls that throw `MethodError` because no method matches the
   specified signature are now reported as `MethodErrorReport` in the `:basic`
   and `:sound` modes, and those whose matching methods are ambiguous are
