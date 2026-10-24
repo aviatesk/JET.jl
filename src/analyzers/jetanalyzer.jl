@@ -837,10 +837,37 @@ function is_ambiguous_call(@nospecialize(atype::Type), world::UInt)
     matches = methods_including_ambiguous(atype, world)
     isempty(matches) && return false
     coverage = Union{}
+    maxlen = 0
     for match in matches
-        coverage = Union{coverage, (match::Core.MethodMatch).spec_types}
+        spec_types = (match::Core.MethodMatch).spec_types
+        coverage = Union{coverage, spec_types}
+        unwrapped = Base.unwrap_unionall(spec_types)
+        if unwrapped isa DataType
+            maxlen = max(maxlen, length(unwrapped.parameters))
+        end
     end
-    return atype <: coverage
+    return is_covered(atype, coverage, maxlen)
+end
+
+# `<:` doesn't split a `Vararg` tuple type by length, e.g.
+# `Tuple{Int,Vararg{Any}} <: Union{Tuple{Int}, Tuple{Int,Any,Vararg{Any}}}` is `false`.
+# So split `atype` into the tuple types of each length up to `maxlen`, the maximum length of
+# the tuple types in `coverage`, and the rest with `Vararg`.
+function is_covered(@nospecialize(atype::Type), @nospecialize(coverage::Type), maxlen::Int)
+    atype <: coverage && return true
+    unwrapped = Base.unwrap_unionall(atype)
+    unwrapped isa DataType || return false
+    params = unwrapped.parameters
+    isempty(params) && return false
+    va = params[end]
+    (Base.isvarargtype(va) && !isdefined(va, :N)) || return false
+    fixed = Any[params[i] for i = 1:length(params)-1]
+    T = Base.unwrapva(va)
+    for _ = length(fixed):maxlen
+        Base.rewrap_unionall(Tuple{fixed...}, atype) <: coverage || return false
+        push!(fixed, T)
+    end
+    return Base.rewrap_unionall(Tuple{fixed..., Vararg{T}}, atype) <: coverage
 end
 
 report_method_error!(::JETAnalyzer, ::InferenceState, ::CallMeta, ::Argtypes, @nospecialize(_atype)) = nothing

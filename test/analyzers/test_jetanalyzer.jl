@@ -56,6 +56,10 @@ func_ambiguous(::Int, ::Any) = :int_any
 func_ambiguous(::Any, ::Int) = :any_int
 func_ambiguous_abstract(::Integer, ::Any) = :integer_any
 func_ambiguous_abstract(::Any, ::Integer) = :any_integer
+func_ambiguous_vararg(::Int, ::Any) = :int_any
+func_ambiguous_vararg(::Any, ::Int) = :any_int
+func_ambiguous_vararg(::Int, ::Any, ::Any, ::Vararg{Any}) = :int_any_vararg
+func_ambiguous_vararg(::Any, ::Int, ::Any, ::Vararg{Any}) = :any_int_vararg
 
 @testset "MethodErrorReport" begin
     # report no match case
@@ -114,6 +118,21 @@ func_ambiguous_abstract(::Any, ::Integer) = :any_integer
         report = only(get_reports_with_test(result))
         @test report isa AmbiguousMethodErrorReport
         @test report.t === Tuple{typeof(func_ambiguous_abstract), Integer, Integer}
+    end
+    # the ambiguous matches may cover a `Vararg` signature only when split by length
+    let result = report_call(Tuple{Vararg{Any}}) do args...
+            func_ambiguous_vararg(1, 1, args...)
+        end
+        report = only(get_reports_with_test(result))
+        @test report isa AmbiguousMethodErrorReport
+        @test report.t === Tuple{typeof(func_ambiguous_vararg), Int, Int, Vararg{Any}}
+    end
+    let result = report_call(Tuple{Vararg{Any}}) do args...
+            func_ambiguous(1, 1, args...)
+        end
+        report = only(get_reports_with_test(result))
+        @test report isa MethodErrorReport
+        @test report.t === Tuple{typeof(func_ambiguous), Int, Int, Vararg{Any}}
     end
 
     # report uncovered match
