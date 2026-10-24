@@ -60,7 +60,37 @@ end
         @eval M baz(a, b) = sum(b), a
     end
     test_sum_over_string(@report_call M.qux([1,2,3], "julia"))
+
+    # the report on `invoke` without matching method is invalidated by a matching method;
+    # analyze it via a caller since the entry frame is always re-analyzed
+    @eval M onlyint(::Int) = :int
+    @eval M invoke_onlyint(a) = invoke(onlyint, Tuple{String}, a)
+    @eval M call_invoke_onlyint(a) = invoke_onlyint(a)
+    @test only(get_reports_with_test(@report_call M.call_invoke_onlyint("julia"))) isa MethodErrorReport
+    @eval M onlyint(::String) = :string
+    @test isempty(get_reports_with_test(@report_call M.call_invoke_onlyint("julia")))
+    @eval M ambiguous(::Int, ::Any) = :int_any
+    @eval M ambiguous(::Any, ::Int) = :any_int
+    @eval M invoke_ambiguous(a) = invoke(ambiguous, Tuple{Int,Int}, a, a)
+    @eval M call_invoke_ambiguous(a) = invoke_ambiguous(a)
+    @test only(get_reports_with_test(@report_call M.call_invoke_ambiguous(1))) isa AmbiguousMethodErrorReport
+    @eval M ambiguous(::Int, ::Int) = :int_int
+    @test isempty(get_reports_with_test(@report_call M.call_invoke_ambiguous(1)))
 end; end
+
+@testset "invoke lookup world validity" begin
+    M = Module()
+    @eval M onlyint(::Int) = :int
+    @eval M invoke_onlyint(a) = invoke(onlyint, Tuple{String}, a)
+    @eval M call_invoke_onlyint(a) = invoke_onlyint(a)
+    world = Base.get_world_counter()
+    # Newly registered backedges cannot detect a method addition that already happened.
+    @eval M onlyint(::String) = :string
+    # Use a caller to reuse the cached invoke frame rather than re-analyzing it as an entry.
+    old = JET.analyze_and_report_call!(JETAnalyzer(world), M.call_invoke_onlyint, (String,))
+    @test only(get_reports_with_test(old)) isa MethodErrorReport
+    @test isempty(get_reports_with_test(report_call(M.call_invoke_onlyint, (String,))))
+end
 
 # COMBAK this test is very fragile, think about the alternate tests
 # @testset "end to end invalidation" begin

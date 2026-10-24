@@ -560,6 +560,10 @@ end
 end
 
 abstract_invoke1(i::Integer) = throw(string(i))
+abstract_invoke_onlyint(::Int) = :int
+const ABSTRACT_INVOKE_VECTOR_SIG = Tuple{Vector{T}} where T
+abstract_invoke_ambiguous(::Int, ::Any) = :int_any
+abstract_invoke_ambiguous(::Any, ::Int) = :any_int
 #== LINE SENSITIVITY START ===#
 const _ABSTRACT_INVOKE2_LINE = (@__LINE__) + 2
 const ABSTRACT_INVOKE2_LINE = (@__LINE__) + 4
@@ -585,6 +589,49 @@ end
     @test length(get_reports_with_test(result)) == 1
     r = first(get_reports_with_test(result))
     @test isa(r, InvalidInvokeErrorReport)
+
+    # no method matches the specified signature
+    let result = report_call((String,)) do a
+            invoke(abstract_invoke_onlyint, Tuple{String}, a)
+        end
+        r = only(get_reports_with_test(result))
+        @test r isa MethodErrorReport
+        @test r.t === Tuple{typeof(abstract_invoke_onlyint), String}
+    end
+    # the method is looked up with the specified signature, not with the argument types
+    let result = report_call((Int,)) do a
+            @invoke abstract_invoke_onlyint(a::Integer)
+        end
+        r = only(get_reports_with_test(result))
+        @test r isa MethodErrorReport
+        @test r.t === Tuple{typeof(abstract_invoke_onlyint), Integer}
+    end
+    # the intersection with the argument type is a `UnionAll` for `a::Vector`
+    for argtype in (Vector{Int}, Vector)
+        result = report_call((argtype,)) do a
+            invoke(abstract_invoke_onlyint, ABSTRACT_INVOKE_VECTOR_SIG, a)
+        end
+        r = only(get_reports_with_test(result))
+        @test r isa MethodErrorReport
+        @test r.t == (Tuple{typeof(abstract_invoke_onlyint), Vector{T}} where T)
+    end
+    test_call((Int,)) do a
+        @invoke abstract_invoke_onlyint(a::Int)
+    end
+    # ambiguous methods match the specified signature
+    let result = report_call((Int,)) do a
+            @invoke abstract_invoke_ambiguous(a::Int, a::Int)
+        end
+        r = only(get_reports_with_test(result))
+        @test r isa AmbiguousMethodErrorReport
+        @test r.t === Tuple{typeof(abstract_invoke_ambiguous), Int, Int}
+    end
+    test_call((Int,)) do a
+        @invoke abstract_invoke_ambiguous(a::Int, a::Any)
+    end
+    test_call((String,); mode=:typo) do a
+        invoke(abstract_invoke_onlyint, Tuple{String}, a)
+    end
 
     # don't report errors collected in `invoke`d functions
     result = report_call((Int,)) do a
