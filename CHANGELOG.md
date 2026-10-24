@@ -69,6 +69,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `JETInterface` now exports `has_problems`, the predicate that `call_test_ex`
   and `func_test` use to decide whether an analysis result fails a test.
 
+- `invoke` calls that throw `MethodError` because no method matches the
+  specified signature are now reported as `MethodErrorReport` in the `:basic`
+  and `:sound` modes, and those whose matching methods are ambiguous are
+  reported as `AmbiguousMethodErrorReport`:
+  ```julia
+  f(::Int) = 1
+  g(x) = invoke(f, Tuple{String}, x) # reported: no method for `f(::String)`
+  h(x) = @invoke f(x::Integer)       # reported: no method for `f(::Integer)`
+  k(::Int, ::Any) = 1
+  k(::Any, ::Int) = 2
+  l(x) = @invoke k(x::Int, x::Int)   # reported: ambiguous `k(::Int, ::Int)`
+  ```
+
 - Top-level analysis now reports a `@test` that always fails, i.e. whose
   expression is inferred to evaluate to `false` or to a non-boolean value, and
   a `@test_throws` that always fails, i.e. whose expression is inferred to

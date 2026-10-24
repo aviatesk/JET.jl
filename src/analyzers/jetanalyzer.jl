@@ -506,19 +506,16 @@ function CC.abstract_invoke(analyzer::JETAnalyzer, arginfo::ArgInfo, si::StmtInf
 end
 end
 
-function postprocess_abstract_invoke!(analyzer::JETAnalyzer, ret::Future, arginfo::ArgInfo,
-    sv::InferenceState)
-    function after_abstract_invoke(analyzer′::JETAnalyzer, sv′::InferenceState)
-        ret′ = ret[]
-        report_invalid_invoke!(analyzer′, sv′, ret′, arginfo.argtypes)
-        return true
+function postprocess_abstract_invoke!(analyzer::JETAnalyzer, ret::Future{CallMeta},
+    arginfo::ArgInfo, sv::InferenceState)
+    function after_abstract_invoke(call::CallMeta, analyzer′::JETAnalyzer, sv′::InferenceState)
+        report_invalid_invoke!(analyzer′, sv′, call, arginfo.argtypes)
+        lookupsig = @something report_invoke_method_error!(
+            analyzer′, sv′, call, arginfo.argtypes) return call
+        return CallMeta(call.rt, call.exct, call.effects, InvokeMethodErrorInfo(lookupsig),
+            call.refinements)
     end
-    if isready(ret)
-        after_abstract_invoke(analyzer, sv)
-    else
-        push!(sv.tasks, after_abstract_invoke)
-    end
-    return ret
+    return Future{CallMeta}(after_abstract_invoke, ret, analyzer, sv)
 end
 
 # inject report pass for undefined static parameter
@@ -991,6 +988,72 @@ function _report_invalid_invoke!(analyzer::JETAnalyzer, sv::InferenceState, ret:
         end
     end
     return false
+end
+
+# The native `abstract_invoke` returns `NoCallInfo` without any edge when the lookup finds no
+# method. This info adds a method table backedge for the lookup signature so that the report
+# is invalidated once a matching method is defined.
+struct InvokeMethodErrorInfo <: CC.CallInfo
+    lookupsig::Type
+    InvokeMethodErrorInfo(@nospecialize lookupsig::Type) = new(lookupsig)
+end
+CC.add_edges_impl(edges::Vector{Any}, info::InvokeMethodErrorInfo) =
+    push!(edges, info.lookupsig, Core.methodtable)
+
+report_invoke_method_error!(::JETAnalyzer, ::InferenceState, ::CallMeta, ::Argtypes) = nothing
+
+# Unlike `report_method_error!`, this doesn't use `basic_filter`: the lookup signature is
+# exactly known even in a frame with abstract signature, so the error is certain once reached.
+function report_invoke_method_error!(analyzer::SoundBasicAnalyzer, sv::InferenceState,
+    call::CallMeta, argtypes::Argtypes)
+    call.info === CC.NoCallInfo() || return nothing
+    lookupsig = @something invoke_lookupsig(argtypes) return nothing
+    match, valid_worlds = CC.findsup(lookupsig, CC.method_table(analyzer))
+    match === nothing || return nothing
+    CC.update_valid_age!(sv, valid_worlds)
+    if is_ambiguous_lookup(lookupsig, CC.get_inference_world(analyzer))
+        report = AmbiguousMethodErrorReport(sv, lookupsig)
+    else
+        report = MethodErrorReport(sv, lookupsig, 0, #=uncovered=#false)
+    end
+    add_new_report!(analyzer, sv.result, report)
+    return lookupsig
+end
+
+# Computes the signature that `invoke` looks up at runtime, or `nothing` if it is not exactly
+# known or `invoke` throws `TypeError` before the lookup. Unlike the native `abstract_invoke`,
+# this doesn't give up when the intersection with the argument types isn't a `DataType`.
+function invoke_lookupsig(argtypes::Argtypes)
+    ft = widenconst(argtype_by_index(argtypes, 2))
+    ft === Bottom && return nothing
+    CC.isdispatchelem(ft) || return nothing
+    types = argtype_by_index(argtypes, 3)
+    hasintersect(widenconst(types), Union{Method,CodeInstance}) && return nothing
+    types, isexact, _, _ = instanceof_tfunc(types, false)
+    isexact || return nothing
+    types === Bottom && return nothing
+    unwrapped = Base.unwrap_unionall(types)
+    (unwrapped isa DataType && unwrapped.name === Tuple.name) || return nothing
+    hasintersect(types, argtypes_to_type(CC.argtype_tail(argtypes, 4))) || return nothing
+    return Base.rewrap_unionall(Tuple{ft, unwrapped.parameters...}, types)::Type
+end
+
+# `findsup` also finds nothing when the most specific methods covering the signature are
+# ambiguous. `CC.findall` drops ambiguous matches, so look them up as
+# `Base.methods_including_ambiguous` does.
+function is_ambiguous_lookup(@nospecialize(lookupsig::Type), world::UInt)
+    matches = Base._methods_by_ftype(lookupsig, nothing, -1, world, #=ambig=#true,
+        Ref(typemin(UInt)), Ref(typemax(UInt)), Ptr{Int32}(C_NULL))
+    matches === nothing && return false
+    return any(m::Core.MethodMatch->m.fully_covers, matches)
+end
+
+@jetreport struct AmbiguousMethodErrorReport <: InferenceErrorReport
+    @nospecialize t # ::Type
+end
+function JETInterface.print_report_message(io::IO, report::AmbiguousMethodErrorReport)
+    print(io, "ambiguous method match found ")
+    print_callsig(io, report.t)
 end
 
 @jetreport struct UndefVarErrorReport <: InferenceErrorReport
