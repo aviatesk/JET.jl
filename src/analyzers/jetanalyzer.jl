@@ -792,6 +792,9 @@ function JETInterface.print_report_message(io::IO, report::MethodErrorReport)
     else
         print(io, "no matching method found ")
     end
+    print_callsigs(io, t, union_split)
+end
+function print_callsigs(io, @nospecialize(t), union_split::Int)
     if union_split == 0
         print_callsig(io, t)
     else
@@ -808,6 +811,36 @@ function print_callsig(io, @nospecialize(t))
     print(io, '`')
     Base.show_tuple_as_call(io, Symbol(""), t)
     print(io, '`')
+end
+
+@jetreport struct AmbiguousMethodErrorReport <: InferenceErrorReport
+    @nospecialize t # ::Union{Type,Vector{Any}}
+    union_split::Int
+end
+function JETInterface.print_report_message(io::IO, report::AmbiguousMethodErrorReport)
+    print(io, "ambiguous method match found ")
+    print_callsigs(io, report.t, report.union_split)
+end
+
+# `CC.findall` drops ambiguous matches, so look them up as `Base.methods_including_ambiguous`
+# does
+function methods_including_ambiguous(@nospecialize(sig::Type), world::UInt)
+    matches = Base._methods_by_ftype(sig, nothing, -1, world, #=ambig=#true,
+        Ref(typemin(UInt)), Ref(typemax(UInt)), Ptr{Int32}(C_NULL))
+    return matches isa Vector{Any} ? matches : Any[]
+end
+
+# Given that the native method lookup finds no method for `atype`, checks if the call throws
+# `MethodError` because of ambiguity rather than missing methods. The matches found here are
+# all ambiguous, but for abstract `atype` they may cover only a part of it.
+function is_ambiguous_call(@nospecialize(atype::Type), world::UInt)
+    matches = methods_including_ambiguous(atype, world)
+    isempty(matches) && return false
+    coverage = Union{}
+    for match in matches
+        coverage = Union{coverage, (match::Core.MethodMatch).spec_types}
+    end
+    return atype <: coverage
 end
 
 report_method_error!(::JETAnalyzer, ::InferenceState, ::CallMeta, ::Argtypes, @nospecialize(_atype)) = nothing
@@ -864,7 +897,11 @@ function report_method_error!(analyzer::JETAnalyzer,
         if !sound && report_reduce_empty_error!(analyzer, sv, argtypes)
             return true
         end
-        report = MethodErrorReport(sv, atype, 0, #=uncovered=#false)
+        if is_ambiguous_call(atype, CC.get_inference_world(analyzer))
+            report = AmbiguousMethodErrorReport(sv, atype, 0)
+        else
+            report = MethodErrorReport(sv, atype, 0, #=uncovered=#false)
+        end
         add_new_report!(analyzer, sv.result, report)
         return true
     elseif sound && !CC.all(m->m.fully_covers, info.results)
@@ -879,7 +916,7 @@ end
 function report_method_error_for_union_split!(analyzer::JETAnalyzer,
     sv::InferenceState, info::UnionSplitInfo, argtypes::Argtypes, @nospecialize(rt), sound::Bool)
     # check each match for union-split signature
-    split_argtypes = empty_matches = uncovered_matches = nothing
+    split_argtypes = empty_matches = ambiguous_matches = uncovered_matches = nothing
     reported = false
     for (i, matchinfo) in enumerate(info.split)
         if CC.isempty(matchinfo.results)
@@ -891,10 +928,17 @@ function report_method_error_for_union_split!(analyzer::JETAnalyzer,
                 reported |= true
                 continue
             end
+            sig_n = argtypes_to_type(argtypes′)
+            if is_ambiguous_call(sig_n, CC.get_inference_world(analyzer))
+                if ambiguous_matches === nothing
+                    ambiguous_matches = (Any[], length(info.split))
+                end
+                push!(ambiguous_matches[1], sig_n)
+                continue
+            end
             if empty_matches === nothing
                 empty_matches = (Any[], length(info.split))
             end
-            sig_n = argtypes_to_type(argtypes′)
             push!(empty_matches[1], sig_n)
         elseif sound && !CC.all(m->m.fully_covers, matchinfo.results)
             if isnothing(split_argtypes)
@@ -910,6 +954,10 @@ function report_method_error_for_union_split!(analyzer::JETAnalyzer,
     end
     if empty_matches !== nothing
         add_new_report!(analyzer, sv.result, MethodErrorReport(sv, empty_matches..., #=reason=#false))
+        reported |= true
+    end
+    if ambiguous_matches !== nothing
+        add_new_report!(analyzer, sv.result, AmbiguousMethodErrorReport(sv, ambiguous_matches...))
         reported |= true
     end
     if uncovered_matches !== nothing
@@ -1012,7 +1060,7 @@ function report_invoke_method_error!(analyzer::SoundBasicAnalyzer, sv::Inference
     match === nothing || return nothing
     CC.update_valid_age!(sv, valid_worlds)
     if is_ambiguous_lookup(lookupsig, CC.get_inference_world(analyzer))
-        report = AmbiguousMethodErrorReport(sv, lookupsig)
+        report = AmbiguousMethodErrorReport(sv, lookupsig, 0)
     else
         report = MethodErrorReport(sv, lookupsig, 0, #=uncovered=#false)
     end
@@ -1039,22 +1087,10 @@ function invoke_lookupsig(argtypes::Argtypes)
 end
 
 # `findsup` also finds nothing when the most specific methods covering the signature are
-# ambiguous. `CC.findall` drops ambiguous matches, so look them up as
-# `Base.methods_including_ambiguous` does.
-function is_ambiguous_lookup(@nospecialize(lookupsig::Type), world::UInt)
-    matches = Base._methods_by_ftype(lookupsig, nothing, -1, world, #=ambig=#true,
-        Ref(typemin(UInt)), Ref(typemax(UInt)), Ptr{Int32}(C_NULL))
-    matches === nothing && return false
-    return any(m::Core.MethodMatch->m.fully_covers, matches)
-end
-
-@jetreport struct AmbiguousMethodErrorReport <: InferenceErrorReport
-    @nospecialize t # ::Type
-end
-function JETInterface.print_report_message(io::IO, report::AmbiguousMethodErrorReport)
-    print(io, "ambiguous method match found ")
-    print_callsig(io, report.t)
-end
+# ambiguous, which is the case if any method covers it. Methods that only intersect with the
+# signature are irrelevant to `invoke`.
+is_ambiguous_lookup(@nospecialize(lookupsig::Type), world::UInt) =
+    any(m::Core.MethodMatch->m.fully_covers, methods_including_ambiguous(lookupsig, world))
 
 @jetreport struct UndefVarErrorReport <: InferenceErrorReport
     var::Union{GlobalRef,TypeVar,Symbol}
