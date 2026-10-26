@@ -2669,6 +2669,9 @@ end
 #   when running analysis multiple times (see aviatesk/JET.jl#597).
 # - Skip the native compilation requested by `precompile` calls, which packages often
 #   make at top level. It doesn't contribute to the analysis but can take long.
+# - Run the functions that type definitions are lowered to call on Julia 1.14 and later
+#   natively. Interpreting them fails during precompilation, since their `ccall`s are then
+#   evaluated in the closed `Core` and `Base` modules.
 function JuliaInterpreter.evaluate_call!(
         interp::ConcreteInterpreter, frame::Frame, fargs::Vector{Any}, enter_generated::Bool
     )
@@ -2698,7 +2701,7 @@ function JuliaInterpreter.evaluate_call!(
     if f === Base.rethrow
         # Even native calls must rethrow the interpreted frame's active exception.
         restore_callee_error!(state, frame, fargs)
-    elseif state.native_calls
+    elseif state.native_calls || is_typedef_function(f)
         popfirst!(fargs)
         return Base.invoke_in_world(frame.world, f, fargs...)
     end
@@ -2707,6 +2710,12 @@ function JuliaInterpreter.evaluate_call!(
 end
 
 isinclude(@nospecialize f) = f isa Base.IncludeInto || f === Base.include || f === Core.include
+
+@static if isdefinedglobal(Core, :resolve_typegroup)
+is_typedef_function(@nospecialize f) = f === Core.resolve_typegroup || f === Base._defaultctors
+else
+is_typedef_function(@nospecialize f) = false
+end
 
 # the return value of `precompile(args...)`, or `nothing` when no `Base.precompile` method
 # accepts `args`, so that the call goes through and raises the `MethodError`
