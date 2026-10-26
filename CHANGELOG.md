@@ -195,6 +195,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   chain. The VS Code integration keeps the summary on the first line of its
   diagnostics.
 
+- Report boxes are now closed with lines as wide as the widest message line in
+  them. Each inference report used to close only the box of its error frame
+  with a fixed-width line, leaving the boxes of its caller frames open. Now one
+  line closes every box that the next report does not share:
+  ```julia
+  g(x) = sin(x)
+  h(x) = cos(x)
+  f(x) = rand(Bool) ? g(x) : h(x)
+  report_call(f, (String,))
+  ```
+  ```
+  ═════ 2 possible errors found ═════
+  ┌ f(x::String) @ Main REPL[3]:1
+  │┌ g(x::String) @ Main REPL[1]:1
+  ││ no matching method found `sin(::String)`: sin(x::String)
+  │└─────────────────────────────────────────────────────────
+  │┌ h(x::String) @ Main REPL[2]:1
+  ││ no matching method found `cos(::String)`: cos(x::String)
+  └┴─────────────────────────────────────────────────────────
+  ```
+  Previously, both reports ended with `│└────────────────────`, leaving the
+  box of `f` open. Top-level report boxes, which ended at the right edge of
+  their section header, are sized the same way.
+
 - Top-level analysis now analyzes test sets as if they were declared with
   `failfast=true`, where a failing test aborts the test set, so it analyzes the
   code after `@test ex` assuming that `ex` is `true`:
@@ -293,6 +317,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `@testset` or a multi-line `@test` expression, pointing to the first line of
   the enclosing top-level statement since 0.12.1. They now point to the line
   of the reported code.
+
+- Fixed package analysis (e.g. `report_package`) of a package that looks
+  itself up with `pathof`, `pkgdir`, or `pkgversion`, which returned `nothing`
+  for the analyzed package module and could stop the analysis:
+  ```julia
+  module MyPkg
+  const SRCDIR = dirname(pathof(@__MODULE__)) # was a `MethodError`
+  end
+  ```
+  `Base.PkgId(@__MODULE__)` of the analyzed package module now differs from
+  that of the actual package, so lookups such as
+  `Base.identify_package(Base.PkgId(@__MODULE__), name)` fail.
 
 - Fixed the loop bodies of `Threads.@threads` not being analyzed on Julia
   1.13.2 and later, where its tasks call the loop body through a dynamic
