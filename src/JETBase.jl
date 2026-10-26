@@ -1541,4 +1541,12 @@ using PrecompileTools
             context=__demo__,
             toplevel_logger=nothing)
     end
+    # Since JuliaLang/julia#62724 (v1.14), inference taints `:effect_free` of every method
+    # while generating an image instrumented for code coverage. Drop the analysis tokens
+    # so that analyzers created at runtime don't reuse the results cached above, which
+    # would prevent concrete evaluation.
+    if Base.JLOptions().code_coverage != 0
+        @lock JET_ANALYZER_CACHE_LOCK empty!(JET_ANALYZER_CACHE)
+        @lock OPT_ANALYZER_CACHE_LOCK empty!(OPT_ANALYZER_CACHE)
+    end
 end

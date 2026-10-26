@@ -70,6 +70,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved the performance of the error analysis of `JETAnalyzer`, e.g.
   `report_call` and `report_package`, on Julia 1.14.
 
+### Fixed
+
+- Fixed false positive reports on Julia 1.14 and later with code coverage
+  enabled, e.g. under `Pkg.test(; coverage=true)`, where JET could reuse the
+  analysis results cached during its precompilation and fail to constant-fold
+  calls:
+  ```julia
+  const SV = Core.svec(1, 2, 3)
+  f() = sin(length(SV) == 3 ? 1.0 : "1")
+  @test_call f() # failed, reporting no method for `sin(::String)`
+  ```
+
 ## [0.13.0]
 
 ### Added
