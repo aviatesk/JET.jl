@@ -65,6 +65,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Improved the performance of the error analysis of `JETAnalyzer`, e.g.
+  `report_call` and `report_package`, on Julia 1.14.
+
 ## [0.13.0]
 
 ### Added

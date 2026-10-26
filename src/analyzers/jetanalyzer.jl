@@ -143,8 +143,15 @@ CC.is_valid_lattice_norec(::IntrinsicErrorCheckLattice, @nospecialize(_elem)) = 
 @nospecs CC.tmerge(𝕃::IntrinsicErrorCheckLattice, x, y) = tmerge(widenlattice(𝕃), x, y)
 @nospecs CC.tmeet(𝕃::IntrinsicErrorCheckLattice, x, t::Type) = tmeet(widenlattice(𝕃), x, t)
 @nospecs CC._getfield_tfunc(𝕃::IntrinsicErrorCheckLattice, xs...) = CC._getfield_tfunc(widenlattice(𝕃), xs...)
+# The base lattices include `MustAliasesLattice` since JuliaLang/julia#47574 (v1.14), where
+# wrapping them again would only slow down inference
+@static if CC.BaseInferenceLattice.instance isa CC.MustAliasesLattice
+CC.typeinf_lattice(::JETAnalyzer) = CC.InferenceLattice(IntrinsicErrorCheckLattice(CC.BaseInferenceLattice.instance))
+CC.ipo_lattice(::JETAnalyzer) = CC.InferenceLattice(IntrinsicErrorCheckLattice(CC.IPOResultLattice.instance))
+else
 CC.typeinf_lattice(::JETAnalyzer) = CC.InferenceLattice(IntrinsicErrorCheckLattice(CC.MustAliasesLattice(CC.BaseInferenceLattice.instance)))
 CC.ipo_lattice(::JETAnalyzer) = CC.InferenceLattice(IntrinsicErrorCheckLattice(CC.InterMustAliasesLattice(CC.IPOResultLattice.instance)))
+end
 
 # AbstractAnalyzer API
 # ====================
