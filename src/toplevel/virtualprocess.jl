@@ -1348,6 +1348,24 @@ function find_module_node(node::JS.SyntaxNode)
     nothing
 end
 
+# `"docstring" module M ... end`
+is_moduledoc_node(node::JS.SyntaxNode) =
+    JS.kind(node) === K"doc" && JS.kind(node[end]) === K"module"
+
+# `Base.Docs.moduledoc` documents a module from within it, by adding `import Base: @doc` to
+# the beginning of a `baremodule` body and the call documenting the module to the end
+function split_moduledoc_code(modparts::JuliaInterpreter.ModuleExprParts)
+    args = modparts.body.args
+    nprologue = modparts.std_imports ? 0 : 1
+    length(args) > nprologue || return nothing
+    prologue = args[1:nprologue]
+    all(isequal(:(import Base: @doc)), prologue) || return nothing
+    docex = args[end]
+    (isexpr(docex, :call) && !isempty(docex.args) && docex.args[1] === Base.Docs.doc!) ||
+        return nothing
+    return prologue, docex
+end
+
 function general_err_handler(@nospecialize(err), st, state::InterpretationState)
     report = ActualErrorWrapped(err, st, state.filename, state.curline)
     abort_toplevel_analysis!(state, report)
@@ -1512,7 +1530,11 @@ function _virtual_process!(interp::ConcreteInterpreter,
         if sourcefile.code == JS.sourcetext(toplevelnode)
             push!(analyzed_file_info.module_range_infos, 1:typemax(Int) => state.context)
         else
-            push!(analyzed_file_info.module_range_infos, first_line:last_line => state.context)
+            # the docstring of a module is evaluated within the module
+            parent = toplevelnode.parent
+            rangenode = parent !== nothing && is_moduledoc_node(parent) ? parent : toplevelnode
+            range_first_line = JS.source_line(sourcefile, JS.first_byte(rangenode))
+            push!(analyzed_file_info.module_range_infos, range_first_line:last_line => state.context)
         end
     end
     state.curline = first_line
@@ -1644,8 +1666,8 @@ function process_toplevel!(interp::ConcreteInterpreter, toplevelnode::JS.SyntaxN
             end
             # A macro can generate a malformed module expression: reject it with the error
             # native evaluation raises, before its body is replaced below.
-            modbody = try
-                JuliaInterpreter.ModuleExprParts(x).body
+            modparts = try
+                JuliaInterpreter.ModuleExprParts(x)
             catch err
                 general_err_handler(err, Base.StackTraces.StackFrame[], state)
             end
@@ -1664,8 +1686,22 @@ function process_toplevel!(interp::ConcreteInterpreter, toplevelnode::JS.SyntaxN
                                            pkg_mod_depth = state.pkg_mod_depth + 1,
                                            dependencies = Set{Symbol}())
             newinterp = ConcreteInterpreter(interp, newstate)
-            if isexpanded
-                overrideex = Expr(:toplevel, modbody.args...)
+            moduledoc_code = isexpanded && is_moduledoc_node(node) ?
+                split_moduledoc_code(modparts) : nothing
+            if moduledoc_code !== nothing
+                # Analyze the body of a documented module from its syntax, which retains the
+                # source locations, and the code `@doc` adds to it at the docstring
+                prologue, docex = moduledoc_code
+                if !isempty(prologue)
+                    _virtual_process!(newinterp, node;
+                                      force_concretize, overrideex = Expr(:toplevel, prologue...))
+                end
+                _virtual_process!(newinterp, node[end];
+                                  force_concretize)
+                _virtual_process!(newinterp, node;
+                                  force_concretize, overrideex = Expr(:toplevel, docex))
+            elseif isexpanded
+                overrideex = Expr(:toplevel, modparts.body.args...)
                 modnode = something(find_module_node(node), node)
                 _virtual_process!(newinterp, modnode;
                                   force_concretize, overrideex)

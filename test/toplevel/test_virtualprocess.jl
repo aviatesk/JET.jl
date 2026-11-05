@@ -1037,6 +1037,50 @@ end
     end
 end
 
+@testset "analyzed_files: documented module" begin
+    # the docstring of a module is evaluated within the module
+    text = """
+    #= L1=# \"\"\"
+    #= L2=# #=cursor Foo=#
+    #= L3=# \"\"\"
+    #= L4=# module Foo
+    #= L5=#     #=cursor Foo=#
+    #= L6=#     \"\"\"
+    #= L7=#     #=cursor Bar=#
+    #= L8=#     \"\"\"
+    #= L9=#     module Bar
+    #=L10=#         #=cursor Bar=#
+    #=L11=#     end
+    #=L12=#     #=cursor Foo=#
+    #=L13=#     "#=cursor Baz=#"
+    #=L14=#     baremodule Baz
+    #=L15=#         #=cursor Baz=#
+    #=L16=#     end
+    #=L17=#     #=cursor Foo=#
+    #=L18=#     module Qux
+    #=L19=#         #=cursor Qux=#
+    #=L20=#     end
+    #=L21=#     #=cursor Foo=#
+    #=L22=# end
+    """
+
+    lines = split(text, '\n')
+    lines_mod = Dict{Symbol,Vector{Int}}()
+    for (i, line) in enumerate(lines)
+        m = match(r"#=cursor (\w+)=#", line)
+        m === nothing && continue
+        push!(get!(Vector{Int}, lines_mod, Symbol(m[1])), i)
+    end
+
+    res = report_text(text, "test_documented_module.jl")
+    @test isnothing(res.res.toplevel_error_report)
+    analyzed_file_info = only(values(res.res.analyzed_files))
+
+    for (mod, lines) in lines_mod, line in lines
+        @test nameof(get_module_context(analyzed_file_info, line)) == mod
+    end
+end
+
 @testset "module definition" for s in ("""
                                        module foo end
                                        """,
@@ -2142,6 +2186,72 @@ end
         @test er.err isa ErrorException
         @test startswith(er.err.msg, "cannot document the following expression")
         @test er.file == "undocumentable.jl" && er.line == 1
+    end
+
+    @testset "documented module" begin
+        # the docstring of a module is evaluated within the module
+        let res = report_text("""
+                \"\"\"
+                \$(VAR)
+                \"\"\"
+                module Documented
+                const VAR = 1
+                end
+                """, "documented_module.jl")
+            @test isnothing(res.res.toplevel_error_report)
+            reports = filter(res.res.inference_error_reports) do r
+                !is_global_undef_var(r, Base, :active_repl)
+            end
+            @test isempty(reports)
+        end
+        let res = report_text("""
+                const OUTER = 1
+                \"\"\"
+                \$(OUTER)
+                \"\"\"
+                module Documented
+                end
+                """, "documented_module.jl")
+            @test isnothing(res.res.toplevel_error_report)
+            r = only(filter(res.res.inference_error_reports) do r
+                !is_global_undef_var(r, Base, :active_repl)
+            end)
+            @test is_global_undef_var(r, :OUTER)
+            @test nameof(r.var.mod) === :Documented
+            @test only(r.vst).line == 2
+        end
+
+        # the body is analyzed with its source locations
+        let res = report_text("""
+                \"\"\"
+                docstring
+                \"\"\"
+                module Documented
+                x = 1
+                sin(undefined_var)
+                end
+                """, "documented_module.jl")
+            @test isnothing(res.res.toplevel_error_report)
+            r = only(filter(r -> is_global_undef_var(r, :undefined_var),
+                            res.res.inference_error_reports))
+            @test only(r.vst).line == 6
+        end
+
+        let vmod = gen_virtual_module()
+            res = report_text("""
+                "docstring"
+                baremodule Documented
+                f() = 1
+                end
+                """; context=vmod, virtualize=false, concretization_patterns=[:x_])
+            @test isnothing(res.res.toplevel_error_report)
+            Documented = @invokelatest vmod.Documented
+            @test (@invokelatest Documented.f()) == 1
+            @test @invokelatest isdefinedglobal(Documented, Symbol("@doc"))
+            docs = @invokelatest Base.Docs.meta(Documented)
+            doc = docs[Base.Docs.Binding(vmod, :Documented)].docs[Union{}]
+            @test only(doc.text) == "docstring"
+        end
     end
 end
 
