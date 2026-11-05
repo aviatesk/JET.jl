@@ -66,6 +66,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed runtime dispatch reports from `report_opt` on Julia 1.14 and later,
+  which printed a call to a global function such as `sin(x::Any)` as
+  `BindingPartition(for Main.sin: ...)(x::Any)` and recorded
+  `Core.BindingPartition` as its callee type.
+
 ## [0.13.1]
 
 ### Changed

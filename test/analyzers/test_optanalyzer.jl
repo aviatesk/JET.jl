@@ -519,4 +519,22 @@ issue863_mapfoldl(xs) = mapfoldl(last, *, xs)
     end
 end
 
+@testset "global callees in optimized IR" begin
+    # Julia ≥ 1.14 refers to globals by `Core.BindingPartition` in optimized IR
+    let r = only(get_reports_with_test(report_opt((Any,)) do x
+            getsomething(x)
+        end))
+        @test r isa RuntimeDispatchReport
+        @test r.sig.tt === Tuple{typeof(getsomething), Any}
+        @test get_msg(r) == "runtime dispatch detected: $(@__MODULE__).getsomething(x::Any)::Any"
+    end
+    let r = only(get_reports_with_test(report_opt((Any,)) do x
+            x.field
+        end))
+        @test r isa RuntimeDispatchReport
+        @test r.sig.tt === Tuple{typeof(getproperty), Any, Symbol}
+        @test get_msg(r) == "runtime dispatch detected: (x::Any).field::Any"
+    end
+end
+
 end # module test_optanalyzer

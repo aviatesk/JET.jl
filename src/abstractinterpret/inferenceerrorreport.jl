@@ -113,6 +113,13 @@ get_sig(caller::InferenceResult) = get_sig(get_linfo(caller))
 const HandleSigRT = Tuple{Vector{Any}, Union{Type,Nothing}}   # the return type of `handle_sig!`
 get_sig_nowrap(s::StateAtPC, @nospecialize(stmt)) = handle_sig!([], s, stmt)::HandleSigRT
 
+# Optimized IR refers to a global by the `Core.BindingPartition` it reads
+@static if isdefined(Base, :partition_owner) # JuliaLang/julia#62452
+    partition_globalref(@nospecialize x) = x isa Core.BindingPartition ? Base.partition_owner(x).globalref : x
+else
+    partition_globalref(@nospecialize x) = x
+end
+
 function handle_sig!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
     head = expr.head
     sig, tt = if head === :call
@@ -136,11 +143,11 @@ function handle_sig_call!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
         return list, last
     end
 
-    f_ssa = f = first(expr.args)
+    f_ssa = f = partition_globalref(first(expr.args))
     if f isa SSAValue
-        f_ssa = get_stmt((s[1], f.id))
+        f_ssa = partition_globalref(get_stmt((s[1], f.id)))
     end
-    args = expr.args[2:end]
+    args = Any[partition_globalref(expr.args[i]) for i = 2:length(expr.args)]
     splat = false
     if isa(f_ssa, GlobalRef)
         handle_sig_binop!(sig, s, f_ssa, args) && return splitlast!(sig)
@@ -300,8 +307,8 @@ function handle_sig_call!(sig::Vector{Any}, s::StateAtPC, @nospecialize(f), args
 end
 
 function handle_sig_invoke!(sig::Vector{Any}, s::StateAtPC, expr::Expr)
-    f = expr.args[2]
-    args = expr.args[3:end]
+    f = partition_globalref(expr.args[2])
+    args = Any[partition_globalref(expr.args[i]) for i = 3:length(expr.args)]
     sig, tt = handle_sig_call!(sig, s, f, args)
     return sig, tt
 end
