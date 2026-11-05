@@ -1474,6 +1474,11 @@ end
     test_call((Union{Type{UInt16},Type{UInt32}}, UInt8)) do T, x
         Core.Intrinsics.zext_int(T, x)
     end
+
+    # a `UnionAll` target type such as `Ptr` has the width of its body
+    test_call((Type{Ptr{T}} where T, Ptr{Nothing})) do T, x
+        Core.Intrinsics.bitcast(T, x)
+    end
 end
 
 # https://github.com/JuliaLang/julia/pull/49801

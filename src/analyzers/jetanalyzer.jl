@@ -1545,7 +1545,7 @@ end
         end
         if bitshift && isconcrete
             @static if isdefinedglobal(Core, :bitsizeof) # JuliaLang/julia#61359
-                if Core.bitsizeof(ty) !== Core.bitsizeof(xty)
+                if Core.bitsizeof(Base.unwrap_unionall(ty)) !== Core.bitsizeof(xty)
                     return IntrinsicError("argument bitsize does not match bitsize of target type")
                 end
             else
