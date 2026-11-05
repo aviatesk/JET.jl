@@ -2582,8 +2582,8 @@ end
         end
         # Since JuliaLang/julia#62263, `typeof(::Memory{T})` is inferred as a
         # `Type{Memory{T}}` that is not a `DataType`, so `supertype(::UnionAll)` is also
-        # analyzed
-        @test isempty(res.res.inference_error_reports) broken=VERSION≥v"1.14.0-DEV.2603"
+        # analyzed, until JuliaLang/julia#64108 fixed its inference
+        @test isempty(res.res.inference_error_reports) broken=v"1.14.0-DEV.2603"≤VERSION<v"1.15.0-DEV.181"
     end
     # make sure we get the error report from the interactive entry
     let res = report_call((Any, Nothing)) do x, y

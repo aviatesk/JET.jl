@@ -508,9 +508,13 @@ issue863_mapfoldl(xs) = mapfoldl(last, *, xs)
         end
     end
     let reports = get_reports_with_test(report_opt(issue863_mapfoldl, (Vector{Any},)))
+        # JuliaLang/julia#64375 moved `BottomRF` outside the mapping
+        RF = VERSION ≥ v"1.15.0-DEV.207" ?
+            Base.BottomRF{Base.MappingRF{typeof(last), typeof(*)}} :
+            Base.BottomRF{typeof(*)}
         @test any(reports) do r
             r isa JET.RuntimeDispatchReport &&
-            r.sig.tt === Tuple{Base.BottomRF{typeof(*)}, Any, Any}
+            r.sig.tt === Tuple{RF, Any, Any}
         end
     end
 end
