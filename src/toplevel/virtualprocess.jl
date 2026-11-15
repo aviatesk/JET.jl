@@ -1468,6 +1468,29 @@ function macroexpand_doc_with_err_handling(state::InterpretationState, x::Expr)
     end
 end
 
+# The parser refers to `Core.@doc` directly for a docstring, whereas an explicit call names
+# it through a binding, as in `@doc`, `Base.@doc` or an alias of them
+function is_doc_macrocall(state::InterpretationState, x::Expr)
+    isexpr(x, :macrocall) && !isempty(x.args) || return false
+    name = first(x.args)
+    name === GlobalRef(Core, Symbol("@doc")) && return true
+    return Base.invoke_in_world(state.world, resolve_global, state.context, name) === Core.var"@doc"
+end
+
+# Look up the global that the possibly qualified `name` refers to, without evaluating code
+function resolve_global(mod::Module, @nospecialize(name))
+    if name isa GlobalRef
+        mod, name = name.mod, name.name
+    elseif isexpr(name, :., 2)
+        mod = resolve_global(mod, name.args[1])
+        mod isa Module || return nothing
+        name = name.args[2]
+        name isa QuoteNode && (name = name.value)
+    end
+    name isa Symbol && isdefinedglobal(mod, name) || return nothing
+    return getglobal(mod, name)
+end
+
 # `Base.Docs.docerror` defers the error for an undocumentable expression to the call site
 is_docerror(@nospecialize x) = isexpr(x, :call) && !isempty(x.args) && x.args[1] === error
 
@@ -1611,7 +1634,7 @@ function process_toplevel!(interp::ConcreteInterpreter, toplevelnode::JS.SyntaxN
             # but for now we just ignore that.
             isexpr(x, :var"hygienic-scope"))
 
-            isdoc = first(x.args) === GlobalRef(Core, Symbol("@doc"))
+            isdoc = is_doc_macrocall(state, x)
             newx = if isdoc && isexpr(x, :macrocall, 4)
                 macroexpand_doc_with_err_handling(state, x)
             else
