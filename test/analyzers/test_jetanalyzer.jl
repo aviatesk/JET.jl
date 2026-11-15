@@ -998,6 +998,7 @@ ordered_checked_field_read(::Val{order}) where order =
     getfield(SingleField(1), :missing, order, true)
 ordered_field_write(::Val{order}) where order =
     setfield!(SingleField(1), :missing, 2, order)
+guarded_union_field(::Type{T}) where T = T isa Union ? T.a : T
 
 @testset "field access diagnostics" begin
     @testset "invalid selectors and receivers" begin
@@ -1045,6 +1046,12 @@ ordered_field_write(::Val{order}) where order =
             report = only(get_reports_with_test(result))
             @test report isa BuiltinErrorReport && report.f === fieldtype
             @test report.msg == JET.GENERAL_BUILTIN_ERROR_MSG
+        end
+        # a field access guarded by the kind of an unknown type object
+        @test isempty(get_reports_with_test(report_call(guarded_union_field, (Type,))))
+        let result = report_call(() -> Type{Int}.a)
+            report = only(get_reports_with_test(result))
+            @test report isa BuiltinErrorReport && report.f === getfield
         end
     end
 
