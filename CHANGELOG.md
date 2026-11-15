@@ -72,6 +72,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which printed a call to a global function such as `sin(x::Any)` as
   `BindingPartition(for Main.sin: ...)(x::Any)` and recorded
   `Core.BindingPartition` as its callee type.
+- Fixed false positive reports that a top-level constant is not defined. They
+  were reported for the names after the first one in a destructuring
+  declaration, and for a `const` declared after another `const` within a block
+  such as `if` (aviatesk/JETLS.jl#1003):
+  ```julia
+  const A, B = 1, 2
+  getB() = B # `B` is not defined
+  ```
+  Errors in the code that follows such a declaration within the same block
+  were not reported either.
 
 - Fixed definitions documented by an explicit `@doc` call, as in
   `@doc "docstring" f() = 1`, not being analyzed like those documented by a

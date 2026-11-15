@@ -671,12 +671,48 @@ function isconcretized(analyzer::ToplevelAbstractAnalyzer, frame::InferenceState
     return istoplevelframe(frame) && get_concretized(analyzer)[pc]
 end
 
+# The binding declared by `stmt` if it is a `const` declaration, i.e. `Expr(:const, ...)`
+# (Julia 1.12) or a `Core.declare_const` call (Julia 1.13 and later).
+function declared_const_binding(@nospecialize(stmt), mod::Module)
+    if isexpr(stmt, :const) && !isempty(stmt.args)
+        var = stmt.args[1]
+        var isa GlobalRef && return var
+        var isa Symbol && return GlobalRef(mod, var)
+    elseif isexpr(stmt, :call) && length(stmt.args) ≥ 3 && stmt.args[1] == GlobalRef(Core, :declare_const)
+        declmod, name = stmt.args[2], stmt.args[3]
+        declmod isa Module && name isa QuoteNode || return nothing
+        name = name.value
+        name isa Symbol && return GlobalRef(declmod, name)
+    end
+    return nothing
+end
+
+# Whether the statement at `pc` directly follows the declaration of a constant that is new
+# to the inference world, as the `:latestworld` that lowering emits after one does.
+# Julia backdates a constant into the worlds before its declaration only if the binding was
+# never declared constant, global or imported, so no code inferred in the inference world
+# can hold a previous definition of it.
+function follows_new_const_declaration(
+        analyzer::ToplevelAbstractAnalyzer, frame::InferenceState, pc::Int=frame.currpc
+    )
+    istoplevelframe(frame) && pc > 1 || return false
+    gr = @something declared_const_binding(frame.src.code[pc-1], CC.frame_module(frame)) return false
+    partition = Base.lookup_binding_partition(CC.get_inference_world(analyzer), gr)
+    return CC.binding_kind(partition) == CC.PARTITION_KIND_BACKDATED_CONST
+end
+
 function CC.abstract_eval_basic_statement(analyzer::ToplevelAbstractAnalyzer, @nospecialize(stmt),
     sstate::StatementState, frame::InferenceState, result::Union{Nothing,Future{RTEffects}})
     if isexpr(stmt, :latestworld)
         if isconcretized(analyzer, frame)
             # ignore the effect of `:latestworld` if its effect took in place by `ConcreteInterpreter`
             return CC.AbstractEvalBasicStatementResult(nothing, Any, nothing, nothing, nothing, #=saw_latestworld=#false)
+        elseif follows_new_const_declaration(analyzer, frame)
+            # `const_assignment_rt_exct` has already declared the constant in a way that
+            # the rest of this frame sees from the inference world, whereas hiding globals
+            # here would leave the declarations that follow it unrecorded
+            # (aviatesk/JETLS.jl#1003)
+            return CC.AbstractEvalBasicStatementResult(nothing, Any, nothing, nothing, nothing, sstate.saw_latestworld)
         end
     end
     return @invoke CC.abstract_eval_basic_statement(analyzer::AbstractAnalyzer, stmt::Any,
