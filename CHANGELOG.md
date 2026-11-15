@@ -73,6 +73,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `BindingPartition(for Main.sin: ...)(x::Any)` and recorded
   `Core.BindingPartition` as its callee type.
 
+- Fixed definitions documented by an explicit `@doc` call, as in
+  `@doc "docstring" f() = 1`, not being analyzed like those documented by a
+  docstring: `concretization_patterns` did not match them, and on Julia 1.13
+  and later they caused false `UndefVarErrorReport`s, e.g.
+  `` `#1#val` may be undefined ``.
+
 ## [0.13.1]
 
 ### Changed

@@ -2188,6 +2188,66 @@ end
         @test er.file == "undocumentable.jl" && er.line == 1
     end
 
+    @testset "explicit `@doc`" begin
+        # a definition documented by calling `@doc` is analyzed like one with a docstring
+        for docmacro in ("@doc", "Core.@doc", "Base.@doc", "Base.Docs.@doc")
+            res = report_text("""
+                $docmacro "doc for x" x = 1
+                $docmacro raw"doc for getx" getx() = x
+                getx()
+                """)
+            @test isnothing(res.res.toplevel_error_report)
+            reports = filter(res.res.inference_error_reports) do r
+                !is_global_undef_var(r, Base, :active_repl)
+            end
+            @test isempty(reports)
+        end
+        let res = report_text("""
+                import Core: @doc as @document
+                @document "doc for x" x = 1
+                @document "doc for getx" getx() = x
+                getx()
+                """)
+            @test isnothing(res.res.toplevel_error_report)
+            reports = filter(res.res.inference_error_reports) do r
+                !is_global_undef_var(r, Base, :active_repl)
+            end
+            @test isempty(reports)
+        end
+
+        let (vmod, res) = @analyze_toplevel2 concretization_patterns = [:(const foo = Dict())] begin
+                @doc "doc for foo" const foo = Dict()
+            end
+            @test isnothing(res.res.toplevel_error_report)
+            @test isconcrete(res, vmod, :foo)
+            @test (@invokelatest vmod.foo) isa Dict
+        end
+
+        let res = report_text("""
+                @doc "doc" if true
+                    f() = 1
+                end
+                """, "undocumentable.jl")
+            er = res.res.toplevel_error_report
+            @test er isa ActualErrorWrapped
+            @test er.err isa ErrorException
+            @test startswith(er.err.msg, "cannot document the following expression")
+            @test er.file == "undocumentable.jl" && er.line == 1
+        end
+
+        # a macro that only shares the name is expanded as it is
+        let res = report_text("""
+                macro doc(str, ex)
+                    return esc(ex)
+                end
+                @doc "not a docstring" f() = 1
+                f()
+                """)
+            @test isnothing(res.res.toplevel_error_report)
+            @test isempty(res.res.inference_error_reports)
+        end
+    end
+
     @testset "documented module" begin
         # the docstring of a module is evaluated within the module
         let res = report_text("""
