@@ -414,6 +414,77 @@ end
     end
 end
 
+@testset "consecutive abstract `const` declarations (aviatesk/JETLS.jl#1003)" begin
+    let res = @analyze_toplevel begin
+            const c1, c2, c3 = 1, 2, 3
+            println(c1, c2, c3)
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        @test isempty(res.res.inference_error_reports)
+    end
+
+    let res = @analyze_toplevel begin
+            pair() = (1, "julia")
+            const n, s = pair()
+            sum(s)
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        @test !any(r -> r isa UndefVarErrorReport, res.res.inference_error_reports)
+        test_sum_over_string(res)
+    end
+
+    let res = @analyze_toplevel begin
+            if rand(Bool)
+                const x = 1
+                const y = x > 0 ? 1 : 2
+            end
+            println(y)
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        @test any(res.res.inference_error_reports) do report
+            report isa UndefVarErrorReport && report.var.name === :y && report.maybeundef
+        end
+        @test !any(res.res.inference_error_reports) do report
+            report isa UndefVarErrorReport && !report.maybeundef
+        end
+    end
+
+    # the statements after the declaration are analyzed too
+    let res = @analyze_toplevel begin
+            if rand(Bool)
+                const x = 1
+                sum("julia")
+            end
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        test_sum_over_string(res)
+    end
+
+    # the inference world still holds the definition before a redeclaration
+    let res = @analyze_toplevel begin
+            const x = "julia"
+            if true
+                const x = 1
+                sin(x)
+            end
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        @test isempty(res.res.inference_error_reports)
+    end
+    let res = @analyze_toplevel begin
+            const x = "julia"
+            readx() = x
+            readx()
+            if true
+                const x = 1
+                sin(readx())
+            end
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        @test isempty(res.res.inference_error_reports)
+    end
+end
+
 @testset "https://github.com/aviatesk/JET.jl/issues/142" begin
     let res = @analyze_toplevel begin
             Circle = @NamedTuple begin
