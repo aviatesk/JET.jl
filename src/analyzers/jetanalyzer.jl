@@ -1648,9 +1648,28 @@ function report_getfield!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::A
     if ret === Any
         report_getglobal!(analyzer, sv, argtypes) && return true
     elseif ret === Bottom
+        @static if isdefinedglobal(Core, :TypeEgal)
+            is_type_kind_getproperty_fallback(sv, argtypes) && return true
+        end
         report_fieldaccess!(analyzer, sv, getfield, argtypes) && return true
     end
     return false
+end
+
+@static if isdefinedglobal(Core, :TypeEgal)
+# `Type{T}` types are kinds of their own since Julia 1.14, on which Base keeps property
+# access working with `getproperty` methods that fall back to `getfield`. These methods also
+# match a receiver that is only known to be some type object, as in `T.a` guarded by
+# `T isa Union`, for which the fallback is unreachable, which inference cannot prove.
+function is_type_kind_getproperty_fallback(sv::InferenceState, argtypes::Argtypes)
+    def = sv.linfo.def
+    def isa Method && def.name === :getproperty && def.module === Base || return false
+    isempty(argtypes) && return false
+    obj = argtypes[1]
+    obj isa Const && return false
+    typ = widenconst(obj)
+    return typ === Core.TypeEq || typ === Core.TypeEgal
+end
 end
 
 report_getglobal!(analyzer::JETAnalyzer, sv::InferenceState, argtypes::Argtypes, @nospecialize(ret)) =

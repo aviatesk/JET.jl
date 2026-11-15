@@ -82,6 +82,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ```
   Errors in the code that follows such a declaration within the same block
   were not reported either.
+- Fixed false positive `FieldError` reports on Julia 1.14 for a field access
+  guarded by the kind of a type object, as in `T isa Union ? T.a : T`. They
+  were reported, for example, for a comprehension over a non-constant global
+  variable.
 
 - Fixed definitions documented by an explicit `@doc` call, as in
   `@doc "docstring" f() = 1`, not being analyzed like those documented by a
