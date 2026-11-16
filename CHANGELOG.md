@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- links start -->
 [Unreleased]: https://github.com/aviatesk/JET.jl/compare/v0.13.1...HEAD
+[0.13.2]: https://github.com/aviatesk/JET.jl/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/aviatesk/JET.jl/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/aviatesk/JET.jl/compare/v0.12.3...v0.13.0
 [0.12.3]: https://github.com/aviatesk/JET.jl/compare/v0.12.2...v0.12.3
@@ -66,6 +67,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.2]
+
 ### Changed
 
 - Top-level analysis now keeps analyzing the code that follows a world age
@@ -87,6 +90,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which printed a call to a global function such as `sin(x::Any)` as
   `BindingPartition(for Main.sin: ...)(x::Any)` and recorded
   `Core.BindingPartition` as its callee type.
+
 - Fixed false positive reports that a top-level constant is not defined. They
   were reported for the names after the first one in a destructuring
   declaration, and for a `const` declared after another `const` within a block
@@ -97,10 +101,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ```
   Errors in the code that follows such a declaration within the same block
   were not reported either.
+
 - Fixed false positive `FieldError` reports on Julia 1.14 for a field access
   guarded by the kind of a type object, as in `T isa Union ? T.a : T`. They
   were reported, for example, for a comprehension over a non-constant global
   variable.
+
 - Fixed false positive reports that a top-level constant may be undefined when
   a block conditionally redeclares a constant that is already defined:
   ```julia
