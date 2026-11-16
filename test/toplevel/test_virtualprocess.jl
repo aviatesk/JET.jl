@@ -1311,6 +1311,7 @@ end
         end
     end
 
+    # the loop is left only after the assignment
     let res = @analyze_toplevel begin
             while true
                 localvar = rand(Bool)
@@ -1320,14 +1321,7 @@ end
             println(globalvar)
         end
         @test isnothing(res.res.toplevel_error_report)
-        isexpected = length(res.res.inference_error_reports) == 1
-        @test isexpected
-        if isexpected
-            report = only(res.res.inference_error_reports)
-            @test report isa UndefVarErrorReport
-            @test report.var.name === :globalvar
-            @test report.maybeundef
-        end
+        @test isempty(res.res.inference_error_reports)
     end
 end
 
@@ -2246,6 +2240,23 @@ end
             @test isnothing(res.res.toplevel_error_report)
             @test isempty(res.res.inference_error_reports)
         end
+    end
+
+    @testset "documented block from a macro" begin
+        # Since Julia 1.13, `@doc` keeps the value of such a block in a hygienic global that
+        # it assigns and reads in separate `if true ... end` wrappers
+        res = report_text("""
+            "doc for Documented"
+            Base.@kwdef struct Documented
+                x::Int = 1
+            end
+            Documented()
+            """)
+        @test isnothing(res.res.toplevel_error_report)
+        reports = filter(res.res.inference_error_reports) do r
+            !is_global_undef_var(r, Base, :active_repl)
+        end
+        @test isempty(reports)
     end
 
     @testset "documented module" begin

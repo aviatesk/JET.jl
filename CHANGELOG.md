@@ -78,7 +78,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   such as `if` (aviatesk/JETLS.jl#1003):
   ```julia
   const A, B = 1, 2
-  getB() = B # `B` is not defined
+  getB() = B # was reported: `B` is not defined
   ```
   Errors in the code that follows such a declaration within the same block
   were not reported either.
@@ -92,6 +92,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   docstring: `concretization_patterns` did not match them, and on Julia 1.13
   and later they caused false `UndefVarErrorReport`s, e.g.
   `` `#1#val` may be undefined ``.
+
+- Fixed false positive reports that a global variable or constant may be
+  undefined when it is assigned within a block such as `if` at the top level.
+  A read that follows the assignment within the block is no longer reported,
+  and neither is a later read if the block assigns the binding however it
+  runs, e.g. under a condition that is known to be constant or in every
+  branch:
+  ```julia
+  if rand(Bool)
+      x = 1
+      println(x) # was reported: `x` may be undefined
+  end
+
+  if Sys.iswindows()
+      const SEP = '\\'
+  else
+      const SEP = '/'
+  end
+  println(SEP) # was reported: `SEP` may be undefined
+  ```
+  On Julia 1.13 and later, this also fixes the reports such as
+  `` `#1#val` may be undefined `` for a docstring attached to a macro call
+  that expands to a block, e.g. `Base.@kwdef struct ... end`.
 
 ## [0.13.1]
 
