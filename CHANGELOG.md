@@ -66,6 +66,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Top-level analysis now keeps analyzing the code that follows a world age
+  update within a top-level block, as in a loop body after a comprehension or
+  after `Core.@latestworld`. JET used to give up on such code and reported
+  nothing for it:
+  ```julia
+  for i in 1:3
+      global xs = [sin(x) for x in 1:i]
+      sum("julia") # now reported
+  end
+  ```
+  The code that follows a `const` declaration within the same block is also
+  analyzed with the type of the constant.
+
 ### Fixed
 
 - Fixed runtime dispatch reports from `report_opt` on Julia 1.14 and later,
@@ -86,6 +101,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   guarded by the kind of a type object, as in `T isa Union ? T.a : T`. They
   were reported, for example, for a comprehension over a non-constant global
   variable.
+- Fixed false positive reports that a top-level constant may be undefined when
+  a block conditionally redeclares a constant that is already defined:
+  ```julia
+  const x = 1
+  if rand(Bool)
+      const x = 2
+  end
+  x # was reported: `x` may be undefined
+  ```
 
 - Fixed definitions documented by an explicit `@doc` call, as in
   `@doc "docstring" f() = 1`, not being analyzed like those documented by a

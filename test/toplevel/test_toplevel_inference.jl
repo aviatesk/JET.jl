@@ -338,6 +338,7 @@ end
             test_sum_over_string(res)
         end
     end
+    # a constant defined before a conditional redeclaration stays defined
     let res = @analyze_toplevel begin
             const s = rand(Int, 10)
             if rand(Bool)
@@ -345,16 +346,18 @@ end
             end
             sum(s)
         end
-        isexpected = length(res.res.inference_error_reports) == 3
-        @test isexpected
-        if isexpected
-            @test any(res.res.inference_error_reports) do report
-                isa(report, UndefVarErrorReport) &&
-                report.var.name === :s &&
-                occursin("may be undefined", get_msg(report))
+        @test !any(r -> r isa UndefVarErrorReport, res.res.inference_error_reports)
+        test_sum_over_string(res)
+    end
+    let res = @analyze_toplevel begin
+            const s = "julia"
+            if rand(Bool)
+                const s = rand(Int, 10)
             end
-            test_sum_over_string(res)
+            sum(s)
         end
+        @test !any(r -> r isa UndefVarErrorReport, res.res.inference_error_reports)
+        test_sum_over_string(res)
     end
 end
 
@@ -823,11 +826,25 @@ end
         test_sum_over_string(res)
     end
 
-    # the inference world still holds the definition before a redeclaration
+end
+
+@testset "`:latestworld` in top-level frames" begin
+    # the rest of the frame sees a declaration
+    let res = @analyze_toplevel begin
+            if rand(Bool)
+                const s = "julia"
+                sum(s)
+            end
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        test_sum_over_string(res)
+    end
+
+    # and a redeclaration, including through what was inferred before it
     let res = @analyze_toplevel begin
             const x = "julia"
-            if true
-                const x = 1
+            let
+                global const x = 1
                 sin(x)
             end
         end
@@ -838,13 +855,94 @@ end
             const x = "julia"
             readx() = x
             readx()
-            if true
-                const x = 1
+            let
+                global const x = 1
                 sin(readx())
             end
         end
         @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
+    end
+
+    # a redeclaration within a loop has the loop analyzed again
+    let res = @analyze_toplevel begin
+            let
+                global const x = 1
+                while x isa Int
+                    global const x = "julia"
+                end
+                sin(x)
+            end
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        @test any(r -> r isa MethodErrorReport, res.res.inference_error_reports)
+    end
+    # which converges even when unconditional redeclarations are analyzed again
+    let res = @analyze_toplevel begin
+            let i = 0
+                @label again
+                global const x = 1
+                global const x = 2
+                i += 1
+                i < 2 && @goto again
+                sin(x)
+            end
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        @test isempty(res.res.inference_error_reports)
+    end
+    let res = @analyze_toplevel begin
+            let i = 0
+                @goto loop
+                @label exit
+                global const x = 1
+                @goto done
+                @label loop
+                global const x = "julia"
+                i += 1
+                (rand(Bool) || i > 1) && @goto exit
+                @goto loop
+                @label done
+                sin(x)
+            end
+        end
+        @test isnothing(res.res.toplevel_error_report)
+    end
+    # and when the types of the constants grow through each other
+    let res = @analyze_toplevel begin
+            let
+                global const x = 1
+                global const y = nothing
+                global const z = ()
+                while rand(Bool)
+                    global const x = y
+                    global const y = (z,)
+                    global const z = (x, y)
+                end
+            end
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        @test isempty(res.res.inference_error_reports)
+    end
+
+    # the statements after `:latestworld` are analyzed
+    let res = @analyze_toplevel begin
+            let
+                Core.@latestworld
+                sum("julia")
+            end
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        test_sum_over_string(res)
+    end
+    let res = @analyze_toplevel begin
+            for i in 1:3
+                xs = [sin(x) for x in 1:i]
+                sum("julia")
+            end
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        test_sum_over_string(res)
     end
 end
 
