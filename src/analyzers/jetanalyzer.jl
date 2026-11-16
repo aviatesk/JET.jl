@@ -342,6 +342,8 @@ function CC.finish!(analyzer::JETAnalyzer, caller::InferenceState, validation_wo
         throw("unexpected state happened, inspect `$(@__MODULE__).src`")
     end
 
+    discard_assigned_global_reports!(analyzer, caller)
+
     return @invoke CC.finish!(analyzer::ToplevelAbstractAnalyzer, caller::InferenceState, validation_world::UInt, time_before::UInt64)
 end
 
@@ -1198,6 +1200,24 @@ function _report_undef_global_var!(analyzer::JETAnalyzer, sv::InferenceState, bi
     end
     add_new_report!(analyzer, sv.result, UndefVarErrorReport(sv, gr, maybeundef))
     return true
+end
+
+# Discard the reports for the global bindings that the top-level `frame` certainly assigns
+# before it reads them, which is not known yet when `_report_undef_global_var!` sees a read.
+# The first frame of a report of `frame` points to the statement of `frame` that reads the
+# binding or that calls the code reading it.
+function discard_assigned_global_reports!(analyzer::JETAnalyzer, frame::InferenceState)
+    istoplevelframe(frame) || return nothing
+    isempty(get_assignment_sites(analyzer)) && return nothing
+    filter!(get_reports(analyzer, frame.result)) do @nospecialize(report::InferenceErrorReport)
+        report isa UndefVarErrorReport || return true
+        var = report.var
+        var isa GlobalRef || return true
+        vf = first(report.vst)
+        vf.linfo === frame.linfo || return true
+        return !is_assigned_at(analyzer, frame, convert(Core.Binding, var), vf.pc)
+    end
+    return nothing
 end
 
 # static parameter

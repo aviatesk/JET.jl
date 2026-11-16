@@ -151,6 +151,15 @@ end
 @inline Base.get(b::AbstractBindings, partition::Core.BindingPartition, @nospecialize(default)) =
     @something(@lock(b.lock, find_binding_state(b.bindings, partition)), Some(default))
 
+"""
+The statements of a top-level frame that assign to a global binding abstractly, i.e. without
+being concretized, together with the partition that the state of the binding is recorded for.
+"""
+struct AbstractAssignmentSites
+    partition::Core.BindingPartition
+    pcs::BitSet
+end
+
 # `export` and `Base.deprecate` replace a partition with one that differs only in its flags,
 # for which the state recorded for the replaced partition still holds
 function find_binding_state(
@@ -226,6 +235,9 @@ mutable struct AnalyzerState
     const current_toplevel_assignment::Union{Nothing,ToplevelAssignment}
     const binding_states::AbstractBindings # TODO Make this globally maintained?
 
+    # the abstract global assignments of the top-level frame under analysis
+    const assignment_sites::IdDict{Core.Binding,AbstractAssignmentSites}
+
     # some `AbstractAnalyzer` may want to use this
     entry::Union{Nothing,MethodInstance}
 end
@@ -254,6 +266,7 @@ function AnalyzerState(world::UInt = get_world_counter();
                          #=concretized::BitVector=# non_toplevel_concretized,
                          #=current_toplevel_assignment=# nothing,
                          #=binding_states::AbstractBindings=# AbstractBindings(),
+                         #=assignment_sites=# IdDict{Core.Binding,AbstractAssignmentSites}(),
                          #=entry::Union{Nothing,MethodInstance}=# nothing)
 end
 
@@ -265,6 +278,7 @@ function AnalyzerState(state::AnalyzerState, refresh_local_cache::Bool=true;
                        concretized::BitVector = state.concretized,
                        current_toplevel_assignment::Union{Nothing,ToplevelAssignment} = state.current_toplevel_assignment,
                        binding_states::AbstractBindings = state.binding_states,
+                       assignment_sites::IdDict{Core.Binding,AbstractAssignmentSites} = state.assignment_sites,
                        entry::Union{Nothing,MethodInstance} = state.entry)
     if refresh_local_cache
         inf_cache = new_inference_cache()
@@ -282,6 +296,7 @@ function AnalyzerState(state::AnalyzerState, refresh_local_cache::Bool=true;
                          concretized,
                          current_toplevel_assignment,
                          binding_states,
+                         assignment_sites,
                          entry)
 end
 
@@ -567,6 +582,8 @@ function ToplevelAbstractAnalyzer(
     world = get_world_counter()
     analyzer = ToplevelAbstractAnalyzer(interp)
     state = AnalyzerState(analyzer)
-    newstate = AnalyzerState(state; world, concretized, current_toplevel_assignment)
+    assignment_sites = IdDict{Core.Binding,AbstractAssignmentSites}()
+    newstate = AnalyzerState(state;
+        world, concretized, current_toplevel_assignment, assignment_sites)
     return AbstractAnalyzer(analyzer, newstate)
 end

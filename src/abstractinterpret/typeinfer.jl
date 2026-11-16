@@ -626,6 +626,9 @@ function finish_frame!(analyzer::AbstractAnalyzer, frame::InferenceState)
             vf = first(report.vst)
             return !(vf.linfo === frame.linfo && is_test_exception_statement(frame, vf.pc))
         end
+        if istoplevelframe(frame)
+            settle_assigned_bindings!(analyzer, frame)
+        end
     end
 
     # XXX this is a dirty fix for performance problem, we need more "proper" fix
@@ -737,6 +740,9 @@ function CC.global_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::In
     if !isconcretized && rt !== Union{}
         # Historical queries must not update the inference world's binding state.
         partition = Base.lookup_binding_partition(CC.get_inference_world(analyzer), g)
+        if istoplevel && is_lowered_assignment(sv.src.code[sv.currpc], g)
+            record_assignment_site!(analyzer, sv, g, partition)
+        end
         # Non-const bindings may be assigned in any call, so it is fundamentally impossible
         # to track their types precisely.
         # However, by accurately determining whether a top-level assignment is conditional,
@@ -873,6 +879,9 @@ function const_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::Infere
             postdomtree = CC.construct_postdomtree(sv.cfg)
             isconditional = !CC.postdominates(postdomtree, sv.currbb, 1)
             assignment = get_current_toplevel_assignment(analyzer)
+            if declared_const_binding(sv.src.code[sv.currpc], CC.frame_module(sv)) == gr
+                record_assignment_site!(analyzer, sv, gr, partition)
+            end
             # `:const` assignment destructively overrides the binding type
             binding_states = get_binding_states(analyzer)
             binding_state = @lock binding_states.lock begin
@@ -917,6 +926,162 @@ function const_assignment_binding_rt_exct(_interp::ToplevelAbstractAnalyzer, par
         return Pair{Any,Any}(Union{}, ErrorException), false
     end
     return Pair{Any,Any}(Nothing, ErrorException), false
+end
+
+# flow-sensitive assignment
+# -------------------------
+
+# The binding states above are decided when an assignment is visited, from the shape of the
+# code alone, and say nothing about where in the frame a binding is read. A global binding
+# stays assigned once it is assigned though, so it is assigned at a point of a top-level
+# frame if the point cannot be reached from the entry of the frame without passing an
+# assignment to it. This is asked after inference of the frame has converged, since the
+# control flow that inference rules out keeps shrinking until then.
+
+# Whether `stmt` is the call that lowering emits for an assignment to `gr`, which names both
+# `setglobal!` and `gr` literally and thus assigns to `gr` whatever types inference derives
+# at the later visits of it. Lowering refers to `Base.setglobal!` on Julia 1.12 and to
+# `Core.setglobal!` on Julia 1.13 and later.
+function is_lowered_assignment(@nospecialize(stmt), gr::GlobalRef)
+    isexpr(stmt, :call) && length(stmt.args) ≥ 3 || return false
+    f, mod, name = stmt.args[1], stmt.args[2], stmt.args[3]
+    f == GlobalRef(Core, :setglobal!) || f == GlobalRef(Base, :setglobal!) || return false
+    return mod === gr.mod && name isa QuoteNode && name.value === gr.name
+end
+
+function record_assignment_site!(
+        analyzer::ToplevelAbstractAnalyzer, sv::InferenceState, gr::GlobalRef,
+        partition::Core.BindingPartition
+    )
+    sites = get!(get_assignment_sites(analyzer), convert(Core.Binding, gr)) do
+        AbstractAssignmentSites(partition, BitSet())
+    end
+    push!(sites.pcs, sv.currpc)
+    return nothing
+end
+
+# The successor of the basic block `bb` that its `GotoIfNot` never branches to because the
+# condition is constant, or `0` if there is no such successor
+function dead_successor(frame::InferenceState, bb::Int)
+    stmt = frame.src.code[last(frame.cfg.blocks[bb].stmts)]
+    stmt isa GotoIfNot || return 0
+    destbb = CC.block_for_inst(frame.cfg, stmt.dest)
+    destbb == bb + 1 && return 0
+    cond = stmt.cond
+    if cond isa SSAValue
+        cond = frame.ssavaluetypes[cond.id]
+        cond isa Const || return 0
+        cond = cond.val
+    end
+    return cond === true ? destbb : cond === false ? bb + 1 : 0
+end
+
+# The basic blocks of the top-level `frame` that control may enter before any of the
+# assignments at `pcs` has completed, following only the control flow that inference of
+# `frame` has not ruled out. The edge from an `EnterNode` to its catch block stands for the
+# exceptions thrown from anywhere in the `try` block, including before an assignment in it.
+function unassigned_blocks(frame::InferenceState, pcs::BitSet)
+    (; cfg, unreachable, ssavaluetypes) = frame
+    blocks = cfg.blocks
+    assigning = BitSet(CC.block_for_inst(cfg, pc) for pc in pcs)
+    unassigned = BitSet(1)
+    worklist = Int[1]
+    while !isempty(worklist)
+        bb = pop!(worklist)
+        bb in assigning && continue
+        terminator = last(blocks[bb].stmts)
+        # control does not leave a block through a statement that always throws
+        terminator in unreachable && continue
+        ssavaluetypes[terminator] === Union{} && continue
+        dead = dead_successor(frame, bb)
+        for succ in blocks[bb].succs
+            succ == dead && continue
+            succ in unassigned && continue
+            first(blocks[succ].stmts) in unreachable && continue
+            push!(unassigned, succ)
+            push!(worklist, succ)
+        end
+    end
+    return unassigned
+end
+
+# Whether control may reach the statement at `pc` before any of the assignments at `pcs`
+# has completed, given `unassigned_blocks(frame, pcs)`
+function is_unassigned_at(frame::InferenceState, unassigned::BitSet, pcs::BitSet, pc::Int)
+    bb = CC.block_for_inst(frame.cfg, pc)
+    bb in unassigned || return false
+    start = first(frame.cfg.blocks[bb].stmts)
+    return !any(assigned::Int -> start ≤ assigned < pc, pcs)
+end
+
+"""
+    is_assigned_at(analyzer::ToplevelAbstractAnalyzer, frame::InferenceState,
+                   binding::Core.Binding, pc::Int) -> Bool
+
+Whether `binding` is certainly assigned when control reaches the statement at `pc` of the
+top-level `frame`, by the abstract assignments that `frame` itself makes before it.
+This is available once inference of `frame` has finished.
+"""
+function is_assigned_at(
+        analyzer::ToplevelAbstractAnalyzer, frame::InferenceState, binding::Core.Binding,
+        pc::Int
+    )
+    sites = get(get_assignment_sites(analyzer), binding, nothing)
+    sites === nothing && return false
+    return !is_unassigned_at(frame, unassigned_blocks(frame, sites.pcs), sites.pcs, pc)
+end
+
+# Bindings that `frame` assigns on every path to its normal exits are defined for the
+# top-level statements that follow, even if no single assignment is unconditional
+function settle_assigned_bindings!(analyzer::ToplevelAbstractAnalyzer, frame::InferenceState)
+    assignment_sites = get_assignment_sites(analyzer)
+    isempty(assignment_sites) && return nothing
+    (; unreachable) = frame
+    exits = Int[pc for (pc, stmt) in enumerate(frame.src.code)
+                if stmt isa ReturnNode && !(pc in unreachable)]
+    isempty(exits) && return nothing
+    for (binding, sites) in assignment_sites
+        unassigned = unassigned_blocks(frame, sites.pcs)
+        any(pc::Int -> is_unassigned_at(frame, unassigned, sites.pcs, pc), exits) && continue
+        mark_assigned!(analyzer, binding, sites)
+    end
+    return nothing
+end
+
+function mark_assigned!(
+        analyzer::ToplevelAbstractAnalyzer, binding::Core.Binding,
+        sites::AbstractAssignmentSites
+    )
+    gr = binding.globalref
+    latest = Base.lookup_binding_partition(get_world_counter(), gr)
+    if CC.is_defined_const_binding(CC.binding_kind(latest))
+        # HACK/FIXME Concretize `AbstractBindingState`
+        # An abstract constant carries its state as its value, so it needs to be declared
+        # again for the following top-level statements to see the new state.
+        state = CC.partition_restriction(latest)
+        state isa AbstractBindingState && state.maybeundef && isdefined(state, :typ) ||
+            return nothing
+        new_state = AbstractBindingState(true, false, state.typ; state.assignment)
+        Core.eval(gr.mod, Expr(:const, gr.name, new_state))
+    else
+        binding_states = get_binding_states(analyzer)
+        state = get(binding_states, sites.partition, nothing)
+        state !== nothing && !state.isconst && state.maybeundef || return nothing
+        # The declaration of an assignment under control flow is evaluated in its weak
+        # form only. Now that one of the assignments certainly runs, declare the binding
+        # as an unconditional assignment does: replacing the partition invalidates the
+        # code that was inferred while the binding might be undefined.
+        declare_strong_global(gr)
+        partition = Base.lookup_binding_partition(get_world_counter(), gr)
+        binding_states[partition] = AbstractBindingState(false, false; state.assignment)
+    end
+    return nothing
+end
+
+@static if isdefinedglobal(Core, :declare_global)
+declare_strong_global(gr::GlobalRef) = Core.declare_global(gr.mod, gr.name, true)
+else
+declare_strong_global(gr::GlobalRef) = Core.eval(gr.mod, Expr(:block, Expr(:globaldecl, gr), nothing))
 end
 
 function CC.abstract_eval_partition_load(analyzer::ToplevelAbstractAnalyzer, binding::Core.Binding, partition::Core.BindingPartition)
