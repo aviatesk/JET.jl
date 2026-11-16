@@ -690,33 +690,55 @@ function declared_const_binding(@nospecialize(stmt), mod::Module)
     return nothing
 end
 
-# Whether the statement at `pc` directly follows the declaration of a constant that is new
-# to the inference world, as the `:latestworld` that lowering emits after one does.
-# Julia backdates a constant into the worlds before its declaration only if the binding was
-# never declared constant, global or imported, so no code inferred in the inference world
-# can hold a previous definition of it.
-function follows_new_const_declaration(
-        analyzer::ToplevelAbstractAnalyzer, frame::InferenceState, pc::Int=frame.currpc
+# After `:latestworld`, top-level code runs in the latest world, where the effects of the
+# statements before it are in place: `ConcreteInterpreter` has evaluated the concretized
+# ones before this analysis started, and `const_assignment_rt_exct` declares constants as it
+# models them. The analysis follows by moving the inference world of `analyzer` on, so that
+# the rest of `frame` sees these effects and nothing inferred for the previous world.
+function advance_inference_world!(analyzer::ToplevelAbstractAnalyzer, frame::InferenceState)
+    state = AnalyzerState(analyzer)
+    world = get_world_counter()
+    world == state.world && return false
+    state.world = world
+    state.inf_cache = new_inference_cache()
+    state.advanced_method_table = nothing
+    reset_frame_world!(frame, world)
+    return true
+end
+
+# The world range that `frame` has converged on holds for the previous world only.
+# Top-level frames are never cached, so the range is simply started over.
+@static if hasfield(InferenceState, :valid_worlds)
+reset_frame_world!(frame::InferenceState, world::UInt) =
+    (frame.valid_worlds = WorldRange(1, world); nothing)
+else
+reset_frame_world!(frame::InferenceState, world::UInt) =
+    (frame.world = CC.WorldWithRange(world, WorldRange(1, world)); nothing)
+end
+
+# The method table for the inference world of `analyzer`: `method_table` that `analyzer`
+# was created with, or one with the same overlay for the world that
+# `advance_inference_world!` has moved to. `CC.method_table` of a `ToplevelAbstractAnalyzer`
+# has to go through this function for method lookups to follow the inference world.
+function current_method_table(
+        analyzer::ToplevelAbstractAnalyzer, method_table::CachedMethodTable{OverlayMethodTable}
     )
-    istoplevelframe(frame) && pc > 1 || return false
-    gr = @something declared_const_binding(frame.src.code[pc-1], CC.frame_module(frame)) return false
-    partition = Base.lookup_binding_partition(CC.get_inference_world(analyzer), gr)
-    return CC.binding_kind(partition) == CC.PARTITION_KIND_BACKDATED_CONST
+    world = get_world(analyzer)
+    method_table.table.world == world && return method_table
+    state = AnalyzerState(analyzer)
+    advanced = state.advanced_method_table
+    if advanced === nothing
+        advanced = state.advanced_method_table =
+            CachedMethodTable(OverlayMethodTable(world, method_table.table.mt))
+    end
+    return advanced
 end
 
 function CC.abstract_eval_basic_statement(analyzer::ToplevelAbstractAnalyzer, @nospecialize(stmt),
     sstate::StatementState, frame::InferenceState, result::Union{Nothing,Future{RTEffects}})
-    if isexpr(stmt, :latestworld)
-        if isconcretized(analyzer, frame)
-            # ignore the effect of `:latestworld` if its effect took in place by `ConcreteInterpreter`
-            return CC.AbstractEvalBasicStatementResult(nothing, Any, nothing, nothing, nothing, #=saw_latestworld=#false)
-        elseif follows_new_const_declaration(analyzer, frame)
-            # `const_assignment_rt_exct` has already declared the constant in a way that
-            # the rest of this frame sees from the inference world, whereas hiding globals
-            # here would leave the declarations that follow it unrecorded
-            # (aviatesk/JETLS.jl#1003)
-            return CC.AbstractEvalBasicStatementResult(nothing, Any, nothing, nothing, nothing, sstate.saw_latestworld)
-        end
+    if isexpr(stmt, :latestworld) && istoplevelframe(frame)
+        advance_inference_world!(analyzer, frame)
+        return CC.AbstractEvalBasicStatementResult(nothing, Any, nothing, nothing, nothing, #=saw_latestworld=#false)
     end
     return @invoke CC.abstract_eval_basic_statement(analyzer::AbstractAnalyzer, stmt::Any,
         sstate::StatementState, frame::InferenceState, result::Union{Nothing,Future{RTEffects}})
@@ -859,6 +881,49 @@ end
 
 end # @static if isdefinedglobal(Core, :declare_const)
 
+# The state of a constant as a previous top-level statement left it. That statement
+# recorded the state against the partition of its own inference world, whereas the partition
+# of a later world holds the declared value itself.
+function previous_const_binding_state(partition::Core.BindingPartition)
+    kind = CC.binding_kind(partition)
+    # a backdated constant must not count as defined in a world before its declaration
+    kind == CC.PARTITION_KIND_BACKDATED_CONST && return nothing
+    CC.is_defined_const_binding(kind) || return nothing
+    value = CC.partition_restriction(partition)
+    value isa AbstractBindingState && return value
+    return AbstractBindingState(true, false, Const(value))
+end
+
+function is_same_binding_state(
+        𝕃::AbstractLattice, a::AbstractBindingState, b::AbstractBindingState
+    )
+    a.isconst === b.isconst && a.maybeundef === b.maybeundef || return false
+    a.assignment === b.assignment || return false
+    isdefined(a, :typ) && isdefined(b, :typ) || return false
+    ⊑ = CC.partialorder(𝕃)
+    return a.typ ⊑ b.typ && b.typ ⊑ a.typ
+end
+
+@static if hasfield(InferenceState, :bb_states)
+is_analyzed_block(frame::InferenceState, bb::Int) = frame.bb_states[bb] !== nothing
+else
+is_analyzed_block(frame::InferenceState, bb::Int) = frame.bb_vartables[bb] !== nothing
+end
+
+# The blocks that can run after the current one.
+function following_blocks(frame::InferenceState)
+    blocks = frame.cfg.blocks
+    following = BitSet()
+    worklist = copy(blocks[frame.currbb].succs)
+    while !isempty(worklist)
+        bb = pop!(worklist)
+        bb in following && continue
+        push!(following, bb)
+        append!(worklist, blocks[bb].succs)
+    end
+    return following
+end
+
 function const_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::InferenceState, saw_latestworld::Bool, gr::GlobalRef,
                                   @nospecialize(new_binding_typ))
     @assert istoplevelframe(sv)
@@ -875,9 +940,14 @@ function const_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::Infere
         if new_binding_typ === nothing
             Core.eval(gr.mod, Expr(:const, gr.name))
         else
-            ⊔ = CC.join(CC.typeinf_lattice(analyzer))
+            𝕃 = CC.typeinf_lattice(analyzer)
+            ⊔ = CC.join(𝕃)
             postdomtree = CC.construct_postdomtree(sv.cfg)
             isconditional = !CC.postdominates(postdomtree, sv.currbb, 1)
+            # A declaration is analyzed again when a binding state changes in a loop that
+            # reaches it. It has to join the states then: overwriting is limited to the
+            # first time for each declaration so that the analysis converges.
+            isrevisited = sv.ssavaluetypes[sv.currpc] !== NOT_FOUND
             assignment = get_current_toplevel_assignment(analyzer)
             if declared_const_binding(sv.src.code[sv.currpc], CC.frame_module(sv)) == gr
                 record_assignment_site!(analyzer, sv, gr, partition)
@@ -886,8 +956,9 @@ function const_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::Infere
             binding_states = get_binding_states(analyzer)
             binding_state = @lock binding_states.lock begin
                 bindings = binding_states.bindings
-                old_binding_state = find_binding_state(bindings, partition)
-                if !isconditional
+                old_binding_state = @something(find_binding_state(bindings, partition),
+                    previous_const_binding_state(partition), Some(nothing))
+                if !isconditional && !isrevisited
                     new_state = AbstractBindingState(true, false, new_binding_typ; assignment)
                 elseif old_binding_state !== nothing
                     @assert old_binding_state.isconst && isdefined(old_binding_state, :typ)
@@ -900,17 +971,32 @@ function const_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::Infere
                     merged_assignment = same_statement ? assignment : nothing
                     new_state = AbstractBindingState(true, newmaybeundef, newtyp; assignment=merged_assignment)
                 else
-                    new_state = AbstractBindingState(true, true, new_binding_typ; assignment)
+                    new_state = AbstractBindingState(true, isconditional, new_binding_typ; assignment)
                 end
-                bindings[partition] = new_state
-                new_state
+                if (old_binding_state !== nothing &&
+                    is_same_binding_state(𝕃, old_binding_state, new_state))
+                    # This declaration has been analyzed already and nothing changes, which
+                    # is where the analysis of a loop that holds it converges.
+                    nothing
+                else
+                    bindings[partition] = new_state
+                    new_state
+                end
             end
-            # HACK/FIXME Concretize `AbstractBindingState`
-            # For top-level analysis implementation reasons, we actually define this
-            # `AbstractBindingState` in the analyzed module’s namespace.
-            # This is necessary because binding resolution cannot be accurately tracked
-            # when using `export`/`using`.
-            Core.eval(gr.mod, Expr(:const, gr.name, binding_state))
+            if binding_state !== nothing
+                # HACK/FIXME Concretize `AbstractBindingState`
+                # For top-level analysis implementation reasons, we actually define this
+                # `AbstractBindingState` in the analyzed module’s namespace.
+                # This is necessary because binding resolution cannot be accurately tracked
+                # when using `export`/`using`.
+                Core.eval(gr.mod, Expr(:const, gr.name, binding_state))
+                # The declaration changes what the blocks running after it see, but
+                # binding states are not part of the state whose change makes the Compiler
+                # analyze a block again, so schedule those already analyzed here.
+                for bb in following_blocks(sv)
+                    is_analyzed_block(sv, bb) && push!(sv.ip, bb)
+                end
+            end
         end
     end
     return ret, isimported
@@ -1066,7 +1152,8 @@ function mark_assigned!(
     else
         binding_states = get_binding_states(analyzer)
         state = get(binding_states, sites.partition, nothing)
-        state !== nothing && !state.isconst && state.maybeundef || return nothing
+        state === nothing && return nothing
+        (!state.isconst && state.maybeundef) || return nothing
         # The declaration of an assignment under control flow is evaluated in its weak
         # form only. Now that one of the assignments certainly runs, declare the binding
         # as an unconditional assignment does: replacing the partition invalidates the

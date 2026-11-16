@@ -1992,7 +1992,7 @@ end
             end # module LatestWorldGetproperty
         """)
         @test isnothing(res.res.toplevel_error_report)
-        @test isempty(res.res.inference_error_reports)
+        test_sum_over_string(res)
     end
 
     # this should work even if the accessed variable is not constant

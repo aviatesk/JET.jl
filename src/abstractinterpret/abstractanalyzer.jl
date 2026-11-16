@@ -210,8 +210,8 @@ JETInterface.AnalyzerState(analyzer::NewAnalyzer) = analyzer.state
 mutable struct AnalyzerState
     ## AbstractInterpreter ##
 
-    const world::UInt
-    const inf_cache::LocalInferenceCache
+    world::UInt
+    inf_cache::LocalInferenceCache
     const inf_params::InferenceParams
     const opt_params::OptimizationParams
 
@@ -240,6 +240,10 @@ mutable struct AnalyzerState
 
     # some `AbstractAnalyzer` may want to use this
     entry::Union{Nothing,MethodInstance}
+
+    # the method table for `world`, once `advance_inference_world!` has moved `world` on
+    # from the one the analyzer was created with (see `current_method_table`)
+    advanced_method_table::Union{Nothing,CachedMethodTable{OverlayMethodTable}}
 end
 
 # define shortcut getter/setter methods for `AbstractAnalyzer`s
@@ -267,7 +271,8 @@ function AnalyzerState(world::UInt = get_world_counter();
                          #=current_toplevel_assignment=# nothing,
                          #=binding_states::AbstractBindings=# AbstractBindings(),
                          #=assignment_sites=# IdDict{Core.Binding,AbstractAssignmentSites}(),
-                         #=entry::Union{Nothing,MethodInstance}=# nothing)
+                         #=entry::Union{Nothing,MethodInstance}=# nothing,
+                         #=advanced_method_table=# nothing)
 end
 
 # The constructor that inherits from existing `state::AnalyzerState`
@@ -297,7 +302,8 @@ function AnalyzerState(state::AnalyzerState, refresh_local_cache::Bool=true;
                          current_toplevel_assignment,
                          binding_states,
                          assignment_sites,
-                         entry)
+                         entry,
+                         #=advanced_method_table=# nothing)
 end
 
 # dummies for non-toplevel analysis
@@ -563,6 +569,13 @@ result = analyze_and_report_text!(interp, "x = 1; y = x + 1")
 Concrete subtypes of `ToplevelAbstractAnalyzer` must implement all interfaces
 required by [`AbstractAnalyzer`](@ref). Methods specialized for this interface
 then provide the top-level-specific abstract interpretation behavior.
+
+Top-level analysis moves the inference world of the analyzer on at each
+`:latestworld` of a top-level frame. A subtype that overloads
+`Compiler.method_table` therefore has to return a method table for the world
+that `Compiler.get_inference_world(analyzer)` returns at that time, e.g. by
+passing the `CachedMethodTable{OverlayMethodTable}` it was created with through
+`JET.current_method_table(analyzer, method_table)`.
 
 ## See also
 

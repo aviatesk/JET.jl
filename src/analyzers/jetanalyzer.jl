@@ -125,7 +125,7 @@ CC.maybe_compress_codeinfo(::JETAnalyzer, ::MethodInstance, ::CodeInfo) = nothin
 # and so the cost of running the optimization passes is just unnecessary
 CC.may_optimize(::JETAnalyzer) = false
 
-CC.method_table(analyzer::JETAnalyzer) = analyzer.method_table
+CC.method_table(analyzer::JETAnalyzer) = current_method_table(analyzer, analyzer.method_table)
 
 """
     IntrinsicErrorCheckLattice <: AbstractLattice
