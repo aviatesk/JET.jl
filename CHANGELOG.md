@@ -68,6 +68,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed top-level analysis ignoring a `:toplevel` expression within a block
+  that a macro expands to, as `Distributed.@everywhere using Foo` does. Names
+  imported by such code were reported as not defined, and the analysis crashed
+  on Julia builds with assertions enabled (aviatesk/JETLS.jl#1074):
+  ```julia
+  using Distributed
+  @everywhere using Base64
+  base64encode("a") # was reported: `base64encode` is not defined
+  ```
+
 ## [0.13.3]
 
 ### Fixed

@@ -1339,6 +1339,9 @@ function push_vnode_stack!(vnodes::Vector{VNode}, node::JS.SyntaxNode, newex::Ex
     return vnodes
 end
 
+contains_toplevel(@nospecialize x) =
+    isexpr(x, :toplevel) || (isexpr(x, :block) && any(contains_toplevel, x.args))
+
 function find_module_node(node::JS.SyntaxNode)
     for i in 1:JS.numchildren(node)
         child = node[i]
@@ -1670,6 +1673,12 @@ function process_toplevel!(interp::ConcreteInterpreter, toplevelnode::JS.SyntaxN
             else
                 push_vnode_stack!(vnodes, node, force_concretize)
             end
+            continue
+        elseif isexpanded && isexpr(x, :block) && any(contains_toplevel, x.args)
+            # Lowering keeps a `:toplevel` within a block as a statement, which neither
+            # partial interpretation nor inference handles. A top-level block introduces no
+            # scope, so its statements can be analyzed one by one instead.
+            push_vnode_stack!(vnodes, node, x, force_concretize)
             continue
         end
 
