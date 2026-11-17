@@ -69,15 +69,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Fixed an internal `MethodError` (`no method matching ⊑(::JLTypeLattice,
-  ::MustAlias, ::Type{Any})`) on Julia versions before 1.14 when analyzing a
-  function that throws a field it has just narrowed and later makes a call that
-  can throw anything. `report_call` threw this error, and `report_package` and
-  `test_package` skipped such functions with an "Error analyzing method
-  signature" log:
+- Fixed an internal error on Julia versions before 1.14 when analyzing a
+  function that checks a field and then throws it, and afterwards makes a call
+  that may throw any exception. `report_call` threw a `MethodError`
+  (`no method matching ⊑(::JLTypeLattice, ::MustAlias, ::Type{Any})`), and
+  `report_package` and `test_package` skipped such functions with an
+  "Error analyzing method signature" log, leaving them unanalyzed:
   ```julia
   struct K; e::Any; end
-  k(x::K) = (x.e === nothing || throw(x.e); Base.invokelatest(identity, x); 1)
+  function k(x::K)
+      x.e === nothing || throw(x.e)
+      maythrow(x)
+      return 1
+  end
+  report_call(k, (K,)) # used to throw the `MethodError`
   ```
 
 ## [0.13.2]
