@@ -151,6 +151,12 @@ CC.ipo_lattice(::JETAnalyzer) = CC.InferenceLattice(IntrinsicErrorCheckLattice(C
 else
 CC.typeinf_lattice(::JETAnalyzer) = CC.InferenceLattice(IntrinsicErrorCheckLattice(CC.MustAliasesLattice(CC.BaseInferenceLattice.instance)))
 CC.ipo_lattice(::JETAnalyzer) = CC.InferenceLattice(IntrinsicErrorCheckLattice(CC.InterMustAliasesLattice(CC.IPOResultLattice.instance)))
+# `abstract_throw` returns the thrown value's type as is, so a `MustAlias` would otherwise
+# reach the IPO lattice, which cannot merge it (backport of JuliaLang/julia#61048)
+function CC.update_exc_bestguess!(analyzer::JETAnalyzer, @nospecialize(exct), frame::InferenceState)
+    return @invoke CC.update_exc_bestguess!(analyzer::ToplevelAbstractAnalyzer,
+        CC.widenslotwrapper(exct)::Any, frame::InferenceState)
+end
 end
 
 # AbstractAnalyzer API

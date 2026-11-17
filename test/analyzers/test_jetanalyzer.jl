@@ -586,6 +586,45 @@ func_throw_call_bar(a) = throw(a)
     end
 end
 
+struct ThrowsAliasedField
+    e::Any
+end
+throws_any(x) = Base.invokelatest(identity, x) # exception type `Any`
+throw_aliased_field(k::ThrowsAliasedField) = k.e === nothing || throw(k.e)
+
+# merging a `MustAlias` exception type with another exception type used to crash with
+# `no method matching ⊑(::JLTypeLattice, ::MustAlias, ::Type{Any})`
+@testset "`MustAlias` exception types" begin
+    let result = report_call((ThrowsAliasedField,)) do k
+            k.e === nothing || throw(k.e)
+            throws_any(k)
+            return 1
+        end
+        @test isempty(get_reports_with_test(result))
+    end
+    # through a callee's exception type
+    let result = report_call((ThrowsAliasedField,)) do k
+            throw_aliased_field(k)
+            throws_any(k)
+            return 1
+        end
+        @test isempty(get_reports_with_test(result))
+    end
+    # into a try/catch handler
+    let result = report_call((ThrowsAliasedField,)) do k
+            try
+                k.e === nothing || throw(k.e)
+                throws_any(k)
+                1
+            catch e
+                e isa InterruptException && rethrow()
+                2
+            end
+        end
+        @test isempty(get_reports_with_test(result))
+    end
+end
+
 func_keyword_argument(a; b = nothing, c = nothing) = nothing
 let result = report_call((Any,)) do b
         func_keyword_argument(1; b)
