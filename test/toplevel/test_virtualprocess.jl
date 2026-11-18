@@ -626,6 +626,32 @@ end
         foo = @invokelatest vmod.foo
         @test isconcrete(res, foo, :bar)
     end
+
+    # aviatesk/JETLS.jl#1074: a `:toplevel` within a block, as `Distributed.@everywhere` makes
+    let res = @analyze_toplevel begin
+            module Issue1074
+            export issue1074
+            issue1074() = 1074
+            end
+            macro using_issue1074()
+                return Expr(:block, Expr(:toplevel, :(using .Issue1074)), :(issue1074()))
+            end
+            @using_issue1074
+            issue1074()
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        @test isempty(res.res.inference_error_reports)
+    end
+    let res = @analyze_toplevel begin
+            macro nested_toplevel()
+                return Expr(:block, Expr(:block, Expr(:toplevel, :(using Test))), nothing)
+            end
+            @nested_toplevel
+            @test true
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        @test isempty(res.res.inference_error_reports)
+    end
 end
 
 @testset "lowering error" begin
