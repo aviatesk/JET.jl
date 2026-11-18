@@ -1626,6 +1626,12 @@ function process_toplevel!(interp::ConcreteInterpreter, toplevelnode::JS.SyntaxN
             end
         end
 
+        everywhere = desugar_everywhere_macrocall(state, x)
+        if everywhere !== nothing
+            push_vnode_stack!(vnodes, node, everywhere, force_concretize)
+            continue
+        end
+
         x = desugar_main_macrocall(x)
         x = replace_test_macrocalls(x, state.context, state.failfast, state.failfast_modes)
 
