@@ -33,7 +33,7 @@ using .CC: @nospecs, AbstractInterpreter, AbstractLattice, ArgInfo, Bottom,
     StatementState, StmtInfo, UnionSplitInfo, VarState, VarTable, WorldRange,
     argextype, argtype_by_index, argtypes_to_type, hasintersect, ignorelimited,
     instanceof_tfunc, singleton_type, slot_id, specialize_method, tmeet, tmerge,
-    typeinf_lattice, widenconst, widenlattice, ⊑
+    widenconst, widenlattice, ⊑
 
 using Base: PkgId, generating_output, get_world_counter
 
