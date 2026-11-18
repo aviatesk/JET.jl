@@ -654,6 +654,67 @@ end
     end
 end
 
+# aviatesk/JETLS.jl#1075
+@testset "`Distributed.@everywhere`" begin
+    let res = @analyze_toplevel begin
+            using Distributed
+            @everywhere f() = 1
+            @everywhere struct S end
+            @everywhere global x = 1
+            @everywhere using Test
+            f(), S(), x
+            @test true
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        @test isempty(res.res.inference_error_reports)
+    end
+
+    # the code is analyzed, not just evaluated
+    let res = @analyze_toplevel begin
+            using Distributed
+            @everywhere undefined_procs() g() = undefined_global
+            g()
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        @test length(res.res.inference_error_reports) == 2
+        @test all(r -> r isa UndefVarErrorReport, res.res.inference_error_reports)
+        @test Set(r.var.name for r in res.res.inference_error_reports) == Set((:undefined_procs, :undefined_global))
+    end
+
+    # the imports run first, so the code can use the macros they import
+    let res = @analyze_toplevel begin
+            using Distributed
+            @everywhere begin
+                using Test
+                @test true
+            end
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        @test isempty(res.res.inference_error_reports)
+    end
+
+    # interpolations from the calling scope, but not those of nested quotes
+    let res = @analyze_toplevel begin
+            import Distributed
+            Distributed.@everywhere Distributed.procs() h(x) = $sin(x)
+            Distributed.@everywhere q(y) = :($y)
+            h(1.0), sum(q(1))
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        @test isempty(res.res.inference_error_reports)
+    end
+
+    # other macros of the same name are expanded as usual
+    let res = @analyze_toplevel begin
+            macro everywhere(ex) nothing end
+            @everywhere f() = 1
+            f()
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        @test only(res.res.inference_error_reports) isa UndefVarErrorReport
+    end
+end
+
 @testset "lowering error" begin
     let res = @analyze_toplevel begin
             let

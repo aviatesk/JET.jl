@@ -457,6 +457,7 @@ end
 
 include("toplevel/virtualprocess.jl")
 include("toplevel/test-macros.jl")
+include("toplevel/distributed-macros.jl")
 
 # results
 # =======

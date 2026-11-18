@@ -80,6 +80,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   base64encode("a") # was reported: `base64encode` is not defined
   ```
 
+- Fixed top-level analysis reporting the functions, types and global variables
+  defined with `Distributed.@everywhere` as not defined
+  (aviatesk/JETLS.jl#1075). The code given to a top-level `@everywhere` call is
+  now analyzed in place of the call, so errors within it are reported too:
+  ```julia
+  using Distributed
+  @everywhere f() = 1
+  f() # was reported: `f` is not defined
+  ```
+
 ## [0.13.3]
 
 ### Fixed
