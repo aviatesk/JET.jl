@@ -654,6 +654,54 @@ end
     end
 end
 
+# a `:toplevel` that remains in lowered code, e.g. from a macro called within a block
+@testset "`:toplevel` statements" begin
+    let res = @analyze_toplevel begin
+            macro using_test()
+                return Expr(:block, Expr(:toplevel, :(using Test)), nothing)
+            end
+            if true
+                @using_test
+            end
+            @test true
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        @test isempty(res.res.inference_error_reports)
+    end
+
+    let res = @analyze_toplevel begin
+            module M
+            export m
+            m() = 1
+            end
+            macro using_m()
+                return Expr(:block, Expr(:toplevel, :(using .M)), nothing)
+            end
+            using Test
+            @testset "x" begin
+                @using_m
+                m()
+            end
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        @test isempty(res.res.inference_error_reports)
+    end
+
+    # the value of the statement is unknown to inference
+    let res = @analyze_toplevel begin
+            macro define_f()
+                return Expr(:block, Expr(:toplevel, esc(:(f() = 1))))
+            end
+            let g = @define_f
+                g()
+            end
+            f()
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        @test isempty(res.res.inference_error_reports)
+    end
+end
+
 # aviatesk/JETLS.jl#1075
 @testset "`Distributed.@everywhere`" begin
     let res = @analyze_toplevel begin
