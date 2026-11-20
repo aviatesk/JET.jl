@@ -110,6 +110,25 @@ end
             err.var isa GlobalRef && err.var.name === :undefined
         end
     end
+
+    # a whole-module usage of the context makes its exported names available
+    let actual = Core.eval(@__MODULE__, :(module VirtualizedContext
+            export foo
+            foo() = 1
+        end))
+        Core.@latestworld
+
+        res = @analyze_toplevel context = actual begin
+            module Sub
+            using ..VirtualizedContext
+            f() = foo()
+            end
+            Sub.f()
+        end
+
+        @test isnothing(res.res.toplevel_error_report)
+        @test isempty(res.res.inference_error_reports)
+    end
 end
 
 @testset "package origin of virtualized package" begin
@@ -183,100 +202,284 @@ end
         Expr[:(import Pkg: status as s), :(import Pkg: gc as g)]
 end
 
-# @testset "fix self-reference of virtual module" begin
-#     let res = @analyze_toplevel begin
-#             const foo = sum
-#             Main.foo("julia") # `Main.sum` should be resolved as constant
-#         end
-#         test_sum_over_string(res)
-#     end
-#
-#     let res = @analyze_toplevel begin
-#             let Main = "julia" # local `Main` should not be resolved to virtual module
-#                 sum(Main)
-#             end
-#         end
-#         test_sum_over_string(res)
-#     end
-#
-#     # https://github.com/aviatesk/JET.jl/issues/151
-#     let res = @analyze_toplevel begin
-#             struct X end
-#
-#             module A
-#             using ..Main: X
-#             end
-#         end
-#
-#         @test isnothing(res.res.toplevel_error_report)
-#     end
-#
-#     let res = @analyze_toplevel begin
-#             struct X end
-#
-#             module A
-#             using ..Main: X as X′
-#             end
-#         end
-#
-#         @test isnothing(res.res.toplevel_error_report)
-#     end
-#
-#     # stress test
-#     let res = @analyze_toplevel begin
-#             module A
-#             struct X end
-#             struct Y end
-#             export X, y
-#             end
-#
-#             module B1
-#             import ..Main.A
-#             println(A.X)
-#             end
-#             module B2
-#             using ..Main.A
-#             println(A.X)
-#             end
-#
-#             module C11
-#             import ..Main.A: X
-#             println(X)
-#             end
-#             module C12
-#             import ..Main.A: X, Y
-#             println(X, Y)
-#             end
-#             module C21
-#             using ..Main.A: X
-#             println(X)
-#             end
-#             module C22
-#             using ..Main.A: X, Y
-#             println(X, Y)
-#             end
-#
-#             module D11
-#             import ..Main.A: X as x
-#             println(x)
-#             end
-#             module D12
-#             import ..Main.A: X as x, Y as y
-#             println(x, y)
-#             end
-#             module D21
-#             using ..Main.A: X as x
-#             println(x)
-#             end
-#             module D22
-#             using ..Main.A: X as x, Y as y
-#             println(x, y)
-#             end
-#         end
-#
-#         @test isnothing(res.res.toplevel_error_report)
-#     end
-# end
+@testset "fix self-reference of virtual module" begin
+    let res = @analyze_toplevel begin
+            const foo = sum
+            Main.foo("julia") # `Main.foo` should be resolved as constant
+        end
+        test_sum_over_string(res)
+    end
+
+    # aviatesk/JETLS.jl#1084
+    let res = @analyze_toplevel begin
+            global x = 1
+            Main.x
+            f() = Main.x
+            f()
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        @test isempty(res.res.inference_error_reports)
+    end
+
+    let res = @analyze_toplevel begin
+            let Main = "julia" # local `Main` should not be resolved to virtual module
+                sum(Main)
+            end
+        end
+        test_sum_over_string(res)
+    end
+
+    # code evaluated by `eval` or expanded from macros refers to the virtual module too
+    let res = @analyze_toplevel begin
+            global __self_reference_eval__ = 1
+            @eval Main.__self_reference_eval__ = 2
+            macro m()
+                return :(1)
+            end
+            Main.@m() + 1
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        @test isempty(res.res.inference_error_reports)
+        @test !(@invokelatest isdefinedglobal(Main, :__self_reference_eval__))
+    end
+
+    # so do the modules that the analyzed code defines
+    let res = @analyze_toplevel begin
+            global counter = 0
+            module Helpers
+            increment!() = Main.counter += 1
+            module Inner
+            current() = Main.counter
+            end
+            end
+            Helpers.increment!()
+            Helpers.Inner.current()
+            module Hooks
+            @eval Main __self_reference_hook__() = Main.counter
+            total() = Main.counter + length(names(Main))
+            root(mod::Module = Main) = mod
+            const mods = (Main, Base)
+            end
+            Hooks.total()
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        @test isempty(res.res.inference_error_reports)
+        @test @invokelatest isdefinedglobal(last(res.res.actual2virtual), :__self_reference_hook__)
+        @test !(@invokelatest isdefinedglobal(Main, :__self_reference_hook__))
+    end
+
+    # including the submodules of a package
+    let pkgfile = joinpath(mktempdir(), "SelfReferencePkg.jl")
+        write(pkgfile, """
+            module SelfReferencePkg
+            module Hooks
+            @eval Main __self_reference_pkg_hook__() = 1
+            end
+            end
+            """)
+        res = report_file(pkgfile, Base.PkgId("SelfReferencePkg"); toplevel_logger=nothing)
+        @test isnothing(res.res.toplevel_error_report)
+        @test @invokelatest isdefinedglobal(last(res.res.actual2virtual), :__self_reference_pkg_hook__)
+        @test !(@invokelatest isdefinedglobal(Main, :__self_reference_pkg_hook__))
+    end
+
+    # but not the modules defined outside the virtual module, e.g. in the actual `Main`
+    let virtual = gen_virtual_module()
+        sub = Core.eval(virtual, :(module Sub end))
+        @test JET.in_virtual_module(nothing, sub, virtual)
+        @test !JET.in_virtual_module(nothing, Main, virtual)
+        @test !JET.in_virtual_module(nothing, Base, virtual)
+    end
+
+    # unless they may define or import a `Main` of their own
+    let res = @analyze_toplevel begin
+            module P
+            Main() = 42
+            Main()
+            end
+            module Q
+            f() = Main
+            const Main = 42
+            f() + 1
+            end
+            module Outer
+            module Main
+            const x = 1
+            const w = 2
+            f() = Main.w
+            end
+            end
+            using .Outer.Main: x
+            x + Outer.Main.f()
+            module A
+            const y = 1
+            end
+            module R
+            begin
+                import ..A as Main
+                using .Main: y
+            end
+            y + 1
+            end
+            module R2
+            import ..A as Main, .Main.y
+            y + 1
+            end
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        @test isempty(res.res.inference_error_reports)
+        # `P.Main()` doesn't define `(::Module)()`
+        @test !(@invokelatest applicable(Base))
+    end
+    @test !JET.may_bind_main(:(isdefined(Main, :x) || @eval Main x = 1))
+    @test !JET.may_bind_main(:(f(mod::Module = Main) = (Main, mod)))
+    @test JET.may_bind_main(:((Main, x) = (1, 2)))
+    @test JET.may_bind_main(:(Main(x) = x))
+    @test JET.may_bind_main(:(import ..A as Main))
+
+    # which refers to the virtual module when imported from it
+    let res = @analyze_toplevel begin
+            export z
+            global z = 1
+            module S
+            import Main
+            g() = Main.z
+            end
+            S.g()
+            module T
+            using Main
+            g() = z + Main.z
+            end
+            T.g()
+            module T2
+            using ..Main
+            g() = z + Main.z
+            end
+            T2.g()
+            module T3
+            using Main
+            const Main = 42
+            end
+            T3.Main + 1
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        @test isempty(res.res.inference_error_reports)
+    end
+
+    # module paths that start with `Main` refer to the virtual module too
+    let res = @analyze_toplevel begin
+            module Foo
+            export a
+            const a = 1
+            end
+            using Main.Foo
+            import Main.Foo as F
+            import Main as M
+            const z = 2
+            module B
+            using Main.Foo: a
+            import Main: z
+            end
+            module C
+            const root = true ? Main : Base # without the `Main` binding
+            module D
+            using ..Main.Foo: a
+            end
+            end
+            a + F.a + M.z + B.a + B.z + C.D.a
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        @test isempty(res.res.inference_error_reports)
+    end
+
+    # https://github.com/aviatesk/JET.jl/issues/151
+    let res = @analyze_toplevel begin
+            struct X end
+
+            module A
+            using ..Main: X
+            X()
+            end
+        end
+
+        @test isnothing(res.res.toplevel_error_report)
+        @test isempty(res.res.inference_error_reports)
+    end
+
+    let res = @analyze_toplevel begin
+            struct X end
+
+            module A
+            using ..Main: X as X′
+            X′()
+            end
+        end
+
+        @test isnothing(res.res.toplevel_error_report)
+        @test isempty(res.res.inference_error_reports)
+    end
+
+    # stress test
+    let res = @analyze_toplevel begin
+            module A
+            struct X end
+            struct Y end
+            export X, y
+            end
+
+            module B1
+            import ..Main.A
+            println(A.X)
+            end
+            module B2
+            using ..Main.A
+            println(A.X)
+            end
+
+            module C11
+            import ..Main.A: X
+            println(X)
+            end
+            module C12
+            import ..Main.A: X, Y
+            println(X, Y)
+            end
+            module C21
+            using ..Main.A: X
+            println(X)
+            end
+            module C22
+            using ..Main.A: X, Y
+            println(X, Y)
+            end
+
+            module D11
+            import ..Main.A: X as x
+            println(x)
+            end
+            module D12
+            import ..Main.A: X as x, Y as y
+            println(x, y)
+            end
+            module D21
+            using ..Main.A: X as x
+            println(x)
+            end
+            module D22
+            using ..Main.A: X as x, Y as y
+            println(x, y)
+            end
+
+            module E
+            import ..Main.A as A′
+            println(A′.X)
+            end
+        end
+
+        @test isnothing(res.res.toplevel_error_report)
+        @test isempty(res.res.inference_error_reports)
+    end
+end
 
 let res = @analyze_toplevel begin
         v = '1'
@@ -1248,6 +1451,19 @@ end
     er = res.res.toplevel_error_report
     @test er isa ActualErrorWrapped
     @test sprint(showerror, er.err) == msg
+end
+
+@testset "malformed module usage: $badex" for badex in (
+        "Expr(:import, :Base)",
+        "Expr(:using, Expr(:(:), :Base, :sum))",
+        "Expr(:module, true, :M, Expr(:block, Expr(:import, Expr(:.))))")
+    res = report_text("""
+        macro badusage()
+            esc($badex)
+        end
+        @badusage
+        """)
+    @test !isnothing(res.res.toplevel_error_report)
 end
 
 @testset "module usage" begin
