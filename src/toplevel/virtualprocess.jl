@@ -895,12 +895,10 @@ supplied syntax tree as follows:
    recursively analyze its body in that new module.
 2. Otherwise, expand macros and lower `blk`. Skip literal results; a `:thunk`
    result supplies the lowered `CodeInfo`.
-3. If the context module was virtualized, rewrite self-references from the
-   original module to the virtual module; see `fix_self_references!`.
-4. Use `ConcreteInterpreter` to concretely interpret statements that must not
+3. Use `ConcreteInterpreter` to concretely interpret statements that must not
    be abstracted, such as `:method` definitions; see
    [`partially_interpret!`](@ref).
-5. Use `ToplevelAbstractAnalyzer` to analyze the remaining statements
+4. Use `ToplevelAbstractAnalyzer` to analyze the remaining statements
    abstractly.
 
 !!! warning
@@ -1040,6 +1038,9 @@ value to variable ... from module ...`. It also allows JET to analyze an
 existing module other than `Main` without defining analyzed code directly in
 that module.
 
+When `actual` is `Main`, the virtual module also binds `Main` to itself, as `Main` does, so
+that e.g. `Main` of `Main.x` in the analyzed code refers to the virtual module.
+
 !!! warning "TODO"
     Because this function relies on `Base.names`, it cannot reproduce names
     made available through `using`.
@@ -1071,8 +1072,79 @@ function virtualize_module_context(actual::Module)
 
     usage = Expr(:using, Expr(:., :., :., split_module_path(sandbox)...))
     Core.eval(virtual, usage)
+    actual === Main && Core.eval(virtual, :(const Main = $virtual))
 
     return virtual
+end
+
+# A module `mod` defined in the module `virtual` virtualized from `Main` sees the actual
+# `Main` through `Core`, so bind `Main` to `virtual` in `mod` as well, unless the body `body`
+# of `mod` may define or import a `Main` of its own, which the binding would conflict with.
+function bind_virtual_main!(state::InterpretationState, mod::Module, body::Expr)
+    actual2virtual = state.res.actual2virtual
+    actual2virtual === nothing && return nothing
+    actual, virtual = actual2virtual
+    if (actual === Main && nameof(mod) !== :Main &&
+        in_virtual_module(state.config.pkgid, mod, virtual) && !may_bind_main(body))
+        Core.eval(mod, :(const Main = $virtual))
+    end
+    return nothing
+end
+
+# Whether `mod` is `virtual` or a module defined in it, including the virtual package module
+# of `pkgid`, which `setup_package_module!` makes its own parent. A module that the analyzed
+# code defines elsewhere, e.g. in a file that it includes into the actual `Main`, outlives the
+# analysis and keeps referring to the actual `Main`.
+function in_virtual_module(pkgid::Union{Nothing,PkgId}, mod::Module, virtual::Module)
+    while mod !== virtual
+        parent = parentmodule(mod)
+        if parent === mod
+            return pkgid !== nothing && Base.PkgId(mod) == virtual_package_id(pkgid)
+        end
+        mod = parent
+    end
+    return true
+end
+
+# Whether `ex` may define or import `Main`, i.e. whether `Main` appears in it other than as
+# the module of a qualified name, e.g. `Main.x`, as a value, e.g. in `isdefined(Main, :x)`,
+# `@eval Main ex` or `(Main,)`, or in a module path that does not bind it
+function may_bind_main(@nospecialize ex)
+    ex === :Main && return true
+    ex isa Expr || return false
+    if isexpr(ex, :., 2) && ex.args[1] === :Main
+        return false
+    elseif isexpr(ex, :call) && !isempty(ex.args)
+        # an argument is a value, or a local variable in a method signature
+        return may_bind_main(ex.args[1]) || any(may_bind_main_as_value, ex.args[2:end])
+    elseif isexpr(ex, (:kw, :return, :tuple, :vect, :ref))
+        return any(may_bind_main_as_value, ex.args)
+    elseif isexpr(ex, :(=), 2)
+        lhs, rhs = ex.args
+        # unlike a method signature, an assignment target, e.g. `(Main, x)`, binds its names
+        return (isexpr(lhs, (:call, :where)) ? may_bind_main(lhs) : mentions_main(lhs)) ||
+            may_bind_main_as_value(rhs)
+    elseif (isexpr(ex, :macrocall, 4) && ex.args[3] === :Main &&
+            ex.args[1] in (Symbol("@eval"), :(Base.var"@eval")))
+        return may_bind_main(ex.args[4])
+    elseif isexpr(ex, :module) # whose body is checked when the module is defined
+        return length(ex.args) ≥ 3 && ex.args[end-1] === :Main
+    elseif isexpr(ex, (:using, :import))
+        # a module usage binds the last name of each path, or its alias, except that `using`
+        # binds the name of a whole module only implicitly, which a definition can override
+        return any(ex.args) do arg
+            isexpr(arg, :(:)) && return any(name -> bound_name(name) === :Main, arg.args[2:end])
+            return ex.head === :import && bound_name(arg) === :Main
+        end
+    end
+    return any(may_bind_main, ex.args)
+end
+may_bind_main_as_value(@nospecialize ex) = ex !== :Main && may_bind_main(ex)
+mentions_main(@nospecialize ex) = ex === :Main ||
+    (ex isa Expr && !(isexpr(ex, :., 2) && ex.args[1] === :Main) && any(mentions_main, ex.args))
+function bound_name(@nospecialize path)
+    isexpr(path, (:as, :.)) || return path
+    return isempty(path.args) ? nothing : path.args[end]
 end
 
 const VIRTUAL_MODULE_NAME = :JETVirtualModule
@@ -1716,6 +1788,7 @@ function process_toplevel!(interp::ConcreteInterpreter, toplevelnode::JS.SyntaxN
             end
             x.args[end] = Expr(:block, lnn) # empty module's code body
             newcontext = eval_with_err_handling(state, x)::Module
+            bind_virtual_main!(state, newcontext, modparts.body)
             if state.pkg_mod_depth == 0
                 setup_package_module!(state, newcontext)
             end
@@ -1764,8 +1837,6 @@ function process_toplevel!(interp::ConcreteInterpreter, toplevelnode::JS.SyntaxN
         isexpr(lwr, :thunk) || continue # literal
 
         src = only(lwr.args)::CodeInfo
-
-        fix_self_references!(state.res.actual2virtual, src)
 
         state.callee_error = nothing
         empty!(state.caught_callee_errors)
@@ -1872,96 +1943,6 @@ form_module_usage_alias(head::Symbol, modpath::Vector{Any}, namepath::Vector{Any
 # import A.B.C as abc
 form_module_import_alias(modpath::Vector{Any}, alias::Symbol) =
     Expr(:import, Expr(:as, Expr(:., modpath...), alias))
-
-# if virtualized, replace self references of `actualmod` with `virtualmod` (as is)
-fix_self_references!(::Nothing, @nospecialize(x)) = x
-function fix_self_references!((actualmod, virtualmod)::Actual2Virtual, @nospecialize(x))
-    actualmodsym   = Symbol(actualmod)
-    virtualmodsyms = split_module_path(virtualmod)
-
-    function any_self(modpath::Vector{Any})
-        for x in modpath
-            if x === virtualmod # postwalk, so we compare to `virtualmod`
-                return true
-            end
-        end
-        return false
-    end
-
-    # we can't use `Module` object in module usage expression, so we need to replace it with
-    # its symbolic representation
-    function fix_self(modpath::Vector{Any})
-        ret = Any[]
-        for x in modpath
-            if x === virtualmod # postwalk, so we compare to `virtualmod`
-                push!(ret, virtualmodsyms...)
-            else
-                push!(ret, x)
-            end
-        end
-        return ret
-    end
-
-    function fix_self_reference_simple(usage::Expr)
-        if isexpr(usage, (:export, :public))
-            return usage
-        end
-        module_usage = pattern_match_module_usage(usage)
-        any_self(module_usage.modpath) || return usage
-        fixed_module_usage = ModuleUsage(module_usage; modpath = fix_self(module_usage.modpath))
-        return form_module_usage(fixed_module_usage)
-    end
-
-    function fix_self_reference(usage::Expr)
-        ret = Expr(usage.head)
-        for simple in to_simple_module_usages(usage)
-            fixed = fix_self_reference_simple(simple)
-            @assert usage.head === fixed.head === simple.head && length(fixed.args) == 1
-            push!(ret.args, first(fixed.args))
-        end
-        return ret
-    end
-
-    return postwalk_and_transform!(x) do @nospecialize(xx), _scope::Vector{Symbol}
-        if ismoduleusage(xx)
-            return fix_self_reference(xx)
-        elseif xx === actualmodsym
-            return virtualmod
-        end
-        return xx
-    end
-end
-
-function postwalk_and_transform!(f, x, scope = Symbol[])
-    inner(@nospecialize(x)) = postwalk_and_transform!(f, x, scope)
-    return walk_and_transform!(x, inner, f, scope)
-end
-function prewalk_and_transform!(f, x, scope::Vector{Symbol} = Symbol[])
-    inner(@nospecialize(x)) = prewalk_and_transform!(f, x, scope)
-    outer(@nospecialize(x), _scope::Vector{Symbol}) = x
-    return walk_and_transform!(f(x, scope), inner, outer, scope)
-end
-
-function walk_and_transform!(@nospecialize(x), inner, outer, scope::Vector{Symbol})
-    if isa(x, GotoIfNot)
-        push!(scope, :gotoifnot)
-        cond = inner(walk_and_transform!(x.cond, inner, outer, scope))
-        dest = inner(walk_and_transform!(x.dest, inner, outer, scope))
-        x = GotoIfNot(cond, dest)
-        pop!(scope)
-    elseif isa(x, Expr)
-        push!(scope, x.head)
-        for i = 1:length(x.args)
-            x.args[i] = inner(walk_and_transform!(x.args[i], inner, outer, scope))
-        end
-        pop!(scope)
-    elseif isa(x, CodeInfo)
-        for i = 1:length(x.code)
-            x.code[i] = inner(walk_and_transform!(x.code[i], inner, outer, scope))
-        end
-    end
-    return outer(x, scope)
-end
 
 """
     partially_interpret!(interp::ConcreteInterpreter, plan::ConcretizationPlan,
@@ -2532,11 +2513,63 @@ function usemodule_with_err_handling(interp::ConcreteInterpreter, ex::Expr, worl
         end
     end
     @label eval_usemodule
+    ex = fix_self_module_usage(state, ex)
     # `scrub_offset = 2`: `invoke_in_world` -> `Core.eval`
     let mod=mod, ex=ex; with_err_handling(general_err_handler, state; scrub_offset=2) do
         Base.invoke_in_world(world, Core.eval, mod, ex)
     end; end
     return nothing
+end
+
+# If virtualized from `Main`, make the simple module usage `ex` in the module `state.context`
+# refer to the virtual module with a module path that refers to `Main`. Other references to
+# `Main`, e.g. `Main` of `Main.x`, refer to the virtual module through the bindings that
+# `virtualize_module_context` and `bind_virtual_main!` make, but the first name of a module
+# path may still refer to the actual `Main`: as the root module of an absolute path, e.g.
+# `Main` of `using Main.Foo`, or in a module without such a binding.
+function fix_self_module_usage(state::InterpretationState, ex::Expr)
+    actual2virtual = state.res.actual2virtual
+    actual2virtual === nothing && return ex
+    actualmod, virtualmod = actual2virtual
+    mod = state.context
+    if !(actualmod === Main && isexpr(ex, (:using, :import), 1) &&
+         in_virtual_module(state.config.pkgid, mod, virtualmod))
+        return ex
+    end
+    arg = ex.args[1]
+    if isexpr(arg, :(:)) && !isempty(arg.args) # `using A: x` imports `x` from the module of `A`
+        path = fix_self_path(virtualmod, mod, arg.args[1])
+        path === nothing && return ex
+        return Expr(ex.head, Expr(:(:), path, arg.args[2:end]...))
+    end
+    path, alias = isexpr(arg, :as, 2) ? (arg.args[1], arg.args[2]) : (arg, nothing)
+    fixed = fix_self_path(virtualmod, mod, path)
+    fixed === nothing && return ex
+    if ex.head === :import && alias === nothing && fixed.args[end] !== path.args[end]
+        alias = path.args[end] # keep binding the name, e.g. `Main` of `import Main`
+    end
+    return Expr(ex.head, alias === nothing ? fixed : Expr(:as, fixed, alias))
+end
+
+# The module path `path` in `mod` with the name of `virtualmod`, a child of `Main`, inserted
+# after its first name if that name, e.g. `Main` of `Main.Foo`, refers to the actual `Main`
+function fix_self_path(virtualmod::Module, mod::Module, @nospecialize path)
+    isexpr(path, :.) || return nothing
+    i = findfirst(name -> name !== :., path.args)
+    i === nothing && return nothing
+    name = path.args[i]
+    name isa Symbol || return nothing
+    if i == 1
+        name === :Main || return nothing
+    else # relative path, whose `i-1` dots go up `i-2` levels from `mod`
+        m = mod
+        for _ = 1:i-2
+            m = parentmodule(m)
+        end
+        # in the latest world, in which a preceding usage of the same statement is visible
+        resolve_latest_global(GlobalRef(m, name)) === Main || return nothing
+    end
+    return Expr(:., path.args[1:i]..., nameof(virtualmod), path.args[i+1:end]...)
 end
 
 function start_concretization_timeout!(state::InterpretationState)

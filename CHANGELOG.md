@@ -102,6 +102,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   const M = Base.Meta
   using .M: isexpr # used to fail: "M" does not name a module
+
+- Fixed top-level analysis resolving references to `Main`, such as `Main.x`, to
+  the actual `Main` rather than the virtualized module in which the code is
+  analyzed, also within `eval`, macro expansions and most of the modules that
+  the analyzed code defines. Global variables referenced as
+  `Main.x` were reported as not defined, and module usages such as
+  `using Main.Foo` failed with a top-level error on Julia 1.13 and later
+  (aviatesk/JETLS.jl#1084):
+  ```julia
+  global x = 1
+  Main.x # was reported: `Main.x` is not defined
   ```
 
 ## [0.13.3]
