@@ -894,6 +894,34 @@ function previous_const_binding_state(partition::Core.BindingPartition)
     return AbstractBindingState(true, false, Const(value))
 end
 
+# HACK/FIXME Concretize `AbstractBindingState`
+# For top-level analysis implementation reasons, we actually define an abstract constant
+# in the analyzed module’s namespace, with its `AbstractBindingState` as the value.
+# This is necessary because binding resolution cannot be accurately tracked
+# when using `export`/`using`.
+# A constant whose value is known is defined with the value itself instead, since code run
+# natively, e.g. a macro reading the constant while it expands, would read the placeholder.
+function declare_abstract_const(gr::GlobalRef, binding_state::AbstractBindingState)
+    value = binding_state
+    if !binding_state.maybeundef && isdefined(binding_state, :typ)
+        typ = binding_state.typ
+        typ isa Const && (value = typ.val)
+    end
+    return declare_const_value(gr, value)
+end
+
+@static if isdefinedglobal(Core, :declare_const)
+declare_const_value(gr::GlobalRef, @nospecialize(value)) =
+    (Core.declare_const(gr.mod, gr.name, value); nothing)
+else
+# Lowering copies an `Expr` quoted in the code, so pass the value in a tuple to define the
+# value itself
+function declare_const_value(gr::GlobalRef, @nospecialize(value))
+    Core.eval(gr.mod, Expr(:const, gr.name, Expr(:call, GlobalRef(Core, :getfield), (value,), 1)))
+    return nothing
+end
+end
+
 function is_same_binding_state(
         𝕃::AbstractLattice, a::AbstractBindingState, b::AbstractBindingState
     )
@@ -984,12 +1012,7 @@ function const_assignment_rt_exct(analyzer::ToplevelAbstractAnalyzer, sv::Infere
                 end
             end
             if binding_state !== nothing
-                # HACK/FIXME Concretize `AbstractBindingState`
-                # For top-level analysis implementation reasons, we actually define this
-                # `AbstractBindingState` in the analyzed module’s namespace.
-                # This is necessary because binding resolution cannot be accurately tracked
-                # when using `export`/`using`.
-                Core.eval(gr.mod, Expr(:const, gr.name, binding_state))
+                declare_abstract_const(gr, binding_state)
                 # The declaration changes what the blocks running after it see, but
                 # binding states are not part of the state whose change makes the Compiler
                 # analyze a block again, so schedule those already analyzed here.
@@ -1148,7 +1171,7 @@ function mark_assigned!(
         state isa AbstractBindingState && state.maybeundef && isdefined(state, :typ) ||
             return nothing
         new_state = AbstractBindingState(true, false, state.typ; state.assignment)
-        Core.eval(gr.mod, Expr(:const, gr.name, new_state))
+        declare_abstract_const(gr, new_state)
     else
         binding_states = get_binding_states(analyzer)
         state = get(binding_states, sites.partition, nothing)
@@ -1204,6 +1227,12 @@ function refine_partition_load(analyzer::ToplevelAbstractAnalyzer,
             end
         end
         return RTEffects(Any, res.exct, effects)
+    end
+    kind = CC.binding_kind(partition)
+    # A redeclaration of this constant records its state against this partition, but code
+    # reading this partition does not see the redeclaration until the world advances
+    if CC.is_defined_const_binding(kind) && kind != CC.PARTITION_KIND_BACKDATED_CONST
+        return res
     end
     binding_state = get(get_binding_states(analyzer), partition, nothing)
     if binding_state !== nothing && isdefined(binding_state, :typ)

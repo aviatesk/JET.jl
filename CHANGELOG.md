@@ -91,6 +91,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   f() # was reported: `f` is not defined
   ```
 
+- Fixed top-level analysis giving code run during the analysis, such as a macro
+  being expanded, `@static`, or `using`, an internal placeholder object in
+  place of the value of a constant (aviatesk/JETLS.jl#1081). A constant whose
+  value is known in the analysis is now defined with the value itself:
+  ```julia
+  const N = 1
+  macro m() N end
+  f() = (@m) + 1 # was reported: no matching method found `+(::JET.AbstractBindingState, ::Int64)`
+
+  const M = Base.Meta
+  using .M: isexpr # used to fail: "M" does not name a module
+  ```
+
 ## [0.13.3]
 
 ### Fixed
