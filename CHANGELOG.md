@@ -102,6 +102,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   const M = Base.Meta
   using .M: isexpr # used to fail: "M" does not name a module
+  ```
 
 - Fixed top-level analysis resolving references to `Main`, such as `Main.x`, to
   the actual `Main` rather than the virtualized module in which the code is
