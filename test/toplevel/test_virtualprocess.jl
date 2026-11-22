@@ -3864,6 +3864,88 @@ end
             @test isnothing(res.res.toplevel_error_report)
         end
     end
+
+    @testset "concretization of `@MethodTable`" begin
+        let (vmod, res) = @analyze_toplevel2 begin
+                Base.Experimental.@MethodTable MT
+                Base.Experimental.@overlay MT sin(x::Float64) = 1.0
+            end
+            @test isnothing(res.res.toplevel_error_report)
+            mt = @invokelatest getglobal(vmod, :MT)
+            @test mt isa Core.MethodTable
+            @test only(Base.MethodList(mt)).sig == Tuple{typeof(sin),Float64}
+        end
+        let res = @analyze_toplevel begin
+                using Base.Experimental: @MethodTable, @overlay
+                @MethodTable(MT)
+                @overlay MT sin(x::Float64) = 1.0
+            end
+            @test isnothing(res.res.toplevel_error_report)
+        end
+        let (vmod, res) = @analyze_toplevel2 begin
+                module OverlayMod
+                @static if isdefined(Base.Experimental, Symbol("@overlay"))
+                    Base.Experimental.@MethodTable(MT)
+                else
+                    const MT = nothing
+                end
+                f(x) = :ordinary
+                Base.Experimental.@overlay OverlayMod.MT f(x::Int) = :overlay
+                end
+            end
+            @test isnothing(res.res.toplevel_error_report)
+            OverlayMod = @invokelatest getglobal(vmod, :OverlayMod)
+            @test (@invokelatest OverlayMod.f(1)) === :ordinary
+            mt = @invokelatest getglobal(OverlayMod, :MT)
+            @test mt isa Core.MethodTable
+            @test only(Base.MethodList(mt)).sig == Tuple{typeof(OverlayMod.f),Int}
+        end
+    end
+
+    @testset "`@overlay` method tables" begin
+        let (vmod, res) = @analyze_toplevel2 begin
+                module OverlayMod
+                module Tables
+                Base.Experimental.@MethodTable MT
+                end
+                f(x) = :ordinary
+                Base.Experimental.@overlay OverlayMod.Tables.MT f(x::Int) = :overlay
+                end
+            end
+            @test isnothing(res.res.toplevel_error_report)
+            OverlayMod = @invokelatest getglobal(vmod, :OverlayMod)
+            @test (@invokelatest OverlayMod.f(1)) === :ordinary
+            @test only(Base.MethodList(OverlayMod.Tables.MT)).sig == Tuple{typeof(OverlayMod.f),Int}
+        end
+        let (vmod, res) = @analyze_toplevel2 begin
+                module OverlayMod
+                Base.Experimental.@MethodTable table
+                MT = table
+                f(x) = :ordinary
+                Base.Experimental.@overlay OverlayMod.MT f(x::Int) = :overlay
+                end
+            end
+            report = res.res.toplevel_error_report
+            @test report isa MissingConcretizationErrorReport
+            @test report.var.name === :MT
+            OverlayMod = @invokelatest getglobal(vmod, :OverlayMod)
+            @test (@invokelatest OverlayMod.f(1)) === :ordinary
+        end
+        @testset "undefined method table: $mt" for mt in (:Undefined, :(OverlayMod.Undefined))
+            vmod = gen_virtual_module()
+            res = report_text("""
+                module OverlayMod
+                f(x) = :ordinary
+                Base.Experimental.@overlay $mt f(x::Int) = :overlay
+                end
+                """; context=vmod, virtualize=false)
+            report = res.res.toplevel_error_report
+            @test report isa ActualErrorWrapped
+            @test report.err isa UndefVarError
+            OverlayMod = @invokelatest getglobal(vmod, :OverlayMod)
+            @test (@invokelatest OverlayMod.f(1)) === :ordinary
+        end
+    end
 end
 
 function eval_replaced_test_macro(mod::Module, ex::Expr)

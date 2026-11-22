@@ -116,6 +116,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Main.x # was reported: `Main.x` is not defined
   ```
 
+- Fixed top-level analysis failing on `Base.Experimental.@overlay` definitions
+  for a method table created by `Base.Experimental.@MethodTable`
+  (aviatesk/JETLS.jl#1072). An `@overlay` definition for a method table whose
+  value JET does not know is now reported as `MissingConcretizationErrorReport`
+  rather than silently defining an ordinary method:
+  ```julia
+  Base.Experimental.@MethodTable MT
+  Base.Experimental.@overlay MT sin(x::Float64) = 1.0 # used to fail: `MT` must have a concrete value
+  ```
+
 ## [0.13.3]
 
 ### Fixed

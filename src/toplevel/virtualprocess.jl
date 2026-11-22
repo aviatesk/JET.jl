@@ -2200,9 +2200,35 @@ function select_direct_requirement!(
         # deprecation flags of bindings are part of the analysis world
         elseif is_base_deprecate_call(stmt, mod, stmts)
             selected[idx] = true
+        # `Base.Experimental.@overlay` definitions need the actual method table, so select the
+        # constant declaration that binds it too
+        elseif is_method_table_creation(stmt)
+            selected[idx] = true
+            for succ in edges.succs[idx]
+                if is_const_declaration(stmts[succ])
+                    selected[succ] = true
+                end
+            end
         end
     end
 end
+
+# `Base.Experimental.@MethodTable` expands to a call of this function, which is local to Base
+const method_table_creator = let ex = macroexpand(@__MODULE__, :(Base.Experimental.@MethodTable mt))
+    if isexpr(ex, :const, 1) && isexpr(ex.args[1], :(=), 2) && isexpr(ex.args[1].args[2], :call)
+        ex.args[1].args[2].args[1]
+    else
+        nothing
+    end
+end
+
+is_method_table_creation(@nospecialize stmt) =
+    method_table_creator !== nothing && isexpr(stmt, :call) && !isempty(stmt.args) &&
+    stmt.args[1] === method_table_creator
+
+is_const_declaration(@nospecialize stmt) =
+    isexpr(stmt, :const, 2) || # Julia 1.12
+    (isexpr(stmt, :call, 4) && stmt.args[1] == GlobalRef(Core, :declare_const))
 
 # Only deprecations of bindings in `mod` are selected, as emitted by `@deprecate_binding`
 # and `Base.deprecate(@__MODULE__, ...)`, so that concretization does not mark bindings of
@@ -2654,11 +2680,37 @@ end
 
 function JuliaInterpreter.evaluate_methoddef(interp::ConcreteInterpreter, frame::Frame, node::Expr)
     # A failed definition may be caught by `step_expr!`; collect only after success.
-    ret = @invoke JuliaInterpreter.evaluate_methoddef(interp::Interpreter, frame::Frame, node::Expr)
+    ret = @invoke JuliaInterpreter.evaluate_methoddef(interp::Interpreter, frame::Frame,
+        with_method_table(interp, frame, node)::Expr)
     if should_analyze_from_definitions(InterpretationState(interp).config)
         collect_toplevel_signature!(interp, frame, node)
     end
     return ret
+end
+
+# Give the method table of an overlay method definition, named as `MT` or `M.MT`, as its
+# value obtained by `lookup`. JuliaInterpreter would otherwise read it natively, and given an
+# `AbstractBindingState`, define an ordinary method or fail to define a function of its name.
+function with_method_table(interp::ConcreteInterpreter, frame::Frame, node::Expr)
+    LoweredCodeUtils.ismethod3(node) || return node
+    i = isexpr(node, :method) ? 1 : 3
+    mt = lookup_method_table(interp, frame, node.args[i])
+    mt isa Core.MethodTable || return node
+    node = Expr(node.head, node.args...)
+    node.args[i] = mt
+    return node
+end
+
+function lookup_method_table(interp::ConcreteInterpreter, frame::Frame, @nospecialize x)
+    if isexpr(x, :call, 3) && x.args[1] == GlobalRef(Base, :getproperty)
+        mod = lookup_method_table(interp, frame, x.args[2])
+        name = x.args[3]
+        name isa QuoteNode && (name = name.value)
+        mod isa Module && name isa Symbol || return nothing
+        x = GlobalRef(mod, name)
+    end
+    x isa Expr && return nothing
+    return JuliaInterpreter.lookup(interp, frame, x)
 end
 
 function collect_toplevel_signature!(interp::ConcreteInterpreter, frame::Frame, @nospecialize(node))
