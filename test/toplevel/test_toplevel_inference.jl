@@ -1236,6 +1236,36 @@ end
         @test isnothing(res.res.toplevel_error_report)
     end
 
+    let (vmod, res) = @analyze_toplevel2 begin
+            module OverlayMod
+            new_method_table(name::Symbol) =
+                ccall(:jl_new_method_table, Any, (Any, Any), name, @__MODULE__)
+            const MT = new_method_table(:MT)
+            f(x) = :ordinary
+            Base.Experimental.@overlay MT f(x::Int) = :overlay
+            end
+        end
+        report = res.res.toplevel_error_report
+        @test report isa MissingConcretizationErrorReport
+        @test report.var.name === :MT
+        @test report.isconst
+    end
+    let (vmod, res) = @analyze_toplevel2 begin
+            module OverlayMod
+            new_method_table(name::Symbol) =
+                ccall(:jl_new_method_table, Any, (Any, Any), name, @__MODULE__)
+            const MT = new_method_table(:MT)
+            f(x) = :ordinary
+            Base.Experimental.@overlay OverlayMod.MT f(x::Int) = :overlay
+            end
+        end
+        report = res.res.toplevel_error_report
+        @test report isa MissingConcretizationErrorReport
+        @test report.var.name === :MT
+        OverlayMod = @invokelatest getglobal(vmod, :OverlayMod)
+        @test (@invokelatest OverlayMod.f(1)) === :ordinary
+    end
+
     mktempdir() do dir
         main_file = joinpath(dir, "main.jl")
         assignment_file = joinpath(dir, "config.jl")
