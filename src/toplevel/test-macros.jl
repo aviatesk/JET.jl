@@ -765,9 +765,28 @@ function replace_test_macrocalls(
                    for arg in x.args[3:end]]
         replaced = Expr(:macrocall, x.args[1], source, args...)
         replacement = replace_test_macrocall(name, replaced.args, failfast === true)
-        return @something replacement replaced
+        replacement === nothing && return replaced
+        return strip_template_linenums!(replacement)
     end
     args = Any[replace_test_macrocalls(arg, mod, failfast, failfast_modes)
                for arg in x.args]
     return Expr(x.head, args...)
+end
+
+# `@q` strips the line numbers of the replacement templates, but when this file is lowered
+# by JuliaLowering, each quote inserts its own line before the statements of its blocks.
+# Strip these as well, so that the code of a replacement is attributed to the line of the
+# macro call as the line numbers of the user code around it specify.
+const TEMPLATE_FILE = Symbol(@__FILE__)
+function strip_template_linenums!(@nospecialize(x))
+    x isa Expr || return x
+    isexpr(x, (:quote, :inert)) && return x
+    if x.head === :block
+        filter!(@nospecialize(arg) -> !(arg isa LineNumberNode && arg.file === TEMPLATE_FILE),
+                x.args)
+    end
+    for arg in x.args
+        strip_template_linenums!(arg)
+    end
+    return x
 end
