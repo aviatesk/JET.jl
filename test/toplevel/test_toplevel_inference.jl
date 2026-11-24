@@ -296,6 +296,9 @@ end
         m = gen_virtual_module()
         g = GlobalRef(m, :x)
         guard = Base.lookup_binding_partition(Base.get_world_counter(), g)
+        # declared separately, since JuliaLowering types `x` before declaring it for
+        # `global x::Int`, which then leaves no declared partition
+        Core.eval(m, :(global x))
         Core.eval(m, :(global x::Int))
         current = Base.lookup_binding_partition(Base.get_world_counter(), g)
         declared = Base.lookup_binding_partition(current.min_world - UInt(1), g)
