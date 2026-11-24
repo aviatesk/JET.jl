@@ -88,6 +88,25 @@ end
     @test_opt sin(10)
 end
 
+@testset "runtime dispatch in macro expansion" begin
+    # a runtime dispatch in the code passed to a macro defined elsewhere is reported at its
+    # line, while the code that the macro itself generates is not analyzed
+    mod = Module()
+    Base.include_string(mod, """
+        function call_callbacks(fs, i)
+            @time begin
+                nothing
+                fs[i](i)
+            end
+        end
+        """, "runtime-dispatch-in-macro-expansion.jl")
+    result = report_opt(mod.call_callbacks, (Vector{Function}, Int); target_modules=(mod,))
+    r = only(get_reports_with_test(result))
+    @test r isa RuntimeDispatchReport
+    @test r.vst[1].file === Symbol("runtime-dispatch-in-macro-expansion.jl")
+    @test r.vst[1].line == 4
+end
+
 # with `use_fixed_world`, the analysis runs in JET's world, which predates this binding
 callee_newer_than_jet(t, ::Val{D}) where {D} = t[D]
 @testset "runtime dispatch report doesn't access bindings from a stale world" begin

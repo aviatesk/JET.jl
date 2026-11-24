@@ -103,5 +103,44 @@ sparams22(::Type{A}, ::Type{B}) where B where A = zero(A), zero(B)
     end
 end
 
+@testset "location in macro expansion" begin
+    # code passed to a macro is reported at its own line rather than at the macro call,
+    # including when JuliaLowering nests it in a "macro expansion" scope
+    mod = Module()
+    Base.include_string(mod, """
+        macro wrap(ex)
+            quote
+                nothing
+                \$(esc(ex))
+            end
+        end
+        function f()
+            @wrap begin
+                nothing
+                sin("julia")
+            end
+        end
+        """, "location-in-macro-expansion.jl")
+    result = report_call(mod.f, ())
+    report = only(get_reports_with_test(result))
+    @test report.vst[1].file === Symbol("location-in-macro-expansion.jl")
+    @test report.vst[1].line == 10
+
+    # also when the macro is defined in another file
+    mod = Module()
+    Base.include_string(mod, """
+        function g()
+            @time begin
+                nothing
+                sin("julia")
+            end
+        end
+        """, "location-in-cross-file-macro-expansion.jl")
+    result = report_call(mod.g, ())
+    report = only(get_reports_with_test(result))
+    @test report.vst[1].file === Symbol("location-in-cross-file-macro-expansion.jl")
+    @test report.vst[1].line == 4
+end
+
 # TODO set up a dedicated module context for this testset
 # end # module test_inferenceerrorreport
