@@ -2192,7 +2192,7 @@ function select_direct_requirement!(
             selected[edges.succs[idx]] .= true
         # `eval` calls are difficult to analyze, but since they may contain toplevel
         # definitions, JET just concretizes them always
-        elseif is_known_call(stmt, :eval, stmts)
+        elseif is_known_call(stmt, :eval, stmts) || is_lowered_eval_call(stmt)
             selected[idx] = true
         elseif is_known_getproperty(stmt, :eval, stmts)
             selected[idx] = true
@@ -2754,22 +2754,47 @@ end
 
 ismoduleusage(@nospecialize(x)) = isexpr(x, (:import, :using, :export, :public))
 
+# Code lowered by `Base.JuliaLowering` calls its runtime functions as values, not through
+# `GlobalRef`s.
+@static if isdefinedglobal(Base, :JuliaLowering)
+is_base_jl_callee(@nospecialize(f), name::Symbol) =
+    isdefinedglobal(Base.JuliaLowering, name) &&
+    (f === getglobal(Base.JuliaLowering, name) || callee_matches(f, Base.JuliaLowering, name))
+else
+is_base_jl_callee(@nospecialize(f), name::Symbol) = false
+end
+
+# JuliaLowering lowers `@eval` and a `:toplevel` within a block to a call of `at_eval_hook`
+is_lowered_eval_call(@nospecialize(x)) =
+    isexpr(x, :call) && !isempty(x.args) && is_base_jl_callee(x.args[1], :at_eval_hook)
+
 @static if isdefinedglobal(Core, :_eval_import)
 function is_lowered_module_usage(@nospecialize(x))
     isexpr(x, :call) || return false
-    f = x.args[1]
-    return (callee_matches(f, Base, :_eval_import) ||
-            callee_matches(f, Base, :_eval_using))
+    return lowered_module_usage_kind(x.args[1]) !== nothing
+end
+function lowered_module_usage_kind(@nospecialize f)
+    if callee_matches(f, Base, :_eval_using) || is_base_jl_callee(f, :eval_using)
+        return :using
+    elseif callee_matches(f, Base, :_eval_import) || is_base_jl_callee(f, :eval_import)
+        return :import
+    elseif is_base_jl_callee(f, :eval_public)
+        return :public
+    end
+    return nothing
 end
 function to_module_usage(x::Expr)
-    @assert is_lowered_module_usage(x)
-    f = x.args[1]
-    if callee_matches(f, Base, :_eval_using)
+    kind = lowered_module_usage_kind(x.args[1])
+    if kind === :using
         @assert length(x.args) == 3
         path = x.args[3]::QuoteNode
         return Expr(:using, path.value)
+    elseif kind === :public
+        @assert length(x.args) == 4
+        head = x.args[3]::Bool ? :export : :public
+        return Expr(head, Symbol[Symbol(name) for name in x.args[4]::Vector{String}]...)
     end
-    @assert callee_matches(f, Base, :_eval_import) && length(x.args) ≥ 5
+    @assert kind === :import && length(x.args) ≥ 5
     explicit = x.args[2]::Bool
     from = x.args[4]
     paths = Any[(x.args[i]::QuoteNode).value for i = 5:length(x.args)]
@@ -3195,17 +3220,26 @@ function analyze_toplevel!(analyzer::ToplevelAbstractAnalyzer, src::CodeInfo, co
 end
 
 # Inference cannot handle `:toplevel` statements, which `ConcreteInterpreter` evaluates
-# instead, so give them values of unknown types in a copy of `src`
+# instead, so give them values of unknown types in a copy of `src`. So are the calls that
+# JuliaLowering lowers them and `@eval` to, whose inference would analyze the lowering of
+# the evaluated code instead of the code itself.
 function replace_toplevel_statements(src::CodeInfo)
-    any(@nospecialize(stmt) -> isexpr(stmt, :toplevel), src.code) || return src
+    any(is_toplevel_statement, src.code) || return src
     src = copy(src)
     for i in eachindex(src.code)
-        if isexpr(src.code[i], :toplevel)
-            src.code[i] = Expr(:call, GlobalRef(Base, :inferencebarrier), nothing)
+        stmt = src.code[i]
+        if isexpr(stmt, :toplevel) || is_lowered_eval_call(stmt)
+            src.code[i] = unknown_value()
+        elseif isexpr(stmt, :(=), 2) && is_lowered_eval_call(stmt.args[2])
+            src.code[i] = Expr(:(=), stmt.args[1], unknown_value())
         end
     end
     return src
 end
+unknown_value() = Expr(:call, GlobalRef(Base, :inferencebarrier), nothing)
+is_toplevel_statement(@nospecialize stmt) =
+    isexpr(stmt, :toplevel) || is_lowered_eval_call(stmt) ||
+    (isexpr(stmt, :(=), 2) && is_lowered_eval_call(stmt.args[2]))
 
 function construct_toplevel_mi(src::Core.CodeInfo, context_module::Module)
     # Resolution evaluates e.g. `ccall` types, which must see the bindings of the latest

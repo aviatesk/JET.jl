@@ -183,6 +183,28 @@ end
         @test JET.to_module_usage(get_lowered_module_usage(ex)) == ex
     end
 end
+
+@static if isdefinedglobal(Base, :JuliaLowering)
+function get_jl_lowered_module_usage(ex::Expr)
+    lwr = Base.JuliaLowering.core_lowering_hook(
+        @__MODULE__, ex, Base.get_world_counter(), false, LineNumberNode(1, :none))[1]
+    @assert JET.isexpr(lwr, :thunk)
+    src = only(lwr.args)::Core.CodeInfo
+    return only(filter(JET.is_lowered_module_usage, src.code))::Expr
+end
+@testset "to_module_usage with JuliaLowering" begin
+    for ex in (:(using SomeModule),
+               :(import SomeModule),
+               :(using SomeModule: bar, foo),
+               :(import SomeModule: bar, foo),
+               :(using SomeModule: foo as baz),
+               :(import SomeModule as SM),
+               Expr(:export, :foo, :bar),
+               Expr(:public, :foo))
+        @test JET.to_module_usage(get_jl_lowered_module_usage(ex)) == ex
+    end
+end
+end
 end
 
 @testset "test to_simple_module_usages" begin

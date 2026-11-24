@@ -69,6 +69,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Updated JET for Julia runtimes where JuliaLowering is enabled, as it is by
+  default on Julia 1.15.
+
 ## [0.13.4]
 
 ### Fixed
