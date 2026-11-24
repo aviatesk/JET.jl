@@ -74,6 +74,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated JET for Julia runtimes where JuliaLowering is enabled, as it is by
   default on Julia 1.15.
 
+### Fixed
+
+- Fixed reports in code passed to a macro being located at the macro call,
+  e.g. in a `@testset` body on Julia 1.15, or in a `@time begin ... end` block
+  on all supported Julia versions. Such reports are now located at the line of
+  the code.
+
+- Fixed `report_opt` not reporting runtime dispatches in code passed to a macro,
+  on Julia 1.15 for any macro, and on earlier Julia versions for a macro defined
+  in another file such as `@time`. Runtime dispatches in the code that such a
+  macro generates itself are still not reported.
+
 ## [0.13.4]
 
 ### Fixed
