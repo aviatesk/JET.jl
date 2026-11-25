@@ -9,5 +9,8 @@
 /LocalPreferences.toml
 /Manifest.toml
 /Manifest-*.toml
-.claude
+# Claude Code: personal files (shared ones such as .claude/skills are tracked)
+.claude/settings.local.json
+.claude/worktrees/
+CLAUDE.local.md
 julia
