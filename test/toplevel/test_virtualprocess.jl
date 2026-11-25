@@ -925,6 +925,51 @@ end
         @test isnothing(res.res.toplevel_error_report)
         @test isempty(res.res.inference_error_reports)
     end
+
+    # the methods that such code defines are analyzed, also in a module and in the files it
+    # includes, which JuliaLowering evaluates through `at_eval_hook`
+    let res = @analyze_toplevel analyze_from_definitions=true begin
+            macro define(ex)
+                return esc(Expr(:toplevel, ex))
+            end
+            if true
+                @define f(x::Int) = x + "a"
+            end
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        @test only(res.res.inference_error_reports) isa MethodErrorReport
+    end
+    let res = @analyze_toplevel analyze_from_definitions=true begin
+            macro define(ex)
+                return esc(Expr(:toplevel, ex))
+            end
+            if true
+                @define module Defined
+                g(x::Int) = x + "a"
+                end
+            end
+        end
+        @test isnothing(res.res.toplevel_error_report)
+        @test only(res.res.inference_error_reports) isa MethodErrorReport
+    end
+    mktempdir() do dir
+        main = joinpath(dir, "main.jl")
+        child = joinpath(dir, "child.jl")
+        write(child, "h(x::Int) = x + \"a\"\n")
+        res = report_text("""
+            macro define(ex)
+                return esc(Expr(:toplevel, ex))
+            end
+            if true
+                @define module Including
+                include("child.jl")
+                end
+            end
+            """, main; analyze_from_definitions=true)
+        @test isnothing(res.res.toplevel_error_report)
+        @test child in JET.included_files(res.res)
+        @test only(res.res.inference_error_reports) isa MethodErrorReport
+    end
 end
 
 # aviatesk/JETLS.jl#1075
