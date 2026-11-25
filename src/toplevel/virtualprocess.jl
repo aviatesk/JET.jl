@@ -1599,6 +1599,8 @@ function lower_with_err_handling(interp::ConcreteInterpreter, ::JS.SyntaxNode, x
         lwr = Base.invoke_in_world(state.world, lower, state.context, xexpanded)
         if isexpr(lwr, :error)
             msg = first(lwr.args)
+            # The messages of JuliaLowering start with the `syntax: ` that the report prints as `Syntax error: `.
+            msg isa String && (msg = String(chopprefix(msg, "syntax: ")))
             abort_toplevel_analysis!(state, LoweringErrorReport(msg, state.filename, state.curline))
         end
         return lwr

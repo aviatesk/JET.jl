@@ -70,6 +70,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed the messages of syntax error reports repeating `syntax: ` on Julia 1.15,
+  e.g. `Syntax error: syntax: function argument name not unique`.
+
 ## [0.13.5]
 
 ### Changed

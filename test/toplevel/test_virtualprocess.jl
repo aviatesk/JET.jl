@@ -999,6 +999,15 @@ end
         @test !isnothing(res.res.toplevel_error_report)
         @test res.res.toplevel_error_report isa LoweringErrorReport
     end
+
+    # The report prints the message after `Syntax error: `, without the `syntax: ` that the
+    # messages of JuliaLowering start with.
+    let res = report_text("f(x, x) = x")
+        report = res.res.toplevel_error_report
+        @test report isa LoweringErrorReport
+        @test occursin("function argument name not unique", report.err)
+        @test !startswith(report.err, "syntax: ")
+    end
 end
 
 @testset "expression flattening" begin
