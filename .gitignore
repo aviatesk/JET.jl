@@ -1,5 +1,3 @@
-/.benchmarkci/
-!/benchmark/tune.json
 /docs/build/
 !/docs/LocalPreferences.toml
 /docs/src/index.md
@@ -9,8 +7,8 @@
 /LocalPreferences.toml
 /Manifest.toml
 /Manifest-*.toml
+
 # Claude Code: personal files (shared ones such as .claude/skills are tracked)
 .claude/settings.local.json
 .claude/worktrees/
 CLAUDE.local.md
-julia
