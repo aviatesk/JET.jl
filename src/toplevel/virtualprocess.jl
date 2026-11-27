@@ -1770,12 +1770,6 @@ function process_toplevel!(interp::ConcreteInterpreter, toplevelnode::JS.SyntaxN
         lnn = LineNumberNode(state.curline, state.filename)
 
         if isexpr(x, :module)
-            # Until JuliaLang/julia#65070, JuliaSyntax produces a 4-arg form that starts with
-            # the syntax version, which native evaluation ignores, or rejects on the Julia
-            # versions without the form.
-            if length(x.args) == 4 && x.args[1] isa VersionNumber
-                deleteat!(x.args, 1)
-            end
             @static if !isdefinedglobal(Base, :set_syntax_version)
                 # Older Julia versions accept any standard-imports flag; only `true` enables it.
                 if length(x.args) == 3
